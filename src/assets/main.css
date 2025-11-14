@@ -1,0 +1,43 @@
+@import './base.css';
+
+#app {
+  /*
+  max-width: 1280px; (УДАЛЕНО)
+  margin: 0 auto; (УДАЛЕНО)
+  padding: 2rem; (УДАЛЕНО)
+  */
+  
+  /* Мы говорим приложению (#app) занимать
+    100% высоты экрана. Это нужно, чтобы
+    наш HomeView.vue (у которого height: 100vh)
+    работал корректно.
+  */
+  height: 100vh;
+  font-weight: normal;
+}
+
+/* Стили для ссылок (a, .green) 
+  оставляем, они не мешают.
+*/
+a,
+.green {
+  text-decoration: none;
+  color: hsla(160, 100%, 37%, 1);
+  transition: 0.4s;
+  padding: 3px;
+}
+
+@media (hover: hover) {
+  a:hover {
+    background-color: hsla(160, 100%, 37%, 0.2);
+  }
+}
+
+/* Блок @media (min-width: 1024px)
+  полностью очищен, так как он
+  содержал старые, ненужные стили 
+  для body и #app.
+*/
+@media (min-width: 1024px) {
+  /* (Здесь было `display: grid`, которое все ломало) */
+}
