@@ -17,7 +17,9 @@ import axios from 'axios';
 axios.defaults.withCredentials = true; 
 // --- КОНЕЦ НОВОГО КОДА ---
 
-const API_BASE_URL = 'http://localhost:3000/api';
+// Адрес "Кухни". Он возьмет VITE_API_BASE_URL из Vercel,
+// а если его нет (на localhost), то использует localhost.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 // =================================================================
 // --- (Без изменений) ---
@@ -1282,10 +1284,11 @@ export const useMainStore = defineStore('mainStore', () => {
    * Проверяет сессию пользователя на бэкенде.
    */
   async function checkAuth() {
-    console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
-    try {
-      isAuthLoading.value = true;
-      const res = await axios.get('http://localhost:3000/api/auth/me'); 
+  console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
+  try {
+    isAuthLoading.value = true;
+    const res = await axios.get(`${API_BASE_URL}/auth/me`); // <-- ВОТ ИСПРАВЛЕНИЕ
+// ... (остальная функция без изменений)
       user.value = res.data; 
       console.log('[ЖУРНАЛ] checkAuth: ✅ Пользователь найден:', user.value.name);
       
@@ -1302,7 +1305,9 @@ export const useMainStore = defineStore('mainStore', () => {
    * Выходит из системы.
    */
 async function logout() {
-    console.log('[ЖУРНАЛ] logout: 🚀 Выход из системы (POST /api/auth/logout)...');
+  // ...
+  axios.post('http://localhost:3000/api/auth/logout') // <-- НАЙДИТЕ ЭТУ СТРОКУ
+// ...
     
     // 1. Отправляем запрос на сервер "в фоновом режиме" (БЕЗ await)
     //    и сразу добавляем .catch, чтобы ошибка не "всплыла" в консоль.
