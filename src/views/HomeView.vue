@@ -1088,7 +1088,7 @@ onBeforeUnmount(() => {
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (12 КОЛОНОК) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШИРИНА < 1920px) === */
 .timeline-grid-content {
   display: grid;
   /* grid-template-columns: repeat(12, 1fr); (ЗАМЕНЕНО) */
@@ -1180,7 +1180,7 @@ onBeforeUnmount(() => {
   height: 120px; /* Высота для итогов (можно настроить) */
   background: var(--color-background);
   border-top: 1px solid var(--color-border);
-  overflow-y: auto; 
+  overflow-y: auto; /* Позволяем итогам скроллиться, если их много */
   padding: 1rem;
   box-sizing: border-box;
 }
