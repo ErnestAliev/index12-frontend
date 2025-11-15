@@ -521,31 +521,31 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e0e0e0;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.6) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.7) === */
 @media (max-height: 900px) {
   .dashboard-card {
-    min-width: 100px; /* Уменьшаем мин. ширину */
-    padding-right: 1rem;
+    min-width: 100px; 
+    padding-right: 0.8rem; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Чуть меньше отступ */
   }
   .card-title {
-    font-size: 0.8em;
+    font-size: 0.75em;
   }
   .card-item {
-    font-size: 0.8em; /* Уменьшаем шрифт списка */
+    font-size: 0.7em; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Агрессивное уменьшение */
     margin-bottom: 0.2rem;
   }
   .card-item span:first-child {
-    padding-right: 5px; /* Уменьшаем отступ у имени */
+    padding-right: 5px; 
   }
   .forecast-display {
-    gap: 2px; /* Сжимаем отступ в прогнозе */
+    gap: 2px; 
   }
   .action-btn {
-    font-size: 1em;
-    gap: 6px;
+    font-size: 0.9em;
+    gap: 4px;
   }
   .forecast-btn {
-    font-size: 1.2em;
+    font-size: 1.1em;
   }
   .filter-icon {
     width: 12px;
