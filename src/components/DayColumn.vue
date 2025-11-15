@@ -124,4 +124,13 @@ const onDrop = (dropDataFromHourCell) => {
 .column-body {
   /* (Стили не менялись) */
 }
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
+@media (max-width: 1919px) {
+  .column-header {
+    font-size: 0.8em; /* Уменьшаем шрифт даты */
+    padding: 6px 4px; /* Уменьшаем отступы */
+  }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
