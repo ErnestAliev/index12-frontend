@@ -180,6 +180,28 @@ watch(isDropdownOpen, (isOpen) => {
         @click.stop="isDropdownOpen = !isDropdownOpen"
         >
         {{ props.title }} <span>▽</span>
+        
+        <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
+          <input
+            type="text"
+            class="widget-search-input"
+            v-model="searchQuery"
+            placeholder="Поиск..."
+            @click.stop />
+          <ul>
+            <li 
+              v-for="widget in filteredWidgets" 
+              :key="widget.key"
+              :class="{ 
+                'active': widget.key === props.widgetKey,
+                'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
+              }"
+              @click.stop="handleSelect(widget.key)"
+            >
+              {{ widget.name }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div class="card-actions">
@@ -204,29 +226,6 @@ watch(isDropdownOpen, (isOpen) => {
         <button @click.stop="$emit('edit')" class="action-btn">✎</button>
       </div>
 
-      <!-- 🔴 ИСПРАВЛЕНИЕ: Выпадающий список ВНЕ card-title -->
-      <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
-        <input
-          type="text"
-          class="widget-search-input"
-          v-model="searchQuery"
-          placeholder="Поиск..."
-          @click.stop />
-        <ul>
-          <li 
-            v-for="widget in filteredWidgets" 
-            :key="widget.key"
-            :class="{ 
-              'active': widget.key === props.widgetKey,
-              'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
-            }"
-            @click.stop="handleSelect(widget.key)"
-          >
-            {{ widget.name }}
-          </li>
-        </ul>
-      </div>
-
       <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
         <div class="filter-group">
           <div class="filter-group-title">Сортировка</div>
@@ -247,7 +246,7 @@ watch(isDropdownOpen, (isOpen) => {
           </ul>
         </div>
       </div>
-    </div>
+      </div>
     
     <div class="card-items-list">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
@@ -281,7 +280,7 @@ watch(isDropdownOpen, (isOpen) => {
             {{ formatBalance(item.futureBalance) }}
           </span>
         </span>
-      </div>
+        </div>
       <p v-if="!processedItems.length" class="card-item-empty">{{ props.emptyText }}</p>
     </div>
   </div>
@@ -310,7 +309,6 @@ watch(isDropdownOpen, (isOpen) => {
   height: 30px; 
   margin-bottom: 0.5rem;
   flex-shrink: 0;
-  position: relative; /* 🔴 ДОБАВЛЕНО: для позиционирования выпадающих списков */
 }
 .card-title {
   font-size: 0.85em;
@@ -436,7 +434,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #f4f4f4;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-  z-index: 100; /* (z-index 100, ниже чем .card-title) */
+  z-index: 1002; /* 🔴 ИСПРАВЛЕНИЕ: Поднят выше 1000 для предотвращения "провала клика" */
   padding: 8px;
   box-sizing: border-box;
   max-height: 400px;
