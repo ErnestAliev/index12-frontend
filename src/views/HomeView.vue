@@ -1088,7 +1088,7 @@ onBeforeUnmount(() => {
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШИРИНА < 1920px) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (12 КОЛОНОК) === */
 .timeline-grid-content {
   display: grid;
   /* grid-template-columns: repeat(12, 1fr); (ЗАМЕНЕНО) */
@@ -1155,32 +1155,29 @@ onBeforeUnmount(() => {
 /* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ВЫСОТА ПЛАНШЕТА) === */
 .graph-area-wrapper {
   overflow-x: hidden;
-  overflow-y: hidden; /* Оставляем, чтобы сам контейнер не скроллился */
+  overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
   min-height: 115px;
-  flex-grow: 1;
   
-  /* Новые стили для вертикального макета */
-  display: flex;
-  flex-direction: column;
+  /* 🔴 НОВОЕ: (v4.1) Должен расти */
+  flex-grow: 1;
+  /* display: flex и flex-direction УДАЛЕНЫ */
 }
 .graph-area-wrapper::-webkit-scrollbar { display: none; }
 
 :deep(.graph-renderer-content) {
-  /* height: 100%; (УДАЛЕНО) */
-  flex-grow: 1; /* График занимает все свободное место */
-  min-height: 0; /* Важно для flex-grow */
+  height: 100%; /* 🟢 ВОЗВРАЩЕНО (было flex-grow: 1) */
   width: 100%;
 }
 
-/* Новые стили для Блока 4 (Итоги дня) */
+/* 🟢 ИСПРАВЛЕНИЕ: Стили для Итогов (Блок 4) */
 .summaries-container {
   flex-shrink: 0; /* Не сжиматься */
   height: 120px; /* Высота для итогов (можно настроить) */
   background: var(--color-background);
   border-top: 1px solid var(--color-border);
-  overflow-y: auto; /* Позволяем итогам скроллиться, если их много */
+  overflow-y: auto; 
   padding: 1rem;
   box-sizing: border-box;
 }
