@@ -21,7 +21,7 @@ const props = defineProps({
   // --- 🔴 ИСПРАВЛЕНИЕ: (Props) ---
   subtitlePrefix: { type: String, required: true },
   subtitleDate: { type: String, required: true },
-  // ---
+  // ---\
   widgetKey: { type: String, required: true },
   widgetIndex: { type: Number, required: true }
 });
@@ -30,174 +30,216 @@ const mainStore = useMainStore();
 const isDropdownOpen = ref(false);
 const cardRef = ref(null);
 
-// --- 🔴 НОВОЕ: Логика поиска ---
-const searchQuery = ref('');
-const filteredWidgets = computed(() => {
-  if (!searchQuery.value) {
-    return mainStore.allWidgets;
+// --- 🔴 НОВОЕ: Логика закрытия при клике вне карточки ---
+const closeDropdownOnOutsideClick = (event) => {
+  if (isDropdownOpen.value && cardRef.value && !cardRef.value.contains(event.target)) {
+    isDropdownOpen.value = false;
   }
-  const query = searchQuery.value.toLowerCase();
-  return mainStore.allWidgets.filter(widget => 
+};
+// Регистрируем и отменяем слушатель
+watch(isDropdownOpen, (newVal) => {
+  if (newVal) {
+    document.addEventListener('click', closeDropdownOnOutsideClick);
+  } else {
+    document.removeEventListener('click', closeDropdownOnOutsideClick);
+  }
+});
+// ----------------------------------------------------\
+
+// --- 🔴 НОВОЕ: Поиск и фильтрация виджетов ---
+const searchQuery = ref('');
+
+// Список всех виджетов (Total)
+const allTotalWidgets = computed(() => mainStore.widgetConfigs.filter(w => w.type === 'total'));
+
+const filteredWidgets = computed(() => {
+  const query = searchQuery.value.toLowerCase().trim();
+  if (!query) return allTotalWidgets.value;
+  
+  return allTotalWidgets.value.filter(widget => 
     widget.name.toLowerCase().includes(query)
   );
 });
-// --- КОНЕЦ НОВОГО ---
 
+// --- 🔴 НОВОЕ: Обработчик выбора виджета ---
 const handleSelect = (newWidgetKey) => {
+  if (newWidgetKey === props.widgetKey) {
+    isDropdownOpen.value = false;
+    return;
+  }
+  
+  // Проверяем, не занят ли уже этот виджет другим местом
+  const isWidgetUsed = mainStore.dashboardLayout.includes(newWidgetKey);
+  if (isWidgetUsed) {
+    // В отличие от Balance/Category, Total не может быть занят
+    // но на всякий случай оставим проверку, если логика изменится
+    return;
+  }
+
+  // Замена виджета в хранилище
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
   isDropdownOpen.value = false;
 };
+// ----------------------------------------------------\
 
-// --- !!! НОВАЯ ЛОГИКА: Клик снаружи !!! ---
-const handleClickOutside = (event) => {
-  // 3. Проверяем, был ли клик СНАРУЖИ этого компонента
-  if (cardRef.value && !cardRef.value.contains(event.target)) {
-    isDropdownOpen.value = false; // Закрываем меню
-  }
-};
-
-// 4. "Наблюдаем" за состоянием меню
-watch(isDropdownOpen, (isOpen) => {
-  if (isOpen) {
-    // 🔴 НОВОЕ: Очищаем поиск при открытии
-    searchQuery.value = ''; 
-    document.addEventListener('mousedown', handleClickOutside);
-  } else {
-    document.removeEventListener('mousedown', handleClickOutside);
-  }
+// --- 🔴 НОВОЕ: Динамический класс для цвета ---
+const balanceClass = computed(() => {
+  if (props.totalBalance > 0) return 'balance-positive';
+  if (props.totalBalance < 0) return 'balance-negative';
+  return 'balance-zero';
 });
-// --- КОНЕЦ НОВОЙ ЛОГИКИ ---
-
 </script>
 
 <template>
-  <div class="dashboard-card" ref="cardRef">
+  <div class="dashboard-card" ref="cardRef"> 
     
-    <div 
-      class="card-title-container" 
-      @click="isDropdownOpen = !isDropdownOpen"
-      >
-      <div class="card-title">{{ title }} <span>▽</span></div>
-      
-      <div v-if="isDropdownOpen" class="widget-dropdown">
-        <input
-          type="text"
-          class="widget-search-input"
-          v-model="searchQuery"
-          placeholder="Поиск..."
-          @click.stop />
-        <ul>
-          <li 
-            v-for="widget in filteredWidgets" 
-            :key="widget.key"
-            :class="{ 
-              'active': widget.key === props.widgetKey,
-              'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
-            }"
-            @click.stop="handleSelect(widget.key)"
-          >
-            {{ widget.name }}
-          </li>
-        </ul>
-      </div>
-      </div>
+    <div class="card-title-container" @click.stop="isDropdownOpen = !isDropdownOpen">
+      <span class="card-title">{{ props.title }}</span>
+      <span class="widget-dropdown-icon">▼</span>
+    </div>
 
-    <div 
-      class="card-total-balance"
-      :class="{
-        'expense': props.totalBalance < 0
-      }"
-    >
-      ₸ 
-      {{ props.totalBalance < 0 ? '-' : '' }}
-      {{ formatNumber(Math.abs(props.totalBalance)) }}
+    <div class="card-content">
+      <div :class="['balance-display', balanceClass]">
+        {{ formatNumber(props.totalBalance) }}
+      </div>
     </div>
     
-    <div class="card-sub-balance">
-      {{ props.subtitlePrefix }} • <span class="subtitle-date">{{ props.subtitleDate }}</span>
+    <div class="card-subtitle">
+      {{ props.subtitlePrefix }} <span class="card-subtitle-date">{{ props.subtitleDate }}</span>
     </div>
+
+    <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
+      
+      <input 
+        type="text" 
+        v-model="searchQuery" 
+        placeholder="Поиск..." 
+        class="widget-search-input"
+        @click.stop
+      />
+      
+      <ul>
+        <li 
+          v-for="widget in filteredWidgets" 
+          :key="widget.key"
+          :class="{ 'active': widget.key === props.widgetKey }"
+          @click.stop="handleSelect(widget.key)"
+        >
+          {{ widget.name }}
+        </li>
+      </ul>
     </div>
+    
+  </div>
 </template>
 
 <style scoped>
-/* Стили карточки (без изменений) */
+/* ================================================= */
+/* Стили карточки (Идентично HeaderBalanceCard)     */
+/* ================================================= */
 .dashboard-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding-right: 1.5rem;
-  border-right: 1px solid var(--color-border);
-  /* min-width: 150px; (🟢 УДАЛЕНО: Позволяем карточке сжиматься) */
-  position: relative; 
-}
-.dashboard-card:last-child {
-  border-right: none;
-  padding-right: 0;
-}
-.card-total-balance {
-  font-size: 1.8em;
-  font-weight: bold;
-  color: var(--color-heading);
-  margin-bottom: 0.25rem;
-  white-space: nowrap;
-}
-.card-sub-balance {
-  font-size: 0.8em;
-  color: #777;
+  /* 🔴 ИСПРАВЛЕНИЕ v4.1: Теперь flex-shrink: 1 (вместо 0) */
+  flex-shrink: 1; /* Разрешаем сжиматься, если не хватает места */
+  background-color: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  position: relative; /* Для позиционирования дропдауна */
+  min-width: 150px;
+  max-width: 300px;
 }
 
-/* (Стиль даты v2.2) */
-.card-sub-balance .subtitle-date {
-  color: var(--color-primary); /* Зеленый */
-  font-weight: 500;
-}
-
+/* ================================================= */
+/* Заголовок + кнопка                                */
+/* ================================================= */
 .card-title-container {
-  height: 30px; 
-  margin-bottom: 0.5rem;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px; /* Добавил отступ */
 }
 .card-title {
-  font-size: 0.85em;
-  color: #aaa;
-  transition: color 0.2s;
-}
-.card-title:hover {
-  color: #ddd;
-}
-.card-title span {
   font-size: 0.8em;
-  margin-left: 4px;
+  font-weight: 500;
+  color: var(--color-text-secondary); /* Серый */
+  text-transform: uppercase;
+}
+.widget-dropdown-icon {
+  font-size: 0.6em;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s;
+}
+.card-title-container:hover .widget-dropdown-icon {
+  color: var(--color-link);
 }
 
-/* (Стили для +/- v2.1) */
-.card-total-balance.expense {
-  color: var(--color-danger); /* Красный/Оранжевый */
+
+/* ================================================= */
+/* Основное содержимое                               */
+/* ================================================= */
+.card-content {
+  margin-bottom: 12px;
+}
+.balance-display {
+  font-size: 1.8em;
+  font-weight: 700;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.balance-positive { color: var(--color-positive); }
+.balance-negative { color: var(--color-negative); }
+.balance-zero { color: var(--color-text); }
+
+
+/* ================================================= */
+/* Подзаголовок (Дата/Период)                        */
+/* ================================================= */
+.card-subtitle {
+  font-size: 0.7em;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.card-subtitle-date {
+  font-weight: 600;
+  color: var(--color-text);
 }
 
-/* --- 🔴 ИСПРАВЛЕНИЕ v2.3: Стили для Dropdown --- */
+
+/* ================================================= */
+/* Выпадающий список виджетов (Dropdown)             */
+/* ================================================= */
 .widget-dropdown {
   position: absolute;
-  top: 35px;
-  left: 0;
-  width: 220px; /* (Чуть шире) */
-  background-color: #f4f4f4;
+  top: 100%; /* Позиционируем под карточкой */
+  right: 0;
+  width: 100%;
+  max-width: 250px;
+  min-width: 200px;
+  background-color: #fcfcfc;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-  z-index: 100;
-  padding: 8px;
-  box-sizing: border-box;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 200; /* Должен быть выше всех карточек */
   
-  /* 🔴 НОВОЕ: Ограничение высоты */
-  max-height: 400px;
+  /* 🔴 НОВОЕ: Внутренний скролл */
+  max-height: 300px;
   display: flex;
   flex-direction: column;
+  
+  /* 🔴 НОВОЕ: Отступы (отличны от BalanceCard) */
+  padding: 8px;
+  transform: translateY(4px); /* Небольшой отступ от карточки */
 }
 
-/* 🔴 ИСПРАВЛЕНИЕ v2.4: Стили для поиска */
+/* --- Поле поиска --- */
 .widget-search-input {
-  flex-shrink: 0;
+  height: 32px;
   padding: 8px 10px;
   border: 1px solid #ddd;
   border-radius: 6px;
@@ -242,30 +284,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e9e9e9;
 }
 .widget-dropdown li.active {
-  color: #333;
+  color: #007AFF; /* (Цвет как у "Создать") */
   background-color: #e0e0e0;
 }
-.widget-dropdown li.disabled {
-  color: #aaa;
-  background-color: transparent;
-  cursor: not-allowed;
-}
-
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
-@media (max-height: 900px) {
-  .dashboard-card {
-    min-width: 100px; /* Уменьшаем мин. ширину */
-    padding-right: 1rem; /* Уменьшаем отступ */
-  }
-  .card-total-balance {
-    font-size: 1.5em; /* Уменьшаем главный шрифт */
-  }
-  .card-sub-balance {
-    font-size: 0.75em; /* И подпись */
-  }
-  .card-title {
-    font-size: 0.8em;
-  }
-}
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
