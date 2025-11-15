@@ -330,11 +330,7 @@ async function saveCreateOrClone(base, dateKey) {
   // 🔴 ИЗМЕНЕНО: Передаем dateKey
   // Бэкенд должен быть обновлен, чтобы принимать dateKey вместо dayOfYear
   const payload = { ...base, dateKey, cellIndex: cellIndexToUse };
-  
-  // ==================================================================
-  // --- 💡 ИСПРАВЛЕНИЕ: Заменяем localhost на API_BASE_URL ---
-  // ==================================================================
-  const response = await axios.post(`${API_BASE_URL}/events`, payload);
+  const response = await axios.post('http://localhost:3000/api/events', payload);
   
   // 🔴 ИЗМЕНЕНО: Обновляем HomeView с помощью полного объекта
   emit('operation-added', response.data);
@@ -367,10 +363,7 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
     }
     
     // Обновляем данные операции (позиция уже обновлена)
-    // ==================================================================
-    // --- 💡 ИСПРАВЛЕНИЕ: Заменяем localhost на API_BASE_URL ---
-    // ==================================================================
-    await axios.put(`${API_BASE_URL}/events/${opId}`, {
+    await axios.put(`http://localhost:3000/api/events/${opId}`, {
       // 🔴 ИЗМЕНЕНО: Передаем dateKey
       ...base,
       dateKey: newDateKey,  
@@ -381,10 +374,7 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
     
   } else {
     // Позиция не изменилась, просто обновляем данные
-    // ==================================================================
-    // --- 💡 ИСПРАВЛЕНИЕ: Заменяем localhost на API_BASE_URL ---
-    // ==================================================================
-    await axios.put(`${API_BASE_URL}/events/${opId}`, {
+    await axios.put(`http://localhost:3000/api/events/${opId}`, {
       ...base,
       dateKey: oldDateKey, // 🔴 ИЗМЕНЕНО
       cellIndex: oldCellIndex
@@ -918,7 +908,7 @@ select option[value="--CREATE_NEW--"] {
   color: #222;
   cursor: pointer;
 }
-.icon-btn:hover { background: #E5E5EE; }
+.icon-btn:hover { background: #E5E5E5; }
 .icon-btn.danger { background: #FF3B30; color: #fff; }
 .icon-btn.danger:hover { background: #d93025; }
 .icon {
