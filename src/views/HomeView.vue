@@ -12,19 +12,17 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.2-AUTH-MENU-FIX ---
- * * ВЕРСIA: 5.2 - Исправлено позиционирование меню пользователя
- * ДАТА: 2025-11-14
+ * * --- МЕТКА ВЕРСИИ: v5.3-FINAL-TOUCH-DROP-FIX ---
+ * * ВЕРСИЯ: 5.3 - Финальное исправление логики Drop для Touch D&D.
+ * * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) HTML-блок `.user-menu` вынесен из `<aside>`
- * в корень `<template>`, как и `CellContextMenu`.
- * 2. (FIX) `.user-menu` теперь позиционируется через `:style="userMenuPosition"`.
- * 3. (FIX) `toggleUserMenu` теперь вычисляет `userMenuPosition`,
- * используя `userButtonRef` (добавлен ref на кнопку).
+ * 1. (FIX) handleOperationDrop теперь явно использует dropData.toDateKey и dropData.toCellIndex.
+ * Это гарантирует, что перетаскивание, инициированное касанием (touch) из HourCell, 
+ * будет работать корректно, даже если оно пересекает границы DayColumn.
  */
 
-console.log('--- HomeView.vue v5.2-AUTH-MENU-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v5.3-FINAL-TOUCH-DROP-FIX ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -294,7 +292,7 @@ const handleTransferComplete = async (eventData) => {
   await recalcProjectionForCurrentView();
   handleCloseTransferPopup();
 };
-// (handleOperationAdded, Delete, Drop, Moved, Updated - без изменений)
+// (handleOperationAdded, Delete, Moved, Updated - без изменений)
 const handleOperationAdded = async (newEvent) => {
   console.log('[ЖУРНАЛ] handleOperationAdded: ➕ Вызываю mainStore.addOperation...');
   await mainStore.addOperation(newEvent); 
@@ -311,16 +309,16 @@ const handleOperationDelete = async (operation) => {
   handleClosePopup();
 };
 
-
-  
+// =================================================================
+// --- 🟢 ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ Touch D&D ---
+// =================================================================
 const handleOperationDrop = async (dropData) => {
   const operation = dropData.operation;
   // 🟢 ИЗМЕНЕНИЕ: Берем toDateKey и toCellIndex напрямую из dropData (если они есть)
   // В Touch-режиме HourCell передает toDateKey и toCellIndex напрямую.
-  // В Mouse-режиме DayColumn/HourCell добавляет toDateKey/toCellIndex.
   const oldDateKey = operation.dateKey; 
-  const newDateKey = dropData.toDateKey; // Теперь всегда явно
-  const newCellIndex = dropData.toCellIndex; // Теперь всегда явно
+  const newDateKey = dropData.toDateKey; 
+  const newCellIndex = dropData.toCellIndex; 
 
   if (!oldDateKey || !newDateKey) {
     console.error('!!! handleOperationDrop ОШИБКА: D&D не передал dateKey!', dropData);
@@ -332,13 +330,8 @@ const handleOperationDrop = async (dropData) => {
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
   await recalcProjectionForCurrentView();
 };
+// =================================================================
 
-  
-  if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
-  console.log('[ЖУРНАЛ] handleOperationDrop: ➡️ Вызываю mainStore.moveOperation (drag-n-drop)...');
-  await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
-  await recalcProjectionForCurrentView();
-};
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
   const baseDate = _parseDateKey(oldDateKey);
@@ -350,9 +343,6 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
   await recalcProjectionForCurrentView();
   handleClosePopup();
 };
-
-
-  
 const handleOperationUpdated = async ({ dayOfYear }) => {
   console.log('[ЖУРНАЛ] handleOperationUpdated: 🔄 Обновление операции, обновляю день', dayOfYear);
   await mainStore.forceRefreshAll();
