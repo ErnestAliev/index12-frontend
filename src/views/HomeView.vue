@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed, nextTick } from 'vue';
 import OperationPopup from '@/components/OperationPopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 import TheHeader from '@/components/TheHeader.vue';
@@ -13,7 +13,7 @@ import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v5.2-AUTH-MENU-FIX ---
- * * ВЕРСIA: 5.2 - Исправлено позиционирование меню пользователя
+ * * ВЕРСИЯ: 5.2 - Исправлено позиционирование меню пользователя
  * ДАТА: 2025-11-14
  *
  * ЧТО ИЗМЕНЕНО:
@@ -75,30 +75,12 @@ const toggleUserMenu = (event) => {
 };
 // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-// 🔴 ИСПРАВЛЕНИЕ: Функция closeAllMenus теперь проверяет целевой элемент
-const closeAllMenus = (event) => {
-  // 🔴 НОВОЕ: Проверяем, не кликнули ли мы по элементам виджетов
-  const target = event.target;
-  
-  // Если клик был по элементам виджетов - НЕ закрываем меню
-  if (target.closest('.dashboard-card') || 
-      target.closest('.card-title') || 
-      target.closest('.widget-dropdown') ||
-      target.closest('.filter-dropdown') ||
-      target.closest('.card-actions') ||
-      target.closest('.action-btn')) {
-    return; // Не закрываем меню при клике по элементам виджетов
-  }
-  
-  // 🔴 НОВОЕ: Проверяем, не кликнули ли мы по кнопке пользователя
-  if (target.closest('.user-profile-button') || target.closest('.user-menu')) {
-    return; // Не закрываем меню при клике по элементам пользовательского меню
-  }
-
-  // Закрываем меню только если клик был вне виджетов и пользовательского меню
+// Закрывает оба меню
+const closeAllMenus = () => {
   if (isContextMenuVisible.value) isContextMenuVisible.value = false;
-  if (showUserMenu.value) showUserMenu.value = false;
+  if (showUserMenu.value) showUserMenu.value = false; // <-- (Это уже было)
 };
+
 
 /**
  * !!! НОВЫЙ КОД: Обработчик завершения импорта !!!
@@ -196,14 +178,6 @@ const dateFromGlobalIndex = (globalIndex) => {
 // (Без изменений, кроме `closeAllMenus` выше)
 const visibleDays = ref([]);
 const isPopupVisible = ref(false);
-  // === 🔴 ДОБАВЬТЕ ЭТОТ КОД ПРЯМО ЗДЕСЬ ===
-watch(isPopupVisible, (newVal) => {
-  console.log('🔄 isPopupVisible changed to:', newVal);
-  if (newVal) {
-    console.log('❓ Popup opened! Stack trace:');
-    console.trace();
-  }
-});
 const isTransferPopupVisible = ref(false);
 const operationType = ref('income');
 const isContextMenuVisible = ref(false);
@@ -267,30 +241,61 @@ const handleContextMenuSelect = (type) => {
     openPopup(type);
   }
 };
+
+// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: openPopup ---
 const openPopup = (type) => {
+  console.log(`[POPUP-OPEN] 🚀 openPopup вызван. Тип: ${type}.`);
   operationType.value = type;
   isPopupVisible.value = true;
 };
+
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
+  
+  console.log(`[POPUP-EDIT] 📝 Редактирование операции. Тип: ${operation.type}`);
+  
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
   } else {
     openPopup(operation.type);
   }
 };
+
+// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: handleClosePopup ---
 const handleClosePopup = () => {
+  console.log(`[POPUP-CLOSE] 🚪 Закрываю OperationPopup.`);
   isPopupVisible.value = false;
   operationToEdit.value = null;
 };
 const handleCloseTransferPopup = () => {
+  console.log(`[POPUP-CLOSE] 🚪 Закрываю TransferPopup.`);
   isTransferPopupVisible.value = false;
   operationToEdit.value = null;
 };
 // --- КОНЕЦ БЛОКА КОНТЕКСТНОГО МЕНЮ ---
+
+// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: handleHeaderAction (Предполагаемый источник) ---
+const handleHeaderAction = (type, event) => {
+  console.log(`[HEADER-ACTION] 🔔 HeaderCard вызвал @add или @edit. Тип: ${type}`);
+  
+  // Логика по умолчанию для HeaderBalanceCard (в вашем шаблоне @add привязан к expense)
+  if (type === 'edit') {
+    // В текущей логике HeaderBalanceCard не передает объект для редактирования, 
+    // но если бы он передавал, это была бы логика редактирования.
+    console.warn('[HEADER-ACTION] Открываю модальное окно для редактирования сущностей (EntityListEditor).');
+    // ... здесь должна быть логика открытия EntityListEditor
+    return;
+  }
+  
+  // Предполагается, что 'add' открывает OperationPopup
+  operationToEdit.value = null;
+  openPopup(type === 'income' ? 'income' : 'expense');
+};
+// --- КОНЕЦ НОВОГО ОБРАБОТЧИКА ---
+
 
 /* ===================== ДАННЫЕ ПО ВИДИМЫМ ДНЯМ ===================== */
 // (Весь этот блок без изменений)
@@ -652,11 +657,13 @@ onBeforeUnmount(() => {
     </div>
   </div>
   
-  <!-- 🔴 ИСПРАВЛЕНИЕ: Добавлен параметр event в @click -->
   <div v-else class="home-layout" @click="closeAllMenus">
     
     <header class="home-header" ref="homeHeaderRef">
-      <TheHeader />
+      <TheHeader 
+        @add="handleHeaderAction('expense', $event)" 
+        @edit="handleHeaderAction('edit', $event)"
+      />
     </header>
     
     <div class="header-resizer" ref="headerResizerRef"></div>
@@ -1228,6 +1235,9 @@ onBeforeUnmount(() => {
 }
 
 /* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* * Мы используем 'max-height' вместо 'max-width'.
+ * Это надежнее определяет "планшетный" (невысокий) режим.
+*/
 @media (max-height: 900px) {
   .header-resizer {
     height: 10px; /* Делаем ресайзер тоньше */
