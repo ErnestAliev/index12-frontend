@@ -222,120 +222,183 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.popup-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.6);
+/* (Стили карточки v4.1 - без изменений) */
+.dashboard-card {
+  flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  flex-direction: column;
+  padding-right: 1.5rem;
+  border-right: 1px solid var(--color-border);
+  min-width: 150px;
+  position: relative; 
+  min-height: 0;
 }
-.popup-content {
-  background: var(--color-background-soft);
-  padding: 25px;
-  border-radius: 10px;
-  width: 90%;
-  max-width: 450px;
-  box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-  border: 1px solid var(--color-border);
-  position: relative;
+
+.dashboard-card:last-child {
+  border-right: none;
+  padding-right: 0;
 }
-.close-btn {
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  background: none;
-  border: none;
-  font-size: 28px;
-  color: var(--color-text-mute);
+.card-title-container {
+  height: 30px; 
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
   cursor: pointer;
-  padding: 0;
-  line-height: 1;
 }
-.close-btn:hover {
+.card-title {
+  font-size: 0.85em;
+  color: #aaa;
+  transition: color 0.2s;
+}
+.card-title:hover {
+  color: #ddd;
+}
+.card-title span {
+  font-size: 0.8em;
+  margin-left: 4px;
+}
+
+/* (Стили списка v4.1 - без изменений) */
+.category-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1; 
+  gap: 0.25rem; 
+}
+.category-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9em;
+  margin-bottom: 0.25rem; 
+}
+.category-item span:first-child {
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 10px;
+}
+.category-item span:last-child {
   color: var(--color-text);
-}
-h2 {
-  margin-top: 0;
-  margin-bottom: 20px;
-  color: var(--color-heading-text);
-  font-weight: 600;
-}
-.form-group {
-  margin-bottom: 15px;
-}
-.form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-mute);
+  white-space: nowrap;
 }
-.form-group input[type="number"],
-.form-group input[type="date"],
-.form-group select {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
-  background: var(--color-background);
-  color: var(--color-text);
-  font-size: 15px;
-  box-sizing: border-box; /* Важно для padding */
+.category-item span.income {
+  color: var(--color-primary); /* Зеленый */
 }
-.form-group-inline {
-  display: inline-block;
-  width: calc(50% - 5px);
-}
-.form-group-inline:first-of-type {
-  margin-right: 10px;
+.category-item span.expense {
+  color: var(--color-danger); /* Оранжевый/Красный */
 }
 
-hr {
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 20px 0;
+/* (Стили списка v4.1 - без изменений) */
+.category-items-list-scroll {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 5px; 
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-height: 0;
 }
 
-.popup-actions {
+.category-items-list-scroll::-webkit-scrollbar {
+  display: none;
+}
+.category-item-empty {
+  font-size: 0.9em;
+  color: #666;
+}
+
+
+/* --- 🔴 ИСПРАВЛЕНИЕ v2.3: Стили для Dropdown --- */
+.widget-dropdown {
+  position: absolute;
+  top: 35px;
+  left: 0;
+  width: 220px; /* (Чуть шире) */
+  background-color: #f4f4f4;
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  z-index: 100;
+  padding: 8px;
+  box-sizing: border-box;
+  
+  /* 🔴 НОВОЕ: Ограничение высоты */
+  max-height: 400px;
   display: flex;
-  justify-content: flex-end;
-  margin-top: 25px;
+  flex-direction: column;
 }
-.popup-actions button {
-  padding: 10px 18px;
-  border: none;
-  border-radius: 5px;
+
+/* 🔴 ИСПРАВЛЕНИЕ v2.4: Стили для поиска */
+.widget-search-input {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 0.7em;
+  box-sizing: border-box;
+  width: 100%;
+
+  /* --- 🔴 НОВОЕ: Исправление цвета --- */
+  background-color: #FFFFFF;
+  color: #333;
+  /* --- КОНЕЦ НОВОГО --- */
+}
+.widget-search-input:focus {
+  outline: none;
+  border-color: #007AFF; /* (Цвет как у "Создать") */
+}
+/* --- */
+
+.widget-dropdown ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  
+  /* 🔴 НОВОЕ: Скролл */
+  flex-grow: 1;
+  overflow-y: auto;
+}
+/* --- КОНЕЦ ИСПРАВЛЕНИЯ --- */
+
+.widget-dropdown li {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.7em;
+  color: #333;
   cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  margin-left: 10px;
-  transition: background-color 0.2s, opacity 0.2s;
+  
+  /* --- 🔴 ИСПРАВЛЕНИЕ v2.5: !important --- */
+  font-weight: 500 !important;
 }
-.btn-primary {
-  background-color: var(--color-accent);
-  color: white;
+.widget-dropdown li:hover {
+  background-color: #e9e9e9;
 }
-.btn-primary:hover {
-  opacity: 0.85;
+.widget-dropdown li.active {
+  color: #333;
+  background-color: #e0e0e0;
 }
-.btn-danger {
-  background-color: #e53e3e;
-  color: white;
+.widget-dropdown li.disabled {
+  color: #aaa;
+  background-color: transparent;
+  cursor: not-allowed;
 }
-.btn-danger:hover {
-  background-color: #c53030;
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
+@media (max-width: 1919px) {
+  .dashboard-card {
+    min-width: 120px;
+    padding-right: 1rem;
+  }
+  .card-title {
+    font-size: 0.8em;
+  }
+  .category-item {
+    font-size: 0.8em; /* Уменьшаем шрифт списка */
+    margin-bottom: 0.2rem;
+  }
+  .category-item span:first-child {
+    padding-right: 5px; /* Уменьшаем отступ у имени */
+  }
 }
-.btn-secondary {
-  background-color: var(--color-background-mute);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-}
-.btn-secondary:hover {
-  background-color: var(--color-border);
-}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
