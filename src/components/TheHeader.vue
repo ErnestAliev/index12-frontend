@@ -250,8 +250,8 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
   width: 100%;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
-@media (max-width: 1919px) {
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+@media (max-height: 900px) {
   .header-dashboard {
     /* Уменьшаем зазоры и отступы */
     gap: 1rem;
