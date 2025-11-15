@@ -310,15 +310,30 @@ const handleOperationDelete = async (operation) => {
   visibleDays.value = [...visibleDays.value];
   handleClosePopup();
 };
+
+
+  
 const handleOperationDrop = async (dropData) => {
   const operation = dropData.operation;
+  // 🟢 ИЗМЕНЕНИЕ: Берем toDateKey и toCellIndex напрямую из dropData (если они есть)
+  // В Touch-режиме HourCell передает toDateKey и toCellIndex напрямую.
+  // В Mouse-режиме DayColumn/HourCell добавляет toDateKey/toCellIndex.
   const oldDateKey = operation.dateKey; 
-  const newDateKey = dropData.toDateKey;
-  const newCellIndex = dropData.toCellIndex;
+  const newDateKey = dropData.toDateKey; // Теперь всегда явно
+  const newCellIndex = dropData.toCellIndex; // Теперь всегда явно
+
   if (!oldDateKey || !newDateKey) {
     console.error('!!! handleOperationDrop ОШИБКА: D&D не передал dateKey!', dropData);
     return;
   }
+  
+  if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
+  console.log('[ЖУРНАЛ] handleOperationDrop: ➡️ Вызываю mainStore.moveOperation (drag-n-drop)...');
+  await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
+  await recalcProjectionForCurrentView();
+};
+
+  
   if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
   console.log('[ЖУРНАЛ] handleOperationDrop: ➡️ Вызываю mainStore.moveOperation (drag-n-drop)...');
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
@@ -335,6 +350,9 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
   await recalcProjectionForCurrentView();
   handleClosePopup();
 };
+
+
+  
 const handleOperationUpdated = async ({ dayOfYear }) => {
   console.log('[ЖУРНАЛ] handleOperationUpdated: 🔄 Обновление операции, обновляю день', dayOfYear);
   await mainStore.forceRefreshAll();
