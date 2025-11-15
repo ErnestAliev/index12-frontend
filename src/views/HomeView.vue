@@ -904,12 +904,12 @@ onBeforeUnmount(() => {
  * Теперь он использует position: fixed (относительно окна)
 */
 .user-menu {
-  position: fixed;
+  position: fixed; /* <--- ГЛАВНОЕ ИСПРАВЛЕНИЕ: (был absolute) */
   width: 180px;      
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1); 
   z-index: 2000; 
   overflow: hidden;
   /* top и left будут установлены через :style */
@@ -966,7 +966,7 @@ onBeforeUnmount(() => {
 /* 🔴 ИСПРАВЛЕНИЕ v4.3: Стили для ресайзера хедера */
 .header-resizer {
   flex-shrink: 0;
-  height: 15px;
+  height: 15px; 
   background: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
@@ -1026,8 +1026,7 @@ onBeforeUnmount(() => {
   scrollbar-width: none;
   -ms-overflow-style: none;
   
-  /* !!! ВОЗВРАЩЕНО: Для позиционирования кнопки !!!
- */
+  /* !!! ВОЗВРАЩЕНО: Для позиционирования кнопки !!! */
   position: relative; 
 }
 .home-right-panel::-webkit-scrollbar { display: none; }
@@ -1089,12 +1088,14 @@ onBeforeUnmount(() => {
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 
-/* === 🟢 ИСПРАВЛЕНИЕ: 12 КОЛОНОК === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШИРИНА < 1920px) === */
 .timeline-grid-content {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  /* grid-template-columns: repeat(12, 1fr); (ЗАМЕНЕНО) */
+  grid-template-columns: repeat(12, minmax(0, 1fr)); /* (ИСПРАВЛЕНИЕ) */
   width: 100%;
 }
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 
 
 .divider-wrapper {
@@ -1151,15 +1152,16 @@ onBeforeUnmount(() => {
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover { background-color: #555; }
 
 
-/* === 🟢 ИСПРАВЛЕНИЕ: ВЫСОТА ПЛАНШЕТА (ИТОГИ ВНИЗУ) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ВЫСОТА ПЛАНШЕТА) === */
 .graph-area-wrapper {
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: hidden; /* Оставляем, чтобы сам контейнер не скроллился */
   scrollbar-width: none;
   -ms-overflow-style: none;
   min-height: 115px;
   flex-grow: 1;
   
+  /* Новые стили для вертикального макета */
   display: flex;
   flex-direction: column;
 }
@@ -1167,7 +1169,7 @@ onBeforeUnmount(() => {
 
 :deep(.graph-renderer-content) {
   /* height: 100%; (УДАЛЕНО) */
-  flex-grow: 1;
+  flex-grow: 1; /* График занимает все свободное место */
   min-height: 0; /* Важно для flex-grow */
   width: 100%;
 }
@@ -1178,11 +1180,11 @@ onBeforeUnmount(() => {
   height: 120px; /* Высота для итогов (можно настроить) */
   background: var(--color-background);
   border-top: 1px solid var(--color-border);
-  overflow-y: auto;
+  overflow-y: auto; /* Позволяем итогам скроллиться, если их много */
   padding: 1rem;
   box-sizing: border-box;
 }
-/* === 🟢 КОНЕЦ ИСПРАВЛЕНИЙ === */
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 
 
 .nav-panel-wrapper {
@@ -1200,40 +1202,4 @@ onBeforeUnmount(() => {
   flex-grow: 1;
   overflow: hidden;
 }
-
-/* === 🟢 ИСПРАВЛЕНИЕ: ШРИФТЫ ДЛЯ ПЛАНШЕТА === */
-/* * Мы используем 'max-height' вместо 'max-width'.
- * Это надежнее определяет "планшетный" (невысокий) режим.
-*/
-@media (max-height: 900px) {
-  .header-resizer {
-    height: 10px; /* Делаем ресайзер тоньше */
-  }
-  .divider-wrapper {
-    height: 10px; /* И нижний ресайзер/скроллбар */
-  }
-  .summaries-container {
-    height: 100px; /* Уменьшаем блок итогов */
-    padding: 0.5rem 1rem;
-  }
-  .import-export-btn {
-    width: 28px;
-    height: 28px;
-    top: 4px;
-    right: 4px;
-  }
-  .import-export-btn svg {
-    width: 16px;
-    height: 16px;
-  }
-  .user-avatar, .user-avatar-placeholder {
-    width: 24px;
-    height: 24px;
-    font-size: 12px;
-  }
-  .user-name {
-    font-size: 12px;
-  }
-}
-/* === 🟢 КОНЕЦ ИСПРАВЛЕНИЙ === */
 </style>
