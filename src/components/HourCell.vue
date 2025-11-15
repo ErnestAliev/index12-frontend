@@ -3,16 +3,16 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.2-TOUCH-DRAG-FIX ---
- * * ВЕРСИЯ: 1.2 - Добавлена поддержка Drag-n-Drop для планшетов (Touch Events).
+ * * --- МЕТКА ВЕРСИИ: v1.3-FULL-TOUCH-DRAG-FIX ---
+ * * ВЕРСИЯ: 1.3 - Финальное исправление Drag-n-Drop для планшетов.
  * * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (ARCH) Добавлены функции onTouchStart/Move/End/Cancel для эмуляции
- * логики перетаскивания (Long-tap = DragStart) на сенсорных экранах.
- * 2. (TEMPLATE) В элемент .operation-chip добавлены @touchstart, @touchmove, @touchend.
- * 3. (TEMPLATE) В элемент .hour-cell добавлены data-date-key и data-cell-index
- * для корректного определения цели сброса при touch-перетаскивании.
+ * 1. (LOGIC) onTouchEnd теперь корректно создает фиктивное событие Drop,
+ * включая обновленные `dateKey` и `cellIndex` целевой ячейки,
+ * чтобы обеспечить работу перемещения между колонками.
+ * 2. (LOGIC) onDrop в HourCell теперь использует целевые данные,
+ * переданные через фиктивное событие, или собственные данные для мыши.
  */
 
 const props = defineProps({
@@ -64,18 +64,32 @@ const onDragLeave = () => { isDragOver.value = false; };
 
 // =================================================================
 // --- 🔴 ИСПРАВЛЕНИЕ: onDrop ---
+// (Теперь может принимать данные от сенсорной эмуляции)
 // =================================================================
 const onDrop = (event) => {
   event.preventDefault(); isDragOver.value = false;
-  const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
-  let operationData = null; try { operationData = JSON.parse(raw); } catch { return; }
+  
+  const raw = event.dataTransfer.getData('application/json'); 
+  if (!raw) return;
+  
+  let operationData = null; 
+  try { operationData = JSON.parse(raw); } catch { return; }
   if (!operationData || !operationData._id) return;
 
   console.log(`[HourCell] 💧 onDrop в ячейку ${props.cellIndex}.`);
 
-  // 🔴 ИЗМЕНЕНО:
-  // Мы больше не отправляем `toDayOfYear`.
-  // DayColumn (v1.2+) перехватит это и добавит `toDateKey`.
+  // Если операция содержит toDateKey, это touch-drop, который пришел с HourCell 
+  // и уже знает свою цель. Мы просто пробрасываем эти данные в DayColumn.
+  if (operationData.toDateKey) {
+    emit('drop-operation', {
+      operation: operationData,
+      toDateKey: operationData.toDateKey,
+      toCellIndex: operationData.cellIndex
+    });
+    return;
+  }
+  
+  // Если toDateKey нет, это обычный Mouse-Drop, и цель - текущая ячейка.
   emit('drop-operation', {
     operation: operationData,
     toCellIndex: props.cellIndex 
@@ -84,7 +98,6 @@ const onDrop = (event) => {
 
 // =================================================================
 // --- 🟢 НОВЫЙ КОД: Обработчики для сенсорного Drag & Drop ---
-// (Эмулируем drag-n-drop через touch events)
 // =================================================================
 
 let dragInProgress = false;
@@ -92,78 +105,76 @@ let touchTimeout = null;
 
 const onTouchStart = (event) => {
   if (props.operation) {
-    // 1. Не даем браузеру начать скроллинг/масштабирование (если это не долгий тап)
     event.stopPropagation();
     
-    // 2. Устанавливаем таймер для имитации "долгого нажатия" (если движение начнется раньше, таймер отменится)
+    // 2. Устанавливаем таймер для имитации "долгого нажатия"
     touchTimeout = setTimeout(() => {
-      // Это имитация dragstart
       dragInProgress = true;
       event.currentTarget.style.opacity = '0.5';
       
-      // Создаем фейковое событие DragStart и прикрепляем данные
-      const fakeEvent = {
-        dataTransfer: {
-          setData: (type, data) => event.currentTarget.dataset.dragData = data,
-          effectAllowed: 'move',
-        },
-        currentTarget: event.currentTarget,
-      };
+      // Сохраняем данные для имитации DragStart
+      event.currentTarget.dataset.dragData = JSON.stringify(props.operation);
+      // Устанавливаем текущую ячейку как начальную цель
+      event.currentTarget.dataset.dropTarget = props.cellIndex;
+      event.currentTarget.dataset.dropTargetKey = props.dateKey;
       
-      fakeEvent.dataTransfer.setData('application/json', JSON.stringify(props.operation));
       console.log('[HourCell] 🖐️ Long-tap START');
-      
-      // Предотвращаем дальнейший скроллинг
       event.preventDefault(); 
-    }, 500); // 500ms - время "долгого нажатия"
+    }, 500); 
   }
 };
 
 const onTouchMove = (event) => {
-  // Если еще не перетаскиваем и таймаут установлен, отменяем "долгий тап"
   if (touchTimeout && !dragInProgress) {
     clearTimeout(touchTimeout);
     touchTimeout = null;
-    return; // Разрешаем скроллинг
+    return; 
   }
   
   if (dragInProgress) {
-    // 1. Блокируем скроллинг страницы
     event.preventDefault();
     
-    // 2. Имитация DragOver: находим элемент под пальцем
     const touch = event.touches[0];
     const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-
-    // 3. Если это другая ячейка - делаем ее `drag-over`
     const newTargetCell = targetElement.closest('.hour-cell');
+    const newTargetColumn = targetElement.closest('.day-column');
+
+    let currentTarget = null;
     
-    // Проверяем, чтобы новая цель была не пустым местом в DayColumn
+    // Если мы над ячейкой (самый точный дроп-зону)
     if (newTargetCell) {
-        const targetCellIndex = newTargetCell.dataset.cellIndex;
-        const targetDateKey = newTargetCell.dataset.dateKey;
-
-        // Если ячейка сменилась ИЛИ это другая дата
-        const isNewTarget = newTargetCell !== document.querySelector('.hour-cell.drag-over');
-
-        if (isNewTarget) {
-            document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
-            newTargetCell.classList.add('drag-over');
-        
-            // Сохраняем целевые данные
-            event.currentTarget.dataset.dropTarget = targetCellIndex;
-            event.currentTarget.dataset.dropTargetKey = targetDateKey;
+        currentTarget = newTargetCell;
+    } 
+    // Если мы над колонкой (пустое место), но не над конкретной ячейкой
+    else if (newTargetColumn) {
+        // Мы берем последнюю видимую ячейку в этой колонке
+        const allCells = newTargetColumn.querySelectorAll('.hour-cell');
+        if (allCells.length > 0) {
+            currentTarget = allCells[allCells.length - 1];
         }
+    }
+    
+    if (currentTarget) {
+        const targetCellIndex = currentTarget.dataset.cellIndex;
+        const targetDateKey = currentTarget.dataset.dateKey;
+        
+        // Обновляем визуальный эффект drag-over
+        if (currentTarget.classList.contains('drag-over') === false) {
+            document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
+            currentTarget.classList.add('drag-over');
+        }
+        
+        // Сохраняем целевые данные
+        event.currentTarget.dataset.dropTarget = targetCellIndex;
+        event.currentTarget.dataset.dropTargetKey = targetDateKey;
     }
   }
 };
 
 const onTouchEnd = (event) => {
-  // Если не было таймаута (т.е. это обычный тап/клик), но и не было dragInProgress
+  // 1. Обработка обычного клика (если не было dragInProgress)
   if (touchTimeout && !dragInProgress) {
     clearTimeout(touchTimeout);
-    // Имитация обычного клика (на Add или Edit)
-    // Если есть операция -> Edit, иначе -> Add
     if (props.operation) {
       onEditClick();
     } else {
@@ -172,28 +183,37 @@ const onTouchEnd = (event) => {
     return;
   }
   
+  // 2. Обработка Drop
   if (dragInProgress) {
-    // 1. Имитация DragEnd
     dragInProgress = false;
     event.currentTarget.style.opacity = '1';
     document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
     
-    // 2. Имитация Drop
     const targetCellIndex = event.currentTarget.dataset.dropTarget;
+    const targetDateKey = event.currentTarget.dataset.dropTargetKey;
     const dragData = event.currentTarget.dataset.dragData;
-
-    if (dragData && targetCellIndex) {
+    
+    if (dragData && targetCellIndex && targetDateKey) {
       let operationData = null; try { operationData = JSON.parse(dragData); } catch { return; }
       if (!operationData || !operationData._id) return;
       
-      console.log(`[HourCell] 🖐️ Tap END/DROP в ячейку ${targetCellIndex}.`);
+      console.log(`[HourCell] 🖐️ Tap END/DROP в ячейку ${targetCellIndex} дня ${targetDateKey}.`);
 
-      // Вызываем onDrop с фейковым событием DataTransfer
+      // 🟢 ФИКТИВНОЕ СОБЫТИЕ: Передаем обновленные данные операции, 
+      // чтобы onDrop (в HourCell, DayColumn и HomeView) знал точную цель.
+      const movedOp = { 
+        ...operationData, 
+        toDateKey: targetDateKey, 
+        cellIndex: Number(targetCellIndex) 
+      };
+      
+      const fakeDataTransfer = {
+          getData: () => JSON.stringify(movedOp)
+      };
+
       onDrop({
           preventDefault: () => {},
-          dataTransfer: {
-              getData: () => dragData
-          }
+          dataTransfer: fakeDataTransfer
       });
     }
     
@@ -201,8 +221,6 @@ const onTouchEnd = (event) => {
     delete event.currentTarget.dataset.dropTarget;
     delete event.currentTarget.dataset.dropTargetKey;
     delete event.currentTarget.dataset.dragData;
-    
-    // Если это был Long-tap + Drop, нам не нужно, чтобы это становилось кликом
     event.preventDefault(); 
   }
 };
