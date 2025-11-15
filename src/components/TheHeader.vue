@@ -250,20 +250,12 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
   width: 100%;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.11) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
 @media (max-height: 900px) {
   .header-dashboard {
     /* Уменьшаем зазоры и отступы */
-    gap: 0.8rem; /* Чуть меньше gap */
-    padding: 0.6rem 0.8rem; /* Чуть меньше padding */
-  }
-}
-
-/* 🔴 ИЗМЕНЕНИЕ (v2.9): Адаптация под ширину (960px - 1200px) */
-@media (max-width: 1200px) {
-  .header-dashboard {
-    gap: 0.8rem;
-    padding: 0.6rem 0.8rem;
+    gap: 1rem;
+    padding: 0.8rem 1rem;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
