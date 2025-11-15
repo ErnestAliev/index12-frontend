@@ -1,18 +1,19 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
-import { useMainStore } from '@/stores/mainStore'; // 🟢 ИМПОРТ STORE
+import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.4-DIRECT-TOUCH-FIX ---
- * * ВЕРСИЯ: 1.4 - Полный отказ от нативного D&D. Прямой вызов moveOperation из HourCell.
+ * * --- МЕТКА ВЕРСИИ: v1.5-FINAL-ABSOLUTE-TOUCH-FIX ---
+ * * ВЕРСИЯ: 1.5 - Окончательный переход на прямое управление Pinia из Touch-событий.
  * * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (CRITICAL) Удалены onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop.
- * 2. (CRITICAL) onTouchEnd теперь напрямую вызывает mainStore.moveOperation,
- * используя собранные dateKey/cellIndex из data-атрибутов.
- * 3. (CRITICAL) Удален emit('drop-operation').
+ * 1. (CRITICAL) onTouchStart: Добавлен event.preventDefault() в самом начале,
+ * чтобы агрессивно блокировать нативные жесты скроллинга/зума (основная причина сбоя в режиме планшета).
+ * 2. (CRITICAL) Удалены все обработчики Drag-and-Drop (onDragStart, onDrop и т.д.)
+ * и emit('drop-operation').
+ * 3. (LOGIC) onTouchEnd напрямую вызывает mainStore.moveOperation.
  */
 
 const props = defineProps({
@@ -21,11 +22,11 @@ const props = defineProps({
   cellIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['edit-operation', 'add-operation']); // 🔴 Удален 'drop-operation'
+const emit = defineEmits(['edit-operation', 'add-operation']); 
 
-const mainStore = useMainStore(); // 🟢 Инициализация Store
+const mainStore = useMainStore();
 
-const isDragOver = ref(false); // Оставлен для touchMove визуализации
+const isDragOver = ref(false); 
 
 /* UI-детектор перевода (без изменений) */
 const isTransferOp = computed(() => {
@@ -52,34 +53,35 @@ const onEditClick = () => {
   emit('edit-operation', props.operation);
 };
 
-/* * DnD для Мыши (Mouse) * */
-// 🔴 УДАЛЕНО: onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop
+/* * DnD для Мыши (Mouse) * /
+/ * 🔴 ВСЕ ОБРАБОТЧИКИ D&D УДАЛЕНЫ */
 
 // =================================================================
 // --- 🟢 НОВЫЙ КОД: Обработчики для сенсорного Drag & Drop ---
-// (Вся логика теперь в onTouchMove/End)
 // =================================================================
 
 let dragInProgress = false;
 let touchTimeout = null;
-let originalOperation = null; // 🟢 Сохраняем исходную операцию
+let originalOperation = null; 
 
 const onTouchStart = (event) => {
   if (props.operation) {
+    // 🟢 КРИТИЧЕСКИЙ ФИКС: Агрессивно блокируем нативные жесты сразу
+    // Это должно решить проблему с невозможностью начать drag в режиме планшета.
+    event.preventDefault(); 
     event.stopPropagation();
-    originalOperation = props.operation; // 🟢 Запоминаем операцию
+    
+    originalOperation = props.operation;
 
     // 2. Устанавливаем таймер для имитации "долгого нажатия"
     touchTimeout = setTimeout(() => {
       dragInProgress = true;
       event.currentTarget.style.opacity = '0.5';
       
-      // 🟢 Сохраняем начальные данные в data-атрибуты для отслеживания
       event.currentTarget.dataset.originalDateKey = props.dateKey;
       event.currentTarget.dataset.originalCellIndex = props.cellIndex;
       
       console.log('[HourCell] 🖐️ Long-tap START (Direct Mode)');
-      event.preventDefault(); 
     }, 500); 
   }
 };
@@ -101,7 +103,6 @@ const onTouchMove = (event) => {
 
     let currentTarget = null;
     
-    // Если мы над ячейкой (самый точный дроп-зону)
     if (newTargetCell) {
         currentTarget = newTargetCell;
     }
@@ -110,13 +111,11 @@ const onTouchMove = (event) => {
         const targetCellIndex = currentTarget.dataset.cellIndex;
         const targetDateKey = currentTarget.dataset.dateKey;
         
-        // Обновляем визуальный эффект drag-over
         if (currentTarget.classList.contains('drag-over') === false) {
             document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
             currentTarget.classList.add('drag-over');
         }
         
-        // 🟢 Сохраняем целевые данные
         event.currentTarget.dataset.dropTarget = targetCellIndex;
         event.currentTarget.dataset.dropTargetKey = targetDateKey;
     }
@@ -154,6 +153,7 @@ const onTouchEnd = (event) => {
       
       // 🟢 КРИТИЧЕСКИЙ ШАГ: ПРЯМОЙ ВЫЗОВ moveOperation (минуя D&D и emit)
       if (originalDateKey !== targetDateKey || oldCellIndex !== newCellIndex) {
+          // Мы не ждем await, так как нам нужно мгновенно освободить UI
           mainStore.moveOperation(
               originalOperation, 
               originalDateKey, 
