@@ -584,10 +584,12 @@ if (resizerRef.value) {
 onBeforeUnmount(() => {
   if (resizerRef.value) {
     resizerRef.value.removeEventListener('mousedown', initResize);
+    resizerRef.value.removeEventListener('touchstart', initResize);
   }
   
   if (headerResizerRef.value) {
     headerResizerRef.value.removeEventListener('mousedown', initHeaderResize);
+    headerResizerRef.value.removeEventListener('touchstart', initHeaderResize);
   }
 
   if (masterScrollbarRef.value) {
