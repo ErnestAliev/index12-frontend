@@ -521,61 +521,35 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e0e0e0;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.12) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
 @media (max-height: 900px) {
   .dashboard-card {
-    min-width: 100px; 
-    padding-right: 0.8rem; /* Чуть меньше отступ */
+    min-width: 100px; /* Уменьшаем мин. ширину */
+    padding-right: 1rem;
   }
   .card-title {
-    font-size: 0.75em;
+    font-size: 0.8em;
   }
   .card-item {
-    font-size: 0.7em; /* Агрессивное уменьшение */
+    font-size: 0.8em; /* Уменьшаем шрифт списка */
     margin-bottom: 0.2rem;
   }
   .card-item span:first-child {
-    padding-right: 5px; 
+    padding-right: 5px; /* Уменьшаем отступ у имени */
   }
   .forecast-display {
-    gap: 2px; 
+    gap: 2px; /* Сжимаем отступ в прогнозе */
   }
   .action-btn {
-    font-size: 0.9em;
-    gap: 4px;
+    font-size: 1em;
+    gap: 6px;
   }
   .forecast-btn {
-    font-size: 1.1em;
+    font-size: 1.2em;
   }
   .filter-icon {
     width: 12px;
     height: 12px;
-  }
-}
-
-/* 🔴 ИЗМЕНЕНИЕ (v2.12): Адаптация под ширину (960px - 1200px) */
-@media (max-width: 1200px) {
-  /* 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Даем минимальную ширину, чтобы карточки не схлопнулись */
-  .dashboard-card {
-      min-width: 140px !important;
-      padding-right: 0.8rem; /* Оставляем 0.8rem, т.к. нет длинной подписи */
-  }
-  .card-title {
-    font-size: 0.7em;
-  }
-  .card-item {
-    font-size: 0.7em; /* Уменьшаем шрифт списка */
-  }
-  .action-btn {
-    font-size: 0.8em;
-    gap: 4px;
-  }
-  .forecast-btn {
-    font-size: 1.0em;
-  }
-  .filter-icon {
-    width: 11px;
-    height: 11px;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
