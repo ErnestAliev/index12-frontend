@@ -382,16 +382,22 @@ const applyHeaderHeight = (newPx) => {
 const initHeaderResize = (e) => {
   e.preventDefault();
   window.addEventListener('mousemove', doHeaderResize);
+  window.addEventListener('touchmove', doHeaderResize, { passive: false });
   window.addEventListener('mouseup', stopHeaderResize);
+  window.addEventListener('touchend', stopHeaderResize);
 };
 const doHeaderResize = (e) => {
-  const raw = e.clientY;
+  // 🟢 Получаем Y-координату из мыши ИЛИ из касания
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const raw = y;
   const clamped = clampHeaderHeight(raw);
   applyHeaderHeight(clamped);
 };
 const stopHeaderResize = () => {
   window.removeEventListener('mousemove', doHeaderResize);
+  window.removeEventListener('touchmove', doHeaderResize);
   window.removeEventListener('mouseup', stopHeaderResize);
+  window.removeEventListener('touchend', stopHeaderResize);
 };
 const clampTimelineHeight = (rawPx) => {
   const container = mainContentRef.value;
@@ -421,18 +427,24 @@ const applyHeights = (timelinePx) => {
 const initResize = (e) => {
   e.preventDefault();
   window.addEventListener('mousemove', doResize);
+  window.addEventListener('touchmove', doResize, { passive: false });
   window.addEventListener('mouseup', stopResize);
+  window.addEventListener('touchend', stopResize);
 };
 const doResize = (e) => {
   if (!mainContentRef.value) return;
+  // 🟢 Получаем Y-координату из мыши ИЛИ из касания
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
   const mainTop = mainContentRef.value.getBoundingClientRect().top;
-  const raw = e.clientY - mainTop;
+  const raw = y - mainTop;
   const clamped = clampTimelineHeight(raw);
   applyHeights(clamped);
 };
 const stopResize = () => {
   window.removeEventListener('mousemove', doResize);
+  window.removeEventListener('touchmove', doResize);
   window.removeEventListener('mouseup', stopResize);
+  window.removeEventListener('touchend', stopResize);
 };
 // --- КОНЕЦ БЛОКА РЕСАЙЗА ---
 
@@ -535,12 +547,14 @@ onMounted(async () => {
     : timelineHeightPx.value;
   applyHeights(clampTimelineHeight(initialTop));
 
-  if (resizerRef.value) {
+if (resizerRef.value) {
     resizerRef.value.addEventListener('mousedown', initResize);
+    resizerRef.value.addEventListener('touchstart', initResize, { passive: false });
   }
   
   if (headerResizerRef.value) {
     headerResizerRef.value.addEventListener('mousedown', initHeaderResize);
+    headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false });
   }
 
   if (masterScrollbarRef.value) {
