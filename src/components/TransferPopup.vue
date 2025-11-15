@@ -329,7 +329,7 @@ const _getDateKey = (date) => {
 
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v4.2) ---
+// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v4.3) ---
 // =================================================================
 const handleSave = async () => {
   errorMessage.value = '';
@@ -355,11 +355,11 @@ const handleSave = async () => {
     const [year, month, day] = editableDate.value.split('-').map(Number);
     const finalDate = new Date(year, month - 1, day);
     
-    // 🔴 ИЗМЕНЕНО: Вычисляем dateKey
+    // 🔴 ВЫЧИСЛЯЕМ dateKey
     const dateKey = _getDateKey(finalDate);
 
     const transferPayload = {
-        date: finalDate, // (mainStore v4.2 ожидает 'date' в payload)
+        date: finalDate,
         amount: amountParsed,
         fromAccountId: fromAccountId.value,
         toAccountId: toAccountId.value,
@@ -372,28 +372,44 @@ const handleSave = async () => {
 
     // Если это клонирование или новый перевод
     if (!props.transferToEdit || isCloneMode.value) {
-      // 🔴 ИЗМЕНЕНО: Вызываем createTransfer (он 'year-aware')
+      // 🔴 ВЫЗЫВАЕМ createTransfer
       savedOperation = await mainStore.createTransfer(transferPayload);
     } else {
-      // 🔴 ИЗМЕНЕНО: Вызываем updateTransfer (он 'year-aware')
+      // 🔴 ВЫЗЫВАЕМ updateTransfer
       savedOperation = await mainStore.updateTransfer(
         props.transferToEdit._id, 
         transferPayload
       );
     }
 
-    // 🔴 ИЗМЕНЕНО: mainStore.refreshDay и fetchAllEntities
-    // УЖЕ вызываются ВНУТРИ createTransfer/updateTransfer.
-    // Повторный вызов не нужен.
+    console.log('🔄 TransferPopup: Принудительно обновляем кеши...');
     
-    // await mainStore.refreshDay(dayOfYear); // (УДАЛЕНО - дубликат)
-    // await mainStore.fetchAllEntities(); // (УДАЛЕНО - дубликат)
+    // 🔴 ДОБАВЛЕНО: Принудительное обновление кешей
+    await mainStore.refreshDay(dateKey);
+    await mainStore.fetchAllEntities();
     
-    // 🔴 ИЗМЕНЕНО: Отправляем dateKey
-    emit('transfer-complete', { dateKey: savedOperation.dateKey || dateKey });
+    // 🔴 ДОБАВЛЕНО: Принудительное обновление реактивности (как в moveOperation)
+    mainStore.displayCache = { ...mainStore.displayCache };
+    mainStore.calculationCache = { ...mainStore.calculationCache };
+    
+    // 🔴 ДОБАВЛЕНО: Пересчет проекции
+    if (mainStore.projection?.mode) {
+      await mainStore.updateProjectionFromCalculationData(
+        mainStore.projection.mode,
+        new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear)
+      );
+    }
+
+    console.log('✅ TransferPopup: Перевод создан и кеши обновлены');
+    
+    // 🔴 ОТПРАВЛЯЕМ dateKey
+    emit('transfer-complete', { 
+      dateKey: savedOperation?.dateKey || dateKey,
+      operation: savedOperation 
+    });
 
   } catch (error) { 
-    console.error('Ошибка при сохранении перевода:', error);
+    console.error('❌ Ошибка при сохранении перевода:', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
   }
 };
@@ -758,4 +774,5 @@ select option[value="--CREATE_NEW--"] {
   background-color: #444444;
 }
 </style>
+
 
