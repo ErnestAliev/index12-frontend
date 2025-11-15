@@ -521,17 +521,17 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e0e0e0;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.7) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.9) === */
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; 
-    padding-right: 0.8rem; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Чуть меньше отступ */
+    padding-right: 0.8rem; /* Чуть меньше отступ */
   }
   .card-title {
     font-size: 0.75em;
   }
   .card-item {
-    font-size: 0.7em; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Агрессивное уменьшение */
+    font-size: 0.7em; /* Агрессивное уменьшение */
     margin-bottom: 0.2rem;
   }
   .card-item span:first-child {
@@ -553,27 +553,29 @@ watch(isDropdownOpen, (isOpen) => {
   }
 }
 
-/* 🔴 НОВОЕ (v2.6): Адаптация под ширину (960px - 1440px) */
-@media (max-width: 1440px) {
+/* 🔴 ИЗМЕНЕНИЕ (v2.9): Адаптация под ширину (960px - 1200px) */
+@media (max-width: 1200px) {
+  /* 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Даем минимальную ширину, чтобы карточки не схлопнулись */
+  .dashboard-card {
+      min-width: 130px !important;
+      padding-right: 0.8rem;
+  }
   .card-title {
-    font-size: 0.75em; /* 🔴 Уменьшаем шрифт заголовка */
+    font-size: 0.7em;
   }
   .card-item {
-    font-size: 0.8em; /* Оставляем как в max-height */
+    font-size: 0.7em; /* Уменьшаем шрифт списка */
   }
   .action-btn {
-    font-size: 0.9em;
+    font-size: 0.8em;
     gap: 4px;
   }
   .forecast-btn {
-    font-size: 1.1em;
+    font-size: 1.0em;
   }
   .filter-icon {
-    width: 12px;
-    height: 12px;
-  }
-  .card-items-list {
-    font-size: 0.8em;
+    width: 11px;
+    height: 11px;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
