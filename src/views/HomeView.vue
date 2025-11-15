@@ -75,12 +75,30 @@ const toggleUserMenu = (event) => {
 };
 // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-// Закрывает оба меню
-const closeAllMenus = () => {
-  if (isContextMenuVisible.value) isContextMenuVisible.value = false;
-  if (showUserMenu.value) showUserMenu.value = false; // <-- (Это уже было)
-};
+// 🔴 ИСПРАВЛЕНИЕ: Функция closeAllMenus теперь проверяет целевой элемент
+const closeAllMenus = (event) => {
+  // 🔴 НОВОЕ: Проверяем, не кликнули ли мы по элементам виджетов
+  const target = event.target;
+  
+  // Если клик был по элементам виджетов - НЕ закрываем меню
+  if (target.closest('.dashboard-card') || 
+      target.closest('.card-title') || 
+      target.closest('.widget-dropdown') ||
+      target.closest('.filter-dropdown') ||
+      target.closest('.card-actions') ||
+      target.closest('.action-btn')) {
+    return; // Не закрываем меню при клике по элементам виджетов
+  }
+  
+  // 🔴 НОВОЕ: Проверяем, не кликнули ли мы по кнопке пользователя
+  if (target.closest('.user-profile-button') || target.closest('.user-menu')) {
+    return; // Не закрываем меню при клике по элементам пользовательского меню
+  }
 
+  // Закрываем меню только если клик был вне виджетов и пользовательского меню
+  if (isContextMenuVisible.value) isContextMenuVisible.value = false;
+  if (showUserMenu.value) showUserMenu.value = false;
+};
 
 /**
  * !!! НОВЫЙ КОД: Обработчик завершения импорта !!!
@@ -626,6 +644,7 @@ onBeforeUnmount(() => {
     </div>
   </div>
   
+  <!-- 🔴 ИСПРАВЛЕНИЕ: Добавлен параметр event в @click -->
   <div v-else class="home-layout" @click="closeAllMenus">
     
     <header class="home-header" ref="homeHeaderRef">
@@ -1201,9 +1220,6 @@ onBeforeUnmount(() => {
 }
 
 /* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
-/* * Мы используем 'max-height' вместо 'max-width'.
- * Это надежнее определяет "планшетный" (невысокий) режим.
-*/
 @media (max-height: 900px) {
   .header-resizer {
     height: 10px; /* Делаем ресайзер тоньше */
