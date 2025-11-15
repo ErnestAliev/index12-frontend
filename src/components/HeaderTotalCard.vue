@@ -70,55 +70,6 @@ watch(isDropdownOpen, (isOpen) => {
 
 </script>
 
-<template>
-  <div class="dashboard-card" ref="cardRef">
-    
-    <div 
-      class="card-title-container" 
-      @click="isDropdownOpen = !isDropdownOpen"
-      >
-      <div class="card-title">{{ title }} <span>▽</span></div>
-      
-      <div v-if="isDropdownOpen" class="widget-dropdown">
-        <input
-          type="text"
-          class="widget-search-input"
-          v-model="searchQuery"
-          placeholder="Поиск..."
-          @click.stop />
-        <ul>
-          <li 
-            v-for="widget in filteredWidgets" 
-            :key="widget.key"
-            :class="{ 
-              'active': widget.key === props.widgetKey,
-              'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
-            }"
-            @click.stop="handleSelect(widget.key)"
-          >
-            {{ widget.name }}
-          </li>
-        </ul>
-      </div>
-      </div>
-
-    <div 
-      class="card-total-balance"
-      :class="{
-        'expense': props.totalBalance < 0
-      }"
-    >
-      ₸ 
-      {{ props.totalBalance < 0 ? '-' : '' }}
-      {{ formatNumber(Math.abs(props.totalBalance)) }}
-    </div>
-    
-    <div class="card-sub-balance">
-      {{ props.subtitlePrefix }} • <span class="subtitle-date">{{ props.subtitleDate }}</span>
-    </div>
-    </div>
-</template>
-
 <style scoped>
 /* Стили карточки (без изменений) */
 .dashboard-card {
@@ -251,7 +202,7 @@ watch(isDropdownOpen, (isOpen) => {
   cursor: not-allowed;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.6) === */
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; /* Уменьшаем мин. ширину */
@@ -265,6 +216,19 @@ watch(isDropdownOpen, (isOpen) => {
   }
   .card-title {
     font-size: 0.8em;
+  }
+}
+
+/* 🔴 НОВОЕ (v2.6): Адаптация под ширину (960px - 1440px) */
+@media (max-width: 1440px) {
+  .card-total-balance {
+    font-size: 1.5em;
+  }
+  .card-sub-balance {
+    font-size: 0.7em; /* 🔴 Уменьшаем шрифт для вместимости подписи */
+  }
+  .card-title {
+    font-size: 0.75em;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
