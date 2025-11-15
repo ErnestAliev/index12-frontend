@@ -791,7 +791,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   border: 1px solid var(--color-border);
   text-align: center;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
 }
 .login-box h1 {
   margin: 0 0 10px 0;
@@ -953,14 +953,13 @@ onBeforeUnmount(() => {
   background-color: var(--color-background);
 }
 
-/* 🔴 КРИТИЧЕСКИЙ FIX v5.14: Убираем Flexbox из родителя и разрешаем скролл */
+/* 🔴 ИСПРАВЛЕНИЕ v4.4: Убрано `overflow: hidden` */
 .home-header {
   flex-shrink: 0; 
   z-index: 100;
   background-color: var(--color-background);
-  /* 🔴 УДАЛЕНО: display: flex; (ИСПРАВЛЯЕТ Flex-конфликт) */
-  width: 100%; /* 🔴 НОВОЕ: Для корректной работы скролла */
-  overflow-x: auto; /* 🔴 КРИТИЧНО: Разрешаем скролл в хедере */
+  display: flex; 
+  /* overflow: hidden; (УДАЛЕНО) */
 }
 /* 🔴 КОНЕЦ ИСПРАВЛЕНИЯ */
 
