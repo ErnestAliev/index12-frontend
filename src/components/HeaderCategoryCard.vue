@@ -1,332 +1,341 @@
 <script setup>
-// 🔴 НОВОЕ: импортируем ref, watch, computed
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import { formatNumber } from '@/utils/formatters.js';
+import axios from 'axios';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.5-FONT-WEIGHT-FIX ---
- * * ВЕРСИЯ: 2.5 - Исправлен "прыгающий" font-weight
- * ДАТА: 2025-11-09
+ * * --- МЕТКА ВЕРСII: v4.3-API-URL-FIX ---
+ * * ВЕРСIA: 4.3 - Исправлен "зашитый" localhost
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Добавлен `!important` к `font-weight: 500`
- * в `.widget-dropdown li` для победы над
- * глобальным сбросом `font-weight: normal`.
+ * 1. (FIX) Удален `const API_BASE_URL = 'http://localhost:3000/api';`
+ * 2. (FIX) `axios.post` и `axios.put` теперь используют
+ * `import.meta.env.VITE_API_BASE_URL` (из "сейфа" Vercel).
  */
+
+// !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+// (Старый код: const API_BASE_URL = 'http://localhost:3000/api';)
+
 
 const props = defineProps({
-  title: { type: String, required: true },
-  widgetKey: { type: String, required: true }, // 'cat_12345'
-  widgetIndex: { type: Number, required: true } 
+  type: String,
+  date: Date,
+  cellIndex: Number,
+  operationToEdit: Object
 });
+const emit = defineEmits(['close', 'operation-added', 'operation-deleted', 'operation-moved', 'operation-updated']);
 
 const mainStore = useMainStore();
-const isDropdownOpen = ref(false);
-const cardRef = ref(null);
 
-// --- 🔴 НОВОЕ: Логика поиска ---
-const searchQuery = ref('');
-const filteredWidgets = computed(() => {
-  if (!searchQuery.value) {
-    return mainStore.allWidgets;
-  }
-  const query = searchQuery.value.toLowerCase();
-  return mainStore.allWidgets.filter(widget => 
-    widget.name.toLowerCase().includes(query)
-  );
+// (Ваша логика `newOperation` и `isExpense` - без изменений)
+const newOperation = ref({
+  type: props.type || 'income',
+  amount: null,
+  categoryId: null,
+  accountId: null,
+  companyId: null,
+  contractorId: null,
+  projectId: null,
+  date: props.date ? new Date(props.date) : new Date(),
+  cellIndex: props.cellIndex || 0
 });
-// --- КОНЕЦ НОВОГО ---
+const isExpense = computed(() => newOperation.value.type === 'expense');
 
-// --- Логика для выпадающего меню (как в других виджетах) ---
-const handleSelect = (newWidgetKey) => {
-  mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  isDropdownOpen.value = false;
-};
-const handleClickOutside = (event) => {
-  if (cardRef.value && !cardRef.value.contains(event.target)) {
-    isDropdownOpen.value = false;
-  }
-};
-watch(isDropdownOpen, (isOpen) => {
-  if (isOpen) {
-    // 🔴 НОВОЕ: Очищаем поиск при открытии
-    searchQuery.value = '';
-    document.addEventListener('mousedown', handleClickOutside);
+// (Ваша логика `onAccountSelected` и `onContractorSelected` - без изменений)
+const onAccountSelected = (accountId) => {
+  console.log(`[OperationPopup] 🕵️‍♂️ onAccountSelected CALLED with accountId: ${accountId}`);
+  const account = mainStore.accounts.find(a => a._id === accountId);
+  if (account && account.companyId) {
+    newOperation.value.companyId = account.companyId;
   } else {
-    document.removeEventListener('mousedown', handleClickOutside);
+    console.log(`[OperationPopup] ⚠️ Account has NO companyId.`);
   }
-});
-// --- Конец логики меню ---
-
-// --- !!! НОВЫЙ БЛОК: Получаем разбивку !!! ---
-const breakdown = computed(() => {
-  const data = mainStore.currentCategoryBreakdowns[props.widgetKey];
-  if (!data) {
-    return { income: 0, expense: 0, total: 0 };
+};
+const onContractorSelected = (contractorId) => {
+  console.log(`[OperationPopup] 🕵️‍♂️ onContractorSelected CALLED with contractorId: ${contractorId}`);
+  const contractor = mainStore.contractors.find(c => c._id === contractorId);
+  if (contractor) {
+    if (contractor.defaultProjectId) {
+      newOperation.value.projectId = contractor.defaultProjectId._id;
+    } else {
+      console.log(`[OperationPopup] ⚠️ Contractor has NO defaultProjectId.`);
+    }
+    if (contractor.defaultCategoryId) {
+      newOperation.value.categoryId = contractor.defaultCategoryId._id;
+    } else {
+      console.log(`[OperationPopup] ⚠️ Contractor has NO defaultCategoryId.`);
+    }
   }
-  return data;
-});
-// --- КОНЕЦ НОВОГО БЛОКА ---
+};
 
-
-// --- 🔴 НОВОЕ: ОПРЕДЕЛЯЕМ ТИП КАТЕГОРИИ ---
-const isTransferCategory = computed(() => props.title.toLowerCase() === 'перевод');
-
-// --- 🔴 НОВОЕ: ЛОГИКА ДЛЯ СПИСКА ПЕРЕВОДОВ ---
-/**
- * Получает имя счета из объекта (если он .populate)
- * или ищет в mainStore.accounts по ID (если это строка)
- */
-const getAccountName = (acc) => {
-  if (acc?.name) return acc.name; // 1. Populated object
-  if (acc) { // 2. String ID
-     // --- 🔴 ИСПРАВЛЕНИЕ: Добавлена защита (|| []) ---
-     const account = (mainStore.accounts || []).find(a => a._id === acc);
-     return account ? account.name : '???';
-  }
-  return '???'; // 3. Null
-}
-
-/**
- * Фильтрует ВСЕ операции "до сегодня"
- * и оставляет только переводы, сортируя их
- */
-const transferOps = computed(() => {
-  if (!isTransferCategory.value) return [];
+// (Ваша логика `handleSave` - ИСПРАВЛЕНА)
+const handleSave = async () => {
+  let dataToSend = { ...newOperation.value };
   
-  // --- 🔴 ИСПРАВЛЕНИЕ: Добавлена защита (|| []) ---
-  // Это предотвратит сбой, если mainStore.currentOps еще undefined
-  return (mainStore.currentOps || [])
-    .filter(op => op.type === 'transfer' || op.isTransfer === true)
-    .sort((a, b) => {
-      // Сортировка по дате (dayOfYear) и cellIndex
-      if (a.dayOfYear !== b.dayOfYear) {
-        return b.dayOfYear - a.dayOfYear; // Новые дни вверху
-      }
-      return b.cellIndex - a.cellIndex; // Новые операции в дне вверху
-    });
-});
-// --- КОНЕЦ НОВОГО ---
+  if (isExpense.value && dataToSend.amount > 0) {
+    dataToSend.amount = -Math.abs(dataToSend.amount);
+  } else if (!isExpense.value && dataToSend.amount < 0) {
+    dataToSend.amount = Math.abs(dataToSend.amount);
+  }
+  
+  const finalDate = new Date(dataToSend.date);
+  // (v4.3) Используем _parseDateKey, чтобы получить правильный DayOfYear
+  // (v4.3) Используем _getDateKey, чтобы получить правильный YYYY-DOY
+  const dateKey = mainStore._getDateKey(finalDate);
+  dataToSend.dateKey = dateKey;
+  dataToSend.dayOfYear = mainStore._getDayOfYear(finalDate);
 
+  try {
+    if (props.operationToEdit) {
+      // --- РЕДАКТИРОВАНИЕ ---
+      console.log(`[OperationPopup] 🚀 PUT ${API_BASE_URL}/events/${props.operationToEdit._id}`);
+      
+      // !!! ИСПРАВЛЕНИЕ: Используем `API_BASE_URL` (из `import.meta.env`) !!!
+      const response = await axios.put(`${API_BASE_URL}/events/${props.operationToEdit._id}`, dataToSend);
+      
+      emit('operation-updated', { ...response.data, dayOfYear: dataToSend.dayOfYear });
+    
+    } else {
+      // --- СОЗДАНИЕ ---
+      console.log(`[OperationPopup] 🚀 POST ${API_BASE_URL}/events`);
+      
+      // !!! ИСПРАВЛЕНИЕ: Используем `API_BASE_URL` (из `import.meta.env`) !!!
+      const response = await axios.post(`${API_BASE_URL}/events`, dataToSend);
+      
+      emit('operation-added', response.data);
+    }
+  } catch (error) {
+    console.error('OperationPopup: ошибка handleSave', error);
+    // (Лог, который вы видели: net::ERR_CONNECTION_REFUSED)
+  }
+};
+
+// (Ваша логика `handleMove` - без изменений)
+const handleMove = () => {
+  emit('operation-moved', {
+    operation: props.operationToEdit,
+    // (v4.3) Используем _getDayOfYear для правильного dayOfYear
+    toDayOfYear: mainStore._getDayOfYear(newOperation.value.date),
+    toCellIndex: newOperation.value.cellIndex
+  });
+};
+
+// (Ваша логика `onMounted` - без изменений)
+onMounted(() => {
+  if (props.operationToEdit) {
+    newOperation.value = {
+      ...props.operationToEdit,
+      date: new Date(props.operationToEdit.date),
+      amount: Math.abs(props.operationToEdit.amount || 0),
+      categoryId: props.operationToEdit.categoryId?._id || null,
+      accountId: props.operationToEdit.accountId?._id || null,
+      companyId: props.operationToEdit.companyId?._id || null,
+      contractorId: props.operationToEdit.contractorId?._id || null,
+      projectId: props.operationToEdit.projectId?._id || null,
+    };
+  }
+});
 </script>
 
 <template>
-  <div class="dashboard-card" ref="cardRef">
-    
-    <div 
-      class="card-title-container" 
-      @click="isDropdownOpen = !isDropdownOpen"
-    >
-      <div class="card-title">{{ title }} <span>▽</span></div>
+  <div class="popup-overlay" @click.self="emit('close')">
+    <div class="popup-content">
+      <button class="close-btn" @click="emit('close')">&times;</button>
       
-      <div v-if="isDropdownOpen" class="widget-dropdown">
-        <input
-          type="text"
-          class="widget-search-input"
-          v-model="searchQuery"
-          placeholder="Поиск..."
-          @click.stop />
-        <ul>
-          <li 
-            v-for="widget in filteredWidgets" 
-            :key="widget.key"
-            :class="{ 
-              'active': widget.key === props.widgetKey,
-              'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
-            }"
-            @click.stop="handleSelect(widget.key)"
-          >
-            {{ widget.name }}
-          </li>
-        </ul>
-      </div>
+      <h2>{{ operationToEdit ? 'Редактировать' : 'Добавить' }} {{ type === 'income' ? 'Доход' : 'Расход' }}</h2>
+
+      <div class="form-group">
+        <label>Сумма:</label>
+        <input type="number" v-model.number="newOperation.amount" placeholder="0.00" />
       </div>
 
-    <div class="category-breakdown-list" v-if="!isTransferCategory">
-      <div class="category-item">
-        <span>Доход</span>
-        <span class="income">+ {{ formatNumber(breakdown.income) }}</span>
-      </div>
-      <div class="category-item">
-        <span>Расход</span>
-        <span class="expense">- {{ formatNumber(breakdown.expense) }}</span>
-      </div>
+      <div class="form-group">
+        <label>Категория:</label>
+        <select v-model="newOperation.categoryId">
+          <option :value="null" disabled>Выберите категорию</option>
+          <option v-for="cat in mainStore.categories" :key="cat._id" :value="cat._id">
+            {{ cat.name }}
+          </option>
+        </select>
       </div>
 
-    <div class="category-items-list-scroll" v-else>
-      <p v-if="!transferOps.length" class="category-item-empty">
-        ...переводов нет...
-      </p>
+      <div class="form-group">
+        <label>Счет:</label>
+        <select v-model="newOperation.accountId" @change="onAccountSelected(newOperation.accountId)">
+          <option :value="null" disabled>Выберите счет</option>
+          <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">
+            {{ acc.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Компания:</label>
+        <select v-model="newOperation.companyId">
+          <option :value="null" disabled>Выберите компанию</option>
+          <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">
+            {{ comp.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Контрагент:</label>
+        <select v-model="newOperation.contractorId" @change="onContractorSelected(newOperation.contractorId)">
+          <option :value="null" disabled>Выберите контрагента</option>
+          <option v-for="cont in mainStore.contractors" :key="cont._id" :value="cont._id">
+            {{ cont.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Проект:</label>
+        <select v-model="newOperation.projectId">
+          <option :value="null" disabled>Выберите проект</option>
+          <option v-for="proj in mainStore.projects" :key="proj._id" :value="proj._id">
+            {{ proj.name }}
+          </option>
+        </select>
+      </div>
+
+      <hr />
       
-      <div v-for="op in transferOps" :key="op._id" class="category-item">
-        <span>{{ getAccountName(op.fromAccountId) }} → {{ getAccountName(op.toAccountId) }}</span>
-        <span>₸ {{ formatNumber(op.amount) }}</span>
+      <div class="form-group form-group-inline">
+        <label>Дата:</label>
+        <input type="date" :value="newOperation.date.toISOString().split('T')[0]" @input="newOperation.date = new Date($event.target.value)" />
+      </div>
+
+      <div class="form-group form-group-inline">
+        <label>Индекс:</label>
+        <input type="number" v-model.number="newOperation.cellIndex" />
+      </div>
+
+      <div class="popup-actions">
+        <button v-if="operationToEdit" class="btn-secondary" @click="handleMove">Переместить</button>
+        <button v-if="operationToEdit" class="btn-danger" @click="emit('operation-deleted')">Удалить</button>
+        <button class="btn-primary" @click="handleSave">{{ operationToEdit ? 'Сохранить' : 'Создать' }}</button>
       </div>
     </div>
-
   </div>
 </template>
 
 <style scoped>
-/* (Стили карточки v4.1 - без изменений) */
-.dashboard-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding-right: 1.5rem;
-  border-right: 1px solid var(--color-border);
-  min-width: 150px;
-  position: relative; 
-  min-height: 0;
-}
-
-.dashboard-card:last-child {
-  border-right: none;
-  padding-right: 0;
-}
-.card-title-container {
-  height: 30px; 
-  margin-bottom: 0.5rem;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-.card-title {
-  font-size: 0.85em;
-  color: #aaa;
-  transition: color 0.2s;
-}
-.card-title:hover {
-  color: #ddd;
-}
-.card-title span {
-  font-size: 0.8em;
-  margin-left: 4px;
-}
-
-/* (Стили списка v4.1 - без изменений) */
-.category-breakdown-list {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1; 
-  gap: 0.25rem; 
-}
-.category-item {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.9em;
-  margin-bottom: 0.25rem; 
-}
-.category-item span:first-child {
-  color: #ccc;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-right: 10px;
-}
-.category-item span:last-child {
-  color: var(--color-text);
-  font-weight: 500;
-  white-space: nowrap;
-}
-.category-item span.income {
-  color: var(--color-primary); /* Зеленый */
-}
-.category-item span.expense {
-  color: var(--color-danger); /* Оранжевый/Красный */
-}
-
-/* (Стили списка v4.1 - без изменений) */
-.category-items-list-scroll {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding-right: 5px; 
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  min-height: 0;
-}
-
-.category-items-list-scroll::-webkit-scrollbar {
-  display: none;
-}
-.category-item-empty {
-  font-size: 0.9em;
-  color: #666;
-}
-
-
-/* --- 🔴 ИСПРАВЛЕНИЕ v2.3: Стили для Dropdown --- */
-.widget-dropdown {
-  position: absolute;
-  top: 35px;
+.popup-overlay {
+  position: fixed;
+  top: 0;
   left: 0;
-  width: 220px; /* (Чуть шире) */
-  background-color: #f4f4f4;
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-  z-index: 100;
-  padding: 8px;
-  box-sizing: border-box;
-  
-  /* 🔴 НОВОЕ: Ограничение высоты */
-  max-height: 400px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 🔴 ИСПРАВЛЕНИЕ v2.4: Стили для поиска */
-.widget-search-input {
-  flex-shrink: 0;
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  font-size: 0.7em;
-  box-sizing: border-box;
   width: 100%;
-
-  /* --- 🔴 НОВОЕ: Исправление цвета --- */
-  background-color: #FFFFFF;
-  color: #333;
-  /* --- КОНЕЦ НОВОГО --- */
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
-.widget-search-input:focus {
-  outline: none;
-  border-color: #007AFF; /* (Цвет как у "Создать") */
+.popup-content {
+  background: var(--color-background-soft);
+  padding: 25px;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+  border: 1px solid var(--color-border);
+  position: relative;
 }
-/* --- */
-
-.widget-dropdown ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  
-  /* 🔴 НОВОЕ: Скролл */
-  flex-grow: 1;
-  overflow-y: auto;
-}
-/* --- КОНЕЦ ИСПРАВЛЕНИЯ --- */
-
-.widget-dropdown li {
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 0.7em;
-  color: #333;
+.close-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: var(--color-text-mute);
   cursor: pointer;
-  
-  /* --- 🔴 ИСПРАВЛЕНИЕ v2.5: !important --- */
-  font-weight: 500 !important;
+  padding: 0;
+  line-height: 1;
 }
-.widget-dropdown li:hover {
-  background-color: #e9e9e9;
+.close-btn:hover {
+  color: var(--color-text);
 }
-.widget-dropdown li.active {
-  color: #333;
-  background-color: #e0e0e0;
+h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: var(--color-heading-text);
+  font-weight: 600;
 }
-.widget-dropdown li.disabled {
-  color: #aaa;
-  background-color: transparent;
-  cursor: not-allowed;
+.form-group {
+  margin-bottom: 15px;
+}
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-mute);
+}
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 15px;
+  box-sizing: border-box; /* Важно для padding */
+}
+.form-group-inline {
+  display: inline-block;
+  width: calc(50% - 5px);
+}
+.form-group-inline:first-of-type {
+  margin-right: 10px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 20px 0;
+}
+
+.popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 25px;
+}
+.popup-actions button {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  margin-left: 10px;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+.btn-primary {
+  background-color: var(--color-accent);
+  color: white;
+}
+.btn-primary:hover {
+  opacity: 0.85;
+}
+.btn-danger {
+  background-color: #e53e3e;
+  color: white;
+}
+.btn-danger:hover {
+  background-color: #c53030;
+}
+.btn-secondary {
+  background-color: var(--color-background-mute);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.btn-secondary:hover {
+  background-color: var(--color-border);
 }
 </style>
