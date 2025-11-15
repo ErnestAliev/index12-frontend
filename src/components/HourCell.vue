@@ -51,20 +51,54 @@ const onEditClick = () => {
   emit('edit-operation', props.operation);
 };
 
-/* * DnD (DragStart / DragEnd / DragOver / DragLeave - без изменений)
- * onDragStart корректен, т.к. operation уже содержит dateKey
- * благодаря исправлениям в mainStore.js (v4.2).
+/* * DnD (DragStart / DragEnd / DragOver / DragLeave - с поддержкой touch)
  */
 const onDragStart = (event) => {
   if (!props.operation) return;
-  // `props.operation` УЖЕ содержит `dateKey`
+  
+  // Для touch-устройств
+  if (event.type === 'touchstart') {
+    event.preventDefault();
+    // Сохраняем данные для touch DnD
+    event.currentTarget._dragData = props.operation;
+    event.currentTarget.style.opacity = '0.5';
+    return;
+  }
+  
+  // Для мыши
   event.dataTransfer.setData('application/json', JSON.stringify(props.operation));
   event.dataTransfer.effectAllowed = 'move';
   event.currentTarget.style.opacity = '0.5';
 };
-const onDragEnd = (event) => { event.currentTarget.style.opacity = '1'; };
-const onDragOver = (event) => { event.preventDefault(); isDragOver.value = true; event.dataTransfer.dropEffect = 'move'; };
+
+const onDragEnd = (event) => { 
+  event.currentTarget.style.opacity = '1'; 
+  delete event.currentTarget._dragData;
+};
+
+const onDragOver = (event) => { 
+  event.preventDefault(); 
+  isDragOver.value = true; 
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+};
+
 const onDragLeave = () => { isDragOver.value = false; };
+
+// Touch-обработчики
+const onTouchStart = (event) => {
+  onDragStart(event);
+};
+
+const onTouchMove = (event) => {
+  event.preventDefault();
+  // Для touch DnD можно добавить визуальную обратную связь
+};
+
+const onTouchEnd = (event) => {
+  onDragEnd(event);
+};
 
 // =================================================================
 // --- 🔴 ИСПРАВЛЕНИЕ: onDrop ---
@@ -85,22 +119,47 @@ const onDrop = (event) => {
     toCellIndex: props.cellIndex 
   });
 };
+
+// Обработчик drop для touch-устройств
+const handleTouchDrop = (event) => {
+  event.preventDefault();
+  isDragOver.value = false;
+  
+  // Ищем элемент, который перетаскивали
+  const draggedElement = document.querySelector('.operation-chip[style*="opacity: 0.5"]');
+  if (!draggedElement || !draggedElement._dragData) return;
+  
+  const operationData = draggedElement._dragData;
+  
+  console.log(`[HourCell] 📱 Touch drop в ячейку ${props.cellIndex}.`);
+  
+  emit('drop-operation', {
+    operation: operationData,
+    toCellIndex: props.cellIndex 
+  });
+  
+  // Восстанавливаем opacity
+  draggedElement.style.opacity = '1';
+  delete draggedElement._dragData;
+};
 </script>
 
 <template>
-  <div
-    class="hour-cell"
-    :class="{ 'drag-over': isDragOver }"
-    @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
-  >
+<div
+  class="hour-cell"
+  :class="{ 'drag-over': isDragOver }"
+  @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
+  @touchmove.prevent @touchend="handleTouchDrop"
+>
     <div
-      v-if="operation"
-      class="operation-chip"
-      :class="{ transfer: isTransferOp, income: operation.type==='income', expense: operation.type==='expense' }"
-      draggable="true"
-      @dragstart="onDragStart" @dragend="onDragEnd"
-      @click.stop="onEditClick"
-    >
+  v-if="operation"
+  class="operation-chip"
+  :class="{ transfer: isTransferOp, income: operation.type==='income', expense: operation.type==='expense' }"
+  draggable="true"
+  @dragstart="onDragStart" @dragend="onDragEnd"
+  @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd"
+  @click.stop="onEditClick"
+>
       <template v-if="isTransferOp">
         <span class="op-title">Перевод</span>
         <span class="op-meta">
@@ -179,6 +238,44 @@ const onDrop = (event) => {
     font-size: 0.7em; /* 🔴 Уменьшаем шрифт чипа */
     padding: 3px 6px;
   }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (TOUCH-ОПТИМИЗАЦИЯ) === */
+/* Улучшаем touch-цели для планшетов */
+@media (hover: none) and (pointer: coarse) {
+  .hour-cell {
+    min-height: 44px; /* Минимальный размер touch-цели по рекомендациям Apple */
+  }
+  
+  .operation-chip {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+  
+  .cell-empty-space {
+    min-height: 40px;
+  }
+}
+
+/* Увеличиваем hit area для touch-устройств */
+.operation-chip {
+  position: relative;
+}
+
+.operation-chip::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  right: -8px;
+  bottom: -8px;
+}
+
+/* Визуальная обратная связь для touch */
+.operation-chip:active {
+  transform: scale(0.98);
+  transition: transform 0.1s;
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
