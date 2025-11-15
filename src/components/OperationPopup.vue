@@ -336,6 +336,9 @@ async function saveCreateOrClone(base, dateKey) {
   // ==================================================================
   const response = await axios.post(`${API_BASE_URL}/events`, payload);
   
+  // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после создания операции
+  await mainStore.fetchAllEntities();
+  
   // 🔴 ИЗМЕНЕНО: Обновляем HomeView с помощью полного объекта
   emit('operation-added', response.data);
 }
@@ -376,6 +379,8 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
       dateKey: newDateKey,  
       cellIndex: desiredCellIndex
     });
+    // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после редактирования
+    await mainStore.fetchAllEntities();
     // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
     emit('operation-updated', { dateKey: newDateKey });
     
@@ -389,6 +394,8 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
       dateKey: oldDateKey, // 🔴 ИЗМЕНЕНО
       cellIndex: oldCellIndex
     });
+    // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после редактирования
+    await mainStore.fetchAllEntities();
     // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
     emit('operation-updated', { dateKey: oldDateKey });
   }
@@ -397,7 +404,7 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
 
 
 // =================================================================
-// --- 🔴 v2.3: Функции Inline-Create (без изменений) ---
+// --- 🔴 v2.3: Функции Inline-Create (С ИСПРАВЛЕНИЯМИ) ---
 // =================================================================
 
 const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
@@ -414,6 +421,8 @@ const saveNewCategory = async () => {
     try {
       const newItem = await mainStore.addCategory(name);
       selectedCategoryId.value = newItem._id;
+      // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после создания категории
+      await mainStore.fetchAllEntities();
     } catch (e) { console.error(e); }
   }
   cancelCreateCategory();
@@ -450,6 +459,8 @@ const saveNewAccount = async () => {
         selectedAccountId.value = newItem._id;
         onAccountSelected(newItem._id); // Вызываем для авто-выбора компании
       }
+      // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после создания счета
+      await mainStore.fetchAllEntities();
     } catch (e) { 
       console.error('Ошибка создания счета:', e); 
     }
@@ -472,6 +483,8 @@ const saveNewCompany = async () => {
     try {
       const newItem = await mainStore.addCompany(name);
       selectedCompanyId.value = newItem._id;
+      // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после создания компании
+      await mainStore.fetchAllEntities();
     } catch (e) { console.error(e); }
   }
   cancelCreateCompany();
@@ -493,6 +506,8 @@ const saveNewContractor = async () => {
     try {
       const newItem = await mainStore.addContractor(name);
       selectedContractorId.value = newItem._id;
+      // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после создания контрагента
+      await mainStore.fetchAllEntities();
     } catch (e) { console.error(e); }
   }
   cancelCreateContractor();
@@ -512,6 +527,8 @@ const saveNewProject = async () => {
     try {
       const newItem = await mainStore.addProject(name);
       selectedProjectId.value = newItem._id;
+      // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после создания проекта
+      await mainStore.fetchAllEntities();
     } catch (e) { console.error(e); }
   }
   cancelCreateProject();
@@ -562,6 +579,9 @@ const onDeleteConfirmed = async () => {
     
     // 🔴 ИЗМЕНЕНО: Используем mainStore.deleteOperation
     await mainStore.deleteOperation(props.operationToEdit);
+    
+    // 🔴 ИСПРАВЛЕНИЕ: Обновляем все сущности после удаления
+    await mainStore.fetchAllEntities();
     
     // 🔴 ИЗМЕНЕНО: Отправляем dateKey
     emit('operation-deleted', { dateKey: props.operationToEdit.dateKey });
@@ -626,7 +646,7 @@ const handleCopyClick = () => {
       </template>
 
       <template v-else>
-        <label>Со счёта *</label>
+        <label>Со счета *</label>
         <select v-model="selectedFromAccountId" class="form-select">
           <option :value="null" disabled>Выберите счёт-источник</option>
           <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">{{ acc.name }}</option>
@@ -918,9 +938,16 @@ select option[value="--CREATE_NEW--"] {
   color: #222;
   cursor: pointer;
 }
-.icon-btn:hover { background: #E5E5EE; }
-.icon-btn.danger { background: #FF3B30; color: #fff; }
-.icon-btn.danger:hover { background: #d93025; }
+.icon-btn:hover {
+  background: #E5E5EE;
+}
+.icon-btn.danger {
+  background: #FF3B30;
+  color: #fff;
+}
+.icon-btn.danger:hover {
+  background: #d93025;
+}
 .icon {
   width: 28px;
   height: 28px;
