@@ -206,26 +206,26 @@ watch(isDropdownOpen, (isOpen) => {
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; 
-    padding-right: 0.8rem; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Чуть меньше отступ */
+    padding-right: 0.8rem; /* Чуть меньше отступ */
   }
   .card-total-balance {
-    font-size: 1.4em; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Агрессивное уменьшение */
+    font-size: 1.4em; /* Агрессивное уменьшение */
   }
   .card-sub-balance {
-    font-size: 0.6em; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Агрессивное уменьшение */
+    font-size: 0.7em; /* Агрессивное уменьшение */
   }
   .card-title {
     font-size: 0.75em;
   }
 }
 
-/* 🔴 НОВОЕ (v2.6): Адаптация под ширину (960px - 1440px) */
+/* 🔴 НОВОЕ (v2.7): Адаптация под ширину (960px - 1440px) */
 @media (max-width: 1440px) {
   .card-total-balance {
     font-size: 1.5em;
   }
   .card-sub-balance {
-    font-size: 0.6em; /* Уменьшаем шрифт для вместимости подписи */
+    font-size: 0.6em; /* 🔴 ИСПРАВЛЕНИЕ v2.7: Уменьшение до 0.6em для вместимости подписи */
   }
   .card-title {
     font-size: 0.75em;
@@ -233,4 +233,3 @@ watch(isDropdownOpen, (isOpen) => {
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
-
