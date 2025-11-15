@@ -383,7 +383,7 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v4.7) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v4.8) === */
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; 
@@ -401,11 +401,11 @@ onMounted(() => {
   }
 }
 
-/* 🔴 ИЗМЕНЕНИЕ (v4.7): Адаптация под ширину (960px - 1200px) */
+/* 🔴 ИЗМЕНЕНИЕ (v4.8): Адаптация под ширину (960px - 1200px) */
 @media (max-width: 1200px) {
   /* 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Даем минимальную ширину, чтобы карточки не схлопнулись */
   .dashboard-card {
-      min-width: 130px !important;
+      min-width: 140px !important;
       padding-right: 0.8rem;
   }
   .card-title {
