@@ -521,4 +521,36 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e0e0e0;
 }
 
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
+@media (max-width: 1919px) {
+  .dashboard-card {
+    min-width: 120px;
+    padding-right: 1rem;
+  }
+  .card-title {
+    font-size: 0.8em;
+  }
+  .card-item {
+    font-size: 0.8em; /* Уменьшаем шрифт списка */
+    margin-bottom: 0.2rem;
+  }
+  .card-item span:first-child {
+    padding-right: 5px; /* Уменьшаем отступ у имени */
+  }
+  .forecast-display {
+    gap: 2px; /* Сжимаем отступ в прогнозе */
+  }
+  .action-btn {
+    font-size: 1em;
+    gap: 6px;
+  }
+  .forecast-btn {
+    font-size: 1.2em;
+  }
+  .filter-icon {
+    width: 12px;
+    height: 12px;
+  }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
