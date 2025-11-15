@@ -3,19 +3,13 @@ import { ref, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.7-CLEANUP-FOR-ERROR-FIX ---
- * * ВЕРСИЯ: 2.7 - Убраны логирующие computed и оптимизированы балансы.
- * * (Логирование теперь встроено в основной код, чтобы избежать лишних вызовов).
- * *
- * * ЧТО ИЗМЕНЕНО:
- * 1. (CLEANUP) Удалены "logged" computed (loggedCurrentTotal, loggedFutureTotal и т.д.).
- * Теперь используем прямые computed или встроенные логи.
- * 2. (CLEANUP) Убрана лишняя логика подсчета total в loggedAccountBalances.
- * 3. (FIX) Убедиться, что все карты используют реактивные геттеры mainStore.
+ * * --- МЕТКА ВЕРСИИ: v2.8-CLEANUP-FOR-BUILD-FIX ---
+ * * ВЕРСИЯ: 2.8 - Устранена ошибка сборки "Illegal '/' in tags." в шаблоне.
+ * * ДАТА: 2025-11-16
  */
 
 // --- !!! ВАША МЕТКА !!! ---
-console.log('--- TheHeader.vue v2.7-CLEANUP-FOR-ERROR-FIX ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v2.8-CLEANUP-FOR-BUILD-FIX ЗАГРУЖЕН ---');
 
 
 // Карточки
@@ -132,7 +126,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
       <HeaderTotalCard
         v-if="widgetKey === 'currentTotal'"
         title="Всего (на тек. момент)"
-        :totalBalance="mainStore.currentTotalBalance" // 🟢 Используем прямой геттер
+        :totalBalance="mainStore.currentTotalBalance"
         :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
         :subtitleDate="`до ${todayStr}`"
         :widgetKey="widgetKey"
@@ -142,7 +136,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
       <HeaderBalanceCard
         v-else-if="widgetKey === 'accounts'"
         title="Мои счета"
-        :items="mergedAccountBalances" // 🟢 Используем объединенный computed
+        :items="mergedAccountBalances"
         emptyText="...счетов нет..."
         :widgetKey="widgetKey"
         :widgetIndex="index"
@@ -183,7 +177,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
       <HeaderTotalCard
         v-else-if="widgetKey === 'futureTotal'"
         title="Всего (с уч. будущих)"
-        :totalBalance="mainStore.futureTotalBalance" // 🟢 Используем прямой геттер
+        :totalBalance="mainStore.futureTotalBalance"
         :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
         :subtitleDate="`до ${futureUntilStr}`"
         :widgetKey="widgetKey"
