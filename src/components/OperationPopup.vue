@@ -18,7 +18,9 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
  * 4. (API) `emit('operation-updated')` теперь возвращает `{ dateKey }`.
  * 5. (Совместимость) Код v2.3 (проверка дубликатов) сохранен.
  */
-
+// !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+// (Старый код: const API_BASE_URL = 'http://localhost:3000/api';)
 const mainStore = useMainStore();
 
 const props = defineProps({
