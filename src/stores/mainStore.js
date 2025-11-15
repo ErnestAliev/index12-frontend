@@ -19,7 +19,7 @@ axios.defaults.withCredentials = true;
 
 // Адрес "Кухни". Он возьмет VITE_API_BASE_URL из Vercel,
 // а если его нет (на localhost), то использует localhost.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.index12.com/api';
 
 // =================================================================
 // --- (Без изменений) ---
@@ -1399,3 +1399,4 @@ async function logout() {
     // --- КОНЕЦ НОВОГО КОДА ---
   };
 });
+
