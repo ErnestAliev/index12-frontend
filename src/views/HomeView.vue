@@ -1077,7 +1077,7 @@ onBeforeUnmount(() => {
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 .timeline-grid-content {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   width: 100%;
 }
 
