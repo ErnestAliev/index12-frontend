@@ -249,4 +249,14 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
   /* 🔴 НОВОЕ (v4.2): Растягиваемся на 100% ширины */
   width: 100%;
 }
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
+@media (max-width: 1919px) {
+  .header-dashboard {
+    /* Уменьшаем зазоры и отступы */
+    gap: 1rem;
+    padding: 0.8rem 1rem;
+  }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
