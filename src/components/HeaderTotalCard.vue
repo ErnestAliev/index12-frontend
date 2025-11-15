@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, computed } from 'vue';
+// 🔴 НОВОЕ: импортируем ref и computed
+import { ref, watch, computed } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
@@ -36,7 +37,7 @@ const filteredWidgets = computed(() => {
     return mainStore.allWidgets;
   }
   const query = searchQuery.value.toLowerCase();
-  return mainStore.allWidgets.filter(widget =>
+  return mainStore.allWidgets.filter(widget => 
     widget.name.toLowerCase().includes(query)
   );
 });
@@ -59,7 +60,7 @@ const handleClickOutside = (event) => {
 watch(isDropdownOpen, (isOpen) => {
   if (isOpen) {
     // 🔴 НОВОЕ: Очищаем поиск при открытии
-    searchQuery.value = '';
+    searchQuery.value = ''; 
     document.addEventListener('mousedown', handleClickOutside);
   } else {
     document.removeEventListener('mousedown', handleClickOutside);
@@ -71,14 +72,17 @@ watch(isDropdownOpen, (isOpen) => {
 
 <template>
   <div class="dashboard-card" ref="cardRef">
-
-    <div
-      class="card-title-container"
-      @click="isDropdownOpen = !isDropdownOpen"
-      >
-      <div class="card-title">{{ title }} <span>▽</span></div>
-
-      <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
+    
+    <div class="card-title-container">
+      <div 
+        class="card-title" 
+        @click="isDropdownOpen = !isDropdownOpen"
+        >
+        {{ title }} <span>▽</span>
+      </div>
+      
+      <!-- 🔴 ИСПРАВЛЕНИЕ: Выпадающий список ВНЕ card-title -->
+      <div v-if="isDropdownOpen" class="widget-dropdown">
         <input
           type="text"
           class="widget-search-input"
@@ -86,10 +90,10 @@ watch(isDropdownOpen, (isOpen) => {
           placeholder="Поиск..."
           @click.stop />
         <ul>
-          <li
-            v-for="widget in filteredWidgets"
+          <li 
+            v-for="widget in filteredWidgets" 
             :key="widget.key"
-            :class="{
+            :class="{ 
               'active': widget.key === props.widgetKey,
               'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
             }"
@@ -99,23 +103,23 @@ watch(isDropdownOpen, (isOpen) => {
           </li>
         </ul>
       </div>
-      </div>
+    </div>
 
-    <div
+    <div 
       class="card-total-balance"
       :class="{
         'expense': props.totalBalance < 0
       }"
     >
-      ₸
+      ₸ 
       {{ props.totalBalance < 0 ? '-' : '' }}
       {{ formatNumber(Math.abs(props.totalBalance)) }}
     </div>
-
+    
     <div class="card-sub-balance">
       {{ props.subtitlePrefix }} • <span class="subtitle-date">{{ props.subtitleDate }}</span>
     </div>
-    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -127,7 +131,7 @@ watch(isDropdownOpen, (isOpen) => {
   padding-right: 1.5rem;
   border-right: 1px solid var(--color-border);
   /* min-width: 150px; (🟢 УДАЛЕНО: Позволяем карточке сжиматься) */
-  position: relative;
+  position: relative; 
 }
 .dashboard-card:last-child {
   border-right: none;
@@ -152,10 +156,11 @@ watch(isDropdownOpen, (isOpen) => {
 }
 
 .card-title-container {
-  height: 30px;
+  height: 30px; 
   margin-bottom: 0.5rem;
   flex-shrink: 0;
   cursor: pointer;
+  position: relative; /* 🔴 ДОБАВЛЕНО: для позиционирования выпадающего списка */
 }
 .card-title {
   font-size: 0.85em;
@@ -187,7 +192,7 @@ watch(isDropdownOpen, (isOpen) => {
   z-index: 100;
   padding: 8px;
   box-sizing: border-box;
-
+  
   /* 🔴 НОВОЕ: Ограничение высоты */
   max-height: 400px;
   display: flex;
@@ -204,7 +209,7 @@ watch(isDropdownOpen, (isOpen) => {
   font-size: 0.7em;
   box-sizing: border-box;
   width: 100%;
-
+  
   /* --- 🔴 НОВОЕ: Исправление цвета --- */
   background-color: #FFFFFF;
   color: #333;
@@ -220,7 +225,7 @@ watch(isDropdownOpen, (isOpen) => {
   list-style: none;
   margin: 0;
   padding: 0;
-
+  
   /* 🔴 НОВОЕ: Скролл */
   flex-grow: 1;
   overflow-y: auto;
@@ -233,7 +238,7 @@ watch(isDropdownOpen, (isOpen) => {
   font-size: 0.7em;
   color: #333;
   cursor: pointer;
-
+  
   /* --- 🔴 ИСПРАВЛЕНИЕ v2.5: !important --- */
   font-weight: 500 !important;
 }
