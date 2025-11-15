@@ -1186,4 +1186,40 @@ onBeforeUnmount(() => {
   flex-grow: 1;
   overflow: hidden;
 }
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* * Мы используем 'max-height' вместо 'max-width'.
+ * Это надежнее определяет "планшетный" (невысокий) режим.
+*/
+@media (max-height: 900px) {
+  .header-resizer {
+    height: 10px; /* Делаем ресайзер тоньше */
+  }
+  .divider-wrapper {
+    height: 10px; /* И нижний ресайзер/скроллбар */
+  }
+  .summaries-container {
+    height: 100px; /* Уменьшаем блок итогов */
+    padding: 0.5rem 1rem;
+  }
+  .import-export-btn {
+    width: 28px;
+    height: 28px;
+    top: 4px;
+    right: 4px;
+  }
+  .import-export-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+  .user-avatar, .user-avatar-placeholder {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+  .user-name {
+    font-size: 12px;
+  }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
