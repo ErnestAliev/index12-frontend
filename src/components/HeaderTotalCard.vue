@@ -73,16 +73,13 @@ watch(isDropdownOpen, (isOpen) => {
 <template>
   <div class="dashboard-card" ref="cardRef">
     
-    <div class="card-title-container">
-      <div 
-        class="card-title" 
-        @click="isDropdownOpen = !isDropdownOpen"
-        >
-        {{ title }} <span>▽</span>
-      </div>
+    <div 
+      class="card-title-container" 
+      @click="isDropdownOpen = !isDropdownOpen"
+      >
+      <div class="card-title">{{ title }} <span>▽</span></div>
       
-      <!-- 🔴 ИСПРАВЛЕНИЕ: Выпадающий список ВНЕ card-title -->
-      <div v-if="isDropdownOpen" class="widget-dropdown">
+      <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
         <input
           type="text"
           class="widget-search-input"
@@ -103,7 +100,7 @@ watch(isDropdownOpen, (isOpen) => {
           </li>
         </ul>
       </div>
-    </div>
+      </div>
 
     <div 
       class="card-total-balance"
@@ -119,7 +116,7 @@ watch(isDropdownOpen, (isOpen) => {
     <div class="card-sub-balance">
       {{ props.subtitlePrefix }} • <span class="subtitle-date">{{ props.subtitleDate }}</span>
     </div>
-  </div>
+    </div>
 </template>
 
 <style scoped>
@@ -160,7 +157,6 @@ watch(isDropdownOpen, (isOpen) => {
   margin-bottom: 0.5rem;
   flex-shrink: 0;
   cursor: pointer;
-  position: relative; /* 🔴 ДОБАВЛЕНО: для позиционирования выпадающего списка */
 }
 .card-title {
   font-size: 0.85em;
@@ -189,7 +185,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #f4f4f4;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-  z-index: 100;
+  z-index: 1002; /* 🔴 ИСПРАВЛЕНИЕ: Поднят выше 1000 для предотвращения "провала клика" */
   padding: 8px;
   box-sizing: border-box;
   
