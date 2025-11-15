@@ -521,7 +521,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e0e0e0;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.6) === */
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; /* Уменьшаем мин. ширину */
@@ -550,6 +550,30 @@ watch(isDropdownOpen, (isOpen) => {
   .filter-icon {
     width: 12px;
     height: 12px;
+  }
+}
+
+/* 🔴 НОВОЕ (v2.6): Адаптация под ширину (960px - 1440px) */
+@media (max-width: 1440px) {
+  .card-title {
+    font-size: 0.75em; /* 🔴 Уменьшаем шрифт заголовка */
+  }
+  .card-item {
+    font-size: 0.8em; /* Оставляем как в max-height */
+  }
+  .action-btn {
+    font-size: 0.9em;
+    gap: 4px;
+  }
+  .forecast-btn {
+    font-size: 1.1em;
+  }
+  .filter-icon {
+    width: 12px;
+    height: 12px;
+  }
+  .card-items-list {
+    font-size: 0.8em;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
