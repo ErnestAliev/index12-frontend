@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref, computed, nextTick } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import OperationPopup from '@/components/OperationPopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 import TheHeader from '@/components/TheHeader.vue';
