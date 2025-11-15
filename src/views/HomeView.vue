@@ -947,7 +947,7 @@ onBeforeUnmount(() => {
 .home-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100vh; /* 🔴 ИСПРАВЛЕНИЕ v5.4: Использование 100vh для полной высоты окна */
   width: 100%;
   overflow: hidden;
   background-color: var(--color-background);
@@ -1158,8 +1158,7 @@ onBeforeUnmount(() => {
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* 🔴 ИСПРАВЛЕНИЕ v5.3: Удаление принудительной минимальной высоты для адаптации */
-  /* min-height: 115px; */
+  /* min-height: 115px; (УДАЛЕНО) */
   
   /* 🔴 НОВОЕ: (v4.1) Должен расти */
   flex-grow: 1;
