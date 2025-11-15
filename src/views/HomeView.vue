@@ -196,6 +196,14 @@ const dateFromGlobalIndex = (globalIndex) => {
 // (Без изменений, кроме `closeAllMenus` выше)
 const visibleDays = ref([]);
 const isPopupVisible = ref(false);
+  // === 🔴 ДОБАВЬТЕ ЭТОТ КОД ПРЯМО ЗДЕСЬ ===
+watch(isPopupVisible, (newVal) => {
+  console.log('🔄 isPopupVisible changed to:', newVal);
+  if (newVal) {
+    console.log('❓ Popup opened! Stack trace:');
+    console.trace();
+  }
+});
 const isTransferPopupVisible = ref(false);
 const operationType = ref('income');
 const isContextMenuVisible = ref(false);
