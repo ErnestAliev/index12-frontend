@@ -947,10 +947,15 @@ onBeforeUnmount(() => {
 .home-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* 🔴 ИСПРАВЛЕНИЕ v5.4: Использование 100vh для полной высоты окна */
+  height: 100vh; /* Использование 100vh для полной высоты окна */
   width: 100%;
   overflow: hidden;
   background-color: var(--color-background);
+  
+  /* 🔴 НОВОЕ v5.6: Отступ сверху, равный высоте панели Safari */
+  padding-top: env(safe-area-inset-top);
+  /* 🔴 НОВОЕ v5.6: Для Safari на iOS */
+  min-height: -webkit-fill-available;
 }
 
 /* 🔴 ИСПРАВЛЕНИЕ v4.4: Убрано `overflow: hidden` */
@@ -1074,7 +1079,7 @@ onBeforeUnmount(() => {
 }
 
 .timeline-grid-wrapper {
-  height: 318px; /* 🔴 ИСПРАВЛЕНИЕ v5.5: Базовая высота 318px (будет уменьшена в max-height) */
+  height: 318px; /* Базовая высота 318px (будет уменьшена в max-height) */
   flex-shrink: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1184,7 +1189,7 @@ onBeforeUnmount(() => {
 
 
 .nav-panel-wrapper {
-  height: 318px; /* 🔴 ИСПРАВЛЕНИЕ v5.5: Базовая высота 318px (будет уменьшена в max-height) */
+  height: 318px; /* Базовая высота 318px (будет уменьшена в max-height) */
   flex-shrink: 0;
   overflow: hidden;
 }
