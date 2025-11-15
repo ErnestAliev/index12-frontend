@@ -383,17 +383,17 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v4.5) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v4.6) === */
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; 
-    padding-right: 0.8rem; /* 🔴 ИСПРАВЛЕНИЕ v4.5: Чуть меньше отступ */
+    padding-right: 0.8rem; /* Чуть меньше отступ */
   }
   .card-title {
     font-size: 0.75em;
   }
   .category-item {
-    font-size: 0.7em; /* 🔴 ИСПРАВЛЕНИЕ v4.5: Агрессивное уменьшение */
+    font-size: 0.7em; /* Агрессивное уменьшение */
     margin-bottom: 0.2rem;
   }
   .category-item span:first-child {
@@ -401,13 +401,13 @@ onMounted(() => {
   }
 }
 
-/* 🔴 НОВОЕ (v4.4): Адаптация под ширину (960px - 1440px) */
-@media (max-width: 1440px) {
+/* 🔴 ИЗМЕНЕНИЕ (v4.6): Адаптация под ширину (960px - 1200px) */
+@media (max-width: 1200px) {
   .card-title {
-    font-size: 0.75em; /* 🔴 Уменьшаем шрифт заголовка */
+    font-size: 0.7em; /* 🔴 Уменьшаем шрифт заголовка */
   }
   .category-item {
-    font-size: 0.75em; /* 🔴 Уменьшаем шрифт списка */
+    font-size: 0.7em; /* 🔴 Уменьшаем шрифт списка */
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
