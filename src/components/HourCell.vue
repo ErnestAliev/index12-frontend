@@ -154,4 +154,19 @@ const onDrop = (event) => {
 .transfer:hover { background:#3a3f50; }
 .transfer .op-title { font-weight:600; margin-right:6px; color:#d4d8e3; }
 .transfer .op-meta { color:#98a2b3; }
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
+@media (max-width: 1919px) {
+  .hour-cell {
+    padding: 4px; /* Уменьшаем боковые отступы ячейки */
+  }
+  .operation-chip {
+    font-size: 0.8em; /* Уменьшаем шрифт */
+    padding: 3px 6px; /* Уменьшаем отступы чипа */
+  }
+  .op-amount, .op-title {
+    margin-right: 4px; /* Уменьшаем отступ у суммы/титула */
+  }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
