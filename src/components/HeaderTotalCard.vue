@@ -127,7 +127,7 @@ watch(isDropdownOpen, (isOpen) => {
   flex-direction: column;
   padding-right: 1.5rem;
   border-right: 1px solid var(--color-border);
-  min-width: 150px;
+  /* min-width: 150px; (🟢 УДАЛЕНО: Позволяем карточке сжиматься) */
   position: relative; 
 }
 .dashboard-card:last-child {
@@ -251,10 +251,10 @@ watch(isDropdownOpen, (isOpen) => {
   cursor: not-allowed;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
-@media (max-width: 1919px) {
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+@media (max-height: 900px) {
   .dashboard-card {
-    min-width: 120px; /* Уменьшаем мин. ширину */
+    min-width: 100px; /* Уменьшаем мин. ширину */
     padding-right: 1rem; /* Уменьшаем отступ */
   }
   .card-total-balance {
