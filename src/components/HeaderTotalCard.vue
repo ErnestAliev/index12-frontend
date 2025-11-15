@@ -70,13 +70,62 @@ watch(isDropdownOpen, (isOpen) => {
 
 </script>
 
+<template>
+  <div class="dashboard-card" ref="cardRef">
+    
+    <div 
+      class="card-title-container" 
+      @click="isDropdownOpen = !isDropdownOpen"
+      >
+      <div class="card-title">{{ title }} <span>▽</span></div>
+      
+      <div v-if="isDropdownOpen" class="widget-dropdown">
+        <input
+          type="text"
+          class="widget-search-input"
+          v-model="searchQuery"
+          placeholder="Поиск..."
+          @click.stop />
+        <ul>
+          <li 
+            v-for="widget in filteredWidgets" 
+            :key="widget.key"
+            :class="{ 
+              'active': widget.key === props.widgetKey,
+              'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
+            }"
+            @click.stop="handleSelect(widget.key)"
+          >
+            {{ widget.name }}
+          </li>
+        </ul>
+      </div>
+      </div>
+
+    <div 
+      class="card-total-balance"
+      :class="{
+        'expense': props.totalBalance < 0
+      }"
+    >
+      ₸ 
+      {{ props.totalBalance < 0 ? '-' : '' }}
+      {{ formatNumber(Math.abs(props.totalBalance)) }}
+    </div>
+    
+    <div class="card-sub-balance">
+      {{ props.subtitlePrefix }} • <span class="subtitle-date">{{ props.subtitleDate }}</span>
+    </div>
+    </div>
+</template>
+
 <style scoped>
 /* Стили карточки (без изменений) */
 .dashboard-card {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding-right: 1.5rem; /* Базовый отступ */
+  padding-right: 1.5rem;
   border-right: 1px solid var(--color-border);
   /* min-width: 150px; (🟢 УДАЛЕНО: Позволяем карточке сжиматься) */
   position: relative; 
@@ -202,39 +251,20 @@ watch(isDropdownOpen, (isOpen) => {
   cursor: not-allowed;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.12) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
 @media (max-height: 900px) {
   .dashboard-card {
-    min-width: 100px; 
-    padding-right: 0.8rem; /* Чуть меньше отступ */
+    min-width: 100px; /* Уменьшаем мин. ширину */
+    padding-right: 1rem; /* Уменьшаем отступ */
   }
   .card-total-balance {
-    font-size: 1.4em; /* Агрессивное уменьшение */
+    font-size: 1.5em; /* Уменьшаем главный шрифт */
   }
   .card-sub-balance {
-    font-size: 0.7em; /* Агрессивное уменьшение */
+    font-size: 0.75em; /* И подпись */
   }
   .card-title {
-    font-size: 0.75em;
-  }
-}
-
-/* 🔴 ИЗМЕНЕНИЕ (v2.12): Адаптация под ширину (960px - 1200px) */
-@media (max-width: 1200px) {
-  /* 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Даем минимальную ширину и убираем padding-right */
-  .dashboard-card {
-      min-width: 140px !important;
-      padding-right: 0.4rem; 
-  }
-  .card-total-balance {
-    font-size: 1.4em; /* Уменьшаем основной шрифт */
-  }
-  .card-sub-balance {
-    /* 🔴 САМЫЙ КРИТИЧЕСКИЙ ШАГ: Максимальное сжатие, чтобы избежать переноса строки и схлопывания */
-    font-size: 0.4em; /* ГАРАНТИРОВАННОЕ УМЕНЬШЕНИЕ до 0.4em */
-  }
-  .card-title {
-    font-size: 0.7em;
+    font-size: 0.8em;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
