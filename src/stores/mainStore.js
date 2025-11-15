@@ -1,16 +1,5 @@
-/**
- * * --- МЕТКА ВЕРСИИ: v4.8c-LOGOUT-FINALLY-FIX ---
- * * ВЕРСИЯ: 4.8c - Принудительный выход через 'finally'
- * ДАТА: 2025-11-14
- *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Функция `logout` переписана с `try...catch...finally`.
- * `user.value = null` теперь находится в `finally`,
- * чтобы гарантировать выход, даже если `axios.post` упадет.
- */
-
 import { defineStore } from 'pinia';
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue'; // 🟢 nextTick ДОБАВЛЕН
 import axios from 'axios';
 
 // --- !!! НОВЫЙ КОД (Шаг 3): Глобальная настройка Axios !!! ---
@@ -821,10 +810,11 @@ export const useMainStore = defineStore('mainStore', () => {
 
     try {
       if (isOpTransfer) {
-        const cachesToUpdate = [displayCache.value, calculationCache.value];
-        for (const cache of cachesToUpdate) {
-          for (const key of Object.keys(cache)) {
-            const before = cache[key] || [];
+        const cachesToUpdate = [displayCache, calculationCache]; // 🟢 Передаем ref
+        for (const cacheRef of cachesToUpdate) {
+          const newCache = { ...cacheRef.value }; // 🟢 Копируем весь объект
+          for (const key of Object.keys(newCache)) {
+            const before = newCache[key] || [];
             const parts = before.filter(o => o.isTransfer && o.transferGroupId === opGroupId);
             const partIds = new Set(parts.map(p => p._id).concat(parts.map(p => p._id2)).filter(Boolean));
             const after = before.filter(o => {
@@ -833,25 +823,25 @@ export const useMainStore = defineStore('mainStore', () => {
               return true;
             });
             if (after.length !== before.length) {
-              cache[key] = _compactIndices(after);
+              newCache[key] = _compactIndices(after);
             }
           }
+          cacheRef.value = newCache; // 🟢 Заменяем ref
         }
       } else {
         // Обновляем оба кеша
         if (displayCache.value[dateKey]) {
           const oldArr = displayCache.value[dateKey] || [];
           const newArr = oldArr.filter(o => o._id !== opId);
-          displayCache.value[dateKey] = _compactIndices(newArr);
+          displayCache.value = { ...displayCache.value, [dateKey]: _compactIndices(newArr) };
         }
         if (calculationCache.value[dateKey]) {
           const oldArr = calculationCache.value[dateKey] || [];
           const newArr = oldArr.filter(o => o._id !== opId);
-          calculationCache.value[dateKey] = _compactIndices(newArr);
+          calculationCache.value = { ...calculationCache.value, [dateKey]: _compactIndices(newArr) };
         }
       }
-      displayCache.value = { ...displayCache.value };
-      calculationCache.value = { ...calculationCache.value };
+      // 🟢 Локальные кеши обновлены через замену объекта, дополнительное spread не требуется
 
       await fetchAllEntities();
 
@@ -935,10 +925,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return others;
   }
 
-
-
-  
- // =================================================================
+  // =================================================================
   // --- 🔴 ИСПРАВЛЕНИЕ: _reorderWithinDayLocal (РАДИКАЛЬНОЕ ОБНОВЛЕНИЕ) ---
   // =================================================================
   function _reorderWithinDayLocal(dateKey, opId, fromIndex, toIndex){
@@ -1116,8 +1103,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-
-  
   // ---------- TRANSFERS ----------
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
@@ -1323,9 +1308,6 @@ export const useMainStore = defineStore('mainStore', () => {
    * Выходит из системы.
    */
 async function logout() {
-  // ...
-  axios.post('http://localhost:3000/api/auth/logout') // <-- НАЙДИТЕ ЭТУ СТРОКУ
-// ...
     
     // 1. Отправляем запрос на сервер "в фоновом режиме" (БЕЗ await)
     //    и сразу добавляем .catch, чтобы ошибка не "всплыла" в консоль.
@@ -1417,5 +1399,3 @@ async function logout() {
     // --- КОНЕЦ НОВОГО КОДА ---
   };
 });
-
-
