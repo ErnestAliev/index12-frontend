@@ -3,17 +3,16 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.1-YEAR-AWARE-FIX ---
- * * ВЕРСИЯ: 1.1 - Исправление "слепоты к году" (dayOfYear -> dateKey)
- * * ДАТА: 2025-11-10
+ * * --- МЕТКА ВЕРСИИ: v1.2-TOUCH-DRAG-FIX ---
+ * * ВЕРСИЯ: 1.2 - Добавлена поддержка Drag-n-Drop для планшетов (Touch Events).
+ * * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (ARCH) Компонент теперь принимает `dateKey` ("YYYY-DOY") вместо `dayOfYear`.
- * 2. (API) `onDrop` больше не отправляет `toDayOfYear`. Он отправляет
- * только `operation` и `toCellIndex`. DayColumn (v1.2+) перехватит это
- * и добавит `toDateKey`.
- * 3. (API) `onDragStart` корректен, так как `props.operation`
- * (из mainStore v4.2) уже содержит `dateKey`.
+ * 1. (ARCH) Добавлены функции onTouchStart/Move/End/Cancel для эмуляции
+ * логики перетаскивания (Long-tap = DragStart) на сенсорных экранах.
+ * 2. (TEMPLATE) В элемент .operation-chip добавлены @touchstart, @touchmove, @touchend.
+ * 3. (TEMPLATE) В элемент .hour-cell добавлены data-date-key и data-cell-index
+ * для корректного определения цели сброса при touch-перетаскивании.
  */
 
 const props = defineProps({
@@ -51,54 +50,17 @@ const onEditClick = () => {
   emit('edit-operation', props.operation);
 };
 
-/* * DnD (DragStart / DragEnd / DragOver / DragLeave - с поддержкой touch)
- */
+/* * DnD для Мыши (Mouse) * */
 const onDragStart = (event) => {
   if (!props.operation) return;
-  
-  // Для touch-устройств
-  if (event.type === 'touchstart') {
-    event.preventDefault();
-    // Сохраняем данные для touch DnD
-    event.currentTarget._dragData = props.operation;
-    event.currentTarget.style.opacity = '0.5';
-    return;
-  }
-  
-  // Для мыши
+  // `props.operation` УЖЕ содержит `dateKey`
   event.dataTransfer.setData('application/json', JSON.stringify(props.operation));
   event.dataTransfer.effectAllowed = 'move';
   event.currentTarget.style.opacity = '0.5';
 };
-
-const onDragEnd = (event) => { 
-  event.currentTarget.style.opacity = '1'; 
-  delete event.currentTarget._dragData;
-};
-
-const onDragOver = (event) => { 
-  event.preventDefault(); 
-  isDragOver.value = true; 
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move';
-  }
-};
-
+const onDragEnd = (event) => { event.currentTarget.style.opacity = '1'; };
+const onDragOver = (event) => { event.preventDefault(); isDragOver.value = true; event.dataTransfer.dropEffect = 'move'; };
 const onDragLeave = () => { isDragOver.value = false; };
-
-// Touch-обработчики
-const onTouchStart = (event) => {
-  onDragStart(event);
-};
-
-const onTouchMove = (event) => {
-  event.preventDefault();
-  // Для touch DnD можно добавить визуальную обратную связь
-};
-
-const onTouchEnd = (event) => {
-  onDragEnd(event);
-};
 
 // =================================================================
 // --- 🔴 ИСПРАВЛЕНИЕ: onDrop ---
@@ -120,46 +82,156 @@ const onDrop = (event) => {
   });
 };
 
-// Обработчик drop для touch-устройств
-const handleTouchDrop = (event) => {
-  event.preventDefault();
-  isDragOver.value = false;
-  
-  // Ищем элемент, который перетаскивали
-  const draggedElement = document.querySelector('.operation-chip[style*="opacity: 0.5"]');
-  if (!draggedElement || !draggedElement._dragData) return;
-  
-  const operationData = draggedElement._dragData;
-  
-  console.log(`[HourCell] 📱 Touch drop в ячейку ${props.cellIndex}.`);
-  
-  emit('drop-operation', {
-    operation: operationData,
-    toCellIndex: props.cellIndex 
-  });
-  
-  // Восстанавливаем opacity
-  draggedElement.style.opacity = '1';
-  delete draggedElement._dragData;
+// =================================================================
+// --- 🟢 НОВЫЙ КОД: Обработчики для сенсорного Drag & Drop ---
+// (Эмулируем drag-n-drop через touch events)
+// =================================================================
+
+let dragInProgress = false;
+let touchTimeout = null;
+
+const onTouchStart = (event) => {
+  if (props.operation) {
+    // 1. Не даем браузеру начать скроллинг/масштабирование (если это не долгий тап)
+    event.stopPropagation();
+    
+    // 2. Устанавливаем таймер для имитации "долгого нажатия" (если движение начнется раньше, таймер отменится)
+    touchTimeout = setTimeout(() => {
+      // Это имитация dragstart
+      dragInProgress = true;
+      event.currentTarget.style.opacity = '0.5';
+      
+      // Создаем фейковое событие DragStart и прикрепляем данные
+      const fakeEvent = {
+        dataTransfer: {
+          setData: (type, data) => event.currentTarget.dataset.dragData = data,
+          effectAllowed: 'move',
+        },
+        currentTarget: event.currentTarget,
+      };
+      
+      fakeEvent.dataTransfer.setData('application/json', JSON.stringify(props.operation));
+      console.log('[HourCell] 🖐️ Long-tap START');
+      
+      // Предотвращаем дальнейший скроллинг
+      event.preventDefault(); 
+    }, 500); // 500ms - время "долгого нажатия"
+  }
 };
+
+const onTouchMove = (event) => {
+  // Если еще не перетаскиваем и таймаут установлен, отменяем "долгий тап"
+  if (touchTimeout && !dragInProgress) {
+    clearTimeout(touchTimeout);
+    touchTimeout = null;
+    return; // Разрешаем скроллинг
+  }
+  
+  if (dragInProgress) {
+    // 1. Блокируем скроллинг страницы
+    event.preventDefault();
+    
+    // 2. Имитация DragOver: находим элемент под пальцем
+    const touch = event.touches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+
+    // 3. Если это другая ячейка - делаем ее `drag-over`
+    const newTargetCell = targetElement.closest('.hour-cell');
+    
+    // Проверяем, чтобы новая цель была не пустым местом в DayColumn
+    if (newTargetCell) {
+        const targetCellIndex = newTargetCell.dataset.cellIndex;
+        const targetDateKey = newTargetCell.dataset.dateKey;
+
+        // Если ячейка сменилась ИЛИ это другая дата
+        const isNewTarget = newTargetCell !== document.querySelector('.hour-cell.drag-over');
+
+        if (isNewTarget) {
+            document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
+            newTargetCell.classList.add('drag-over');
+        
+            // Сохраняем целевые данные
+            event.currentTarget.dataset.dropTarget = targetCellIndex;
+            event.currentTarget.dataset.dropTargetKey = targetDateKey;
+        }
+    }
+  }
+};
+
+const onTouchEnd = (event) => {
+  // Если не было таймаута (т.е. это обычный тап/клик), но и не было dragInProgress
+  if (touchTimeout && !dragInProgress) {
+    clearTimeout(touchTimeout);
+    // Имитация обычного клика (на Add или Edit)
+    // Если есть операция -> Edit, иначе -> Add
+    if (props.operation) {
+      onEditClick();
+    } else {
+      onAddClick(event);
+    }
+    return;
+  }
+  
+  if (dragInProgress) {
+    // 1. Имитация DragEnd
+    dragInProgress = false;
+    event.currentTarget.style.opacity = '1';
+    document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
+    
+    // 2. Имитация Drop
+    const targetCellIndex = event.currentTarget.dataset.dropTarget;
+    const dragData = event.currentTarget.dataset.dragData;
+
+    if (dragData && targetCellIndex) {
+      let operationData = null; try { operationData = JSON.parse(dragData); } catch { return; }
+      if (!operationData || !operationData._id) return;
+      
+      console.log(`[HourCell] 🖐️ Tap END/DROP в ячейку ${targetCellIndex}.`);
+
+      // Вызываем onDrop с фейковым событием DataTransfer
+      onDrop({
+          preventDefault: () => {},
+          dataTransfer: {
+              getData: () => dragData
+          }
+      });
+    }
+    
+    // Очистка
+    delete event.currentTarget.dataset.dropTarget;
+    delete event.currentTarget.dataset.dropTargetKey;
+    delete event.currentTarget.dataset.dragData;
+    
+    // Если это был Long-tap + Drop, нам не нужно, чтобы это становилось кликом
+    event.preventDefault(); 
+  }
+};
+
+const onTouchCancel = () => {
+  if (touchTimeout) { clearTimeout(touchTimeout); touchTimeout = null; }
+  dragInProgress = false;
+  document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
+};
+
 </script>
 
 <template>
-<div
-  class="hour-cell"
-  :class="{ 'drag-over': isDragOver }"
-  @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
-  @touchmove.prevent @touchend="handleTouchDrop"
->
+  <div
+    class="hour-cell"
+    :class="{ 'drag-over': isDragOver }"
+    @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
+    :data-date-key="dateKey" 
+    :data-cell-index="cellIndex"
+  >
     <div
-  v-if="operation"
-  class="operation-chip"
-  :class="{ transfer: isTransferOp, income: operation.type==='income', expense: operation.type==='expense' }"
-  draggable="true"
-  @dragstart="onDragStart" @dragend="onDragEnd"
-  @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd"
-  @click.stop="onEditClick"
->
+      v-if="operation"
+      class="operation-chip"
+      :class="{ transfer: isTransferOp, income: operation.type==='income', expense: operation.type==='expense' }"
+      draggable="true"
+      @dragstart="onDragStart" @dragend="onDragEnd"
+      @click.stop="onEditClick"
+      @touchstart.stop="onTouchStart" @touchmove.stop="onTouchMove" @touchend.stop="onTouchEnd" @touchcancel.stop="onTouchCancel"
+    >
       <template v-if="isTransferOp">
         <span class="op-title">Перевод</span>
         <span class="op-meta">
@@ -197,6 +269,14 @@ const handleTouchDrop = (event) => {
   background:#383838; padding:4px 8px; width:100%;
   border-radius:4px; font-size:.85em; display:flex; justify-content:space-between;
   cursor:grab; transition: background-color .2s; overflow:hidden; user-select:none;
+  /* 🟢 НОВЫЙ СТИЛЬ: Отключаем нативный drag-n-drop и выделение на touch-устройствах */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 .operation-chip:active { cursor:grabbing; }
 .operation-chip:hover { background:#4a4a4c; }
@@ -239,8 +319,5 @@ const handleTouchDrop = (event) => {
     padding: 3px 6px;
   }
 }
-  /* Увеличиваем hit area для touch-устройств */
-.operation-chip { position: relative; }
-.operation-chip::after { content: ''; position: absolute; top: -15px; left: -15px; right: -15px; bottom: -15px; }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
