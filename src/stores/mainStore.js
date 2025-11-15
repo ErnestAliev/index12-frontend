@@ -81,13 +81,9 @@ export const useMainStore = defineStore('mainStore', () => {
   watch(dashboardForecastState, (newState) => {
     localStorage.setItem('dashboardForecastState', JSON.stringify(newState));
   }, { deep: true });
-  
-  // --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: replaceWidget ---
   function replaceWidget(i, key){ 
-    console.log(`[STORE] 🔄 Замена виджета #${i} на ключ: ${key}`);
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
-  
   function setForecastState(widgetKey, value) {
     dashboardForecastState.value[widgetKey] = !!value;
   }
@@ -440,7 +436,7 @@ export const useMainStore = defineStore('mainStore', () => {
   // ---------- ОСНОВНЫЕ ФУНКЦИИ ЗАГРУЗКИ ДАННЫХ ----------
   
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНО: loadCalculationData (v4.4) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: loadCalculationData (v4.4) ---
   // =================================================================
   async function loadCalculationData(mode, baseDate = new Date()) {
     console.log(`[ЖУРНАЛ] loadCalculationData: 🚀 Загрузка данных для расчетов (${mode})`);
@@ -465,7 +461,7 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
 
   // =================================================================
-  // --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ И ОБРАБОТКА 401: fetchCalculationRange ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: fetchCalculationRange (API v4.3) ---
   // =================================================================
   async function fetchCalculationRange(startDate, endDate) {
     console.log(`[ЖУРНАЛ] fetchCalculationRange: 📊 Загрузка диапазона расчетов ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
@@ -500,9 +496,8 @@ export const useMainStore = defineStore('mainStore', () => {
         console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
     } catch (error) {
-      console.error('[STORE] ❌ Ошибка загрузки данных для расчетов:', error);
+      console.error('Ошибка загрузки данных для расчетов:', error);
       if (error.response && error.response.status === 401) {
-        console.log('[STORE] 🚨 ОШИБКА 401: Сессия истекла, устанавливаю user.value = null.');
         user.value = null;
       }
     }
@@ -534,7 +529,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   // =================================================================
-  // --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ И ОБРАБОТКА 401: fetchOperationsRange ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: fetchOperationsRange (API v4.3) ---
   // =================================================================
   async function fetchOperationsRange(startDate, endDate) {
     console.log(`[ЖУРНАЛ] fetchOperationsRange: 🚀 Загрузка диапазона ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
@@ -569,16 +564,91 @@ export const useMainStore = defineStore('mainStore', () => {
       displayCache.value = { ...displayCache.value, ...tempCache };
       console.log(`[ЖУРНАЛ] fetchOperationsRange: ✅ Загрузка завершена.`);
     } catch (error) {
-      console.error('[STORE] ❌ Ошибка загрузки диапазона операций:', error);
+      console.error('Ошибка загрузки диапазона операций:', error);
       if (error.response && error.response.status === 401) {
-        console.log('[STORE] 🚨 ОШИБКА 401: Сессия истекла, устанавливаю user.value = null.');
         user.value = null;
       }
     }
   }
 
   // --- (Старые/вспомогательные функции проекции - без изменений) ---
-  // ...
+  // (updateFutureProjectionWithData, updateFutureProjection, updateFutureTotals, updateFutureProjectionByMode, setProjectionRange)
+  async function updateFutureProjectionWithData(mode, today = new Date()) {
+    console.log(`[ЖУРНАЛ] updateFutureProjection: 🚀 Расчет проекции для режима ${mode}`);
+    const base = new Date(today); base.setHours(0, 0, 0, 0);
+    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
+    await fetchOperationsRange(startDate, endDate); // (Теперь 'year-aware')
+    let futureIncomeSum = 0;
+    let futureExpenseSum = 0;
+    const baseToday = new Date(currentYear.value, 0, todayDayOfYear.value || 0);
+    for (const op of allOperationsFlat.value) {
+      if (!op?.dateKey) continue;
+      const opDate = _parseDateKey(op.dateKey);
+      if (opDate > baseToday && opDate <= endDate && !isTransfer(op)) {
+        if (op.type === 'income') futureIncomeSum += op.amount || 0;
+        else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
+      }
+    }
+    projection.value = { 
+      mode, totalDays: computeTotalDaysForMode(mode, base),
+      rangeStartDate: startDate, rangeEndDate: endDate,
+      futureIncomeSum, futureExpenseSum 
+    };
+    console.log(`[ЖУРНАЛ] updateFutureProjection: ✅ Расчет завершен. RangeEndDate: ${_formatDate(endDate)}`);
+    updateFutureTotals();
+  }
+  function updateFutureProjection({ mode, totalDays, today = new Date() }) {
+    const t0 = new Date(today); t0.setHours(0, 0, 0, 0);
+    let globalTodayIndex;
+    if (mode === '12d') { globalTodayIndex = 5; } 
+    else { globalTodayIndex = Math.floor(totalDays / 2); }
+    const rangeStartDate = _addDays(t0, 0 - globalTodayIndex);
+    const rangeEndDate = _addDays(t0, (totalDays - 1) - globalTodayIndex);
+    let futureIncomeSum = 0;
+    let futureExpenseSum = 0;
+    const baseToday = new Date(currentYear.value, 0, todayDayOfYear.value || 0);
+    for (const op of allOperationsFlat.value) {
+      if (!op?.dateKey) continue;
+      const opDate = _parseDateKey(op.dateKey);
+      if (opDate > baseToday && opDate <= rangeEndDate && !isTransfer(op)) {
+        if (op.type === 'income') futureIncomeSum += op.amount || 0;
+        else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
+      }
+    }
+    projection.value = { 
+      mode, totalDays, rangeStartDate, rangeEndDate, 
+      futureIncomeSum, futureExpenseSum 
+    };
+    updateFutureTotals();
+  }
+  function updateFutureTotals() {
+    const _ = futureTotalBalance.value;
+    const __ = futureAccountBalances.value;
+    const ___ = futureCompanyBalances.value;
+    const ____ = futureContractorBalances.value;
+    const _____ = futureProjectBalances.value;
+  }
+  function updateFutureProjectionByMode(mode, today = new Date()){
+    const base = new Date(today); base.setHours(0,0,0,0);
+    const info = getViewModeInfo(mode);
+    updateFutureProjection({ mode: mode, totalDays: info.total, today: base });
+  }
+  function setProjectionRange(startDate, endDate){
+    const t0 = new Date(); t0.setHours(0,0,0,0);
+    const start = new Date(startDate); start.setHours(0,0,0,0);
+    const end   = new Date(endDate); end.setHours(0,0,0,0);
+    let sum=0;
+    for (let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+      if (d<=t0) continue;
+      const dateKey = _getDateKey(d);
+      const data = dailyChartData.value.get(dateKey);
+      if (data && data.income) sum += data.income;
+    }
+    projection.value = {
+      mode:'custom', totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
+      rangeStartDate:start, rangeEndDate:end, futureIncomeSum:sum
+    };
+  }
 
   // ---------- HELPERS ----------
   const _doyFromDate = (date) => { 
@@ -645,9 +715,7 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
 
   // ---------- API ----------
-  // =================================================================
-  // --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ И ОБРАБОТКА 401: fetchAllEntities ---
-  // =================================================================
+  // (fetchAllEntities - без изменений)
   async function fetchAllEntities(){
     try{
       const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
@@ -659,16 +727,15 @@ export const useMainStore = defineStore('mainStore', () => {
       contractors.value = contrRes.data; projects.value    = projRes.data;
       categories.value  = catRes.data;
     }catch(e){ 
-        console.error('[STORE] Pinia: Ошибка загрузки сущностей!', e); 
+        console.error('Pinia: Ошибка загрузки сущностей!', e); 
         if (e.response && e.response.status === 401) {
-             console.log('[STORE] 🚨 ОШИБКА 401: Сессия истекла, устанавливаю user.value = null.');
-             user.value = null;
+            user.value = null;
         }
     }
   }
 
   // =================================================================
-  // --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ И ОБРАБОТКА 401: fetchOperations ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: fetchOperations (API v4.3) ---
   // =================================================================
   async function fetchOperations(dateKey, force = false) {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
@@ -689,16 +756,15 @@ export const useMainStore = defineStore('mainStore', () => {
       
       displayCache.value[dateKey] = processedOps;
     } catch (e) {
-      console.error('[STORE] ❌ Ошибка загрузки операций для отображения:', e);
+      console.error('Ошибка загрузки операций для отображения:', e);
       if (e.response && e.response.status === 401) {
-        console.log('[STORE] 🚨 ОШИБКА 401: Сессия истекла, устанавливаю user.value = null.');
         user.value = null;
       }
     }
   }
 
   // =================================================================
-  // --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ И ОБРАБОТКА 401: refreshDay ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: refreshDay (API v4.3) ---
   // =================================================================
   async function refreshDay(dateKey) {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
@@ -725,9 +791,8 @@ export const useMainStore = defineStore('mainStore', () => {
       calculationCache.value = { ...calculationCache.value };
       
     } catch (e) {
-      console.error('[STORE] ❌ Ошибка загрузки операций для дня:', e);
+      console.error('Ошибка загрузки операций для дня:', e);
       if (e.response && e.response.status === 401) {
-        console.log('[STORE] 🚨 ОШИБКА 401: Сессия истекла, устанавливаю user.value = null.');
         user.value = null;
       }
     }
@@ -812,7 +877,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
     } catch(e) { 
       console.error('Ошибка API удаления! Восстанавливаю состояние с сервера...', e); 
-      // 🔴 Здесь также может быть 401, но мы полагаемся на то, что refreshDay поймает его
       await refreshDay(dateKey);
       await fetchAllEntities();
       if (projection.value.mode) {
@@ -871,7 +935,171 @@ export const useMainStore = defineStore('mainStore', () => {
     return others;
   }
 
-  // ... (moveOperation - с логированием и обработкой ошибок) ...
+  // =================================================================
+  // --- 🔴 ИСПРАВЛЕНИЕ: _reorderWithinDayLocal (dateKey) ---
+  // =================================================================
+  function _reorderWithinDayLocal(dateKey, opId, fromIndex, toIndex){
+    const list = (displayCache.value[dateKey] || []).slice();
+    
+    const self = list.find(o => o._id === opId);
+    if (!self) return { affected: [], self: null };
+
+    const others = list.filter(o => o._id !== opId);
+    _compactIndices(others);
+    if (toIndex < 0) toIndex = 0;
+    if (toIndex > others.length) toIndex = others.length;
+    const affected = [];
+    if (toIndex < fromIndex){
+      for (const o of others){
+        if (o.cellIndex >= toIndex && o.cellIndex <= fromIndex-1){
+          o.cellIndex += 1; affected.push(o);
+        }
+      }
+      self.cellIndex = toIndex;
+    } else if (toIndex > fromIndex){
+      for (const o of others){
+        if (o.cellIndex >= fromIndex+1 && o.cellIndex <= toIndex){
+          o.cellIndex -= 1; affected.push(o);
+        }
+      }
+      self.cellIndex = toIndex;
+    } else {
+       self.cellIndex = fromIndex;
+    }
+
+    const merged = [...others, self].sort((a,b)=>a.cellIndex - b.cellIndex);
+    
+    // Обновляем ОБА кеша
+    displayCache.value[dateKey] = merged;
+    displayCache.value = { ...displayCache.value };
+
+    if (calculationCache.value[dateKey]) {
+      const mergedClone = merged.map(op => ({ ...op })); 
+      calculationCache.value[dateKey] = mergedClone;
+      calculationCache.value = { ...calculationCache.value };
+    }
+    
+    return { affected, self };
+  }
+
+  // =================================================================
+  // --- 🔴 ИСПРАВЛЕНИЕ: moveOperation (dateKey) ---
+  // =================================================================
+  async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
+    if (!oldDateKey || !newDateKey) {
+        console.error(`!!! moveOperation ОШИБКА:`, operation);
+        return;
+    }
+    console.log(`[ЖУРНАЛ] moveOperation: ➡️ Перемещение ID: ${operation._id}. Из ${oldDateKey} -> В ${newDateKey}`);
+    
+    const desired = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
+
+    if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
+    if (!displayCache.value[newDateKey])   await fetchOperations(newDateKey);
+    if (!calculationCache.value[oldDateKey]) await refreshDay(oldDateKey);
+    if (!calculationCache.value[newDateKey])   await refreshDay(newDateKey);
+
+
+    if (oldDateKey === newDateKey) {
+      console.log(`[ЖУРНАЛ] moveOperation: ➡️ (Перемещение внутри ${newDateKey})`);
+      const fromIndex = Number(operation.cellIndex || 0);
+      const toIndex   = Math.max(0, desired);
+      const { affected, self } = _reorderWithinDayLocal(newDateKey, operation._id, fromIndex, toIndex);
+      
+      try{
+        if (self) {
+          for (const a of affected) {
+            await axios.put(`${API_BASE_URL}/events/${a._id}`, { dateKey: newDateKey, cellIndex: a.cellIndex });
+          }
+          if (isTransfer(operation) && operation._id2) {
+            await Promise.all([
+              axios.put(`${API_BASE_URL}/events/${operation._id}`,  { dateKey: newDateKey, cellIndex: self.cellIndex }),
+              axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: self.cellIndex }),
+            ]);
+          } else {
+            await axios.put(`${API_BASE_URL}/events/${operation._id}`, { dateKey: newDateKey, cellIndex: self.cellIndex });
+          }
+        }
+      }catch(e){
+        console.error('Ошибка перестановки внутри дня — обновляю день из сервера', e);
+        await refreshDay(newDateKey);
+      }
+      
+      if (projection.value.mode) {
+        await updateProjectionFromCalculationData(
+          projection.value.mode, 
+          new Date(currentYear.value, 0, todayDayOfYear.value)
+        );
+      }
+      return;
+    }
+    
+    // Логика перемещения МЕЖДУ днями
+    
+    const oldArr_display = (displayCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
+    _compactIndices(oldArr_display);
+    displayCache.value[oldDateKey] = oldArr_display;
+
+    const oldArr_calc = (calculationCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
+    _compactIndices(oldArr_calc);
+    calculationCache.value[oldDateKey] = oldArr_calc;
+
+    let newArr_display = (displayCache.value[newDateKey] || []).filter(o => o._id !== operation._id);
+    _compactIndices(newArr_display);
+
+    let newArr_calc = (calculationCache.value[newDateKey] || []).filter(o => o._id !== operation._id);
+    _compactIndices(newArr_calc);
+
+    const targetIndex = await getFirstFreeCellIndex(newDateKey, desired);
+    
+    const shifted_display = [];
+    for (const o of newArr_display) {
+      if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_display.push(o); }
+    }
+    const shifted_calc = [];
+    for (const o of newArr_calc) {
+      if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
+    }
+
+    const moved = { ...operation, cellIndex: targetIndex, dateKey: newDateKey };
+    
+    const merged_display = [...newArr_display, moved].sort((a,b)=>a.cellIndex - b.cellIndex);
+    displayCache.value[newDateKey] = merged_display;
+    
+    const merged_calc = [...newArr_calc, { ...moved }].sort((a,b)=>a.cellIndex - b.cellIndex);
+    calculationCache.value[newDateKey] = merged_calc;
+
+    displayCache.value = { ...displayCache.value };
+    calculationCache.value = { ...calculationCache.value };
+    
+    try{
+      for (const s of shifted_display) {
+        await axios.put(`${API_BASE_URL}/events/${s._id}`, { dateKey: newDateKey, cellIndex: s.cellIndex });
+      }
+      if (isTransfer(operation) && operation._id2) {
+        await Promise.all([
+          axios.put(`${API_BASE_URL}/events/${moved._id}`,  { dateKey: newDateKey, cellIndex: moved.cellIndex }),
+          axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: moved.cellIndex }),
+        ]);
+      } else {
+        await axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: moved.cellIndex });
+      }
+      for (const o of oldArr_display){
+        await axios.put(`${API_BASE_URL}/events/${o._id}`, { dateKey: oldDateKey, cellIndex: o.cellIndex });
+      }
+    } catch(e) {
+      console.error('Ошибка переноса между днями — откатываю к серверному состоянию', e);
+      await refreshDay(oldDateKey);
+      await refreshDay(newDateKey);
+    }
+
+    if (projection.value.mode) {
+      await updateProjectionFromCalculationData(
+        projection.value.mode, 
+        new Date(currentYear.value, 0, todayDayOfYear.value)
+      );
+    }
+  }
 
   // ---------- TRANSFERS ----------
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
@@ -900,7 +1128,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return response.data;
     } catch (error) {
       console.error('Ошибка создания перевода:', error);
-      // 🔴 Здесь также может быть 401, но мы не можем обработать его без рефреша
       throw error;
     }
   }
@@ -962,7 +1189,6 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='projects')    projects.value = res.data;
     }catch(e){
       console.error(`Ошибка пакетного обновления для ${path}:`, e);
-      // 🔴 Здесь также может быть 401
       await fetchAllEntities();
     }
   }
@@ -986,7 +1212,6 @@ export const useMainStore = defineStore('mainStore', () => {
         console.log('[ЖУРНАЛ] AutoRefresh: ✅ Данные успешно обновлены');
       } catch (error) {
         console.error('Ошибка при автообновлении:', error);
-        // 🔴 Здесь также может быть 401
       }
     }, intervalMs);
   }
@@ -1015,7 +1240,6 @@ export const useMainStore = defineStore('mainStore', () => {
       console.log('Все данные успешно обновлены');
     } catch (error) {
       console.error('Ошибка при принудительном обновлении:', error);
-      // 🔴 Здесь также может быть 401
     }
   }
   // =================================================================
@@ -1047,7 +1271,6 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (error) {
       console.error('Ошибка импорта в mainStore (v4.6):', error);
       if (error.response && error.response.status === 401) {
-        console.log('[STORE] 🚨 ОШИБКА 401: Сессия истекла, устанавливаю user.value = null.');
         user.value = null;
       }
       throw error; 
@@ -1065,7 +1288,8 @@ export const useMainStore = defineStore('mainStore', () => {
   console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
   try {
     isAuthLoading.value = true;
-    const res = await axios.get(`${API_BASE_URL}/auth/me`); 
+    const res = await axios.get(`${API_BASE_URL}/auth/me`); // <-- ВОТ ИСПРАВЛЕНИЕ
+// ... (остальная функция без изменений)
       user.value = res.data; 
       console.log('[ЖУРНАЛ] checkAuth: ✅ Пользователь найден:', user.value.name);
       
@@ -1082,6 +1306,9 @@ export const useMainStore = defineStore('mainStore', () => {
    * Выходит из системы.
    */
 async function logout() {
+  // ...
+  axios.post('http://localhost:3000/api/auth/logout') // <-- НАЙДИТЕ ЭТУ СТРОКУ
+// ...
     
     // 1. Отправляем запрос на сервер "в фоновом режиме" (БЕЗ await)
     //    и сразу добавляем .catch, чтобы ошибка не "всплыла" в консоль.
@@ -1173,3 +1400,4 @@ async function logout() {
     // --- КОНЕЦ НОВОГО КОДА ---
   };
 });
+

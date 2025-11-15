@@ -1,5 +1,5 @@
 <script setup>
-// 🔴 НОВОЕ: импортируем ref и computed
+// 🔴 НОВОЕ: импортируем ref и computed (watch уже был)
 import { ref, watch, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -144,18 +144,10 @@ const formatBalance = (balance) => {
 };
 // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
-// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: handleSelect ---
 const handleSelect = (newWidgetKey) => {
-  console.log(`[WIDGET-SELECT] 1. Выбран ключ: ${newWidgetKey}. Запускаю replaceWidget.`);
+  // ... (старый код без изменений) ...
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  
-  // Добавляем задержку (как мы обсуждали ранее), чтобы исключить провал клика
-  setTimeout(() => {
-    console.log(`[WIDGET-SELECT] 2. Закрываю dropdown.`);
-    isDropdownOpen.value = false;
-  }, 100); 
-
-  document.removeEventListener('mousedown', handleClickOutside);
+  isDropdownOpen.value = false;
 };
 
 // --- !!! НОВАЯ ЛОГИКА: Клик снаружи (для старого меню) !!! ---
@@ -442,7 +434,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #f4f4f4;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-  z-index: 1002; /* 🔴 ИСПРАВЛЕНИЕ: Поднят выше 1000 для предотвращения "провала клика" */
+  z-index: 100; /* (z-index 100, ниже чем .card-title) */
   padding: 8px;
   box-sizing: border-box;
   max-height: 400px;

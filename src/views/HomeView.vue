@@ -13,7 +13,7 @@ import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v5.2-AUTH-MENU-FIX ---
- * * ВЕРСИЯ: 5.2 - Исправлено позиционирование меню пользователя
+ * * ВЕРСIA: 5.2 - Исправлено позиционирование меню пользователя
  * ДАТА: 2025-11-14
  *
  * ЧТО ИЗМЕНЕНО:
@@ -241,61 +241,30 @@ const handleContextMenuSelect = (type) => {
     openPopup(type);
   }
 };
-
-// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: openPopup ---
 const openPopup = (type) => {
-  console.log(`[POPUP-OPEN] 🚀 openPopup вызван. Тип: ${type}.`);
   operationType.value = type;
   isPopupVisible.value = true;
 };
-
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
-  
-  console.log(`[POPUP-EDIT] 📝 Редактирование операции. Тип: ${operation.type}`);
-  
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
   } else {
     openPopup(operation.type);
   }
 };
-
-// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: handleClosePopup ---
 const handleClosePopup = () => {
-  console.log(`[POPUP-CLOSE] 🚪 Закрываю OperationPopup.`);
   isPopupVisible.value = false;
   operationToEdit.value = null;
 };
 const handleCloseTransferPopup = () => {
-  console.log(`[POPUP-CLOSE] 🚪 Закрываю TransferPopup.`);
   isTransferPopupVisible.value = false;
   operationToEdit.value = null;
 };
 // --- КОНЕЦ БЛОКА КОНТЕКСТНОГО МЕНЮ ---
-
-// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: handleHeaderAction (Предполагаемый источник) ---
-const handleHeaderAction = (type, event) => {
-  console.log(`[HEADER-ACTION] 🔔 HeaderCard вызвал @add или @edit. Тип: ${type}`);
-  
-  // Логика по умолчанию для HeaderBalanceCard (в вашем шаблоне @add привязан к expense)
-  if (type === 'edit') {
-    // В текущей логике HeaderBalanceCard не передает объект для редактирования, 
-    // но если бы он передавал, это была бы логика редактирования.
-    console.warn('[HEADER-ACTION] Открываю модальное окно для редактирования сущностей (EntityListEditor).');
-    // ... здесь должна быть логика открытия EntityListEditor
-    return;
-  }
-  
-  // Предполагается, что 'add' открывает OperationPopup
-  operationToEdit.value = null;
-  openPopup(type === 'income' ? 'income' : 'expense');
-};
-// --- КОНЕЦ НОВОГО ОБРАБОТЧИКА ---
-
 
 /* ===================== ДАННЫЕ ПО ВИДИМЫМ ДНЯМ ===================== */
 // (Весь этот блок без изменений)
@@ -660,10 +629,7 @@ onBeforeUnmount(() => {
   <div v-else class="home-layout" @click="closeAllMenus">
     
     <header class="home-header" ref="homeHeaderRef">
-      <TheHeader 
-        @add="handleHeaderAction('expense', $event)" 
-        @edit="handleHeaderAction('edit', $event)"
-      />
+      <TheHeader />
     </header>
     
     <div class="header-resizer" ref="headerResizerRef"></div>

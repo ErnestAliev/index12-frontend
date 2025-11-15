@@ -79,7 +79,7 @@ watch(isDropdownOpen, (isOpen) => {
       >
       <div class="card-title">{{ title }} <span>▽</span></div>
       
-      <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
+      <div v-if="isDropdownOpen" class="widget-dropdown">
         <input
           type="text"
           class="widget-search-input"
@@ -185,7 +185,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #f4f4f4;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-  z-index: 1002; /* 🔴 ИСПРАВЛЕНИЕ: Поднят выше 1000 для предотвращения "провала клика" */
+  z-index: 100;
   padding: 8px;
   box-sizing: border-box;
   
