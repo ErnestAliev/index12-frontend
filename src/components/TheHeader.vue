@@ -250,20 +250,20 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
   width: 100%;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.8) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.11) === */
 @media (max-height: 900px) {
   .header-dashboard {
     /* Уменьшаем зазоры и отступы */
-    gap: 0.8rem; /* 🔴 ИСПРАВЛЕНИЕ v2.8: Чуть меньше gap */
-    padding: 0.6rem 0.8rem; /* 🔴 ИСПРАВЛЕНИЕ v2.8: Чуть меньше padding */
+    gap: 0.8rem; /* Чуть меньше gap */
+    padding: 0.6rem 0.8rem; /* Чуть меньше padding */
   }
 }
 
-/* 🔴 НОВОЕ (v2.7): Адаптация под ширину (960px - 1440px) */
-@media (max-width: 1440px) {
+/* 🔴 ИЗМЕНЕНИЕ (v2.9): Адаптация под ширину (960px - 1200px) */
+@media (max-width: 1200px) {
   .header-dashboard {
-    gap: 1rem;
-    padding: 0.8rem 1rem;
+    gap: 0.8rem;
+    padding: 0.6rem 0.8rem;
   }
 }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
