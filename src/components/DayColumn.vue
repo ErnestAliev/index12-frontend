@@ -100,7 +100,7 @@ const onDrop = (dropDataFromHourCell) => {
 /* (Стили я не менял, они идентичны твоим из v1.1) */
 .day-column {
   flex: 1;
-  min-width: 150px; 
+  /* min-width: 150px; (🟢 УДАЛЕНО: Это исправляет "сломанные 12 колонок") */
   background-color: var(--color-background-soft);
   border-left: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
@@ -125,8 +125,8 @@ const onDrop = (dropDataFromHourCell) => {
   /* (Стили не менялись) */
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
-@media (max-width: 1919px) {
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+@media (max-height: 900px) {
   .column-header {
     font-size: 0.8em; /* Уменьшаем шрифт даты */
     padding: 6px 4px; /* Уменьшаем отступы */
