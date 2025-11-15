@@ -885,10 +885,6 @@ onBeforeUnmount(() => {
 }
 
 /* * !!! ИСПРАВЛЕННЫЙ .user-menu !!!
- * Теперь он позиционируется абсолютно от корня, 
- * а не от правой панели.
-*/
-/* * !!! ИСПРАВЛЕННЫЙ .user-menu !!!
  * Теперь он использует position: fixed (относительно окна)
 */
 .user-menu {
@@ -1075,11 +1071,16 @@ onBeforeUnmount(() => {
   overscroll-behavior-x: contain;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШИРИНА < 1920px) === */
 .timeline-grid-content {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  /* grid-template-columns: repeat(12, 1fr); (ЗАМЕНЕНО) */
+  grid-template-columns: repeat(12, minmax(0, 1fr)); /* (ИСПРАВЛЕНИЕ) */
   width: 100%;
 }
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
+
 
 .divider-wrapper {
   flex-shrink: 0;
@@ -1134,21 +1135,41 @@ onBeforeUnmount(() => {
 }
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover { background-color: #555; }
 
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ВЫСОТА ПЛАНШЕТА) === */
 .graph-area-wrapper {
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: hidden; /* Оставляем, чтобы сам контейнер не скроллился */
   scrollbar-width: none;
   -ms-overflow-style: none;
   min-height: 115px;
-  
-  /* 🔴 НОВОЕ: (v4.1) Должен расти */
   flex-grow: 1;
+  
+  /* Новые стили для вертикального макета */
+  display: flex;
+  flex-direction: column;
 }
 .graph-area-wrapper::-webkit-scrollbar { display: none; }
+
 :deep(.graph-renderer-content) {
-  height: 100%;
+  /* height: 100%; (УДАЛЕНО) */
+  flex-grow: 1; /* График занимает все свободное место */
+  min-height: 0; /* Важно для flex-grow */
   width: 100%;
 }
+
+/* Новые стили для Блока 4 (Итоги дня) */
+.summaries-container {
+  flex-shrink: 0; /* Не сжиматься */
+  height: 120px; /* Высота для итогов (можно настроить) */
+  background: var(--color-background);
+  border-top: 1px solid var(--color-border);
+  overflow-y: auto; /* Позволяем итогам скроллиться, если их много */
+  padding: 1rem;
+  box-sizing: border-box;
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
+
 
 .nav-panel-wrapper {
   height: 318px;
