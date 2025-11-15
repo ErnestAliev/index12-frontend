@@ -791,7 +791,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   border: 1px solid var(--color-border);
   text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
 }
 .login-box h1 {
   margin: 0 0 10px 0;
@@ -1204,7 +1204,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ/ВЫСОТА ДЛЯ ПЛАНШЕТА v5.7) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ/ВЫСОТА ДЛЯ ПЛАНШЕТА v5.12) === */
 /* * Активируется при небольшой высоте (например, планшет в ландшафте) */
 @media (max-height: 900px) {
   /* 🔴 ИСПРАВЛЕНИЕ v5.5: Уменьшаем область таймлайна, чтобы дать место графику */
