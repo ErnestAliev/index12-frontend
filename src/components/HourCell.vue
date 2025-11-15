@@ -239,43 +239,8 @@ const handleTouchDrop = (event) => {
     padding: 3px 6px;
   }
 }
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
-
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (TOUCH-ОПТИМИЗАЦИЯ) === */
-/* Улучшаем touch-цели для планшетов */
-@media (hover: none) and (pointer: coarse) {
-  .hour-cell {
-    min-height: 44px; /* Минимальный размер touch-цели по рекомендациям Apple */
-  }
-  
-  .operation-chip {
-    min-height: 40px;
-    padding: 8px 12px;
-  }
-  
-  .cell-empty-space {
-    min-height: 40px;
-  }
-}
-
-/* Увеличиваем hit area для touch-устройств */
-.operation-chip {
-  position: relative;
-}
-
-.operation-chip::after {
-  content: '';
-  position: absolute;
-  top: -8px;
-  left: -8px;
-  right: -8px;
-  bottom: -8px;
-}
-
-/* Визуальная обратная связь для touch */
-.operation-chip:active {
-  transform: scale(0.98);
-  transition: transform 0.1s;
-}
+  /* Увеличиваем hit area для touch-устройств */
+.operation-chip { position: relative; }
+.operation-chip::after { content: ''; position: absolute; top: -15px; left: -15px; right: -15px; bottom: -15px; }
 /* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
