@@ -421,7 +421,7 @@ const applyHeights = (timelinePx) => {
     const headerTotalH = headerHeightPx.value + 15; 
     const containerH = window.innerHeight - headerTotalH;
     const graphH = Math.max(GRAPH_MIN, containerH - timelineHeightPx.value - DIVIDER_H);
-    graphAreaRef.value.style.height = `${Math.round(graphH)}px`;
+    /* graphAreaRef.value.style.height = `${Math.round(graphH)}px`; */ // <-- 🟢 СТРОКА ЗАКОММЕНТИРОВАНА
   }
 };
 const initResize = (e) => {
