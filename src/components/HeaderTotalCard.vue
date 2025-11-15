@@ -250,4 +250,22 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: transparent;
   cursor: not-allowed;
 }
+
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ < 1920px) === */
+@media (max-width: 1919px) {
+  .dashboard-card {
+    min-width: 120px; /* Уменьшаем мин. ширину */
+    padding-right: 1rem; /* Уменьшаем отступ */
+  }
+  .card-total-balance {
+    font-size: 1.5em; /* Уменьшаем главный шрифт */
+  }
+  .card-sub-balance {
+    font-size: 0.75em; /* И подпись */
+  }
+  .card-title {
+    font-size: 0.8em;
+  }
+}
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
