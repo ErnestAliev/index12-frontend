@@ -783,19 +783,19 @@ onBeforeUnmount(() => {
   flex-direction: column;
   background-color: var(--color-background);
   color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; [cite: 139]
 }
 .login-box {
   background: var(--color-background-soft);
   padding: 40px;
   border-radius: 12px;
   border: 1px solid var(--color-border);
-  text-align: center;
+  text-align: center; [cite: 140]
   box-shadow: 0 10px 30px rgba(0,0,0,0.1);
 }
 .login-box h1 {
   margin: 0 0 10px 0;
-  color: var(--color-heading-text);
+  color: var(--color-heading-text); [cite: 141]
 }
 .login-box p {
   margin-bottom: 30px;
@@ -806,7 +806,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 24px;
+  padding: 12px 24px; [cite: 142]
   background-color: #fff;
   color: #333;
   border: 1px solid #ddd;
@@ -814,13 +814,13 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 500;
   text-decoration: none;
-  cursor: pointer;
+  cursor: pointer; [cite: 143]
   transition: background-color 0.2s, box-shadow 0.2s;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 .google-login-button:hover {
   background-color: #f9f9f9;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1); [cite: 144]
 }
 .google-login-button svg {
   margin-right: 12px;
@@ -829,13 +829,13 @@ onBeforeUnmount(() => {
 /* Спиннер загрузки */
 .spinner {
   width: 40px;
-  height: 40px;
+  height: 40px; [cite: 145]
   border: 4px solid var(--color-border);
   border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
-}
+} [cite: 146]
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -845,7 +845,7 @@ onBeforeUnmount(() => {
 =================================================================
 --- !!! ИЗМЕНЕННЫЕ СТИЛИ (Шаг 4 v2): ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ !!! ---
 =================================================================
-*/
+*/ [cite: 147]
 .user-profile-widget {
   position: absolute;
   bottom: 0;
@@ -856,14 +856,14 @@ onBeforeUnmount(() => {
 .user-profile-button {
   display: flex;
   align-items: center;
-  width: 100%;
+  width: 100%; [cite: 148]
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 6px;
   cursor: pointer;
   transition: background-color 0.2s, border-color 0.2s;
-  color: var(--color-text);
+  color: var(--color-text); [cite: 149]
   text-align: left;
 }
 .user-profile-button:hover {
@@ -874,7 +874,7 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  margin-right: 8px;
+  margin-right: 8px; [cite: 150]
   object-fit: cover;
   border: 1px solid var(--color-border);
 }
@@ -883,7 +883,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 50%;
   margin-right: 8px;
-  background-color: var(--color-accent);
+  background-color: var(--color-accent); [cite: 151]
   color: #fff;
   display: flex;
   align-items: center;
@@ -893,7 +893,7 @@ onBeforeUnmount(() => {
 }
 .user-name {
   flex-grow: 1;
-  font-size: 13px;
+  font-size: 13px; [cite: 152]
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -902,21 +902,21 @@ onBeforeUnmount(() => {
 
 /* * !!! ИСПРАВЛЕННЫЙ .user-menu !!!
  * Теперь он использует position: fixed (относительно окна)
-*/
+*/ [cite: 153]
 .user-menu {
-  position: fixed; /* <--- ГЛАВНОЕ ИСПРАВЛЕНИЕ: (был absolute) */
+  position: fixed; [cite: 154]
   width: 180px;      
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.1); 
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1); [cite: 155]
   z-index: 2000; 
   overflow: hidden;
   /* top и left будут установлены через :style */
 }
 .user-menu-item {
   display: block;
-  width: 100%;
+  width: 100%; [cite: 156]
   padding: 10px 12px;
   background: none;
   border: none;
@@ -924,7 +924,7 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   cursor: pointer;
   text-align: left;
-  font-size: 14px;
+  font-size: 14px; [cite: 157]
 }
 .user-menu-item:last-child {
   border-bottom: none;
@@ -935,7 +935,7 @@ onBeforeUnmount(() => {
 .user-menu-item:disabled {
   color: var(--color-text-mute);
   cursor: not-allowed;
-  background: none;
+  background: none; [cite: 158]
 }
 
 
@@ -948,7 +948,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  width: 100%;
+  width: 100%; [cite: 159]
   overflow: hidden;
   background-color: var(--color-background);
 }
@@ -957,7 +957,7 @@ onBeforeUnmount(() => {
 .home-header {
   flex-shrink: 0; 
   z-index: 100;
-  background-color: var(--color-background);
+  background-color: var(--color-background); [cite: 160]
   display: flex; 
   /* overflow: hidden; (УДАЛЕНО) */
 }
@@ -966,7 +966,7 @@ onBeforeUnmount(() => {
 /* 🔴 ИСПРАВЛЕНИЕ v4.3: Стили для ресайзера хедера */
 .header-resizer {
   flex-shrink: 0;
-  height: 15px; 
+  height: 15px; [cite: 161]
   background: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
@@ -974,14 +974,14 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 50;
   
-  /* Центрируем "точку" */
+  /* Центрируем "точку" */ [cite: 162]
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .header-resizer:hover {
   border-top: 1px solid #777;
-}
+} [cite: 163]
 /* "Точка" (скопирована с .vertical-resizer) */
 .header-resizer::before {
   content: '';
@@ -990,11 +990,11 @@ onBeforeUnmount(() => {
   height: 10px;
   background-color: #ffffff;
   border-radius: 50%;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border); [cite: 164]
   opacity: 0.5;
   transition: opacity 0.2s, transform 0.2s;
   box-shadow: 0 0 5px rgba(0,0,0,0.3);
-}
+} [cite: 165]
 .header-resizer:hover::before { 
   opacity: 1; 
   transform: scale(1.2);
@@ -1007,9 +1007,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   
   /* 🔴 НОВОЕ: (v4.1) min-height: 0 нужен,
-     чтобы flex-grow корректно работал */
+     чтобы flex-grow корректно работал */ [cite: 166]
   min-height: 0;
-}
+} [cite: 167]
 .home-left-panel {
   width: 60px;
   flex-shrink: 0;
@@ -1020,29 +1020,30 @@ onBeforeUnmount(() => {
 .home-right-panel {
   width: 60px;
   flex-shrink: 0;
-  overflow-y: auto;
+  overflow-y: auto; [cite: 168]
   background-color: var(--color-background-soft);
   border-left: 1px solid var(--color-border);
   scrollbar-width: none;
   -ms-overflow-style: none;
   
-  /* !!! ВОЗВРАЩЕНО: Для позиционирования кнопки !!! */
+  /* !!! ВОЗВРАЩЕНО: Для позиционирования кнопки !!!
+ */ [cite: 169]
   position: relative; 
 }
 .home-right-panel::-webkit-scrollbar { display: none; }
 
 /* !!! ВАШИ СТИЛИ ВОЗВРАЩЕНЫ !!!
   Стили для кнопки Импорт/Экспорт 
-*/
+*/ [cite: 170]
 .import-export-btn {
   position: absolute;
   top: 8px; /* Отступ сверху */
-  right: 8px; /* Отступ справа */
+  right: 8px; /* Отступ справа */ [cite: 171]
   z-index: 20; 
   
   /* Общие стили для icon-btn (можно вынести, если есть другие) */
   background: var(--color-background-soft);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border); [cite: 172]
   border-radius: 50%;
   width: 32px;
   height: 32px;
@@ -1051,7 +1052,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   color: var(--color-text);
-  padding: 0;
+  padding: 0; [cite: 173]
   transition: background-color 0.2s, border-color 0.2s;
 }
 .import-export-btn:hover {
@@ -1059,10 +1060,10 @@ onBeforeUnmount(() => {
   border-color: var(--color-border-hover);
 }
 .import-export-btn svg {
-  width: 18px; /* Чуть меньше для отступов */
+  width: 18px; /* Чуть меньше для отступов */ [cite: 174]
   height: 18px;
   stroke: currentColor;
-}
+} [cite: 175]
 /* --- КОНЕЦ СТИЛЕЙ --- */
 
 
@@ -1071,7 +1072,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
+} [cite: 176]
 
 .timeline-grid-wrapper {
   height: 318px;
@@ -1080,22 +1081,20 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
-  scrollbar-width: none;
+  scrollbar-width: none; [cite: 177]
   -ms-overflow-style: none;
   
   /* --- 🔴 НОВОЕ: Блокировка свайпа "назад" в браузере --- */
   overscroll-behavior-x: contain;
-}
+} [cite: 178]
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШИРИНА < 1920px) === */
+/* === 🟢 ИСПРАВЛЕНИЕ: 12 КОЛОНОК === */
 .timeline-grid-content {
   display: grid;
-  /* grid-template-columns: repeat(12, 1fr); (ЗАМЕНЕНО) */
-  grid-template-columns: repeat(12, minmax(0, 1fr)); /* (ИСПРАВЛЕНИЕ) */
+  grid-template-columns: repeat(12, minmax(0, 1fr)); /* [cite: 179] */
   width: 100%;
-}
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
+} [cite: 180]
 
 
 .divider-wrapper {
@@ -1103,7 +1102,7 @@ onBeforeUnmount(() => {
   height: 15px;
   width: 100%;
   background-color: var(--color-background-soft);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border); [cite: 181]
   position: relative;
 }
 .vertical-resizer {
@@ -1112,7 +1111,7 @@ onBeforeUnmount(() => {
   left: 50%;
   transform: translateX(-50%);
   width: 40px;
-  height: 25px;
+  height: 25px; [cite: 182]
   cursor: row-resize;
   z-index: 20;
   display: flex;
@@ -1122,14 +1121,14 @@ onBeforeUnmount(() => {
 .vertical-resizer::before {
   content: '';
   display: block;
-  width: 10px;
+  width: 10px; [cite: 183]
   height: 10px;
   background-color: #ffffff;
   border-radius: 50%;
   border: 1px solid var(--color-border);
   opacity: 0.5;
   transition: opacity 0.2s, transform 0.2s;
-  box-shadow: 0 0 5px rgba(0,0,0,0.3);
+  box-shadow: 0 0 5px rgba(0,0,0,0.3); [cite: 184]
 }
 .vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
 
@@ -1137,54 +1136,53 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: hidden; [cite: 185]
 }
 .scrollbar-content { height: 1px; }
 .horizontal-scrollbar-wrapper::-webkit-scrollbar { height: 10px; }
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-track {
   background: var(--color-background-soft);
   border-radius: 5px;
-}
+} [cite: 186]
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb {
   background-color: var(--color-border);
   border-radius: 5px;
 }
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover { background-color: #555; }
+.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover { background-color: #555; } [cite: 187]
 
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ВЫСОТА ПЛАНШЕТА) === */
+/* === 🟢 ИСПРАВЛЕНИЕ: ВЫСОТА ПЛАНШЕТА (ИТОГИ ВНИЗУ) === */
 .graph-area-wrapper {
   overflow-x: hidden;
-  overflow-y: hidden; /* Оставляем, чтобы сам контейнер не скроллился */
+  overflow-y: hidden; [cite: 188]
   scrollbar-width: none;
   -ms-overflow-style: none;
   min-height: 115px;
   flex-grow: 1;
   
-  /* Новые стили для вертикального макета */
-  display: flex;
+  display: flex; [cite: 189]
   flex-direction: column;
-}
-.graph-area-wrapper::-webkit-scrollbar { display: none; }
+} [cite: 189]
+.graph-area-wrapper::-webkit-scrollbar { display: none; } [cite: 190]
 
 :deep(.graph-renderer-content) {
   /* height: 100%; (УДАЛЕНО) */
-  flex-grow: 1; /* График занимает все свободное место */
-  min-height: 0; /* Важно для flex-grow */
+  flex-grow: 1; [cite: 190-191]
+  min-height: 0; /* Важно для flex-grow */ [cite: 191]
   width: 100%;
-}
+} [cite: 192]
 
 /* Новые стили для Блока 4 (Итоги дня) */
 .summaries-container {
-  flex-shrink: 0; /* Не сжиматься */
-  height: 120px; /* Высота для итогов (можно настроить) */
-  background: var(--color-background);
-  border-top: 1px solid var(--color-border);
-  overflow-y: auto; /* Позволяем итогам скроллиться, если их много */
-  padding: 1rem;
+  flex-shrink: 0; /* Не сжиматься */ [cite: 192]
+  height: 120px; /* Высота для итогов (можно настроить) */ [cite: 192-193]
+  background: var(--color-background); [cite: 193]
+  border-top: 1px solid var(--color-border); [cite: 193]
+  overflow-y: auto; [cite: 193-194]
+  padding: 1rem; [cite: 194]
   box-sizing: border-box;
-}
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
+} [cite: 195]
+/* === 🟢 КОНЕЦ ИСПРАВЛЕНИЙ === */
 
 
 .nav-panel-wrapper {
@@ -1194,48 +1192,48 @@ onBeforeUnmount(() => {
 }
 .divider-placeholder {
   height: 15px;
-  flex-shrink: 0;
+  flex-shrink: 0; [cite: 196]
   background-color: var(--color-background-soft);
   border-bottom: 1px solid var(--color-border);
 }
 .home-left-panel > :deep(.y-axis-panel) {
   flex-grow: 1;
   overflow: hidden;
-}
+} [cite: 197]
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* === 🟢 ИСПРАВЛЕНИЕ: ШРИФТЫ ДЛЯ ПЛАНШЕТА === */
 /* * Мы используем 'max-height' вместо 'max-width'.
  * Это надежнее определяет "планшетный" (невысокий) режим.
-*/
+*/ [cite: 198]
 @media (max-height: 900px) {
   .header-resizer {
-    height: 10px; /* Делаем ресайзер тоньше */
+    height: 10px; /* Делаем ресайзер тоньше */ [cite: 199]
   }
   .divider-wrapper {
-    height: 10px; /* И нижний ресайзер/скроллбар */
+    height: 10px; /* И нижний ресайзер/скроллбар */ [cite: 200]
   }
   .summaries-container {
-    height: 100px; /* Уменьшаем блок итогов */
+    height: 100px; /* Уменьшаем блок итогов */ [cite: 201]
     padding: 0.5rem 1rem;
   }
   .import-export-btn {
     width: 28px;
-    height: 28px;
+    height: 28px; [cite: 202]
     top: 4px;
     right: 4px;
   }
   .import-export-btn svg {
     width: 16px;
     height: 16px;
-  }
+  } [cite: 203]
   .user-avatar, .user-avatar-placeholder {
     width: 24px;
     height: 24px;
     font-size: 12px;
-  }
+  } [cite: 204]
   .user-name {
     font-size: 12px;
   }
 }
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
+/* === 🟢 КОНЕЦ ИСПРАВЛЕНИЙ === */
 </style>
