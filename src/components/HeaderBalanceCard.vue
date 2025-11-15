@@ -521,7 +521,7 @@ watch(isDropdownOpen, (isOpen) => {
   background-color: #e0e0e0;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.9) === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v2.12) === */
 @media (max-height: 900px) {
   .dashboard-card {
     min-width: 100px; 
@@ -553,12 +553,12 @@ watch(isDropdownOpen, (isOpen) => {
   }
 }
 
-/* 🔴 ИЗМЕНЕНИЕ (v2.9): Адаптация под ширину (960px - 1200px) */
+/* 🔴 ИЗМЕНЕНИЕ (v2.12): Адаптация под ширину (960px - 1200px) */
 @media (max-width: 1200px) {
   /* 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Даем минимальную ширину, чтобы карточки не схлопнулись */
   .dashboard-card {
-      min-width: 130px !important;
-      padding-right: 0.8rem;
+      min-width: 140px !important;
+      padding-right: 0.8rem; /* Оставляем 0.8rem, т.к. нет длинной подписи */
   }
   .card-title {
     font-size: 0.7em;
