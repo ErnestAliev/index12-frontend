@@ -1,5 +1,5 @@
 <script setup>
-// 🔴 НОВОЕ: импортируем ref и computed (watch уже был)
+// 🔴 НОВОЕ: импортируем ref и computed
 import { ref, watch, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -144,10 +144,18 @@ const formatBalance = (balance) => {
 };
 // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
+// --- 🔴 ДОБАВЛЕНО ЛОГИРОВАНИЕ: handleSelect ---
 const handleSelect = (newWidgetKey) => {
-  // ... (старый код без изменений) ...
+  console.log(`[WIDGET-SELECT] 1. Выбран ключ: ${newWidgetKey}. Запускаю replaceWidget.`);
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  isDropdownOpen.value = false;
+  
+  // Добавляем задержку (как мы обсуждали ранее), чтобы исключить провал клика
+  setTimeout(() => {
+    console.log(`[WIDGET-SELECT] 2. Закрываю dropdown.`);
+    isDropdownOpen.value = false;
+  }, 100); 
+
+  document.removeEventListener('mousedown', handleClickOutside);
 };
 
 // --- !!! НОВАЯ ЛОГИКА: Клик снаружи (для старого меню) !!! ---
