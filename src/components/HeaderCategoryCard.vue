@@ -317,7 +317,7 @@ const categoryBreakdown = computed(() => {
 }
 .t-arrow {
   font-size: 0.8em;
-  color: #555;
+  color: #34c759;
   padding: 0 4px;
 }
 
@@ -399,3 +399,4 @@ const categoryBreakdown = computed(() => {
   }
 }
 </style>
+
