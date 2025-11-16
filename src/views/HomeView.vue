@@ -12,19 +12,20 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.3-TABLET-ADAPT ---
- * * ВЕРСИЯ: 6.3 - Адаптация высоты для iPad/Safari
+ * * --- МЕТКА ВЕРСИИ: v6.4-LAYOUT-FIX ---
+ * * ВЕРСИЯ: 6.4 - Финальная адаптация Layout и скролла
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. CSS: .home-layout теперь использует `height: 100dvh`.
- * Это решает проблему вылезания за пределы экрана на iPad,
- * учитывая адресную строку браузера.
- * 2. CSS: У `.graph-area-wrapper` добавлено `min-height: 0`,
- * чтобы flex-контейнер мог сжимать его, когда места мало.
+ * 1. CSS: `.home-layout` теперь `height: 100dvh` (dynamic viewport height)
+ * для корректной работы в Safari с панелями навигации.
+ * 2. JS: Устранен "скачок" хедера при старте. Из `ResizeObserver` убран вызов
+ * `applyHeaderHeight`. Теперь высота хедера меняется ТОЛЬКО при ручном
+ * ресайзе или глобальном ресайзе окна, но не при обновлении контента.
+ * 3. Сохранена вся логика кастомного скролла из v6.2.
  */
 
-console.log('--- HomeView.vue v6.3-TABLET-ADAPT ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.4-LAYOUT-FIX ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -164,6 +165,7 @@ const navPanelWrapperRef = ref(null);
 const yAxisLabels = ref([]); 
 const resizerRef = ref(null);
 
+// --- REFS ДЛЯ КАСТОМНОГО СКРОЛЛА ---
 const customScrollbarTrackRef = ref(null);
 const scrollbarThumbWidth = ref(0);
 const scrollbarThumbX = ref(0);
@@ -316,7 +318,7 @@ const generateVisibleDays = () => {
   rebuildVisibleDays();
 };
 
-/* ===================== РЕСАЙЗЕР ===================== */
+/* ===================== РЕСАЙЗЕР (ВЫСОТА) ===================== */
 const clampHeaderHeight = (rawPx) => {
   const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO;
   return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight);
@@ -383,7 +385,9 @@ const stopResize = () => {
   window.removeEventListener('touchend', stopResize);
 };
 
-/* ===================== КАСТОМНЫЙ СКРОЛЛБАР ===================== */
+/* ==================================================================
+   --- КАСТОМНЫЙ СКРОЛЛБАР (LOGIC) ---
+   ================================================================== */
 
 const updateScrollbarMetrics = () => {
   if (!customScrollbarTrackRef.value) return;
@@ -645,7 +649,8 @@ onMounted(async () => {
   }
 
   resizeObserver = new ResizeObserver(() => {
-    applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
+    // 🔴 ИСПРАВЛЕНИЕ: Удален вызов applyHeaderHeight, вызывавший "скачок"
+    // applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
     applyHeights(clampTimelineHeight(timelineHeightPx.value));
     updateScrollbarMetrics();
   });
@@ -740,8 +745,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <!-- 🔴 КАСТОМНЫЙ СКРОЛЛБАР -->
         <div class="divider-wrapper">
-          
           <div 
             v-if="isScrollActive"
             class="custom-scrollbar-track" 
@@ -755,7 +760,6 @@ onBeforeUnmount(() => {
                @touchstart.stop="onScrollThumbTouchStart"
              ></div>
           </div>
-
           <div class="vertical-resizer" ref="resizerRef"></div>
         </div>
 
