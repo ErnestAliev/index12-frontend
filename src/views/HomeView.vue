@@ -697,25 +697,16 @@ onBeforeUnmount(() => {
     <p>Проверка сессии...</p>
   </div>
   
-  <div v-else-if="!mainStore.user" class="welcome-screen">
-    
-    <div class="welcome-layout-container">
-      
-      <div class="welcome-content">
-        <h1 class="welcome-title">INDEX12</h1>
-        <h2 class="welcome-subtitle">Система управления финансами и активами</h2>
-        <p class="welcome-features">Счета, компании, проекты, контрагенты</p>
-        <a href="https://api.index12.com/auth/google" class="welcome-button">
-          Начать
-        </a>
-      </div>
-
-      <div class="welcome-image-container">
-        <img src="/Серсив.png" alt="INDEX12 Dashboard" class="welcome-image">
-      </div>
-
+  <div v-else-if="!mainStore.user" class="login-screen">
+    <div class="login-box">
+      <h1>Добро пожаловать</h1>
+      <p>Войдите, чтобы продолжить работу с вашим финансовым помощником.</p>
+      <a href="https://api.index12.com/auth/google" class="google-login-button">
+        Войти через Google
+      </a>
     </div>
-    </div>
+  </div>
+  
   <div v-else class="home-layout" @click="closeAllMenus">
     
     <header class="home-header" ref="homeHeaderRef">
@@ -844,8 +835,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* --- Стили для загрузки и нового экрана входа --- */
-.loading-screen {
+.loading-screen, .login-screen {
   width: 100vw;
   height: 100vh;
   display: flex;
@@ -856,134 +846,57 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+.login-box {
+  background: var(--color-background-soft);
+  padding: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.login-box h1 {
+  margin: 0 0 10px 0;
+  color: var(--color-heading-text);
+}
+.login-box p {
+  margin-bottom: 30px;
+  max-width: 300px;
+  opacity: 0.8;
+}
+.google-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  background-color: #fff;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.google-login-button:hover {
+  background-color: #f9f9f9;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.google-login-button svg {
+  margin-right: 12px;
+}
 .spinner {
   width: 40px;
   height: 40px;
   border: 4px solid var(--color-border);
-  border-top-color: var(--color-primary); /* Используем зеленый акцент */
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/*
- * НОВЫЙ МАКЕТ ПРИВЕТСТВИЯ
- */
-.welcome-screen {
-  width: 100vw;
-  height: 100vh;
-  background-color: var(--color-background-soft); /* #282828 */
-  
-  /* 1. Фон теперь просто центрирует наш главный контейнер */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 2rem;
-  box-sizing: border-box;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-
-.welcome-layout-container {
-  /* 2. Это главный контейнер. Он центрируется и имеет лимит ширины */
-  display: flex;
-  align-items: center;  /* <<< ВОТ ЭТО ДЕЛАЕТ РОВНО */
-  justify-content: center;
-  width: 100%;
-  max-width: 1700px; /* <<< ЭТО РЕШАЕТ ПРОБЛЕМУ ШИРОКИХ ЭКРАНОВ */
-  margin: 0 auto;
-}
-
-.welcome-content {
-  /* 3. Текстовый блок. Занимает 1 часть */
-  flex: 1;
-  max-width: 540px;
-  min-width: 380px; /* Чтобы не сжимался слишком сильно */
-  padding-right: 4rem; /* Даем больше "воздуха" */
-  z-index: 10;
-  color: var(--color-text);
-}
-
-.welcome-title {
-  font-size: 4rem; /* 64px */
-  font-weight: 700;
-  color: var(--color-heading);
-  margin-bottom: 1rem;
-}
-
-.welcome-subtitle {
-  font-size: 1.75rem; /* 28px */
-  font-weight: 300;
-  color: var(--color-heading);
-  margin-bottom: 1.5rem;
-  line-height: 1.4;
-}
-
-.welcome-features {
-  font-size: 1.125rem; /* 18px */
-  color: var(--color-text);
-  opacity: 0.8;
-  margin-bottom: 2.5rem;
-}
-
-.welcome-button {
-  display: inline-block;
-  padding: 14px 32px;
-  font-size: 1.125rem; /* 18px */
-  font-weight: 600;
-  color: #fff;
-  background-color: var(--color-primary); /* Зеленый из base.css */
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  text-decoration: none;
-  text-align: center;
-  transition: background-color 0.2s, transform 0.2s;
-}
-.welcome-button:hover {
-  background-color: #28a745;
-  transform: translateY(-2px);
-}
-
-.welcome-image-container {
-  /* 4. Блок картинки. Занимает 1.5 части (больше текста) */
-  flex: 1.5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.welcome-image {
-  max-width: 100%;
-  height: auto;
-  /* Никаких теней и поворотов из CSS. Все ровно. */
-}
-
-/* Адаптивность для нового экрана */
-@media (max-width: 900px) {
-  .welcome-screen {
-    align-items: center; /* Центрируем по вертикали */
-    padding: 1rem;
-  }
-  .welcome-layout-container {
-      flex-direction: column;
-      text-align: center;
-  }
-  .welcome-content {
-    padding-right: 0;
-    max-width: 100%;
-    margin-bottom: 3rem;
-  }
-  .welcome-image-container {
-    /* На мобильных спрячем, как и было */
-    display: none; 
-  }
-}
-
-
-/* --- Стили остального приложения (для залогиненного пользователя) --- */
-/* (ОНИ ОСТАЛИСЬ БЕЗ ИЗМЕНЕНИЙ) */
 .user-profile-widget {
   position: absolute;
   bottom: 0;
@@ -1021,7 +934,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 50%;
   margin-right: 8px;
-  background-color: var(--color-primary); /* Зеленый акцент */
+  background-color: var(--color-accent);
   color: #fff;
   display: flex;
   align-items: center;
@@ -1077,6 +990,7 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
+  /* 🔴 ИСПРАВЛЕНИЕ: Фиксированная стартовая высота 130px */
   height: 130px;
 }
 .header-resizer {
@@ -1170,7 +1084,10 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
   scrollbar-width: none;
   -ms-overflow-style: none;
+  
+  /* Запрещаем навигацию "Назад" */
   overscroll-behavior-x: none;
+  /* Разрешаем только вертикальный скролл */
   touch-action: pan-y;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
