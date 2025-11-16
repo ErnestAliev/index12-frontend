@@ -835,9 +835,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.loading-screen, .login-screen {
+/* --- Стили для загрузки --- */
+.loading-screen {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -846,57 +848,100 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
-.login-box {
-  background: var(--color-background-soft);
-  padding: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-}
-.login-box h1 {
-  margin: 0 0 10px 0;
-  color: var(--color-heading-text);
-}
-.login-box p {
-  margin-bottom: 30px;
-  max-width: 300px;
-  opacity: 0.8;
-}
-.google-login-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 24px;
-  background-color: #fff;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 0.2s, box-shadow 0.2s;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-.google-login-button:hover {
-  background-color: #f9f9f9;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-.google-login-button svg {
-  margin-right: 12px;
-}
 .spinner {
   width: 40px;
   height: 40px;
   border: 4px solid var(--color-border);
-  border-top-color: var(--color-accent);
+  border-top-color: var(--color-primary); /* Используем зеленый акцент */
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* =========================================== */
+/* === СТИЛИ ДЛЯ ЭКРАНА ВХОДА (LOGIN-SCREEN) === */
+/* =========================================== */
+
+/* Этот класс отвечает за полноэкранный контейнер, 
+  который центрирует .login-box 
+*/
+.login-screen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* Для лучшей поддержки мобильных */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+  /* Используем #1a1a1a как фон всего экрана */
+  background-color: var(--color-background); 
+}
+
+/* Это сама карточка входа 
+*/
+.login-box {
+  width: 100%;
+  max-width: 500px; /* Адаптивность: на десктопе макс. 500px, на мобильном 100% */
+  padding: 2.5rem 2rem;
+  
+  /* Используем #282828 (soft) для самой карточки,
+     чтобы она немного выделялась на фоне #1a1a1a */
+  background: var(--color-background-soft);
+  
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* Стили для заголовка 
+*/
+.login-box h1 {
+  color: var(--color-heading);
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 1rem;
+}
+
+/* Стили для параграфа 
+*/
+.login-box p {
+  color: var(--color-text);
+  font-size: 1rem;
+  line-height: 1.5;
+  opacity: 0.8;
+  margin-bottom: 2.5rem; /* Больше отступ перед кнопкой */
+}
+
+/* Стили для кнопки "Войти через Google" 
+*/
+.google-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  background-color: #ffffff; /* Кнопки Google обычно белые */
+  color: #333333; /* Темный текст на белой кнопке */
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.google-login-button:hover {
+  background-color: #f9f9f9;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+
+/* --- Стили остального приложения (для залогиненного пользователя) --- */
 .user-profile-widget {
   position: absolute;
   bottom: 0;
@@ -934,7 +979,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 50%;
   margin-right: 8px;
-  background-color: var(--color-accent);
+  background-color: var(--color-primary); /* Зеленый акцент */
   color: #fff;
   display: flex;
   align-items: center;
