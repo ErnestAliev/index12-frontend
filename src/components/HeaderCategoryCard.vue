@@ -4,17 +4,17 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.7-TRANSFER-VIEW ---
- * * ВЕРСИЯ: 5.7 - Спец-режим для категории "Перевод"
+ * * --- МЕТКА ВЕРСИИ: v5.8-TRANSFER-REDESIGN ---
+ * * ВЕРСИЯ: 5.8 - Редизайн виджета "Перевод"
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX ОШИБКА #2) Добавлена логика определения категории "Перевод".
- * 2. Реализован альтернативный вид отображения: список транзакций
- * (Дата, Сумма, Откуда -> Куда) вместо Доход/Расход.
+ * 1. Полностью изменен HTML шаблон для `isTransferWidget`.
+ * 2. Обновлен формат даты на DD.MM.YY.
+ * 3. Добавлены стили для красного/зеленого отображения сумм и центрирования даты.
  */
 
-console.log('--- HeaderCategoryCard.vue v5.7-TRANSFER-VIEW ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v5.8-TRANSFER-REDESIGN ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -62,27 +62,20 @@ watch(isDropdownOpen, (isOpen) => {
 });
 
 // =================================================================
-// --- 🔴 НОВАЯ ЛОГИКА (ОШИБКА #2): Определение "Перевода" ---
+// --- Логика Переводов ---
 // =================================================================
 
-// 1. Определяем, является ли эта карточка "Переводом"
 const isTransferWidget = computed(() => {
-  // Ключ виджета имеет формат 'cat_{id}'
   const catId = props.widgetKey.replace('cat_', '');
-  // Ищем категорию в сторе (helper добавлен в v5.7)
   const category = mainStore.getCategoryById(catId); 
-  // Проверяем имя (безопасно)
   return category && category.name.toLowerCase() === 'перевод';
 });
 
-// 2. Получаем список переводов (если это виджет перевода)
 const transferList = computed(() => {
   if (!isTransferWidget.value) return [];
-  // Берем готовый список из стора (добавлен в v5.7)
   return mainStore.currentTransfers; 
 });
 
-// 3. Helpers для отображения перевода
 const getAccountName = (accIdOrObj) => {
   if (!accIdOrObj) return '???';
   const id = typeof accIdOrObj === 'object' ? accIdOrObj._id : accIdOrObj;
@@ -90,18 +83,20 @@ const getAccountName = (accIdOrObj) => {
   return acc ? acc.name : 'Удален';
 };
 
+// 🔴 ОБНОВЛЕНО: Формат даты DD.MM.YY
 const formatTransferDate = (dateVal) => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
-  // Формат: 15.11
-  return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const year = d.getFullYear().toString().slice(-2); // Берем последние 2 цифры года
+  return `${day}.${month}.${year}`;
 };
 
-// --- Логика данных для ОБЫЧНЫХ категорий (Доход/Расход) ---
+// --- Логика для обычных категорий ---
 const categoryBreakdown = computed(() => {
   return mainStore.currentCategoryBreakdowns[props.widgetKey] || { income: 0, expense: 0, total: 0 };
 });
-// =================================================================
 </script>
 
 <template>
@@ -138,20 +133,28 @@ const categoryBreakdown = computed(() => {
 
     <div class="category-items-list-scroll">
       
-      <!-- 🔴 ВАРИАНТ 1: СПИСОК ПЕРЕВОДОВ (Если это категория "Перевод") -->
+      <!-- 🔴 ВАРИАНТ 1: СПИСОК ПЕРЕВОДОВ (РЕДИЗАЙН) -->
       <div v-if="isTransferWidget" class="transfer-list">
         <div v-for="t in transferList" :key="t._id" class="transfer-item">
-          <!-- Верхняя строка: Дата и Сумма -->
-          <div class="t-row">
-            <span class="t-date">{{ formatTransferDate(t.date) }}</span>
-            <span class="t-amount">{{ formatNumber(t.amount) }} ₸</span>
-          </div>
-          <!-- Нижняя строка: Откуда -> Куда -->
-          <div class="t-row t-details">
-            <span class="t-acc">{{ getAccountName(t.fromAccountId) }}</span>
+          
+          <!-- Верхняя строка: - Сумма -> + Сумма -->
+          <div class="t-row t-top">
+            <span class="t-amount expense">- {{ formatNumber(t.amount) }} ₸</span>
             <span class="t-arrow">→</span>
-            <span class="t-acc">{{ getAccountName(t.toAccountId) }}</span>
+            <span class="t-amount income">+ {{ formatNumber(t.amount) }} ₸</span>
           </div>
+          
+          <!-- Нижняя строка: Счет (Дата) Счет -->
+          <div class="t-row t-bottom">
+            <span class="t-acc left" :title="getAccountName(t.fromAccountId)">
+              {{ getAccountName(t.fromAccountId) }}
+            </span>
+            <span class="t-date">{{ formatTransferDate(t.date) }}</span>
+            <span class="t-acc right" :title="getAccountName(t.toAccountId)">
+              {{ getAccountName(t.toAccountId) }}
+            </span>
+          </div>
+
         </div>
         
         <div v-if="transferList.length === 0" class="category-item-empty">
@@ -159,7 +162,7 @@ const categoryBreakdown = computed(() => {
         </div>
       </div>
 
-      <!-- 🔴 ВАРИАНТ 2: ОБЫЧНАЯ КАТЕГОРИЯ (Доход/Расход) -->
+      <!-- 🔴 ВАРИАНТ 2: ОБЫЧНАЯ КАТЕГОРИЯ -->
       <div v-else class="category-breakdown-list">
 
         <div class="category-item">
@@ -187,7 +190,7 @@ const categoryBreakdown = computed(() => {
 </template>
 
 <style scoped>
-/* Основные стили карточки (Без изменений) */
+/* Базовые стили (Без изменений) */
 .dashboard-card {
   flex: 1;
   display: flex;
@@ -221,7 +224,6 @@ const categoryBreakdown = computed(() => {
   margin-left: 4px;
 }
 
-/* Скролл-контейнер */
 .category-items-list-scroll {
   flex-grow: 1;
   overflow-y: auto;
@@ -234,7 +236,7 @@ const categoryBreakdown = computed(() => {
   display: none;
 }
 
-/* --- Стили для обычной категории --- */
+/* --- Стили обычной категории --- */
 .category-breakdown-list {
   display: flex;
   flex-direction: column;
@@ -274,51 +276,66 @@ const categoryBreakdown = computed(() => {
   margin-top: 10px;
 }
 
-/* --- 🔴 НОВЫЕ СТИЛИ: Список переводов --- */
+/* --- 🔴 СТИЛИ НОВОГО ДИЗАЙНА ПЕРЕВОДОВ --- */
 .transfer-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px; /* Чуть больше воздуха между переводами */
 }
 .transfer-item {
   display: flex;
   flex-direction: column;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--color-border); /* Разделитель */
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
 }
 .transfer-item:last-child {
   border-bottom: none;
 }
+
 .t-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  line-height: 1.3;
+  line-height: 1.4;
 }
-.t-date {
-  font-size: 0.75em;
-  color: #777;
+
+/* Верхняя строка */
+.t-top {
+  margin-bottom: 2px;
 }
 .t-amount {
-  font-size: 0.9em;
+  font-size: 0.9em; /* Соответствует обычным цифрам в карточках */
   font-weight: 500;
-  color: var(--color-text);
 }
-.t-details {
-  margin-top: 1px;
+.t-amount.expense {
+  color: var(--color-danger); /* Красный */
+}
+.t-amount.income {
+  color: var(--color-primary); /* Зеленый */
+}
+.t-arrow {
+  color: #888; /* Нейтральная стрелка */
+  font-size: 0.8em;
+}
+
+/* Нижняя строка */
+.t-bottom {
+  font-size: 0.8em; /* Чуть меньше основного текста */
+  color: #aaa;
 }
 .t-acc {
-  font-size: 0.8em;
-  color: #aaa;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 45%; /* Чтобы не наезжали друг на друга */
+  max-width: 35%; /* Ограничиваем ширину счетов, чтобы влезла дата */
 }
-.t-arrow {
-  font-size: 0.8em;
-  color: #34c759;
-  padding: 0 4px;
+.t-acc.left { text-align: left; }
+.t-acc.right { text-align: right; }
+
+.t-date {
+  color: #666; /* Чуть темнее счетов для акцента */
+  font-size: 0.9em;
+  white-space: nowrap;
 }
 
 /* --- Dropdown styles (Без изменений) --- */
@@ -394,9 +411,8 @@ const categoryBreakdown = computed(() => {
     font-size: 0.8em;
     margin-bottom: 0.2rem;
   }
-  .category-item span:first-child {
-    padding-right: 5px;
-  }
+  /* Адаптация нового виджета под планшет */
+  .t-amount { font-size: 0.85em; }
+  .t-bottom { font-size: 0.75em; }
 }
 </style>
-
