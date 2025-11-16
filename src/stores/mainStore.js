@@ -9,6 +9,10 @@
  * 2. Эта строка была случайно удалена в v5.3 при исправлении
  * ошибки `projection`. Ее отсутствие приводило к тому, что `displayCache`
  * не обновлялся при `forceRefreshAll`, и чипы пропадали (Bug 2, Bug 3).
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
+ * 1. (FIX-BUG-4) `createTransfer` теперь вызывает `getFirstFreeCellIndex`
+ * для предотвращения перезаписи ячеек (Ошибка #1).
  */
 
 import { defineStore } from 'pinia';
@@ -1118,21 +1122,27 @@ export const useMainStore = defineStore('mainStore', () => {
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: createTransfer (v4.7) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: createTransfer (v4.7 + v5.5) ---
   // =================================================================
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
-      const cellIndex = 0; // (server.js (v2.8) сам найдет cellIndex)
+
+      // 🔴🔴🔴 ИСПРАВЛЕНИЕ (ОШИБКА #1) 🔴🔴🔴
+      // Бэкенд (POST /api/transfers) НЕ ищет ячейку сам.
+      // Мы ДОЛЖНЫ найти ее здесь, на клиенте.
+      const cellIndex = await getFirstFreeCellIndex(dateKey); // <-- Было: const cellIndex = 0;
+      // 🔴🔴🔴 КОНЕЦ ИСПРАВЛЕНИЯ 🔴🔴🔴
+      
       const transferCategory = await _getOrCreateTransferCategory();
       
-      console.log(`[ЖУРНАЛ] createTransfer: ➡️ Отправляю POST /api/transfers...`, transferData);
+      console.log(`[ЖУРНАЛ] createTransfer: ➡️ Отправляю POST /api/transfers (в ячейку ${cellIndex})...`, transferData);
       
       const response = await axios.post(`${API_BASE_URL}/transfers`, {
         ...transferData,
         dateKey: dateKey, 
-        cellIndex: cellIndex,
+        cellIndex: cellIndex, // <-- Теперь здесь правильный индекс
         categoryId: transferData.categoryId || transferCategory
       });
       
