@@ -1,14 +1,17 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v6.14-SWAP-LOGIC ---
- * * ВЕРСИЯ: 6.14 - Логика обмена местами (Swap) и фиксы
+ * * --- МЕТКА ВЕРСИИ: v7.0-DATE-SWAP-FIX ---
+ * * ВЕРСИЯ: 7.0 - Исправление даты и логика обмена (Swap)
  * ДАТА: 2025-11-16
  *
- * ИСПРАВЛЕНИЯ:
- * 1. (LOGIC) `moveOperation`:
- * - Внутри дня: Если целевая ячейка занята -> меняем чипы местами (SWAP).
- * - Между днями: Если целевая ячейка занята -> сдвигаем "хозяина" на свободное место.
- * 2. (FIX) `moved.date` обновляется корректно при D&D.
- * 3. (LOGIC) Сохранена логика поиска свободной ячейки при создании/редактировании.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX ДАТЫ) В `moveOperation` при перемещении теперь обновляется не только
+ * `dateKey`, но и объект `date`. Теперь в попапе отображается правильное число.
+ * 2. (LOGIC SWAP) В `moveOperation`:
+ * - Если ячейка занята внутри дня -> Чипы меняются местами.
+ * - Если ячейка занята в другом дне -> "Старожил" сдвигается на свободное место.
+ * 3. (LOGIC EDIT) В `updateTransfer` и `updateOperation`:
+ * - При смене даты чип ищет `getFirstFreeCellIndex`, чтобы не накладываться.
+ * 4. (RESTORE) Восстановлены все функции API и автообновления.
  */
 
 import { defineStore } from 'pinia';
@@ -34,7 +37,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v6.14-SWAP-LOGIC ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v7.0-DATE-SWAP-FIX ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -652,7 +655,6 @@ export const useMainStore = defineStore('mainStore', () => {
     };
   }
 
-  // 🔴 ВОССТАНОВЛЕННАЯ ФУНКЦИЯ: fetchAllEntities
   async function fetchAllEntities(){
     try{
       const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
@@ -966,33 +968,30 @@ export const useMainStore = defineStore('mainStore', () => {
 
     // 3. Логика перемещения
     if (oldDateKey === newDateKey) {
-      // === ВНУТРИ ОДНОГО ДНЯ ===
-      // Ищем, занят ли целевой слот
+      // === ВНУТРИ ОДНОГО ДНЯ (Swap) ===
       const dayOps = displayCache.value[newDateKey];
       const sourceIndex = operation.cellIndex;
+      // Ищем, кто занимает целевой слот (кроме самого себя)
       const targetOp = dayOps.find(op => op.cellIndex === targetIndex && op._id !== operation._id);
 
       if (targetOp) {
           console.log(`[moveOperation] Swap внутри дня: ${operation._id} <-> ${targetOp._id}`);
-          // Обмен местами (Swap)
-          targetOp.cellIndex = sourceIndex; // Старый житель улетает на место пришедшего
-          operation.cellIndex = targetIndex; // Пришедший занимает место
+          // Обмен местами
+          targetOp.cellIndex = sourceIndex; 
+          operation.cellIndex = targetIndex;
           
-          // Оптимистичное обновление UI
           displayCache.value = { ...displayCache.value };
           
-          // API вызовы для обоих
           try {
              await Promise.all([
                  axios.put(`${API_BASE_URL}/events/${operation._id}`, { cellIndex: targetIndex }),
                  axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: sourceIndex })
              ]);
           } catch(e) {
-              console.error("Ошибка Swap:", e);
               await refreshDay(newDateKey);
           }
       } else {
-          // Слот свободен - просто перемещаем
+          // Слот свободен
           operation.cellIndex = targetIndex;
           displayCache.value = { ...displayCache.value };
           try {
@@ -1004,7 +1003,7 @@ export const useMainStore = defineStore('mainStore', () => {
       
     } else {
       // === МЕЖДУ ДНЯМИ ===
-      // Удаляем из старого дня (оптимистично)
+      // Удаляем из старого дня
       const oldOps = displayCache.value[oldDateKey] || [];
       displayCache.value[oldDateKey] = oldOps.filter(o => o._id !== operation._id);
 
@@ -1014,11 +1013,10 @@ export const useMainStore = defineStore('mainStore', () => {
       
       if (targetOp) {
           console.log(`[moveOperation] Коллизия в новом дне. Сдвигаю ${targetOp._id} на свободное место.`);
-          // Находим свободное место для "старожила"
+          // Ищем свободное место для "старожила"
           const freeIndex = await getFirstFreeCellIndex(newDateKey);
           targetOp.cellIndex = freeIndex;
           
-          // API: сдвигаем старожила
           try {
             await axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: freeIndex });
           } catch(e) {
@@ -1031,30 +1029,26 @@ export const useMainStore = defineStore('mainStore', () => {
           ...operation, 
           cellIndex: targetIndex, 
           dateKey: newDateKey,
-          date: _parseDateKey(newDateKey) 
+          date: _parseDateKey(newDateKey) // 🔴 ФИКС ДАТЫ
       };
       
-      // Вставляем в массив нового дня
       if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
       displayCache.value[newDateKey].push(moved);
       displayCache.value[newDateKey].sort((a,b) => a.cellIndex - b.cellIndex);
       
-      displayCache.value = { ...displayCache.value }; // Триггер реактивности
+      displayCache.value = { ...displayCache.value };
 
-      // API: перемещаем новичка
       try {
           await axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
               dateKey: newDateKey, 
               cellIndex: targetIndex 
           });
       } catch(e) {
-          console.error("Ошибка перемещения меж дней:", e);
           await refreshDay(oldDateKey);
           await refreshDay(newDateKey);
       }
     }
 
-    // Обновляем проекцию
     if (projection.value.mode) {
       await updateProjectionFromCalculationData(
         projection.value.mode, 
@@ -1091,12 +1085,12 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // --- 🔴 ИСПРАВЛЕНИЕ (FIX #2): Обновление с поиском свободной ячейки (Переводы) ---
   async function updateTransfer(transferId, transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
       
-      // Находим старую операцию для сравнения дат
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
       
       let newCellIndex;
@@ -1125,7 +1119,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   // --- 🔴 ИСПРАВЛЕНИЕ (FIX #2): Обновление с поиском свободной ячейки (Операции) ---
-  // (Этой функции раньше не было в экспорте, добавлена)
   async function updateOperation(opId, opData) {
     try {
       const finalDate = new Date(opData.date);
@@ -1137,7 +1130,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
       } else {
-        // Дата изменилась -> ищем свободное место
         console.log(`[updateOperation] Дата изменена на ${newDateKey}. Ищу свободную ячейку...`);
         newCellIndex = await getFirstFreeCellIndex(newDateKey);
       }
