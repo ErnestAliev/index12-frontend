@@ -281,7 +281,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
   /* Добавлено: подъем на 7px вверх */
-  transform: translateY(-7px);
+  transform: translateY(-5px);
 }
 .delete-btn svg {
   stroke: #999; /* Базовый цвет */
@@ -349,3 +349,4 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
