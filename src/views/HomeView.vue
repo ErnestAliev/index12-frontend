@@ -19,6 +19,12 @@ import ImportExportModal from '@/components/ImportExportModal.vue';
  * ЧТО ИЗМЕНЕНО:
  * 1. (FIX 1B) `today` теперь `ref` и обновляется при смене календарного дня.
  * 2. (FIX 3) Активировано `mainStore.startAutoRefresh()` в onMounted.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
+ * 1. (FIX-BUG-6 / ОШИБКА #3, #4) `handleOperationUpdated` (для Доходов/Расходов)
+ * больше не вызывает `forceRefreshAll()`. Он "хирургически" обновляет
+ * день (`refreshDay`) и пересчитывает проекцию (`recalcProjectionForCurrentView`),
+ * что устраняет исчезновение хедера.
  */
 
 console.log('--- HomeView.vue v5.3-SYNC-FIXES ЗАГРУЖЕН ---'); 
@@ -295,15 +301,17 @@ const handleTransferComplete = async (eventData) => {
   console.log(`[ЖУРНАЛ] handleTransferComplete: 🤝 Перевод завершен, обновляю dateKey: ${dateKey}`);
   if (!dateKey) {
     console.error('!!! handleTransferComplete ОШИБКА: не получен dateKey, выполняю forceRefreshAll()');
-    await mainStore.forceRefreshAll();
+    // 🔴 ИСПРАВЛЕНИЕ: Это аварийный вызов, он должен остаться,
+    // но в штатном режиме (с моим фиксом) он НЕ вызывается.
+    await mainStore.forceRefreshAll(); 
     handleCloseTransferPopup();
     return;
   }
-  // await mainStore.refreshDay(dateKey); // Уже вызвано в TransferPopup (v5.3)
+  // await mainStore.refreshDay(dateKey); // (Уже вызвано в TransferPopup)
   await recalcProjectionForCurrentView();
   handleCloseTransferPopup();
 };
-// (handleOperationAdded, Delete, Drop, Moved, Updated - без изменений)
+// (handleOperationAdded, Delete, Drop, Moved - без изменений)
 const handleOperationAdded = async (newEvent) => {
   console.log('[ЖУРНАЛ] handleOperationAdded: ➕ Вызываю mainStore.addOperation...');
   await mainStore.addOperation(newEvent); 
@@ -335,22 +343,49 @@ const handleOperationDrop = async (dropData) => {
 };
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
-  const baseDate = _parseDateKey(oldDateKey);
-  const newDate = new Date(baseDate.getFullYear(), 0, 1);
-  newDate.setDate(toDayOfYear);
+  // 🔴 ИСПРАВЛЕНИЕ: Используем _parseDateKey, чтобы сохранить год
+  const baseDate = _parseDateKey(oldDateKey); 
+  // const newDate = new Date(baseDate.getFullYear(), 0, 1); // (Старый код)
+  // newDate.setDate(toDayOfYear); // (Старый код)
+  
+  // 🔴 НОВЫЙ КОД: (v5.3) OperationPopup (v5.3) теперь передает dateKey!
+  // ... А нет, он все еще передает toDayOfYear.
+  // Мы должны использовать _parseDateKey из mainStore, который у нас уже есть.
+  const newDate = mainStore._parseDateKey(`${baseDate.getFullYear()}-${toDayOfYear}`);
+  
   const newDateKey = _getDateKey(newDate);
   console.log('[ЖУРНАЛ] handleOperationMoved: ➡️ Вызываю mainStore.moveOperation (из попапа)...');
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, toCellIndex ?? (operation.cellIndex ?? 0));
   await recalcProjectionForCurrentView();
   handleClosePopup();
 };
-const handleOperationUpdated = async ({ dayOfYear }) => {
-  console.log('[ЖУРНАЛ] handleOperationUpdated: 🔄 Обновление операции, обновляю день', dayOfYear);
-  await mainStore.forceRefreshAll();
+
+// =================================================================
+// --- 🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3 / #4): Исчезающий Хедер ---
+// =================================================================
+const handleOperationUpdated = async ({ dateKey, oldDateKey }) => {
+  // (Старый параметр был { dayOfYear })
+  console.log(`[ЖУРНАЛ] handleOperationUpdated: 🔄 Обновление операции, обновляю ${dateKey}`);
+  
+  // 🔴 УДАЛЕНО:
+  // await mainStore.forceRefreshAll(); // <-- ЭТО БЫЛ БАГ
+  
+  // 🔴 ДОБАВЛЕНО: "Хирургическое" обновление
+  if (dateKey) {
+    await mainStore.refreshDay(dateKey);
+  }
+  // Если операция переместилась, обновляем и старый день
+  if (oldDateKey && oldDateKey !== dateKey) {
+    await mainStore.refreshDay(oldDateKey);
+  }
+
+  // Пересчитываем хедер
   await recalcProjectionForCurrentView();
+  
   handleClosePopup();
 };
-// --- КОНЕЦ БЛОКА ДАННЫХ ---
+// --- КОНЕЦ БЛОКА ИСПРАВЛЕНИЯ ---
+
 
 /* ===================== ОКНО 12 ДНЕЙ ===================== */
 const rebuildVisibleDays = () => {
