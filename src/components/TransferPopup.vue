@@ -23,6 +23,11 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
  * 2. (FIX-BUG-2) Исправлена опечатка: `toAccountId: fromAccountId.value` заменено на `toAccountId: toAccountId.value`.
  * 3. (FIX-BUG-2) Добавлена недостающая логика обновления mainStore (refreshDay, forceRefreshAll и т.д.)
  * в `handleSave` для предотвращения наложения операций.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
+ * 1. (FIX-BUG-1 / ОШИБКА #1) `finalDate` теперь использует 12:00, чтобы избежать сдвига часовых поясов.
+ * 2. (FIX-BUG-3 / ОШИБКА #2) `handleSave` теперь немедленно закрывает попап,
+ * а вся синхронизация (forceRefreshAll и т.д.) запускается в фоне.
  */
 
 const mainStore = useMainStore();
@@ -338,6 +343,45 @@ const _getDateKey = (date) => {
 // =================================================================
 // --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v4.4 + Наши фиксы) ---
 // =================================================================
+
+// 🔴 НОВЫЙ HELPER (ОШИБКА #2)
+// Эта функция запускает синхронизацию в фоне, не блокируя UI
+const syncState = async (dateKey, oldDateKey = null) => {
+  try {
+    console.log('🔄 TransferPopup (async): Принудительно обновляем кеши...');
+    
+    // 1. Обновляем затронутые дни
+    await mainStore.refreshDay(dateKey);
+    if (oldDateKey && oldDateKey !== dateKey) {
+      await mainStore.refreshDay(oldDateKey);
+    }
+    
+    // 2. Обновляем балансы
+    await mainStore.fetchAllEntities();
+    
+    // 3. Принудительно обновляем реактивность
+    mainStore.displayCache = { ...mainStore.displayCache };
+    mainStore.calculationCache = { ...mainStore.calculationCache };
+    
+    // 4. Пересчитываем проекцию
+    if (mainStore.projection?.mode) {
+      await mainStore.updateProjectionFromCalculationData(
+        mainStore.projection.mode,
+        new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear)
+      );
+    }
+    
+    // 5. Вызываем forceRefreshAll для синхронизации других клиентов
+    await mainStore.forceRefreshAll();
+
+    console.log('✅ TransferPopup (async): Cинхронизация завершена');
+
+  } catch (e) {
+    console.error('❌ Ошибка фоновой синхронизации TransferPopup:', e);
+  }
+};
+
+
 const handleSave = async () => {
   errorMessage.value = '';
   
@@ -359,10 +403,9 @@ const handleSave = async () => {
   }
 
   try {
-    // 🔴 ИСПРАВЛЕНИЕ (BUG 1): Используем локальную дату, а не UTC.
-    // Helper `_getDateKey` в mainStore ожидает локальную дату.
+    // 🔴 ИСПРАВЛЕНИЕ (ОШИБКА #1): Используем 12:00 (полдень)
     const [year, month, day] = editableDate.value.split('-').map(Number);
-    const finalDate = new Date(year, month - 1, day);
+    const finalDate = new Date(year, month - 1, day, 12, 0, 0); // 12:00
     
     // (Этот `_getDateKey` - локальный, из v4.2)
     const dateKey = _getDateKey(finalDate);
@@ -371,7 +414,6 @@ const handleSave = async () => {
         date: finalDate,
         amount: amountParsed,
         fromAccountId: fromAccountId.value,
-        // 🔴 ИСПРАВЛЕНИЕ (BUG 2): Было fromAccountId.value
         toAccountId: toAccountId.value, 
         fromCompanyId: fromCompanyId.value,
         toCompanyId: toCompanyId.value,
@@ -379,58 +421,29 @@ const handleSave = async () => {
     };
 
     let savedOperation;
-    // (v4.2) Нам нужен `oldDateKey` для обновления UI
     const oldDateKey = props.transferToEdit ? props.transferToEdit.dateKey : null;
 
     if (!props.transferToEdit || isCloneMode.value) {
+      // --- 🔴 ОШИБКА #2: Ждем ТОЛЬКО CОЗДАНИЕ ---
       savedOperation = await mainStore.createTransfer(transferPayload);
     } else {
+      // --- 🔴 ОШИБКА #2: Ждем ТОЛЬКО ОБНОВЛЕНИЕ ---
       savedOperation = await mainStore.updateTransfer(
         props.transferToEdit._id, 
         transferPayload
       );
     }
-
-    // --- 🔴 ИСПРАВЛЕНИЕ (BUG 2): Добавлена логика обновления/синхронизации ---
     
-    console.log('🔄 TransferPopup: Принудительно обновляем кеши...');
-    
-    // 1. Обновляем затронутые дни
-    await mainStore.refreshDay(dateKey);
-    // Если дата изменилась, обновляем и старый день
-    if (oldDateKey && oldDateKey !== dateKey) {
-      await mainStore.refreshDay(oldDateKey);
-    }
-    
-    // 2. Обновляем балансы
-    await mainStore.fetchAllEntities();
-    
-    // 3. Принудительно обновляем реактивность
-    mainStore.displayCache = { ...mainStore.displayCache };
-    mainStore.calculationCache = { ...mainStore.calculationCache };
-    
-    // 4. Пересчитываем проекцию
-    if (mainStore.projection?.mode) {
-      await mainStore.updateProjectionFromCalculationData(
-        mainStore.projection.mode,
-        new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear)
-      );
-    }
-    
-    // 5. Вызываем `forceRefreshAll` для синхронизации других клиентов
-    //    (Так как `startAutoRefresh` теперь вызывает `forceRefreshAll`, 
-    //    этот шаг необязателен, но он ускоряет синхронизацию)
-    await mainStore.forceRefreshAll();
-
-    console.log('✅ TransferPopup: Перевод создан и кеши обновлены');
-    
-    // 6. Уведомляем HomeView и закрываем
+    // --- 🔴 ОШИБКА #2: НЕМЕДЛЕННО ЗАКРЫВАЕМ ПОПАП ---
+    console.log('✅ TransferPopup: Перевод сохранен. Закрываю попап...');
     emit('transfer-complete', { 
       dateKey: savedOperation?.dateKey || dateKey,
       operation: savedOperation 
     });
     emit('close');
-    // --- КОНЕЦ ИСПРАВЛЕНИЯ (BUG 2) ---
+
+    // --- 🔴 ОШИБКА #2: ЗАПУСКАЕМ СИНХРОНИЗАЦИЮ В ФОНЕ ---
+    syncState(dateKey, oldDateKey); // Вызов БЕЗ await
 
   } catch (error) { 
     console.error('❌ Ошибка при сохранении перевода:', error);
