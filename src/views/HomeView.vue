@@ -876,9 +876,9 @@ onBeforeUnmount(() => {
 }
 
 .welcome-content {
-  flex: 1;
- 
- 
+  flex: 1; /* Текст занимает 1 часть */
+  max-width: 540px;
+  padding-right: 2rem;
   z-index: 10;
 }
 
@@ -924,22 +924,19 @@ onBeforeUnmount(() => {
 }
 
 .welcome-image-container {
-  flex: 1.2;
+  flex: 1.5; /* Изображение занимает 1.5 части (стало больше) */
   display: flex;
   align-items: center;
   justify-content: center;
-  perspective: 1500px;
-  hight: 90%;
 }
 
 .welcome-image {
   max-width: 100%;
   height: auto;
-  border-radius: 8px;
-  
-  /* Эффект из вашего скриншота */
-  transform: rotateY(-10deg) rotateX(5deg) rotateZ(-3deg) scale(1.1);
-  opacity: 0.9;
+  /* УБРАНЫ: transform, box-shadow, perspective, opacity.
+    Теперь изображение отображается "как есть", 
+    используя вашу тень из PNG.
+  */
 }
 
 /* Адаптивность для нового экрана */
