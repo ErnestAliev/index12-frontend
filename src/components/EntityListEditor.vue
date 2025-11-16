@@ -100,9 +100,10 @@ const cancelDelete = () => {
     
     <div class="popup-content" :class="{ 'wide': isContractorEditor }">
       <h3>{{ title }}</h3>
-      <!-- Добавляем описание для всех ListEditor --><p class="editor-hint">Перетащите для сортировки. Нажмите на корзину для удаления.</p>
+      <p class="editor-hint">Перетащите для сортировки. Нажмите на корзину для удаления.</p>
       
-      <!-- Заголовки --><div v-if="isAccountEditor" class="editor-header account-header">
+      <!-- Заголовки -->
+      <div v-if="isAccountEditor" class="editor-header account-header">
         <span class="header-name">Название счета</span>
         <span class="header-company">Компания</span>
         <span class="header-balance">Нач. баланс</span>
@@ -151,7 +152,9 @@ const cancelDelete = () => {
                 </select>
               </template>
               
-              <!-- КНОПКА УДАЛЕНИЯ --><button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
+              <!-- КНОПКА УДАЛЕНИЯ -->
+              <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
+                <!-- Используем явные цвета stroke и fill -->
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                    <polyline points="3 6 5 6 21 6"></polyline>
                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -168,10 +171,12 @@ const cancelDelete = () => {
       </div>
     </div>
 
-    <!-- ВСТРОЕННЫЙ МОДАЛ ПОДТВЕРЖДЕНИЯ + ПРОГРЕСС --><div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete">
+    <!-- ВСТРОЕННЫЙ МОДАЛ ПОДТВЕРЖДЕНИЯ + ПРОГРЕСС -->
+    <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         
-        <!-- Состояние загрузки (Прогресс бар) --><div v-if="isDeleting" class="deleting-state">
+        <!-- Состояние загрузки (Прогресс бар) -->
+        <div v-if="isDeleting" class="deleting-state">
           <h4>Удаление...</h4>
           <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
           <div class="progress-container">
@@ -179,7 +184,8 @@ const cancelDelete = () => {
           </div>
         </div>
 
-        <!-- Состояние выбора --><div v-else>
+        <!-- Состояние выбора -->
+        <div v-else>
           <h4>Удаление сущности</h4>
           <p>
             Вы собираетесь удалить <strong>«{{ itemToDelete?.name }}»</strong>.<br>
@@ -233,7 +239,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-submit-edit { background-color: #222222; }
 .btn-submit-edit:hover { background-color: #444444; }
 
-.editor-hint { font-size: 0.9em; color: #666; text-align: left; margin-top: -10px; margin-bottom: 1rem; } /* Выравнивание по левому краю */
+.editor-hint { font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 1rem; }
 
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; }
 .header-name { flex-grow: 1; }
@@ -241,7 +247,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .account-header .header-balance { flex-shrink: 0; width: 120px; text-align: right; padding-right: 14px; }
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
-.header-trash { width: 48px; flex-shrink: 0; } /* Увеличил ширину для правильного отступа */
+.header-trash { width: 36px; flex-shrink: 0; }
 
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
 .list-editor::-webkit-scrollbar { display: none; }
@@ -268,13 +274,14 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 /* КНОПКА УДАЛЕНИЯ */
 .delete-btn {
-  width: 100%; /* Ширина кнопки как высота инпута */
   height: 48px; 
   flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
   border-radius: 8px; 
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
+  /* Добавлено: подъем на 7px вверх */
+  transform: translateY(-7px);
 }
 .delete-btn svg {
   stroke: #999; /* Базовый цвет */
@@ -342,4 +349,3 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
-
