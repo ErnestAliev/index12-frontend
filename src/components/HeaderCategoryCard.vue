@@ -1,10 +1,10 @@
 <script setup>
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, nextTick } from 'vue'; // Добавил nextTick
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderCategoryCard.vue v3.2-GAP-FIX ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v3.4-FULL-FIX ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -19,17 +19,20 @@ const isDropdownOpen = ref(false);
 const cardRef = ref(null);
 const searchQuery = ref('');
 
+// --- Состояние фильтров ---
 const isFilterOpen = ref(false);
 const filterBtnRef = ref(null);
 const filterDropdownRef = ref(null);
 const sortMode = ref('default'); 
 const filterMode = ref('all');
 
+// --- Прогноз (Этого не хватало!) ---
 const showFutureBalance = computed({
   get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
   set: (val) => mainStore.setForecastState(props.widgetKey, val)
 });
 
+// --- Логика выбора виджета ---
 const filteredWidgets = computed(() => {
   if (!searchQuery.value) return mainStore.allWidgets;
   const query = searchQuery.value.toLowerCase();
@@ -39,14 +42,19 @@ const filteredWidgets = computed(() => {
 const handleSelect = (newWidgetKey) => {
   if (mainStore.dashboardLayout.includes(newWidgetKey) && newWidgetKey !== props.widgetKey) return;
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  isDropdownOpen.value = false;
+  // Используем nextTick для плавного закрытия, как в других карточках
+  nextTick(() => { isDropdownOpen.value = false; });
 };
 
+// --- Клик снаружи ---
 const handleClickOutside = (event) => {
+  // Закрываем выбор виджета
   if (isDropdownOpen.value && cardRef.value && !cardRef.value.contains(event.target)) {
     isDropdownOpen.value = false;
   }
-  if (isFilterOpen.value && filterDropdownRef.value && !filterDropdownRef.value.contains(event.target) && 
+  // Закрываем фильтр
+  if (isFilterOpen.value && 
+      filterDropdownRef.value && !filterDropdownRef.value.contains(event.target) && 
       filterBtnRef.value && !filterBtnRef.value.contains(event.target)) {
     isFilterOpen.value = false;
   }
@@ -61,19 +69,31 @@ watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
   }
 });
 
+// --- Данные ---
+
+// Определяем, это виджет "Перевод" или обычная категория
 const isTransferWidget = computed(() => {
   const catId = props.widgetKey.replace('cat_', '');
   const category = mainStore.getCategoryById(catId); 
   return category && category.name.toLowerCase() === 'перевод';
 });
 
+// Список переводов (для виджета "Перевод")
 const transferList = computed(() => {
   if (!isTransferWidget.value) return [];
+  
+  // Выбираем источник данных в зависимости от режима прогноза
   let list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
+  
   if (!list) return [];
   list = [...list];
+
+  // Сортировка
   if (sortMode.value === 'desc') list.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   else if (sortMode.value === 'asc') list.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
+  
+  // По умолчанию сортировка в mainStore уже по дате (от новых к старым)
+  
   return list;
 });
 
@@ -93,15 +113,20 @@ const formatTransferDate = (dateVal) => {
   return `${day}.${month}.${year}`;
 };
 
+// Сводка по категории (Доход/Расход/Итого)
 const categoryBreakdown = computed(() => {
   const source = showFutureBalance.value ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
+  // Если данных нет, возвращаем нули, чтобы не падало
   const data = source[props.widgetKey] || { income: 0, expense: 0, total: 0 };
   return data;
 });
 
+// --- Actions ---
 const setSortMode = (mode) => { sortMode.value = mode; };
-const setFilterMode = (mode) => { filterMode.value = mode; };
+const setFilterMode = (mode) => { filterMode.value = mode; }; // Для категорий (скрыть нули)
+
 const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
+
 const handleAdd = () => { emit('add'); };
 const handleEdit = () => { emit('edit'); };
 </script>
@@ -112,12 +137,25 @@ const handleEdit = () => { emit('edit'); };
     <div class="card-title-container">
       <div class="card-title" @click.stop="toggleDropdown">
         {{ title }} <span>▽</span>
+        
         <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
-          <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." @click.stop />
+          <input 
+            type="text" 
+            class="widget-search-input" 
+            v-model="searchQuery" 
+            placeholder="Поиск..." 
+            @click.stop 
+          />
           <ul>
-            <li v-for="widget in filteredWidgets" :key="widget.key"
-              :class="{ 'active': widget.key === props.widgetKey, 'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey }"
-              @click.stop="handleSelect(widget.key)">
+            <li 
+              v-for="widget in filteredWidgets" 
+              :key="widget.key"
+              :class="{ 
+                'active': widget.key === props.widgetKey, 
+                'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey 
+              }"
+              @click.stop="handleSelect(widget.key)"
+            >
               {{ widget.name }}
             </li>
           </ul>
@@ -167,6 +205,8 @@ const handleEdit = () => { emit('edit'); };
 
       <!-- FILTER DROPDOWN -->
       <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
+        
+        <!-- Опции для "Переводов" -->
         <div v-if="isTransferWidget" class="filter-group">
           <div class="filter-group-title">Сортировка</div>
           <ul>
@@ -175,18 +215,22 @@ const handleEdit = () => { emit('edit'); };
             <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')">Сумма (возр.)</li>
           </ul>
         </div>
+
+        <!-- Опции для обычных категорий -->
         <div v-else class="filter-group">
            <div class="filter-group-title">Отображение</div>
            <ul>
              <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все строки</li>
-             <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нулевые</li>
+             <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нули</li>
            </ul>
         </div>
+
       </div>
     </div>
 
     <div class="category-items-list-scroll">
-      <!-- ПЕРЕВОДЫ -->
+      
+      <!-- СПИСОК ПЕРЕВОДОВ -->
       <div v-if="isTransferWidget" class="transfer-list">
         <div v-for="t in transferList" :key="t._id" class="transfer-item">
           <div class="t-row t-top">
@@ -205,8 +249,9 @@ const handleEdit = () => { emit('edit'); };
         </div>
       </div>
 
-      <!-- КАТЕГОРИЯ -->
+      <!-- СВОДКА ПО КАТЕГОРИИ -->
       <div v-else class="category-breakdown-list">
+        
         <div class="category-item" v-if="filterMode === 'all' || categoryBreakdown.income !== 0">
           <span>Доходы</span>
           <span class="income">₸ {{ formatNumber(categoryBreakdown.income) }}</span>
@@ -237,12 +282,19 @@ const handleEdit = () => { emit('edit'); };
   position: relative; min-height: 0;
 }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
-.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-.card-title { font-size: 0.85em; color: #aaa; transition: color 0.2s; cursor: pointer; position: relative; z-index: 101; }
+
+.card-title-container { 
+  display: flex; justify-content: space-between; align-items: center; 
+  height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; 
+}
+.card-title { 
+  font-size: 0.85em; color: #aaa; transition: color 0.2s; cursor: pointer; 
+  position: relative; z-index: 101; 
+}
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- СТИЛИ КНОПОК --- */
+/* --- СТИЛИ КНОПОК (ТЕМНЫЕ) --- */
 .card-actions {
   display: flex;
   gap: 6px; 
@@ -254,7 +306,10 @@ const handleEdit = () => { emit('edit'); };
   height: 18px;
   border: 1px solid transparent; 
   border-radius: 4px; 
-  background-color: #1a1a1a; 
+  
+  /* Темный фон #3D3B3B */
+  background-color: #3D3B3B; 
+  
   display: flex;
   align-items: center;
   justify-content: center;
@@ -265,11 +320,13 @@ const handleEdit = () => { emit('edit'); };
 }
 
 .action-square-btn:hover {
-  background-color: #333;
+  /* Светлее при наведении */
+  background-color: #555555;
   color: #ccc;
 }
 
 .action-square-btn.active {
+  /* Зеленый активный */
   background-color: #34c759;
   color: #fff;
   border-color: transparent;
@@ -281,18 +338,36 @@ const handleEdit = () => { emit('edit'); };
   display: block;
   object-fit: contain; 
 }
-/* ----------------------------------------------------- */
+/* ----------------------------------- */
 
-.filter-dropdown { position: absolute; top: 35px; right: 0; width: 160px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; }
-.filter-group-title { font-size: 0.75em; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 6px; padding-left: 2px; }
+/* Выпадашка фильтров */
+.filter-dropdown { 
+  position: absolute; top: 35px; right: 0; width: 160px; 
+  background-color: #f4f4f4; border-radius: 8px; 
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; 
+  padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; 
+}
+.filter-group-title { 
+  font-size: 0.75em; font-weight: 600; color: #888; 
+  text-transform: uppercase; margin-bottom: 6px; padding-left: 2px; 
+}
 .filter-dropdown ul { list-style: none; margin: 0; padding: 0; }
-.filter-dropdown li { padding: 8px 10px; border-radius: 6px; font-size: 0.85em; color: #333; cursor: pointer; font-weight: 500 !important; transition: background-color 0.2s; }
+.filter-dropdown li { 
+  padding: 8px 10px; border-radius: 6px; font-size: 0.85em; color: #333; 
+  cursor: pointer; font-weight: 500 !important; transition: background-color 0.2s; 
+}
 .filter-dropdown li:hover { background-color: #e9e9e9; }
 .filter-dropdown li.active { color: #007AFF; background-color: #e0e0e0; }
 
-.category-items-list-scroll { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; min-height: 0; }
+
+/* Список элементов (скролл) */
+.category-items-list-scroll { 
+  flex-grow: 1; overflow-y: auto; padding-right: 5px; 
+  scrollbar-width: none; -ms-overflow-style: none; min-height: 0; 
+}
 .category-items-list-scroll::-webkit-scrollbar { display: none; }
 
+/* Сводка категории */
 .category-breakdown-list { display: flex; flex-direction: column; flex-grow: 1; gap: 0.25rem; }
 .category-item { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 0.25rem; }
 .category-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
@@ -302,6 +377,7 @@ const handleEdit = () => { emit('edit'); };
 .category-item-total { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--color-border); }
 .category-item-empty { font-size: 0.9em; color: #666; text-align: center; margin-top: 10px; }
 
+/* Список переводов */
 .transfer-list { display: flex; flex-direction: column; gap: 10px; }
 .transfer-item { display: flex; flex-direction: column; padding-bottom: 8px; border-bottom: 1px solid var(--color-border); }
 .transfer-item:last-child { border-bottom: none; }
@@ -317,6 +393,7 @@ const handleEdit = () => { emit('edit'); };
 .t-acc.right { text-align: right; }
 .t-date { color: #666; font-size: 0.9em; white-space: nowrap; }
 
+/* Выбор виджета */
 .widget-dropdown { position: absolute; top: 35px; left: 0; width: 220px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; }
 .widget-search-input { flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.9em; box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333; }
 .widget-search-input:focus { outline: none; border-color: #007AFF; }
@@ -334,7 +411,7 @@ const handleEdit = () => { emit('edit'); };
   .t-amount { font-size: 0.85em; }
   .t-bottom { font-size: 0.75em; }
   
-  /* Уменьшаем расстояние между иконками */
+  /* Уменьшаем отступы на планшете */
   .card-actions { gap: 3px; }
   
   .action-square-btn { width: 16px; height: 16px; }
