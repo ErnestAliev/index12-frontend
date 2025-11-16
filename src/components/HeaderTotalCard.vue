@@ -1,27 +1,30 @@
 <script setup>
-// 🔴 НОВОЕ: импортируем ref и computed
-import { ref, watch, computed } from 'vue'; 
+// 🔴 НОВОЕ: импортируем ref и computed (и nextTick)
+import { ref, watch, computed, nextTick } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.5-FONT-WEIGHT-FIX ---
- * * ВЕРСИЯ: 2.5 - Исправлен "прыгающий" font-weight
- * ДАТА: 2025-11-09
+ * * --- МЕТКА ВЕРСИИ: v2.7 (Fix #13a) ---
+ * * ВЕРСИЯ: 2.7 - Исправление "проваливающегося клика" (Click-Through)
+ * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Добавлен `!important` к `font-weight: 500`
- * в `.widget-dropdown li` для победы над
- * глобальным сбросом `font-weight: normal`.
+ * 1. (FIX #13a) `handleSelect` теперь закрывает dropdown
+ * через `nextTick()`. Это дает `@click.stop`
+ * завершиться до уничтожения компонента,
+ * предотвращая "проваливание" клика в DayColumn.
+ * 2. (NEW) Добавлено подробное логирование.
  */
+
+// 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
+console.log('--- HeaderTotalCard.vue v2.7 (Fix #13a) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
   totalBalance: { type: Number, required: true },
-  // --- 🔴 ИСПРАВЛЕНИЕ: (Props) ---
   subtitlePrefix: { type: String, required: true },
   subtitleDate: { type: String, required: true },
-  // ---
   widgetKey: { type: String, required: true },
   widgetIndex: { type: Number, required: true }
 });
@@ -43,15 +46,33 @@ const filteredWidgets = computed(() => {
 });
 // --- КОНЕЦ НОВОГО ---
 
+// =================================================================
+// --- 🔴 ИСПРАВЛЕНИЕ (FIX #13a): Проваливающийся клик ---
+// =================================================================
 const handleSelect = (newWidgetKey) => {
+  // 🔴 ЛОГИРОВАНИЕ
+  console.log(`[HeaderTotalCard] handleSelect: Выбран виджет ${newWidgetKey}`);
+  
+  // 1. Меняем виджет в store
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  isDropdownOpen.value = false;
+  
+  // 2. 🔴 ИСПРАВЛЕНИЕ:
+  // Мы *не* закрываем дропдаун немедленно.
+  // Мы ждем, пока Vue "отпустит" текущий event loop,
+  // чтобы `@click.stop` успел 100% отработать.
+  nextTick(() => {
+    isDropdownOpen.value = false;
+    console.log('[HeaderTotalCard] handleSelect: (nextTick) Дропдаун закрыт');
+  });
 };
+// =================================================================
 
 // --- !!! НОВАЯ ЛОГИКА: Клик снаружи !!! ---
 const handleClickOutside = (event) => {
   // 3. Проверяем, был ли клик СНАРУЖИ этого компонента
   if (cardRef.value && !cardRef.value.contains(event.target)) {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log('[HeaderTotalCard] handleClickOutside: Клик снаружи, закрываю дропдаун');
     isDropdownOpen.value = false; // Закрываем меню
   }
 };
@@ -59,14 +80,24 @@ const handleClickOutside = (event) => {
 // 4. "Наблюдаем" за состоянием меню
 watch(isDropdownOpen, (isOpen) => {
   if (isOpen) {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log('[HeaderTotalCard] watch: Дропдаун ОТКРЫТ');
     // 🔴 НОВОЕ: Очищаем поиск при открытии
     searchQuery.value = ''; 
     document.addEventListener('mousedown', handleClickOutside);
   } else {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log('[HeaderTotalCard] watch: Дропдаун ЗАКРЫТ');
     document.removeEventListener('mousedown', handleClickOutside);
   }
 });
 // --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
+const toggleDropdown = () => {
+  // 🔴 ЛОГИРОВАНИЕ
+  console.log('[HeaderTotalCard] toggleDropdown: Клик по заголовку');
+  isDropdownOpen.value = !isDropdownOpen.value;
+};
 
 </script>
 
@@ -75,11 +106,11 @@ watch(isDropdownOpen, (isOpen) => {
     
     <div 
       class="card-title-container" 
-      @click="isDropdownOpen = !isDropdownOpen"
+      @click="toggleDropdown"
       >
       <div class="card-title">{{ title }} <span>▽</span></div>
       
-      <div v-if="isDropdownOpen" class="widget-dropdown">
+      <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
         <input
           type="text"
           class="widget-search-input"
