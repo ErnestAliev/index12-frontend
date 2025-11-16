@@ -311,25 +311,7 @@ const saveNewToCompany = async () => {
 
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: Helpers для handleSave (v4.2) ---
-// =================================================================
-const _getDayOfYear = (date) => {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.floor(diff / oneDay);
-};
-
-const _getDateKey = (date) => {
-  const year = date.getFullYear();
-  const doy = _getDayOfYear(date);
-  return `${year}-${doy}`;
-};
-// =================================================================
-
-
-// =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v4.3) ---
+// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v4.4) ---
 // =================================================================
 const handleSave = async () => {
   errorMessage.value = '';
@@ -337,7 +319,7 @@ const handleSave = async () => {
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
   const amountParsed = parseFloat(cleanedAmount);
 
-  // Валидация (без изменений)
+  // Валидация
   if (isNaN(amountParsed) || amountParsed <= 0) {
     errorMessage.value = 'Введите корректную сумму';
     return;
@@ -352,17 +334,17 @@ const handleSave = async () => {
   }
 
   try {
+    // 🔴 ИСПРАВЛЕНИЕ ДАТЫ: Используем UTC для избежания смещения
     const [year, month, day] = editableDate.value.split('-').map(Number);
-    const finalDate = new Date(year, month - 1, day);
+    const finalDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
     
-    // 🔴 ВЫЧИСЛЯЕМ dateKey
     const dateKey = _getDateKey(finalDate);
 
     const transferPayload = {
         date: finalDate,
         amount: amountParsed,
         fromAccountId: fromAccountId.value,
-        toAccountId: toAccountId.value,
+        toAccountId: fromAccountId.value,
         fromCompanyId: fromCompanyId.value,
         toCompanyId: toCompanyId.value,
         categoryId: categoryId.value
@@ -370,12 +352,9 @@ const handleSave = async () => {
 
     let savedOperation;
 
-    // Если это клонирование или новый перевод
     if (!props.transferToEdit || isCloneMode.value) {
-      // 🔴 ВЫЗЫВАЕМ createTransfer
       savedOperation = await mainStore.createTransfer(transferPayload);
     } else {
-      // 🔴 ВЫЗЫВАЕМ updateTransfer
       savedOperation = await mainStore.updateTransfer(
         props.transferToEdit._id, 
         transferPayload
@@ -384,15 +363,15 @@ const handleSave = async () => {
 
     console.log('🔄 TransferPopup: Принудительно обновляем кеши...');
     
-    // 🔴 ДОБАВЛЕНО: Принудительное обновление кешей
+    // 🔴 ОБНОВЛЯЕМ КЕШИ
     await mainStore.refreshDay(dateKey);
     await mainStore.fetchAllEntities();
     
-    // 🔴 ДОБАВЛЕНО: Принудительное обновление реактивности (как в moveOperation)
+    // 🔴 ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ РЕАКТИВНОСТИ
     mainStore.displayCache = { ...mainStore.displayCache };
     mainStore.calculationCache = { ...mainStore.calculationCache };
     
-    // 🔴 ДОБАВЛЕНО: Пересчет проекции
+    // 🔴 ПЕРЕСЧЕТ ПРОЕКЦИИ
     if (mainStore.projection?.mode) {
       await mainStore.updateProjectionFromCalculationData(
         mainStore.projection.mode,
@@ -400,9 +379,20 @@ const handleSave = async () => {
       );
     }
 
+    // 🔴 СИНХРОНИЗАЦИЯ МЕЖДУ УСТРОЙСТВАМИ
+    if (typeof mainStore.syncOperationsAcrossDevices === 'function') {
+      await mainStore.syncOperationsAcrossDevices(dateKey);
+    } else {
+      await mainStore.forceRefreshAll();
+    }
+
     console.log('✅ TransferPopup: Перевод создан и кеши обновлены');
     
-    // 🔴 ОТПРАВЛЯЕМ dateKey
+    // 🔴 ЗАКРЫВАЕМ ПОПАП ПЕРЕД ОБНОВЛЕНИЕМ ИНТЕРФЕЙСА
+    setTimeout(() => {
+      emit('close');
+    }, 50);
+    
     emit('transfer-complete', { 
       dateKey: savedOperation?.dateKey || dateKey,
       operation: savedOperation 
@@ -774,4 +764,5 @@ select option[value="--CREATE_NEW--"] {
   background-color: #444444;
 }
 </style>
+
 
