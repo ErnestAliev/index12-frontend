@@ -3,21 +3,16 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v7.5-HEADER-REPLACE ---
- * * ВЕРСИЯ: 7.5 - Замена виджета при создании категории и фикс переименования
+ * * --- МЕТКА ВЕРСИИ: v8.1-HEADER-DELETE-FIX ---
+ * * ВЕРСИЯ: 8.1 - Фиксы удаления категорий и иконок
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) `onCategoryAdd`: теперь при создании новой категории мы передаем индекс
- * виджета, на котором был клик.
- * 2. (FIX) `onEntitySave`: Если это создание категории, то после создания
- * мы вызываем `mainStore.replaceWidget(index, newKey)`, заменяя старый виджет на новый.
- * Это решает проблему "7-го виджета".
- * 3. (FIX) `onCategoryEdit`: Переименование теперь работает через попап,
- * который вызывает обновление в сторе.
+ * 1. Добавлена обработка @delete в EntityPopup для категорий.
+ * 2. Исправлена логика openRenamePopup (теперь принимает аргумент canDelete).
  */
 
-console.log('--- TheHeader.vue v7.5-HEADER-REPLACE ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v8.1-HEADER-DELETE-FIX ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -71,49 +66,84 @@ const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProj
 /* ======================= Попапы (Entity / List) ======================= */
 const isEntityPopupVisible = ref(false);
 const popupTitle = ref('');
+const popupInitialValue = ref(''); // Для передачи имени при переименовании
 const saveHandler = ref(null);
-const currentWidgetIndexForReplace = ref(null); // 🟢 Индекс для замены
+const deleteHandler = ref(null); // 🔴 Обработчик удаления
+const showDeleteInPopup = ref(false); // 🔴 Флаг показа кнопки
 
-// Обычное добавление (для счетов, компаний и т.д.)
+const currentWidgetIndexForReplace = ref(null);
+
+// Обычное добавление
 const openAddPopup = (title, storeAction) => {
   popupTitle.value = title;
+  popupInitialValue.value = '';
+  showDeleteInPopup.value = false;
   saveHandler.value = storeAction;
-  currentWidgetIndexForReplace.value = null; // Не заменяем виджет
+  deleteHandler.value = null;
+  currentWidgetIndexForReplace.value = null;
   isEntityPopupVisible.value = true;
 };
 
-// 🟢 НОВОЕ: Добавление КАТЕГОРИИ с заменой виджета
+// Добавление категории с заменой виджета
 const openAddCategoryPopup = (title, widgetIndex) => {
   popupTitle.value = title;
-  // Мы создаем обертку: сначала создаем категорию, потом меняем виджет
+  popupInitialValue.value = '';
+  showDeleteInPopup.value = false;
   saveHandler.value = async (name) => {
-     const newCategory = await mainStore.addCategory(name); // Вернет объект категории
+     const newCategory = await mainStore.addCategory(name); 
      if (newCategory && newCategory._id && widgetIndex !== null) {
          const newWidgetKey = `cat_${newCategory._id}`;
-         // Заменяем виджет на месте
          mainStore.replaceWidget(widgetIndex, newWidgetKey);
      }
   };
+  deleteHandler.value = null;
   currentWidgetIndexForReplace.value = widgetIndex;
   isEntityPopupVisible.value = true;
 };
 
-const openRenamePopup = (title, entity, storeUpdateAction) => {
+// Переименование + Удаление
+const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
+  popupInitialValue.value = entity.name;
+  showDeleteInPopup.value = canDelete; // Показываем корзину?
+  
+  // Логика сохранения (переименования)
   saveHandler.value = async (newName) => {
-      const updatedItem = { ...entity, name: newName };
-      await mainStore.batchUpdateEntities('categories', [updatedItem]);
+      if (entityType === 'categories') {
+          const updatedItem = { ...entity, name: newName };
+          await mainStore.batchUpdateEntities('categories', [updatedItem]);
+      }
   };
+
+  // Логика удаления (только если canDelete=true)
+  if (canDelete && entityType) {
+      deleteHandler.value = async ({ deleteOperations, done }) => {
+          try {
+             await mainStore.deleteEntity(entityType, entity._id, deleteOperations);
+             isEntityPopupVisible.value = false;
+          } catch (e) {
+             alert('Ошибка удаления: ' + e.message);
+             if(done) done();
+          }
+      };
+  } else {
+      deleteHandler.value = null;
+  }
+
   isEntityPopupVisible.value = true;
 };
 
 const onEntitySave = async (name) => {
   if (saveHandler.value) {
-    try {
-      await saveHandler.value(name);
-    } catch (e) { console.error(e); }
+    try { await saveHandler.value(name); } catch (e) { console.error(e); }
   }
   isEntityPopupVisible.value = false;
+};
+
+const onEntityDelete = (payload) => {
+    if (deleteHandler.value) {
+        deleteHandler.value(payload);
+    }
 };
 
 const isListEditorVisible = ref(false);
@@ -138,13 +168,11 @@ const onEntityListSave = async (updatedItems) => {
 /* ======================= Обработчики Категорий ======================= */
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
-// 🟢 ИЗМЕНЕНО: Принимаем index
 const onCategoryAdd = (widgetKey, index) => {
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод') {
         isTransferPopupVisible.value = true;
     } else {
-        // Открываем создание с заменой
         openAddCategoryPopup('Новая категория', index);
     }
 };
@@ -153,7 +181,8 @@ const onCategoryEdit = (widgetKey) => {
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
-        openRenamePopup(`Переименовать ${category.name}`, category, null);
+        // 🔴 Разрешаем удаление для категории
+        openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
     }
 };
 
@@ -228,7 +257,6 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
       />
 
-      <!-- 🟢 ПЕРЕДАЕМ INDEX в обработчик add -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
@@ -243,8 +271,11 @@ const handleTransferComplete = async (eventData) => {
   <EntityPopup
     v-if="isEntityPopupVisible"
     :title="popupTitle"
+    :initial-value="popupInitialValue"
+    :show-delete="showDeleteInPopup"
     @close="isEntityPopupVisible = false"
     @save="onEntitySave"
+    @delete="onEntityDelete"
   />
   <EntityListEditor
     v-if="isListEditorVisible"
