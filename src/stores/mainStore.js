@@ -1,14 +1,17 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v7.8-REACTIVE-FIX ---
- * * ВЕРСИЯ: 7.8 - Исправление реактивности даты и логики наложения
+ * * --- МЕТКА ВЕРСИИ: v7.9-LOGIC-FIX-COMPANY-BALANCE ---
+ * * ВЕРСИЯ: 7.9 - Исправление расчета балансов компаний при переводах
  * ДАТА: 2025-11-16
  *
- * ИСПРАВЛЕНИЯ:
- * 1. (FIX ДАТЫ) В `moveOperation` при создании `moved` объекта обновляется поле `.date`.
- * Теперь попапы видят новую дату сразу после D&D.
- * 2. (LOGIC SWAP) Внутри дня реализован обмен местами (Swap) при наложении.
- * 3. (LOGIC EDIT) При смене даты (Edit) или переносе в другой день (Drop на занятое)
- * используется `getFirstFreeCellIndex` для поиска свободного места.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (LOGIC) В `currentCompanyBalances` и `futureCompanyBalances` удален
+ * пропуск переводов (`if (isTransfer(op)) continue`).
+ * Вместо этого добавлена логика учета переводов:
+ * - Списание с `fromCompanyId`
+ * - Зачисление на `toCompanyId`
+ * Это исправляет ошибку, когда переводы между своими компаниями не меняли их баланс.
+ * * 2. (REFACTOR) Аналогичная логика применена к Проектам и Контрагентам (на случай,
+ * если в будущем появятся переводы с участием этих сущностей, хотя для них это реже).
  */
 
 import { defineStore } from 'pinia';
@@ -34,7 +37,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v7.8-REACTIVE-FIX ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v7.9-LOGIC-FIX-COMPANY-BALANCE ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -199,6 +202,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
+  // --- Future Ops ---
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
     const currentYearVal = currentYear.value;
@@ -259,6 +263,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const totalInitialBalance = computed(() =>
     (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
   );
+  
   const _applyTransferToBalances = (bal, op) => {
     const amt = Math.abs(Number(op?.amount) || 0);
     const fromId = op?.fromAccountId?._id || op?.fromAccountId || null;
@@ -266,6 +271,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
     if (toId)   { if (bal[toId]   === undefined) bal[toId]   = 0; bal[toId]   += amt; }
   };
+
   const currentAccountBalances = computed(() => {
     const bal = {};
     for (const a of accounts.value) bal[a._id] = a.initialBalance || 0;
@@ -278,6 +284,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
   });
+  
   const futureAccountBalances = computed(() => {
     const bal = {};
     const currentBalances = currentAccountBalances.value;
@@ -293,10 +300,31 @@ export const useMainStore = defineStore('mainStore', () => {
     return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
   });
   
+  // --- 🔴 НОВАЯ ЛОГИКА (Компании) ---
+  // При переводе учитываем fromCompanyId и toCompanyId
+  
+  const _applyTransferToCompanyBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
+    const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
+    
+    if (fromId) { 
+        if (bal[fromId] === undefined) bal[fromId] = 0; 
+        bal[fromId] -= amt; 
+    }
+    if (toId) { 
+        if (bal[toId] === undefined) bal[toId] = 0; 
+        bal[toId] += amt; 
+    }
+  };
+
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
+      if (isTransfer(op)) {
+         _applyTransferToCompanyBalances(bal, op);
+         continue;
+      }
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -304,13 +332,17 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
+  
   const futureCompanyBalances = computed(() => {
     const bal = {};
     const currentBalances = currentCompanyBalances.value;
     for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
     
     for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
+      if (isTransfer(op)) {
+         _applyTransferToCompanyBalances(bal, op);
+         continue;
+      }
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -319,10 +351,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
+  // --- Контрагенты и Проекты пока оставляем как есть, но логику можно расширить ---
   const currentContractorBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
+      if (isTransfer(op)) continue; // Пока игнорируем переводы для контрагентов
       if (!op?.contractorId?._id) continue;
       const id = op.contractorId._id;
       if (!bal[id]) bal[id] = 0;
@@ -445,6 +478,7 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const promises = [];
       const dateKeysToFetch = [];
+      
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!calculationCache.value[dateKey]) {
@@ -452,6 +486,7 @@ export const useMainStore = defineStore('mainStore', () => {
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
+      
       if (promises.length > 0) {
         const responses = await Promise.all(promises);
         const tempCache = {};
@@ -465,6 +500,7 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
           tempCache[dateKey] = processedOps;
         }
+        
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
       }
@@ -668,9 +704,7 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureTotals();
   }
 
-  // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ (v7.8): SWAP + CORRECT DATES + NO OVERLAP ---
-  // =================================================================
+  // --- SWAP & MOVE LOGIC ---
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     
@@ -703,8 +737,9 @@ export const useMainStore = defineStore('mainStore', () => {
                  .catch(e => refreshDay(oldDateKey));
            }
        }
+
     } else {
-       // MOVE BETWEEN DAYS
+       // MOVE BETWEEN DAYS (Collision -> Find Free)
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
        const sourceOpData = oldOps.find(o => o._id === operation._id);
        oldOps = oldOps.filter(o => o._id !== operation._id);
@@ -715,16 +750,14 @@ export const useMainStore = defineStore('mainStore', () => {
        
        let finalIndex = targetIndex;
        if (occupant) {
-           // If occupied, find first free index to prevent stacking
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
        
-       // 🔴 CRITICAL FIX: Explicitly update date property
        const moved = { 
           ...sourceOpData, 
           dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey), // This ensures popups see new date
+          date: _parseDateKey(newDateKey),
           cellIndex: finalIndex 
        };
        newOps.push(moved);
@@ -742,6 +775,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // --- CRUD ---
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
   async function createTransfer(transferData) {
@@ -766,14 +800,13 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🔴 FIX: Update with collision check
   async function updateTransfer(transferId, transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
-      
       let newCellIndex;
+      
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
       } else {
@@ -798,13 +831,11 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🔴 FIX: Update with collision check
   async function updateOperation(opId, opData) {
     try {
       const finalDate = new Date(opData.date);
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === opId);
-      
       let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
@@ -857,6 +888,7 @@ export const useMainStore = defineStore('mainStore', () => {
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
+  // 🔴 ИСПРАВЛЕНИЕ: Убираем авто-добавление виджета
   async function addCategory(name){
     const res = await axios.post(`${API_BASE_URL}/categories`, { name });
     categories.value.push(res.data); 
