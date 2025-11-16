@@ -1,14 +1,17 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v5.4-REACTIVITY-FIX ---
- * * ВЕРСИЯ: 5.4 - Восстановление `displayCache` в `fetchCalculationRange`
+ * * --- МЕТКА ВЕРСИИ: v5.6-AUTO-ADD-WIDGET ---
+ * * ВЕРСИЯ: 5.6 (на базе v5.4) - Автоматическое добавление виджета категории
  * ДАТА: 2025-11-16
  *
- * ЧТО ИСПРАВЛЕНО:
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FIX) Функция `addCategory` теперь автоматически добавляет
+ * новый виджет категории (`cat_[id]`) в конец `dashboardLayout`.
+ * 2. (FIX) Функция `logout` теперь использует `API_BASE_URL` вместо localhost.
+ *
+ * (Остальные метки из v5.4 сохранены для истории)
+ * * ВЕРСИЯ: 5.4 - Восстановление `displayCache` в `fetchCalculationRange`
  * 1. (FIX) В `fetchCalculationRange` восстановлена строка
  * `displayCache.value = { ...displayCache.value, ...tempCache };`
- * 2. Эта строка была случайно удалена в v5.3 при исправлении
- * ошибки `projection`. Ее отсутствие приводило к тому, что `displayCache`
- * не обновлялся при `forceRefreshAll`, и чипы пропадали (Bug 2, Bug 3).
  *
  * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
  * 1. (FIX-BUG-4) `createTransfer` теперь вызывает `getFirstFreeCellIndex`
@@ -44,7 +47,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v5.4-REACTIVITY-FIX ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
+  console.log('--- mainStore.js v5.6-AUTO-ADD-WIDGET ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
   
   // ---------- STATE ----------
   
@@ -725,6 +728,7 @@ export const useMainStore = defineStore('mainStore', () => {
   async function _getOrCreateTransferCategory() {
     let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
     if (!transferCategory) {
+      // Вызываем нашу обновленную addCategory
       transferCategory = await addCategory('Перевод');
     }
     return transferCategory._id;
@@ -1179,7 +1183,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // ---------- ENTITIES (Без изменений) ----------
+  // ---------- ENTITIES (Изменена только addCategory) ----------
   async function addAccount(data) {
     let payload;
     if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
@@ -1199,10 +1203,28 @@ export const useMainStore = defineStore('mainStore', () => {
     const res = await axios.post(`${API_BASE_URL}/projects`, { name });
     projects.value.push(res.data); return res.data;
   }
+
+  // =================================================================
+  // --- 🔴 ИСПРАВЛЕНИЕ (v5.6): Авто-добавление виджета ---
+  // =================================================================
   async function addCategory(name){
     const res = await axios.post(`${API_BASE_URL}/categories`, { name });
-    categories.value.push(res.data); return res.data;
+    categories.value.push(res.data); 
+    
+    // --- 🔴 НОВОЕ: Автоматически добавляем виджет на дашборд ---
+    const newWidgetKey = `cat_${res.data._id}`;
+    // Проверяем, что такого виджета еще нет в layout (на случай, если это "Перевод")
+    if (!dashboardLayout.value.includes(newWidgetKey)) {
+        console.log(`[mainStore] addCategory: 🆕 Автоматически добавляю виджет категории на дашборд: ${newWidgetKey}`);
+        dashboardLayout.value.push(newWidgetKey);
+        // dashboardLayout реактивен, UI (TheHeader) обновится автоматически.
+    }
+    // --- КОНЕЦ НОВОГО ---
+    
+    return res.data;
   }
+  // =================================================================
+
   async function batchUpdateEntities(path, items){
     try{
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
@@ -1311,8 +1333,7 @@ export const useMainStore = defineStore('mainStore', () => {
   console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
   try {
     isAuthLoading.value = true;
-    const res = await axios.get(`${API_BASE_URL}/auth/me`); // <-- ВОТ ИСПРАВЛЕНИЕ
-// ... (остальная функция без изменений)
+    const res = await axios.get(`${API_BASE_URL}/auth/me`);
       user.value = res.data; 
       console.log('[ЖУРНАЛ] checkAuth: ✅ Пользователь найден:', user.value.name);
       
@@ -1325,17 +1346,15 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   /**
-   * !!! ИСПРАВЛЕННАЯ ФУНКЦИЯ (v4.8c) !!!
+   * !!! ИСПРАВЛЕННАЯ ФУНКЦИЯ (v5.6) !!!
    * Выходит из системы.
    */
 async function logout() {
-  // ...
-  axios.post('http://localhost:3000/api/auth/logout') // <-- НАЙДИТЕ ЭТУ СТРОКУ
-// ...
     
     // 1. Отправляем запрос на сервер "в фоновом режиме" (БЕЗ await)
     //    и сразу добавляем .catch, чтобы ошибка не "всплыла" в консоль.
-    axios.post('http://localhost:3000/api/auth/logout')
+    // 🔴 ИСПРАВЛЕНИЕ (v5.6): Используем API_BASE_URL вместо захардкоженного localhost
+    axios.post(`${API_BASE_URL}/auth/logout`)
       .then(() => {
         console.log('[ЖУРНАЛ] logout: ✅ Серверная сессия успешно завершена (в фоне).');
       })
@@ -1410,6 +1429,7 @@ async function logout() {
     // helpers
     getFirstFreeCellIndex, // 🔴 (Теперь принимает dateKey)
     _parseDateKey, // <-- (v4.4) Экспортируем helper
+    _getDateKey, // <-- (v5.6) Экспортируем для использования там, где нужно
 
     allOperationsFlat,
     displayOperationsFlat,
