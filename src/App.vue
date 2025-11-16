@@ -23,14 +23,16 @@ const initializeApp = async () => {
 onMounted(async () => {
   await initializeApp()
   
-  // Запускаем автообновление
-  mainStore.startAutoRefresh(30000)
+  // 🔴 УДАЛЕНО: HomeView.vue (v5.3) теперь управляет 
+  // 🔴 запуском автообновления ПОСЛЕ входа пользователя.
+  // mainStore.startAutoRefresh(30000)
 })
 
 // При размонтировании компонента
 onUnmounted(() => {
   // Сохраняем кеш перед выходом
-  mainStore.saveOperationsCache()
+  // (Примечание: эта логика 'saveOperationsCache' не определена в mainStore v4.8)
+  // mainStore.saveOperationsCache() 
   
   // Останавливаем автообновление
   mainStore.stopAutoRefresh()
