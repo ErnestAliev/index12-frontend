@@ -4,7 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderBalanceCard.vue v3.0-ICONS-FIX ЗАГРУЖЕН ---');
+console.log('--- HeaderBalanceCard.vue v3.1-SMALL-DARK-BTNS ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -217,7 +217,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 
 .card-title-container {
   display: flex; justify-content: space-between; align-items: center;
-  height: 32px; /* Чуть выше, чтобы вместить кнопки */
+  height: 32px; 
   margin-bottom: 0.5rem; flex-shrink: 0;
 }
 .card-title {
@@ -227,45 +227,51 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- 🔴 НОВЫЕ СТИЛИ ДЛЯ КНОПОК --- */
+/* --- 🔴 ОБНОВЛЕННЫЕ СТИЛИ КНОПОК --- */
 .card-actions {
   display: flex;
-  gap: 8px; /* Одинаковое расстояние между квадратиками */
+  gap: 6px; /* Чуть уменьшили расстояние */
   position: relative; z-index: 101;
 }
 
 .action-square-btn {
-  width: 28px;
-  height: 28px;
+  /* 🔴 Размер уменьшен (~40% от 28px) */
+  width: 18px;
+  height: 18px;
   border: 1px solid transparent; 
-  border-radius: 6px; /* Скругление */
-  background-color: #F7F7F7; /* Еле заметный фон */
+  border-radius: 4px; /* Скругление под новый размер */
+  
+  /* 🔴 Новый цвет фона */
+  background-color: #1a1a1a; 
+  
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  color: #888;
+  
+  /* Цвет иконки оставляем серым/белым по умолчанию (или наследуется) */
+  color: #888; 
   transition: all 0.2s ease;
 }
 
 .action-square-btn:hover {
-  background-color: #EAEAEA;
-  color: #333;
-  border-color: #E0E0E0;
+  background-color: #333; /* Чуть светлее при наведении */
+  color: #ccc;
 }
 
 .action-square-btn.active {
-  background-color: #E6F7FF; /* Активный цвет (светло-голубой) */
-  color: #007AFF;
-  border-color: rgba(0, 122, 255, 0.2);
+  /* 🔴 Активный цвет (зеленый) */
+  background-color: #34c759; 
+  color: #fff; /* Белая иконка на зеленом фоне */
+  border-color: transparent;
 }
 
 .icon-svg {
-  width: 18px; /* Размер иконки внутри квадрата */
-  height: 18px;
+  /* 🔴 Уменьшенный размер иконки */
+  width: 11px; 
+  height: 11px;
   display: block;
-  /* Если это img (filter), он тоже применит эти размеры */
   object-fit: contain; 
 }
 /* ----------------------------------- */
@@ -307,8 +313,8 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
   .card-item span:first-child { padding-right: 5px; }
   .forecast-display { gap: 2px; }
   
-  /* Уменьшаем квадратики на планшете/маленьком экране */
-  .action-square-btn { width: 24px; height: 24px; }
-  .icon-svg { width: 16px; height: 16px; }
+  /* Еще немного уменьшаем на планшете */
+  .action-square-btn { width: 16px; height: 16px; }
+  .icon-svg { width: 10px; height: 10px; }
 }
 </style>
