@@ -1,6 +1,6 @@
 <script setup>
-// 🔴 НОВОЕ: импортируем ref и computed (watch уже был)
-import { ref, watch, computed } from 'vue';
+// 🔴 НОВОЕ: импортируем ref, computed, watch И nextTick
+import { ref, watch, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
@@ -8,16 +8,20 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.5-FONT-WEIGHT-FIX ---
+ * * --- МЕТКА ВЕРСИИ: v2.7 (Fix #13a) ---
  * * (с доработками для прогноза v1.0)
  * *
- * * ЧТО ДОБАВЛЕНО (Прогноз v1.0):
- * 1. Добавлена кнопка прогноза `↗`.
- * 2. `showFutureBalance` теперь `computed` из `mainStore.dashboardForecastState`.
- * 3. В `<template>` `v-for` добавлена логика `v-if/v-else` для
- * отображения либо "Баланс", либо "Баланс > Будущий Баланс".
- * 4. Добавлены стили для `.forecast-btn`, `.active`, `.forecast-display`.
+ * * ЧТО ИСПРАВЛЕНО (Fix #13a):
+ * 1. `handleSelect` теперь закрывает dropdown
+ * через `nextTick()`. Это дает `@click.stop`
+ * завершиться до уничтожения компонента,
+ * предотвращая "проваливание" клика в DayColumn.
+ * 2. (NEW) Добавлено подробное логирование.
  */
+
+// 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
+console.log('--- HeaderBalanceCard.vue v2.7 (Fix #13a) ЗАГРУЖЕН ---');
+
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -34,8 +38,17 @@ const cardRef = ref(null);
 
 // 🔴 ИЗМЕНЕНО: Состояние для переключателя прогноза из Pinia
 const showFutureBalance = computed({
-  get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
-  set: (val) => mainStore.setForecastState(props.widgetKey, val)
+  get: () => {
+    const state = mainStore.dashboardForecastState[props.widgetKey] ?? false;
+    // 🔴 ЛОГИРОВАНИЕ
+    // console.log(`[HeaderBalanceCard: ${props.title}] computed: showFutureBalance (GET): ${state}`);
+    return state;
+  },
+  set: (val) => {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] computed: showFutureBalance (SET): ${val}`);
+    mainStore.setForecastState(props.widgetKey, val);
+  }
 });
 
 /* ======================= 🔴 1. ЛОГИКА ФИЛЬТРОВ И СОРТИРОВКИ ======================= */
@@ -59,6 +72,8 @@ const filterMode = ref('all');
  * props.items на основе `sortMode` и `filterMode`.
  */
 const processedItems = computed(() => {
+  // 🔴 ЛОГИРОВАНИЕ
+  // console.log(`[HeaderBalanceCard: ${props.title}] computed: processedItems (sort: ${sortMode.value}, filter: ${filterMode.value})`);
   let items = [...props.items]; // Копируем, чтобы не мутировать props
 
   // 1. Применяем ФИЛЬТР
@@ -87,10 +102,14 @@ const processedItems = computed(() => {
 
 // 🔴 Функции для установки режимов из меню
 const setSortMode = (mode) => {
+  // 🔴 ЛОГИРОВАНИЕ
+  console.log(`[HeaderBalanceCard: ${props.title}] setSortMode: ${mode}`);
   sortMode.value = mode;
   // isFilterOpen.value = false; // (Опционально) Закрывать меню при клике
 };
 const setFilterMode = (mode) => {
+  // 🔴 ЛОГИРОВАНИЕ
+  console.log(`[HeaderBalanceCard: ${props.title}] setFilterMode: ${mode}`);
   filterMode.value = mode;
   // isFilterOpen.value = false; // (Опционально) Закрывать меню при клике
 };
@@ -101,14 +120,20 @@ const handleFilterClickOutside = (event) => {
     filterDropdownRef.value && !filterDropdownRef.value.contains(event.target) &&
     filterBtnRef.value && !filterBtnRef.value.contains(event.target)
   ) {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] handleFilterClickOutside: Клик снаружи, закрываю ФИЛЬТР`);
     isFilterOpen.value = false;
   }
 };
 
 watch(isFilterOpen, (isOpen) => {
   if (isOpen) {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] watch: Дропдаун ФИЛЬТРА ОТКРЫТ`);
     document.addEventListener('mousedown', handleFilterClickOutside);
   } else {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] watch: Дропдаун ФИЛЬТРА ЗАКРЫТ`);
     document.removeEventListener('mousedown', handleFilterClickOutside);
   }
 });
@@ -144,16 +169,34 @@ const formatBalance = (balance) => {
 };
 // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
+// =================================================================
+// --- 🔴 ИСПРАВЛЕНИЕ (FIX #13a): Проваливающийся клик ---
+// =================================================================
 const handleSelect = (newWidgetKey) => {
-  // ... (старый код без изменений) ...
+  // 🔴 ЛОГИРОВАНИЕ
+  console.log(`[HeaderBalanceCard: ${props.title}] handleSelect: Выбран виджет ${newWidgetKey}`);
+  
+  // 1. Меняем виджет в store
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  isDropdownOpen.value = false;
+  
+  // 2. 🔴 ИСПРАВЛЕНИЕ:
+  // Мы *не* закрываем дропдаун немедленно.
+  // Мы ждем, пока Vue "отпустит" текущий event loop,
+  // чтобы `@click.stop` успел 100% отработать.
+  nextTick(() => {
+    isDropdownOpen.value = false;
+    console.log(`[HeaderBalanceCard: ${props.title}] handleSelect: (nextTick) Дропдаун закрыт`);
+  });
 };
+// =================================================================
+
 
 // --- !!! НОВАЯ ЛОГИКА: Клик снаружи (для старого меню) !!! ---
 const handleClickOutside = (event) => {
   // ... (старый код без изменений) ...
   if (cardRef.value && !cardRef.value.contains(event.target)) {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] handleClickOutside: Клик снаружи, закрываю дропдаун`);
     isDropdownOpen.value = false; // Закрываем меню
   }
 };
@@ -161,13 +204,23 @@ const handleClickOutside = (event) => {
 watch(isDropdownOpen, (isOpen) => {
   // ... (старый код без изменений) ...
   if (isOpen) {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] watch: Дропдаун ВЫБОРА ВИДЖЕТА ОТКРЫТ`);
     searchQuery.value = '';
     document.addEventListener('mousedown', handleClickOutside);
   } else {
+    // 🔴 ЛОГИРОВАНИЕ
+    console.log(`[HeaderBalanceCard: ${props.title}] watch: Дропдаун ВЫБОРА ВИДЖЕТА ЗАКРЫТ`);
     document.removeEventListener('mousedown', handleClickOutside);
   }
 });
 // --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
+const toggleDropdown = () => {
+  // 🔴 ЛОГИРОВАНИЕ
+  console.log(`[HeaderBalanceCard: ${props.title}] toggleDropdown: Клик по заголовку`);
+  isDropdownOpen.value = !isDropdownOpen.value;
+};
 
 </script>
 
@@ -177,7 +230,7 @@ watch(isDropdownOpen, (isOpen) => {
     <div class="card-title-container">
       <div 
         class="card-title" 
-        @click.stop="isDropdownOpen = !isDropdownOpen"
+        @click.stop="toggleDropdown"
         >
         {{ props.title }} <span>▽</span>
         
