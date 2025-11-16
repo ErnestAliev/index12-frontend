@@ -20,7 +20,11 @@ const handleDeleteClick = () => {
 
 const confirmDelete = (deleteOperations) => {
   isDeleting.value = true;
-  emit('delete', { deleteOperations, done: () => isDeleting.value = false });
+  // Запускаем прогресс и отдаем управление родителю
+  emit('delete', { 
+      deleteOperations, 
+      done: () => { isDeleting.value = false; } 
+  });
 };
 
 const cancelDelete = () => {
@@ -32,30 +36,36 @@ const cancelDelete = () => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     
-    <!-- 🔴 СТИЛИЗОВАННЫЙ ПОПАП (как ListEditor) -->
+    <!-- ЕДИНЫЙ СТИЛЬ: Ширина 580px, как у ListEditor -->
     <div class="popup-content">
       <h3>{{ title }}</h3>
       
-      <input 
-        type="text" 
-        v-model="inputValue" 
-        placeholder="Введите название..." 
-        class="popup-input"
-        @keyup.enter="$emit('save', inputValue)"
-      />
+      <div class="single-field-wrapper">
+          <!-- Заголовок поля (как в таблице, для единообразия) -->
+          <label class="field-label">Название</label>
+          
+          <div class="field-row">
+              <input 
+                type="text" 
+                v-model="inputValue" 
+                placeholder="Введите название..." 
+                class="popup-input"
+                @keyup.enter="$emit('save', inputValue)"
+              />
+              
+              <!-- КНОПКА УДАЛЕНИЯ (Квадратная, как в списке) -->
+              <button v-if="showDelete" class="btn-delete" @click="handleDeleteClick" title="Удалить">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                     <polyline points="3 6 5 6 21 6"></polyline>
+                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+              </button>
+          </div>
+      </div>
           
       <div class="popup-actions">
-        <!-- Кнопка Сохранить (растягивается) -->
         <button @click="$emit('save', inputValue)" class="btn-submit">
-          Сохранить
-        </button>
-        
-        <!-- Кнопка Удалить (квадратная, как в списке) -->
-        <button v-if="showDelete" class="btn-delete" @click="handleDeleteClick" title="Удалить">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-             <polyline points="3 6 5 6 21 6"></polyline>
-             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
+          Сохранить изменения
         </button>
       </div>
     </div>
@@ -64,26 +74,31 @@ const cancelDelete = () => {
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         
+        <!-- Прогресс -->
         <div v-if="isDeleting" class="deleting-state">
            <h4>Удаление...</h4>
-           <p class="sub-note">Пожалуйста, подождите.</p>
+           <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
            <div class="progress-container">
              <div class="progress-bar"></div>
            </div>
         </div>
         
+        <!-- Выбор -->
         <div v-else>
-          <h4>Удаление</h4>
-          <p>Что делать со связанными операциями?</p>
+          <h4>Удаление сущности</h4>
+          <p>
+            Вы собираетесь удалить <strong>«{{ inputValue }}»</strong>.<br>
+            Что делать со связанными операциями?
+          </p>
           
-          <div class="delete-options">
-             <button class="btn-opt btn-keep" @click="confirmDelete(false)">
-                <strong>Только сущность</strong>
-                <small>Операции отвяжутся</small>
+          <div class="delete-actions">
+             <button class="btn-choice btn-keep" @click="confirmDelete(false)">
+                <span class="main-text">Только сущность</span>
+                <span class="sub-text">Операции останутся (связь исчезнет)</span>
              </button>
-             <button class="btn-opt btn-nuke" @click="confirmDelete(true)">
-                <strong>Всё вместе</strong>
-                <small>Удалить и операции</small>
+             <button class="btn-choice btn-nuke" @click="confirmDelete(true)">
+                <span class="main-text">Сущность + Операции</span>
+                <span class="sub-text">Удалится всё безвозвратно</span>
              </button>
           </div>
           
@@ -97,38 +112,41 @@ const cancelDelete = () => {
 
 <style scoped>
 .popup-overlay {
-  position: fixed; top: 0; left: 0;
-  width: 100%; height: 100%;
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background-color: rgba(0, 0, 0, 0.6);
   display: flex; justify-content: center; align-items: center;
   z-index: 1000;
 }
-/* 🔴 ЕДИНЫЙ СТИЛЬ: Ширина 580px */
+
+/* ЕДИНЫЙ СТИЛЬ: Фон и ширина */
 .popup-content {
   max-width: 580px; 
-  background: #F4F4F4; padding: 2rem;
-  border-radius: 12px; color: #1a1a1a;
-  width: 100%;
+  background: #F4F4F4; padding: 2rem; border-radius: 12px;
+  color: #1a1a1a; width: 100%;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
   margin: 1rem; position: relative;
 }
-h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 600; }
+h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 600; text-align: left; }
 
-/* 🔴 ЕДИНЫЙ СТИЛЬ: Светлые поля */
+/* Обертки полей */
+.single-field-wrapper { margin-bottom: 2rem; }
+.field-label { display: block; font-size: 0.85em; color: #666; margin-bottom: 8px; margin-left: 2px; }
+.field-row { display: flex; gap: 10px; align-items: center; }
+
+/* Инпут (стиль ListEditor) */
 .popup-input {
-  width: 100%; height: 48px; padding: 0 14px;
-  margin-bottom: 1.5rem; 
+  flex-grow: 1; height: 48px; padding: 0 14px;
   background: #FFFFFF; border: 1px solid #E0E0E0;
   border-radius: 8px; font-size: 15px;
   box-sizing: border-box; color: #1a1a1a;
 }
 .popup-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 
-.popup-actions { display: flex; gap: 10px; }
+.popup-actions { display: flex; justify-content: flex-end; }
 
 /* Кнопка Сохранить */
 .btn-submit {
-  flex-grow: 1; height: 50px;
+  width: 100%; height: 50px;
   background-color: #222; color: white;
   border: none; border-radius: 8px;
   font-size: 16px; font-weight: 600; cursor: pointer;
@@ -136,17 +154,17 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font
 }
 .btn-submit:hover { background-color: #444; }
 
-/* 🔴 ЕДИНЫЙ СТИЛЬ: Кнопка удаления */
+/* Кнопка Удалить (стиль ListEditor) */
 .btn-delete {
-  width: 50px; height: 50px; flex-shrink: 0;
+  width: 48px; height: 48px; flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
-  border-radius: 8px; color: #b0b0b0;
+  border-radius: 8px; 
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
 }
-.btn-delete:hover {
-  border-color: #FF3B30; color: #FF3B30; background: #fff5f5;
-}
+.btn-delete svg { stroke: #999; transition: stroke 0.2s; }
+.btn-delete:hover { border-color: #FF3B30; background: #fff5f5; }
+.btn-delete:hover svg { stroke: #FF3B30; }
 
 /* Внутренний модал (Идентичен ListEditor) */
 .inner-overlay {
@@ -157,24 +175,30 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font
 }
 .delete-confirm-box {
   background: #fff; padding: 20px; border-radius: 12px;
-  width: 85%; text-align: center; max-width: 400px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+  width: 90%; max-width: 400px;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+  text-align: center;
 }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; }
 .delete-confirm-box p { color: #555; font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
 
-.delete-options { display: flex; flex-direction: column; gap: 8px; margin: 15px 0; }
+.delete-actions { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
 
-.btn-opt {
-  border: 1px solid #ddd; background: #fff; border-radius: 8px;
-  padding: 10px; cursor: pointer; text-align: left;
+.btn-choice {
+  border: 1px solid #ddd; border-radius: 8px; background: #fff;
+  padding: 12px; cursor: pointer; text-align: left;
   display: flex; flex-direction: column;
-  transition: all 0.2s;
+  transition: border-color 0.2s, background 0.2s;
 }
-.btn-opt:hover { background: #f9f9f9; border-color: #ccc; }
-.btn-nuke:hover { border-color: #FF3B30; background: #FFF0F0; color: #FF3B30; }
+.btn-choice:hover { border-color: #aaa; background: #f9f9f9; }
+.btn-choice .main-text { font-weight: 600; color: #333; font-size: 15px; margin-bottom: 2px; }
+.btn-choice .sub-text { font-size: 12px; color: #888; }
 
-.btn-cancel { background: none; border: none; text-decoration: underline; color: #888; cursor: pointer; }
+.btn-nuke:hover { border-color: #FF3B30; background: #FFF0F0; }
+.btn-nuke .main-text { color: #FF3B30; }
+
+.btn-cancel { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; text-decoration: underline; }
+.btn-cancel:hover { color: #555; }
 
 /* Прогресс бар */
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
