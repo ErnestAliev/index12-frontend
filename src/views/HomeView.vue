@@ -878,7 +878,7 @@ onBeforeUnmount(() => {
 .welcome-content {
   flex: 1;
  
-  padding-right: 2rem;
+ 
   z-index: 10;
 }
 
@@ -929,7 +929,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   perspective: 1500px;
-  max-width: 50%;
+  hight: 90%;
 }
 
 .welcome-image {
