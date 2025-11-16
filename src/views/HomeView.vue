@@ -1011,7 +1011,7 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
-  hight: 120px;
+  
 }
 .header-resizer {
   flex-shrink: 0;
