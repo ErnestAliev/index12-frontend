@@ -25,6 +25,11 @@ import ImportExportModal from '@/components/ImportExportModal.vue';
  * больше не вызывает `forceRefreshAll()`. Он "хирургически" обновляет
  * день (`refreshDay`) и пересчитывает проекцию (`recalcProjectionForCurrentView`),
  * что устраняет исчезновение хедера.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025 / 08:15) ---
+ * 1. (FIX-BUG-7 / ОШИБКА #3, #4) `handleTransferComplete`
+ * также очищен от `forceRefreshAll()` в fallback-блоке,
+ * чтобы полностью устранить исчезновение хедера.
  */
 
 console.log('--- HomeView.vue v5.3-SYNC-FIXES ЗАГРУЖЕН ---'); 
@@ -296,21 +301,34 @@ const recalcProjectionForCurrentView = async () => {
   await mainStore.loadCalculationData(viewMode.value, today.value);
 };
 
+
+// =================================================================
+// --- 🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3 / #4): Исчезающий Хедер (Переводы) ---
+// =================================================================
 const handleTransferComplete = async (eventData) => {
   const dateKey = eventData?.dateKey;
   console.log(`[ЖУРНАЛ] handleTransferComplete: 🤝 Перевод завершен, обновляю dateKey: ${dateKey}`);
+  
   if (!dateKey) {
-    console.error('!!! handleTransferComplete ОШИБКА: не получен dateKey, выполняю forceRefreshAll()');
-    // 🔴 ИСПРАВЛЕНИЕ: Это аварийный вызов, он должен остаться,
-    // но в штатном режиме (с моим фиксом) он НЕ вызывается.
-    await mainStore.forceRefreshAll(); 
+    console.error('!!! handleTransferComplete ОШИБКА: не получен dateKey, ВЫЗЫВАЮ ХИРУРГИЧЕСКОЕ ОБНОВЛЕНИЕ');
+    
+    // 🔴 УДАЛЕНО:
+    // await mainStore.forceRefreshAll(); // <-- ЭТО БЫЛ БАГ
+    
+    // 🔴 ДОБАВЛЕНО: "Мягкое" обновление (лучшее, что мы можем сделать без dateKey)
+    await recalcProjectionForCurrentView(); 
+    
     handleCloseTransferPopup();
     return;
   }
-  // await mainStore.refreshDay(dateKey); // (Уже вызвано в TransferPopup)
+  
+  // (Этот код уже был "хирургическим" и работал правильно)
   await recalcProjectionForCurrentView();
   handleCloseTransferPopup();
 };
+// =================================================================
+
+
 // (handleOperationAdded, Delete, Drop, Moved - без изменений)
 const handleOperationAdded = async (newEvent) => {
   console.log('[ЖУРНАЛ] handleOperationAdded: ➕ Вызываю mainStore.addOperation...');
@@ -343,25 +361,28 @@ const handleOperationDrop = async (dropData) => {
 };
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
-  // 🔴 ИСПРАВЛЕНИЕ: Используем _parseDateKey, чтобы сохранить год
-  const baseDate = _parseDateKey(oldDateKey); 
-  // const newDate = new Date(baseDate.getFullYear(), 0, 1); // (Старый код)
-  // newDate.setDate(toDayOfYear); // (Старый код)
   
-  // 🔴 НОВЫЙ КОД: (v5.3) OperationPopup (v5.3) теперь передает dateKey!
+  // 🔴 ИСПРАВЛЕНИЕ: (v5.3) OperationPopup (v5.3) теперь передает dateKey!
   // ... А нет, он все еще передает toDayOfYear.
   // Мы должны использовать _parseDateKey из mainStore, который у нас уже есть.
-  const newDate = mainStore._parseDateKey(`${baseDate.getFullYear()}-${toDayOfYear}`);
+  
+  // 🔴 ИСПРАВЛЕНИЕ: Используем _parseDateKey, чтобы сохранить год
+  const baseDate = _parseDateKey(oldDateKey); 
+  // const newDate = mainStore._parseDateKey(`${baseDate.getFullYear()}-${toDayOfYear}`); // (Ошибка, toDayOfYear может быть < 100)
+  
+  // 🔴 ИСПРАВЛЕНИЕ 2: Корректное создание newDate
+  const newDate = new Date(baseDate.getFullYear(), 0, 1);
+  newDate.setDate(toDayOfYear); // <-- Это корректно обработает dayOfYear
   
   const newDateKey = _getDateKey(newDate);
-  console.log('[ЖУРНАЛ] handleOperationMoved: ➡️ Вызываю mainStore.moveOperation (из попапа)...');
+  console.log(`[ЖУРНАЛ] handleOperationMoved: ➡️ Вызываю mainStore.moveOperation (из попапа) ${oldDateKey} -> ${newDateKey}...`);
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, toCellIndex ?? (operation.cellIndex ?? 0));
   await recalcProjectionForCurrentView();
   handleClosePopup();
 };
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3 / #4): Исчезающий Хедер ---
+// --- 🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3 / #4): Исчезающий Хедер (Доход/Расход) ---
 // =================================================================
 const handleOperationUpdated = async ({ dateKey, oldDateKey }) => {
   // (Старый параметр был { dayOfYear })
@@ -793,7 +814,7 @@ onBeforeUnmount(() => {
               :src="mainStore.user.avatarUrl" 
               alt="avatar" 
               class="user-avatar" 
-              v-if="mainStore.user.avatarUrl"
+              vif="mainStore.user.avatarUrl"
             />
             <div class="user-avatar-placeholder" v-else>
               {{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}
