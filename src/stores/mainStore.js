@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v6.13-FINAL-FIX ---
- * * ВЕРСИЯ: 6.13 - Восстановление displayOperationsFlat
+ * * --- МЕТКА ВЕРСИИ: v6.14-AUTOREFRESH-FIX ---
+ * * ВЕРСИЯ: 6.14 - Восстановление startAutoRefresh
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (CRITICAL FIX) Вернуто определение `displayOperationsFlat`, которое
- * было случайно удалено в v6.12, но требовалось в экспорте.
- * 2. Все логические фиксы (дата D&D, проверка ячейки) сохранены.
+ * 1. (CRITICAL) Функции `startAutoRefresh`, `stopAutoRefresh` и `forceRefreshAll`
+ * восстановлены и корректно экспортируются.
+ * 2. Сохранена вся логика из v6.11-v6.13 (даты, переводы, фиксы).
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v6.13-FINAL-FIX ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v6.14-AUTOREFRESH-FIX ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -164,7 +164,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // 🔴 ВОССТАНОВЛЕНО: displayOperationsFlat
   const displayOperationsFlat = computed(() => {
     const displayOps = [];
     Object.values(displayCache.value).forEach(dayOps => {
@@ -1019,7 +1018,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
     }
 
-    // --- 🔴 ИСПРАВЛЕНИЕ (FIX #1): Обновляем дату объекта перемещения ---
+    // --- 🔴 ИСПРАВЛЕНИЕ: Обновляем дату объекта перемещения ---
     const moved = { 
       ...operation, 
       cellIndex: targetIndex, 
@@ -1203,6 +1202,77 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  let autoRefreshInterval = null;
+  function startAutoRefresh(intervalMs = 30000) {
+    stopAutoRefresh();
+    console.log(`[ЖУРНАЛ] startAutoRefresh: ⏱️ Запуск автообновления каждые ${intervalMs}ms`);
+    autoRefreshInterval = setInterval(async () => {
+      console.log('[ЖУРНАЛ] AutoRefresh: 🔄 Выполняю автообновление...');
+      try {
+        await fetchAllEntities();
+        if (projection.value.mode) {
+          await loadCalculationData( 
+            projection.value.mode,
+            new Date(currentYear.value, 0, todayDayOfYear.value)
+          );
+        }
+        console.log('[ЖУРНАЛ] AutoRefresh: ✅ Данные успешно обновлены');
+      } catch (error) {
+        console.error('Ошибка при автообновлении:', error);
+      }
+    }, intervalMs);
+  }
+  function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+      console.log('[ЖУРНАЛ] stopAutoRefresh: 🛑 Остановка автообновления.');
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+    }
+  }
+  async function forceRefreshAll() {
+    console.log('Принудительное обновление всех данных...');
+    try {
+      displayCache.value = {};
+      calculationCache.value = {};
+      
+      await fetchAllEntities();
+      
+      if (projection.value.mode) {
+        await loadCalculationData( 
+          projection.value.mode,
+          new Date(currentYear.value, 0, todayDayOfYear.value)
+        );
+      }
+      
+      console.log('Все данные успешно обновлены');
+    } catch (error) {
+      console.error('Ошибка при принудительном обновлении:', error);
+    }
+  }
+
+  async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
+    console.log(`[mainStore v4.6] importOperations: Начинаем импорт ${selectedIndices.length} операций...`);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
+        operations, 
+        selectedRows: selectedIndices 
+      });
+      const createdOps = response.data;
+      console.log(`[mainStore v4.6] importOperations: Сервер успешно создал ${createdOps.length} операций.`);
+      progressCallback(createdOps.length);
+      console.log('[mainStore v4.6] importOperations: Запускаю forceRefreshAll...');
+      await forceRefreshAll();
+      console.log('[mainStore v4.6] importOperations: Импорт и обновление завершены.');
+      return createdOps;
+    } catch (error) {
+      console.error('Ошибка импорта в mainStore (v4.6):', error);
+      if (error.response && error.response.status === 401) {
+        user.value = null;
+      }
+      throw error; 
+    }
+  }
+
   async function checkAuth() {
   console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
   try {
@@ -1219,7 +1289,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-async function logout() {
+  async function logout() {
     axios.post(`${API_BASE_URL}/auth/logout`)
       .then(() => {
         console.log('[ЖУРНАЛ] logout: ✅ Серверная сессия успешно завершена (в фоне).');
