@@ -12,21 +12,18 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.0-FINAL-SCROLL ---
- * * ВЕРСИЯ: 6.0 - Финальная полировка скролла (Mac & Touch)
+ * * --- МЕТКА ВЕРСИИ: v6.1-CUSTOM-SCROLL ---
+ * * ВЕРСИЯ: 6.1 - Кастомный "Figma-like" скроллбар
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. CSS: Добавлено `touch-action: pan-y` для `.timeline-grid-wrapper`.
- * Это КРИТИЧЕСКИ ВАЖНО для Mac, чтобы жест двумя пальцами не вызывал
- * системную навигацию "Назад".
- * 2. JS: `onChangeView` теперь использует `setTimeout` для обновления
- * скроллбара. Это решает проблему на планшетах, когда при переключении
- * на "1 год" скролл не активировался мгновенно.
- * 3. JS: Улучшена чувствительность `onWheelScroll`.
+ * 1. УДАЛЕН нативный скроллбар (`horizontal-scrollbar-wrapper`).
+ * 2. ДОБАВЛЕН кастомный скроллбар (`custom-scrollbar-track` + `thumb`).
+ * 3. Реализована математика Drag-n-Drop для ползунка (мышь + тач).
+ * 4. Скроллбар теперь ВСЕГДА виден и интерактивен на iPad/Mac.
  */
 
-console.log('--- HomeView.vue v6.0-FINAL-SCROLL ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.1-CUSTOM-SCROLL ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -121,10 +118,10 @@ const totalDays = computed(() => {
   return mainStore.computeTotalDaysForMode(viewMode.value, today.value);
 });
 
-// Watcher остается как страховка
-watch(totalDays, async (newVal) => {
+// Watcher для обновления размеров скролла при смене режима
+watch(totalDays, async () => {
   await nextTick();
-  updateScrollbarWidthAndPosition();
+  updateScrollbarMetrics();
 });
 
 const globalTodayIndex = computed(() => {
@@ -162,8 +159,12 @@ const timelineGridContentRef = ref(null);
 const navPanelWrapperRef = ref(null);
 const yAxisLabels = ref([]); 
 const resizerRef = ref(null);
-const masterScrollbarRef = ref(null);
-const scrollbarContentRef = ref(null);
+
+// --- 🔴 НОВЫЕ REFS ДЛЯ КАСТОМНОГО СКРОЛЛА ---
+const customScrollbarTrackRef = ref(null);
+const scrollbarThumbWidth = ref(0);
+const scrollbarThumbX = ref(0);
+
 const graphAreaRef = ref(null);
 const homeHeaderRef = ref(null);
 const headerResizerRef = ref(null);
@@ -312,7 +313,7 @@ const generateVisibleDays = () => {
   rebuildVisibleDays();
 };
 
-/* ===================== РЕСАЙЗЕР ===================== */
+/* ===================== РЕСАЙЗЕР (ВЫСОТА) ===================== */
 const clampHeaderHeight = (rawPx) => {
   const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO;
   return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight);
@@ -379,103 +380,225 @@ const stopResize = () => {
   window.removeEventListener('touchend', stopResize);
 };
 
-/* ===================== СКРОЛЛ / ЖЕСТЫ (MAC & TOUCH) ===================== */
-const updateScrollbarWidthAndPosition = () => {
-  if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value) return;
-  const viewportWidth = timelineGridRef.value.clientWidth || 1;
-  
-  const widthRatio = Math.max(1, totalDays.value / VISIBLE_COLS);
-  scrollbarContentRef.value.style.width = `${viewportWidth * widthRatio}px`;
-  
-  const scroller = masterScrollbarRef.value;
+/* ==================================================================
+   --- 🔴 КАСТОМНЫЙ СКРОЛЛБАР (LOGIC) ---
+   ================================================================== */
+
+// Обновляет позицию ползунка и его ширину (вызывается при скролле или ресайзе)
+const updateScrollbarMetrics = () => {
+  if (!customScrollbarTrackRef.value) return;
+
+  const trackWidth = customScrollbarTrackRef.value.clientWidth || 0;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-  const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
   
-  if (maxVirtual === 0 || maxScroll === 0) {
-    scroller.scrollLeft = 0;
+  // 1. Расчет ширины ползунка
+  // (Видимая часть / Всего) * Ширина трека. Минимум 50px для удобства.
+  const ratio = VISIBLE_COLS / Math.max(VISIBLE_COLS, totalDays.value);
+  let tWidth = trackWidth * ratio;
+  tWidth = Math.max(50, tWidth); // Min width
+  // Если все влезает, ползунок равен треку (но мы его скроем через v-if если не нужен скролл)
+  scrollbarThumbWidth.value = tWidth;
+
+  // 2. Расчет позиции ползунка
+  if (maxVirtual <= 0) {
+    scrollbarThumbX.value = 0;
     return;
   }
-  scroller.scrollLeft = (virtualStartIndex.value / maxVirtual) * maxScroll;
-};
-
-const onMasterScroll = () => {
-  if (!masterScrollbarRef.value) return;
-  const scroller = masterScrollbarRef.value;
-  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-  const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-  if (maxVirtual === 0 || maxScroll === 0) return;
-  const ratio = scroller.scrollLeft / maxScroll;
-  virtualStartIndex.value = Math.round(ratio * maxVirtual);
-  rebuildVisibleDays(); 
-};
-
-// --- 🔴 FIX (MAC): Блокировка навигации при свайпе ---
-const onWheelScroll = (event) => {
-  if (!masterScrollbarRef.value) return;
   
-  // Проверяем, горизонтальный ли это скролл
+  const availableSpace = trackWidth - tWidth;
+  const progress = virtualStartIndex.value / maxVirtual;
+  scrollbarThumbX.value = progress * availableSpace;
+};
+
+// --- Управление перетаскиванием ползунка (Drag-n-Drop) ---
+const scrollState = {
+  isDragging: false,
+  startX: 0,
+  startThumbX: 0
+};
+
+const onScrollThumbMouseDown = (e) => {
+  startDrag(e.clientX);
+};
+const onScrollThumbTouchStart = (e) => {
+  startDrag(e.touches[0].clientX);
+};
+
+const startDrag = (clientX) => {
+  scrollState.isDragging = true;
+  scrollState.startX = clientX;
+  scrollState.startThumbX = scrollbarThumbX.value;
+  
+  window.addEventListener('mousemove', onScrollThumbMove);
+  window.addEventListener('mouseup', onScrollThumbEnd);
+  window.addEventListener('touchmove', onScrollThumbTouchMove, { passive: false });
+  window.addEventListener('touchend', onScrollThumbEnd);
+  
+  // Добавляем класс к body для курсора grabbing
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'grabbing';
+};
+
+const calculateScrollFromDrag = (clientX) => {
+  if (!customScrollbarTrackRef.value) return;
+  const trackWidth = customScrollbarTrackRef.value.clientWidth;
+  const availableSpace = trackWidth - scrollbarThumbWidth.value;
+  if (availableSpace <= 0) return;
+
+  const delta = clientX - scrollState.startX;
+  let newThumbX = scrollState.startThumbX + delta;
+  
+  // Clamp
+  newThumbX = Math.max(0, Math.min(newThumbX, availableSpace));
+  
+  // Update UI immediately for smoothness
+  scrollbarThumbX.value = newThumbX;
+  
+  // Calculate new virtual index
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const ratio = newThumbX / availableSpace;
+  const newIndex = Math.round(ratio * maxVirtual);
+  
+  if (newIndex !== virtualStartIndex.value) {
+    virtualStartIndex.value = newIndex;
+    rebuildVisibleDays();
+  }
+};
+
+const onScrollThumbMove = (e) => {
+  if (!scrollState.isDragging) return;
+  calculateScrollFromDrag(e.clientX);
+};
+const onScrollThumbTouchMove = (e) => {
+  if (!scrollState.isDragging) return;
+  e.preventDefault(); // Блокируем скролл страницы при драге ползунка
+  calculateScrollFromDrag(e.touches[0].clientX);
+};
+
+const onScrollThumbEnd = () => {
+  scrollState.isDragging = false;
+  window.removeEventListener('mousemove', onScrollThumbMove);
+  window.removeEventListener('mouseup', onScrollThumbEnd);
+  window.removeEventListener('touchmove', onScrollThumbTouchMove);
+  window.removeEventListener('touchend', onScrollThumbEnd);
+  
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+};
+
+// Клик по треку (прыжок к месту)
+const onTrackClick = (e) => {
+  if (e.target.classList.contains('custom-scrollbar-thumb')) return; // Игнорируем клик по самому ползунку
+  
+  const trackRect = customScrollbarTrackRef.value.getBoundingClientRect();
+  const clickX = e.clientX - trackRect.left;
+  
+  // Центрируем ползунок по клику
+  const targetThumbX = clickX - (scrollbarThumbWidth.value / 2);
+  
+  // Эмулируем drag логику для расчета
+  const trackWidth = trackRect.width;
+  const availableSpace = trackWidth - scrollbarThumbWidth.value;
+  let newThumbX = Math.max(0, Math.min(targetThumbX, availableSpace));
+  
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const ratio = newThumbX / availableSpace;
+  virtualStartIndex.value = Math.round(ratio * maxVirtual);
+  rebuildVisibleDays();
+  updateScrollbarMetrics(); // Sync thumb position exactly
+};
+
+
+/* ===================== ЖЕСТЫ КОНТЕНТА (GRID) ===================== */
+// Эти жесты обновляют virtualStartIndex, а ползунок реагирует через watcher/вызовы
+const onWheelScroll = (event) => {
+  // Mac Trackpad: deltaX
   const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
 
   if (isHorizontal) {
-    // Если это горизонтальный свайп, и не нажат Ctrl (зум), блокируем "Назад"
-    if (event.cancelable && !event.ctrlKey) {
-        event.preventDefault();
+    if (event.cancelable && !event.ctrlKey) event.preventDefault();
+    
+    // "Сила" скролла. Можно настроить множитель.
+    const delta = event.deltaX;
+    const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+    
+    // Эвристика: 1 свайп ~ несколько дней
+    // Здесь мы просто аккумулируем пиксели, но у нас виртуальный скролл по индексам.
+    // Простейшая реализация: если delta > порога, смещаем индекс.
+    
+    // Более плавная: используем аккумулятор?
+    // Для простоты: прямое воздействие.
+    // Но для плавности как в Figma лучше мапить пиксели в "доли индекса".
+    // Сейчас сделаем просто:
+    
+    if (Math.abs(delta) > 1) {
+        const direction = delta > 0 ? 1 : -1;
+        // Ускорение при резком скролле
+        const speed = Math.abs(delta) > 50 ? 2 : 1; 
+        
+        let nextVal = virtualStartIndex.value + (direction * speed);
+        nextVal = Math.max(0, Math.min(nextVal, maxVirtual));
+        
+        if (nextVal !== virtualStartIndex.value) {
+            virtualStartIndex.value = nextVal;
+            rebuildVisibleDays();
+            updateScrollbarMetrics(); // Синхронизируем ползунок
+        }
     }
-    // Применяем скролл
-    masterScrollbarRef.value.scrollLeft += event.deltaX;
   }
 };
 
-// --- 🔴 FIX (TOUCH): Эмуляция скролла для планшетов ---
-const touchState = {
-  startX: 0,
-  scrollLeftStart: 0,
-  isDragging: false
+// Touch gestures (iPad content drag)
+const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
+
+const onContentTouchStart = (e) => {
+  contentTouchState.isDragging = true;
+  contentTouchState.startX = e.touches[0].clientX;
+  contentTouchState.startIndex = virtualStartIndex.value;
 };
 
-const onTouchStart = (e) => {
-  if (!masterScrollbarRef.value) return;
-  touchState.isDragging = true;
-  touchState.startX = e.touches[0].clientX;
-  touchState.scrollLeftStart = masterScrollbarRef.value.scrollLeft;
+const onContentTouchMove = (e) => {
+  if (!contentTouchState.isDragging) return;
+  // Тянем влево -> идем вперед (индекс растет)
+  const deltaPx = contentTouchState.startX - e.touches[0].clientX;
+  
+  // Чувствительность: сколько пикселей свайпа = 1 день
+  const pxPerDay = 50; 
+  const deltaDays = Math.round(deltaPx / pxPerDay);
+  
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  let nextVal = contentTouchState.startIndex + deltaDays;
+  nextVal = Math.max(0, Math.min(nextVal, maxVirtual));
+  
+  if (e.cancelable) e.preventDefault(); // Block native nav
+  
+  if (nextVal !== virtualStartIndex.value) {
+    virtualStartIndex.value = nextVal;
+    rebuildVisibleDays();
+    updateScrollbarMetrics();
+  }
 };
 
-const onTouchMove = (e) => {
-  if (!touchState.isDragging || !masterScrollbarRef.value) return;
-  
-  const currentX = e.touches[0].clientX;
-  const deltaX = touchState.startX - currentX; // Тянем влево -> скроллим вправо
-  
-  // Блокируем свайп страницы, если это явно горизонтальное движение
-  if (e.cancelable) e.preventDefault();
-  
-  masterScrollbarRef.value.scrollLeft = touchState.scrollLeftStart + deltaX;
+const onContentTouchEnd = () => {
+  contentTouchState.isDragging = false;
 };
 
-const onTouchEnd = () => {
-  touchState.isDragging = false;
-};
 
 const centerToday = () => {
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   virtualStartIndex.value = Math.min(Math.max(0, globalTodayIndex.value - CENTER_INDEX), maxVirtual);
   rebuildVisibleDays();
-  updateScrollbarWidthAndPosition();
+  updateScrollbarMetrics();
 };
 
-// --- 🔴 FIX (ПЛАНШЕТЫ): Надежное обновление скролла при смене вида ---
 const onChangeView = async (newView) => {
   console.log(`[HomeView] onChangeView: ${newView}`);
   viewMode.value = newView;
-  
-  // Шаг 1: Ждем обновления Vue
   await nextTick();
   centerToday();
-  
-  // Шаг 2: Ждем еще тик + setTimeout для гарантии обновления DOM размеров
   await nextTick();
   setTimeout(() => {
-    updateScrollbarWidthAndPosition();
+    updateScrollbarMetrics();
     recalcProjectionForCurrentView();
   }, 50);
 };
@@ -483,7 +606,7 @@ const onChangeView = async (newView) => {
 const onWindowResize = () => {
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));
-  updateScrollbarWidthAndPosition();
+  updateScrollbarMetrics(); // Ресайз скролла
 };
 
 /* ===================== ИНИЦИАЛИЗАЦИЯ ===================== */
@@ -540,30 +663,23 @@ onMounted(async () => {
     headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false });
   }
 
-  if (masterScrollbarRef.value) {
-    masterScrollbarRef.value.addEventListener('scroll', onMasterScroll);
-  }
-
-  // Привязка событий жестов и скролла
+  // 🔴 Grid Gestures
   if (timelineGridRef.value) {
-    // Wheel (Trackpad)
     timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false });
-    
-    // Touch (Tablet/Phone)
-    timelineGridRef.value.addEventListener('touchstart', onTouchStart, { passive: true });
-    timelineGridRef.value.addEventListener('touchmove', onTouchMove, { passive: false });
-    timelineGridRef.value.addEventListener('touchend', onTouchEnd);
+    timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true });
+    timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false });
+    timelineGridRef.value.addEventListener('touchend', onContentTouchEnd);
   }
 
   resizeObserver = new ResizeObserver(() => {
     applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
     applyHeights(clampTimelineHeight(timelineHeightPx.value));
-    updateScrollbarWidthAndPosition();
+    updateScrollbarMetrics();
   });
   if (mainContentRef.value) resizeObserver.observe(mainContentRef.value);
 
   window.addEventListener('resize', onWindowResize);
-  updateScrollbarWidthAndPosition();
+  updateScrollbarMetrics();
 
   await recalcProjectionForCurrentView();
 });
@@ -583,15 +699,12 @@ onBeforeUnmount(() => {
     headerResizerRef.value.removeEventListener('mousedown', initHeaderResize);
     headerResizerRef.value.removeEventListener('touchstart', initHeaderResize);
   }
-  if (masterScrollbarRef.value) {
-    masterScrollbarRef.value.removeEventListener('scroll', onMasterScroll);
-  }
   
   if (timelineGridRef.value) {
     timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
-    timelineGridRef.value.removeEventListener('touchstart', onTouchStart);
-    timelineGridRef.value.removeEventListener('touchmove', onTouchMove);
-    timelineGridRef.value.removeEventListener('touchend', onTouchEnd);
+    timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart);
+    timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove);
+    timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd);
   }
   
   window.removeEventListener('resize', onWindowResize);
@@ -653,10 +766,25 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <!-- 🔴 КАСТОМНЫЙ СКРОЛЛБАР -->
         <div class="divider-wrapper">
-          <div class="horizontal-scrollbar-wrapper" ref="masterScrollbarRef">
-            <div class="scrollbar-content" ref="scrollbarContentRef"></div>
+          
+          <!-- Трек скроллбара (кликабельный) -->
+          <div 
+            class="custom-scrollbar-track" 
+            ref="customScrollbarTrackRef"
+            @mousedown="onTrackClick"
+          >
+             <!-- Ползунок (Drag) -->
+             <div 
+               class="custom-scrollbar-thumb"
+               :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }"
+               @mousedown.stop="onScrollThumbMouseDown"
+               @touchstart.stop="onScrollThumbTouchStart"
+             ></div>
           </div>
+
+          <!-- Пипка ресайза высоты (поверх скролла) -->
           <div class="vertical-resizer" ref="resizerRef"></div>
         </div>
 
@@ -984,9 +1112,9 @@ onBeforeUnmount(() => {
   scrollbar-width: none;
   -ms-overflow-style: none;
   
-  /* 🔴 FIX: Запрещаем навигацию "Назад" на уровне CSS для браузера */
+  /* 🔴 FIX: Запрещаем навигацию "Назад" */
   overscroll-behavior-x: none;
-  /* 🔴 FIX: Разрешаем только вертикальный скролл (браузерный), горизонтальный отдаем JS */
+  /* 🔴 FIX: Разрешаем только вертикальный скролл */
   touch-action: pan-y;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
@@ -996,6 +1124,7 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+/* --- КОНТЕЙНЕР СКРОЛЛА И РЕСАЙЗЕРА --- */
 .divider-wrapper {
   flex-shrink: 0;
   height: 15px;
@@ -1003,7 +1132,39 @@ onBeforeUnmount(() => {
   background-color: var(--color-background-soft);
   border-bottom: 1px solid var(--color-border);
   position: relative;
+  
+  /* Для правильного позиционирования кастомного скролла */
+  display: flex;
+  align-items: center;
 }
+
+/* --- 🔴 СТИЛИ КАСТОМНОГО СКРОЛЛА --- */
+.custom-scrollbar-track {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #2a2a2a; /* Цвет трека */
+  cursor: pointer;
+  z-index: 10; /* Под ресайзером (пипкой) */
+}
+
+.custom-scrollbar-thumb {
+  position: absolute;
+  top: 2px; /* Отступ сверху */
+  bottom: 2px; /* Отступ снизу */
+  background-color: #555; /* Цвет ползунка */
+  border-radius: 6px;
+  cursor: grab;
+  /* Добавляем transition только если не драгаем, но лучше без него для мгновенного отклика */
+}
+.custom-scrollbar-thumb:active {
+  background-color: #777;
+  cursor: grabbing;
+}
+
+/* --- РЕСАЙЗЕР (ПИПКА) --- */
 .vertical-resizer {
   position: absolute;
   top: -5px;
@@ -1012,7 +1173,7 @@ onBeforeUnmount(() => {
   width: 40px;
   height: 25px;
   cursor: row-resize;
-  z-index: 20;
+  z-index: 20; /* Поверх скролла */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1031,30 +1192,6 @@ onBeforeUnmount(() => {
 }
 .vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
 
-.horizontal-scrollbar-wrapper {
-  width: 100%;
-  height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: auto;
-  scrollbar-color: #555555 #2a2a2a;
-}
-.horizontal-scrollbar-wrapper::-webkit-scrollbar {
-  height: 12px;
-}
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-track {
-  background: #2a2a2a;
-  border-top: 1px solid var(--color-border);
-}
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb {
-  background-color: #555;
-  border-radius: 6px;
-  border: 3px solid #2a2a2a;
-}
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover {
-  background-color: #777;
-}
-.scrollbar-content { height: 1px; }
 
 .graph-area-wrapper {
   flex-grow: 1;
