@@ -3,17 +3,17 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.4-HEADER-IPAD ---
- * * ВЕРСИЯ: 6.4 - Адаптация дат для iPad Pro
+ * * --- МЕТКА ВЕРСИИ: v6.5-HEADER-1400 ---
+ * * ВЕРСИЯ: 6.5 - Адаптация для iPad Pro (1400px)
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Порог `isTablet` увеличен до 1370px, чтобы захватить iPad Pro 12.9"
- * в ландшафтной ориентации (1366px).
- * 2. Формат даты переключается на DD.MM.YY при ширине < 1370px.
+ * 1. Порог `isTablet` увеличен до 1400px. Это включает iPad Pro 12.9"
+ * и небольшие ноутбуки.
+ * 2. При ширине < 1400px дата будет отображаться в формате "16.11.25".
  */
 
-console.log('--- TheHeader.vue v6.4-HEADER-IPAD ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v6.5-HEADER-1400 ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -33,8 +33,8 @@ const updateWidth = () => { windowWidth.value = window.innerWidth; };
 onMounted(() => window.addEventListener('resize', updateWidth));
 onUnmounted(() => window.removeEventListener('resize', updateWidth));
 
-// 🔴 ИЗМЕНЕНО: Увеличен порог для iPad Pro 12.9 (1366px)
-const isTablet = computed(() => windowWidth.value < 1370);
+// 🔴 ИЗМЕНЕНО: Порог увеличен до 1400px (по запросу)
+const isTablet = computed(() => windowWidth.value < 1400);
 
 // Форматтеры
 const ruShort = new Intl.DateTimeFormat('ru-RU', {
@@ -51,6 +51,7 @@ const ruSuperShort = new Intl.DateTimeFormat('ru-RU', {
 
 const todayStr = computed(() => {
   const d = new Date();
+  // Если планшет (<1400), используем супер-короткий формат
   return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d);
 });
 
@@ -262,7 +263,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
   width: 100%;
 }
 
-/* === 🟢 АДАПТАЦИЯ ДЛЯ ПЛАНШЕТА === */
+/* === 🟢 АДАПТАЦИЯ ДЛЯ ПЛАНШЕТА (и небольших экранов) === */
 @media (max-height: 900px) {
   .header-dashboard {
     gap: 1rem;
