@@ -12,19 +12,19 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.2-CONDITIONAL-SCROLL ---
- * * ВЕРСИЯ: 6.2 - Условная видимость скроллбара
+ * * --- МЕТКА ВЕРСИИ: v6.3-TABLET-ADAPT ---
+ * * ВЕРСИЯ: 6.3 - Адаптация высоты для iPad/Safari
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлено computed свойство `isScrollActive`.
- * 2. Скроллбар теперь имеет `v-if="isScrollActive"`.
- * - В режиме '12d': Скрыт полностью.
- * - В режимах '1m' и выше: Виден постоянно (как на Windows).
- * 3. Сохранена вся логика жестов и плавности из v6.1.
+ * 1. CSS: .home-layout теперь использует `height: 100dvh`.
+ * Это решает проблему вылезания за пределы экрана на iPad,
+ * учитывая адресную строку браузера.
+ * 2. CSS: У `.graph-area-wrapper` добавлено `min-height: 0`,
+ * чтобы flex-контейнер мог сжимать его, когда места мало.
  */
 
-console.log('--- HomeView.vue v6.2-CONDITIONAL-SCROLL ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.3-TABLET-ADAPT ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -115,17 +115,14 @@ const VISIBLE_COLS = 12;
 const CENTER_INDEX = Math.floor((VISIBLE_COLS - 1) / 2);
 const viewMode = ref('12d');
 
-// --- 🔴 НОВОЕ: Проверка активности скролла ---
 const isScrollActive = computed(() => {
   return viewMode.value !== '12d';
 });
-// --- КОНЕЦ НОВОГО ---
 
 const totalDays = computed(() => {
   return mainStore.computeTotalDaysForMode(viewMode.value, today.value);
 });
 
-// Watcher для обновления размеров скролла при смене режима
 watch(totalDays, async () => {
   await nextTick();
   updateScrollbarMetrics();
@@ -167,7 +164,6 @@ const navPanelWrapperRef = ref(null);
 const yAxisLabels = ref([]); 
 const resizerRef = ref(null);
 
-// --- REFS ДЛЯ КАСТОМНОГО СКРОЛЛА ---
 const customScrollbarTrackRef = ref(null);
 const scrollbarThumbWidth = ref(0);
 const scrollbarThumbX = ref(0);
@@ -320,7 +316,7 @@ const generateVisibleDays = () => {
   rebuildVisibleDays();
 };
 
-/* ===================== РЕСАЙЗЕР (ВЫСОТА) ===================== */
+/* ===================== РЕСАЙЗЕР ===================== */
 const clampHeaderHeight = (rawPx) => {
   const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO;
   return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight);
@@ -387,18 +383,14 @@ const stopResize = () => {
   window.removeEventListener('touchend', stopResize);
 };
 
-/* ==================================================================
-   --- КАСТОМНЫЙ СКРОЛЛБАР (LOGIC) ---
-   ================================================================== */
+/* ===================== КАСТОМНЫЙ СКРОЛЛБАР ===================== */
 
 const updateScrollbarMetrics = () => {
-  // Если скроллбара нет в DOM (12d режим), выходим
   if (!customScrollbarTrackRef.value) return;
 
   const trackWidth = customScrollbarTrackRef.value.clientWidth || 0;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   
-  // Если скроллить некуда, можно показать ползунок на всю ширину или скрыть
   if (maxVirtual <= 0) {
     scrollbarThumbWidth.value = trackWidth;
     scrollbarThumbX.value = 0;
@@ -507,7 +499,6 @@ const onTrackClick = (e) => {
 
 /* ===================== ЖЕСТЫ КОНТЕНТА ===================== */
 const onWheelScroll = (event) => {
-  // Проверяем, нужно ли вообще скроллить
   if (!isScrollActive.value) return;
 
   const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
@@ -577,12 +568,8 @@ const centerToday = () => {
 const onChangeView = async (newView) => {
   console.log(`[HomeView] onChangeView: ${newView}`);
   viewMode.value = newView;
-  
-  // 1. Сначала центрируем и обновляем данные
   await nextTick();
   centerToday();
-  
-  // 2. После обновления DOM (появления/исчезновения скролла) пересчитываем его
   await nextTick();
   setTimeout(() => {
     updateScrollbarMetrics();
@@ -666,7 +653,6 @@ onMounted(async () => {
 
   window.addEventListener('resize', onWindowResize);
   
-  // Первичная инициализация скролла (может быть 0, если 12d)
   updateScrollbarMetrics();
 
   await recalcProjectionForCurrentView();
@@ -754,14 +740,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 🔴 КАСТОМНЫЙ СКРОЛЛБАР -->
         <div class="divider-wrapper">
           
-          <!-- 
-            v-if="isScrollActive": 
-            Если 12d -> элемента нет в DOM (невидим).
-            Если 1m..1y -> элемент есть и виден.
-          -->
           <div 
             v-if="isScrollActive"
             class="custom-scrollbar-track" 
@@ -776,7 +756,6 @@ onBeforeUnmount(() => {
              ></div>
           </div>
 
-          <!-- Пипка ресайза -->
           <div class="vertical-resizer" ref="resizerRef"></div>
         </div>
 
@@ -1001,7 +980,9 @@ onBeforeUnmount(() => {
 .home-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* 🔴 ИСПРАВЛЕНИЕ: height: 100dvh учитывает адресную строку Safari */
+  height: 100vh; /* Fallback */
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
   background-color: var(--color-background);
@@ -1011,7 +992,6 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
-  
 }
 .header-resizer {
   flex-shrink: 0;
@@ -1105,9 +1085,9 @@ onBeforeUnmount(() => {
   scrollbar-width: none;
   -ms-overflow-style: none;
   
-  /* 🔴 FIX: Запрещаем навигацию "Назад" */
+  /* Запрещаем навигацию "Назад" */
   overscroll-behavior-x: none;
-  /* 🔴 FIX: Разрешаем только вертикальный скролл */
+  /* Разрешаем только вертикальный скролл */
   touch-action: pan-y;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
@@ -1117,7 +1097,6 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-/* --- КОНТЕЙНЕР СКРОЛЛА И РЕСАЙЗЕРА --- */
 .divider-wrapper {
   flex-shrink: 0;
   height: 15px;
@@ -1125,28 +1104,26 @@ onBeforeUnmount(() => {
   background-color: var(--color-background-soft);
   border-bottom: 1px solid var(--color-border);
   position: relative;
-  
   display: flex;
   align-items: center;
 }
 
-/* --- СТИЛИ КАСТОМНОГО СКРОЛЛА --- */
 .custom-scrollbar-track {
   position: absolute;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
-  background-color: #2a2a2a; /* Цвет трека */
+  background-color: #2a2a2a; 
   cursor: pointer;
   z-index: 10;
 }
 
 .custom-scrollbar-thumb {
   position: absolute;
-  top: 2px; /* Отступ сверху */
-  bottom: 2px; /* Отступ снизу */
-  background-color: #555; /* Цвет ползунка */
+  top: 2px; 
+  bottom: 2px; 
+  background-color: #555; 
   border-radius: 6px;
   cursor: grab;
 }
@@ -1155,7 +1132,6 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-/* --- РЕСАЙЗЕР (ПИПКА) --- */
 .vertical-resizer {
   position: absolute;
   top: -5px;
@@ -1164,7 +1140,7 @@ onBeforeUnmount(() => {
   width: 40px;
   height: 25px;
   cursor: row-resize;
-  z-index: 20; /* Поверх скролла */
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1189,6 +1165,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  
+  /* 🔴 ИСПРАВЛЕНИЕ: Позволяем этому контейнеру сжиматься */
+  min-height: 0;
 }
 .graph-renderer-content { flex-grow: 1; }
 .summaries-container { flex-shrink: 0; }
