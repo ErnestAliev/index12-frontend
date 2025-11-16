@@ -12,16 +12,16 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.7-HEADER-120 ---
- * * ВЕРСИЯ: 6.7 - Стартовая высота хедера 120px
+ * * --- МЕТКА ВЕРСИИ: v6.8-HEADER-130 ---
+ * * ВЕРСИЯ: 6.8 - Высота хедера 130px
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. HEADER_MIN_H установлено в 120 (было 150).
- * 2. CSS .home-header height установлено в 120px.
+ * 1. HEADER_MIN_H установлено в 130.
+ * 2. CSS .home-header height установлено в 130px.
  */
 
-console.log('--- HomeView.vue v6.7-HEADER-120 ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.8-HEADER-130 ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -174,8 +174,8 @@ const headerResizerRef = ref(null);
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
-// 🔴 ИЗМЕНЕНО: Стартовая высота 120px
-const HEADER_MIN_H = 120; 
+// 🔴 ИЗМЕНЕНО: Стартовая высота 130px
+const HEADER_MIN_H = 130; 
 const HEADER_MAX_H_RATIO = 0.5; 
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
@@ -622,7 +622,7 @@ onMounted(async () => {
   centerToday(); 
   await nextTick();
 
-  // 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 120px
+  // 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 130px
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height)
     ? parseFloat(timelineGridRef.value.style.height)
@@ -990,8 +990,8 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
-  /* 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 120px */
-  height: 140px;
+  /* 🔴 ИСПРАВЛЕНИЕ: Фиксированная стартовая высота 130px */
+  height: 130px;
 }
 .header-resizer {
   flex-shrink: 0;
