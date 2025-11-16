@@ -991,7 +991,7 @@ onBeforeUnmount(() => {
   background-color: var(--color-background);
   display: flex; 
   /* 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 120px */
-  height: 130px;
+  height: 140px;
 }
 .header-resizer {
   flex-shrink: 0;
