@@ -699,7 +699,7 @@ onBeforeUnmount(() => {
   
   <div v-else-if="!mainStore.user" class="login-screen">
     <div class="login-box">
-      <h1>Добро пожаловать</h1>
+      <h1>Добро пожаловать в систему управления финансами и активами index12</h1>
       <p>Войдите, чтобы продолжить работу с вашим финансовым помощником.</p>
       <a href="https://api.index12.com/auth/google" class="google-login-button">
         Войти через Google
