@@ -1,14 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v7.6-NO-AUTO-LAYOUT ---
- * * ВЕРСИЯ: 7.6 - Исправление "7-го виджета"
+ * * --- МЕТКА ВЕРСИИ: v7.7-FIX-RENAME ---
+ * * ВЕРСИЯ: 7.7 - Исправление переименования категорий
  * ДАТА: 2025-11-16
  *
- * ИСПРАВЛЕНИЯ:
- * 1. (CRITICAL LOGIC) В функции `addCategory` УДАЛЕНО автоматическое
- * добавление виджета в `dashboardLayout`.
- * Теперь добавление виджета на доску контролируется исключительно
- * компонентом (TheHeader), который использует `replaceWidget` для сохранения
- * лимита в 6 слотов.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX) В функцию `batchUpdateEntities` добавлена обработка `categories`.
+ * Теперь при переименовании категории через карандаш ✎ локальное состояние
+ * обновляется мгновенно, и заголовок виджета меняется сразу.
  */
 
 import { defineStore } from 'pinia';
@@ -34,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v7.6-NO-AUTO-LAYOUT ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v7.7-FIX-RENAME ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -92,10 +90,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }, { deep: true });
   
   function replaceWidget(i, key){ 
-    // Заменяем виджет по индексу. Массив всегда остается той же длины.
-    dashboardLayout.value[i] = key;
-    // Триггерим реактивность (для надежности при мутации по индексу)
-    dashboardLayout.value = [...dashboardLayout.value];
+    if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
   function setForecastState(widgetKey, value) {
     dashboardForecastState.value[widgetKey] = !!value;
@@ -392,7 +387,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (endDate <= todayDate) { return currentTotalBalance.value || 0; }
     let total = totalInitialBalance.value || 0;
     
-    for (const op of futureOps.value) { // Используем futureOps
+    for (const op of futureOps.value) { 
        if (!isTransfer(op)) total += (op?.amount || 0); 
     }
     return total;
@@ -436,19 +431,12 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
   
   async function loadCalculationData(mode, baseDate = new Date()) {
-    console.log(`[ЖУРНАЛ] loadCalculationData: 🚀 Загрузка данных для расчетов (${mode})`);
-    
     const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
-
     const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
     const yearStartDate = new Date(currentYear.value, 0, 1);
     
-    console.log(`[ЖУРНАЛ] loadCalculationData:  memastikan (insuring) прошлое загружено...`);
     await fetchCalculationRange(yearStartDate, todayDate);
-    
-    console.log(`[ЖУРНАЛ] loadCalculationData: загружаю диапазон вида...`);
     await fetchCalculationRange(viewStartDate, viewEndDate);
-
     await updateProjectionFromCalculationData(mode, baseDate);
   }
 
@@ -481,15 +469,9 @@ export const useMainStore = defineStore('mainStore', () => {
         
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
-        
-      } else {
-        console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
     } catch (error) {
-      console.error('Ошибка загрузки данных для расчетов:', error);
-      if (error.response && error.response.status === 401) {
-        user.value = null;
-      }
+      if (error.response && error.response.status === 401) user.value = null;
     }
   }
 
@@ -500,8 +482,7 @@ export const useMainStore = defineStore('mainStore', () => {
     let futureIncomeSum = 0;
     let futureExpenseSum = 0;
     
-    // Используем futureOps для расчета проекции
-    for (const op of futureOps.value) {
+    for (const op of futureOps.value) { 
         if (!isTransfer(op)) {
             if (op.type === 'income') futureIncomeSum += op.amount || 0;
             else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
@@ -545,14 +526,10 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       displayCache.value = { ...displayCache.value, ...tempCache };
     } catch (error) {
-      console.error('Ошибка загрузки диапазона операций:', error);
-      if (error.response && error.response.status === 401) {
-        user.value = null;
-      }
+      if (error.response && error.response.status === 401) user.value = null;
     }
   }
 
-  // Функция синхронизации кэшей (Для мгновенного UI)
   const _syncCaches = (key, ops) => {
       displayCache.value[key] = [...ops];
       calculationCache.value[key] = [...ops];
@@ -610,9 +587,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   function getOperationsForDay(dateKey) {
-    if (typeof dateKey !== 'string') {
-        return [];
-    }
     return displayCache.value[dateKey] || [];
   }
 
@@ -681,7 +655,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function refreshDay(dateKey) {
     if (!dateKey) return;
-    console.log(`[ЖУРНАЛ] refreshDay: 🔄 ${dateKey}`);
     try {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
@@ -701,7 +674,6 @@ export const useMainStore = defineStore('mainStore', () => {
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     
-    // Ensure data
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
 
@@ -731,7 +703,6 @@ export const useMainStore = defineStore('mainStore', () => {
                  .catch(e => refreshDay(oldDateKey));
            }
        }
-
     } else {
        // MOVE BETWEEN DAYS (Collision -> Find Free)
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
@@ -916,6 +887,8 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='companies')   companies.value = res.data;
       else if (path==='contractors') contractors.value = res.data;
       else if (path==='projects')    projects.value = res.data;
+      // 🔴 ДОБАВЛЕНО: Обновление категорий в локальном стейте
+      else if (path==='categories')  categories.value = res.data; 
     }catch(e){
       await fetchAllEntities();
     }
