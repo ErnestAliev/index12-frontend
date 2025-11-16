@@ -697,16 +697,19 @@ onBeforeUnmount(() => {
     <p>Проверка сессии...</p>
   </div>
   
-  <div v-else-if="!mainStore.user" class="login-screen">
-    <div class="login-box">
-      <h1>Добро пожаловать</h1>
-      <p>Войдите, чтобы продолжить работу с вашим финансовым помощником.</p>
-      <a href="https://api.index12.com/auth/google" class="google-login-button">
-        Войти через Google
+  <div v-else-if="!mainStore.user" class="welcome-screen">
+    <div class="welcome-content">
+      <h1 class="welcome-title">INDEX12</h1>
+      <h2 class="welcome-subtitle">Система управления финансами и активами</h2>
+      <p class="welcome-features">Счета, компании, проекты, контрагенты</p>
+      <a href="https://api.index12.com/auth/google" class="welcome-button">
+        Начать
       </a>
     </div>
+    <div class="welcome-image-container">
+      <img src="/Серсив.jpg" alt="INDEX12 Dashboard" class="welcome-image">
+    </div>
   </div>
-  
   <div v-else class="home-layout" @click="closeAllMenus">
     
     <header class="home-header" ref="homeHeaderRef">
@@ -835,7 +838,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.loading-screen, .login-screen {
+/* --- Стили для загрузки и нового экрана входа --- */
+.loading-screen {
   width: 100vw;
   height: 100vh;
   display: flex;
@@ -846,57 +850,116 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
-.login-box {
-  background: var(--color-background-soft);
-  padding: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-}
-.login-box h1 {
-  margin: 0 0 10px 0;
-  color: var(--color-heading-text);
-}
-.login-box p {
-  margin-bottom: 30px;
-  max-width: 300px;
-  opacity: 0.8;
-}
-.google-login-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 24px;
-  background-color: #fff;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 0.2s, box-shadow 0.2s;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-.google-login-button:hover {
-  background-color: #f9f9f9;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-.google-login-button svg {
-  margin-right: 12px;
-}
 .spinner {
   width: 40px;
   height: 40px;
   border: 4px solid var(--color-border);
-  border-top-color: var(--color-accent);
+  border-top-color: var(--color-primary); /* Используем зеленый акцент */
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.welcome-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-background-soft); /* #282828 из base.css */
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 5vw;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.welcome-content {
+  flex: 1;
+  max-width: 540px;
+  padding-right: 2rem;
+  z-index: 10;
+}
+
+.welcome-title {
+  font-size: 4rem; /* 64px */
+  font-weight: 700;
+  color: var(--color-heading);
+  margin-bottom: 1rem;
+}
+
+.welcome-subtitle {
+  font-size: 1.75rem; /* 28px */
+  font-weight: 300;
+  color: var(--color-heading);
+  margin-bottom: 1.5rem;
+  line-height: 1.4;
+}
+
+.welcome-features {
+  font-size: 1.125rem; /* 18px */
+  color: var(--color-text);
+  opacity: 0.8;
+  margin-bottom: 2.5rem;
+}
+
+.welcome-button {
+  display: inline-block;
+  padding: 14px 32px;
+  font-size: 1.125rem; /* 18px */
+  font-weight: 600;
+  color: #fff;
+  background-color: var(--color-primary); /* Зеленый из base.css */
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  transition: background-color 0.2s, transform 0.2s;
+}
+.welcome-button:hover {
+  background-color: #28a745; /* Чуть темнее зеленый */
+  transform: translateY(-2px);
+}
+
+.welcome-image-container {
+  flex: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1500px;
+}
+
+.welcome-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  /* Эффект из вашего скриншота */
+  transform: rotateY(-10deg) rotateX(5deg) rotateZ(-3deg) scale(1.1);
+  opacity: 0.9;
+}
+
+/* Адаптивность для нового экрана */
+@media (max-width: 900px) {
+  .welcome-screen {
+    flex-direction: column;
+    text-align: center;
+    justify-content: center;
+  }
+  .welcome-content {
+    padding-right: 0;
+    max-width: 100%;
+    margin-bottom: 3rem;
+  }
+  .welcome-image-container {
+    display: none; /* Скрываем изображение на маленьких экранах */
+  }
+}
+
+
+/* --- Стили остального приложения (для залогиненного пользователя) --- */
 .user-profile-widget {
   position: absolute;
   bottom: 0;
@@ -934,7 +997,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 50%;
   margin-right: 8px;
-  background-color: var(--color-accent);
+  background-color: var(--color-primary); /* Зеленый акцент */
   color: #fff;
   display: flex;
   align-items: center;
