@@ -12,20 +12,18 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.4-LAYOUT-FIX ---
- * * ВЕРСИЯ: 6.4 - Финальная адаптация Layout и скролла
+ * * --- МЕТКА ВЕРСИИ: v6.5-HEADER-STABLE ---
+ * * ВЕРСИЯ: 6.5 - Стабилизация высоты хедера
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. CSS: `.home-layout` теперь `height: 100dvh` (dynamic viewport height)
- * для корректной работы в Safari с панелями навигации.
- * 2. JS: Устранен "скачок" хедера при старте. Из `ResizeObserver` убран вызов
- * `applyHeaderHeight`. Теперь высота хедера меняется ТОЛЬКО при ручном
- * ресайзе или глобальном ресайзе окна, но не при обновлении контента.
- * 3. Сохранена вся логика кастомного скролла из v6.2.
+ * 1. CSS: Для `.home-header` задана явная `height: 150px`.
+ * Это предотвращает визуальный "скачок" при загрузке, пока JS не инициализируется.
+ * 2. JS: `headerHeightPx` инициализируется строго с `HEADER_MIN_H` (150).
+ * 3. ResizeObserver больше не трогает хедер, как и в v6.4, что разрывает цикл.
  */
 
-console.log('--- HomeView.vue v6.4-LAYOUT-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.5-HEADER-STABLE ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -649,8 +647,7 @@ onMounted(async () => {
   }
 
   resizeObserver = new ResizeObserver(() => {
-    // 🔴 ИСПРАВЛЕНИЕ: Удален вызов applyHeaderHeight, вызывавший "скачок"
-    // applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
+    // 🔴 ИСПРАВЛЕНИЕ: Удален автоматический ресайз хедера, который вызывал скачок
     applyHeights(clampTimelineHeight(timelineHeightPx.value));
     updateScrollbarMetrics();
   });
@@ -745,7 +742,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 🔴 КАСТОМНЫЙ СКРОЛЛБАР -->
         <div class="divider-wrapper">
           <div 
             v-if="isScrollActive"
@@ -984,8 +980,7 @@ onBeforeUnmount(() => {
 .home-layout {
   display: flex;
   flex-direction: column;
-  /* 🔴 ИСПРАВЛЕНИЕ: height: 100dvh учитывает адресную строку Safari */
-  height: 100vh; /* Fallback */
+  height: 100vh;
   height: 100dvh;
   width: 100%;
   overflow: hidden;
@@ -996,6 +991,8 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
+  /* 🔴 ИСПРАВЛЕНИЕ: Жесткая высота для предотвращения скачка */
+  height: 150px;
 }
 .header-resizer {
   flex-shrink: 0;
@@ -1169,8 +1166,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  
-  /* 🔴 ИСПРАВЛЕНИЕ: Позволяем этому контейнеру сжиматься */
   min-height: 0;
 }
 .graph-renderer-content { flex-grow: 1; }
