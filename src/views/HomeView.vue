@@ -12,18 +12,16 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.5-HEADER-STABLE ---
- * * ВЕРСИЯ: 6.5 - Стабилизация высоты хедера
+ * * --- МЕТКА ВЕРСИИ: v6.7-HEADER-120 ---
+ * * ВЕРСИЯ: 6.7 - Стартовая высота хедера 120px
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. CSS: Для `.home-header` задана явная `height: 150px`.
- * Это предотвращает визуальный "скачок" при загрузке, пока JS не инициализируется.
- * 2. JS: `headerHeightPx` инициализируется строго с `HEADER_MIN_H` (150).
- * 3. ResizeObserver больше не трогает хедер, как и в v6.4, что разрывает цикл.
+ * 1. HEADER_MIN_H установлено в 120 (было 150).
+ * 2. CSS .home-header height установлено в 120px.
  */
 
-console.log('--- HomeView.vue v6.5-HEADER-STABLE ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.7-HEADER-120 ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -176,7 +174,8 @@ const headerResizerRef = ref(null);
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
-const HEADER_MIN_H = 150; 
+// 🔴 ИЗМЕНЕНО: Стартовая высота 120px
+const HEADER_MIN_H = 120; 
 const HEADER_MAX_H_RATIO = 0.5; 
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
@@ -623,6 +622,7 @@ onMounted(async () => {
   centerToday(); 
   await nextTick();
 
+  // 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 120px
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height)
     ? parseFloat(timelineGridRef.value.style.height)
@@ -647,7 +647,6 @@ onMounted(async () => {
   }
 
   resizeObserver = new ResizeObserver(() => {
-    // 🔴 ИСПРАВЛЕНИЕ: Удален автоматический ресайз хедера, который вызывал скачок
     applyHeights(clampTimelineHeight(timelineHeightPx.value));
     updateScrollbarMetrics();
   });
@@ -991,8 +990,8 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
-  /* 🔴 ИСПРАВЛЕНИЕ: Жесткая высота для предотвращения скачка */
-  height: 150px;
+  /* 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 120px */
+  height: 120px;
 }
 .header-resizer {
   flex-shrink: 0;
