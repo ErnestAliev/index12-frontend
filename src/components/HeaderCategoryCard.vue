@@ -304,7 +304,7 @@ const categoryBreakdown = computed(() => {
   margin-bottom: 2px;
 }
 .t-amount {
-  font-size: 0.9em; /* Соответствует обычным цифрам в карточках */
+  font-size: 0.8em; /* Соответствует обычным цифрам в карточках */
   font-weight: 500;
 }
 .t-amount.expense {
@@ -416,3 +416,4 @@ const categoryBreakdown = computed(() => {
   .t-bottom { font-size: 0.75em; }
 }
 </style>
+
