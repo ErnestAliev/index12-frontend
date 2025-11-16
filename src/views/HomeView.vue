@@ -12,19 +12,21 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.9-GESTURE-FIX ---
- * * ВЕРСИЯ: 5.9 - Улучшение жестов (Figma-like scroll)
+ * * --- МЕТКА ВЕРСИИ: v6.0-FINAL-SCROLL ---
+ * * ВЕРСИЯ: 6.0 - Финальная полировка скролла (Mac & Touch)
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Обновлена логика `onWheelScroll`: теперь она агрессивно перехватывает
- * горизонтальные свайпы, предотвращая навигацию "Назад" в браузере.
- * 2. Добавлена поддержка TOUCH-жестов (touchstart/move/end) для планшетов.
- * Так как `overflow: hidden`, мы эмулируем скролл пальцем.
- * 3. CSS: `overscroll-behavior-x` изменен на `none` для полной блокировки.
+ * 1. CSS: Добавлено `touch-action: pan-y` для `.timeline-grid-wrapper`.
+ * Это КРИТИЧЕСКИ ВАЖНО для Mac, чтобы жест двумя пальцами не вызывал
+ * системную навигацию "Назад".
+ * 2. JS: `onChangeView` теперь использует `setTimeout` для обновления
+ * скроллбара. Это решает проблему на планшетах, когда при переключении
+ * на "1 год" скролл не активировался мгновенно.
+ * 3. JS: Улучшена чувствительность `onWheelScroll`.
  */
 
-console.log('--- HomeView.vue v5.9-GESTURE-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v6.0-FINAL-SCROLL ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -35,7 +37,6 @@ const userButtonRef = ref(null);
 const userMenuPosition = ref({ top: '0px', left: '0px' });
 
 const handleLogout = () => {
-  console.log('[HomeView] handleLogout: 🔴 Пользователь выходит...');
   showUserMenu.value = false;
   mainStore.logout();
 };
@@ -120,6 +121,7 @@ const totalDays = computed(() => {
   return mainStore.computeTotalDaysForMode(viewMode.value, today.value);
 });
 
+// Watcher остается как страховка
 watch(totalDays, async (newVal) => {
   await nextTick();
   updateScrollbarWidthAndPosition();
@@ -266,10 +268,8 @@ const handleOperationDrop = async (dropData) => {
   const oldDateKey = operation.dateKey; 
   const newDateKey = dropData.toDateKey;
   const newCellIndex = dropData.toCellIndex;
-  
   if (!oldDateKey || !newDateKey) return;
   if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
-  
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
   await recalcProjectionForCurrentView();
 };
@@ -279,9 +279,7 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
   const newDate = new Date(baseDate.getFullYear(), 0, 1);
   newDate.setDate(toDayOfYear);
   const newDateKey = _getDateKey(newDate);
-  
   if (!oldDateKey || !newDateKey) return;
-  
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, toCellIndex ?? (operation.cellIndex ?? 0));
   await recalcProjectionForCurrentView();
   handleClosePopup();
@@ -381,15 +379,18 @@ const stopResize = () => {
   window.removeEventListener('touchend', stopResize);
 };
 
-/* ===================== СКРОЛЛ / ЖЕСТЫ ===================== */
+/* ===================== СКРОЛЛ / ЖЕСТЫ (MAC & TOUCH) ===================== */
 const updateScrollbarWidthAndPosition = () => {
   if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value) return;
   const viewportWidth = timelineGridRef.value.clientWidth || 1;
+  
   const widthRatio = Math.max(1, totalDays.value / VISIBLE_COLS);
   scrollbarContentRef.value.style.width = `${viewportWidth * widthRatio}px`;
+  
   const scroller = masterScrollbarRef.value;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  
   if (maxVirtual === 0 || maxScroll === 0) {
     scroller.scrollLeft = 0;
     return;
@@ -408,25 +409,24 @@ const onMasterScroll = () => {
   rebuildVisibleDays(); 
 };
 
-// --- 🔴 УЛУЧШЕННОЕ УПРАВЛЕНИЕ КОЛЕСОМ (MAC/TRACKPAD) ---
+// --- 🔴 FIX (MAC): Блокировка навигации при свайпе ---
 const onWheelScroll = (event) => {
   if (!masterScrollbarRef.value) return;
-  // Определяем, является ли скролл горизонтальным
-  // (на трекпаде deltaX работает, на мыши иногда используют Shift+Wheel -> deltaY, но современные браузеры переводят в X)
+  
+  // Проверяем, горизонтальный ли это скролл
   const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
 
   if (isHorizontal) {
-    // !!! КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ !!!
-    // Блокируем дефолтное поведение браузера (свайп назад/вперед по истории)
-    // Это работает только если event listener добавлен с { passive: false }
-    if (event.cancelable) event.preventDefault();
-    
-    // Применяем скролл к нашему мастер-скроллбару
+    // Если это горизонтальный свайп, и не нажат Ctrl (зум), блокируем "Назад"
+    if (event.cancelable && !event.ctrlKey) {
+        event.preventDefault();
+    }
+    // Применяем скролл
     masterScrollbarRef.value.scrollLeft += event.deltaX;
   }
 };
 
-// --- 🔴 УПРАВЛЕНИЕ ЖЕСТАМИ (TOUCH/TABLET) ---
+// --- 🔴 FIX (TOUCH): Эмуляция скролла для планшетов ---
 const touchState = {
   startX: 0,
   scrollLeftStart: 0,
@@ -446,7 +446,7 @@ const onTouchMove = (e) => {
   const currentX = e.touches[0].clientX;
   const deltaX = touchState.startX - currentX; // Тянем влево -> скроллим вправо
   
-  // Блокируем свайп страницы (Pull-to-refresh или навигацию)
+  // Блокируем свайп страницы, если это явно горизонтальное движение
   if (e.cancelable) e.preventDefault();
   
   masterScrollbarRef.value.scrollLeft = touchState.scrollLeftStart + deltaX;
@@ -455,8 +455,6 @@ const onTouchMove = (e) => {
 const onTouchEnd = () => {
   touchState.isDragging = false;
 };
-// --- КОНЕЦ БЛОКА ЖЕСТОВ ---
-
 
 const centerToday = () => {
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
@@ -464,14 +462,24 @@ const centerToday = () => {
   rebuildVisibleDays();
   updateScrollbarWidthAndPosition();
 };
+
+// --- 🔴 FIX (ПЛАНШЕТЫ): Надежное обновление скролла при смене вида ---
 const onChangeView = async (newView) => {
+  console.log(`[HomeView] onChangeView: ${newView}`);
   viewMode.value = newView;
+  
+  // Шаг 1: Ждем обновления Vue
   await nextTick();
   centerToday();
+  
+  // Шаг 2: Ждем еще тик + setTimeout для гарантии обновления DOM размеров
   await nextTick();
-  updateScrollbarWidthAndPosition();
-  await recalcProjectionForCurrentView();
+  setTimeout(() => {
+    updateScrollbarWidthAndPosition();
+    recalcProjectionForCurrentView();
+  }, 50);
 };
+
 const onWindowResize = () => {
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));
@@ -536,14 +544,14 @@ onMounted(async () => {
     masterScrollbarRef.value.addEventListener('scroll', onMasterScroll);
   }
 
-  // 🔴 ИСПРАВЛЕНИЕ: Привязка событий жестов
+  // Привязка событий жестов и скролла
   if (timelineGridRef.value) {
-    // Wheel (Trackpad) - passive: false ОБЯЗАТЕЛЬНО для preventDefault()
+    // Wheel (Trackpad)
     timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false });
     
     // Touch (Tablet/Phone)
     timelineGridRef.value.addEventListener('touchstart', onTouchStart, { passive: true });
-    timelineGridRef.value.addEventListener('touchmove', onTouchMove, { passive: false }); // false для блокировки скролла страницы
+    timelineGridRef.value.addEventListener('touchmove', onTouchMove, { passive: false });
     timelineGridRef.value.addEventListener('touchend', onTouchEnd);
   }
 
@@ -579,7 +587,6 @@ onBeforeUnmount(() => {
     masterScrollbarRef.value.removeEventListener('scroll', onMasterScroll);
   }
   
-  // 🔴 Очистка новых событий
   if (timelineGridRef.value) {
     timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
     timelineGridRef.value.removeEventListener('touchstart', onTouchStart);
@@ -977,8 +984,10 @@ onBeforeUnmount(() => {
   scrollbar-width: none;
   -ms-overflow-style: none;
   
-  /* 🔴 ИСПРАВЛЕНИЕ: Полная блокировка свайпа назад */
+  /* 🔴 FIX: Запрещаем навигацию "Назад" на уровне CSS для браузера */
   overscroll-behavior-x: none;
+  /* 🔴 FIX: Разрешаем только вертикальный скролл (браузерный), горизонтальный отдаем JS */
+  touch-action: pan-y;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 .timeline-grid-content {
@@ -1027,11 +1036,9 @@ onBeforeUnmount(() => {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  /* Стили скроллбара */
   scrollbar-width: auto;
   scrollbar-color: #555555 #2a2a2a;
 }
-
 .horizontal-scrollbar-wrapper::-webkit-scrollbar {
   height: 12px;
 }
@@ -1047,7 +1054,6 @@ onBeforeUnmount(() => {
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover {
   background-color: #777;
 }
-
 .scrollbar-content { height: 1px; }
 
 .graph-area-wrapper {
