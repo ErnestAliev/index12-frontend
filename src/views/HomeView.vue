@@ -12,25 +12,27 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.7-ULTRA-SAFE-FINAL-FIX ---
- * * ВЕРСИЯ: 5.7 - Радикальное устранение TypeError и синхронизация onMounted.
- * * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v5.2-AUTH-MENU-FIX ---
+ * * ВЕРСIA: 5.2 - Исправлено позиционирование меню пользователя
+ * ДАТА: 2025-11-14
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CRITICAL FIX) Применена агрессивная проверка .style во всех функциях ресайза.
- * 2. (CRITICAL FIX) Логика инициализации ресайз-слушателей и updateScrollbarWidthAndPosition 
- * перенесена в конец onMounted, чтобы гарантировать, что DOM готов.
+ * 1. (FIX) HTML-блок `.user-menu` вынесен из `<aside>`
+ * в корень `<template>`, как и `CellContextMenu`.
+ * 2. (FIX) `.user-menu` теперь позиционируется через `:style="userMenuPosition"`.
+ * 3. (FIX) `toggleUserMenu` теперь вычисляет `userMenuPosition`,
+ * используя `userButtonRef` (добавлен ref на кнопку).
  */
 
-console.log('--- HomeView.vue v5.7-ULTRA-SAFE-FINAL-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v5.2-AUTH-MENU-FIX ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
 
 // --- !!! ИЗМЕНЕНИЯ (Шаг 4 v2) !!! ---
 const showUserMenu = ref(false);
-const userButtonRef = ref(null);
-const userMenuPosition = ref({ top: '0px', left: '0px' });
+const userButtonRef = ref(null); // (у вас уже есть)
+const userMenuPosition = ref({ top: '0px', left: '0px' }); // (у вас уже есть)
 
 /**
  * !!! ИЗМЕНЕНИЕ (Шаг 4 v3): Обработчики меню пользователя !!!
@@ -56,9 +58,12 @@ const toggleUserMenu = (event) => {
   const rect = userButtonRef.value.getBoundingClientRect();
   
   // 1. Горизонтально (влево)
+  // (Левый край меню = Левый край кнопки - Ширина меню - Отступ)
   const left = rect.left - menuWidth - menuMargin;
   
   // 2. Вертикально (сверху)
+  // (Верхний край меню = Нижний край кнопки - Высота меню)
+  // Это прижмет НИЗ меню к НИЗУ кнопки.
   const top = rect.bottom - menuHeight;
   
   userMenuPosition.value = {
@@ -73,12 +78,13 @@ const toggleUserMenu = (event) => {
 // Закрывает оба меню
 const closeAllMenus = () => {
   if (isContextMenuVisible.value) isContextMenuVisible.value = false;
-  if (showUserMenu.value) showUserMenu.value = false;
+  if (showUserMenu.value) showUserMenu.value = false; // <-- (Это уже было)
 };
 
 
 /**
  * !!! НОВЫЙ КОД: Обработчик завершения импорта !!!
+ * (Код из вашего v5.0, без изменений)
  */
 async function handleImportComplete() {
   showImportModal.value = false;
@@ -95,6 +101,7 @@ async function handleImportComplete() {
 
 
 // --- !!! НОВЫЙ КОД: Функция Debounce !!! ---
+// (Код из вашего v5.0, без изменений)
 const debounce = (func, delay) => {
   let timeout;
   return (...args) => {
@@ -105,6 +112,7 @@ const debounce = (func, delay) => {
 // --- КОНЕЦ НОВОГО КОДА ---
 
 /* ===================== ДАТЫ / ВИРТУАЛКА ===================== */
+// (Весь этот блок без изменений)
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
@@ -122,7 +130,7 @@ const getDayOfYear = (date) => {
 
 const _getDateKey = (date) => {
   const year = date.getFullYear();
-  const doy = getDayOfYear(date);
+  const doy = getDayOfYear(date); // Используем существующий helper
   return `${year}-${doy}`;
 };
 
@@ -156,6 +164,7 @@ const globalTodayIndex = computed(() => {
   }
   return Math.floor(totalDays.value / 2);
 });
+// (Вся виртуализация - без изменений)
 const virtualStartIndex = ref(0);
 const globalIndexFromLocal = (localIndex) => virtualStartIndex.value + localIndex;
 const dateFromGlobalIndex = (globalIndex) => {
@@ -166,6 +175,7 @@ const dateFromGlobalIndex = (globalIndex) => {
 };
 
 /* ===================== UI STATE ===================== */
+// (Без изменений, кроме `closeAllMenus` выше)
 const visibleDays = ref([]);
 const isPopupVisible = ref(false);
 const isTransferPopupVisible = ref(false);
@@ -177,6 +187,7 @@ const selectedCellIndex = ref(0);
 const operationToEdit = ref(null);
 
 /* ===================== REFS LAYOUT ===================== */
+// (Без изменений)
 const mainContentRef = ref(null);
 const timelineGridRef = ref(null);
 const timelineGridContentRef = ref(null);
@@ -188,8 +199,10 @@ const scrollbarContentRef = ref(null);
 const graphAreaRef = ref(null);
 const homeHeaderRef = ref(null);
 const headerResizerRef = ref(null);
+// (userButtonRef был добавлен выше)
 
 /* ===================== КОНСТАНТЫ ДЛЯ РЕСАЙЗА ===================== */
+// (Без изменений)
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
@@ -199,6 +212,7 @@ const headerHeightPx = ref(HEADER_MIN_H);
 const timelineHeightPx = ref(318);
 
 /* ===================== КОНТЕКСТНОЕ МЕНЮ / ПОПАПЫ ===================== */
+// (Весь этот блок без изменений)
 const openContextMenu = (day, event, cellIndex) => {
   event.stopPropagation();
   selectedDay.value = day; 
@@ -250,8 +264,10 @@ const handleCloseTransferPopup = () => {
   isTransferPopupVisible.value = false;
   operationToEdit.value = null;
 };
+// --- КОНЕЦ БЛОКА КОНТЕКСТНОГО МЕНЮ ---
 
 /* ===================== ДАННЫЕ ПО ВИДИМЫМ ДНЯМ ===================== */
+// (Весь этот блок без изменений)
 const debouncedFetchVisibleDays = debounce(() => {
   console.log('[ЖУРНАЛ] (DEBOUNCED) fetchVisibleDays: ⌛️ Скролл остановлен. ЗАПРАШИВАЮ ДАННЫЕ...');
   visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey));
@@ -278,7 +294,7 @@ const handleTransferComplete = async (eventData) => {
   await recalcProjectionForCurrentView();
   handleCloseTransferPopup();
 };
-
+// (handleOperationAdded, Delete, Drop, Moved, Updated - без изменений)
 const handleOperationAdded = async (newEvent) => {
   console.log('[ЖУРНАЛ] handleOperationAdded: ➕ Вызываю mainStore.addOperation...');
   await mainStore.addOperation(newEvent); 
@@ -294,25 +310,20 @@ const handleOperationDelete = async (operation) => {
   visibleDays.value = [...visibleDays.value];
   handleClosePopup();
 };
-
-// 🟢 ФУНКЦИЯ DROP ИСПРАВЛЕНА
 const handleOperationDrop = async (dropData) => {
   const operation = dropData.operation;
   const oldDateKey = operation.dateKey; 
-  const newDateKey = dropData.toDateKey; 
-  const newCellIndex = dropData.toCellIndex; 
-
+  const newDateKey = dropData.toDateKey;
+  const newCellIndex = dropData.toCellIndex;
   if (!oldDateKey || !newDateKey) {
     console.error('!!! handleOperationDrop ОШИБКА: D&D не передал dateKey!', dropData);
     return;
   }
-  
   if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
   console.log('[ЖУРНАЛ] handleOperationDrop: ➡️ Вызываю mainStore.moveOperation (drag-n-drop)...');
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
   await recalcProjectionForCurrentView();
 };
-
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
   const baseDate = _parseDateKey(oldDateKey);
@@ -330,8 +341,10 @@ const handleOperationUpdated = async ({ dayOfYear }) => {
   await recalcProjectionForCurrentView();
   handleClosePopup();
 };
+// --- КОНЕЦ БЛОКА ДАННЫХ ---
 
 /* ===================== ОКНО 12 ДНЕЙ ===================== */
+// (Без изменений)
 const rebuildVisibleDays = () => {
   const days = [];
   for (let i = 0; i < VISIBLE_COLS; i++) {
@@ -352,21 +365,20 @@ const rebuildVisibleDays = () => {
 const generateVisibleDays = () => {
   rebuildVisibleDays();
 };
+// --- КОНЕЦ БЛОКА ОКНА ---
 
-/* ===================== РЕСАЙЗЕР (САМЫЙ КРИТИЧНЫЙ БЛОК) ===================== */
+/* ===================== РЕСАЙЗЕР ===================== */
+// (Весь этот блок без изменений)
 const clampHeaderHeight = (rawPx) => {
   const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO;
   return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight);
 };
-
-// 🟢 ИСПРАВЛЕНО: Добавлены проверки .style
 const applyHeaderHeight = (newPx) => {
   headerHeightPx.value = Math.round(newPx);
-  if (homeHeaderRef.value && homeHeaderRef.value.style) {
+  if (homeHeaderRef.value) {
     homeHeaderRef.value.style.height = `${headerHeightPx.value}px`;
   }
 };
-
 const initHeaderResize = (e) => {
   e.preventDefault();
   window.addEventListener('mousemove', doHeaderResize);
@@ -375,6 +387,7 @@ const initHeaderResize = (e) => {
   window.addEventListener('touchend', stopHeaderResize);
 };
 const doHeaderResize = (e) => {
+  // 🟢 Получаем Y-координату из мыши ИЛИ из касания
   const y = e.touches ? e.touches[0].clientY : e.clientY;
   const raw = y;
   const clamped = clampHeaderHeight(raw);
@@ -386,7 +399,6 @@ const stopHeaderResize = () => {
   window.removeEventListener('mouseup', stopHeaderResize);
   window.removeEventListener('touchend', stopHeaderResize);
 };
-
 const clampTimelineHeight = (rawPx) => {
   const container = mainContentRef.value;
   if (!container) return timelineHeightPx.value;
@@ -396,14 +408,12 @@ const clampTimelineHeight = (rawPx) => {
   const minTop = TIMELINE_MIN;
   return Math.min(Math.max(rawPx, minTop), maxTop);
 };
-
-// 🟢 ИСПРАВЛЕНО: Добавлены проверки .style
 const applyHeights = (timelinePx) => {
   timelineHeightPx.value = Math.round(timelinePx);
-  if (timelineGridRef.value && timelineGridRef.value.style) {
+  if (timelineGridRef.value) {
     timelineGridRef.value.style.height = `${timelineHeightPx.value}px`;
   }
-  if (navPanelWrapperRef.value && navPanelWrapperRef.value.style) {
+  if (navPanelWrapperRef.value) {
     navPanelWrapperRef.value.style.height = `${timelineHeightPx.value}px`;
   }
   const container = mainContentRef.value;
@@ -411,10 +421,9 @@ const applyHeights = (timelinePx) => {
     const headerTotalH = headerHeightPx.value + 15; 
     const containerH = window.innerHeight - headerTotalH;
     const graphH = Math.max(GRAPH_MIN, containerH - timelineHeightPx.value - DIVIDER_H);
-    /* graphAreaRef.value.style.height = `${Math.round(graphH)}px`; */ 
+    /* graphAreaRef.value.style.height = `${Math.round(graphH)}px`; */ // <-- 🟢 СТРОКА ЗАКОММЕНТИРОВАНА
   }
 };
-
 const initResize = (e) => {
   e.preventDefault();
   window.addEventListener('mousemove', doResize);
@@ -424,6 +433,7 @@ const initResize = (e) => {
 };
 const doResize = (e) => {
   if (!mainContentRef.value) return;
+  // 🟢 Получаем Y-координату из мыши ИЛИ из касания
   const y = e.touches ? e.touches[0].clientY : e.clientY;
   const mainTop = mainContentRef.value.getBoundingClientRect().top;
   const raw = y - mainTop;
@@ -436,30 +446,24 @@ const stopResize = () => {
   window.removeEventListener('mouseup', stopResize);
   window.removeEventListener('touchend', stopResize);
 };
+// --- КОНЕЦ БЛОКА РЕСАЙЗА ---
 
 /* ===================== МАСТЕР-СКРОЛЛБАР ===================== */
-// 🟢 ИСПРАВЛЕНО: Добавлены проверки .style
+// (Весь этот блок без изменений)
 const updateScrollbarWidthAndPosition = () => {
-  // 🟢 АГРЕССИВНАЯ ПРОВЕРКА: Если любой из ref'ов не готов, или у скроллбара нет .style, выходим.
-  if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value || !scrollbarContentRef.value.style) return;
-  
+  if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value) return;
   const viewportWidth = timelineGridRef.value.clientWidth || 1;
   const widthRatio = Math.max(1, totalDays.value / VISIBLE_COLS);
   scrollbarContentRef.value.style.width = `${viewportWidth * widthRatio}px`;
-  
   const scroller = masterScrollbarRef.value;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-  
-  if (!scroller.style) return; 
-
   if (maxVirtual === 0 || maxScroll === 0) {
     scroller.scrollLeft = 0;
     return;
   }
   scroller.scrollLeft = (virtualStartIndex.value / maxVirtual) * maxScroll;
 };
-
 const onMasterScroll = () => {
   if (!masterScrollbarRef.value) return;
   const scroller = masterScrollbarRef.value;
@@ -478,40 +482,38 @@ const onWheelScroll = (event) => {
     masterScrollbarRef.value.scrollLeft += event.deltaX;
   }
 };
+// --- КОНЕЦ БЛОКА СРКОЛЛА ---
 
 /* ===================== ЦЕНТРОВКА / СМЕНА МАСШТАБА ===================== */
-// 🟢 ИСПРАВЛЕНО: Добавлена синхронизация nextTick
-const centerToday = async () => {
+// (Без изменений)
+const centerToday = () => {
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   virtualStartIndex.value = Math.min(
     Math.max(0, globalTodayIndex.value - CENTER_INDEX),
     maxVirtual
   );
   rebuildVisibleDays();
-  await nextTick(); 
   updateScrollbarWidthAndPosition();
 };
-
-// 🟢 ИСПРАВЛЕНО: Добавлена синхронизация nextTick
 const onChangeView = async (newView) => {
   viewMode.value = newView;
   console.log(`[ЖУРНАЛ] onChangeView: 🔄 Сменил вид на ${newView}.`);
   await nextTick();
-  await centerToday(); 
+  centerToday();
   await nextTick();
   updateScrollbarWidthAndPosition();
   await recalcProjectionForCurrentView();
 };
-
-// 🟢 ИСПРАВЛЕНО: Добавлена синхронизация nextTick
-const onWindowResize = async () => {
+const onWindowResize = () => {
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));
-  await nextTick();
   updateScrollbarWidthAndPosition();
 };
+// --- КОНЕЦ БЛОКА ---
 
 /* ===================== ИНИЦИАЛИЗАЦИЯ / ОЧИСТКА ===================== */
+
+// !!! (Логика onMounted из Шага 4) !!!
 let resizeObserver = null;
 
 onMounted(async () => {
@@ -536,7 +538,7 @@ onMounted(async () => {
 
   generateVisibleDays();
   await nextTick();
-  await centerToday(); 
+  centerToday(); 
   await nextTick();
 
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
@@ -575,6 +577,7 @@ if (resizerRef.value) {
   updateScrollbarWidthAndPosition();
 
   await recalcProjectionForCurrentView();
+  // --- (Конец вашей старой логики onMounted) ---
 });
 
 // onBeforeUnmount (Без изменений)
@@ -901,7 +904,7 @@ onBeforeUnmount(() => {
  * Теперь он использует position: fixed (относительно окна)
 */
 .user-menu {
-  position: fixed; 
+  position: fixed; /* <--- ГЛАВНОЕ ИСПРАВЛЕНИЕ: (был absolute) */
   width: 180px;      
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
@@ -909,6 +912,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 5px 15px rgba(0,0,0,0.1); 
   z-index: 2000; 
   overflow: hidden;
+  /* top и left будут установлены через :style */
 }
 .user-menu-item {
   display: block;
@@ -955,7 +959,9 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
+  /* overflow: hidden; (УДАЛЕНО) */
 }
+/* 🔴 КОНЕЦ ИСПРАВЛЕНИЯ */
 
 /* 🔴 ИСПРАВЛЕНИЕ v4.3: Стили для ресайзера хедера */
 .header-resizer {
@@ -1156,18 +1162,19 @@ onBeforeUnmount(() => {
   
   /* 🔴 НОВОЕ: (v4.1) Должен расти */
   flex-grow: 1;
+  /* display: flex и flex-direction УДАЛЕНЫ */
 }
 .graph-area-wrapper::-webkit-scrollbar { display: none; }
 
 :deep(.graph-renderer-content) {
-  height: 100%; 
+  height: 100%; /* 🟢 ВОЗВРАЩЕНО (было flex-grow: 1) */
   width: 100%;
 }
 
 /* 🟢 ИСПРАВЛЕНИЕ: Стили для Итогов (Блок 4) */
 .summaries-container {
-  flex-shrink: 0; 
-  height: 120px; 
+  flex-shrink: 0; /* Не сжиматься */
+  height: 120px; /* Высота для итогов (можно настроить) */
   background: var(--color-background);
   border-top: 1px solid var(--color-border);
   overflow-y: auto; 
@@ -1194,15 +1201,18 @@ onBeforeUnmount(() => {
 }
 
 /* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* * Мы используем 'max-height' вместо 'max-width'.
+ * Это надежнее определяет "планшетный" (невысокий) режим.
+*/
 @media (max-height: 900px) {
   .header-resizer {
-    height: 10px; 
+    height: 10px; /* Делаем ресайзер тоньше */
   }
   .divider-wrapper {
-    height: 10px; 
+    height: 10px; /* И нижний ресайзер/скроллбар */
   }
   .summaries-container {
-    height: 100px; 
+    height: 100px; /* Уменьшаем блок итогов */
     padding: 0.5rem 1rem;
   }
   .import-export-btn {

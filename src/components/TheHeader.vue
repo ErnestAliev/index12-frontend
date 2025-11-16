@@ -3,13 +3,20 @@ import { ref, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.8-CLEANUP-FOR-BUILD-FIX ---
- * * ВЕРСИЯ: 2.8 - Устранена ошибка сборки "Illegal '/' in tags." в шаблоне.
- * * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v2.6-SUBTITLE-SPLIT ---
+ * * (с доработками для прогноза v1.0)
+ * *
+ * * ЧТО ДОБАВЛЕНО (Прогноз v1.0):
+ * 1. Добавлен helper `mergeBalances` для слияния текущих и будущих балансов.
+ * 2. `loggedAccountBalances` теперь возвращает *слияние*
+ * `currentAccountBalances` и `futureAccountBalances`.
+ * 3. Добавлены новые computed (`mergedCompanyBalances` и т.д.) для
+ * других карточек, которые также возвращают слияние.
+ * 4. Карточки в `<template>` теперь получают :items с этими слияниями.
  */
 
 // --- !!! ВАША МЕТКА !!! ---
-console.log('--- TheHeader.vue v2.8-CLEANUP-FOR-BUILD-FIX ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v2.6-SUBTITLE-SPLIT ЗАГРУЖЕН ---');
 
 
 // Карточки
@@ -35,38 +42,51 @@ const futureUntilStr = computed(() => {
   const d = mainStore.projection?.rangeEndDate
     ? new Date(mainStore.projection.rangeEndDate)
     : null;
-  // 🟢 LOGGING: (Имитируем ваш старый лог)
-  if (d) {
-    const balance = mainStore.futureTotalBalance;
-    console.log(`[ЖУРНАЛ] TheHeader.vue: 📈 'Всего (с уч. будущих)' = ${balance} (до ${ruShort.format(d)})`);
-  }
-  
   return d ? ruShort.format(d) : todayStr.value;
 });
 
-// 🔴 НОВОЕ: Helper для слияния (Без изменений, он корректен)
+
+// --- !!! УЛУЧШЕННЫЕ ЛОГИ (по вашему запросу) !!! ---
+
+// "Всего (на тек. момент)"
+const loggedCurrentTotal = computed(() => {
+  const balance = mainStore.currentTotalBalance;
+  console.log(`[ЖУРНАЛ] TheHeader.vue: 📊 'Всего (на тек. момент)' = ${balance} (на ${todayStr.value})`);
+  return balance;
+});
+
+// "Всего (с уч. будущих)"
+const loggedFutureTotal = computed(() => {
+  const balance = mainStore.futureTotalBalance;
+  console.log(`[ЖУРНАЛ] TheHeader.vue: 📈 'Всего (с уч. будущих)' = ${balance} (до ${futureUntilStr.value})`);
+  return balance;
+});
+
+// 🔴 НОВОЕ: Helper для слияния
 const mergeBalances = (currentBalances, futureBalances) => {
-  if (!currentBalances || !futureBalances) return currentBalances || [];
+  if (!currentBalances || !futureBalances) return currentBalances || []; // Возвращаем хотя бы текущие
 
   const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
   
   return currentBalances.map(item => ({
     ...item,
-    futureBalance: futureMap.get(item._id) ?? item.balance
+    // item.balance - это текущий баланс
+    futureBalance: futureMap.get(item._id) ?? item.balance // По умолчанию = текущий
   }));
 };
 
-// 🟢 ИСПОЛЬЗУЕМ ПРЯМЫЕ COMPUTED ГЕТТЕРЫ ИЗ СТОРА, а не логирующие:
-
-const mergedAccountBalances = computed(() => {
-  // 🟢 LOGGING: (Имитируем ваш старый лог)
-  const balances = mainStore.currentAccountBalances;
+// "Мои счета"
+const loggedAccountBalances = computed(() => {
+  const balances = mainStore.currentAccountBalances; // Текущие
+  // Считаем ОБЩУЮ сумму по всем счетам для лога
   const total = balances.reduce((sum, acc) => sum + (acc.balance || 0), 0);
   console.log(`[ЖУРНАЛ] TheHeader.vue: 💳 'Мои счета' ОБНОВЛЕНЫ. Сумма: ${total} (${balances.length} счетов)`);
   
+  // 🔴 НОВОЕ: Возвращаем СЛИЯННЫЕ данные
   return mergeBalances(balances, mainStore.futureAccountBalances);
 });
 
+// 🔴 НОВОЕ: Computeds для остальных (они не логировались, поэтому создаем новые)
 const mergedCompanyBalances = computed(() => 
   mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances)
 );
@@ -126,7 +146,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
       <HeaderTotalCard
         v-if="widgetKey === 'currentTotal'"
         title="Всего (на тек. момент)"
-        :totalBalance="mainStore.currentTotalBalance"
+        :totalBalance="loggedCurrentTotal" 
         :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
         :subtitleDate="`до ${todayStr}`"
         :widgetKey="widgetKey"
@@ -136,7 +156,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
       <HeaderBalanceCard
         v-else-if="widgetKey === 'accounts'"
         title="Мои счета"
-        :items="mergedAccountBalances"
+        :items="loggedAccountBalances" 
         emptyText="...счетов нет..."
         :widgetKey="widgetKey"
         :widgetIndex="index"
@@ -177,7 +197,7 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
       <HeaderTotalCard
         v-else-if="widgetKey === 'futureTotal'"
         title="Всего (с уч. будущих)"
-        :totalBalance="mainStore.futureTotalBalance"
+        :totalBalance="loggedFutureTotal" 
         :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
         :subtitleDate="`до ${futureUntilStr}`"
         :widgetKey="widgetKey"

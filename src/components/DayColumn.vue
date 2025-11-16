@@ -5,14 +5,16 @@ import { formatNumber } from '@/utils/formatters.js';
 import HourCell from './HourCell.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.3-FULL-TOUCH-DRAG-FIX ---
- * * ВЕРСИЯ: 1.3 - Финальное исправление Drag-n-Drop для планшетов.
- * * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v1.2-YEAR-AWARE-FIX ---
+ * * ВЕРСИЯ: 1.2 - Исправление "слепоты к году" (dayOfYear -> dateKey)
+ * * ДАТА: 2025-11-10
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (LOGIC) onDropFromHourCell переименован в onDrop для HourCell.
- * 2. (LOGIC) onColumnDrop добавлен для обработки Drop на саму колонку (например, при touch).
- * 3. (TEMPLATE) Колонка DayColumn теперь является drop-зоной (@dragover.prevent, @drop="onColumnDrop").
+ * 1. (ARCH) Компонент теперь принимает `dateKey` ("YYYY-DOY") вместо `dayOfYear`.
+ * 2. (API) `operations` computed теперь использует `mainStore.getOperationsForDay(props.dateKey)`.
+ * 3. (API) `onDrop` теперь перехватывает событие и добавляет `toDateKey: props.dateKey`,
+ * как того ожидает HomeView (v4.6+).
+ * 4. (ARCH) Передает `dateKey` вниз в `HourCell.vue`.
  */
 
 const props = defineProps({
@@ -59,68 +61,23 @@ const onAdd = (event, cellIndex) => {
 };
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: onDrop (для HourCell) ---
+// --- 🔴 ИСПРАВЛЕНИЕ: onDrop ---
 // =================================================================
 const onDrop = (dropDataFromHourCell) => {
   // dropDataFromHourCell = { operation, toCellIndex }
   // HomeView (v4.6) ожидает { operation, toCellIndex, toDateKey }
   
-  console.log(`[DayColumn] 💧 onDrop (ИЗ ЯЧЕЙКИ) в ${props.dateKey}.`);
+  console.log(`[DayColumn] 💧 onDrop в ${props.dateKey}.`);
 
-  // Если HourCell передал toDateKey, значит это Touch Drop, который уже знает точную цель
-  if (dropDataFromHourCell.toDateKey) {
-     emit('drop-operation', dropDataFromHourCell);
-     return;
-  }
-
-  // Если toDateKey не передан, то это Mouse Drop внутри колонки или на HourCell.
   emit('drop-operation', {
     ...dropDataFromHourCell,
     toDateKey: props.dateKey // 🟢 ДОБАВЛЯЕМ КЛЮЧ ДАТЫ
   });
 };
-
-
-// =================================================================
-// --- 🟢 НОВОЕ: onColumnDrop для самой колонки (для тача/пустого места) ---
-// =================================================================
-const onColumnDrop = (event) => {
-  event.preventDefault(); 
-  
-  const raw = event.dataTransfer.getData('application/json'); 
-  if (!raw) return;
-  
-  let operationData = null; 
-  try { operationData = JSON.parse(raw); } catch { return; }
-  
-  // Если операция уже содержит toDateKey, значит это touch, который прошел
-  // через HourCell, но упал на пустое место. HourCell уже обработал сброс
-  // в onTouchEnd, но мы должны убедиться, что HomeView получит данные.
-  if (operationData.toDateKey) {
-    emit('drop-operation', operationData);
-    return;
-  }
-  
-  // Это Drop на пустое место в колонке (Mouse Drop).
-  // Мы берем первую свободную ячейку.
-  console.log(`[DayColumn] 💧 onColumnDrop (НА ПУСТОЕ МЕСТО) в ${props.dateKey}.`);
-  
-  emit('drop-operation', {
-    operation: operationData,
-    toCellIndex: 0, 
-    toDateKey: props.dateKey 
-  });
-};
-
 </script>
 
 <template>
-  <div 
-    class="day-column" 
-    :class="{ 'today': isToday }"
-    @dragover.prevent 
-    @drop="onColumnDrop"
-  >
+  <div class="day-column" :class="{ 'today': isToday }">
     <div class="column-header">
       {{ formattedDate }}
     </div>

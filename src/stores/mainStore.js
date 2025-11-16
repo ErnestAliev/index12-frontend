@@ -1,5 +1,16 @@
+/**
+ * * --- МЕТКА ВЕРСИИ: v4.8c-LOGOUT-FINALLY-FIX ---
+ * * ВЕРСИЯ: 4.8c - Принудительный выход через 'finally'
+ * ДАТА: 2025-11-14
+ *
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX) Функция `logout` переписана с `try...catch...finally`.
+ * `user.value = null` теперь находится в `finally`,
+ * чтобы гарантировать выход, даже если `axios.post` упадет.
+ */
+
 import { defineStore } from 'pinia';
-import { ref, computed, watch, nextTick } from 'vue'; // 🟢 nextTick ДОБАВЛЕН
+import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 
 // --- !!! НОВЫЙ КОД (Шаг 3): Глобальная настройка Axios !!! ---
@@ -810,11 +821,10 @@ export const useMainStore = defineStore('mainStore', () => {
 
     try {
       if (isOpTransfer) {
-        const cachesToUpdate = [displayCache, calculationCache]; // 🟢 Передаем ref
-        for (const cacheRef of cachesToUpdate) {
-          const newCache = { ...cacheRef.value }; // 🟢 Копируем весь объект
-          for (const key of Object.keys(newCache)) {
-            const before = newCache[key] || [];
+        const cachesToUpdate = [displayCache.value, calculationCache.value];
+        for (const cache of cachesToUpdate) {
+          for (const key of Object.keys(cache)) {
+            const before = cache[key] || [];
             const parts = before.filter(o => o.isTransfer && o.transferGroupId === opGroupId);
             const partIds = new Set(parts.map(p => p._id).concat(parts.map(p => p._id2)).filter(Boolean));
             const after = before.filter(o => {
@@ -823,25 +833,25 @@ export const useMainStore = defineStore('mainStore', () => {
               return true;
             });
             if (after.length !== before.length) {
-              newCache[key] = _compactIndices(after);
+              cache[key] = _compactIndices(after);
             }
           }
-          cacheRef.value = newCache; // 🟢 Заменяем ref
         }
       } else {
         // Обновляем оба кеша
         if (displayCache.value[dateKey]) {
           const oldArr = displayCache.value[dateKey] || [];
           const newArr = oldArr.filter(o => o._id !== opId);
-          displayCache.value = { ...displayCache.value, [dateKey]: _compactIndices(newArr) };
+          displayCache.value[dateKey] = _compactIndices(newArr);
         }
         if (calculationCache.value[dateKey]) {
           const oldArr = calculationCache.value[dateKey] || [];
           const newArr = oldArr.filter(o => o._id !== opId);
-          calculationCache.value = { ...calculationCache.value, [dateKey]: _compactIndices(newArr) };
+          calculationCache.value[dateKey] = _compactIndices(newArr);
         }
       }
-      // 🟢 Локальные кеши обновлены через замену объекта, дополнительное spread не требуется
+      displayCache.value = { ...displayCache.value };
+      calculationCache.value = { ...calculationCache.value };
 
       await fetchAllEntities();
 
@@ -926,7 +936,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: _reorderWithinDayLocal (РАДИКАЛЬНОЕ ОБНОВЛЕНИЕ) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: _reorderWithinDayLocal (dateKey) ---
   // =================================================================
   function _reorderWithinDayLocal(dateKey, opId, fromIndex, toIndex){
     const list = (displayCache.value[dateKey] || []).slice();
@@ -959,19 +969,21 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const merged = [...others, self].sort((a,b)=>a.cellIndex - b.cellIndex);
     
-    // 🟢 РАДИКАЛЬНЫЙ ФИКС: Гарантируем реактивность, заменяя весь объект.
-    displayCache.value = { ...displayCache.value, [dateKey]: merged };
+    // Обновляем ОБА кеша
+    displayCache.value[dateKey] = merged;
+    displayCache.value = { ...displayCache.value };
 
     if (calculationCache.value[dateKey]) {
       const mergedClone = merged.map(op => ({ ...op })); 
-      calculationCache.value = { ...calculationCache.value, [dateKey]: mergedClone };
+      calculationCache.value[dateKey] = mergedClone;
+      calculationCache.value = { ...calculationCache.value };
     }
     
     return { affected, self };
   }
 
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: moveOperation (РАДИКАЛЬНОЕ ОБНОВЛЕНИЕ) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: moveOperation (dateKey) ---
   // =================================================================
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) {
@@ -981,37 +993,32 @@ export const useMainStore = defineStore('mainStore', () => {
     console.log(`[ЖУРНАЛ] moveOperation: ➡️ Перемещение ID: ${operation._id}. Из ${oldDateKey} -> В ${newDateKey}`);
     
     const desired = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
-    
-    // 🟢 КРИТИЧЕСКИЙ ФИКС: Перед началом операции - принудительно обновим кеши 
-    await fetchOperations(oldDateKey);
-    await fetchOperations(newDateKey);
-    await refreshDay(oldDateKey);
-    await refreshDay(newDateKey);
-    
-    // Если перемещение внутри дня
+
+    if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
+    if (!displayCache.value[newDateKey])   await fetchOperations(newDateKey);
+    if (!calculationCache.value[oldDateKey]) await refreshDay(oldDateKey);
+    if (!calculationCache.value[newDateKey])   await refreshDay(newDateKey);
+
+
     if (oldDateKey === newDateKey) {
       console.log(`[ЖУРНАЛ] moveOperation: ➡️ (Перемещение внутри ${newDateKey})`);
       const fromIndex = Number(operation.cellIndex || 0);
       const toIndex   = Math.max(0, desired);
       const { affected, self } = _reorderWithinDayLocal(newDateKey, operation._id, fromIndex, toIndex);
       
-      // 🟢 Добавляем nextTick для синхронизации после локального _reorder
-      await nextTick();
-
       try{
         if (self) {
-          // Обновление на сервере
-          const promises = [];
           for (const a of affected) {
-            promises.push(axios.put(`${API_BASE_URL}/events/${a._id}`, { dateKey: newDateKey, cellIndex: a.cellIndex }));
+            await axios.put(`${API_BASE_URL}/events/${a._id}`, { dateKey: newDateKey, cellIndex: a.cellIndex });
           }
           if (isTransfer(operation) && operation._id2) {
-            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id}`,  { dateKey: newDateKey, cellIndex: self.cellIndex }));
-            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: self.cellIndex }));
+            await Promise.all([
+              axios.put(`${API_BASE_URL}/events/${operation._id}`,  { dateKey: newDateKey, cellIndex: self.cellIndex }),
+              axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: self.cellIndex }),
+            ]);
           } else {
-            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id}`, { dateKey: newDateKey, cellIndex: self.cellIndex }));
+            await axios.put(`${API_BASE_URL}/events/${operation._id}`, { dateKey: newDateKey, cellIndex: self.cellIndex });
           }
-          await Promise.all(promises);
         }
       }catch(e){
         console.error('Ошибка перестановки внутри дня — обновляю день из сервера', e);
@@ -1029,23 +1036,20 @@ export const useMainStore = defineStore('mainStore', () => {
     
     // Логика перемещения МЕЖДУ днями
     
-    // 1. УДАЛЯЕМ из старого дня и компактируем
     const oldArr_display = (displayCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
     _compactIndices(oldArr_display);
-    displayCache.value = { ...displayCache.value, [oldDateKey]: oldArr_display };
-    
+    displayCache.value[oldDateKey] = oldArr_display;
+
     const oldArr_calc = (calculationCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
     _compactIndices(oldArr_calc);
-    calculationCache.value = { ...calculationCache.value, [oldDateKey]: oldArr_calc };
+    calculationCache.value[oldDateKey] = oldArr_calc;
 
-    // 2. ПОДГОТАВЛИВАЕМ новый день
     let newArr_display = (displayCache.value[newDateKey] || []).filter(o => o._id !== operation._id);
     _compactIndices(newArr_display);
 
     let newArr_calc = (calculationCache.value[newDateKey] || []).filter(o => o._id !== operation._id);
     _compactIndices(newArr_calc);
 
-    // 3. НАХОДИМ целевой индекс и сдвигаем
     const targetIndex = await getFirstFreeCellIndex(newDateKey, desired);
     
     const shifted_display = [];
@@ -1057,40 +1061,34 @@ export const useMainStore = defineStore('mainStore', () => {
       if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
     }
 
-    // 4. ДОБАВЛЯЕМ перемещенную операцию
     const moved = { ...operation, cellIndex: targetIndex, dateKey: newDateKey };
     
     const merged_display = [...newArr_display, moved].sort((a,b)=>a.cellIndex - b.cellIndex);
-    displayCache.value = { ...displayCache.value, [newDateKey]: merged_display };
+    displayCache.value[newDateKey] = merged_display;
     
     const merged_calc = [...newArr_calc, { ...moved }].sort((a,b)=>a.cellIndex - b.cellIndex);
-    calculationCache.value = { ...calculationCache.value, [newDateKey]: merged_calc };
-    
-    // 🟢 Добавляем nextTick для синхронизации после локальных изменений
-    await nextTick();
+    calculationCache.value[newDateKey] = merged_calc;
 
-    // 5. API-ОБНОВЛЕНИЕ
+    displayCache.value = { ...displayCache.value };
+    calculationCache.value = { ...calculationCache.value };
+    
     try{
-      const promises = [];
-      // Обновляем сдвинутые операции в новом дне
       for (const s of shifted_display) {
-        promises.push(axios.put(`${API_BASE_URL}/events/${s._id}`, { dateKey: newDateKey, cellIndex: s.cellIndex }));
+        await axios.put(`${API_BASE_URL}/events/${s._id}`, { dateKey: newDateKey, cellIndex: s.cellIndex });
       }
-      // Обновляем саму перемещенную операцию (или обе части перевода)
       if (isTransfer(operation) && operation._id2) {
-        promises.push(axios.put(`${API_BASE_URL}/events/${moved._id}`,  { dateKey: newDateKey, cellIndex: moved.cellIndex }));
-        promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: moved.cellIndex }));
+        await Promise.all([
+          axios.put(`${API_BASE_URL}/events/${moved._id}`,  { dateKey: newDateKey, cellIndex: moved.cellIndex }),
+          axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: moved.cellIndex }),
+        ]);
       } else {
-        promises.push(axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: moved.cellIndex }));
+        await axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: moved.cellIndex });
       }
-      // Обновляем компактированные операции в старом дне
       for (const o of oldArr_display){
-        promises.push(axios.put(`${API_BASE_URL}/events/${o._id}`, { dateKey: oldDateKey, cellIndex: o.cellIndex }));
+        await axios.put(`${API_BASE_URL}/events/${o._id}`, { dateKey: oldDateKey, cellIndex: o.cellIndex });
       }
-      await Promise.all(promises);
     } catch(e) {
       console.error('Ошибка переноса между днями — откатываю к серверному состоянию', e);
-      // В случае сбоя, принудительно обновляем UI с сервера
       await refreshDay(oldDateKey);
       await refreshDay(newDateKey);
     }
@@ -1308,6 +1306,9 @@ export const useMainStore = defineStore('mainStore', () => {
    * Выходит из системы.
    */
 async function logout() {
+  // ...
+  axios.post('http://localhost:3000/api/auth/logout') // <-- НАЙДИТЕ ЭТУ СТРОКУ
+// ...
     
     // 1. Отправляем запрос на сервер "в фоновом режиме" (БЕЗ await)
     //    и сразу добавляем .catch, чтобы ошибка не "всплыла" в консоль.
@@ -1399,3 +1400,4 @@ async function logout() {
     // --- КОНЕЦ НОВОГО КОДА ---
   };
 });
+
