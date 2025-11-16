@@ -1,19 +1,19 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'; // Добавили hooks
+import { ref, computed, onMounted, onUnmounted } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.3-HEADER-ADAPT ---
- * * ВЕРСИЯ: 6.3 - Сокращение дат для планшетов
+ * * --- МЕТКА ВЕРСИИ: v6.4-HEADER-IPAD ---
+ * * ВЕРСИЯ: 6.4 - Адаптация дат для iPad Pro
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен листенер `resize` для отслеживания ширины экрана.
- * 2. `todayStr` и `futureUntilStr` теперь меняют формат даты
- * (короткий/длинный) в зависимости от ширины экрана (< 1024px = планшет).
+ * 1. Порог `isTablet` увеличен до 1370px, чтобы захватить iPad Pro 12.9"
+ * в ландшафтной ориентации (1366px).
+ * 2. Формат даты переключается на DD.MM.YY при ширине < 1370px.
  */
 
-console.log('--- TheHeader.vue v6.3-HEADER-ADAPT ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v6.4-HEADER-IPAD ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -33,8 +33,8 @@ const updateWidth = () => { windowWidth.value = window.innerWidth; };
 onMounted(() => window.addEventListener('resize', updateWidth));
 onUnmounted(() => window.removeEventListener('resize', updateWidth));
 
-// Считаем планшетом всё, что уже 1024px (или можно настроить под ваш вкус, например 1100)
-const isTablet = computed(() => windowWidth.value < 1100);
+// 🔴 ИЗМЕНЕНО: Увеличен порог для iPad Pro 12.9 (1366px)
+const isTablet = computed(() => windowWidth.value < 1370);
 
 // Форматтеры
 const ruShort = new Intl.DateTimeFormat('ru-RU', {
