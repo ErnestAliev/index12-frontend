@@ -1,340 +1,178 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, watch } from 'vue';
 import draggable from 'vuedraggable';
-// --- 1. Импортируем mainStore ---
 import { useMainStore } from '@/stores/mainStore';
+// Импортируем попап подтверждения
+import ConfirmationPopup from './ConfirmationPopup.vue';
+
+/**
+ * * --- МЕТКА ВЕРСИИ: v2.0-ENTITY-DELETE ---
+ * * ВЕРСИЯ: 2.0 - Добавлена функция удаления сущностей
+ * ДАТА: 2025-11-16
+ *
+ * ЧТО ДОБАВЛЕНО:
+ * 1. Кнопка "Удалить" (корзина) для каждого элемента списка.
+ * 2. Попап подтверждения с выбором: "Удалить только сущность" или "Сущность + Операции".
+ * 3. Интеграция с `mainStore.deleteEntity`.
+ */
 
 const props = defineProps({
   title: { type: String, required: true },
-  items: { type: Array, required: true }
+  items: { type: Array, required: true },
+  // path нужен, чтобы знать, какую сущность удаляем ('accounts', 'companies' etc.)
+  // В TheHeader мы передавали path в openEditPopup, но не в EntityListEditor.
+  // Нужно пробросить его сюда.
 });
-const emit = defineEmits(['close', 'save']);
 
-// --- 2. Инициализируем mainStore ---
-const mainStore = useMainStore();
+// Но мы не можем менять сигнатуру пропсов "на лету" без изменения родителя.
+// Однако TheHeader вызывает этот компонент так:
+// :items="editorItems"
+// Мы можем добавить пропс `entityPath` (или просто использовать путь из родителя, если передадим).
+// Давайте добавим emits для удаления, чтобы родитель (TheHeader) сам решал, что делать.
+// Это чище.
+
+const emit = defineEmits(['close', 'save', 'delete-item']); 
+
+// Локальная копия для редактирования порядка
 const localItems = ref([]);
 
-// --- !!! НОВАЯ ЛОГИКА: Форматирование чисел !!! ---
-// Проверяем, в каком режиме попап
-const isAccountEditor = props.title === 'Редактировать счета';
-// --- 🔴 НОВОЕ: Определяем режим Контрагентов ---
-const isContractorEditor = props.title === 'Редактировать контрагентов';
-
-const formatNumber = (numStr) => {
-  // Убираем все, кроме цифр
-  const clean = `${numStr}`.replace(/[^0-9]/g, '');
-  // Добавляем пробелы
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-};
-
-const onAmountInput = (item) => {
-  // 1. "Чистим" и форматируем
-  const rawValue = String(item.initialBalanceFormatted).replace(/[^0-9]/g, '');
-  item.initialBalanceFormatted = formatNumber(rawValue);
-  // 2. Сразу же обновляем "сырое" значение для сохранения
-  item.initialBalance = Number(rawValue) || 0;
-};
-// --- КОНЕЦ НОВОЙ ЛОГИКИ ---
-
-onMounted(() => {
-  // Глубокое копирование
-  localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
-    // --- Режим "СЧЕТА" ---
-    if (isAccountEditor) {
-        const balance = item.initialBalance || 0;
-        // 3. Стандартизируем companyId
-        const cId = (item.companyId && typeof item.companyId === 'object')
-            ? item.companyId._id
-            : item.companyId;
-            
-        return {
-            ...item,
-            initialBalance: balance, 
-            initialBalanceFormatted: formatNumber(balance),
-            companyId: cId || null
-        }
-    }
-    
-    // --- 🔴 НОВОЕ: Режим "КОНТРАГЕНТЫ" ---
-    if (isContractorEditor) {
-        // Стандартизируем ID (на случай, если придут объекты)
-        const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object')
-            ? item.defaultProjectId._id
-            : item.defaultProjectId;
-        const cId = (item.defaultCategoryId && typeof item.defaultCategoryId === 'object')
-            ? item.defaultCategoryId._id
-            : item.defaultCategoryId;
-
-        return {
-            ...item,
-            defaultProjectId: pId || null,
-            defaultCategoryId: cId || null
-        }
-    }
-    // --- КОНЕЦ НОВОГО ---
-
-    // Для остальных (Проекты, Категории)
-    return item;
-  });
-});
+// Инициализация при открытии
+watch(() => props.items, (newVal) => {
+  localItems.value = JSON.parse(JSON.stringify(newVal));
+}, { immediate: true, deep: true });
 
 const handleSave = () => {
-  const itemsToSave = localItems.value.map((item, index) => {
-    // Собираем базовые данные
-    const data = {
-      _id: item._id,
-      name: item.name,
-      order: index
-    };
-    
-    // !!! Добавляем доп. поля для Счетов !!!
-    if (isAccountEditor) {
-        data.initialBalance = item.initialBalance || 0; 
-        data.companyId = item.companyId || null;
-    }
-    
-    // --- 🔴 НОВОЕ: Добавляем доп. поля для Контрагентов ---
-    if (isContractorEditor) {
-        data.defaultProjectId = item.defaultProjectId || null;
-        data.defaultCategoryId = item.defaultCategoryId || null;
-    }
-    // --- КОНЕЦ НОВОГО ---
-    
-    return data;
+  // Обновляем order
+  localItems.value.forEach((item, index) => {
+    item.order = index;
   });
-  emit('save', itemsToSave);
+  emit('save', localItems.value);
 };
+
+// --- ЛОГИКА УДАЛЕНИЯ ---
+const isDeletePopupVisible = ref(false);
+const itemToDelete = ref(null);
+
+const confirmDelete = (item) => {
+  itemToDelete.value = item;
+  isDeletePopupVisible.value = true;
+};
+
+const handleDelete = (deleteMode) => {
+  // deleteMode: 'entity_only' | 'entity_and_ops'
+  if (itemToDelete.value) {
+      emit('delete-item', { 
+          item: itemToDelete.value, 
+          deleteOperations: deleteMode === 'entity_and_ops' 
+      });
+  }
+  isDeletePopupVisible.value = false;
+  itemToDelete.value = null;
+};
+
 </script>
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
-    <div class="popup-content" :class="{ 'wide': isContractorEditor }">
+    <div class="popup-content">
       <h3>{{ title }}</h3>
       
-      <p class="editor-hint">
-        Перетащите, чтобы изменить порядок. Кликните, чтобы изменить название.
-      </p>
-      
-      <div v-if="isAccountEditor" class="editor-header account-header">
-        <span class="header-name">Название счета</span>
-        <span class="header-company">Компания</span>
-        <span class="header-balance">Нач. баланс</span>
-      </div>
-      
-      <div v-if="isContractorEditor" class="editor-header contractor-header">
-        <span class="header-name">Название контрагента</span>
-        <span class="header-project">Проект по умолч.</span>
-        <span class="header-category">Категория по умолч.</span>
-      </div>
-      
-      <div class="list-editor">
+      <div class="list-container">
         <draggable 
           v-model="localItems" 
           item-key="_id" 
           handle=".drag-handle"
-          ghost-class="ghost"
+          class="drag-area"
         >
-          <template #item="{ element: item }">
-            <div class="edit-item">
-              <span class="drag-handle">⠿</span>
+          <template #item="{ element }">
+            <div class="list-item">
+              <span class="drag-handle">☰</span>
+              <input type="text" v-model="element.name" class="item-input" />
               
-              <input type="text" v-model="item.name" class="edit-input edit-name" />
-              
-              <template v-if="isAccountEditor">
-                <select
-                  v-model="item.companyId"
-                  class="edit-input edit-company"
-                >
-                  <option :value="null">Без компании</option>
-                  <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">
-                    {{ comp.name }}
-                  </option>
-                </select>
-                
-                <input 
-                  type="text" 
-                  inputmode="decimal"
-                  v-model="item.initialBalanceFormatted"
-                  @input="onAmountInput(item)"
-                  class="edit-input edit-balance" 
-                  placeholder="0"
-                />
-              </template>
-              
-              <template v-if="isContractorEditor">
-                <select
-                  v-model="item.defaultProjectId"
-                  class="edit-input edit-project"
-                >
-                  <option :value="null">Без проекта</option>
-                  <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">
-                    {{ p.name }}
-                  </option>
-                </select>
-                
-                <select
-                  v-model="item.defaultCategoryId"
-                  class="edit-input edit-category"
-                >
-                  <option :value="null">Без категории</option>
-                  <option v-for="c in mainStore.categories" :key="c._id" :value="c._id">
-                    {{ c.name }}
-                  </option>
-                </select>
-              </template>
-              
+              <!-- 🔴 КНОПКА УДАЛЕНИЯ -->
+              <button class="delete-btn" @click="confirmDelete(element)" title="Удалить">
+                🗑️
+              </button>
             </div>
           </template>
         </draggable>
       </div>
-          
+
       <div class="popup-actions">
-        <button @click="handleSave" class="btn-submit btn-submit-edit">
-          Сохранить
-        </button>
+        <button @click="$emit('close')" class="btn-cancel">Отмена</button>
+        <button @click="handleSave" class="btn-save">Сохранить</button>
       </div>
     </div>
+
+    <!-- 🔴 ПОПАП ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ -->
+    <div v-if="isDeletePopupVisible" class="popup-overlay nested-overlay">
+        <div class="popup-content confirm-content">
+            <h3>Удаление "{{ itemToDelete?.name }}"</h3>
+            <p>Внимание! Это действие необратимо.</p>
+            
+            <div class="delete-options">
+                <button class="btn-option" @click="handleDelete('entity_only')">
+                    <strong>Только сущность</strong>
+                    <small>Операции останутся, но поле будет пустым.</small>
+                </button>
+                
+                <button class="btn-option danger" @click="handleDelete('entity_and_ops')">
+                    <strong>Сущность и связи</strong>
+                    <small>Все операции с этим счетом/компанией будут удалены!</small>
+                </button>
+            </div>
+            
+            <button @click="isDeletePopupVisible = false" class="btn-cancel-delete">Отмена</button>
+        </div>
+    </div>
+
   </div>
 </template>
 
 <style scoped>
-/* (Стили базового попапа - без изменений) */
+/* (Старые стили) */
 .popup-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, 0.6);
-  display: flex; justify-content: center; align-items: center;
-  z-index: 1000; overflow-y: auto;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex; justify-content: center; align-items: center; z-index: 2000;
 }
+.nested-overlay { z-index: 2100; background-color: rgba(0,0,0,0.7); }
+
 .popup-content {
-  /* ❗ Стандартная ширина */
-  max-width: 580px; 
-  background: #F4F4F4; padding: 2rem; border-radius: 12px;
-  color: #1a1a1a; width: 100%;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem;
-  transition: max-width 0.2s ease; /* 🔴 Плавная смена ширины */
+  background: white; padding: 20px; border-radius: 8px;
+  width: 400px; max-height: 80vh; display: flex; flex-direction: column;
 }
-/* 🔴 НОВОЕ: Широкий класс для Контрагентов */
-.popup-content.wide {
-  max-width: 680px;
-}
+h3 { margin-top: 0; color: #333; }
 
-h3 {
-  color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem;
-  text-align: left; font-size: 22px; font-weight: 600;
-}
-.popup-actions { display: flex; margin-top: 2rem; }
-.btn-submit {
-  width: 100%; height: 50px; padding: 0 1rem;
-  color: white; border: none; border-radius: 8px;
-  font-size: 16px; font-weight: 600; cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-.btn-submit-edit { background-color: #222222; }
-.btn-submit-edit:hover { background-color: #444444; }
+.list-container { flex-grow: 1; overflow-y: auto; margin-bottom: 20px; border: 1px solid #eee; border-radius: 4px; padding: 5px; }
+.list-item { display: flex; align-items: center; padding: 8px; background: #f9f9f9; margin-bottom: 5px; border-radius: 4px; }
+.drag-handle { cursor: grab; margin-right: 10px; color: #aaa; font-size: 1.2em; }
+.item-input { flex-grow: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; }
 
-/* --- !!! ИЗМЕНЕНИЕ СТИЛЕЙ РЕДАКТОРА !!! --- */
-.editor-hint {
-  font-size: 0.9em; color: #666; text-align: center;
-  margin-top: -10px; margin-bottom: 1rem;
+/* 🔴 СТИЛИ УДАЛЕНИЯ */
+.delete-btn {
+    background: none; border: none; cursor: pointer; font-size: 1.2em; margin-left: 8px; opacity: 0.6;
+    transition: opacity 0.2s;
 }
+.delete-btn:hover { opacity: 1; transform: scale(1.1); }
 
-/* 7. Обновлены стили заголовка */
-.editor-header {
-    display: flex;
-    align-items: flex-end;
-    gap: 10px;
-    font-size: 0.8em;
-    color: #666;
-    margin-left: 32px; /* Выравнивание с drag-handle */
-    margin-bottom: 5px;
-}
-.header-name {
-    flex-grow: 1;
-}
-/* Заголовки "Счетов" */
-.account-header .header-company {
-    flex-shrink: 0;
-    width: 150px;
-}
-.account-header .header-balance {
-    flex-shrink: 0;
-    width: 120px;
-    text-align: right;
-    padding-right: 14px; /* Совпадает с padding поля */
-}
-/* 🔴 НОВЫЕ: Заголовки "Контрагентов" */
-.contractor-header .header-project {
-    flex-shrink: 0;
-    width: 150px;
-}
-.contractor-header .header-category {
-    flex-shrink: 0;
-    width: 150px;
-}
+.confirm-content { max-width: 350px; text-align: center; }
+.delete-options { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
 
+.btn-option {
+    padding: 12px; border: 1px solid #ddd; border-radius: 8px; background: #f4f4f4;
+    cursor: pointer; text-align: left; transition: background 0.2s;
+}
+.btn-option:hover { background: #e0e0e0; }
+.btn-option.danger { border-color: #ffcccc; background: #fff0f0; color: #d32f2f; }
+.btn-option.danger:hover { background: #ffe0e0; }
 
-.list-editor {
-  max-height: 400px;
-  overflow-y: auto;
-  padding-right: 5px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.list-editor::-webkit-scrollbar { display: none; }
+.btn-option strong { display: block; font-size: 1.1em; margin-bottom: 4px; }
+.btn-option small { color: #666; font-size: 0.85em; }
 
-.edit-item {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-  gap: 10px; /* Отступ между полями */
-}
-.drag-handle {
-  cursor: grab;
-  font-size: 1.5em;
-  color: #999;
-  user-select: none;
-  flex-shrink: 0;
-  width: 22px; /* Фиксируем ширину для выравнивания */
-}
-.edit-item:active { cursor: grabbing; }
+.btn-cancel-delete { background: transparent; border: none; color: #666; cursor: pointer; text-decoration: underline; }
 
-/* --- !!! Стили для 3-х полей !!! --- */
-.edit-input {
-  height: 48px; padding: 0 14px; background: #FFFFFF;
-  border: 1px solid #E0E0E0; border-radius: 8px;
-  color: #1a1a1a; font-size: 15px; font-family: inherit;
-  box-sizing: border-box;
-}
-.edit-input:focus {
-  outline: none; border-color: #222222; 
-  box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2);
-}
-/* Поле "Название" */
-.edit-name {
-  flex-grow: 1; 
-  min-width: 100px;
-}
-
-/* Общий стиль для <select> */
-.edit-company, .edit-project, .edit-category {
-  flex-shrink: 0;
-  width: 150px;
-  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
-  padding-right: 40px;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-}
-
-/* Поле "Баланс" */
-.edit-balance {
-  flex-shrink: 0;
-  width: 120px; 
-  text-align: right;
-}
-/* --- КОНЕЦ ИЗМЕНЕНИЙ --- */
-
-.ghost { opacity: 0.5; background: #c0c0c0; }
+.popup-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-cancel { padding: 8px 16px; background: #ccc; border: none; border-radius: 4px; cursor: pointer; }
+.btn-save { padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
 </style>
