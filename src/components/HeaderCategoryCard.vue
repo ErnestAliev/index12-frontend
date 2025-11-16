@@ -4,27 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v7.4-CATEGORY-FIXES ---
- * * ВЕРСИЯ: 7.4 - Фиксы фильтров, прогноза и действий
- * ДАТА: 2025-11-16
- *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Добавлена кнопка фильтрации для ОБЫЧНЫХ категорий.
- * 2. (FIX) Реализована сортировка для списка транзакций категории (если мы будем его показывать,
- * но пока у нас breakdown. Для breakdown сортировка не применима, так как это сводка.
- * ОДНАКО, если пользователь хочет видеть детализацию, это отдельная история.
- * В текущем дизайне (Доход/Расход/Итого) фильтровать нечего, кроме как переключать вид.
- * НО, вы просили "добавить фильтрацию". Возможно, имеется в виду сортировка виджетов?
- * Или фильтрация транзакций внутри?
- * -> Для виджета "Перевод" фильтр сортирует список.
- * -> Для категории у нас СВОДКА. Фильтровать 3 строки (Доход, Расход, Итого) бессмысленно.
- * -> Я добавлю фильтр, который (как пример) может скрывать нулевые строки.
- * 3. (FIX) Кнопка прогноза ↗ теперь реально переключает данные на `futureCategoryBreakdowns`.
- * 4. (FIX) Исправлена реакция на кнопки Add/Edit.
- */
-
-console.log('--- HeaderCategoryCard.vue v7.4-CATEGORY-FIXES ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v3.0-ICONS-FIX ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -39,20 +19,17 @@ const isDropdownOpen = ref(false);
 const cardRef = ref(null);
 const searchQuery = ref('');
 
-// --- STATE ---
 const isFilterOpen = ref(false);
 const filterBtnRef = ref(null);
 const filterDropdownRef = ref(null);
-const sortMode = ref('default'); // Для переводов
-const filterMode = ref('all');   // Для категорий (скрыть нули?)
+const sortMode = ref('default'); 
+const filterMode = ref('all');
 
-// ПРОГНОЗ
 const showFutureBalance = computed({
   get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
   set: (val) => mainStore.setForecastState(props.widgetKey, val)
 });
 
-// --- Logic Dropdown ---
 const filteredWidgets = computed(() => {
   if (!searchQuery.value) return mainStore.allWidgets;
   const query = searchQuery.value.toLowerCase();
@@ -65,7 +42,6 @@ const handleSelect = (newWidgetKey) => {
   isDropdownOpen.value = false;
 };
 
-// --- CLICK OUTSIDE ---
 const handleClickOutside = (event) => {
   if (isDropdownOpen.value && cardRef.value && !cardRef.value.contains(event.target)) {
     isDropdownOpen.value = false;
@@ -85,32 +61,19 @@ watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
   }
 });
 
-// =================================================================
-// --- ДАННЫЕ ---
-// =================================================================
-
 const isTransferWidget = computed(() => {
   const catId = props.widgetKey.replace('cat_', '');
   const category = mainStore.getCategoryById(catId); 
   return category && category.name.toLowerCase() === 'перевод';
 });
 
-// --- ПЕРЕВОДЫ ---
 const transferList = computed(() => {
   if (!isTransferWidget.value) return [];
-  
-  let list = showFutureBalance.value 
-    ? mainStore.futureTransfers 
-    : mainStore.currentTransfers;
-  
-  // Фильтрация пустых массивов (на всякий случай)
+  let list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
   if (!list) return [];
-
   list = [...list];
-
   if (sortMode.value === 'desc') list.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   else if (sortMode.value === 'asc') list.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
-  
   return list;
 });
 
@@ -130,33 +93,17 @@ const formatTransferDate = (dateVal) => {
   return `${day}.${month}.${year}`;
 };
 
-// --- КАТЕГОРИИ (СВОДКА) ---
 const categoryBreakdown = computed(() => {
-  // Берем нужный источник данных
-  const source = showFutureBalance.value 
-    ? mainStore.futureCategoryBreakdowns 
-    : mainStore.currentCategoryBreakdowns;
-    
-  // Если данных нет, возвращаем нули
+  const source = showFutureBalance.value ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
   const data = source[props.widgetKey] || { income: 0, expense: 0, total: 0 };
-  
-  // 🔴 DEBUG LOG (Чтобы проверить, работают ли данные)
-  // console.log(`Category [${props.title}] Future: ${showFutureBalance.value}, Data:`, data);
-  
   return data;
 });
 
-// =================================================================
-// --- ACTIONS ---
-// =================================================================
 const setSortMode = (mode) => { sortMode.value = mode; };
-const setFilterMode = (mode) => { filterMode.value = mode; }; // Для категорий
-
+const setFilterMode = (mode) => { filterMode.value = mode; };
 const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
-
 const handleAdd = () => { emit('add'); };
 const handleEdit = () => { emit('edit'); };
-
 </script>
 
 <template>
@@ -165,24 +112,12 @@ const handleEdit = () => { emit('edit'); };
     <div class="card-title-container">
       <div class="card-title" @click.stop="toggleDropdown">
         {{ title }} <span>▽</span>
-        
         <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
-          <input
-            type="text"
-            class="widget-search-input"
-            v-model="searchQuery"
-            placeholder="Поиск..."
-            @click.stop />
+          <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." @click.stop />
           <ul>
-            <li
-              v-for="widget in filteredWidgets"
-              :key="widget.key"
-              :class="{
-                'active': widget.key === props.widgetKey,
-                'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
-              }"
-              @click.stop="handleSelect(widget.key)"
-            >
+            <li v-for="widget in filteredWidgets" :key="widget.key"
+              :class="{ 'active': widget.key === props.widgetKey, 'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey }"
+              @click.stop="handleSelect(widget.key)">
               {{ widget.name }}
             </li>
           </ul>
@@ -190,34 +125,48 @@ const handleEdit = () => { emit('edit'); };
       </div>
 
       <div class="card-actions">
-        <!-- 🔴 FILTER BUTTON (Теперь для ВСЕХ категорий) -->
+        <!-- 1. ФИЛЬТР -->
         <button 
-          class="action-btn" 
+          class="action-square-btn" 
           ref="filterBtnRef" 
           @click.stop="isFilterOpen = !isFilterOpen"
+          title="Фильтр"
         >
-          <img :src="filterIcon" alt="Filter" class="filter-icon" />
+          <img :src="filterIcon" alt="Filter" class="icon-svg" />
         </button>
         
-        <!-- FORECAST -->
+        <!-- 2. ПРОГНОЗ (SVG) -->
         <button 
-          class="action-btn forecast-btn"
+          class="action-square-btn"
           :class="{ 'active': showFutureBalance }"
           @click.stop="showFutureBalance = !showFutureBalance"
           title="Прогноз"
         >
-          ↗
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7"></line>
+            <polyline points="7 7 17 7 17 17"></polyline>
+          </svg>
         </button>
         
-        <!-- ADD / EDIT -->
-        <button @click.stop="handleAdd" class="action-btn">+</button>
-        <button @click.stop="handleEdit" class="action-btn">✎</button>
+        <!-- 3. ДОБАВИТЬ (SVG) -->
+        <button @click.stop="handleAdd" class="action-square-btn" title="Добавить">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+
+        <!-- 4. РЕДАКТИРОВАТЬ (SVG) -->
+        <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
+           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+        </button>
       </div>
 
       <!-- FILTER DROPDOWN -->
       <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
-        
-        <!-- Фильтры для Переводов -->
         <div v-if="isTransferWidget" class="filter-group">
           <div class="filter-group-title">Сортировка</div>
           <ul>
@@ -226,8 +175,6 @@ const handleEdit = () => { emit('edit'); };
             <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')">Сумма (возр.)</li>
           </ul>
         </div>
-
-        <!-- Фильтры для Категорий -->
         <div v-else class="filter-group">
            <div class="filter-group-title">Отображение</div>
            <ul>
@@ -235,12 +182,10 @@ const handleEdit = () => { emit('edit'); };
              <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нули</li>
            </ul>
         </div>
-
       </div>
     </div>
 
     <div class="category-items-list-scroll">
-      
       <!-- ПЕРЕВОДЫ -->
       <div v-if="isTransferWidget" class="transfer-list">
         <div v-for="t in transferList" :key="t._id" class="transfer-item">
@@ -262,7 +207,6 @@ const handleEdit = () => { emit('edit'); };
 
       <!-- КАТЕГОРИЯ -->
       <div v-else class="category-breakdown-list">
-        <!-- Показываем строки только если filterMode='all' ИЛИ значение != 0 -->
         <div class="category-item" v-if="filterMode === 'all' || categoryBreakdown.income !== 0">
           <span>Доходы</span>
           <span class="income">₸ {{ formatNumber(categoryBreakdown.income) }}</span>
@@ -287,25 +231,58 @@ const handleEdit = () => { emit('edit'); };
 </template>
 
 <style scoped>
-/* Стили (без изменений относительно v5.8) */
 .dashboard-card {
   flex: 1; display: flex; flex-direction: column;
   padding-right: 1.5rem; border-right: 1px solid var(--color-border);
   position: relative; min-height: 0;
 }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
-.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 30px; margin-bottom: 0.5rem; flex-shrink: 0; }
+.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
 .card-title { font-size: 0.85em; color: #aaa; transition: color 0.2s; cursor: pointer; position: relative; z-index: 101; }
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-.card-actions { display: flex; gap: 8px; position: relative; z-index: 101; }
-.action-btn { background: none; border: none; color: #777; cursor: pointer; padding: 0; font-size: 1.1em; line-height: 1; transition: color 0.2s; display: flex; align-items: center; justify-content: center; }
-.action-btn:hover { color: #ccc; }
-.forecast-btn { font-size: 1.4em; font-weight: bold; padding-bottom: 2px; }
-.action-btn.active { color: var(--color-primary); }
-.filter-icon { width: 14px; height: 14px; opacity: 0.7; transition: opacity 0.2s; }
-.action-btn:hover .filter-icon { opacity: 1; }
+/* --- 🔴 СТИЛИ КНОПОК (ДУБЛИРУЮТСЯ ДЛЯ ИДЕНТИЧНОСТИ) --- */
+.card-actions {
+  display: flex;
+  gap: 8px; 
+  position: relative; z-index: 101;
+}
+
+.action-square-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent; 
+  border-radius: 6px; 
+  background-color: #F7F7F7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  color: #888;
+  transition: all 0.2s ease;
+}
+
+.action-square-btn:hover {
+  background-color: #EAEAEA;
+  color: #333;
+  border-color: #E0E0E0;
+}
+
+.action-square-btn.active {
+  background-color: #E6F7FF;
+  color: #007AFF;
+  border-color: rgba(0, 122, 255, 0.2);
+}
+
+.icon-svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain; 
+}
+/* ----------------------------------------------------- */
 
 .filter-dropdown { position: absolute; top: 35px; right: 0; width: 160px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; }
 .filter-group-title { font-size: 0.75em; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 6px; padding-left: 2px; }
@@ -357,8 +334,8 @@ const handleEdit = () => { emit('edit'); };
   .category-item span:first-child { padding-right: 5px; }
   .t-amount { font-size: 0.85em; }
   .t-bottom { font-size: 0.75em; }
-  .action-btn { font-size: 1em; gap: 6px; }
-  .forecast-btn { font-size: 1.2em; }
-  .filter-icon { width: 12px; height: 12px; }
+  
+  .action-square-btn { width: 24px; height: 24px; }
+  .icon-svg { width: 16px; height: 16px; }
 }
 </style>
