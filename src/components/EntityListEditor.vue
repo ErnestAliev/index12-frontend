@@ -14,11 +14,12 @@ const localItems = ref([]);
 
 // Определяем путь для API
 let entityPath = '';
-if (props.title.toLowerCase().includes('счета')) entityPath = 'accounts';
-else if (props.title.toLowerCase().includes('компании')) entityPath = 'companies';
-else if (props.title.toLowerCase().includes('контрагент')) entityPath = 'contractors';
-else if (props.title.toLowerCase().includes('проекты')) entityPath = 'projects';
-else if (props.title.toLowerCase().includes('категор')) entityPath = 'categories';
+const t = props.title.toLowerCase();
+if (t.includes('счета')) entityPath = 'accounts';
+else if (t.includes('компании')) entityPath = 'companies';
+else if (t.includes('контрагент')) entityPath = 'contractors';
+else if (t.includes('проекты')) entityPath = 'projects';
+else if (t.includes('категор')) entityPath = 'categories';
 
 const isAccountEditor = props.title === 'Редактировать счета';
 const isContractorEditor = props.title === 'Редактировать контрагентов';
@@ -72,16 +73,12 @@ const openDeleteDialog = (item) => {
 
 const confirmDelete = async (deleteOperations) => {
   if (!itemToDelete.value || !entityPath) return;
-  
-  isDeleting.value = true; // Запуск анимации
-  
+  isDeleting.value = true;
   try {
-    // Эмулируем небольшую задержку для плавности UI, если сервер ответит мгновенно (опционально)
-    // await new Promise(r => setTimeout(r, 500)); 
-
+    // Имитация задержки для визуализации прогресс-бара (0.5 сек)
+    await new Promise(resolve => setTimeout(resolve, 500));
     await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-    
     showDeletePopup.value = false;
     itemToDelete.value = null;
   } catch (e) {
@@ -155,10 +152,10 @@ const cancelDelete = () => {
                 </select>
               </template>
               
-              <!-- 🔴 КНОПКА УДАЛЕНИЯ (Исправлен цвет иконки) -->
+              <!-- КНОПКА УДАЛЕНИЯ -->
               <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
-                <!-- stroke явно задан как currentColor, цвет задается в CSS класса -->
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Используем явные цвета stroke и fill -->
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                    <polyline points="3 6 5 6 21 6"></polyline>
                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
@@ -174,7 +171,7 @@ const cancelDelete = () => {
       </div>
     </div>
 
-    <!-- 🔴 ВСТРОЕННЫЙ МОДАЛ ПОДТВЕРЖДЕНИЯ + ПРОГРЕСС -->
+    <!-- ВСТРОЕННЫЙ МОДАЛ ПОДТВЕРЖДЕНИЯ + ПРОГРЕСС -->
     <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         
@@ -182,8 +179,6 @@ const cancelDelete = () => {
         <div v-if="isDeleting" class="deleting-state">
           <h4>Удаление...</h4>
           <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
-          
-          <!-- Анимированный прогресс-бар -->
           <div class="progress-container">
             <div class="progress-bar"></div>
           </div>
@@ -224,7 +219,6 @@ const cancelDelete = () => {
   display: flex; justify-content: center; align-items: center;
   z-index: 1000; overflow-y: auto;
 }
-/* Ширина окна списка - 580px (стандарт) */
 .popup-content {
   max-width: 580px; 
   background: #F4F4F4; padding: 2rem; border-radius: 12px;
@@ -278,24 +272,28 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 }
 .edit-balance { flex-shrink: 0; width: 120px; text-align: right; }
 
-/* 🔴 ИСПРАВЛЕНИЕ: Цвет иконки */
+/* КНОПКА УДАЛЕНИЯ */
 .delete-btn {
   width: 36px; height: 36px; flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
   border-radius: 8px; 
-  color: #b0b0b0; /* Серый цвет по умолчанию */
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
 }
+.delete-btn svg {
+  stroke: #999; /* Базовый цвет */
+  transition: stroke 0.2s;
+}
 .delete-btn:hover { 
-  border-color: #FF3B30; 
-  color: #FF3B30; /* Красный при наведении */
-  background: #fff5f5; 
+  border-color: #FF3B30; background: #fff5f5; 
+}
+.delete-btn:hover svg {
+  stroke: #FF3B30; /* Красный при наведении */
 }
 
 .ghost { opacity: 0.5; background: #c0c0c0; }
 
-/* Внутренний модал */
+/* ВНУТРЕННИЙ МОДАЛ (Overlay внутри Overlay) */
 .inner-overlay {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.3);
@@ -330,22 +328,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-cancel { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; text-decoration: underline; }
 .btn-cancel:hover { color: #555; }
 
-/* 🔴 ПРОГРЕСС БАР */
+/* ПРОГРЕСС БАР */
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
 .sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
-
 .progress-container {
-  width: 100%; height: 6px;
-  background-color: #eee; border-radius: 3px;
+  width: 100%; height: 6px; background-color: #eee; border-radius: 3px;
   overflow: hidden; position: relative;
 }
 .progress-bar {
-  width: 100%; height: 100%;
-  background-color: #222;
+  width: 100%; height: 100%; background-color: #222;
   position: absolute; left: -100%;
   animation: indeterminate 1.5s infinite ease-in-out;
 }
-
 @keyframes indeterminate {
   0% { left: -100%; width: 50%; }
   50% { left: 25%; width: 50%; }
