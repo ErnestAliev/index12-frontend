@@ -12,21 +12,24 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.8-SCROLL-STYLE ---
- * * ВЕРСИЯ: 5.8 - Стилизация скроллбара
+ * * --- МЕТКА ВЕРСИИ: v5.9-GESTURE-FIX ---
+ * * ВЕРСИЯ: 5.9 - Улучшение жестов (Figma-like scroll)
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. В блок <style> добавлены правила для .horizontal-scrollbar-wrapper,
- * чтобы скроллбар был темно-серым (в цвет интерфейса), а не стандартным белым.
+ * 1. Обновлена логика `onWheelScroll`: теперь она агрессивно перехватывает
+ * горизонтальные свайпы, предотвращая навигацию "Назад" в браузере.
+ * 2. Добавлена поддержка TOUCH-жестов (touchstart/move/end) для планшетов.
+ * Так как `overflow: hidden`, мы эмулируем скролл пальцем.
+ * 3. CSS: `overscroll-behavior-x` изменен на `none` для полной блокировки.
  */
 
-console.log('--- HomeView.vue v5.8-SCROLL-STYLE ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v5.9-GESTURE-FIX ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
 
-// --- Меню пользователя (Без изменений) ---
+// --- Меню пользователя ---
 const showUserMenu = ref(false);
 const userButtonRef = ref(null);
 const userMenuPosition = ref({ top: '0px', left: '0px' });
@@ -38,7 +41,6 @@ const handleLogout = () => {
 };
 
 const toggleUserMenu = (event) => {
-  console.log('[HomeView] toggleUserMenu: 🔳 Открытие/закрытие меню пользователя');
   event.stopPropagation();
   if (!userButtonRef.value) return;
   const menuWidth = 180;
@@ -57,13 +59,12 @@ const closeAllMenus = () => {
 };
 
 async function handleImportComplete() {
-  console.log('[HomeView] handleImportComplete: 🏁 Импорт завершен...');
   showImportModal.value = false;
   try {
     await mainStore.forceRefreshAll();
     rebuildVisibleDays(); 
   } catch (error) {
-    console.error('[HomeView] handleImportComplete: ❌ Ошибка:', error);
+    console.error(error);
   }
 }
 
@@ -103,7 +104,6 @@ const _getDateKey = (date) => {
 
 const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        console.error(`!!! HomeView._parseDateKey ОШИБКА:`, dateKey);
         return new Date(); 
     }
     const [year, doy] = dateKey.split('-').map(Number);
@@ -113,16 +113,14 @@ const _parseDateKey = (dateKey) => {
 };
 
 const VISIBLE_COLS = 12;
-const CENTER_INDEX = Math.floor((VISIBLE_COLS - 1) / 2); // 5
+const CENTER_INDEX = Math.floor((VISIBLE_COLS - 1) / 2);
 const viewMode = ref('12d');
 
 const totalDays = computed(() => {
   return mainStore.computeTotalDaysForMode(viewMode.value, today.value);
 });
 
-// 🔴 НОВОЕ: Авто-обновление скроллбара при изменении количества дней
 watch(totalDays, async (newVal) => {
-  console.log(`[HomeView] watch(totalDays): Изменилось на ${newVal}. Обновляю скроллбар...`);
   await nextTick();
   updateScrollbarWidthAndPosition();
 });
@@ -168,7 +166,7 @@ const graphAreaRef = ref(null);
 const homeHeaderRef = ref(null);
 const headerResizerRef = ref(null);
 
-/* ===================== КОНСТАНТЫ ДЛЯ РЕСАЙЗА ===================== */
+/* ===================== КОНСТАНТЫ ===================== */
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
@@ -179,7 +177,6 @@ const timelineHeightPx = ref(318);
 
 /* ===================== КОНТЕКСТНОЕ МЕНЮ / ПОПАПЫ ===================== */
 const openContextMenu = (day, event, cellIndex) => {
-  console.log(`[HomeView] openContextMenu: 🖱️ ${day.dateKey}, ячейка ${cellIndex}`);
   event.stopPropagation();
   selectedDay.value = day; 
   selectedCellIndex.value = cellIndex;
@@ -231,20 +228,17 @@ const handleCloseTransferPopup = () => {
   operationToEdit.value = null;
 };
 
-/* ===================== ДАННЫЕ ПО ВИДИМЫМ ДНЯМ ===================== */
+/* ===================== ДАННЫЕ ===================== */
 const debouncedFetchVisibleDays = debounce(() => {
-  console.log('[HomeView] (DEBOUNCED) fetchVisibleDays: Запрашиваю данные...');
   visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey));
 }, 300); 
 
 const recalcProjectionForCurrentView = async () => {
-  console.log(`[HomeView] recalcProjection: Вид ${viewMode.value}`);
   await mainStore.loadCalculationData(viewMode.value, today.value);
 };
 
 const handleTransferComplete = async (eventData) => {
   const dateKey = eventData?.dateKey;
-  console.log(`[HomeView] TransferComplete: dateKey: ${dateKey}`);
   if (!dateKey) {
     await recalcProjectionForCurrentView(); 
     handleCloseTransferPopup();
@@ -294,17 +288,12 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
 };
 
 const handleOperationUpdated = async ({ dateKey, oldDateKey }) => {
-  if (dateKey) {
-    await mainStore.refreshDay(dateKey);
-  }
-  if (oldDateKey && oldDateKey !== dateKey) {
-    await mainStore.refreshDay(oldDateKey);
-  }
+  if (dateKey) await mainStore.refreshDay(dateKey);
+  if (oldDateKey && oldDateKey !== dateKey) await mainStore.refreshDay(oldDateKey);
   await recalcProjectionForCurrentView();
   handleClosePopup();
 };
 
-/* ===================== ОКНО 12 ДНЕЙ ===================== */
 const rebuildVisibleDays = () => {
   const days = [];
   for (let i = 0; i < VISIBLE_COLS; i++) {
@@ -373,7 +362,6 @@ const applyHeights = (timelinePx) => {
   }
 };
 const initResize = (e) => {
-  console.log('[HomeView] initResize: 🖱️ Начало ресайза (хватаем пипку)');
   e.preventDefault();
   window.addEventListener('mousemove', doResize);
   window.addEventListener('touchmove', doResize, { passive: false });
@@ -393,14 +381,12 @@ const stopResize = () => {
   window.removeEventListener('touchend', stopResize);
 };
 
-/* ===================== МАСТЕР-СКРОЛЛБАР ===================== */
+/* ===================== СКРОЛЛ / ЖЕСТЫ ===================== */
 const updateScrollbarWidthAndPosition = () => {
   if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value) return;
   const viewportWidth = timelineGridRef.value.clientWidth || 1;
-  
   const widthRatio = Math.max(1, totalDays.value / VISIBLE_COLS);
   scrollbarContentRef.value.style.width = `${viewportWidth * widthRatio}px`;
-  
   const scroller = masterScrollbarRef.value;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
@@ -421,27 +407,64 @@ const onMasterScroll = () => {
   virtualStartIndex.value = Math.round(ratio * maxVirtual);
   rebuildVisibleDays(); 
 };
+
+// --- 🔴 УЛУЧШЕННОЕ УПРАВЛЕНИЕ КОЛЕСОМ (MAC/TRACKPAD) ---
 const onWheelScroll = (event) => {
   if (!masterScrollbarRef.value) return;
-  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-    event.preventDefault();
+  // Определяем, является ли скролл горизонтальным
+  // (на трекпаде deltaX работает, на мыши иногда используют Shift+Wheel -> deltaY, но современные браузеры переводят в X)
+  const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+
+  if (isHorizontal) {
+    // !!! КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ !!!
+    // Блокируем дефолтное поведение браузера (свайп назад/вперед по истории)
+    // Это работает только если event listener добавлен с { passive: false }
+    if (event.cancelable) event.preventDefault();
+    
+    // Применяем скролл к нашему мастер-скроллбару
     masterScrollbarRef.value.scrollLeft += event.deltaX;
   }
 };
 
-/* ===================== ЦЕНТРОВКА / СМЕНА МАСШТАБА ===================== */
+// --- 🔴 УПРАВЛЕНИЕ ЖЕСТАМИ (TOUCH/TABLET) ---
+const touchState = {
+  startX: 0,
+  scrollLeftStart: 0,
+  isDragging: false
+};
+
+const onTouchStart = (e) => {
+  if (!masterScrollbarRef.value) return;
+  touchState.isDragging = true;
+  touchState.startX = e.touches[0].clientX;
+  touchState.scrollLeftStart = masterScrollbarRef.value.scrollLeft;
+};
+
+const onTouchMove = (e) => {
+  if (!touchState.isDragging || !masterScrollbarRef.value) return;
+  
+  const currentX = e.touches[0].clientX;
+  const deltaX = touchState.startX - currentX; // Тянем влево -> скроллим вправо
+  
+  // Блокируем свайп страницы (Pull-to-refresh или навигацию)
+  if (e.cancelable) e.preventDefault();
+  
+  masterScrollbarRef.value.scrollLeft = touchState.scrollLeftStart + deltaX;
+};
+
+const onTouchEnd = () => {
+  touchState.isDragging = false;
+};
+// --- КОНЕЦ БЛОКА ЖЕСТОВ ---
+
+
 const centerToday = () => {
-  console.log('[HomeView] centerToday: 🎯 Центрирую на "сегодня"');
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-  virtualStartIndex.value = Math.min(
-    Math.max(0, globalTodayIndex.value - CENTER_INDEX),
-    maxVirtual
-  );
+  virtualStartIndex.value = Math.min(Math.max(0, globalTodayIndex.value - CENTER_INDEX), maxVirtual);
   rebuildVisibleDays();
   updateScrollbarWidthAndPosition();
 };
 const onChangeView = async (newView) => {
-  console.log(`[HomeView] onChangeView: 🔄 Сменил вид на ${newView}.`);
   viewMode.value = newView;
   await nextTick();
   centerToday();
@@ -455,7 +478,7 @@ const onWindowResize = () => {
   updateScrollbarWidthAndPosition();
 };
 
-/* ===================== ИНИЦИАЛИЗАЦИЯ / ОЧИСТКА ===================== */
+/* ===================== ИНИЦИАЛИЗАЦИЯ ===================== */
 const checkDayChange = () => {
   const currentToday = initializeToday();
   if (!sameDay(currentToday, today.value)) {
@@ -473,7 +496,6 @@ let dayChangeCheckerInterval = null;
 let resizeObserver = null;
 
 onMounted(async () => {
-  console.log('[HomeView] onMounted...');
   checkDayChange();
   dayChangeCheckerInterval = setInterval(checkDayChange, 60000);
 
@@ -514,8 +536,15 @@ onMounted(async () => {
     masterScrollbarRef.value.addEventListener('scroll', onMasterScroll);
   }
 
+  // 🔴 ИСПРАВЛЕНИЕ: Привязка событий жестов
   if (timelineGridRef.value) {
+    // Wheel (Trackpad) - passive: false ОБЯЗАТЕЛЬНО для preventDefault()
     timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false });
+    
+    // Touch (Tablet/Phone)
+    timelineGridRef.value.addEventListener('touchstart', onTouchStart, { passive: true });
+    timelineGridRef.value.addEventListener('touchmove', onTouchMove, { passive: false }); // false для блокировки скролла страницы
+    timelineGridRef.value.addEventListener('touchend', onTouchEnd);
   }
 
   resizeObserver = new ResizeObserver(() => {
@@ -529,7 +558,6 @@ onMounted(async () => {
   updateScrollbarWidthAndPosition();
 
   await recalcProjectionForCurrentView();
-  console.log('[HomeView] onMounted: ✅ Инициализация завершена.');
 });
 
 onBeforeUnmount(() => {
@@ -550,9 +578,15 @@ onBeforeUnmount(() => {
   if (masterScrollbarRef.value) {
     masterScrollbarRef.value.removeEventListener('scroll', onMasterScroll);
   }
+  
+  // 🔴 Очистка новых событий
   if (timelineGridRef.value) {
     timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
+    timelineGridRef.value.removeEventListener('touchstart', onTouchStart);
+    timelineGridRef.value.removeEventListener('touchmove', onTouchMove);
+    timelineGridRef.value.removeEventListener('touchend', onTouchEnd);
   }
+  
   window.removeEventListener('resize', onWindowResize);
   if (resizeObserver && mainContentRef.value) {
     resizeObserver.unobserve(mainContentRef.value);
@@ -612,12 +646,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- ref="resizerRef" перенесен НА ПИПКУ -->
         <div class="divider-wrapper">
           <div class="horizontal-scrollbar-wrapper" ref="masterScrollbarRef">
             <div class="scrollbar-content" ref="scrollbarContentRef"></div>
           </div>
-          <!-- Вот сюда перенесен ref: -->
           <div class="vertical-resizer" ref="resizerRef"></div>
         </div>
 
@@ -944,7 +976,9 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
   scrollbar-width: none;
   -ms-overflow-style: none;
-  overscroll-behavior-x: contain;
+  
+  /* 🔴 ИСПРАВЛЕНИЕ: Полная блокировка свайпа назад */
+  overscroll-behavior-x: none;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 .timeline-grid-content {
@@ -993,34 +1027,25 @@ onBeforeUnmount(() => {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Стили скроллбара */
+  scrollbar-width: auto;
+  scrollbar-color: #555555 #2a2a2a;
 }
 
-/* --- СТИЛИЗАЦИЯ СКРОЛЛБАРА (Для горизонтального скролла) --- */
-
-/* 1. Для Firefox */
-.horizontal-scrollbar-wrapper {
-  scrollbar-width: auto; /* или thin */
-  scrollbar-color: #555555 #2a2a2a; /* Ползунок и Трек */
-}
-
-/* 2. Для Webkit (Chrome, Safari, Edge) */
 .horizontal-scrollbar-wrapper::-webkit-scrollbar {
-  height: 12px; /* Высота горизонтального скролла */
+  height: 12px;
 }
-
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-track {
-  background: #2a2a2a; /* Темный фон (трек) */
-  border-top: 1px solid var(--color-border); /* Тонкая линия сверху */
+  background: #2a2a2a;
+  border-top: 1px solid var(--color-border);
 }
-
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb {
-  background-color: #555; /* Темно-серый ползунок */
-  border-radius: 6px;     /* Закругленные края */
-  border: 3px solid #2a2a2a; /* Отступ внутри трека (создает "тонкий" эффект) */
+  background-color: #555;
+  border-radius: 6px;
+  border: 3px solid #2a2a2a;
 }
-
 .horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover {
-  background-color: #777; /* Чуть светлее при наведении */
+  background-color: #777;
 }
 
 .scrollbar-content { height: 1px; }
