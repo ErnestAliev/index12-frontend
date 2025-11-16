@@ -4,7 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderBalanceCard.vue v3.1-SMALL-DARK-BTNS ЗАГРУЖЕН ---');
+console.log('--- HeaderBalanceCard.vue v3.2-GAP-FIX ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -227,53 +227,30 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- 🔴 ОБНОВЛЕННЫЕ СТИЛИ КНОПОК --- */
+/* --- СТИЛИ КНОПОК --- */
 .card-actions {
   display: flex;
-  gap: 6px; /* Чуть уменьшили расстояние */
+  gap: 6px; 
   position: relative; z-index: 101;
 }
 
 .action-square-btn {
-  /* 🔴 Размер уменьшен (~40% от 28px) */
   width: 18px;
   height: 18px;
   border: 1px solid transparent; 
-  border-radius: 4px; /* Скругление под новый размер */
-  
-  /* 🔴 Новый цвет фона */
+  border-radius: 4px; 
   background-color: #1a1a1a; 
-  
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  
-  /* Цвет иконки оставляем серым/белым по умолчанию (или наследуется) */
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0;
   color: #888; 
   transition: all 0.2s ease;
 }
 
-.action-square-btn:hover {
-  background-color: #333; /* Чуть светлее при наведении */
-  color: #ccc;
-}
+.action-square-btn:hover { background-color: #333; color: #ccc; }
+.action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 
-.action-square-btn.active {
-  /* 🔴 Активный цвет (зеленый) */
-  background-color: #34c759; 
-  color: #fff; /* Белая иконка на зеленом фоне */
-  border-color: transparent;
-}
+.icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
-.icon-svg {
-  /* 🔴 Уменьшенный размер иконки */
-  width: 11px; 
-  height: 11px;
-  display: block;
-  object-fit: contain; 
-}
 /* ----------------------------------- */
 
 .card-items-list {
@@ -313,7 +290,9 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
   .card-item span:first-child { padding-right: 5px; }
   .forecast-display { gap: 2px; }
   
-  /* Еще немного уменьшаем на планшете */
+  /* Уменьшаем расстояние между иконками */
+  .card-actions { gap: 3px; }
+  
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
 }
