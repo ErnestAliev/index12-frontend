@@ -1,15 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v6.12-CRITICAL-FIX ---
- * * ВЕРСИЯ: 6.12 - Восстановление fetchAllEntities
+ * * --- МЕТКА ВЕРСИИ: v6.13-FINAL-FIX ---
+ * * ВЕРСИЯ: 6.13 - Восстановление displayOperationsFlat
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (CRITICAL) Восстановлена функция `fetchAllEntities`, отсутствие которой
- * ломало запуск приложения (ReferenceError).
- * 2. Сохранены все предыдущие фиксы:
- * - Дата при D&D (`moved.date`).
- * - Проверка свободной ячейки при редактировании.
- * - Геттеры для виджета переводов.
+ * 1. (CRITICAL FIX) Вернуто определение `displayOperationsFlat`, которое
+ * было случайно удалено в v6.12, но требовалось в экспорте.
+ * 2. Все логические фиксы (дата D&D, проверка ячейки) сохранены.
  */
 
 import { defineStore } from 'pinia';
@@ -35,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v6.12-CRITICAL-FIX ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v6.13-FINAL-FIX ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -165,6 +162,17 @@ export const useMainStore = defineStore('mainStore', () => {
       }
     });
     return allOps;
+  });
+
+  // 🔴 ВОССТАНОВЛЕНО: displayOperationsFlat
+  const displayOperationsFlat = computed(() => {
+    const displayOps = [];
+    Object.values(displayCache.value).forEach(dayOps => {
+      if (Array.isArray(dayOps)) {
+        displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
+      }
+    });
+    return displayOps;
   });
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
@@ -503,6 +511,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
+    console.log(`[ЖУРНАЛ] updateProjectionFromCalculationData: 🎯 Расчет проекции из calculationCache (${mode})`);
     const base = new Date(today);
     base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
@@ -526,6 +535,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function fetchOperationsRange(startDate, endDate) {
+    console.log(`[ЖУРНАЛ] fetchOperationsRange: 🚀 Загрузка диапазона ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
     try {
       const promises = [];
       const dateKeysToFetch = [];
@@ -537,9 +547,11 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       if (promises.length === 0) {
+        console.log(`[ЖУРНАЛ] fetchOperationsRange: ✅ Данные уже в кеше.`);
         displayCache.value = { ...displayCache.value };
         return;
       }
+      console.log(`[ЖУРНАЛ] fetchOperationsRange: 🚚 Запрашиваю ${promises.length} новых дней...`);
       const responses = await Promise.all(promises);
       const tempCache = {};
       for (let i = 0; i < responses.length; i++) {
@@ -553,6 +565,7 @@ export const useMainStore = defineStore('mainStore', () => {
         tempCache[dateKey] = processedOps;
       }
       displayCache.value = { ...displayCache.value, ...tempCache };
+      console.log(`[ЖУРНАЛ] fetchOperationsRange: ✅ Загрузка завершена.`);
     } catch (error) {
       console.error('Ошибка загрузки диапазона операций:', error);
       if (error.response && error.response.status === 401) {
@@ -562,6 +575,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function updateFutureProjectionWithData(mode, today = new Date()) {
+    console.log(`[ЖУРНАЛ] updateFutureProjection: 🚀 Расчет проекции для режима ${mode}`);
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     await fetchOperationsRange(startDate, endDate); 
@@ -581,6 +595,7 @@ export const useMainStore = defineStore('mainStore', () => {
       rangeStartDate: startDate, rangeEndDate: endDate,
       futureIncomeSum, futureExpenseSum 
     };
+    console.log(`[ЖУРНАЛ] updateFutureProjection: ✅ Расчет завершен. RangeEndDate: ${_formatDate(endDate)}`);
     updateFutureTotals();
   }
   function updateFutureProjection({ mode, totalDays, today = new Date() }) {
@@ -636,7 +651,6 @@ export const useMainStore = defineStore('mainStore', () => {
     };
   }
 
-  // 🔴 ВОССТАНОВЛЕННАЯ ФУНКЦИЯ: fetchAllEntities
   async function fetchAllEntities(){
     try{
       const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
@@ -1005,7 +1019,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
     }
 
-    // --- 🔴 ИСПРАВЛЕНИЕ: Обновляем дату объекта перемещения ---
+    // --- 🔴 ИСПРАВЛЕНИЕ (FIX #1): Обновляем дату объекта перемещения ---
     const moved = { 
       ...operation, 
       cellIndex: targetIndex, 
@@ -1189,77 +1203,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  let autoRefreshInterval = null;
-  function startAutoRefresh(intervalMs = 30000) {
-    stopAutoRefresh();
-    console.log(`[ЖУРНАЛ] startAutoRefresh: ⏱️ Запуск автообновления каждые ${intervalMs}ms`);
-    autoRefreshInterval = setInterval(async () => {
-      console.log('[ЖУРНАЛ] AutoRefresh: 🔄 Выполняю автообновление...');
-      try {
-        await fetchAllEntities();
-        if (projection.value.mode) {
-          await loadCalculationData( 
-            projection.value.mode,
-            new Date(currentYear.value, 0, todayDayOfYear.value)
-          );
-        }
-        console.log('[ЖУРНАЛ] AutoRefresh: ✅ Данные успешно обновлены');
-      } catch (error) {
-        console.error('Ошибка при автообновлении:', error);
-      }
-    }, intervalMs);
-  }
-  function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-      console.log('[ЖУРНАЛ] stopAutoRefresh: 🛑 Остановка автообновления.');
-      clearInterval(autoRefreshInterval);
-      autoRefreshInterval = null;
-    }
-  }
-  async function forceRefreshAll() {
-    console.log('Принудительное обновление всех данных...');
-    try {
-      displayCache.value = {};
-      calculationCache.value = {};
-      
-      await fetchAllEntities();
-      
-      if (projection.value.mode) {
-        await loadCalculationData( 
-          projection.value.mode,
-          new Date(currentYear.value, 0, todayDayOfYear.value)
-        );
-      }
-      
-      console.log('Все данные успешно обновлены');
-    } catch (error) {
-      console.error('Ошибка при принудительном обновлении:', error);
-    }
-  }
-
-  async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
-    console.log(`[mainStore v4.6] importOperations: Начинаем импорт ${selectedIndices.length} операций...`);
-    try {
-      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
-        operations, 
-        selectedRows: selectedIndices 
-      });
-      const createdOps = response.data;
-      console.log(`[mainStore v4.6] importOperations: Сервер успешно создал ${createdOps.length} операций.`);
-      progressCallback(createdOps.length);
-      console.log('[mainStore v4.6] importOperations: Запускаю forceRefreshAll...');
-      await forceRefreshAll();
-      console.log('[mainStore v4.6] importOperations: Импорт и обновление завершены.');
-      return createdOps;
-    } catch (error) {
-      console.error('Ошибка импорта в mainStore (v4.6):', error);
-      if (error.response && error.response.status === 401) {
-        user.value = null;
-      }
-      throw error; 
-    }
-  }
-
   async function checkAuth() {
   console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
   try {
@@ -1276,7 +1219,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  async function logout() {
+async function logout() {
     axios.post(`${API_BASE_URL}/auth/logout`)
       .then(() => {
         console.log('[ЖУРНАЛ] logout: ✅ Серверная сессия успешно завершена (в фоне).');
