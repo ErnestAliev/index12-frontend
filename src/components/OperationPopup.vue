@@ -5,19 +5,21 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.3-DATE-FIX ---
- * * ВЕРСИЯ: 5.3 - Исправление сдвига даты
+ * * --- МЕТКА ВЕРСИИ: v5.5-COMPLEX-FIX ---
+ * * ВЕРСИЯ: 5.5 - Комплексное исправление ошибок #13, #14.
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (FIX 1A) `handleSave` теперь создает дату на 12:00 (полдень) для избежания сдвига часовых поясов.
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
  * 1. (FIX #14) Восстановлена функция `onAmountInput` и `formatNumber`
  * для форматирования сумм (разделители тысячных).
  * 2. (FIX #13) Полностью удален блок `<template v-else>` (форма перевода).
  * 3. (FIX #13) Удалены связанные `ref` (`selectedFromAccountId`, `selectedToAccountId`).
+ * 4. (NEW) Добавлено логирование в `handleSave` и `onAmountInput`.
  */
+
+// 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
+console.log('--- OperationPopup.vue v5.5 (Fix #13, #14) ЗАГРУЖЕН ---');
+
 // !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 // (Старый код: const API_BASE_URL = 'http://localhost:3000/api';)
@@ -96,6 +98,7 @@ const formatNumber = (numStr) => {
 };
 
 const onAmountInput = (event) => {
+  // console.log('[OperationPopup] onAmountInput СРАБОТАЛ'); // 🔴 ЛОГ (Слишком много)
   const input = event.target;
   const value = input.value;
   const cursorPosition = input.selectionStart;
@@ -127,6 +130,7 @@ const onAmountInput = (event) => {
 
 // --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА КОМПАНИИ ПРИ ВЫБОРЕ СЧЕТА ---
 const onAccountSelected = (accountId) => {
+  console.log(`[OperationPopup] onAccountSelected: Выбран счет ${accountId}`);
   const account = mainStore.accounts.find(a => a._id === accountId);
   if (account && account.companyId) {
     // (v4.4) Убедимся, что companyId - это строка, а не объект
@@ -134,11 +138,13 @@ const onAccountSelected = (accountId) => {
       ? account.companyId._id
       : account.companyId;
     selectedCompanyId.value = cId;
+    console.log(`[OperationPopup] onAccountSelected: Авто-установлена компания ${cId}`);
   }
 };
 
 // --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА (КОНТРАГЕНТ -> ПРОЕКТ / КАТЕГОРИЯ) ---
 const onContractorSelected = (contractorId, setProject, setCategory) => {
+  console.log(`[OperationPopup] onContractorSelected: Выбран контрагент ${contractorId}`);
   const contractor = mainStore.contractors.find(c => c._id === contractorId);
   if (contractor) {
     if (setProject && contractor.defaultProjectId) {
@@ -146,12 +152,14 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
         ? contractor.defaultProjectId._id
         : contractor.defaultProjectId;
       selectedProjectId.value = pId;
+      console.log(`[OperationPopup] onContractorSelected: Авто-установлен проект ${pId}`);
     }
     if (setCategory && contractor.defaultCategoryId) {
       const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object')
         ? contractor.defaultCategoryId._id
         : contractor.defaultCategoryId;
       selectedCategoryId.value = cId;
+      console.log(`[OperationPopup] onContractorSelected: Авто-установлена категория ${cId}`);
     }
   }
 };
@@ -161,6 +169,7 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
 onMounted(() => {
   if (props.operationToEdit) {
     // РЕЖИМ РЕДАКТИРОВАНИЯ
+    console.log('[OperationPopup] onMounted: РЕЖИМ РЕДАКТИРОВАНИЯ', props.operationToEdit);
     const op = props.operationToEdit;
     amount.value = formatNumber(Math.abs(op.amount || 0));
     selectedAccountId.value = op.accountId?._id || op.accountId;
@@ -175,6 +184,7 @@ onMounted(() => {
     
   } else {
     // РЕЖИМ СОЗДАНИЯ
+    console.log(`[OperationPopup] onMounted: РЕЖИМ СОЗДАНИЯ (Тип: ${props.type})`);
     // Автофокус на поле суммы
     setTimeout(() => {
       if (amountInput.value) {
@@ -207,6 +217,7 @@ const _getDateKey = (date) => {
 // --- 🔴 ИСПРАВЛЕНИЕ: handleSave (v5.3) ---
 // =================================================================
 const handleSave = async () => {
+  console.log('[OperationPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
 
   // 🔴 ИСПРАВЛЕНИЕ (FIX #14): Используем .value или amount, а не amountInput.value
@@ -214,9 +225,10 @@ const handleSave = async () => {
   const amountParsed = parseFloat(amountFromState);
 
   // --- ВАЛИДАЦИЯ ДЛЯ ДОХОДОВ/РАСХОДОВ ---
-  // (Блок `props.type === 'transfer'` удален)
+  // (Блок `props.type === 'transfer'` удален (Fix #13))
   if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedCompanyId.value || !selectedContractorId.value) {
     errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания, Контрагент.';
+    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ', { amountParsed, selectedAccountId: selectedAccountId.value, selectedCompanyId: selectedCompanyId.value, selectedContractorId: selectedContractorId.value });
     return;
   }
   
@@ -225,10 +237,10 @@ const handleSave = async () => {
     const [year, month, day] = editableDate.value.split('-').map(Number);
 
     // !!! ИСПРАВЛЕНИЕ (1A): Устанавливаем время на 12:00 (полдень) !!!
-    // const finalDate = new Date(year, month - 1, day); // УДАЛЕНО
     const finalDate = new Date(year, month - 1, day, 12, 0, 0); // ДОБАВЛЕНО
 
     const dateKey = _getDateKey(finalDate); // 🔴 КЛЮЧЕВОЙ МОМЕНТ
+    console.log(`[OperationPopup] handleSave: Дата операции: ${finalDate.toISOString()}, dateKey: ${dateKey}`);
     
     const base = {
       type: props.type,
@@ -242,6 +254,7 @@ const handleSave = async () => {
 
     if (!props.operationToEdit || isCloneMode.value) {
       // 🔴 ИЗМЕНЕНО: Передаем dateKey
+      console.log('[OperationPopup] handleSave: РЕЖИМ СОЗДАНИЯ/КЛОНИРОВАНИЯ');
       await saveCreateOrClone(base, dateKey);
       emit('close');
       isCloneMode.value = false;
@@ -249,6 +262,8 @@ const handleSave = async () => {
     }
 
     const prev = props.operationToEdit;
+    console.log('[OperationPopup] handleSave: РЕЖИМ РЕДАКТИРОВАНИЯ');
+    
     // 🔴 ИЗМЕНЕНО: Убедимся, что у операции есть dateKey
     const oldDateKey = prev.dateKey; 
     if (!oldDateKey) {
@@ -264,7 +279,7 @@ const handleSave = async () => {
     isCloneMode.value = false;
 
   } catch (error) {
-    console.error('OperationPopup: ошибка handleSave', error);
+    console.error('OperationPopup: ❌ КРИТИЧЕСКАЯ ОШИБКА handleSave', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
   }
 };
@@ -278,26 +293,25 @@ async function saveCreateOrClone(base, dateKey) {
   let cellIndexToUse = 0;
   try {
     if (typeof mainStore.getFirstFreeCellIndex === 'function') {
+      console.log(`[OperationPopup] saveCreateOrClone: 🔍 Поиск свободной ячейки для ${dateKey}...`);
       // 🔴 ИЗМЕНЕНО: Используем dateKey (строку)
-      // Это исправляет ошибку `dateKey.split is not a function`
       const freeIndex = await mainStore.getFirstFreeCellIndex(dateKey, 0);
       cellIndexToUse = Number.isInteger(freeIndex) ? freeIndex : 0;
+      console.log(`[OperationPopup] saveCreateOrClone: Ячейка найдена: ${cellIndexToUse}`);
     }
   } catch(e) { 
-      console.error('Ошибка getFirstFreeCellIndex:', e);
-      cellIndexToUse = 0; 
+      console.error('[OperationPopup] saveCreateOrClone: ❌ Ошибка getFirstFreeCellIndex:', e);
+      cellIndexToUse = 0; // Fallback
   }
 
   // 🔴 ИЗМЕНЕНО: Передаем dateKey
-  // Бэкенд должен быть обновлен, чтобы принимать dateKey вместо dayOfYear
   const payload = { ...base, dateKey, cellIndex: cellIndexToUse };
   
-  // ==================================================================
-  // --- 💡 ИСПРАВЛЕНИЕ: Заменяем localhost на API_BASE_URL ---
-  // ==================================================================
+  console.log('[OperationPopup] saveCreateOrClone: 🚀 Отправка POST /api/events', payload);
   const response = await axios.post(`${API_BASE_URL}/events`, payload);
   
   // 🔴 ИЗМЕНЕНО: Обновляем HomeView с помощью полного объекта
+  console.log('[OperationPopup] saveCreateOrClone: ✅ УСПЕХ. Вызов emit(operation-added)');
   emit('operation-added', response.data);
 }
 // =================================================================
@@ -312,46 +326,42 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
   const finalDateKey = positionChanged ? newDateKey : oldDateKey;
 
   if (positionChanged) {
+    console.log(`[OperationPopup] saveEdit: ➡️ Обнаружено ПЕРЕМЕЩЕНИЕ ДАТЫ (${oldDateKey} -> ${newDateKey})`);
     try {
       // 🔴 ИЗМЕНЕНО: Передаем dateKey
-      // `moveOperation` также должен быть обновлен на бэкенде
       await mainStore.moveOperation(
         { _id: opId, ...base, dateKey: oldDateKey, cellIndex: oldCellIndex },
         oldDateKey,
         newDateKey,
         Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0
       );
-      // 🔴 ИЗМЕНЕНО: Этот emit больше не используется в HomeView (v4.6+)
-      // emit('operation-moved', { operation: { _id: opId }, toDateKey: newDateKey, toCellIndex: desiredCellIndex });
     } catch (e) {
-      console.error('moveOperation error', e);
+      console.error('[OperationPopup] saveEdit: ❌ Ошибка moveOperation', e);
       throw e;
     }
     
     // Обновляем данные операции (позиция уже обновлена)
-    // ==================================================================
-    // --- 💡 ИСПРАВЛЕНИЕ: Заменяем localhost на API_BASE_URL ---
-    // ==================================================================
+    console.log(`[OperationPopup] saveEdit: 🚀 Отправка PUT /api/events/${opId} (после перемещения)`);
     await axios.put(`${API_BASE_URL}/events/${opId}`, {
-      // 🔴 ИЗМЕНЕНО: Передаем dateKey
       ...base,
       dateKey: newDateKey,  
       cellIndex: desiredCellIndex
     });
     // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
+    console.log('[OperationPopup] saveEdit: ✅ УСПЕХ. Вызов emit(operation-updated)');
     emit('operation-updated', { dateKey: newDateKey, oldDateKey: oldDateKey });
     
   } else {
     // Позиция не изменилась, просто обновляем данные
-    // ==================================================================
-    // --- 💡 ИСПРАВЛЕНИЕ: Заменяем localhost на API_BASE_URL ---
-    // ==================================================================
+    console.log(`[OperationPopup] saveEdit: 🔄 Обнаружено ОБНОВЛЕНИЕ НА МЕСТЕ (${oldDateKey})`);
+    console.log(`[OperationPopup] saveEdit: 🚀 Отправка PUT /api/events/${opId}`);
     await axios.put(`${API_BASE_URL}/events/${opId}`, {
       ...base,
-      dateKey: oldDateKey, // 🔴 ИЗМЕНЕНО
+      dateKey: oldDateKey, 
       cellIndex: oldCellIndex
     });
     // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
+    console.log('[OperationPopup] saveEdit: ✅ УСПЕХ. Вызов emit(operation-updated)');
     emit('operation-updated', { dateKey: oldDateKey, oldDateKey: null });
   }
 }
@@ -359,14 +369,14 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
 
 
 // =================================================================
-// --- 🔴 v2.3: Функции Inline-Create (без изменений) ---
+// --- 🔴 v2.3: Функции Inline-Create (с логированием) ---
 // =================================================================
-// ... (Все функции Inline-Create)
-const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
-const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
+const showAccountInput = () => { console.log('[OperationPopup] showAccountInput'); isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
+const cancelCreateAccount = () => { console.log('[OperationPopup] cancelCreateAccount'); isCreatingAccount.value = false; newAccountName.value = ''; };
 const saveNewAccount = async () => {
   const name = newAccountName.value.trim();
   if (!name) return;
+  console.log(`[OperationPopup] saveNewAccount: 💾 Сохранение счета ${name}`);
   const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     selectedAccountId.value = existing._id;
@@ -381,11 +391,12 @@ const saveNewAccount = async () => {
   cancelCreateAccount();
 };
 
-const showCompanyInput = () => { isCreatingCompany.value = true; nextTick(() => newCompanyInput.value?.focus()); };
-const cancelCreateCompany = () => { isCreatingCompany.value = false; newCompanyName.value = ''; };
+const showCompanyInput = () => { console.log('[OperationPopup] showCompanyInput'); isCreatingCompany.value = true; nextTick(() => newCompanyInput.value?.focus()); };
+const cancelCreateCompany = () => { console.log('[OperationPopup] cancelCreateCompany'); isCreatingCompany.value = false; newCompanyName.value = ''; };
 const saveNewCompany = async () => {
   const name = newCompanyName.value.trim();
   if (!name) return;
+  console.log(`[OperationPopup] saveNewCompany: 💾 Сохранение компании ${name}`);
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     selectedCompanyId.value = existing._id;
@@ -398,11 +409,12 @@ const saveNewCompany = async () => {
   cancelCreateCompany();
 };
 
-const showContractorInput = () => { isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
-const cancelCreateContractor = () => { isCreatingContractor.value = false; newContractorName.value = ''; };
+const showContractorInput = () => { console.log('[OperationPopup] showContractorInput'); isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
+const cancelCreateContractor = () => { console.log('[OperationPopup] cancelCreateContractor'); isCreatingContractor.value = false; newContractorName.value = ''; };
 const saveNewContractor = async () => {
   const name = newContractorName.value.trim();
   if (!name) return;
+  console.log(`[OperationPopup] saveNewContractor: 💾 Сохранение контрагента ${name}`);
   const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     selectedContractorId.value = existing._id;
@@ -417,11 +429,12 @@ const saveNewContractor = async () => {
   cancelCreateContractor();
 };
 
-const showProjectInput = () => { isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); };
-const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
+const showProjectInput = () => { console.log('[OperationPopup] showProjectInput'); isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); };
+const cancelCreateProject = () => { console.log('[OperationPopup] cancelCreateProject'); isCreatingProject.value = false; newProjectName.value = ''; };
 const saveNewProject = async () => {
   const name = newProjectName.value.trim();
   if (!name) return;
+  console.log(`[OperationPopup] saveNewProject: 💾 Сохранение проекта ${name}`);
   const existing = mainStore.projects.find(p => p.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     selectedProjectId.value = existing._id;
@@ -434,11 +447,12 @@ const saveNewProject = async () => {
   cancelCreateProject();
 };
 
-const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
-const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
+const showCategoryInput = () => { console.log('[OperationPopup] showCategoryInput'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
+const cancelCreateCategory = () => { console.log('[OperationPopup] cancelCreateCategory'); isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
   const name = newCategoryName.value.trim();
   if (!name) return;
+  console.log(`[OperationPopup] saveNewCategory: 💾 Сохранение категории ${name}`);
   const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     selectedCategoryId.value = existing._id;
@@ -473,14 +487,21 @@ const buttonClass = computed(() => {
 });
 // =================================================================
 
-const closePopup = () => emit('close');
+const closePopup = () => {
+  console.log('[OperationPopup] closePopup: 🛑 Закрытие попапа');
+  emit('close');
+};
 
 // =================================================================
 // --- 🔴 ИСПРАВЛЕНИЕ: Удаление и Клонирование (v2.4) ---
 // =================================================================
-const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
+const handleDeleteClick = () => {
+  console.log('[OperationPopup] handleDeleteClick: ❓ Запрос на удаление');
+  isDeleteConfirmVisible.value = true;
+};
 
 const onDeleteConfirmed = async () => {
+  console.log('[OperationPopup] onDeleteConfirmed: 🔥 УДАЛЕНИЕ ПОДТВЕРЖДЕНО');
   try {
     if (!props.operationToEdit?._id) return;
     
@@ -488,16 +509,18 @@ const onDeleteConfirmed = async () => {
     await mainStore.deleteOperation(props.operationToEdit);
     
     // 🔴 ИЗМЕНЕНО: Отправляем dateKey
+    console.log('[OperationPopup] onDeleteConfirmed: ✅ УСПЕХ. Вызов emit(operation-deleted)');
     emit('operation-deleted', { dateKey: props.operationToEdit.dateKey });
     emit('close');
   } catch (e) {
-    console.error('Ошибка при удалении', e);
+    console.error('[OperationPopup] onDeleteConfirmed: ❌ Ошибка при удалении', e);
   } finally {
     isDeleteConfirmVisible.value = false;
   }
 };
 
 const handleCopyClick = () => {
+  console.log('[OperationPopup] handleCopyClick: 📋 Клонирование операции');
   isCloneMode.value = true;
   // 🔴 ИЗМЕНЕНО: При клонировании сбрасываем дату на ту,
   // которая пришла из props (дата кликнутой ячейки)
