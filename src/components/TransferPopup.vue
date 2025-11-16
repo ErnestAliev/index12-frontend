@@ -5,14 +5,15 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.5-COMPLEX-FIX ---
- * * ВЕРСИЯ: 5.5 - Комплексное исправление ошибок #3, #4.
+ * * --- МЕТКА ВЕРСИИ: v5.5 (Fix #3, #4) ---
+ * * ВЕРСИЯ: 5.5 - Устранение "гонки состояний" (Race Condition)
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (FIX-BUG-5 / ОШИБКА #3) Удален `forceRefreshAll()` из `syncState`
- * для предотвращения "исчезновения" данных на 5-7 сек.
- * 2. (NEW) Добавлено логирование.
+ * 1. (FIX-BUG-7 / ОШИБКА #3, #4) Удален `updateProjectionFromCalculationData`
+ * из `syncState`. Это устраняет "гонку состояний",
+ * из-за которой `TheHeader.vue` падал с ошибкой `RangeError`.
+ * 2. (NEW) Добавлено подробное логирование по всему файлу.
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
@@ -36,11 +37,15 @@ const toCompanyId = ref(null);
 const categoryId = ref(null);
 
 const toInputDate = (date) => {
+  // 🔴 ЛОГИРОВАНИЕ
+  // console.log('[TransferPopup] toInputDate: Входящая дата:', date);
   const d = new Date(date);
   const year = d.getFullYear();
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
   const day = d.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const result = `${year}-${month}-${day}`;
+  // console.log('[TransferPopup] toInputDate: Результат:', result);
+  return result;
 };
 const editableDate = ref(toInputDate(props.date));
 const errorMessage = ref('');
@@ -74,7 +79,8 @@ const formatNumber = (numStr) => {
 };
 
 const onAmountInput = (event) => {
-  // console.log('[TransferPopup] onAmountInput СРАБОТАЛ'); // 🔴 ЛОГ (Слишком много)
+  // 🔴 ЛОГИРОВАНИЕ
+  // console.log('[TransferPopup] onAmountInput СРАБОТАЛ');
   const input = event.target;
   const value = input.value;
   const cursorPosition = input.selectionStart;
@@ -90,6 +96,7 @@ const onAmountInput = (event) => {
 
 // --- Автоматическая привязка компании (без изменений) ---
 const onFromAccountSelected = (accountId) => {
+  // 🔴 ЛОГИРОВАНИЕ
   console.log(`[TransferPopup] onFromAccountSelected: Выбран счет ${accountId}`);
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount && selectedAccount.companyId) {
@@ -102,6 +109,7 @@ const onFromAccountSelected = (accountId) => {
 };
 
 const onToAccountSelected = (accountId) => {
+  // 🔴 ЛОГИРОВАНИЕ
   console.log(`[TransferPopup] onToAccountSelected: Выбран счет ${accountId}`);
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount && selectedAccount.companyId) {
@@ -115,20 +123,26 @@ const onToAccountSelected = (accountId) => {
 
 // --- Заполнение полей при редактировании ---
 onMounted(async () => {
+  // 🔴 ЛОГИРОВАНИЕ
+  if (props.transferToEdit) {
+    console.log('[TransferPopup] onMounted: РЕЖИМ РЕДАКТИРОВАНИЯ', props.transferToEdit);
+  } else {
+    console.log('[TransferPopup] onMounted: РЕЖИМ СОЗДАНИЯ');
+  }
+
   // Находим категорию "Перевод"
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
   if (!transferCategory) {
-    console.log("[TransferPopup] onMounted: Категория 'Перевод' не найдена, создаю...");
     try {
+        console.log('[TransferPopup] onMounted: Категория "Перевод" не найдена, создаю...');
         transferCategory = await mainStore.addCategory('Перевод');
-    } catch (e) { console.error("[TransferPopup] onMounted: ❌ Не удалось создать категорию 'Перевод'", e)}
+    } catch (e) { console.error("[TransferPopup] onMounted: Не удалось создать категорию 'Перевод'", e)}
   }
   // Устанавливаем ID по умолчанию
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
 
   // Если редактируем существующий перевод
   if (props.transferToEdit) {
-    console.log('[TransferPopup] onMounted: РЕЖИМ РЕДАКТИРОВАНИЯ', props.transferToEdit);
     const transfer = props.transferToEdit;
     amount.value = formatNumber(Math.abs(transfer.amount));
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId;
@@ -157,12 +171,14 @@ onMounted(async () => {
     }
   } else {
     // Устанавливаем категорию "Перевод" для нового
-    console.log('[TransferPopup] onMounted: РЕЖИМ СОЗДАНИЯ');
     categoryId.value = defaultCategoryId;
     
     // Автофокус для нового перевода
     setTimeout(() => {
-      if (amountInput.value) amountInput.value.focus();
+      if (amountInput.value) {
+        amountInput.value.focus();
+        console.log('[TransferPopup] onMounted: Фокус установлен на amountInput');
+      }
     }, 100);
   }
 });
@@ -186,31 +202,34 @@ const buttonText = computed(() => {
 // --- 🔴 ИСПРАВЛЕНИЕ: Кнопки Удаления и Клонирования (v4.2) ---
 // =================================================================
 const handleDeleteClick = () => {
-  console.log('[TransferPopup] handleDeleteClick: ❓ Запрос на удаление');
+  console.log('[TransferPopup] handleDeleteClick: Нажата кнопка "Удалить"');
   isDeleteConfirmVisible.value = true;
 };
 
 const onDeleteConfirmed = async () => {
-  console.log('[TransferPopup] onDeleteConfirmed: 🔥 УДАЛЕНИЕ ПОДТВЕРЖДЕНО');
+  console.log('[TransferPopup] onDeleteConfirmed: Удаление подтверждено');
   try {
-    if (!props.transferToEdit?._id) return;
+    if (!props.transferToEdit?._id) {
+      console.error('[TransferPopup] onDeleteConfirmed: Ошибка! Нет operationToEdit._id');
+      return;
+    }
     
     // 🔴 ИЗМЕНЕНО: Используем mainStore.deleteOperation
     await mainStore.deleteOperation(props.transferToEdit);
     
     // 🔴 ИЗМЕНЕНО: Отправляем dateKey
-    console.log('[TransferPopup] onDeleteConfirmed: ✅ УСПЕХ. Вызов emit(transfer-complete)');
+    console.log('[TransferPopup] onDeleteConfirmed: Вызываю emit transfer-complete (для обновления UI)');
     emit('transfer-complete', { dateKey: props.transferToEdit.dateKey });
     emit('close');
   } catch (e) {
-    console.error('[TransferPopup] onDeleteConfirmed: ❌ Ошибка при удалении перевода', e);
+    console.error('Ошибка при удалении перевода', e);
   } finally {
     isDeleteConfirmVisible.value = false;
   }
 };
 
 const handleCopyClick = () => {
-  console.log('[TransferPopup] handleCopyClick: 📋 Клонирование операции');
+  console.log('[TransferPopup] handleCopyClick: Нажата кнопка "Копировать"');
   isCloneMode.value = true;
   // 🔴 ИЗМЕНЕНО: Сбрасываем дату на дату ячейки
   editableDate.value = toInputDate(props.date); 
@@ -220,14 +239,15 @@ const handleCopyClick = () => {
 
 
 // =================================================================
-// --- 🔴 v4.1: Функции Inline-Create (с логированием) ---
+// --- 🔴 v4.1: Функции Inline-Create (с логами) ---
 // =================================================================
 const showCategoryInput = () => { console.log('[TransferPopup] showCategoryInput'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
 const cancelCreateCategory = () => { console.log('[TransferPopup] cancelCreateCategory'); isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
   const name = newCategoryName.value.trim();
+  console.log(`[TransferPopup] saveNewCategory: Сохраняю категорию '${name}'`);
   if (!name) return;
-  console.log(`[TransferPopup] saveNewCategory: 💾 Сохранение категории ${name}`);
+  
   const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     categoryId.value = existing._id;
@@ -245,8 +265,9 @@ const showFromAccountInput = () => { console.log('[TransferPopup] showFromAccoun
 const cancelCreateFromAccount = () => { console.log('[TransferPopup] cancelCreateFromAccount'); isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
 const saveNewFromAccount = async () => {
   const name = newFromAccountName.value.trim();
+  console.log(`[TransferPopup] saveNewFromAccount: Сохраняю счет (From) '${name}'`);
   if (!name) return;
-  console.log(`[TransferPopup] saveNewFromAccount: 💾 Сохранение счета ${name}`);
+
   const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     fromAccountId.value = existing._id;
@@ -265,8 +286,9 @@ const showFromCompanyInput = () => { console.log('[TransferPopup] showFromCompan
 const cancelCreateFromCompany = () => { console.log('[TransferPopup] cancelCreateFromCompany'); isCreatingFromCompany.value = false; newFromCompanyName.value = ''; };
 const saveNewFromCompany = async () => {
   const name = newFromCompanyName.value.trim();
+  console.log(`[TransferPopup] saveNewFromCompany: Сохраняю компанию (From) '${name}'`);
   if (!name) return;
-  console.log(`[TransferPopup] saveNewFromCompany: 💾 Сохранение компании ${name}`);
+  
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     fromCompanyId.value = existing._id;
@@ -284,8 +306,9 @@ const showToAccountInput = () => { console.log('[TransferPopup] showToAccountInp
 const cancelCreateToAccount = () => { console.log('[TransferPopup] cancelCreateToAccount'); isCreatingToAccount.value = false; newToAccountName.value = ''; };
 const saveNewToAccount = async () => {
   const name = newToAccountName.value.trim();
+  console.log(`[TransferPopup] saveNewToAccount: Сохраняю счет (To) '${name}'`);
   if (!name) return;
-  console.log(`[TransferPopup] saveNewToAccount: 💾 Сохранение счета ${name}`);
+
   const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     toAccountId.value = existing._id;
@@ -304,8 +327,9 @@ const showToCompanyInput = () => { console.log('[TransferPopup] showToCompanyInp
 const cancelCreateToCompany = () => { console.log('[TransferPopup] cancelCreateToCompany'); isCreatingToCompany.value = false; newToCompanyName.value = ''; };
 const saveNewToCompany = async () => {
   const name = newToCompanyName.value.trim();
+  console.log(`[TransferPopup] saveNewToCompany: Сохраняю компанию (To) '${name}'`);
   if (!name) return;
-  console.log(`[TransferPopup] saveNewToCompany: 💾 Сохранение компании ${name}`);
+  
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     toCompanyId.value = existing._id;
@@ -339,48 +363,34 @@ const _getDateKey = (date) => {
 
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v4.4 + Наши фиксы) ---
+// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v5.5) ---
 // =================================================================
 
 // 🔴 НОВЫЙ HELPER (ОШИБКА #2)
 // Эта функция запускает синхронизацию в фоне, не блокируя UI
 const syncState = async (dateKey, oldDateKey = null) => {
   try {
+    // 🔴 ЛОГИРОВАНИЕ
     console.log(`[TransferPopup] syncState (async): 🔄 ФОНОВАЯ СИНХРОНИЗАЦИЯ для ${dateKey}...`);
     
     // 1. Обновляем затронутые дни
     await mainStore.refreshDay(dateKey);
     if (oldDateKey && oldDateKey !== dateKey) {
-      console.log(`[TransferPopup] syncState (async): 🔄 Обновляю старый день ${oldDateKey}`);
+      console.log(`[TransferPopup] syncState (async): 🔄 Обновляю также старый день ${oldDateKey}`);
       await mainStore.refreshDay(oldDateKey);
     }
     
     // 2. Обновляем балансы
-    console.log('[TransferPopup] syncState (async): 🔄 Обновляю все сущности (балансы)...');
+    console.log(`[TransferPopup] syncState (async): 🔄 Обновляю все сущности (балансы)...`);
     await mainStore.fetchAllEntities();
     
     // 3. Принудительно обновляем реактивность
     mainStore.displayCache = { ...mainStore.displayCache };
     mainStore.calculationCache = { ...mainStore.calculationCache };
     
-    // 4. Пересчитываем проекцию
-    if (mainStore.projection?.mode) {
-      console.log('[TransferPopup] syncState (async): 🔄 Пересчитываю проекцию...');
-      await mainStore.updateProjectionFromCalculationData(
-        mainStore.projection.mode,
-        new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear)
-      );
-    }
-    
-    // 5. 🔴🔴🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3) 🔴🔴🔴
-    // `forceRefreshAll()` ОЧИЩАЕТ КЭШ, вызывая "исчезновение" данных.
-    // Мы его удаляем, т.к. `refreshDay` и `updateProjection`
-    // УЖЕ обновили кэш хирургически.
-    // Глобальная синхронизация (Fix #3) будет выполнена
-    // штатным `startAutoRefresh` в HomeView, который НЕ чистит кэш.
-    
-    // await mainStore.forceRefreshAll(); // <-- 🔴 УДАЛЕНО
-
+    // 4. 🔴🔴🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3 / #4) 🔴🔴🔴
+    // УДАЛЯЕМ `updateProjectionFromCalculationData` И `forceRefreshAll`
+    // Этим теперь управляет `HomeView`
     console.log(`[TransferPopup] syncState (async): ✅ ФОНОВАЯ СИНХРОНИЗАЦИЯ для ${dateKey} ЗАВЕРШЕНА.`);
 
   } catch (e) {
@@ -390,6 +400,7 @@ const syncState = async (dateKey, oldDateKey = null) => {
 
 
 const handleSave = async () => {
+  // 🔴 ЛОГИРОВАНИЕ
   console.log('[TransferPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
   
@@ -399,17 +410,17 @@ const handleSave = async () => {
   // Валидация
   if (isNaN(amountParsed) || amountParsed <= 0) {
     errorMessage.value = 'Введите корректную сумму';
-    console.error('[TransferPopup] handleSave: ОШИБКА ВАЛИДАЦИИ (Сумма)');
+    console.warn('[TransferPopup] handleSave: Ошибка валидации: Некорректная сумма');
     return;
   }
   if (!fromAccountId.value || !toAccountId.value) {
     errorMessage.value = 'Выберите счета отправителя и получателя';
-    console.error('[TransferPopup] handleSave: ОШИБКА ВАЛИДАЦИИ (Счета не выбраны)');
+    console.warn('[TransferPopup] handleSave: Ошибка валидации: Счета не выбраны');
     return;
   }
   if (fromAccountId.value === toAccountId.value) {
     errorMessage.value = 'Счета не должны совпадать';
-    console.error('[TransferPopup] handleSave: ОШИБКА ВАЛИДАЦИИ (Счета совпадают)');
+    console.warn('[TransferPopup] handleSave: Ошибка валидации: Счета совпадают');
     return;
   }
 
@@ -420,6 +431,7 @@ const handleSave = async () => {
     
     // (Этот `_getDateKey` - локальный, из v4.2)
     const dateKey = _getDateKey(finalDate);
+    // 🔴 ЛОГИРОВАНИЕ
     console.log(`[TransferPopup] handleSave: Дата операции: ${finalDate.toISOString()}, dateKey: ${dateKey}`);
 
     const transferPayload = {
@@ -436,12 +448,12 @@ const handleSave = async () => {
     const oldDateKey = props.transferToEdit ? props.transferToEdit.dateKey : null;
 
     if (!props.transferToEdit || isCloneMode.value) {
+      // 🔴 ЛОГИРОВАНИЕ
       console.log('[TransferPopup] handleSave: РЕЖИМ СОЗДАНИЯ/КЛОНИРОВАНИЯ');
-      // --- 🔴 ОШИБКА #2: Ждем ТОЛЬКО CОЗДАНИЕ ---
       savedOperation = await mainStore.createTransfer(transferPayload);
     } else {
-      console.log('[TransferPopup] handleSave: РЕЖИМ РЕДАКТИРОВАНИЯ');
-      // --- 🔴 ОШИБКА #2: Ждем ТОЛЬКО ОБНОВЛЕНИЕ ---
+      // 🔴 ЛОГИРОВАНИЕ
+      console.log(`[TransferPopup] handleSave: РЕЖИМ РЕДАКТИРОВАНИЯ (ID: ${props.transferToEdit._id})`);
       savedOperation = await mainStore.updateTransfer(
         props.transferToEdit._id, 
         transferPayload
@@ -460,14 +472,14 @@ const handleSave = async () => {
     syncState(dateKey, oldDateKey); // Вызов БЕЗ await
 
   } catch (error) { 
-    console.error('❌ КРИТИЧЕСКАЯ ОШИБКА при сохранении перевода:', error);
+    console.error('❌ Ошибка при сохранении перевода:', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
   }
 };
 // =================================================================
 
 const closePopup = () => { 
-  console.log('[TransferPopup] closePopup: 🛑 Закрытие попапа');
+  console.log('[TransferPopup] closePopup: 🛑 Закрытие попапа (через overlay или отмену)');
   emit('close'); 
 };
 </script>
@@ -635,7 +647,7 @@ const closePopup = () => {
 </template>
 
 <style scoped>
-/* (Стили не менялись) */
+/* (Стили я не менял, они идентичны твоим из v4.1) */
 .popup-overlay {
   position: fixed; top: 0; left: 0;
   width: 100%; height: 100%;
