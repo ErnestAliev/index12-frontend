@@ -18,13 +18,19 @@ const handleDeleteClick = () => {
   showDeleteConfirm.value = true;
 };
 
-const confirmDelete = (deleteOperations) => {
+const confirmDelete = async (deleteOperations) => {
   isDeleting.value = true;
-  // Запускаем прогресс и отдаем управление родителю
-  emit('delete', { 
-      deleteOperations, 
-      done: () => { isDeleting.value = false; } 
-  });
+  try {
+    // Имитация задержки для визуализации прогресс-бара (0.5 сек)
+    await new Promise(resolve => setTimeout(resolve, 500));
+    // Сообщаем родителю об удалении и передаем функцию "done" для сброса isDeleting
+    emit('delete', { deleteOperations, done: () => isDeleting.value = false });
+    showDeleteConfirm.value = false;
+  } catch (e) {
+    alert('Ошибка при удалении: ' + e.message);
+  } finally {
+    isDeleting.value = false;
+  }
 };
 
 const cancelDelete = () => {
@@ -36,12 +42,13 @@ const cancelDelete = () => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     
-    <!-- ЕДИНЫЙ СТИЛЬ: Ширина 580px, как у ListEditor -->
     <div class="popup-content">
       <h3>{{ title }}</h3>
+      <!-- Добавляем описание, если это окно для редактирования одной сущности --><p class="editor-hint" v-if="title.includes('Категория') || title.includes('Проект')">
+        Название сущности. Нажмите на корзину для удаления.
+      </p>
       
       <div class="single-field-wrapper">
-          <!-- Заголовок поля (как в таблице, для единообразия) -->
           <label class="field-label">Название</label>
           
           <div class="field-row">
@@ -53,8 +60,7 @@ const cancelDelete = () => {
                 @keyup.enter="$emit('save', inputValue)"
               />
               
-              <!-- КНОПКА УДАЛЕНИЯ (Квадратная, как в списке) -->
-              <button v-if="showDelete" class="btn-delete" @click="handleDeleteClick" title="Удалить">
+              <!-- КНОПКА УДАЛЕНИЯ --><button v-if="showDelete" class="delete-btn" @click="handleDeleteClick" title="Удалить">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                      <polyline points="3 6 5 6 21 6"></polyline>
                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -70,12 +76,10 @@ const cancelDelete = () => {
       </div>
     </div>
 
-    <!-- ВСТРОЕННЫЙ МОДАЛ (Идентичен ListEditor) -->
-    <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
+    <!-- ВСТРОЕННЫЙ МОДАЛ (Идентичен ListEditor) --><div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         
-        <!-- Прогресс -->
-        <div v-if="isDeleting" class="deleting-state">
+        <!-- Прогресс --><div v-if="isDeleting" class="deleting-state">
            <h4>Удаление...</h4>
            <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
            <div class="progress-container">
@@ -83,8 +87,7 @@ const cancelDelete = () => {
            </div>
         </div>
         
-        <!-- Выбор -->
-        <div v-else>
+        <!-- Выбор --><div v-else>
           <h4>Удаление сущности</h4>
           <p>
             Вы собираетесь удалить <strong>«{{ inputValue }}»</strong>.<br>
@@ -118,7 +121,6 @@ const cancelDelete = () => {
   z-index: 1000;
 }
 
-/* ЕДИНЫЙ СТИЛЬ: Фон и ширина */
 .popup-content {
   max-width: 580px; 
   background: #F4F4F4; padding: 2rem; border-radius: 12px;
@@ -127,6 +129,15 @@ const cancelDelete = () => {
   margin: 1rem; position: relative;
 }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 600; text-align: left; }
+
+/* Новый стиль для описания под заголовком */
+.editor-hint { 
+  font-size: 0.9em; 
+  color: #666; 
+  text-align: left; /* Выравнивание по левому краю */
+  margin-top: -10px; 
+  margin-bottom: 1rem; 
+}
 
 /* Обертки полей */
 .single-field-wrapper { margin-bottom: 2rem; }
@@ -155,16 +166,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font
 .btn-submit:hover { background-color: #444; }
 
 /* Кнопка Удалить (стиль ListEditor) */
-.btn-delete {
-  width: 48px; height: 48px; flex-shrink: 0;
+.delete-btn {
+  width: 48px; /* Ширина кнопки как высота инпута */
+  height: 48px; 
+  flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
   border-radius: 8px; 
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
 }
-.btn-delete svg { stroke: #999; transition: stroke 0.2s; }
-.btn-delete:hover { border-color: #FF3B30; background: #fff5f5; }
-.btn-delete:hover svg { stroke: #FF3B30; }
+.delete-btn svg { stroke: #999; transition: stroke 0.2s; }
+.delete-btn:hover { border-color: #FF3B30; background: #fff5f5; }
+.delete-btn:hover svg { stroke: #FF3B30; }
 
 /* Внутренний модал (Идентичен ListEditor) */
 .inner-overlay {
@@ -202,19 +215,4 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; font-size: 22px; font
 
 /* Прогресс бар */
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
-.sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
-.progress-container {
-  width: 100%; height: 6px; background-color: #eee; border-radius: 3px;
-  overflow: hidden; position: relative;
-}
-.progress-bar {
-  width: 100%; height: 100%; background-color: #222;
-  position: absolute; left: -100%;
-  animation: indeterminate 1.5s infinite ease-in-out;
-}
-@keyframes indeterminate {
-  0% { left: -100%; width: 50%; }
-  50% { left: 25%; width: 50%; }
-  100% { left: 100%; width: 50%; }
-}
-</style>
+.
