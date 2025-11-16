@@ -698,18 +698,24 @@ onBeforeUnmount(() => {
   </div>
   
   <div v-else-if="!mainStore.user" class="welcome-screen">
-    <div class="welcome-content">
-      <h1 class="welcome-title">INDEX12</h1>
-      <h2 class="welcome-subtitle">Система управления финансами и активами</h2>
-      <p class="welcome-features">Счета, компании, проекты, контрагенты</p>
-      <a href="https://api.index12.com/auth/google" class="welcome-button">
-        Начать
-      </a>
+    
+    <div class="welcome-layout-container">
+      
+      <div class="welcome-content">
+        <h1 class="welcome-title">INDEX12</h1>
+        <h2 class="welcome-subtitle">Система управления финансами и активами</h2>
+        <p class="welcome-features">Счета, компании, проекты, контрагенты</p>
+        <a href="https://api.index12.com/auth/google" class="welcome-button">
+          Начать
+        </a>
+      </div>
+
+      <div class="welcome-image-container">
+        <img src="/Серсив.png" alt="INDEX12 Dashboard" class="welcome-image">
+      </div>
+
     </div>
-    <div class="welcome-image-container">
-      <img src="/Серсив.png" alt="INDEX12 Dashboard" class="welcome-image">
     </div>
-  </div>
   <div v-else class="home-layout" @click="closeAllMenus">
     
     <header class="home-header" ref="homeHeaderRef">
@@ -861,25 +867,42 @@ onBeforeUnmount(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/*
+ * НОВЫЙ МАКЕТ ПРИВЕТСТВИЯ
+ */
 .welcome-screen {
   width: 100vw;
   height: 100vh;
+  background-color: var(--color-background-soft); /* #282828 */
+  
+  /* 1. Фон теперь просто центрирует наш главный контейнер */
   display: flex;
-  align-items: center;
   justify-content: center;
-  background-color: var(--color-background-soft); /* #282828 из base.css */
-  color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  padding: 5vw;
+  align-items: center;
+  padding: 2rem;
   box-sizing: border-box;
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.welcome-layout-container {
+  /* 2. Это главный контейнер. Он центрируется и имеет лимит ширины */
+  display: flex;
+  align-items: center;  /* <<< ВОТ ЭТО ДЕЛАЕТ РОВНО */
+  justify-content: center;
+  width: 100%;
+  max-width: 1700px; /* <<< ЭТО РЕШАЕТ ПРОБЛЕМУ ШИРОКИХ ЭКРАНОВ */
+  margin: 0 auto;
 }
 
 .welcome-content {
-  flex: 1; /* Текст занимает 1 часть */
+  /* 3. Текстовый блок. Занимает 1 часть */
+  flex: 1;
   max-width: 540px;
-  padding-right: 2rem;
+  min-width: 380px; /* Чтобы не сжимался слишком сильно */
+  padding-right: 4rem; /* Даем больше "воздуха" */
   z-index: 10;
+  color: var(--color-text);
 }
 
 .welcome-title {
@@ -919,12 +942,13 @@ onBeforeUnmount(() => {
   transition: background-color 0.2s, transform 0.2s;
 }
 .welcome-button:hover {
-  background-color: #28a745; /* Чуть темнее зеленый */
+  background-color: #28a745;
   transform: translateY(-2px);
 }
 
 .welcome-image-container {
-  flex: 1.5; /* Изображение занимает 1.5 части (стало больше) */
+  /* 4. Блок картинки. Занимает 1.5 части (больше текста) */
+  flex: 1.5;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -933,18 +957,18 @@ onBeforeUnmount(() => {
 .welcome-image {
   max-width: 100%;
   height: auto;
-  /* УБРАНЫ: transform, box-shadow, perspective, opacity.
-    Теперь изображение отображается "как есть", 
-    используя вашу тень из PNG.
-  */
+  /* Никаких теней и поворотов из CSS. Все ровно. */
 }
 
 /* Адаптивность для нового экрана */
 @media (max-width: 900px) {
   .welcome-screen {
-    flex-direction: column;
-    text-align: center;
-    justify-content: center;
+    align-items: center; /* Центрируем по вертикали */
+    padding: 1rem;
+  }
+  .welcome-layout-container {
+      flex-direction: column;
+      text-align: center;
   }
   .welcome-content {
     padding-right: 0;
@@ -952,12 +976,14 @@ onBeforeUnmount(() => {
     margin-bottom: 3rem;
   }
   .welcome-image-container {
-    display: none; /* Скрываем изображение на маленьких экранах */
+    /* На мобильных спрячем, как и было */
+    display: none; 
   }
 }
 
 
 /* --- Стили остального приложения (для залогиненного пользователя) --- */
+/* (ОНИ ОСТАЛИСЬ БЕЗ ИЗМЕНЕНИЙ) */
 .user-profile-widget {
   position: absolute;
   bottom: 0;
@@ -1051,7 +1077,6 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
-  /* 🔴 ИСПРАВЛЕНИЕ: Фиксированная стартовая высота 130px */
   height: 130px;
 }
 .header-resizer {
@@ -1145,10 +1170,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
   scrollbar-width: none;
   -ms-overflow-style: none;
-  
-  /* Запрещаем навигацию "Назад" */
   overscroll-behavior-x: none;
-  /* Разрешаем только вертикальный скролл */
   touch-action: pan-y;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
