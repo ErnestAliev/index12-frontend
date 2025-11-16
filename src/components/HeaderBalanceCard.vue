@@ -4,7 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderBalanceCard.vue v3.2-GAP-FIX ЗАГРУЖЕН ---');
+console.log('--- HeaderBalanceCard.vue v3.3-BTN-BG-CHANGE ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -116,8 +116,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
       </div>
 
       <div class="card-actions">
-        <!-- 1. ФИЛЬТР -->
-        <button 
+        <!-- 1. ФИЛЬТР --><button 
           class="action-square-btn" 
           ref="filterBtnRef" 
           @click.stop="isFilterOpen = !isFilterOpen"
@@ -126,8 +125,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
           <img :src="filterIcon" alt="Filter" class="icon-svg" />
         </button>
         
-        <!-- 2. ПРОГНОЗ (SVG стрелка) -->
-        <button 
+        <!-- 2. ПРОГНОЗ (SVG стрелка) --><button 
           class="action-square-btn"
           :class="{ 'active': showFutureBalance }"
           @click.stop="showFutureBalance = !showFutureBalance"
@@ -139,8 +137,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
           </svg>
         </button>
         
-        <!-- 3. ДОБАВИТЬ (SVG плюс) -->
-        <button 
+        <!-- 3. ДОБАВИТЬ (SVG плюс) --><button 
           @click.stop="$emit('add')" 
           class="action-square-btn"
           title="Добавить"
@@ -151,8 +148,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
           </svg>
         </button>
         
-        <!-- 4. РЕДАКТИРОВАТЬ (SVG карандаш) -->
-        <button 
+        <!-- 4. РЕДАКТИРОВАТЬ (SVG карандаш) --><button 
           @click.stop="$emit('edit')" 
           class="action-square-btn"
           title="Редактировать список"
@@ -164,8 +160,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
         </button>
       </div>
 
-      <!-- ВЫПАДАШКА ФИЛЬТРА -->
-      <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
+      <!-- ВЫПАДАШКА ФИЛЬТРА --><div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
         <div class="filter-group">
           <div class="filter-group-title">Сортировка</div>
           <ul>
@@ -227,7 +222,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- СТИЛИ КНОПОК --- */
+/* --- ОБНОВЛЕННЫЕ СТИЛИ КНОПОК --- */
 .card-actions {
   display: flex;
   gap: 6px; 
@@ -239,14 +234,15 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
   height: 18px;
   border: 1px solid transparent; 
   border-radius: 4px; 
-  background-color: #1a1a1a; 
+  /* 🔴 Новый цвет фона */
+  background-color: #3D3B3B; 
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; padding: 0;
   color: #888; 
   transition: all 0.2s ease;
 }
 
-.action-square-btn:hover { background-color: #333; color: #ccc; }
+.action-square-btn:hover { background-color: #555; color: #ccc; } /* Чуть светлее при наведении */
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
@@ -290,7 +286,6 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
   .card-item span:first-child { padding-right: 5px; }
   .forecast-display { gap: 2px; }
   
-  /* Уменьшаем расстояние между иконками */
   .card-actions { gap: 3px; }
   
   .action-square-btn { width: 16px; height: 16px; }
