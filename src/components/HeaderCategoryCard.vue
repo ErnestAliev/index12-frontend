@@ -4,7 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderCategoryCard.vue v3.0-ICONS-FIX ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v3.1-SMALL-DARK-BTNS ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -242,43 +242,49 @@ const handleEdit = () => { emit('edit'); };
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- 🔴 СТИЛИ КНОПОК (ДУБЛИРУЮТСЯ ДЛЯ ИДЕНТИЧНОСТИ) --- */
+/* --- 🔴 ОБНОВЛЕННЫЕ СТИЛИ КНОПОК --- */
 .card-actions {
   display: flex;
-  gap: 8px; 
+  gap: 6px; 
   position: relative; z-index: 101;
 }
 
 .action-square-btn {
-  width: 28px;
-  height: 28px;
+  /* 🔴 Размер уменьшен (~40% от 28px) */
+  width: 18px;
+  height: 18px;
   border: 1px solid transparent; 
-  border-radius: 6px; 
-  background-color: #F7F7F7;
+  border-radius: 4px; 
+  
+  /* 🔴 Новый цвет фона */
+  background-color: #1a1a1a; 
+  
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  color: #888;
+  
+  color: #888; 
   transition: all 0.2s ease;
 }
 
 .action-square-btn:hover {
-  background-color: #EAEAEA;
-  color: #333;
-  border-color: #E0E0E0;
+  background-color: #333;
+  color: #ccc;
 }
 
 .action-square-btn.active {
-  background-color: #E6F7FF;
-  color: #007AFF;
-  border-color: rgba(0, 122, 255, 0.2);
+  /* 🔴 Активный цвет */
+  background-color: #34c759; 
+  color: #fff;
+  border-color: transparent;
 }
 
 .icon-svg {
-  width: 18px;
-  height: 18px;
+  /* 🔴 Уменьшенный размер иконки */
+  width: 11px; 
+  height: 11px;
   display: block;
   object-fit: contain; 
 }
@@ -335,7 +341,7 @@ const handleEdit = () => { emit('edit'); };
   .t-amount { font-size: 0.85em; }
   .t-bottom { font-size: 0.75em; }
   
-  .action-square-btn { width: 24px; height: 24px; }
-  .icon-svg { width: 16px; height: 16px; }
+  .action-square-btn { width: 16px; height: 16px; }
+  .icon-svg { width: 10px; height: 10px; }
 }
 </style>
