@@ -12,19 +12,16 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.7-SCROLL-FIX ---
- * * ВЕРСИЯ: 5.7 - Исправление горизонтального скролла
+ * * --- МЕТКА ВЕРСИИ: v5.8-SCROLL-STYLE ---
+ * * ВЕРСИЯ: 5.8 - Стилизация скроллбара
  * ДАТА: 2025-11-16
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (КРИТИЧЕСКИЙ ФИКС) `ref="resizerRef"` перенесен с `.divider-wrapper`
- * на `.vertical-resizer`. Ранее `preventDefault()` в `initResize`
- * блокировал работу скроллбара, так как он находился внутри wrapper'а.
- * 2. Добавлен `watch` на `totalDays` для автоматического обновления
- * геометрии скроллбара при изменении режима просмотра.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. В блок <style> добавлены правила для .horizontal-scrollbar-wrapper,
+ * чтобы скроллбар был темно-серым (в цвет интерфейса), а не стандартным белым.
  */
 
-console.log('--- HomeView.vue v5.7-SCROLL-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v5.8-SCROLL-STYLE ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -401,9 +398,6 @@ const updateScrollbarWidthAndPosition = () => {
   if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value) return;
   const viewportWidth = timelineGridRef.value.clientWidth || 1;
   
-  // 🔴 Логируем расчеты
-  // console.log(`[HomeView] updateScrollbar: totalDays=${totalDays.value}, viewport=${viewportWidth}`);
-  
   const widthRatio = Math.max(1, totalDays.value / VISIBLE_COLS);
   scrollbarContentRef.value.style.width = `${viewportWidth * widthRatio}px`;
   
@@ -506,7 +500,6 @@ onMounted(async () => {
     : timelineHeightPx.value;
   applyHeights(clampTimelineHeight(initialTop));
 
-  // 🔴 ИСПРАВЛЕНИЕ: (см. шаблон) ref теперь на самой пипке
   if (resizerRef.value) {
     resizerRef.value.addEventListener('mousedown', initResize);
     resizerRef.value.addEventListener('touchstart', initResize, { passive: false });
@@ -550,7 +543,6 @@ onBeforeUnmount(() => {
     resizerRef.value.removeEventListener('mousedown', initResize);
     resizerRef.value.removeEventListener('touchstart', initResize);
   }
-  // ... (Остальные removeEventListener без изменений)
   if (headerResizerRef.value) {
     headerResizerRef.value.removeEventListener('mousedown', initHeaderResize);
     headerResizerRef.value.removeEventListener('touchstart', initHeaderResize);
@@ -581,7 +573,6 @@ onBeforeUnmount(() => {
       <h1>Добро пожаловать</h1>
       <p>Войдите, чтобы продолжить работу с вашим финансовым помощником.</p>
       <a href="https://api.index12.com/auth/google" class="google-login-button">
-        <!-- SVG icons omitted for brevity (same as original) -->
         Войти через Google
       </a>
     </div>
@@ -621,7 +612,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 🔴 ИСПРАВЛЕНИЕ: ref="resizerRef" перенесен НА ПИПКУ -->
+        <!-- ref="resizerRef" перенесен НА ПИПКУ -->
         <div class="divider-wrapper">
           <div class="horizontal-scrollbar-wrapper" ref="masterScrollbarRef">
             <div class="scrollbar-content" ref="scrollbarContentRef"></div>
@@ -707,7 +698,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* (Стили из v5.5 - полностью идентичны) */
 .loading-screen, .login-screen {
   width: 100vw;
   height: 100vh;
@@ -967,7 +957,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   height: 15px;
   width: 100%;
-  background-color: #ffffff;
+  background-color: var(--color-background-soft);
   border-bottom: 1px solid var(--color-border);
   position: relative;
 }
@@ -1004,6 +994,35 @@ onBeforeUnmount(() => {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* --- СТИЛИЗАЦИЯ СКРОЛЛБАРА (Для горизонтального скролла) --- */
+
+/* 1. Для Firefox */
+.horizontal-scrollbar-wrapper {
+  scrollbar-width: auto; /* или thin */
+  scrollbar-color: #555555 #2a2a2a; /* Ползунок и Трек */
+}
+
+/* 2. Для Webkit (Chrome, Safari, Edge) */
+.horizontal-scrollbar-wrapper::-webkit-scrollbar {
+  height: 12px; /* Высота горизонтального скролла */
+}
+
+.horizontal-scrollbar-wrapper::-webkit-scrollbar-track {
+  background: #2a2a2a; /* Темный фон (трек) */
+  border-top: 1px solid var(--color-border); /* Тонкая линия сверху */
+}
+
+.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb {
+  background-color: #555; /* Темно-серый ползунок */
+  border-radius: 6px;     /* Закругленные края */
+  border: 3px solid #2a2a2a; /* Отступ внутри трека (создает "тонкий" эффект) */
+}
+
+.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: #777; /* Чуть светлее при наведении */
+}
+
 .scrollbar-content { height: 1px; }
 
 .graph-area-wrapper {
