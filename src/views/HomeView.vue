@@ -378,15 +378,147 @@ const generateVisibleDays = () => {
 
 /* ===================== РЕСАЙЗЕР ===================== */
 // (Весь этот блок без изменений)
-// ...
+const clampHeaderHeight = (rawPx) => {
+  const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO;
+  return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight);
+};
+const applyHeaderHeight = (newPx) => {
+  headerHeightPx.value = Math.round(newPx);
+  if (homeHeaderRef.value) {
+    homeHeaderRef.value.style.height = `${headerHeightPx.value}px`;
+  }
+};
+const initHeaderResize = (e) => {
+  e.preventDefault();
+  window.addEventListener('mousemove', doHeaderResize);
+  window.addEventListener('touchmove', doHeaderResize, { passive: false });
+  window.addEventListener('mouseup', stopHeaderResize);
+  window.addEventListener('touchend', stopHeaderResize);
+};
+const doHeaderResize = (e) => {
+  // 🟢 Получаем Y-координату из мыши ИЛИ из касания
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const raw = y;
+  const clamped = clampHeaderHeight(raw);
+  applyHeaderHeight(clamped);
+};
+const stopHeaderResize = () => {
+  window.removeEventListener('mousemove', doHeaderResize);
+  window.removeEventListener('touchmove', doHeaderResize);
+  window.removeEventListener('mouseup', stopHeaderResize);
+  window.removeEventListener('touchend', stopHeaderResize);
+};
+const clampTimelineHeight = (rawPx) => {
+  const container = mainContentRef.value;
+  if (!container) return timelineHeightPx.value;
+  const headerTotalH = headerHeightPx.value + 15; 
+  const containerH = window.innerHeight - headerTotalH;
+  const maxTop = Math.max(0, containerH - DIVIDER_H - GRAPH_MIN);
+  const minTop = TIMELINE_MIN;
+  return Math.min(Math.max(rawPx, minTop), maxTop);
+};
+const applyHeights = (timelinePx) => {
+  timelineHeightPx.value = Math.round(timelinePx);
+  if (timelineGridRef.value) {
+    timelineGridRef.value.style.height = `${timelineHeightPx.value}px`;
+  }
+  if (navPanelWrapperRef.value) {
+    navPanelWrapperRef.value.style.height = `${timelineHeightPx.value}px`;
+  }
+  const container = mainContentRef.value;
+  if (container && graphAreaRef.value) {
+    const headerTotalH = headerHeightPx.value + 15; 
+    const containerH = window.innerHeight - headerTotalH;
+    const graphH = Math.max(GRAPH_MIN, containerH - timelineHeightPx.value - DIVIDER_H);
+    /* graphAreaRef.value.style.height = `${Math.round(graphH)}px`; */ // <-- 🟢 СТРОКА ЗАКОММЕНТИРОВАНА
+  }
+};
+const initResize = (e) => {
+  e.preventDefault();
+  window.addEventListener('mousemove', doResize);
+  window.addEventListener('touchmove', doResize, { passive: false });
+  window.addEventListener('mouseup', stopResize);
+  window.addEventListener('touchend', stopResize);
+};
+const doResize = (e) => {
+  if (!mainContentRef.value) return;
+  // 🟢 Получаем Y-координату из мыши ИЛИ из касания
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const mainTop = mainContentRef.value.getBoundingClientRect().top;
+  const raw = y - mainTop;
+  const clamped = clampTimelineHeight(raw);
+  applyHeights(clamped);
+};
+const stopResize = () => {
+  window.removeEventListener('mousemove', doResize);
+  window.removeEventListener('touchmove', doResize);
+  window.removeEventListener('mouseup', stopResize);
+  window.removeEventListener('touchend', stopResize);
+};
+// --- КОНЕЦ БЛОКА РЕСАЙЗА ---
 
 /* ===================== МАСТЕР-СКРОЛЛБАР ===================== */
 // (Весь этот блок без изменений)
-// ...
+const updateScrollbarWidthAndPosition = () => {
+  if (!timelineGridRef.value || !scrollbarContentRef.value || !masterScrollbarRef.value) return;
+  const viewportWidth = timelineGridRef.value.clientWidth || 1;
+  const widthRatio = Math.max(1, totalDays.value / VISIBLE_COLS);
+  scrollbarContentRef.value.style.width = `${viewportWidth * widthRatio}px`;
+  const scroller = masterScrollbarRef.value;
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  if (maxVirtual === 0 || maxScroll === 0) {
+    scroller.scrollLeft = 0;
+    return;
+  }
+  scroller.scrollLeft = (virtualStartIndex.value / maxVirtual) * maxScroll;
+};
+const onMasterScroll = () => {
+  if (!masterScrollbarRef.value) return;
+  const scroller = masterScrollbarRef.value;
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  if (maxVirtual === 0 || maxScroll === 0) return;
+  const ratio = scroller.scrollLeft / maxScroll;
+  virtualStartIndex.value = Math.round(ratio * maxVirtual);
+  console.log(`[ЖУРНАЛ] onMasterScroll: 🌀 Скролл! vStartIndex: ${virtualStartIndex.value}.`);
+  rebuildVisibleDays(); 
+};
+const onWheelScroll = (event) => {
+  if (!masterScrollbarRef.value) return;
+  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+    event.preventDefault();
+    masterScrollbarRef.value.scrollLeft += event.deltaX;
+  }
+};
+// --- КОНЕЦ БЛОКА СРКОЛЛА ---
 
 /* ===================== ЦЕНТРОВКА / СМЕНА МАСШТАБА ===================== */
 // (Без изменений)
-// ...
+const centerToday = () => {
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  virtualStartIndex.value = Math.min(
+    Math.max(0, globalTodayIndex.value - CENTER_INDEX),
+    maxVirtual
+  );
+  rebuildVisibleDays();
+  updateScrollbarWidthAndPosition();
+};
+const onChangeView = async (newView) => {
+  viewMode.value = newView;
+  console.log(`[ЖУРНАЛ] onChangeView: 🔄 Сменил вид на ${newView}.`);
+  await nextTick();
+  centerToday();
+  await nextTick();
+  updateScrollbarWidthAndPosition();
+  await recalcProjectionForCurrentView();
+};
+const onWindowResize = () => {
+  applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
+  applyHeights(clampTimelineHeight(timelineHeightPx.value));
+  updateScrollbarWidthAndPosition();
+};
+// --- КОНЕЦ БЛОКА ---
 
 /* ===================== ИНИЦИАЛИЗАЦИЯ / ОЧИСТКА ===================== */
 
@@ -449,7 +581,40 @@ onMounted(async () => {
   centerToday(); 
   await nextTick();
 
-  // ... (Остальная часть onMounted без изменений)
+  applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
+  const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height)
+    ? parseFloat(timelineGridRef.value.style.height)
+    : timelineHeightPx.value;
+  applyHeights(clampTimelineHeight(initialTop));
+
+if (resizerRef.value) {
+    resizerRef.value.addEventListener('mousedown', initResize);
+    resizerRef.value.addEventListener('touchstart', initResize, { passive: false });
+  }
+  
+  if (headerResizerRef.value) {
+    headerResizerRef.value.addEventListener('mousedown', initHeaderResize);
+    headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false });
+  }
+
+  if (masterScrollbarRef.value) {
+    masterScrollbarRef.value.addEventListener('scroll', onMasterScroll);
+  }
+
+  if (timelineGridRef.value) {
+    timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false });
+  }
+
+  resizeObserver = new ResizeObserver(() => {
+    applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
+    applyHeights(clampTimelineHeight(timelineHeightPx.value));
+    updateScrollbarWidthAndPosition();
+  });
+  if (mainContentRef.value) resizeObserver.observe(mainContentRef.value);
+
+  window.addEventListener('resize', onWindowResize);
+
+  updateScrollbarWidthAndPosition();
 
   await recalcProjectionForCurrentView();
   // --- (Конец вашей старой логики onMounted) ---
@@ -468,16 +633,194 @@ onBeforeUnmount(() => {
   mainStore.stopAutoRefresh();
   // !!! КОНЕЦ ИСПРАВЛЕНИЯ !!!
 
-  // ... (Остальная часть onBeforeUnmount без изменений)
+  if (resizerRef.value) {
+    resizerRef.value.removeEventListener('mousedown', initResize);
+    resizerRef.value.removeEventListener('touchstart', initResize);
+  }
+  
+  if (headerResizerRef.value) {
+    headerResizerRef.value.removeEventListener('mousedown', initHeaderResize);
+    headerResizerRef.value.removeEventListener('touchstart', initHeaderResize);
+  }
+
+  if (masterScrollbarRef.value) {
+    masterScrollbarRef.value.removeEventListener('scroll', onMasterScroll);
+  }
+  
+  if (timelineGridRef.value) {
+    timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
+  }
+
+  window.removeEventListener('resize', onWindowResize);
+  if (resizeObserver && mainContentRef.value) {
+    resizeObserver.unobserve(mainContentRef.value);
+  }
+  resizeObserver = null;
 });
 </script>
 
 <template>
+  
+  <div v-if="mainStore.isAuthLoading" class="loading-screen">
+    <div class="spinner"></div>
+    <p>Проверка сессии...</p>
+  </div>
+  
+  <div v-else-if="!mainStore.user" class="login-screen">
+    <div class="login-box">
+      <h1>Добро пожаловать</h1>
+      <p>Войдите, чтобы продолжить работу с вашим финансовым помощником.</p>
+      <a href="https://api.index12.com/auth/google" class="google-login-button">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#FF3D00" d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.108-11.283-7.443l-6.57 4.818C9.656 39.663 16.318 44 24 44z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C39.712 36.091 44 30.638 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>
+        Войти через Google
+      </a>
+    </div>
+  </div>
+  
+  <div v-else class="home-layout" @click="closeAllMenus">
+    
+    <header class="home-header" ref="homeHeaderRef">
+      <TheHeader />
+    </header>
+    
+    <div class="header-resizer" ref="headerResizerRef"></div>
+
+    <div class="home-body">
+      <aside class="home-left-panel">
+        <div class="nav-panel-wrapper" ref="navPanelWrapperRef">
+          <NavigationPanel @change-view="onChangeView" />
+        </div>
+        <div class="divider-placeholder"></div>
+        
+        <YAxisPanel :yLabels="yAxisLabels" />
+      
+      </aside>
+
+      <main class="home-main-content" ref="mainContentRef">
+        <div class="timeline-grid-wrapper" ref="timelineGridRef">
+          <div class="timeline-grid-content" ref="timelineGridContentRef">
+            
+            <DayColumn
+              v-for="day in visibleDays"
+              :key="day.id"
+              :date="day.date"
+              :isToday="day.isToday"
+              :dayOfYear="day.dayOfYear"
+              :dateKey="day.dateKey" 
+              @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)"
+              @edit-operation="handleEditOperation"
+              @drop-operation="handleOperationDrop"
+            />
+          </div>
+        </div>
+
+        <div class="divider-wrapper" ref="resizerRef">
+          <div class="horizontal-scrollbar-wrapper" ref="masterScrollbarRef">
+            <div class="scrollbar-content" ref="scrollbarContentRef"></div>
+          </div>
+          <div class="vertical-resizer"></div>
+        </div>
+
+        <div class="graph-area-wrapper" ref="graphAreaRef">
+          <GraphRenderer
+            v-if="visibleDays.length"
+            :visibleDays="visibleDays"
+            
+            @update:yLabels="yAxisLabels = $event"
+            
+            class="graph-renderer-content"
+          />
+          <div class="summaries-container">
+            </div>
+        </div>
+      </main>
+
+      <aside class="home-right-panel">
+        <button 
+          class="icon-btn import-export-btn" 
+          @click="showImportModal = true" 
+          title="Импорт / Экспорт"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </button>
+        
+        <div class="user-profile-widget">
+          <button 
+            class="user-profile-button" 
+            ref="userButtonRef" 
+            @click="toggleUserMenu"
+          >
+            <img 
+              :src="mainStore.user.avatarUrl" 
+              alt="avatar" 
+              class="user-avatar" 
+              v-if="mainStore.user.avatarUrl"
+            />
+            <div class="user-avatar-placeholder" v-else>
+              {{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}
+            </div>
+            <span class="user-name">{{ mainStore.user.name }}</span>
+          </button>
+          
+          </div>
+        
+      </aside>
+    </div>
+
+    <CellContextMenu
+      v-if="isContextMenuVisible"
+      :style="contextMenuPosition"
+      @select="handleContextMenuSelect"
+    />
+    
+    <div 
+      v-if="showUserMenu" 
+      class="user-menu" 
+      :style="userMenuPosition"
+      @click.stop >
+      <button class="user-menu-item" disabled title="В разработке">
+        Настройки
+      </button>
+      <button class="user-menu-item" @click="handleLogout">
+        Выйти
+      </button>
+    </div>
+    
+    <OperationPopup
+      v-if="isPopupVisible"
+      :type="operationType"
+      :date="selectedDay ? selectedDay.date : new Date()"
+      :cellIndex="selectedDay ? selectedCellIndex : 0"
+      :operation-to-edit="operationToEdit"
+      @close="handleClosePopup"
+      @operation-added="handleOperationAdded"
+      @operation-deleted="handleOperationDelete(operationToEdit)"
+      @operation-moved="handleOperationMoved"
+      @operation-updated="handleOperationUpdated"
+    />
+    <TransferPopup
+      v-if="isTransferPopupVisible"
+      :date="selectedDay ? selectedDay.date : new Date()"
+      :cellIndex="selectedDay ? selectedCellIndex : 0"
+      :transferToEdit="operationToEdit"
+      @close="handleCloseTransferPopup"
+      @transfer-complete="handleTransferComplete"
+    />
+    <ImportExportModal 
+      v-if="showImportModal"
+      @close="showImportModal = false"
+      @import-complete="handleImportComplete"
+    />
+    
+  </div>
 </template>
 
 <style scoped>
-
-
+/* Стили не менялись */
 /*
 =================================================================
 --- !!! НОВЫЕ СТИЛИ (Шаг 4): ЭКРАН ВХОДА И ЗАГРУЗКИ !!! ---
@@ -840,7 +1183,10 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s, transform 0.2s;
   box-shadow: 0 0 5px rgba(0,0,0,0.3);
 }
-.vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
+.vertical-resizer:hover::before { 
+  opacity: 1; 
+  transform: scale(1.2);
+}
 
 .horizontal-scrollbar-wrapper {
   width: 100%;
@@ -848,100 +1194,42 @@ onBeforeUnmount(() => {
   overflow-x: auto;
   overflow-y: hidden;
 }
-.scrollbar-content { height: 1px; }
-.horizontal-scrollbar-wrapper::-webkit-scrollbar { height: 10px; }
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-track {
-  background: var(--color-background-soft);
-  border-radius: 5px;
+.scrollbar-content {
+  height: 1px;
 }
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb {
-  background-color: var(--color-border);
-  border-radius: 5px;
-}
-.horizontal-scrollbar-wrapper::-webkit-scrollbar-thumb:hover { background-color: #555; }
 
-
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ВЫСОТА ПЛАНШЕТА) === */
 .graph-area-wrapper {
-  overflow-x: hidden;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  min-height: 115px;
-  
-  /* 🔴 НОВОЕ: (v4.1) Должен расти */
   flex-grow: 1;
-  /* display: flex и flex-direction УДАЛЕНЫ */
-}
-.graph-area-wrapper::-webkit-scrollbar { display: none; }
-
-:deep(.graph-renderer-content) {
-  height: 100%; /* 🟢 ВОЗВРАЩЕНО (было flex-grow: 1) */
-  width: 100%;
+  overflow: hidden;
+  
+  /* 🔴 НОВОЕ: Делаем контейнер flex-колонкой */
+  display: flex;
+  flex-direction: column;
 }
 
-/* 🟢 ИСПРАВЛЕНИЕ: Стили для Итогов (Блок 4) */
+.graph-renderer-content {
+  /* 🔴 НОВОЕ: График занимает все доступное место */
+  flex-grow: 1;
+}
+
 .summaries-container {
-  flex-shrink: 0; /* Не сжиматься */
-  height: 120px; /* Высота для итогов (можно настроить) */
-  background: var(--color-background);
-  border-top: 1px solid var(--color-border);
-  overflow-y: auto; 
-  padding: 1rem;
-  box-sizing: border-box;
+  flex-shrink: 0;
 }
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 
 
+/* === СТРУКТУРА ЛЕВОЙ ПАНЕЛИ === */
 .nav-panel-wrapper {
-  height: 318px;
+  height: 318px; 
   flex-shrink: 0;
   overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
+
 .divider-placeholder {
-  height: 15px;
   flex-shrink: 0;
+  height: 15px;
   background-color: var(--color-background-soft);
   border-bottom: 1px solid var(--color-border);
 }
-.home-left-panel > :deep(.y-axis-panel) {
-  flex-grow: 1;
-  overflow: hidden;
-}
-
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
-/* * Мы используем 'max-height' вместо 'max-width'.
- * Это надежнее определяет "планшетный" (невысокий) режим.
-*/
-@media (max-height: 900px) {
-  .header-resizer {
-    height: 10px; /* Делаем ресайзер тоньше */
-  }
-  .divider-wrapper {
-    height: 10px; /* И нижний ресайзер/скроллбар */
-  }
-  .summaries-container {
-    height: 100px; /* Уменьшаем блок итогов */
-    padding: 0.5rem 1rem;
-  }
-  .import-export-btn {
-    width: 28px;
-    height: 28px;
-    top: 4px;
-    right: 4px;
-  }
-  .import-export-btn svg {
-    width: 16px;
-    height: 16px;
-  }
-  .user-avatar, .user-avatar-placeholder {
-    width: 24px;
-    height: 24px;
-    font-size: 12px;
-  }
-  .user-name {
-    font-size: 12px;
-  }
-}
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
