@@ -1,13 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v5.3-PROJECTION-FIX ---
- * * ВЕРСИЯ: 5.3 - Исправление ошибки `ReferenceError: projection is not defined`
+ * * --- МЕТКА ВЕРСИИ: v5.4-REACTIVITY-FIX ---
+ * * ВЕРСИЯ: 5.4 - Восстановление `displayCache` в `fetchCalculationRange`
  * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Блок определения `const projection = ref(...)` был
- * перемещен из 400-х строк в начало setup() функции.
- * 2. Это исправляет `ReferenceError`, так как `projection`
- * теперь определяется *до* computed-свойств, которые его используют.
+ * 1. (FIX) В `fetchCalculationRange` восстановлена строка
+ * `displayCache.value = { ...displayCache.value, ...tempCache };`
+ * 2. Эта строка была случайно удалена в v5.3 при исправлении
+ * ошибки `projection`. Ее отсутствие приводило к тому, что `displayCache`
+ * не обновлялся при `forceRefreshAll`, и чипы пропадали (Bug 2, Bug 3).
  */
 
 import { defineStore } from 'pinia';
@@ -39,7 +40,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v5.3-PROJECTION-FIX ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
+  console.log('--- mainStore.js v5.4-REACTIVITY-FIX ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
   
   // ---------- STATE ----------
   
@@ -469,7 +470,7 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
 
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: fetchCalculationRange (API v4.3) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: fetchCalculationRange (v5.4-REACTIVITY-FIX) ---
   // =================================================================
   async function fetchCalculationRange(startDate, endDate) {
     console.log(`[ЖУРНАЛ] fetchCalculationRange: 📊 Загрузка диапазона расчетов ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
@@ -499,7 +500,11 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
           tempCache[dateKey] = processedOps;
         }
+        
+        // 🔴 ИСПРАВЛЕНИЕ (BUG 3): Обновляем ОБА кэша для синхронизации D&D
         calculationCache.value = { ...calculationCache.value, ...tempCache };
+        displayCache.value = { ...displayCache.value, ...tempCache }; // <-- ЭТА СТРОКА ВОССТАНОВЛЕНА
+        
       } else {
         console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
