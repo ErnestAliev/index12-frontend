@@ -1,20 +1,20 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-// Импортируем утилиту форматирования, используемую в других карточках
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.6-CATEGORY-CARD-REBUILD ---
- * * ВЕРСИЯ: 5.6 - Полное восстановление HeaderCategoryCard
+ * * --- МЕТКА ВЕРСИИ: v5.7-TRANSFER-VIEW ---
+ * * ВЕРСИЯ: 5.7 - Спец-режим для категории "Перевод"
  * ДАТА: 2025-11-16
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (КРИТИЧЕСКАЯ ОШИБКА) Компонент полностью восстановлен.
- *    В предыдущей версии код был ошибочно заменен на код из OperationPopup.
- * 2. Восстановлена стандартная логика карточки (dropdown, поиск, выбор виджета).
- * 3. Добавлена логика отображения данных категории (Доход, Расход, Итого).
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FIX ОШИБКА #2) Добавлена логика определения категории "Перевод".
+ * 2. Реализован альтернативный вид отображения: список транзакций
+ * (Дата, Сумма, Откуда -> Куда) вместо Доход/Расход.
  */
+
+console.log('--- HeaderCategoryCard.vue v5.7-TRANSFER-VIEW ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -27,9 +27,8 @@ const isDropdownOpen = ref(false);
 const cardRef = ref(null);
 const searchQuery = ref('');
 
-// --- Логика Dropdown (Аналогично HeaderTotalCard) ---
+// --- Логика Dropdown (Без изменений) ---
 const filteredWidgets = computed(() => {
-  // Реактивно обновляется при создании новых категорий благодаря mainStore.allWidgets
   if (!searchQuery.value) {
     return mainStore.allWidgets;
   }
@@ -39,18 +38,14 @@ const filteredWidgets = computed(() => {
   );
 });
 
-// Обработчик выбора нового виджета
 const handleSelect = (newWidgetKey) => {
-  // Проверка на disabled состояние (если виджет уже на дашборде в другом месте)
   if (mainStore.dashboardLayout.includes(newWidgetKey) && newWidgetKey !== props.widgetKey) {
-    // Если кликнули на disabled, ничего не делаем
     return;
   }
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
   isDropdownOpen.value = false;
 };
 
-// Логика клика снаружи
 const handleClickOutside = (event) => {
   if (cardRef.value && !cardRef.value.contains(event.target)) {
     isDropdownOpen.value = false;
@@ -66,12 +61,47 @@ watch(isDropdownOpen, (isOpen) => {
   }
 });
 
-// --- Логика данных категории ---
+// =================================================================
+// --- 🔴 НОВАЯ ЛОГИКА (ОШИБКА #2): Определение "Перевода" ---
+// =================================================================
+
+// 1. Определяем, является ли эта карточка "Переводом"
+const isTransferWidget = computed(() => {
+  // Ключ виджета имеет формат 'cat_{id}'
+  const catId = props.widgetKey.replace('cat_', '');
+  // Ищем категорию в сторе (helper добавлен в v5.7)
+  const category = mainStore.getCategoryById(catId); 
+  // Проверяем имя (безопасно)
+  return category && category.name.toLowerCase() === 'перевод';
+});
+
+// 2. Получаем список переводов (если это виджет перевода)
+const transferList = computed(() => {
+  if (!isTransferWidget.value) return [];
+  // Берем готовый список из стора (добавлен в v5.7)
+  return mainStore.currentTransfers; 
+});
+
+// 3. Helpers для отображения перевода
+const getAccountName = (accIdOrObj) => {
+  if (!accIdOrObj) return '???';
+  const id = typeof accIdOrObj === 'object' ? accIdOrObj._id : accIdOrObj;
+  const acc = mainStore.accounts.find(a => a._id === id);
+  return acc ? acc.name : 'Удален';
+};
+
+const formatTransferDate = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  // Формат: 15.11
+  return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+};
+
+// --- Логика данных для ОБЫЧНЫХ категорий (Доход/Расход) ---
 const categoryBreakdown = computed(() => {
-  // Получаем данные из стора по ключу виджета (например, 'cat_654...')
-  // currentCategoryBreakdowns рассчитывается в mainStore на основе текущих операций.
   return mainStore.currentCategoryBreakdowns[props.widgetKey] || { income: 0, expense: 0, total: 0 };
 });
+// =================================================================
 </script>
 
 <template>
@@ -96,7 +126,6 @@ const categoryBreakdown = computed(() => {
             :key="widget.key"
             :class="{
               'active': widget.key === props.widgetKey,
-              // Виджет disabled, если он уже есть на дашборде, но это не текущая карточка
               'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
             }"
             @click.stop="handleSelect(widget.key)"
@@ -108,7 +137,30 @@ const categoryBreakdown = computed(() => {
     </div>
 
     <div class="category-items-list-scroll">
-      <div class="category-breakdown-list">
+      
+      <!-- 🔴 ВАРИАНТ 1: СПИСОК ПЕРЕВОДОВ (Если это категория "Перевод") -->
+      <div v-if="isTransferWidget" class="transfer-list">
+        <div v-for="t in transferList" :key="t._id" class="transfer-item">
+          <!-- Верхняя строка: Дата и Сумма -->
+          <div class="t-row">
+            <span class="t-date">{{ formatTransferDate(t.date) }}</span>
+            <span class="t-amount">{{ formatNumber(t.amount) }} ₸</span>
+          </div>
+          <!-- Нижняя строка: Откуда -> Куда -->
+          <div class="t-row t-details">
+            <span class="t-acc">{{ getAccountName(t.fromAccountId) }}</span>
+            <span class="t-arrow">→</span>
+            <span class="t-acc">{{ getAccountName(t.toAccountId) }}</span>
+          </div>
+        </div>
+        
+        <div v-if="transferList.length === 0" class="category-item-empty">
+          Нет переводов
+        </div>
+      </div>
+
+      <!-- 🔴 ВАРИАНТ 2: ОБЫЧНАЯ КАТЕГОРИЯ (Доход/Расход) -->
+      <div v-else class="category-breakdown-list">
 
         <div class="category-item">
           <span>Доходы</span>
@@ -135,14 +187,13 @@ const categoryBreakdown = computed(() => {
 </template>
 
 <style scoped>
-/* Стили взяты из оригинального запроса, так как они принадлежали этому компоненту */
+/* Основные стили карточки (Без изменений) */
 .dashboard-card {
   flex: 1;
   display: flex;
   flex-direction: column;
   padding-right: 1.5rem;
   border-right: 1px solid var(--color-border);
-  /* min-width: 150px; (🟢 УДАЛЕНО: Позволяем карточке сжиматься) */
   position: relative;
   min-height: 0;
 }
@@ -170,7 +221,20 @@ const categoryBreakdown = computed(() => {
   margin-left: 4px;
 }
 
-/* (Стили списка v4.1 - без изменений) */
+/* Скролл-контейнер */
+.category-items-list-scroll {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 5px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-height: 0;
+}
+.category-items-list-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* --- Стили для обычной категории --- */
 .category-breakdown-list {
   display: flex;
   flex-direction: column;
@@ -195,106 +259,115 @@ const categoryBreakdown = computed(() => {
   font-weight: 500;
   white-space: nowrap;
 }
-.category-item span.income {
-  color: var(--color-primary); /* Зеленый */
-}
-.category-item span.expense {
-  color: var(--color-danger); /* Оранжевый/Красный */
-}
+.category-item span.income { color: var(--color-primary); }
+.category-item span.expense { color: var(--color-danger); }
 
-/* НОВОЕ: Стиль для строки "Итого" */
 .category-item-total {
   margin-top: 0.5rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--color-border);
-  /* font-weight: bold; (Убрано, так как цифры уже 500) */
-}
-
-
-/* (Стили списка v4.1 - без изменений) */
-.category-items-list-scroll {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding-right: 5px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  min-height: 0;
-}
-
-.category-items-list-scroll::-webkit-scrollbar {
-  display: none;
 }
 .category-item-empty {
   font-size: 0.9em;
   color: #666;
+  text-align: center;
+  margin-top: 10px;
 }
 
+/* --- 🔴 НОВЫЕ СТИЛИ: Список переводов --- */
+.transfer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.transfer-item {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border); /* Разделитель */
+}
+.transfer-item:last-child {
+  border-bottom: none;
+}
+.t-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  line-height: 1.3;
+}
+.t-date {
+  font-size: 0.75em;
+  color: #777;
+}
+.t-amount {
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--color-text);
+}
+.t-details {
+  margin-top: 1px;
+}
+.t-acc {
+  font-size: 0.8em;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%; /* Чтобы не наезжали друг на друга */
+}
+.t-arrow {
+  font-size: 0.8em;
+  color: #555;
+  padding: 0 4px;
+}
 
-/* --- 🔴 ИСПРАВЛЕНИЕ v2.3: Стили для Dropdown --- */
+/* --- Dropdown styles (Без изменений) --- */
 .widget-dropdown {
   position: absolute;
   top: 35px;
   left: 0;
-  width: 220px; /* (Чуть шире) */
+  width: 220px; 
   background-color: #f4f4f4;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
   z-index: 100;
   padding: 8px;
   box-sizing: border-box;
-
-  /* 🔴 НОВОЕ: Ограничение высоты */
   max-height: 400px;
   display: flex;
   flex-direction: column;
 }
-
-/* 🔴 ИСПРАВЛЕНИЕ v2.4: Стили для поиска */
 .widget-search-input {
   flex-shrink: 0;
   padding: 8px 10px;
   border: 1px solid #ddd;
   border-radius: 6px;
   margin-bottom: 8px;
-  /* font-size: 0.7em; (ИЗМЕНЕНО на 0.9em для консистентности) */
   font-size: 0.9em;
   box-sizing: border-box;
   width: 100%;
-
-  /* --- 🔴 НОВОЕ: Исправление цвета --- */
   background-color: #FFFFFF;
   color: #333;
-  /* --- КОНЕЦ НОВОГО --- */
 }
 .widget-search-input:focus {
   outline: none;
-  border-color: #007AFF; /* (Цвет как у "Создать") */
+  border-color: #007AFF; 
 }
-/* --- */
-
 .widget-dropdown ul {
   list-style: none;
   margin: 0;
   padding: 0;
-
-  /* 🔴 НОВОЕ: Скролл */
   flex-grow: 1;
   overflow-y: auto;
 }
-/* --- КОНЕЦ ИСПРАВЛЕНИЯ --- */
-
 .widget-dropdown li {
   padding: 10px 12px;
   border-radius: 6px;
-  /* font-size: 0.7em; (ИЗМЕНЕНО на 0.9em для консистентности) */
   font-size: 0.9em;
   color: #333;
   cursor: pointer;
-
-  /* --- 🔴 ИСПРАВЛЕНИЕ v2.5: !important --- */
   font-weight: 500 !important;
 }
-/* При клике на disabled не должно быть эффекта hover */
 .widget-dropdown li:not(.disabled):hover {
   background-color: #e9e9e9;
 }
@@ -308,22 +381,21 @@ const categoryBreakdown = computed(() => {
   cursor: not-allowed;
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
+/* Media Queries (Без изменений) */
 @media (max-height: 900px) {
   .dashboard-card {
-    min-width: 100px; /* Уменьшаем мин. ширину */
+    min-width: 100px;
     padding-right: 1rem;
   }
   .card-title {
     font-size: 0.8em;
   }
   .category-item {
-    font-size: 0.8em; /* Уменьшаем шрифт списка */
+    font-size: 0.8em;
     margin-bottom: 0.2rem;
   }
   .category-item span:first-child {
-    padding-right: 5px; /* Уменьшаем отступ у имени */
+    padding-right: 5px;
   }
 }
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
