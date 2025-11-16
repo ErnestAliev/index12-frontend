@@ -5,34 +5,18 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.2-YEAR-AWARE-FIX ---
- * * ВЕРСИЯ: 4.2 - Исправление "слепоты к году" (dayOfYear -> dateKey)
- * ДАТА: 2025-11-10
+ * * --- МЕТКА ВЕРСИИ: v5.5-COMPLEX-FIX ---
+ * * ВЕРСИЯ: 5.5 - Комплексное исправление ошибок #3, #4.
+ * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (ARCH) Добавлены helpers `_getDayOfYear` и `_getDateKey`.
- * 2. (ARCH) `handleSave` теперь вычисляет и использует `dateKey` ("YYYY-DOY").
- * 3. (API) `handleSave` (для create/update) теперь вызывает `mainStore`
- * с `dateKey` (строкой), исправляя ошибку `dateKey.split is not a function`.
- * 4. (API) `onDeleteConfirmed` теперь использует `operation.dateKey`.
- * 5. (FIX) `handleCopyClick` сбрасывает дату на `props.date` (дату ячейки).
- *
- * --- ДОПОЛНИТЕЛЬНЫЕ ИСПРАВЛЕНИЯ (16.11.2025) ---
- * 1. (FIX-BUG-1) `finalDate` теперь использует локальное время (new Date(y,m,d)) вместо Date.UTC()
- * для корректного расчета `dateKey`.
- * 2. (FIX-BUG-2) Исправлена опечатка: `toAccountId: fromAccountId.value` заменено на `toAccountId: toAccountId.value`.
- * 3. (FIX-BUG-2) Добавлена недостающая логика обновления mainStore (refreshDay, forceRefreshAll и т.д.)
- * в `handleSave` для предотвращения наложения операций.
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
- * 1. (FIX-BUG-1 / ОШИБКА #1) `finalDate` теперь использует 12:00, чтобы избежать сдвига часовых поясов.
- * 2. (FIX-BUG-3 / ОШИБКА #2) `handleSave` теперь немедленно закрывает попап,
- * а вся синхронизация (forceRefreshAll и т.д.) запускается в фоне.
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025 / 08:15) ---
  * 1. (FIX-BUG-5 / ОШИБКА #3) Удален `forceRefreshAll()` из `syncState`
  * для предотвращения "исчезновения" данных на 5-7 сек.
+ * 2. (NEW) Добавлено логирование.
  */
+
+// 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
+console.log('--- TransferPopup.vue v5.5 (Fix #3, #4) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -90,6 +74,7 @@ const formatNumber = (numStr) => {
 };
 
 const onAmountInput = (event) => {
+  // console.log('[TransferPopup] onAmountInput СРАБОТАЛ'); // 🔴 ЛОГ (Слишком много)
   const input = event.target;
   const value = input.value;
   const cursorPosition = input.selectionStart;
@@ -105,22 +90,26 @@ const onAmountInput = (event) => {
 
 // --- Автоматическая привязка компании (без изменений) ---
 const onFromAccountSelected = (accountId) => {
+  console.log(`[TransferPopup] onFromAccountSelected: Выбран счет ${accountId}`);
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount && selectedAccount.companyId) {
     const cId = typeof selectedAccount.companyId === 'object'
       ? selectedAccount.companyId._id
       : selectedAccount.companyId;
     fromCompanyId.value = cId;
+    console.log(`[TransferPopup] onFromAccountSelected: Авто-установлена компания ${cId}`);
   }
 };
 
 const onToAccountSelected = (accountId) => {
+  console.log(`[TransferPopup] onToAccountSelected: Выбран счет ${accountId}`);
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount && selectedAccount.companyId) {
     const cId = typeof selectedAccount.companyId === 'object'
       ? selectedAccount.companyId._id
       : selectedAccount.companyId;
     toCompanyId.value = cId;
+    console.log(`[TransferPopup] onToAccountSelected: Авто-установлена компания ${cId}`);
   }
 };
 
@@ -129,17 +118,17 @@ onMounted(async () => {
   // Находим категорию "Перевод"
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
   if (!transferCategory) {
-    // (Гарантируем, что _getOrCreateTransferCategory будет вызван, если категории нет)
-    // Либо mainStore.addCategory, если уверены, что он существует
+    console.log("[TransferPopup] onMounted: Категория 'Перевод' не найдена, создаю...");
     try {
         transferCategory = await mainStore.addCategory('Перевод');
-    } catch (e) { console.error("Не удалось создать категорию 'Перевод'", e)}
+    } catch (e) { console.error("[TransferPopup] onMounted: ❌ Не удалось создать категорию 'Перевод'", e)}
   }
   // Устанавливаем ID по умолчанию
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
 
   // Если редактируем существующий перевод
   if (props.transferToEdit) {
+    console.log('[TransferPopup] onMounted: РЕЖИМ РЕДАКТИРОВАНИЯ', props.transferToEdit);
     const transfer = props.transferToEdit;
     amount.value = formatNumber(Math.abs(transfer.amount));
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId;
@@ -168,6 +157,7 @@ onMounted(async () => {
     }
   } else {
     // Устанавливаем категорию "Перевод" для нового
+    console.log('[TransferPopup] onMounted: РЕЖИМ СОЗДАНИЯ');
     categoryId.value = defaultCategoryId;
     
     // Автофокус для нового перевода
@@ -196,10 +186,12 @@ const buttonText = computed(() => {
 // --- 🔴 ИСПРАВЛЕНИЕ: Кнопки Удаления и Клонирования (v4.2) ---
 // =================================================================
 const handleDeleteClick = () => {
+  console.log('[TransferPopup] handleDeleteClick: ❓ Запрос на удаление');
   isDeleteConfirmVisible.value = true;
 };
 
 const onDeleteConfirmed = async () => {
+  console.log('[TransferPopup] onDeleteConfirmed: 🔥 УДАЛЕНИЕ ПОДТВЕРЖДЕНО');
   try {
     if (!props.transferToEdit?._id) return;
     
@@ -207,16 +199,18 @@ const onDeleteConfirmed = async () => {
     await mainStore.deleteOperation(props.transferToEdit);
     
     // 🔴 ИЗМЕНЕНО: Отправляем dateKey
+    console.log('[TransferPopup] onDeleteConfirmed: ✅ УСПЕХ. Вызов emit(transfer-complete)');
     emit('transfer-complete', { dateKey: props.transferToEdit.dateKey });
     emit('close');
   } catch (e) {
-    console.error('Ошибка при удалении перевода', e);
+    console.error('[TransferPopup] onDeleteConfirmed: ❌ Ошибка при удалении перевода', e);
   } finally {
     isDeleteConfirmVisible.value = false;
   }
 };
 
 const handleCopyClick = () => {
+  console.log('[TransferPopup] handleCopyClick: 📋 Клонирование операции');
   isCloneMode.value = true;
   // 🔴 ИЗМЕНЕНО: Сбрасываем дату на дату ячейки
   editableDate.value = toInputDate(props.date); 
@@ -226,14 +220,14 @@ const handleCopyClick = () => {
 
 
 // =================================================================
-// --- 🔴 v4.1: Функции Inline-Create (без изменений) ---
+// --- 🔴 v4.1: Функции Inline-Create (с логированием) ---
 // =================================================================
-const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
-const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
+const showCategoryInput = () => { console.log('[TransferPopup] showCategoryInput'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
+const cancelCreateCategory = () => { console.log('[TransferPopup] cancelCreateCategory'); isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
   const name = newCategoryName.value.trim();
   if (!name) return;
-  
+  console.log(`[TransferPopup] saveNewCategory: 💾 Сохранение категории ${name}`);
   const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     categoryId.value = existing._id;
@@ -247,12 +241,12 @@ const saveNewCategory = async () => {
 };
 
 // --- "FROM" ---
-const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
-const cancelCreateFromAccount = () => { isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
+const showFromAccountInput = () => { console.log('[TransferPopup] showFromAccountInput'); isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
+const cancelCreateFromAccount = () => { console.log('[TransferPopup] cancelCreateFromAccount'); isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
 const saveNewFromAccount = async () => {
   const name = newFromAccountName.value.trim();
   if (!name) return;
-
+  console.log(`[TransferPopup] saveNewFromAccount: 💾 Сохранение счета ${name}`);
   const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     fromAccountId.value = existing._id;
@@ -267,12 +261,12 @@ const saveNewFromAccount = async () => {
   cancelCreateFromAccount(); 
 };
 
-const showFromCompanyInput = () => { isCreatingFromCompany.value = true; nextTick(() => newFromCompanyInput.value?.focus()); };
-const cancelCreateFromCompany = () => { isCreatingFromCompany.value = false; newFromCompanyName.value = ''; };
+const showFromCompanyInput = () => { console.log('[TransferPopup] showFromCompanyInput'); isCreatingFromCompany.value = true; nextTick(() => newFromCompanyInput.value?.focus()); };
+const cancelCreateFromCompany = () => { console.log('[TransferPopup] cancelCreateFromCompany'); isCreatingFromCompany.value = false; newFromCompanyName.value = ''; };
 const saveNewFromCompany = async () => {
   const name = newFromCompanyName.value.trim();
   if (!name) return;
-  
+  console.log(`[TransferPopup] saveNewFromCompany: 💾 Сохранение компании ${name}`);
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     fromCompanyId.value = existing._id;
@@ -286,12 +280,12 @@ const saveNewFromCompany = async () => {
 };
 
 // --- "TO" ---
-const showToAccountInput = () => { isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
-const cancelCreateToAccount = () => { isCreatingToAccount.value = false; newToAccountName.value = ''; };
+const showToAccountInput = () => { console.log('[TransferPopup] showToAccountInput'); isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
+const cancelCreateToAccount = () => { console.log('[TransferPopup] cancelCreateToAccount'); isCreatingToAccount.value = false; newToAccountName.value = ''; };
 const saveNewToAccount = async () => {
   const name = newToAccountName.value.trim();
   if (!name) return;
-
+  console.log(`[TransferPopup] saveNewToAccount: 💾 Сохранение счета ${name}`);
   const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     toAccountId.value = existing._id;
@@ -306,12 +300,12 @@ const saveNewToAccount = async () => {
   cancelCreateToAccount(); 
 };
 
-const showToCompanyInput = () => { isCreatingToCompany.value = true; nextTick(() => newToCompanyInput.value?.focus()); };
-const cancelCreateToCompany = () => { isCreatingToCompany.value = false; newToCompanyName.value = ''; };
+const showToCompanyInput = () => { console.log('[TransferPopup] showToCompanyInput'); isCreatingToCompany.value = true; nextTick(() => newToCompanyInput.value?.focus()); };
+const cancelCreateToCompany = () => { console.log('[TransferPopup] cancelCreateToCompany'); isCreatingToCompany.value = false; newToCompanyName.value = ''; };
 const saveNewToCompany = async () => {
   const name = newToCompanyName.value.trim();
   if (!name) return;
-  
+  console.log(`[TransferPopup] saveNewToCompany: 💾 Сохранение компании ${name}`);
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     toCompanyId.value = existing._id;
@@ -352,15 +346,17 @@ const _getDateKey = (date) => {
 // Эта функция запускает синхронизацию в фоне, не блокируя UI
 const syncState = async (dateKey, oldDateKey = null) => {
   try {
-    console.log('🔄 TransferPopup (async): Принудительно обновляем кеши...');
+    console.log(`[TransferPopup] syncState (async): 🔄 ФОНОВАЯ СИНХРОНИЗАЦИЯ для ${dateKey}...`);
     
     // 1. Обновляем затронутые дни
     await mainStore.refreshDay(dateKey);
     if (oldDateKey && oldDateKey !== dateKey) {
+      console.log(`[TransferPopup] syncState (async): 🔄 Обновляю старый день ${oldDateKey}`);
       await mainStore.refreshDay(oldDateKey);
     }
     
     // 2. Обновляем балансы
+    console.log('[TransferPopup] syncState (async): 🔄 Обновляю все сущности (балансы)...');
     await mainStore.fetchAllEntities();
     
     // 3. Принудительно обновляем реактивность
@@ -369,6 +365,7 @@ const syncState = async (dateKey, oldDateKey = null) => {
     
     // 4. Пересчитываем проекцию
     if (mainStore.projection?.mode) {
+      console.log('[TransferPopup] syncState (async): 🔄 Пересчитываю проекцию...');
       await mainStore.updateProjectionFromCalculationData(
         mainStore.projection.mode,
         new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear)
@@ -384,7 +381,7 @@ const syncState = async (dateKey, oldDateKey = null) => {
     
     // await mainStore.forceRefreshAll(); // <-- 🔴 УДАЛЕНО
 
-    console.log('✅ TransferPopup (async): Cинхронизация завершена');
+    console.log(`[TransferPopup] syncState (async): ✅ ФОНОВАЯ СИНХРОНИЗАЦИЯ для ${dateKey} ЗАВЕРШЕНА.`);
 
   } catch (e) {
     console.error('❌ Ошибка фоновой синхронизации TransferPopup:', e);
@@ -393,6 +390,7 @@ const syncState = async (dateKey, oldDateKey = null) => {
 
 
 const handleSave = async () => {
+  console.log('[TransferPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
   
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
@@ -401,14 +399,17 @@ const handleSave = async () => {
   // Валидация
   if (isNaN(amountParsed) || amountParsed <= 0) {
     errorMessage.value = 'Введите корректную сумму';
+    console.error('[TransferPopup] handleSave: ОШИБКА ВАЛИДАЦИИ (Сумма)');
     return;
   }
   if (!fromAccountId.value || !toAccountId.value) {
     errorMessage.value = 'Выберите счета отправителя и получателя';
+    console.error('[TransferPopup] handleSave: ОШИБКА ВАЛИДАЦИИ (Счета не выбраны)');
     return;
   }
   if (fromAccountId.value === toAccountId.value) {
     errorMessage.value = 'Счета не должны совпадать';
+    console.error('[TransferPopup] handleSave: ОШИБКА ВАЛИДАЦИИ (Счета совпадают)');
     return;
   }
 
@@ -419,6 +420,7 @@ const handleSave = async () => {
     
     // (Этот `_getDateKey` - локальный, из v4.2)
     const dateKey = _getDateKey(finalDate);
+    console.log(`[TransferPopup] handleSave: Дата операции: ${finalDate.toISOString()}, dateKey: ${dateKey}`);
 
     const transferPayload = {
         date: finalDate,
@@ -434,9 +436,11 @@ const handleSave = async () => {
     const oldDateKey = props.transferToEdit ? props.transferToEdit.dateKey : null;
 
     if (!props.transferToEdit || isCloneMode.value) {
+      console.log('[TransferPopup] handleSave: РЕЖИМ СОЗДАНИЯ/КЛОНИРОВАНИЯ');
       // --- 🔴 ОШИБКА #2: Ждем ТОЛЬКО CОЗДАНИЕ ---
       savedOperation = await mainStore.createTransfer(transferPayload);
     } else {
+      console.log('[TransferPopup] handleSave: РЕЖИМ РЕДАКТИРОВАНИЯ');
       // --- 🔴 ОШИБКА #2: Ждем ТОЛЬКО ОБНОВЛЕНИЕ ---
       savedOperation = await mainStore.updateTransfer(
         props.transferToEdit._id, 
@@ -456,13 +460,14 @@ const handleSave = async () => {
     syncState(dateKey, oldDateKey); // Вызов БЕЗ await
 
   } catch (error) { 
-    console.error('❌ Ошибка при сохранении перевода:', error);
+    console.error('❌ КРИТИЧЕСКАЯ ОШИБКА при сохранении перевода:', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
   }
 };
 // =================================================================
 
 const closePopup = () => { 
+  console.log('[TransferPopup] closePopup: 🛑 Закрытие попапа');
   emit('close'); 
 };
 </script>
