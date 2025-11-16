@@ -707,7 +707,7 @@ onBeforeUnmount(() => {
       </a>
     </div>
     <div class="welcome-image-container">
-      <img src="/Серсив.jpg" alt="INDEX12 Dashboard" class="welcome-image">
+      <img src="/Серсив.png" alt="INDEX12 Dashboard" class="welcome-image">
     </div>
   </div>
   <div v-else class="home-layout" @click="closeAllMenus">
