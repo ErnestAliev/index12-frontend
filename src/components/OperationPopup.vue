@@ -11,6 +11,12 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
  *
  * ИСПРАВЛЕНИЯ:
  * 1. (FIX 1A) `handleSave` теперь создает дату на 12:00 (полдень) для избежания сдвига часовых поясов.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
+ * 1. (FIX #14) Восстановлена функция `onAmountInput` и `formatNumber`
+ * для форматирования сумм (разделители тысячных).
+ * 2. (FIX #13) Полностью удален блок `<template v-else>` (форма перевода).
+ * 3. (FIX #13) Удалены связанные `ref` (`selectedFromAccountId`, `selectedToAccountId`).
  */
 // !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -42,15 +48,31 @@ const selectedContractorId = ref(null);
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
 
-// для transfer:
-const selectedFromAccountId = ref(null);
-const selectedToAccountId   = ref(null);
+// --- 🔴 УДАЛЕНО (FIX #13) ---
+// const selectedFromAccountId = ref(null);
+// const selectedToAccountId   = ref(null);
 
 const errorMessage = ref('');
 const amountInput = ref(null);
 
 // --- INLINE CREATE STATES ---
-// ... (Без изменений)
+const isCreatingAccount = ref(false);
+const newAccountName = ref('');
+const newAccountInput = ref(null);
+const isCreatingCompany = ref(false);
+const newCompanyName = ref('');
+const newCompanyInput = ref(null);
+const isCreatingContractor = ref(false);
+const newContractorName = ref('');
+const newContractorInput = ref(null);
+const isCreatingProject = ref(false);
+const newProjectName = ref('');
+const newProjectInput = ref(null);
+const isCreatingCategory = ref(false);
+const newCategoryName = ref('');
+const newCategoryInput = ref(null);
+// --- (Конец Inline Create) ---
+
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
@@ -65,18 +87,102 @@ const toInputDate = (date) => {
 };
 const editableDate = ref(toInputDate(props.date));
 
-// --- ФОРМАТИРОВАНИЕ СУММЫ ---
-// ... (Без изменений)
+// =================================================================
+// --- 🔴 ИСПРАВЛЕНИЕ (FIX #14): ФОРМАТИРОВАНИЕ СУММЫ ---
+// =================================================================
+const formatNumber = (numStr) => {
+  const clean = `${numStr}`.replace(/[^0-9]/g, '');
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+const onAmountInput = (event) => {
+  const input = event.target;
+  const value = input.value;
+  const cursorPosition = input.selectionStart;
+  
+  // 1. Очищаем значение от всего, кроме цифр
+  const rawValue = value.replace(/[^0-9]/g, '');
+  
+  // 2. Форматируем
+  const formattedValue = formatNumber(rawValue);
+  
+  // 3. Считаем, насколько изменилась длина (из-за добавления/удаления пробелов)
+  const cursorOffset = formattedValue.length - value.length;
+  
+  // 4. Устанавливаем форматированное значение
+  amount.value = formattedValue;
+  if (input.value !== formattedValue) {
+    input.value = formattedValue; // Принудительно ставим в DOM
+  }
+  
+  // 5. Восстанавливаем позицию курсора
+  nextTick(() => {
+    if (input.selectionStart !== undefined) {
+      input.setSelectionRange(cursorPosition + cursorOffset, cursorPosition + cursorOffset);
+    }
+  });
+};
+// =================================================================
+
 
 // --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА КОМПАНИИ ПРИ ВЫБОРЕ СЧЕТА ---
-// ... (Без изменений)
+const onAccountSelected = (accountId) => {
+  const account = mainStore.accounts.find(a => a._id === accountId);
+  if (account && account.companyId) {
+    // (v4.4) Убедимся, что companyId - это строка, а не объект
+    const cId = (account.companyId && typeof account.companyId === 'object')
+      ? account.companyId._id
+      : account.companyId;
+    selectedCompanyId.value = cId;
+  }
+};
 
 // --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА (КОНТРАГЕНТ -> ПРОЕКТ / КАТЕГОРИЯ) ---
-// ... (Без изменений)
+const onContractorSelected = (contractorId, setProject, setCategory) => {
+  const contractor = mainStore.contractors.find(c => c._id === contractorId);
+  if (contractor) {
+    if (setProject && contractor.defaultProjectId) {
+      const pId = (contractor.defaultProjectId && typeof contractor.defaultProjectId === 'object')
+        ? contractor.defaultProjectId._id
+        : contractor.defaultProjectId;
+      selectedProjectId.value = pId;
+    }
+    if (setCategory && contractor.defaultCategoryId) {
+      const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object')
+        ? contractor.defaultCategoryId._id
+        : contractor.defaultCategoryId;
+      selectedCategoryId.value = cId;
+    }
+  }
+};
 
 
 // --- ИНИЦИАЛИЗАЦИЯ ПРИ РЕДАКТИРОВАНИИ ---
-// ... (Без изменений)
+onMounted(() => {
+  if (props.operationToEdit) {
+    // РЕЖИМ РЕДАКТИРОВАНИЯ
+    const op = props.operationToEdit;
+    amount.value = formatNumber(Math.abs(op.amount || 0));
+    selectedAccountId.value = op.accountId?._id || op.accountId;
+    selectedCompanyId.value = op.companyId?._id || op.companyId;
+    selectedContractorId.value = op.contractorId?._id || op.contractorId;
+    selectedCategoryId.value = op.categoryId?._id || op.categoryId;
+    selectedProjectId.value = op.projectId?._id || op.projectId;
+    
+    if (op.date) {
+      editableDate.value = toInputDate(new Date(op.date));
+    }
+    
+  } else {
+    // РЕЖИМ СОЗДАНИЯ
+    // Автофокус на поле суммы
+    setTimeout(() => {
+      if (amountInput.value) {
+        amountInput.value.focus();
+      }
+    }, 100);
+  }
+});
 
 
 // =================================================================
@@ -103,28 +209,17 @@ const _getDateKey = (date) => {
 const handleSave = async () => {
   errorMessage.value = '';
 
-  const amountFromDOM = (amountInput.value?.value || '').replace(/ /g, '');
-  const amountParsed = parseFloat(amountFromDOM);
+  // 🔴 ИСПРАВЛЕНИЕ (FIX #14): Используем .value или amount, а не amountInput.value
+  const amountFromState = (amount.value || '').replace(/ /g, '');
+  const amountParsed = parseFloat(amountFromState);
 
-  // --- ВАЛИДАЦИЯ ДЛЯ ПЕРЕВОДОВ ---
-  if (props.type === 'transfer') {
-    if (isNaN(amountParsed) || amountParsed <= 0 || !selectedFromAccountId.value || !selectedToAccountId.value) {
-      errorMessage.value = 'Введите сумму и выберите оба счёта.';
-      return;
-    }
-    if (selectedFromAccountId.value === selectedToAccountId.value) {
-      errorMessage.value = 'Счёт-источник и счёт-получатель не должны совпадать.';
-      return;
-    }
-  } 
   // --- ВАЛИДАЦИЯ ДЛЯ ДОХОДОВ/РАСХОДОВ ---
-  else {
-    if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedCompanyId.value || !selectedContractorId.value) {
-      errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания, Контрагент.';
-      return;
-    }
+  // (Блок `props.type === 'transfer'` удален)
+  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedCompanyId.value || !selectedContractorId.value) {
+    errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания, Контрагент.';
+    return;
   }
-
+  
   try {
     // 🔴 ИЗМЕНЕНО: Вычисляем dateKey
     const [year, month, day] = editableDate.value.split('-').map(Number);
@@ -134,29 +229,16 @@ const handleSave = async () => {
     const finalDate = new Date(year, month - 1, day, 12, 0, 0); // ДОБАВЛЕНО
 
     const dateKey = _getDateKey(finalDate); // 🔴 КЛЮЧЕВОЙ МОМЕНТ
-    // const dayOfYear = getDayOfYear(finalDate); // (УДАЛЕНО)
-
-    const base =
-      (props.type === 'transfer')
-        ? {
-            type: 'transfer',
-            amount: amountParsed,
-            fromAccountId: selectedFromAccountId.value,
-            toAccountId: selectedToAccountId.value,
-            categoryId: selectedCategoryId.value,
-            companyId: null, // Переводы не участвуют в расчетах компаний
-            contractorId: null, // Переводы не участвуют в расчетах контрагентов
-            projectId: null // Переводы не участвуют в расчетах проектов
-          }
-        : {
-            type: props.type,
-            amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed),
-            categoryId: selectedCategoryId.value,
-            accountId: selectedAccountId.value,
-            companyId: selectedCompanyId.value,
-            contractorId: selectedContractorId.value,
-            projectId: selectedProjectId.value
-          };
+    
+    const base = {
+      type: props.type,
+      amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed),
+      categoryId: selectedCategoryId.value,
+      accountId: selectedAccountId.value,
+      companyId: selectedCompanyId.value,
+      contractorId: selectedContractorId.value,
+      projectId: selectedProjectId.value
+    };
 
     if (!props.operationToEdit || isCloneMode.value) {
       // 🔴 ИЗМЕНЕНО: Передаем dateKey
@@ -175,10 +257,9 @@ const handleSave = async () => {
         return;
     }
     const oldCellIndex = Number.isInteger(prev.cellIndex) ? prev.cellIndex : 0;
-    const desiredCellIndex = oldCellIndex; // (При редактировании cellIndex не меняется)
-
+    
     // 🔴 ИЗМЕНЕНО: Передаем dateKey
-    await saveEdit(prev._id, base, oldDateKey, oldCellIndex, dateKey, desiredCellIndex);
+    await saveEdit(prev._id, base, oldDateKey, oldCellIndex, dateKey, oldCellIndex);
     emit('close');
     isCloneMode.value = false;
 
@@ -228,6 +309,7 @@ async function saveCreateOrClone(base, dateKey) {
 async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desiredCellIndex) {
   // 🔴 ИЗМЕНЕНО: Сравниваем dateKey
   const positionChanged = (newDateKey !== oldDateKey); // (cellIndex не меняется при редактировании)
+  const finalDateKey = positionChanged ? newDateKey : oldDateKey;
 
   if (positionChanged) {
     try {
@@ -257,7 +339,7 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
       cellIndex: desiredCellIndex
     });
     // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
-    emit('operation-updated', { dateKey: newDateKey });
+    emit('operation-updated', { dateKey: newDateKey, oldDateKey: oldDateKey });
     
   } else {
     // Позиция не изменилась, просто обновляем данные
@@ -270,7 +352,7 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
       cellIndex: oldCellIndex
     });
     // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
-    emit('operation-updated', { dateKey: oldDateKey });
+    emit('operation-updated', { dateKey: oldDateKey, oldDateKey: null });
   }
 }
 // =================================================================
@@ -279,10 +361,117 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
 // =================================================================
 // --- 🔴 v2.3: Функции Inline-Create (без изменений) ---
 // =================================================================
-// ... (Все функции Inline-Create без изменений)
+// ... (Все функции Inline-Create)
+const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
+const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
+const saveNewAccount = async () => {
+  const name = newAccountName.value.trim();
+  if (!name) return;
+  const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    selectedAccountId.value = existing._id;
+    onAccountSelected(existing._id);
+  } else {
+    try {
+      const newItem = await mainStore.addAccount({ name: name, companyId: selectedCompanyId.value });
+      selectedAccountId.value = newItem._id;
+      onAccountSelected(newItem._id);
+    } catch (e) { console.error(e); }
+  }
+  cancelCreateAccount();
+};
+
+const showCompanyInput = () => { isCreatingCompany.value = true; nextTick(() => newCompanyInput.value?.focus()); };
+const cancelCreateCompany = () => { isCreatingCompany.value = false; newCompanyName.value = ''; };
+const saveNewCompany = async () => {
+  const name = newCompanyName.value.trim();
+  if (!name) return;
+  const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    selectedCompanyId.value = existing._id;
+  } else {
+    try {
+      const newItem = await mainStore.addCompany(name);
+      selectedCompanyId.value = newItem._id;
+    } catch (e) { console.error(e); }
+  }
+  cancelCreateCompany();
+};
+
+const showContractorInput = () => { isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
+const cancelCreateContractor = () => { isCreatingContractor.value = false; newContractorName.value = ''; };
+const saveNewContractor = async () => {
+  const name = newContractorName.value.trim();
+  if (!name) return;
+  const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    selectedContractorId.value = existing._id;
+    onContractorSelected(existing._id, true, true);
+  } else {
+    try {
+      const newItem = await mainStore.addContractor(name);
+      selectedContractorId.value = newItem._id;
+      onContractorSelected(newItem._id, true, true);
+    } catch (e) { console.error(e); }
+  }
+  cancelCreateContractor();
+};
+
+const showProjectInput = () => { isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); };
+const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
+const saveNewProject = async () => {
+  const name = newProjectName.value.trim();
+  if (!name) return;
+  const existing = mainStore.projects.find(p => p.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    selectedProjectId.value = existing._id;
+  } else {
+    try {
+      const newItem = await mainStore.addProject(name);
+      selectedProjectId.value = newItem._id;
+    } catch (e) { console.error(e); }
+  }
+  cancelCreateProject();
+};
+
+const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
+const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
+const saveNewCategory = async () => {
+  const name = newCategoryName.value.trim();
+  if (!name) return;
+  const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    selectedCategoryId.value = existing._id;
+  } else {
+    try {
+      const newItem = await mainStore.addCategory(name);
+      selectedCategoryId.value = newItem._id;
+    } catch (e) { console.error(e); }
+  }
+  cancelCreateCategory();
+};
+// =================================================================
 
 // --- UI COMPUTED (без изменений) ---
-// ... (Все функции UI COMPUTED без изменений)
+const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
+const title = computed(() => {
+  if (isCloneMode.value) return `Копия: ${props.type === 'income' ? 'Доход' : 'Расход'}`;
+  if (isEditMode.value) return `${props.type === 'income' ? 'Доход' : 'Расход'}`;
+  return `Новый ${props.type === 'income' ? 'Доход' : 'Расход'}`;
+});
+const popupTheme = computed(() => {
+  if (isEditMode.value) return 'theme-edit';
+  return props.type === 'income' ? 'theme-income' : 'theme-expense';
+});
+const buttonText = computed(() => {
+  if (isCloneMode.value) return 'Создать копию';
+  return isEditMode.value ? 'Сохранить' : 'Создать';
+});
+const buttonClass = computed(() => {
+  if (isEditMode.value) return 'btn-submit-edit';
+  return props.type === 'income' ? 'btn-submit-income' : 'btn-submit-expense';
+});
+// =================================================================
 
 const closePopup = () => emit('close');
 
@@ -358,109 +547,84 @@ const handleCopyClick = () => {
           <button @click="saveNewAccount" class="btn-inline-save">✓</button>
           <button @click="cancelCreateAccount" class="btn-inline-cancel">X</button>
         </div>
-      </template>
-
-      <template v-else>
-        <label>Со счёта *</label>
-        <select v-model="selectedFromAccountId" class="form-select">
-          <option :value="null" disabled>Выберите счёт-источник</option>
-          <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">{{ acc.name }}</option>
-        </select>
-
-        <label>На счёт *</label>
+      
+        <label>Компания *</label>
         <select
-          v-if="!isCreatingAccount"
-          v-model="selectedToAccountId"
-          @change="e => e.target.value === '--CREATE_NEW--' && showAccountInput()"
+          v-if="!isCreatingCompany"
+          v-model="selectedCompanyId"
+          @change="e => e.target.value === '--CREATE_NEW--' && showCompanyInput()"
+          class="form-select"
+          :disabled="props.type === 'transfer'"
+        >
+          <option :value="null" disabled>Выберите компанию</option>
+          <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
+          <option value="--CREATE_NEW--">[ + Создать новую компанию ]</option>
+        </select>
+        <div v-else class="inline-create-form">
+          <input type="text" v-model="newCompanyName" placeholder="Название компании" ref="newCompanyInput" @keyup.enter="saveNewCompany" @keyup.esc="cancelCreateCompany" />
+          <button @click="saveNewCompany" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateCompany" class="btn-inline-cancel">X</button>
+        </div>
+
+        <label>Контрагент *</label>
+        <select
+          v-if="!isCreatingContractor"
+          v-model="selectedContractorId"
+          @change="e => {
+            if (e.target.value === '--CREATE_NEW--') {
+              showContractorInput();
+            } else {
+              onContractorSelected(e.target.value, true, true);
+            }
+          }"
+          class="form-select"
+          :disabled="props.type === 'transfer'"
+        >
+          <option :value="null" disabled>Выберите контрагента</option>
+          <option v-for="c in mainStore.contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+          <option value="--CREATE_NEW--">[ + Создать нового контрагента ]</option>
+        </select>
+        <div v-else class="inline-create-form">
+          <input type="text" v-model="newContractorName" placeholder="Название контрагента" ref="newContractorInput" @keyup.enter="saveNewContractor" @keyup.esc="cancelCreateContractor" />
+          <button @click="saveNewContractor" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateContractor" class="btn-inline-cancel">X</button>
+        </div>
+
+        <label>Проект</label>
+        <select
+          v-if="!isCreatingProject"
+          v-model="selectedProjectId"
+          @change="e => e.target.value === '--CREATE_NEW--' && showProjectInput()"
+          class="form-select"
+          :disabled="props.type === 'transfer'"
+        >
+          <option :value="null">Без проекта</option>
+          <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
+          <option value="--CREATE_NEW--">[ + Создать новый проект ]</option>
+        </select>
+        <div v-else class="inline-create-form">
+          <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
+          <button @click="saveNewProject" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateProject" class="btn-inline-cancel">X</button>
+        </div>
+
+        <label>Категория</label>
+        <select
+          v-if="!isCreatingCategory"
+          v-model="selectedCategoryId"
+          @change="e => e.target.value === '--CREATE_NEW--' && showCategoryInput()"
           class="form-select"
         >
-          <option :value="null" disabled>Выберите счёт-получатель</option>
-          <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">{{ acc.name }}</option>
-          <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
+          <option :value="null">Без категории</option>
+          <option v-for="cat in mainStore.categories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
+          <option value="--CREATE_NEW--">[ + Создать новую категорию ]</option>
         </select>
-         <div v-else class="inline-create-form">
-          <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" />
-          <button @click="saveNewAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateAccount" class="btn-inline-cancel">X</button>
+        <div v-else class="inline-create-form">
+          <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
+          <button @click="saveNewCategory" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateCategory" class="btn-inline-cancel">X</button>
         </div>
       </template>
-
-      <label>Компания *</label>
-      <select
-        v-if="!isCreatingCompany"
-        v-model="selectedCompanyId"
-        @change="e => e.target.value === '--CREATE_NEW--' && showCompanyInput()"
-        class="form-select"
-        :disabled="props.type === 'transfer'"
-      >
-        <option :value="null" disabled>Выберите компанию</option>
-        <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
-        <option value="--CREATE_NEW--">[ + Создать новую компанию ]</option>
-      </select>
-      <div v-else class="inline-create-form">
-        <input type="text" v-model="newCompanyName" placeholder="Название компании" ref="newCompanyInput" @keyup.enter="saveNewCompany" @keyup.esc="cancelCreateCompany" />
-        <button @click="saveNewCompany" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateCompany" class="btn-inline-cancel">X</button>
-      </div>
-
-      <label>Контрагент *</label>
-      <select
-        v-if="!isCreatingContractor"
-        v-model="selectedContractorId"
-        @change="e => {
-          if (e.target.value === '--CREATE_NEW--') {
-            showContractorInput();
-          } else {
-            onContractorSelected(e.target.value, true, true);
-          }
-        }"
-        class="form-select"
-        :disabled="props.type === 'transfer'"
-      >
-        <option :value="null" disabled>Выберите контрагента</option>
-        <option v-for="c in mainStore.contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
-        <option value="--CREATE_NEW--">[ + Создать нового контрагента ]</option>
-      </select>
-      <div v-else class="inline-create-form">
-        <input type="text" v-model="newContractorName" placeholder="Название контрагента" ref="newContractorInput" @keyup.enter="saveNewContractor" @keyup.esc="cancelCreateContractor" />
-        <button @click="saveNewContractor" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateContractor" class="btn-inline-cancel">X</button>
-      </div>
-
-      <label>Проект</label>
-      <select
-        v-if="!isCreatingProject"
-        v-model="selectedProjectId"
-        @change="e => e.target.value === '--CREATE_NEW--' && showProjectInput()"
-        class="form-select"
-        :disabled="props.type === 'transfer'"
-      >
-        <option :value="null">Без проекта</option>
-        <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
-        <option value="--CREATE_NEW--">[ + Создать новый проект ]</option>
-      </select>
-      <div v-else class="inline-create-form">
-        <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
-        <button @click="saveNewProject" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateProject" class="btn-inline-cancel">X</button>
-      </div>
-
-      <label>Категория</label>
-      <select
-        v-if="!isCreatingCategory"
-        v-model="selectedCategoryId"
-        @change="e => e.target.value === '--CREATE_NEW--' && showCategoryInput()"
-        class="form-select"
-      >
-        <option :value="null">Без категории</option>
-        <option v-for="cat in mainStore.categories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
-        <option value="--CREATE_NEW--">[ + Создать новую категорию ]</option>
-      </select>
-      <div v-else class="inline-create-form">
-        <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
-        <button @click="saveNewCategory" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateCategory" class="btn-inline-cancel">X</button>
-      </div>
 
       <label>Дата операции</label>
       <input type="date" v-model="editableDate" class="form-input" />
