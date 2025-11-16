@@ -814,7 +814,7 @@ onBeforeUnmount(() => {
               :src="mainStore.user.avatarUrl" 
               alt="avatar" 
               class="user-avatar" 
-              vif="mainStore.user.avatarUrl"
+              v-if="mainStore.user.avatarUrl"
             />
             <div class="user-avatar-placeholder" v-else>
               {{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}
