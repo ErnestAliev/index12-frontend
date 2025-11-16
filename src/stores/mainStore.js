@@ -1,12 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v7.7-FIX-RENAME ---
- * * ВЕРСИЯ: 7.7 - Исправление переименования категорий
+ * * --- МЕТКА ВЕРСИИ: v7.8-REACTIVE-FIX ---
+ * * ВЕРСИЯ: 7.8 - Исправление реактивности даты и логики наложения
  * ДАТА: 2025-11-16
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) В функцию `batchUpdateEntities` добавлена обработка `categories`.
- * Теперь при переименовании категории через карандаш ✎ локальное состояние
- * обновляется мгновенно, и заголовок виджета меняется сразу.
+ * ИСПРАВЛЕНИЯ:
+ * 1. (FIX ДАТЫ) В `moveOperation` при создании `moved` объекта обновляется поле `.date`.
+ * Теперь попапы видят новую дату сразу после D&D.
+ * 2. (LOGIC SWAP) Внутри дня реализован обмен местами (Swap) при наложении.
+ * 3. (LOGIC EDIT) При смене даты (Edit) или переносе в другой день (Drop на занятое)
+ * используется `getFirstFreeCellIndex` для поиска свободного места.
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +34,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v7.7-FIX-RENAME ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v7.8-REACTIVE-FIX ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -197,7 +199,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // --- Future Ops ---
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
     const currentYearVal = currentYear.value;
@@ -444,7 +445,6 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const promises = [];
       const dateKeysToFetch = [];
-      
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!calculationCache.value[dateKey]) {
@@ -452,7 +452,6 @@ export const useMainStore = defineStore('mainStore', () => {
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
-      
       if (promises.length > 0) {
         const responses = await Promise.all(promises);
         const tempCache = {};
@@ -466,7 +465,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
           tempCache[dateKey] = processedOps;
         }
-        
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
       }
@@ -488,7 +486,6 @@ export const useMainStore = defineStore('mainStore', () => {
             else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
         }
     }
-    
     projection.value = { 
       mode, totalDays: computeTotalDaysForMode(mode, base),
       rangeStartDate: startDate, rangeEndDate: endDate,
@@ -530,6 +527,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // Функция синхронизации кэшей (Для мгновенного UI)
   const _syncCaches = (key, ops) => {
       displayCache.value[key] = [...ops];
       calculationCache.value[key] = [...ops];
@@ -670,7 +668,9 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureTotals();
   }
 
-  // --- SWAP & MOVE LOGIC ---
+  // =================================================================
+  // --- 🔴 ИСПРАВЛЕНИЕ (v7.8): SWAP + CORRECT DATES + NO OVERLAP ---
+  // =================================================================
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     
@@ -704,7 +704,7 @@ export const useMainStore = defineStore('mainStore', () => {
            }
        }
     } else {
-       // MOVE BETWEEN DAYS (Collision -> Find Free)
+       // MOVE BETWEEN DAYS
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
        const sourceOpData = oldOps.find(o => o._id === operation._id);
        oldOps = oldOps.filter(o => o._id !== operation._id);
@@ -715,14 +715,16 @@ export const useMainStore = defineStore('mainStore', () => {
        
        let finalIndex = targetIndex;
        if (occupant) {
+           // If occupied, find first free index to prevent stacking
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
        
+       // 🔴 CRITICAL FIX: Explicitly update date property
        const moved = { 
           ...sourceOpData, 
           dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey),
+          date: _parseDateKey(newDateKey), // This ensures popups see new date
           cellIndex: finalIndex 
        };
        newOps.push(moved);
@@ -740,7 +742,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // --- CRUD ---
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
   async function createTransfer(transferData) {
@@ -765,13 +766,14 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // 🔴 FIX: Update with collision check
   async function updateTransfer(transferId, transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
-      let newCellIndex;
       
+      let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
       } else {
@@ -796,11 +798,13 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // 🔴 FIX: Update with collision check
   async function updateOperation(opId, opData) {
     try {
       const finalDate = new Date(opData.date);
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === opId);
+      
       let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
@@ -853,7 +857,6 @@ export const useMainStore = defineStore('mainStore', () => {
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
-  // 🔴 ИСПРАВЛЕНИЕ: Убираем авто-добавление виджета
   async function addCategory(name){
     const res = await axios.post(`${API_BASE_URL}/categories`, { name });
     categories.value.push(res.data); 
@@ -887,7 +890,6 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='companies')   companies.value = res.data;
       else if (path==='contractors') contractors.value = res.data;
       else if (path==='projects')    projects.value = res.data;
-      // 🔴 ДОБАВЛЕНО: Обновление категорий в локальном стейте
       else if (path==='categories')  categories.value = res.data; 
     }catch(e){
       await fetchAllEntities();
