@@ -268,7 +268,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 /* КНОПКА УДАЛЕНИЯ */
 .delete-btn {
-  width: 48px; /* Ширина кнопки как высота инпута */
+  width: 100%; /* Ширина кнопки как высота инпута */
   height: 48px; 
   flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
@@ -342,3 +342,4 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
