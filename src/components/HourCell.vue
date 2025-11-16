@@ -4,16 +4,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.5-FINAL-ABSOLUTE-TOUCH-FIX ---
- * * ВЕРСИЯ: 1.5 - Окончательный переход на прямое управление Pinia из Touch-событий.
+ * * --- МЕТКА ВЕРСИИ: v1.6-RESTORE-MOUSE-FIX ---
+ * * ВЕРСИЯ: 1.6 - Восстановление Mouse D&D при сохранении Touch-логики.
  * * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (CRITICAL) onTouchStart: Добавлен event.preventDefault() в самом начале,
- * чтобы агрессивно блокировать нативные жесты скроллинга/зума (основная причина сбоя в режиме планшета).
- * 2. (CRITICAL) Удалены все обработчики Drag-and-Drop (onDragStart, onDrop и т.д.)
- * и emit('drop-operation').
- * 3. (LOGIC) onTouchEnd напрямую вызывает mainStore.moveOperation.
+ * 1. (CRITICAL FIX) Восстановлены функции onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop.
+ * 2. (LOGIC) onDrop (для мыши) теперь вызывает mainStore.moveOperation, используя Mouse D&D API.
+ * 3. (LOGIC) onTouchEnd (для сенсора) продолжает напрямую вызывать mainStore.moveOperation.
  */
 
 const props = defineProps({
@@ -22,7 +20,8 @@ const props = defineProps({
   cellIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['edit-operation', 'add-operation']); 
+// 🟢 Восстановлен drop-operation для корректной работы с Mouse D&D
+const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']); 
 
 const mainStore = useMainStore();
 
@@ -53,11 +52,39 @@ const onEditClick = () => {
   emit('edit-operation', props.operation);
 };
 
-/* * DnD для Мыши (Mouse) * /
-/ * 🔴 ВСЕ ОБРАБОТЧИКИ D&D УДАЛЕНЫ */
+// =================================================================
+// --- 🟢 ВОССТАНОВЛЕННАЯ ЛОГИКА MOUSE D&D ---
+// =================================================================
+const onDragStart = (event) => {
+  if (!props.operation) return;
+  // Мы используем dateKey, чтобы HomeView знал, откуда перемещать
+  event.dataTransfer.setData('application/json', JSON.stringify(props.operation));
+  event.dataTransfer.effectAllowed = 'move';
+  event.currentTarget.style.opacity = '0.5';
+};
+const onDragEnd = (event) => { event.currentTarget.style.opacity = '1'; };
+const onDragOver = (event) => { event.preventDefault(); isDragOver.value = true; event.dataTransfer.dropEffect = 'move'; };
+const onDragLeave = () => { isDragOver.value = false; };
+
+const onDrop = (event) => {
+  event.preventDefault(); isDragOver.value = false;
+  const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
+  let operationData = null; try { operationData = JSON.parse(raw); } catch { return; }
+  if (!operationData || !operationData._id) return;
+
+  console.log(`[HourCell] 💧 Mouse Drop в ячейку ${props.cellIndex}.`);
+
+  // 🟢 ДЛЯ MOUSE D&D: Мы отправляем событие наверх (DayColumn/HomeView), 
+  // которые добавят toDateKey и вызовут mainStore.moveOperation.
+  emit('drop-operation', {
+    operation: operationData,
+    toCellIndex: props.cellIndex 
+  });
+};
+
 
 // =================================================================
-// --- 🟢 НОВЫЙ КОД: Обработчики для сенсорного Drag & Drop ---
+// --- 🟢 ЛОГИКА TOUCH D&D (Прямое управление Store) ---
 // =================================================================
 
 let dragInProgress = false;
@@ -66,8 +93,7 @@ let originalOperation = null;
 
 const onTouchStart = (event) => {
   if (props.operation) {
-    // 🟢 КРИТИЧЕСКИЙ ФИКС: Агрессивно блокируем нативные жесты сразу
-    // Это должно решить проблему с невозможностью начать drag в режиме планшета.
+    // 🟢 АГРЕССИВНЫЙ БЛОК: Предотвращает нативный скроллинг/зум
     event.preventDefault(); 
     event.stopPropagation();
     
@@ -78,8 +104,11 @@ const onTouchStart = (event) => {
       dragInProgress = true;
       event.currentTarget.style.opacity = '0.5';
       
+      // Сохраняем исходные и целевые данные в data-атрибуты
       event.currentTarget.dataset.originalDateKey = props.dateKey;
       event.currentTarget.dataset.originalCellIndex = props.cellIndex;
+      event.currentTarget.dataset.dropTarget = props.cellIndex; // Начальная цель
+      event.currentTarget.dataset.dropTargetKey = props.dateKey; // Начальная цель
       
       console.log('[HourCell] 🖐️ Long-tap START (Direct Mode)');
     }, 500); 
@@ -87,7 +116,6 @@ const onTouchStart = (event) => {
 };
 
 const onTouchMove = (event) => {
-  // Отмена Long-tap, если началось движение
   if (touchTimeout && !dragInProgress) {
     clearTimeout(touchTimeout);
     touchTimeout = null;
@@ -100,20 +128,14 @@ const onTouchMove = (event) => {
     const touch = event.touches[0];
     const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
     const newTargetCell = targetElement.closest('.hour-cell');
-
-    let currentTarget = null;
     
     if (newTargetCell) {
-        currentTarget = newTargetCell;
-    }
-    
-    if (currentTarget) {
-        const targetCellIndex = currentTarget.dataset.cellIndex;
-        const targetDateKey = currentTarget.dataset.dateKey;
+        const targetCellIndex = newTargetCell.dataset.cellIndex;
+        const targetDateKey = newTargetCell.dataset.dateKey;
         
-        if (currentTarget.classList.contains('drag-over') === false) {
+        if (newTargetCell.classList.contains('drag-over') === false) {
             document.querySelectorAll('.hour-cell').forEach(c => c.classList.remove('drag-over'));
-            currentTarget.classList.add('drag-over');
+            newTargetCell.classList.add('drag-over');
         }
         
         event.currentTarget.dataset.dropTarget = targetCellIndex;
@@ -123,7 +145,7 @@ const onTouchMove = (event) => {
 };
 
 const onTouchEnd = (event) => {
-  // 1. Обработка обычного клика (если не было dragInProgress)
+  // 1. Обработка обычного клика 
   if (touchTimeout && !dragInProgress) {
     clearTimeout(touchTimeout);
     if (props.operation) {
@@ -134,7 +156,7 @@ const onTouchEnd = (event) => {
     return;
   }
   
-  // 2. Обработка Drop
+  // 2. Обработка Drop (Только для Touch, минуя Mouse D&D API)
   if (dragInProgress) {
     dragInProgress = false;
     event.currentTarget.style.opacity = '1';
@@ -143,17 +165,15 @@ const onTouchEnd = (event) => {
     const targetCellIndex = event.currentTarget.dataset.dropTarget;
     const targetDateKey = event.currentTarget.dataset.dropTargetKey;
     const originalDateKey = event.currentTarget.dataset.originalDateKey;
-    const originalCellIndex = event.currentTarget.dataset.originalCellIndex;
     
     if (originalOperation && targetCellIndex && targetDateKey && originalDateKey) {
       const newCellIndex = Number(targetCellIndex);
-      const oldCellIndex = Number(originalCellIndex);
-
-      console.log(`[HourCell] 🖐️ Tap END/DROP: ${originalDateKey}:${oldCellIndex} -> ${targetDateKey}:${newCellIndex}`);
+      const oldCellIndex = Number(event.currentTarget.dataset.originalCellIndex); // Берем оригинальный index
       
-      // 🟢 КРИТИЧЕСКИЙ ШАГ: ПРЯМОЙ ВЫЗОВ moveOperation (минуя D&D и emit)
+      console.log(`[HourCell] 🖐️ Tap END/DROP (Direct): ${originalDateKey}:${oldCellIndex} -> ${targetDateKey}:${newCellIndex}`);
+      
+      // 🟢 ПРЯМОЙ ВЫЗОВ: Touch-логика вызывает Store напрямую.
       if (originalDateKey !== targetDateKey || oldCellIndex !== newCellIndex) {
-          // Мы не ждем await, так как нам нужно мгновенно освободить UI
           mainStore.moveOperation(
               originalOperation, 
               originalDateKey, 
@@ -187,6 +207,7 @@ const onTouchCancel = () => {
     class="hour-cell"
     :class="{ 'drag-over': isDragOver }"
     
+    @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
     :data-date-key="dateKey" 
     :data-cell-index="cellIndex"
   >
@@ -195,11 +216,11 @@ const onTouchCancel = () => {
       class="operation-chip"
       :class="{ transfer: isTransferOp, income: operation.type==='income', expense: operation.type==='expense' }"
       
+      draggable="true" 
+      @dragstart="onDragStart" @dragend="onDragEnd" 
+      
       @click.stop="onEditClick"
       @touchstart.stop="onTouchStart" @touchmove.stop="onTouchMove" @touchend.stop="onTouchEnd" @touchcancel.stop="onTouchCancel"
-      
-      draggable="false"
-      @dragstart.prevent @dragend.prevent @dragover.prevent @dragleave.prevent @drop.prevent
     >
       <template v-if="isTransferOp">
         <span class="op-title">Перевод</span>
@@ -238,7 +259,7 @@ const onTouchCancel = () => {
   background:#383838; padding:4px 8px; width:100%;
   border-radius:4px; font-size:.85em; display:flex; justify-content:space-between;
   cursor:grab; transition: background-color .2s; overflow:hidden; user-select:none;
-  /* 🟢 СТИЛИ ДЛЯ БЛОКИРОВКИ НАТИВНОГО D&D */
+  /* 🟢 СТИЛИ ДЛЯ БЛОКИРОВКИ НАТИВНОГО D&D НА TOUCH */
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -khtml-user-select: none;
