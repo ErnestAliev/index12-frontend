@@ -3,33 +3,34 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v7.0-HEADER-ACTIONS ---
- * * ВЕРСИЯ: 7.0 - Обработка действий категорий
+ * * --- МЕТКА ВЕРСИИ: v7.5-HEADER-REPLACE ---
+ * * ВЕРСИЯ: 7.5 - Замена виджета при создании категории и фикс переименования
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлена обработка событий `@add` и `@edit` от HeaderCategoryCard.
- * 2. Реализована логика:
- * - "Перевод" -> Add: Открыть TransferPopup (пустой).
- * - "Перевод" -> Edit: (Опционально) Переименовать категорию.
- * - Категория -> Add: (Опционально) Добавить новую категорию.
- * - Категория -> Edit: Переименовать текущую.
+ * 1. (FIX) `onCategoryAdd`: теперь при создании новой категории мы передаем индекс
+ * виджета, на котором был клик.
+ * 2. (FIX) `onEntitySave`: Если это создание категории, то после создания
+ * мы вызываем `mainStore.replaceWidget(index, newKey)`, заменяя старый виджет на новый.
+ * Это решает проблему "7-го виджета".
+ * 3. (FIX) `onCategoryEdit`: Переименование теперь работает через попап,
+ * который вызывает обновление в сторе.
  */
 
-console.log('--- TheHeader.vue v7.0-HEADER-ACTIONS ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v7.5-HEADER-REPLACE ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
-import TransferPopup from '@/components/TransferPopup.vue'; // 🟢 Импорт
+import TransferPopup from '@/components/TransferPopup.vue';
 
 // Попапы
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 
 const mainStore = useMainStore();
-const isTransferPopupVisible = ref(false); // 🟢 Состояние для TransferPopup
+const isTransferPopupVisible = ref(false);
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
@@ -71,24 +72,35 @@ const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProj
 const isEntityPopupVisible = ref(false);
 const popupTitle = ref('');
 const saveHandler = ref(null);
-const editingEntity = ref(null); // Для переименования
+const currentWidgetIndexForReplace = ref(null); // 🟢 Индекс для замены
 
+// Обычное добавление (для счетов, компаний и т.д.)
 const openAddPopup = (title, storeAction) => {
   popupTitle.value = title;
   saveHandler.value = storeAction;
-  editingEntity.value = null; // Режим создания
+  currentWidgetIndexForReplace.value = null; // Не заменяем виджет
   isEntityPopupVisible.value = true;
 };
 
-// 🟢 НОВОЕ: Открытие попапа для РЕДАКТИРОВАНИЯ сущности (категории)
+// 🟢 НОВОЕ: Добавление КАТЕГОРИИ с заменой виджета
+const openAddCategoryPopup = (title, widgetIndex) => {
+  popupTitle.value = title;
+  // Мы создаем обертку: сначала создаем категорию, потом меняем виджет
+  saveHandler.value = async (name) => {
+     const newCategory = await mainStore.addCategory(name); // Вернет объект категории
+     if (newCategory && newCategory._id && widgetIndex !== null) {
+         const newWidgetKey = `cat_${newCategory._id}`;
+         // Заменяем виджет на месте
+         mainStore.replaceWidget(widgetIndex, newWidgetKey);
+     }
+  };
+  currentWidgetIndexForReplace.value = widgetIndex;
+  isEntityPopupVisible.value = true;
+};
+
 const openRenamePopup = (title, entity, storeUpdateAction) => {
   popupTitle.value = title;
-  // Создаем обертку, которая вызовет update вместо add
   saveHandler.value = async (newName) => {
-      // Здесь мы предполагаем, что storeUpdateAction умеет обновлять по ID
-      // Но у нас есть batchUpdate. Для одной сущности проще сделать простой API вызов или batch из 1 элемента.
-      // Используем batchUpdateEntities для простоты, так как он уже есть.
-      // Нам нужно знать путь (categories).
       const updatedItem = { ...entity, name: newName };
       await mainStore.batchUpdateEntities('categories', [updatedItem]);
   };
@@ -126,13 +138,14 @@ const onEntityListSave = async (updatedItems) => {
 /* ======================= Обработчики Категорий ======================= */
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
-const onCategoryAdd = (widgetKey) => {
-    // Если это Перевод -> Открываем TransferPopup
-    if (getWidgetByKey(widgetKey)?.name.toLowerCase() === 'перевод') {
+// 🟢 ИЗМЕНЕНО: Принимаем index
+const onCategoryAdd = (widgetKey, index) => {
+    const widget = getWidgetByKey(widgetKey);
+    if (widget?.name.toLowerCase() === 'перевод') {
         isTransferPopupVisible.value = true;
     } else {
-        // Если это обычная категория -> Создаем НОВУЮ категорию
-        openAddPopup('Новая категория', mainStore.addCategory);
+        // Открываем создание с заменой
+        openAddCategoryPopup('Новая категория', index);
     }
 };
 
@@ -144,7 +157,6 @@ const onCategoryEdit = (widgetKey) => {
     }
 };
 
-// Обработчик закрытия TransferPopup
 const handleTransferComplete = async (eventData) => {
     if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
     isTransferPopupVisible.value = false;
@@ -216,13 +228,13 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
       />
 
-      <!-- 🟢 ОБНОВЛЕНО: Передаем обработчики событий -->
+      <!-- 🟢 ПЕРЕДАЕМ INDEX в обработчик add -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
         :widgetIndex="index"
-        @add="onCategoryAdd(widgetKey)"
+        @add="onCategoryAdd(widgetKey, index)"
         @edit="onCategoryEdit(widgetKey)"
       />
     </template>
@@ -242,7 +254,6 @@ const handleTransferComplete = async (eventData) => {
     @save="onEntityListSave"
   />
   
-  <!-- 🟢 НОВОЕ: Попап перевода -->
   <TransferPopup
       v-if="isTransferPopupVisible"
       :date="new Date()"
