@@ -12,31 +12,23 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.3-SYNC-FIXES ---
- * * ВЕРСIA: 5.3 - Исправления синхронизации и смены дня
+ * * --- МЕТКА ВЕРСИИ: v5.5-COMPLEX-FIX ---
+ * * ВЕРСIA: 5.5 - Комплексное исправление ошибок #1, #3, #4.
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
  * 1. (FIX 1B) `today` теперь `ref` и обновляется при смене календарного дня.
  * 2. (FIX 3) Активировано `mainStore.startAutoRefresh()` в onMounted.
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
- * 1. (FIX-BUG-6 / ОШИБКА #3, #4) `handleOperationUpdated` (для Доходов/Расходов)
- * больше не вызывает `forceRefreshAll()`. Он "хирургически" обновляет
- * день (`refreshDay`) и пересчитывает проекцию (`recalcProjectionForCurrentView`),
- * что устраняет исчезновение хедера.
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025 / 08:15) ---
- * 1. (FIX-BUG-7 / ОШИБКА #3, #4) `handleTransferComplete`
- * также очищен от `forceRefreshAll()` в fallback-блоке,
- * чтобы полностью устранить исчезновение хедера.
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025 / 08:30) ---
- * 1. (FIX-BUILD-ERROR) Исправлена опечатка `vif` на `v-if`
- * в шаблоне (аватар пользователя).
+ * 3. (FIX-BUG-6 / ОШИБКА #3, #4) `handleOperationUpdated`
+ * больше не вызывает `forceRefreshAll()`.
+ * 4. (FIX-BUG-7 / ОШИБКА #3, #4) `handleTransferComplete`
+ * также очищен от `forceRefreshAll()`.
+ * 5. (FIX-BUILD-ERROR / ОШИБКА #1) Исправлена опечатка `vif` на `v-if`.
+ * 6. (NEW) Добавлено логирование во все обработчики.
  */
 
-console.log('--- HomeView.vue v5.3-SYNC-FIXES ЗАГРУЖЕН ---'); 
+// 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
+console.log('--- HomeView.vue v5.5 (Fix #1, #3, #4) ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -50,12 +42,14 @@ const userMenuPosition = ref({ top: '0px', left: '0px' }); // (у вас уже 
  * !!! ИЗМЕНЕНИЕ (Шаг 4 v3): Обработчики меню пользователя !!!
  */
 const handleLogout = () => {
+  console.log('[HomeView] handleLogout: 🔴 Пользователь выходит...');
   showUserMenu.value = false;
   mainStore.logout();
 };
 
 // !!! ЗАМЕНИТЕ ЭТУ ФУНКЦИЮ !!!
 const toggleUserMenu = (event) => {
+  console.log('[HomeView] toggleUserMenu: 🔳 Открытие/закрытие меню пользователя');
   event.stopPropagation();
   
   if (!userButtonRef.value) return;
@@ -89,6 +83,7 @@ const toggleUserMenu = (event) => {
 
 // Закрывает оба меню
 const closeAllMenus = () => {
+  // console.log('[HomeView] closeAllMenus: 🖱️ Клик вне меню'); // 🔴 ЛОГ (Слишком много)
   if (isContextMenuVisible.value) isContextMenuVisible.value = false;
   if (showUserMenu.value) showUserMenu.value = false; // <-- (Это уже было)
 };
@@ -99,15 +94,15 @@ const closeAllMenus = () => {
  * (Код из вашего v5.0, без изменений)
  */
 async function handleImportComplete() {
+  console.log('[HomeView] handleImportComplete: 🏁 Импорт завершен, принудительно обновляем все данные...');
   showImportModal.value = false;
-  console.log('Импорт завершен, принудительно обновляем все данные...');
   
   try {
     await mainStore.forceRefreshAll();
     rebuildVisibleDays(); 
     
   } catch (error) {
-    console.error('Ошибка при обновлении данных после импорта:', error);
+    console.error('[HomeView] handleImportComplete: ❌ Ошибка при обновлении данных после импорта:', error);
   }
 }
 
@@ -237,6 +232,7 @@ const timelineHeightPx = ref(318);
 /* ===================== КОНТЕКСТНОЕ МЕНЮ / ПОПАПЫ ===================== */
 // (Весь этот блок без изменений)
 const openContextMenu = (day, event, cellIndex) => {
+  console.log(`[HomeView] openContextMenu: 🖱️ Открыто контекстное меню для ${day.dateKey}, ячейка ${cellIndex}`);
   event.stopPropagation();
   selectedDay.value = day; 
   selectedCellIndex.value = cellIndex;
@@ -254,6 +250,7 @@ const openContextMenu = (day, event, cellIndex) => {
   isContextMenuVisible.value = true;
 };
 const handleContextMenuSelect = (type) => {
+  console.log(`[HomeView] handleContextMenuSelect: 🔲 Выбран тип: ${type}`);
   isContextMenuVisible.value = false;
   if (!selectedDay.value) return;
   if (type === 'transfer') {
@@ -265,25 +262,30 @@ const handleContextMenuSelect = (type) => {
   }
 };
 const openPopup = (type) => {
+  console.log(`[HomeView] openPopup: 📖 Открываю OperationPopup (Тип: ${type})`);
   operationType.value = type;
   isPopupVisible.value = true;
 };
 const handleEditOperation = (operation) => {
+  console.log(`[HomeView] handleEditOperation: ✏️ Редактирование операции ${operation._id}`);
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
   if (operation.type === 'transfer' || operation.isTransfer) {
+    console.log('[HomeView] handleEditOperation: 📖 Открываю TransferPopup (Редактирование)');
     isTransferPopupVisible.value = true;
   } else {
     openPopup(operation.type);
   }
 };
 const handleClosePopup = () => {
+  console.log('[HomeView] handleClosePopup: 🛑 Закрываю OperationPopup');
   isPopupVisible.value = false;
   operationToEdit.value = null;
 };
 const handleCloseTransferPopup = () => {
+  console.log('[HomeView] handleCloseTransferPopup: 🛑 Закрываю TransferPopup');
   isTransferPopupVisible.value = false;
   operationToEdit.value = null;
 };
@@ -292,17 +294,19 @@ const handleCloseTransferPopup = () => {
 /* ===================== ДАННЫЕ ПО ВИДИМЫМ ДНЯМ ===================== */
 // (Весь этот блок без изменений)
 const debouncedFetchVisibleDays = debounce(() => {
-  console.log('[ЖУРНАЛ] (DEBOUNCED) fetchVisibleDays: ⌛️ Скролл остановлен. ЗАПРАШИВАЮ ДАННЫЕ...');
+  console.log('[HomeView] (DEBOUNCED) fetchVisibleDays: ⌛️ Скролл остановлен. ЗАПРАШИВАЮ ДАННЫЕ...');
   visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey));
 }, 300); 
 
 const fetchVisibleDaysOperations = () => {
-  console.log('[ЖУРНАЛ] fetchVisibleDays: 🏃‍♂️ Запрос на загрузку поставлен в очередь (debounced)...');
+  console.log('[HomeView] fetchVisibleDays: 🏃‍♂️ Запрос на загрузку поставлен в очередь (debounced)...');
 };
 
 const recalcProjectionForCurrentView = async () => {
+  console.log(`[HomeView] recalcProjectionForCurrentView: 🔄 Пересчет проекции для вида ${viewMode.value}...`);
   // (Используем today.value)
   await mainStore.loadCalculationData(viewMode.value, today.value);
+  console.log(`[HomeView] recalcProjectionForCurrentView: ✅ Пересчет проекции завершен.`);
 };
 
 
@@ -311,10 +315,10 @@ const recalcProjectionForCurrentView = async () => {
 // =================================================================
 const handleTransferComplete = async (eventData) => {
   const dateKey = eventData?.dateKey;
-  console.log(`[ЖУРНАЛ] handleTransferComplete: 🤝 Перевод завершен, обновляю dateKey: ${dateKey}`);
+  console.log(`[HomeView] handleTransferComplete: 🤝 Перевод завершен, обновляю dateKey: ${dateKey}`);
   
   if (!dateKey) {
-    console.error('!!! handleTransferComplete ОШИБКА: не получен dateKey, ВЫЗЫВАЮ ХИРУРГИЧЕСКОЕ ОБНОВЛЕНИЕ');
+    console.error('!!! [HomeView] handleTransferComplete ОШИБКА: не получен dateKey, ВЫЗЫВАЮ ХИРУРГИЧЕСКОЕ ОБНОВЛЕНИЕ');
     
     // 🔴 УДАЛЕНО:
     // await mainStore.forceRefreshAll(); // <-- ЭТО БЫЛ БАГ
@@ -335,7 +339,7 @@ const handleTransferComplete = async (eventData) => {
 
 // (handleOperationAdded, Delete, Drop, Moved - без изменений)
 const handleOperationAdded = async (newEvent) => {
-  console.log('[ЖУРНАЛ] handleOperationAdded: ➕ Вызываю mainStore.addOperation...');
+  console.log(`[HomeView] handleOperationAdded: ➕ Новая операция ${newEvent._id} в ${newEvent.dateKey}. Вызываю mainStore.addOperation...`);
   await mainStore.addOperation(newEvent); 
   await recalcProjectionForCurrentView();
   visibleDays.value = [...visibleDays.value];
@@ -343,7 +347,7 @@ const handleOperationAdded = async (newEvent) => {
 };
 const handleOperationDelete = async (operation) => {
   if (!operation) return;
-  console.log('[ЖУРНАЛ] handleOperationDelete: ❌ Вызываю mainStore.deleteOperation...');
+  console.log(`[HomeView] handleOperationDelete: ❌ Удаление операции ${operation._id} из ${operation.dateKey}. Вызываю mainStore.deleteOperation...`);
   await mainStore.deleteOperation(operation); 
   await recalcProjectionForCurrentView();
   visibleDays.value = [...visibleDays.value];
@@ -354,32 +358,41 @@ const handleOperationDrop = async (dropData) => {
   const oldDateKey = operation.dateKey; 
   const newDateKey = dropData.toDateKey;
   const newCellIndex = dropData.toCellIndex;
+  
+  console.log(`[HomeView] handleOperationDrop: 💧 Drop операции ${operation._id}`);
+  
   if (!oldDateKey || !newDateKey) {
-    console.error('!!! handleOperationDrop ОШИБКА: D&D не передал dateKey!', dropData);
+    console.error('!!! [HomeView] handleOperationDrop ОШИБКА: D&D не передал dateKey!', dropData);
     return;
   }
-  if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
-  console.log('[ЖУРНАЛ] handleOperationDrop: ➡️ Вызываю mainStore.moveOperation (drag-n-drop)...');
+  if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) {
+    console.log('[HomeView] handleOperationDrop: 🛑 Drop в ту же ячейку, отмена.');
+    return;
+  }
+  
+  console.log(`[HomeView] handleOperationDrop: ➡️ Вызываю mainStore.moveOperation (drag-n-drop) ${oldDateKey} -> ${newDateKey}`);
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
   await recalcProjectionForCurrentView();
 };
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
+  console.log(`[HomeView] handleOperationMoved: ➡️ Перемещение операции ${operation._id} (из попапа)...`);
   const oldDateKey = operation.dateKey;
-  
-  // 🔴 ИСПРАВЛЕНИЕ: (v5.3) OperationPopup (v5.3) теперь передает dateKey!
-  // ... А нет, он все еще передает toDayOfYear.
-  // Мы должны использовать _parseDateKey из mainStore, который у нас уже есть.
   
   // 🔴 ИСПРАВЛЕНИЕ: Используем _parseDateKey, чтобы сохранить год
   const baseDate = _parseDateKey(oldDateKey); 
-  // const newDate = mainStore._parseDateKey(`${baseDate.getFullYear()}-${toDayOfYear}`); // (Ошибка, toDayOfYear может быть < 100)
   
   // 🔴 ИСПРАВЛЕНИЕ 2: Корректное создание newDate
   const newDate = new Date(baseDate.getFullYear(), 0, 1);
   newDate.setDate(toDayOfYear); // <-- Это корректно обработает dayOfYear
   
   const newDateKey = _getDateKey(newDate);
-  console.log(`[ЖУРНАЛ] handleOperationMoved: ➡️ Вызываю mainStore.moveOperation (из попапа) ${oldDateKey} -> ${newDateKey}...`);
+  
+  if (!oldDateKey || !newDateKey) {
+     console.error('!!! [HomeView] handleOperationMoved ОШИБКА: Не удалось определить oldDateKey или newDateKey');
+     return;
+  }
+  
+  console.log(`[HomeView] handleOperationMoved: ➡️ Вызываю mainStore.moveOperation (из попапа) ${oldDateKey} -> ${newDateKey}...`);
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, toCellIndex ?? (operation.cellIndex ?? 0));
   await recalcProjectionForCurrentView();
   handleClosePopup();
@@ -389,8 +402,7 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
 // --- 🔴 ИСПРАВЛЕНИЕ (ОШИБКА #3 / #4): Исчезающий Хедер (Доход/Расход) ---
 // =================================================================
 const handleOperationUpdated = async ({ dateKey, oldDateKey }) => {
-  // (Старый параметр был { dayOfYear })
-  console.log(`[ЖУРНАЛ] handleOperationUpdated: 🔄 Обновление операции, обновляю ${dateKey}`);
+  console.log(`[HomeView] handleOperationUpdated: 🔄 Обновление операции, основной dateKey: ${dateKey}, старый (если был): ${oldDateKey}`);
   
   // 🔴 УДАЛЕНО:
   // await mainStore.forceRefreshAll(); // <-- ЭТО БЫЛ БАГ
@@ -401,6 +413,7 @@ const handleOperationUpdated = async ({ dateKey, oldDateKey }) => {
   }
   // Если операция переместилась, обновляем и старый день
   if (oldDateKey && oldDateKey !== dateKey) {
+    console.log(`[HomeView] handleOperationUpdated: 🔄 Обновляю также старый день ${oldDateKey}`);
     await mainStore.refreshDay(oldDateKey);
   }
 
@@ -428,7 +441,7 @@ const rebuildVisibleDays = () => {
     });
   }
   visibleDays.value = days;
-  console.log('[ЖУРНАЛ] rebuildVisibleDays: 🛠️ Перестроил дни. Вызываю debouncedFetchVisibleDays...');
+  console.log(`[HomeView] rebuildVisibleDays: 🛠️ Перестроил ${days.length} видимых дней. Вызываю debouncedFetch...`);
   debouncedFetchVisibleDays(); 
 };
 const generateVisibleDays = () => {
@@ -541,7 +554,7 @@ const onMasterScroll = () => {
   if (maxVirtual === 0 || maxScroll === 0) return;
   const ratio = scroller.scrollLeft / maxScroll;
   virtualStartIndex.value = Math.round(ratio * maxVirtual);
-  console.log(`[ЖУРНАЛ] onMasterScroll: 🌀 Скролл! vStartIndex: ${virtualStartIndex.value}.`);
+  // console.log(`[HomeView] onMasterScroll: 🌀 Скролл! vStartIndex: ${virtualStartIndex.value}.`); // 🔴 ЛОГ (Слишком много)
   rebuildVisibleDays(); 
 };
 const onWheelScroll = (event) => {
@@ -556,6 +569,7 @@ const onWheelScroll = (event) => {
 /* ===================== ЦЕНТРОВКА / СМЕНА МАСШТАБА ===================== */
 // (Без изменений)
 const centerToday = () => {
+  console.log('[HomeView] centerToday: 🎯 Центрирую на "сегодня"');
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   virtualStartIndex.value = Math.min(
     Math.max(0, globalTodayIndex.value - CENTER_INDEX),
@@ -565,8 +579,8 @@ const centerToday = () => {
   updateScrollbarWidthAndPosition();
 };
 const onChangeView = async (newView) => {
+  console.log(`[HomeView] onChangeView: 🔄 Сменил вид на ${newView}.`);
   viewMode.value = newView;
-  console.log(`[ЖУРНАЛ] onChangeView: 🔄 Сменил вид на ${newView}.`);
   await nextTick();
   centerToday();
   await nextTick();
@@ -574,6 +588,7 @@ const onChangeView = async (newView) => {
   await recalcProjectionForCurrentView();
 };
 const onWindowResize = () => {
+  console.log('[HomeView] onWindowResize: 📐 Изменение размера окна');
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));
   updateScrollbarWidthAndPosition();
@@ -586,7 +601,7 @@ const onWindowResize = () => {
 const checkDayChange = () => {
   const currentToday = initializeToday();
   if (!sameDay(currentToday, today.value)) {
-    console.log('[HomeView] Обнаружена смена дня. Обновляю "сегодня" и перестраиваю вид.');
+    console.log('[HomeView] checkDayChange: 🌞 ОБНАРУЖЕНА СМЕНА ДНЯ. Обновляю "сегодня" и перестраиваю вид.');
     today.value = currentToday;
     // Обновляем стор
     const todayDay = getDayOfYear(today.value);
@@ -596,6 +611,8 @@ const checkDayChange = () => {
         centerToday(); // Вызывает rebuildVisibleDays
         recalcProjectionForCurrentView();
     }
+  } else {
+    // console.log('[HomeView] checkDayChange: (Тот же день, все ок)'); // 🔴 ЛОГ (Слишком много)
   }
 };
 
@@ -605,6 +622,7 @@ let dayChangeCheckerInterval = null;
 let resizeObserver = null;
 
 onMounted(async () => {
+  console.log('[HomeView] onMounted: 🚀 Компонент монтируется...');
   // !!! ИСПРАВЛЕНИЕ (1B): Запускаем интервал !!!
   checkDayChange(); // Проверяем сразу
   // Проверяем каждую минуту
@@ -616,12 +634,12 @@ onMounted(async () => {
 
   // 2. Если (пока грузим) ИЛИ (загрузили и юзера нет) -> ВЫХОД
   if (mainStore.isAuthLoading || !mainStore.user) {
-    console.log("[HomeView] onMounted: Остановка (Либо загрузка, либо нет пользователя).");
+    console.log("[HomeView] onMounted: 🛑 Остановка (Либо загрузка, либо нет пользователя).");
     return; 
   }
   
   // 3. ЕСЛИ МЫ ДОШЛИ СЮДА = isAuthLoading: false, user: { ... }
-  console.log(`[HomeView] onMounted: Пользователь ${mainStore.user.name} вошел. Загружаем приложение...`);
+  console.log(`[HomeView] onMounted: ✅ Пользователь ${mainStore.user.name} вошел. Загружаем приложение...`);
 
   // !!! ИСПРАВЛЕНИЕ (3): Запускаем автообновление !!!
   mainStore.startAutoRefresh();
@@ -630,11 +648,14 @@ onMounted(async () => {
   await nextTick();
 
   // --- (Вся ваша старая логика onMounted из v5.0) ---
+  console.log('[HomeView] onMounted: 🚚 Загружаю все сущности (accounts, companies...)...');
   await mainStore.fetchAllEntities();
+  console.log('[HomeView] onMounted: ✅ Сущности загружены.');
 
   // (Используем today.value)
   const todayDay = getDayOfYear(today.value);
   mainStore.setToday(todayDay);
+  console.log(`[HomeView] onMounted: 🗓️ "Сегодня" установлено на ${todayDay}`);
 
   generateVisibleDays();
   await nextTick();
@@ -646,8 +667,9 @@ onMounted(async () => {
     ? parseFloat(timelineGridRef.value.style.height)
     : timelineHeightPx.value;
   applyHeights(clampTimelineHeight(initialTop));
+  console.log(`[HomeView] onMounted: 📐 Высоты интерфейса установлены (Header: ${headerHeightPx.value}px, Timeline: ${timelineHeightPx.value}px)`);
 
-if (resizerRef.value) {
+  if (resizerRef.value) {
     resizerRef.value.addEventListener('mousedown', initResize);
     resizerRef.value.addEventListener('touchstart', initResize, { passive: false });
   }
@@ -666,6 +688,7 @@ if (resizerRef.value) {
   }
 
   resizeObserver = new ResizeObserver(() => {
+    // console.log('[HomeView] ResizeObserver: 📐 Обнаружено изменение размера, применяю высоты...'); // 🔴 ЛОГ (Слишком много)
     applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
     applyHeights(clampTimelineHeight(timelineHeightPx.value));
     updateScrollbarWidthAndPosition();
@@ -677,11 +700,13 @@ if (resizerRef.value) {
   updateScrollbarWidthAndPosition();
 
   await recalcProjectionForCurrentView();
+  console.log('[HomeView] onMounted: ✅ Инициализация завершена.');
   // --- (Конец вашей старой логики onMounted) ---
 });
 
 // onBeforeUnmount
 onBeforeUnmount(() => {
+  console.log('[HomeView] onBeforeUnmount: 🧹 Очистка...');
   // !!! ИСПРАВЛЕНИЕ (1B): Очищаем интервал !!!
   if (dayChangeCheckerInterval) {
     clearInterval(dayChangeCheckerInterval);
