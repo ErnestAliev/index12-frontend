@@ -1,17 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v7.9-LOGIC-FIX-COMPANY-BALANCE ---
- * * ВЕРСИЯ: 7.9 - Исправление расчета балансов компаний при переводах
+ * * --- МЕТКА ВЕРСИИ: v8.0-DELETE-ACTION ---
+ * * ВЕРСИЯ: 8.0 - Добавлен метод deleteEntity
  * ДАТА: 2025-11-16
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (LOGIC) В `currentCompanyBalances` и `futureCompanyBalances` удален
- * пропуск переводов (`if (isTransfer(op)) continue`).
- * Вместо этого добавлена логика учета переводов:
- * - Списание с `fromCompanyId`
- * - Зачисление на `toCompanyId`
- * Это исправляет ошибку, когда переводы между своими компаниями не меняли их баланс.
- * * 2. (REFACTOR) Аналогичная логика применена к Проектам и Контрагентам (на случай,
- * если в будущем появятся переводы с участием этих сущностей, хотя для них это реже).
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) Функция `deleteEntity(path, id, deleteOperations)`.
+ * Отправляет запрос DELETE с параметром ?deleteOperations=true/false.
+ * После успеха обновляет локальный список и вызывает `forceRefreshAll`.
  */
 
 import { defineStore } from 'pinia';
@@ -37,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v7.9-LOGIC-FIX-COMPANY-BALANCE ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v8.0-DELETE-ACTION ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -145,17 +140,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return { startDate, endDate };
   };
-  const _formatDate = (date) => {
-    const d = new Date(date);
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}.${month}.${year}`;
-  };
-  const _addDays = (base, n) => { 
-    const d = new Date(base); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; 
-  };
-
+  
   // =================================================================
   // 4. COMPUTED (Balances & Ops)
   // =================================================================
@@ -300,31 +285,18 @@ export const useMainStore = defineStore('mainStore', () => {
     return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
   });
   
-  // --- 🔴 НОВАЯ ЛОГИКА (Компании) ---
-  // При переводе учитываем fromCompanyId и toCompanyId
-  
   const _applyTransferToCompanyBalances = (bal, op) => {
     const amt = Math.abs(Number(op?.amount) || 0);
     const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
     const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
-    
-    if (fromId) { 
-        if (bal[fromId] === undefined) bal[fromId] = 0; 
-        bal[fromId] -= amt; 
-    }
-    if (toId) { 
-        if (bal[toId] === undefined) bal[toId] = 0; 
-        bal[toId] += amt; 
-    }
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
   };
 
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToCompanyBalances(bal, op);
-         continue;
-      }
+      if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -339,10 +311,7 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
     
     for (const op of futureOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToCompanyBalances(bal, op);
-         continue;
-      }
+      if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -351,11 +320,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
-  // --- Контрагенты и Проекты пока оставляем как есть, но логику можно расширить ---
   const currentContractorBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) continue; // Пока игнорируем переводы для контрагентов
+      if (isTransfer(op)) continue; 
       if (!op?.contractorId?._id) continue;
       const id = op.contractorId._id;
       if (!bal[id]) bal[id] = 0;
@@ -468,7 +436,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
     const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
     const yearStartDate = new Date(currentYear.value, 0, 1);
-    
     await fetchCalculationRange(yearStartDate, todayDate);
     await fetchCalculationRange(viewStartDate, viewEndDate);
     await updateProjectionFromCalculationData(mode, baseDate);
@@ -478,7 +445,6 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const promises = [];
       const dateKeysToFetch = [];
-      
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!calculationCache.value[dateKey]) {
@@ -486,7 +452,6 @@ export const useMainStore = defineStore('mainStore', () => {
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
-      
       if (promises.length > 0) {
         const responses = await Promise.all(promises);
         const tempCache = {};
@@ -494,28 +459,20 @@ export const useMainStore = defineStore('mainStore', () => {
           const dateKey = dateKeysToFetch[i];
           const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
           const processedOps = _mergeTransfers(raw).map(op => ({
-            ...op,
-            dateKey: dateKey,
-            date: op.date || _parseDateKey(dateKey) 
+            ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) 
           }));
           tempCache[dateKey] = processedOps;
         }
-        
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
       }
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-    }
+    } catch (error) { if (error.response && error.response.status === 401) user.value = null; }
   }
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
-    const base = new Date(today);
-    base.setHours(0, 0, 0, 0);
+    const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    let futureIncomeSum = 0;
-    let futureExpenseSum = 0;
-    
+    let futureIncomeSum = 0; let futureExpenseSum = 0;
     for (const op of futureOps.value) { 
         if (!isTransfer(op)) {
             if (op.type === 'income') futureIncomeSum += op.amount || 0;
@@ -532,60 +489,41 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function fetchOperationsRange(startDate, endDate) {
     try {
-      const promises = [];
-      const dateKeysToFetch = [];
+      const promises = []; const dateKeysToFetch = [];
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!displayCache.value[dateKey]) {
-          dateKeysToFetch.push(dateKey);
-          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
+          dateKeysToFetch.push(dateKey); promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
-      if (promises.length === 0) {
-        displayCache.value = { ...displayCache.value };
-        return;
-      }
+      if (promises.length === 0) { displayCache.value = { ...displayCache.value }; return; }
       const responses = await Promise.all(promises);
       const tempCache = {};
       for (let i = 0; i < responses.length; i++) {
         const dateKey = dateKeysToFetch[i];
         const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
         const processedOps = _mergeTransfers(raw).map(op => ({
-          ...op,
-          dateKey: dateKey,
-          date: op.date || _parseDateKey(dateKey) 
+          ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) 
         }));
         tempCache[dateKey] = processedOps;
       }
       displayCache.value = { ...displayCache.value, ...tempCache };
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-    }
+    } catch (error) { if (error.response && error.response.status === 401) user.value = null; }
   }
 
-  // Функция синхронизации кэшей (Для мгновенного UI)
   const _syncCaches = (key, ops) => {
-      displayCache.value[key] = [...ops];
-      calculationCache.value[key] = [...ops];
-      displayCache.value = { ...displayCache.value };
-      calculationCache.value = { ...calculationCache.value };
+      displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops];
+      displayCache.value = { ...displayCache.value }; calculationCache.value = { ...calculationCache.value };
   };
 
   async function updateFutureProjectionWithData(mode, today = new Date()) {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    await fetchOperationsRange(startDate, endDate); 
-    await updateProjectionFromCalculationData(mode, today); 
+    await fetchOperationsRange(startDate, endDate); await updateProjectionFromCalculationData(mode, today); 
   }
-  function updateFutureProjection({ mode, totalDays, today = new Date() }) {
-     updateFutureTotals();
-  }
+  function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
   function updateFutureTotals() {
-    const _ = futureTotalBalance.value;
-    const __ = futureAccountBalances.value;
-    const ___ = futureCompanyBalances.value;
-    const ____ = futureContractorBalances.value;
-    const _____ = futureProjectBalances.value;
+    const _ = futureTotalBalance.value; const __ = futureAccountBalances.value; const ___ = futureCompanyBalances.value; const ____ = futureContractorBalances.value; const _____ = futureProjectBalances.value;
   }
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
@@ -597,11 +535,8 @@ export const useMainStore = defineStore('mainStore', () => {
     const start = new Date(startDate); start.setHours(0,0,0,0);
     const end   = new Date(endDate); end.setHours(0,0,0,0);
     projection.value = {
-      mode:'custom', 
-      totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
-      rangeStartDate:start, 
-      rangeEndDate:end, 
-      futureIncomeSum: 0 
+      mode:'custom', totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
+      rangeStartDate:start, rangeEndDate:end, futureIncomeSum: 0 
     };
   }
 
@@ -615,14 +550,10 @@ export const useMainStore = defineStore('mainStore', () => {
       accounts.value    = accRes.data; companies.value   = compRes.data;
       contractors.value = contrRes.data; projects.value    = projRes.data;
       categories.value  = catRes.data;
-    }catch(e){ 
-        if (e.response && e.response.status === 401) user.value = null;
-    }
+    }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  function getOperationsForDay(dateKey) {
-    return displayCache.value[dateKey] || [];
-  }
+  function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
@@ -664,9 +595,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   async function _getOrCreateTransferCategory() {
     let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
-    if (!transferCategory) {
-      transferCategory = await addCategory('Перевод');
-    }
+    if (!transferCategory) { transferCategory = await addCategory('Перевод'); }
     return transferCategory._id;
   }
 
@@ -677,14 +606,10 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
+        ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) 
       }));
       displayCache.value[dateKey] = processedOps;
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-    }
+    } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
   async function refreshDay(dateKey) {
@@ -693,86 +618,54 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
+        ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) 
       }));
       _syncCaches(dateKey, processedOps);
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-    }
+    } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     updateFutureTotals();
   }
 
-  // --- SWAP & MOVE LOGIC ---
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
-    
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
-
     const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
-
     if (oldDateKey === newDateKey) {
-       // SWAP WITHIN DAY
        const ops = [...(displayCache.value[oldDateKey] || [])];
        const sourceOp = ops.find(o => o._id === operation._id);
        const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
-       
        if (sourceOp) {
            if (targetOp) {
                const originalSourceIndex = sourceOp.cellIndex;
-               sourceOp.cellIndex = targetIndex;
-               targetOp.cellIndex = originalSourceIndex;
-               
+               sourceOp.cellIndex = targetIndex; targetOp.cellIndex = originalSourceIndex;
                _syncCaches(oldDateKey, ops);
                Promise.all([
                   axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
                   axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
                ]).catch(e => refreshDay(oldDateKey));
            } else {
-               sourceOp.cellIndex = targetIndex;
-               _syncCaches(oldDateKey, ops);
-               axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
-                 .catch(e => refreshDay(oldDateKey));
+               sourceOp.cellIndex = targetIndex; _syncCaches(oldDateKey, ops);
+               axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }).catch(e => refreshDay(oldDateKey));
            }
        }
-
     } else {
-       // MOVE BETWEEN DAYS (Collision -> Find Free)
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
        const sourceOpData = oldOps.find(o => o._id === operation._id);
        oldOps = oldOps.filter(o => o._id !== operation._id);
        _syncCaches(oldDateKey, oldOps);
-       
        let newOps = [...(displayCache.value[newDateKey] || [])];
        const occupant = newOps.find(o => o.cellIndex === targetIndex);
-       
        let finalIndex = targetIndex;
        if (occupant) {
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
-       
-       const moved = { 
-          ...sourceOpData, 
-          dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey),
-          cellIndex: finalIndex 
-       };
+       const moved = { ...sourceOpData, dateKey: newDateKey, date: _parseDateKey(newDateKey), cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
-       
-       axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
-          dateKey: newDateKey, 
-          cellIndex: finalIndex,
-          date: moved.date 
-       }).catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
+       axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date }).catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
     }
-
-    if (projection.value.mode) {
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-    }
+    if (projection.value.mode) { updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value)); }
   }
 
   // --- CRUD ---
@@ -784,20 +677,13 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateKey = _getDateKey(finalDate);
       const cellIndex = await getFirstFreeCellIndex(dateKey);
       const transferCategory = await _getOrCreateTransferCategory();
-      
       const response = await axios.post(`${API_BASE_URL}/transfers`, {
-        ...transferData,
-        dateKey: dateKey, 
-        cellIndex: cellIndex,
-        categoryId: transferData.categoryId || transferCategory
+        ...transferData, dateKey: dateKey, cellIndex: cellIndex, categoryId: transferData.categoryId || transferCategory
       });
-      
       await refreshDay(dateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   }
 
   async function updateTransfer(transferId, transferData) {
@@ -806,29 +692,16 @@ export const useMainStore = defineStore('mainStore', () => {
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
       let newCellIndex;
-      
-      if (oldOp && oldOp.dateKey === newDateKey) {
-        newCellIndex = oldOp.cellIndex || 0;
-      } else {
-        newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      }
-      
+      if (oldOp && oldOp.dateKey === newDateKey) { newCellIndex = oldOp.cellIndex || 0; } 
+      else { newCellIndex = await getFirstFreeCellIndex(newDateKey); }
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
-        ...transferData,
-        dateKey: newDateKey, 
-        cellIndex: newCellIndex,
-        type: 'transfer',
-        isTransfer: true
+        ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true
       });
-      
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      
       return response.data;
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   }
 
   async function updateOperation(opId, opData) {
@@ -837,48 +710,32 @@ export const useMainStore = defineStore('mainStore', () => {
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === opId);
       let newCellIndex;
-      if (oldOp && oldOp.dateKey === newDateKey) {
-        newCellIndex = oldOp.cellIndex || 0;
-      } else {
-        newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      }
-      
+      if (oldOp && oldOp.dateKey === newDateKey) { newCellIndex = oldOp.cellIndex || 0; } 
+      else { newCellIndex = await getFirstFreeCellIndex(newDateKey); }
       const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
-        ...opData,
-        dateKey: newDateKey,
-        cellIndex: newCellIndex
+        ...opData, dateKey: newDateKey, cellIndex: newCellIndex
       });
-      
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-
       return response.data;
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   }
 
   async function deleteOperation(operation){
     const dateKey = operation.dateKey;
     if (!dateKey) return;
-    
     const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
     _syncCaches(dateKey, ops);
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-
     try {
       if (isTransfer(operation) && operation._id2) {
           await Promise.all([
              axios.delete(`${API_BASE_URL}/events/${operation._id}`),
              axios.delete(`${API_BASE_URL}/events/${operation._id2}`)
           ]);
-      } else {
-          await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
-      }
-    } catch(e) {
-        refreshDay(dateKey);
-    }
+      } else { await axios.delete(`${API_BASE_URL}/events/${operation._id}`); }
+    } catch(e) { refreshDay(dateKey); }
   }
 
   async function addOperation(op){
@@ -888,13 +745,37 @@ export const useMainStore = defineStore('mainStore', () => {
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
-  // 🔴 ИСПРАВЛЕНИЕ: Убираем авто-добавление виджета
-  async function addCategory(name){
-    const res = await axios.post(`${API_BASE_URL}/categories`, { name });
-    categories.value.push(res.data); 
-    return res.data;
+  // 🔴 НОВАЯ ФУНКЦИЯ: Удаление сущности
+  async function deleteEntity(path, id, deleteOperations = false) {
+      try {
+          await axios.delete(`${API_BASE_URL}/${path}/${id}`, {
+              params: { deleteOperations }
+          });
+          
+          // Удаляем локально
+          if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
+          if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
+          if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
+          if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
+          if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
+
+          // Если удалили с операциями, нужно обновить данные
+          if (deleteOperations) {
+              await forceRefreshAll();
+          } else {
+              // Если операции "отвязались", балансы могли поменяться
+              await forceRefreshAll(); 
+          }
+      } catch (error) {
+          console.error('Ошибка удаления сущности:', error);
+          throw error; // Пробрасываем ошибку в UI
+      }
   }
 
+  async function addCategory(name){
+    const res = await axios.post(`${API_BASE_URL}/categories`, { name });
+    categories.value.push(res.data); return res.data;
+  }
   async function addAccount(data) {
     let payload;
     if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
@@ -923,9 +804,7 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='contractors') contractors.value = res.data;
       else if (path==='projects')    projects.value = res.data;
       else if (path==='categories')  categories.value = res.data; 
-    }catch(e){
-      await fetchAllEntities();
-    }
+    }catch(e){ await fetchAllEntities(); }
   }
 
   async function getFirstFreeCellIndex(dateKey, startIndex=0){
@@ -949,41 +828,24 @@ export const useMainStore = defineStore('mainStore', () => {
     autoRefreshInterval = setInterval(async () => {
       try {
         await fetchAllEntities();
-        if (projection.value.mode) {
-          await loadCalculationData( 
-            projection.value.mode,
-            new Date(currentYear.value, 0, todayDayOfYear.value)
-          );
-        }
+        if (projection.value.mode) { await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value)); }
       } catch (error) {}
     }, intervalMs);
   }
   function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-      clearInterval(autoRefreshInterval);
-      autoRefreshInterval = null;
-    }
+    if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
   }
   async function forceRefreshAll() {
     try {
-      displayCache.value = {};
-      calculationCache.value = {};
+      displayCache.value = {}; calculationCache.value = {};
       await fetchAllEntities();
-      if (projection.value.mode) {
-        await loadCalculationData( 
-          projection.value.mode,
-          new Date(currentYear.value, 0, todayDayOfYear.value)
-        );
-      }
+      if (projection.value.mode) { await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value)); }
     } catch (error) {}
   }
 
   async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
-        operations, 
-        selectedRows: selectedIndices 
-      });
+      const response = await axios.post(`${API_BASE_URL}/import/operations`, { operations, selectedRows: selectedIndices });
       const createdOps = response.data;
       progressCallback(createdOps.length);
       await forceRefreshAll();
@@ -999,18 +861,12 @@ export const useMainStore = defineStore('mainStore', () => {
     isAuthLoading.value = true;
     const res = await axios.get(`${API_BASE_URL}/auth/me`);
       user.value = res.data; 
-    } catch (error) {
-      user.value = null;
-    } finally {
-      isAuthLoading.value = false;
-    }
+    } catch (error) { user.value = null; } finally { isAuthLoading.value = false; }
   }
 
   async function logout() {
     axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {});
-    user.value = null; 
-    displayCache.value = {};
-    calculationCache.value = {};
+    user.value = null; displayCache.value = {}; calculationCache.value = {};
   }
   
   return {
@@ -1039,6 +895,7 @@ export const useMainStore = defineStore('mainStore', () => {
     fetchAllEntities, fetchOperations, refreshDay, 
     
     addOperation, deleteOperation, moveOperation,
+    deleteEntity, // 🔴 Экспорт новой функции
     addAccount, addCompany, addContractor, addProject, addCategory,
     batchUpdateEntities,
 
