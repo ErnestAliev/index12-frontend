@@ -1,13 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v6.10-STABLE-RESTORE ---
- * * ВЕРСИЯ: 6.10 - Стабилизация и исправление
+ * * --- МЕТКА ВЕРСИИ: v6.11-DATE-LOGIC-FIX ---
+ * * ВЕРСИЯ: 6.11 - Исправление логики дат и индексов
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (CRITICAL) Полностью восстановлена структура файла. Исправлены возможные
- * потери скобок при предыдущем сокращении.
- * 2. (LOGIC FIX v6.9) Сохранено исправление даты при перемещении (`moved.date`).
- * 3. (FEATURE) Сохранены геттеры `currentTransfers` для виджета.
+ * 1. (FIX #1 D&D) В `moveOperation` теперь явно обновляется поле `.date`.
+ * Это исправляет баг, когда после переноса чипа в попапе отображалась старая дата.
+ * 2. (FIX #2 Overlap) В `updateTransfer` и `updateOperation` добавлена проверка:
+ * Если дата изменилась -> ищем `getFirstFreeCellIndex` в новом дне.
+ * Это предотвращает наложение чипов друг на друга при редактировании даты.
  */
 
 import { defineStore } from 'pinia';
@@ -33,7 +34,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v6.10-STABLE-RESTORE ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v6.11-DATE-LOGIC-FIX ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -91,7 +92,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }, { deep: true });
   
   // =================================================================
-  // 3. BASIC ACTIONS (Setters)
+  // 3. BASIC ACTIONS
   // =================================================================
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
@@ -109,7 +110,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   
   // =================================================================
-  // 4. HELPERS (Date & Utils)
+  // 4. HELPERS
   // =================================================================
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
@@ -156,7 +157,7 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   // =================================================================
-  // 5. COMPUTED PROPERTIES (Operations & Balances)
+  // 5. COMPUTED PROPERTIES
   // =================================================================
   const allOperationsFlat = computed(() => {
     const allOps = [];
@@ -190,7 +191,6 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  // 🔴 Геттер для виджета "Перевод"
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
@@ -453,24 +453,17 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
   
   async function loadCalculationData(mode, baseDate = new Date()) {
-    console.log(`[ЖУРНАЛ] loadCalculationData: 🚀 Загрузка данных для расчетов (${mode})`);
-    
     const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
 
     const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
     const yearStartDate = new Date(currentYear.value, 0, 1);
     
-    console.log(`[ЖУРНАЛ] loadCalculationData:  memastikan (insuring) прошлое загружено...`);
     await fetchCalculationRange(yearStartDate, todayDate);
-    
-    console.log(`[ЖУРНАЛ] loadCalculationData: загружаю диапазон вида...`);
     await fetchCalculationRange(viewStartDate, viewEndDate);
-
     await updateProjectionFromCalculationData(mode, baseDate);
   }
 
   async function fetchCalculationRange(startDate, endDate) {
-    console.log(`[ЖУРНАЛ] fetchCalculationRange: 📊 Загрузка диапазона расчетов ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
     try {
       const promises = [];
       const dateKeysToFetch = [];
@@ -484,7 +477,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
       if (promises.length > 0) {
-        console.log(`[ЖУРНАЛ] fetchCalculationRange: 🚚 Запрашиваю ${promises.length} новых дней...`);
         const responses = await Promise.all(promises);
         const tempCache = {};
         for (let i = 0; i < responses.length; i++) {
@@ -500,9 +492,6 @@ export const useMainStore = defineStore('mainStore', () => {
         
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
-        
-      } else {
-        console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
     } catch (error) {
       console.error('Ошибка загрузки данных для расчетов:', error);
@@ -513,7 +502,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
-    console.log(`[ЖУРНАЛ] updateProjectionFromCalculationData: 🎯 Расчет проекции из calculationCache (${mode})`);
     const base = new Date(today);
     base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
@@ -537,7 +525,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function fetchOperationsRange(startDate, endDate) {
-    console.log(`[ЖУРНАЛ] fetchOperationsRange: 🚀 Загрузка диапазона ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
     try {
       const promises = [];
       const dateKeysToFetch = [];
@@ -549,11 +536,9 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       if (promises.length === 0) {
-        console.log(`[ЖУРНАЛ] fetchOperationsRange: ✅ Данные уже в кеше.`);
         displayCache.value = { ...displayCache.value };
         return;
       }
-      console.log(`[ЖУРНАЛ] fetchOperationsRange: 🚚 Запрашиваю ${promises.length} новых дней...`);
       const responses = await Promise.all(promises);
       const tempCache = {};
       for (let i = 0; i < responses.length; i++) {
@@ -567,7 +552,6 @@ export const useMainStore = defineStore('mainStore', () => {
         tempCache[dateKey] = processedOps;
       }
       displayCache.value = { ...displayCache.value, ...tempCache };
-      console.log(`[ЖУРНАЛ] fetchOperationsRange: ✅ Загрузка завершена.`);
     } catch (error) {
       console.error('Ошибка загрузки диапазона операций:', error);
       if (error.response && error.response.status === 401) {
@@ -577,7 +561,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function updateFutureProjectionWithData(mode, today = new Date()) {
-    console.log(`[ЖУРНАЛ] updateFutureProjection: 🚀 Расчет проекции для режима ${mode}`);
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     await fetchOperationsRange(startDate, endDate); 
@@ -597,7 +580,6 @@ export const useMainStore = defineStore('mainStore', () => {
       rangeStartDate: startDate, rangeEndDate: endDate,
       futureIncomeSum, futureExpenseSum 
     };
-    console.log(`[ЖУРНАЛ] updateFutureProjection: ✅ Расчет завершен. RangeEndDate: ${_formatDate(endDate)}`);
     updateFutureTotals();
   }
   function updateFutureProjection({ mode, totalDays, today = new Date() }) {
@@ -934,7 +916,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: moveOperation (Дата) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: moveOperation (Дата + Объект) ---
   // =================================================================
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) {
@@ -985,7 +967,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return;
     }
     
-    // Логика перемещения МЕЖДУ днями
     const oldArr_display = (displayCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
     _compactIndices(oldArr_display);
     displayCache.value[oldDateKey] = oldArr_display;
@@ -1011,13 +992,12 @@ export const useMainStore = defineStore('mainStore', () => {
       if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
     }
 
-    // --- 🔴 ИСПРАВЛЕНИЕ ТУТ ---
+    // --- 🔴 ИСПРАВЛЕНИЕ (FIX #1): Обновляем дату объекта перемещения ---
     const moved = { 
       ...operation, 
       cellIndex: targetIndex, 
       dateKey: newDateKey,
-      // Явно обновляем дату объекта, чтобы попапы видели актуальное значение
-      date: _parseDateKey(newDateKey) 
+      date: _parseDateKey(newDateKey) // <-- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
     };
     
     const merged_display = [...newArr_display, moved].sort((a,b)=>a.cellIndex - b.cellIndex);
@@ -1085,14 +1065,29 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // --- 🔴 ИСПРАВЛЕНИЕ (FIX #2): Обновление с поиском свободной ячейки (Переводы) ---
   async function updateTransfer(transferId, transferData) {
     try {
       const finalDate = new Date(transferData.date);
-      const dateKey = _getDateKey(finalDate);
+      const newDateKey = _getDateKey(finalDate);
+      
+      // Находим старую операцию для сравнения дат
+      const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
+      
+      let newCellIndex;
+      // Если даты совпадают, оставляем старый индекс (или 0 если не найден)
+      if (oldOp && oldOp.dateKey === newDateKey) {
+        newCellIndex = oldOp.cellIndex || 0;
+      } else {
+        // Если дата изменилась, ищем первую свободную ячейку в новом дне
+        console.log(`[updateTransfer] Дата изменена на ${newDateKey}. Ищу свободную ячейку...`);
+        newCellIndex = await getFirstFreeCellIndex(newDateKey);
+      }
       
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
         ...transferData,
-        dateKey: dateKey, 
+        dateKey: newDateKey, 
+        cellIndex: newCellIndex, // <-- Используем вычисленный индекс
         type: 'transfer',
         isTransfer: true
       });
@@ -1100,6 +1095,38 @@ export const useMainStore = defineStore('mainStore', () => {
       return response.data;
     } catch (error) {
       console.error('Ошибка обновления перевода:', error);
+      throw error;
+    }
+  }
+
+  // --- 🔴 ИСПРАВЛЕНИЕ (FIX #2): Обновление с поиском свободной ячейки (Операции) ---
+  // (Этой функции раньше не было, но она нужна для OperationPopup)
+  async function updateOperation(opId, opData) {
+    try {
+      const finalDate = new Date(opData.date);
+      const newDateKey = _getDateKey(finalDate);
+      
+      // Находим старую операцию для сравнения дат
+      const oldOp = allOperationsFlat.value.find(o => o._id === opId);
+      
+      let newCellIndex;
+      if (oldOp && oldOp.dateKey === newDateKey) {
+        newCellIndex = oldOp.cellIndex || 0;
+      } else {
+        // Дата изменилась -> ищем свободное место
+        console.log(`[updateOperation] Дата изменена на ${newDateKey}. Ищу свободную ячейку...`);
+        newCellIndex = await getFirstFreeCellIndex(newDateKey);
+      }
+      
+      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
+        ...opData,
+        dateKey: newDateKey,
+        cellIndex: newCellIndex // <-- Используем вычисленный индекс
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка обновления операции:', error);
       throw error;
     }
   }
@@ -1216,7 +1243,7 @@ async function logout() {
     fetchCalculationRange, 
     updateProjectionFromCalculationData,
 
-    createTransfer, updateTransfer, 
+    createTransfer, updateTransfer, updateOperation, // <-- Добавили updateOperation в экспорт
 
     fetchOperationsRange, 
     updateFutureProjectionWithData,
