@@ -1,12 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v7.2-FUTURE-DATA ---
- * * ВЕРСИЯ: 7.2 - Поддержка будущих операций для категорий и переводов
+ * * --- МЕТКА ВЕРСИИ: v7.6-NO-AUTO-LAYOUT ---
+ * * ВЕРСИЯ: 7.6 - Исправление "7-го виджета"
  * ДАТА: 2025-11-16
  *
- * ЧТО ДОБАВЛЕНО:
- * 1. Computed `futureOps`: Базовый список всех будущих операций в диапазоне проекции.
- * 2. Computed `futureTransfers`: Список будущих переводов.
- * 3. Computed `futureCategoryBreakdowns`: Сводка по категориям для будущего.
+ * ИСПРАВЛЕНИЯ:
+ * 1. (CRITICAL LOGIC) В функции `addCategory` УДАЛЕНО автоматическое
+ * добавление виджета в `dashboardLayout`.
+ * Теперь добавление виджета на доску контролируется исключительно
+ * компонентом (TheHeader), который использует `replaceWidget` для сохранения
+ * лимита в 6 слотов.
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +34,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v7.2-FUTURE-DATA ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v7.6-NO-AUTO-LAYOUT ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -90,7 +92,10 @@ export const useMainStore = defineStore('mainStore', () => {
   }, { deep: true });
   
   function replaceWidget(i, key){ 
-    if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
+    // Заменяем виджет по индексу. Массив всегда остается той же длины.
+    dashboardLayout.value[i] = key;
+    // Триггерим реактивность (для надежности при мутации по индексу)
+    dashboardLayout.value = [...dashboardLayout.value];
   }
   function setForecastState(widgetKey, value) {
     dashboardForecastState.value[widgetKey] = !!value;
@@ -119,6 +124,7 @@ export const useMainStore = defineStore('mainStore', () => {
   };
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
+        console.error(`!!! mainStore._parseDateKey ОШИБКА:`, dateKey);
         return new Date(); 
     }
     const [year, doy] = dateKey.split('-').map(Number);
@@ -175,7 +181,6 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
-  // Текущие операции (до сегодня включительно)
   const currentOps = computed(() =>
     allOperationsFlat.value.filter(op => {
       if (!op?.dateKey) return false;
@@ -188,41 +193,36 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  // --- 🔴 НОВОЕ: Будущие операции (Future Ops) ---
-  const futureOps = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); } // Fallback
-    
-    const todayDate = new Date(currentYearVal, 0, baseToday);
-    
-    return allOperationsFlat.value.filter(op => {
-      if (!op?.dateKey) return false;
-      const opDate = _parseDateKey(op.dateKey);
-      // Строго больше "сегодня" и меньше или равно дате конца проекции
-      return opDate > todayDate && opDate <= endDate;
-    });
-  });
-
-  // Переводы (Текущие)
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
       const dateA = _parseDateKey(a.dateKey); 
       const dateB = _parseDateKey(b.dateKey);
-      return dateB.getTime() - dateA.getTime(); // Новые сверху
+      return dateB.getTime() - dateA.getTime();
     });
   });
 
-  // --- 🔴 НОВОЕ: Переводы (Будущие) ---
+  // --- Future Ops ---
+  const futureOps = computed(() => {
+    const baseToday = todayDayOfYear.value || 0;
+    const currentYearVal = currentYear.value;
+    let endDate;
+    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
+    else { endDate = new Date(currentYearVal, 0, baseToday); }
+    const todayDate = new Date(currentYearVal, 0, baseToday);
+    return allOperationsFlat.value.filter(op => {
+      if (!op?.dateKey) return false;
+      const opDate = _parseDateKey(op.dateKey);
+      return opDate > todayDate && opDate <= endDate;
+    });
+  });
+
   const futureTransfers = computed(() => {
     const transfers = futureOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
       const dateA = _parseDateKey(a.dateKey); 
       const dateB = _parseDateKey(b.dateKey);
-      return dateA.getTime() - dateB.getTime(); // Ближайшие сверху
+      return dateA.getTime() - dateB.getTime();
     });
   });
 
@@ -230,7 +230,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return categories.value.find(c => c._id === id);
   };
 
-  // Сводка по категориям (Текущая)
   const currentCategoryBreakdowns = computed(() => {
     const map = {};
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
@@ -246,18 +245,14 @@ export const useMainStore = defineStore('mainStore', () => {
     return map;
   });
 
-  // --- 🔴 НОВОЕ: Сводка по категориям (Будущая) ---
   const futureCategoryBreakdowns = computed(() => {
     const map = {};
-    // Инициализируем нулями
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
-    
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const key = `cat_${op.categoryId._id}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      
       if (op.type === 'income') map[key].income += op.amount || 0;
       else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
       map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
@@ -397,7 +392,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (endDate <= todayDate) { return currentTotalBalance.value || 0; }
     let total = totalInitialBalance.value || 0;
     
-    for (const op of futureOps.value) { 
+    for (const op of futureOps.value) { // Используем futureOps
        if (!isTransfer(op)) total += (op?.amount || 0); 
     }
     return total;
@@ -441,12 +436,19 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
   
   async function loadCalculationData(mode, baseDate = new Date()) {
+    console.log(`[ЖУРНАЛ] loadCalculationData: 🚀 Загрузка данных для расчетов (${mode})`);
+    
     const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
+
     const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
     const yearStartDate = new Date(currentYear.value, 0, 1);
     
+    console.log(`[ЖУРНАЛ] loadCalculationData:  memastikan (insuring) прошлое загружено...`);
     await fetchCalculationRange(yearStartDate, todayDate);
+    
+    console.log(`[ЖУРНАЛ] loadCalculationData: загружаю диапазон вида...`);
     await fetchCalculationRange(viewStartDate, viewEndDate);
+
     await updateProjectionFromCalculationData(mode, baseDate);
   }
 
@@ -454,6 +456,7 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const promises = [];
       const dateKeysToFetch = [];
+      
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!calculationCache.value[dateKey]) {
@@ -461,6 +464,7 @@ export const useMainStore = defineStore('mainStore', () => {
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
+      
       if (promises.length > 0) {
         const responses = await Promise.all(promises);
         const tempCache = {};
@@ -474,11 +478,18 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
           tempCache[dateKey] = processedOps;
         }
+        
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
+        
+      } else {
+        console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
     } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
+      console.error('Ошибка загрузки данных для расчетов:', error);
+      if (error.response && error.response.status === 401) {
+        user.value = null;
+      }
     }
   }
 
@@ -489,12 +500,14 @@ export const useMainStore = defineStore('mainStore', () => {
     let futureIncomeSum = 0;
     let futureExpenseSum = 0;
     
-    for (const op of futureOps.value) { // Используем наш новый computed
+    // Используем futureOps для расчета проекции
+    for (const op of futureOps.value) {
         if (!isTransfer(op)) {
             if (op.type === 'income') futureIncomeSum += op.amount || 0;
             else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
         }
     }
+    
     projection.value = { 
       mode, totalDays: computeTotalDaysForMode(mode, base),
       rangeStartDate: startDate, rangeEndDate: endDate,
@@ -532,7 +545,10 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       displayCache.value = { ...displayCache.value, ...tempCache };
     } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
+      console.error('Ошибка загрузки диапазона операций:', error);
+      if (error.response && error.response.status === 401) {
+        user.value = null;
+      }
     }
   }
 
@@ -548,11 +564,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     await fetchOperationsRange(startDate, endDate); 
-    await updateProjectionFromCalculationData(mode, today); // Reuse logic
+    await updateProjectionFromCalculationData(mode, today); 
   }
   function updateFutureProjection({ mode, totalDays, today = new Date() }) {
-     // Logic now centralized in updateProjectionFromCalculationData + futureOps
-     // Updating totals only
      updateFutureTotals();
   }
   function updateFutureTotals() {
@@ -568,16 +582,15 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureProjection({ mode: mode, totalDays: info.total, today: base });
   }
   function setProjectionRange(startDate, endDate){
-    // Custom range logic
+    const t0 = new Date(); t0.setHours(0,0,0,0);
     const start = new Date(startDate); start.setHours(0,0,0,0);
     const end   = new Date(endDate); end.setHours(0,0,0,0);
-    // Logic simplified as we depend on projection state for futureOps
     projection.value = {
       mode:'custom', 
       totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
       rangeStartDate:start, 
       rangeEndDate:end, 
-      futureIncomeSum: 0 // Will be recalc by computed
+      futureIncomeSum: 0 
     };
   }
 
@@ -597,6 +610,9 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   function getOperationsForDay(dateKey) {
+    if (typeof dateKey !== 'string') {
+        return [];
+    }
     return displayCache.value[dateKey] || [];
   }
 
@@ -665,6 +681,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function refreshDay(dateKey) {
     if (!dateKey) return;
+    console.log(`[ЖУРНАЛ] refreshDay: 🔄 ${dateKey}`);
     try {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
@@ -714,6 +731,7 @@ export const useMainStore = defineStore('mainStore', () => {
                  .catch(e => refreshDay(oldDateKey));
            }
        }
+
     } else {
        // MOVE BETWEEN DAYS (Collision -> Find Free)
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
@@ -782,6 +800,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
       let newCellIndex;
+      
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
       } else {
@@ -863,6 +882,13 @@ export const useMainStore = defineStore('mainStore', () => {
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
+  // 🔴 ИСПРАВЛЕНИЕ: Убираем авто-добавление виджета
+  async function addCategory(name){
+    const res = await axios.post(`${API_BASE_URL}/categories`, { name });
+    categories.value.push(res.data); 
+    return res.data;
+  }
+
   async function addAccount(data) {
     let payload;
     if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
@@ -881,16 +907,6 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addProject(name){
     const res = await axios.post(`${API_BASE_URL}/projects`, { name });
     projects.value.push(res.data); return res.data;
-  }
-
-  async function addCategory(name){
-    const res = await axios.post(`${API_BASE_URL}/categories`, { name });
-    categories.value.push(res.data); 
-    const newWidgetKey = `cat_${res.data._id}`;
-    if (!dashboardLayout.value.includes(newWidgetKey)) {
-        dashboardLayout.value.push(newWidgetKey);
-    }
-    return res.data;
   }
 
   async function batchUpdateEntities(path, items){
@@ -1005,9 +1021,9 @@ export const useMainStore = defineStore('mainStore', () => {
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     currentOps, 
     
-    currentTransfers, futureTransfers, // 🔴
+    currentTransfers, futureTransfers,
     getCategoryById,
-    currentCategoryBreakdowns, futureCategoryBreakdowns, // 🔴
+    currentCategoryBreakdowns, futureCategoryBreakdowns,
 
     getOperationsForDay, 
 
