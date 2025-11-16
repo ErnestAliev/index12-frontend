@@ -13,10 +13,14 @@ import { useMainStore } from '@/stores/mainStore';
  * 3. Добавлены новые computed (`mergedCompanyBalances` и т.д.) для
  * других карточек, которые также возвращают слияние.
  * 4. Карточки в `<template>` теперь получают :items с этими слияниями.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
+ * 1. (FIX #16) `futureUntilStr` теперь проверяет `!isNaN(d.getTime())`
+ * для предотвращения `RangeError: Invalid time value`.
  */
 
 // --- !!! ВАША МЕТКА !!! ---
-console.log('--- TheHeader.vue v2.6-SUBTITLE-SPLIT ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v2.6 (Fix #16) ЗАГРУЖЕН ---');
 
 
 // Карточки
@@ -37,12 +41,27 @@ const ruShort = new Intl.DateTimeFormat('ru-RU', {
   year: 'numeric',
 });
 
-const todayStr = computed(() => ruShort.format(new Date()));
+const todayStr = computed(() => {
+  console.log('[TheHeader.vue] computed: todayStr');
+  return ruShort.format(new Date());
+});
+
 const futureUntilStr = computed(() => {
+  console.log('[TheHeader.vue] computed: futureUntilStr (ВЫЧИСЛЕНИЕ)');
   const d = mainStore.projection?.rangeEndDate
     ? new Date(mainStore.projection.rangeEndDate)
     : null;
-  return d ? ruShort.format(d) : todayStr.value;
+  
+  // 🔴 ИСПРАВЛЕНИЕ (FIX #16): Проверяем, что 'd' - это валидная дата
+  // `new Date(undefined)` или `new Date("invalid")` вернет "Invalid Date"
+  // `getTime()` у "Invalid Date" вернет NaN.
+  if (d && !isNaN(d.getTime())) {
+    console.log('[TheHeader.vue] computed: futureUntilStr (РЕЗУЛЬТАТ: ФОРМАТИРОВАННАЯ ДАТА)');
+    return ruShort.format(d);
+  }
+  
+  console.warn(`[TheHeader.vue] computed: futureUntilStr (ВНИМАНИЕ: Дата проекции невалидна, использую todayStr)`);
+  return todayStr.value;
 });
 
 
@@ -51,20 +70,24 @@ const futureUntilStr = computed(() => {
 // "Всего (на тек. момент)"
 const loggedCurrentTotal = computed(() => {
   const balance = mainStore.currentTotalBalance;
-  console.log(`[ЖУРНАЛ] TheHeader.vue: 📊 'Всего (на тек. момент)' = ${balance} (на ${todayStr.value})`);
+  console.log(`[TheHeader.vue] computed: 📊 'Всего (на тек. момент)' = ${balance} (на ${todayStr.value})`);
   return balance;
 });
 
 // "Всего (с уч. будущих)"
 const loggedFutureTotal = computed(() => {
   const balance = mainStore.futureTotalBalance;
-  console.log(`[ЖУРНАЛ] TheHeader.vue: 📈 'Всего (с уч. будущих)' = ${balance} (до ${futureUntilStr.value})`);
+  console.log(`[TheHeader.vue] computed: 📈 'Всего (с уч. будущих)' = ${balance} (до ${futureUntilStr.value})`);
   return balance;
 });
 
 // 🔴 НОВОЕ: Helper для слияния
 const mergeBalances = (currentBalances, futureBalances) => {
-  if (!currentBalances || !futureBalances) return currentBalances || []; // Возвращаем хотя бы текущие
+  // console.log('[TheHeader.vue] mergeBalances: Слияние балансов...');
+  if (!currentBalances || !futureBalances) {
+    console.warn('[TheHeader.vue] mergeBalances: Отсутствуют current или future балансы');
+    return currentBalances || []; // Возвращаем хотя бы текущие
+  }
 
   const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
   
@@ -80,22 +103,25 @@ const loggedAccountBalances = computed(() => {
   const balances = mainStore.currentAccountBalances; // Текущие
   // Считаем ОБЩУЮ сумму по всем счетам для лога
   const total = balances.reduce((sum, acc) => sum + (acc.balance || 0), 0);
-  console.log(`[ЖУРНАЛ] TheHeader.vue: 💳 'Мои счета' ОБНОВЛЕНЫ. Сумма: ${total} (${balances.length} счетов)`);
+  console.log(`[TheHeader.vue] computed: 💳 'Мои счета' ОБНОВЛЕНЫ. Сумма: ${total} (${balances.length} счетов)`);
   
   // 🔴 НОВОЕ: Возвращаем СЛИЯННЫЕ данные
   return mergeBalances(balances, mainStore.futureAccountBalances);
 });
 
 // 🔴 НОВОЕ: Computeds для остальных (они не логировались, поэтому создаем новые)
-const mergedCompanyBalances = computed(() => 
-  mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances)
-);
-const mergedContractorBalances = computed(() => 
-  mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances)
-);
-const mergedProjectBalances = computed(() => 
-  mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances)
-);
+const mergedCompanyBalances = computed(() => {
+  console.log(`[TheHeader.vue] computed: 🏢 'Мои компании' ОБНОВЛЕНЫ.`);
+  return mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances)
+});
+const mergedContractorBalances = computed(() => {
+  console.log(`[TheHeader.vue] computed: 👥 'Мои контрагенты' ОБНОВЛЕНЫ.`);
+  return mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances)
+});
+const mergedProjectBalances = computed(() => {
+  console.log(`[TheHeader.vue] computed: 🏗️ 'Мои проекты' ОБНОВЛЕНЫ.`);
+  return mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances)
+});
 // --- КОНЕЦ НОВОГО ---
 
 
@@ -105,13 +131,21 @@ const popupTitle = ref('');
 const saveHandler = ref(null);
 
 const openAddPopup = (title, storeAction) => {
+  console.log(`[TheHeader.vue] openAddPopup: Открываю попап '${title}'`);
   popupTitle.value = title;
   saveHandler.value = storeAction;
   isEntityPopupVisible.value = true;
 };
 
 const onEntitySave = async (name) => {
-  if (saveHandler.value) await saveHandler.value(name);
+  console.log(`[TheHeader.vue] onEntitySave: Сохраняю '${popupTitle.value}' с именем '${name}'`);
+  if (saveHandler.value) {
+    try {
+      await saveHandler.value(name);
+    } catch (e) {
+      console.error(`[TheHeader.vue] onEntitySave: ❌ Ошибка при сохранении '${name}'`, e);
+    }
+  }
   isEntityPopupVisible.value = false;
 };
 
@@ -122,6 +156,7 @@ const editorItems = ref([]);
 const editorSavePath = ref(null);
 
 const openEditPopup = (title, items, path) => {
+  console.log(`[TheHeader.vue] openEditPopup: Открываю редактор '${title}'`);
   editorTitle.value = title;
   editorItems.value = JSON.parse(JSON.stringify(items));
   editorSavePath.value = path;
@@ -129,8 +164,13 @@ const openEditPopup = (title, items, path) => {
 };
 
 const onEntityListSave = async (updatedItems) => {
+  console.log(`[TheHeader.vue] onEntityListSave: Сохраняю '${editorTitle.value}' (${updatedItems.length} шт.)`);
   if (editorSavePath.value) {
-    await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems);
+    try {
+      await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems);
+    } catch (e) {
+      console.error(`[TheHeader.vue] onEntityListSave: ❌ Ошибка при сохранении '${editorSavePath.value}'`, e);
+    }
   }
   isListEditorVisible.value = false;
 };
