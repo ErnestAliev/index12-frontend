@@ -1,21 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v5.6-AUTO-ADD-WIDGET ---
- * * ВЕРСИЯ: 5.6 (на базе v5.4) - Автоматическое добавление виджета категории
+ * * --- МЕТКА ВЕРСИИ: v5.7-TRANSFER-WIDGET-FIX ---
+ * * ВЕРСИЯ: 5.7 - Поддержка виджета переводов и фикс скролла
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Функция `addCategory` теперь автоматически добавляет
- * новый виджет категории (`cat_[id]`) в конец `dashboardLayout`.
- * 2. (FIX) Функция `logout` теперь использует `API_BASE_URL` вместо localhost.
- *
- * (Остальные метки из v5.4 сохранены для истории)
- * * ВЕРСИЯ: 5.4 - Восстановление `displayCache` в `fetchCalculationRange`
- * 1. (FIX) В `fetchCalculationRange` восстановлена строка
- * `displayCache.value = { ...displayCache.value, ...tempCache };`
- *
- * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025) ---
- * 1. (FIX-BUG-4) `createTransfer` теперь вызывает `getFirstFreeCellIndex`
- * для предотвращения перезаписи ячеек (Ошибка #1).
+ * 1. Добавлен computed `currentTransfers` для получения списка переводов
+ * (для отображения в виджете категории "Перевод").
+ * 2. Добавлен helper `getCategoryById` для определения имени категории в компонентах.
  */
 
 import { defineStore } from 'pinia';
@@ -26,9 +17,7 @@ import axios from 'axios';
 axios.defaults.withCredentials = true; 
 // --- КОНЕЦ НОВОГО КОДА ---
 
-// Адрес "Кухни". Он возьмет VITE_API_BASE_URL из Vercel,
-// а если его нет (на localhost), то использует localhost.
-// НОВЫЙ КОД (Читает VITE_API_BASE_URL из Vercel):
+// Адрес "Кухни".
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 // =================================================================
@@ -47,14 +36,12 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v5.6-AUTO-ADD-WIDGET ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
+  console.log('--- mainStore.js v5.7-TRANSFER-WIDGET-FIX ЗАГРУЖЕН ---'); 
   
   // ---------- STATE ----------
   
-  // --- !!! НОВЫЙ КОД (Шаг 3): Состояние аутентификации !!! ---
   const user = ref(null); 
   const isAuthLoading = ref(true); 
-  // --- КОНЕЦ НОВОГО КОДА ---
   
   const displayCache = ref({});
   const calculationCache = ref({});
@@ -91,9 +78,6 @@ export const useMainStore = defineStore('mainStore', () => {
     localStorage.setItem('dashboardForecastState', JSON.stringify(newState));
   }, { deep: true });
 
-  // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: Определение projection ПЕРЕМЕЩЕНО СЮДА (ДО computed) ---
-  // =================================================================
   const savedProjection = localStorage.getItem('projection');
   const initialProjection = savedProjection ? JSON.parse(savedProjection) : {
     mode: '12d', totalDays: 12, rangeStartDate: null, rangeEndDate: null,
@@ -103,7 +87,6 @@ export const useMainStore = defineStore('mainStore', () => {
   watch(projection, (newProjection) => {
     localStorage.setItem('projection', JSON.stringify(newProjection));
   }, { deep: true });
-  // =================================================================
   
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
@@ -198,6 +181,26 @@ export const useMainStore = defineStore('mainStore', () => {
       return opYear < currentYearVal || (opYear === currentYearVal && opDoy <= currentDoy);
     })
   );
+
+  // =================================================================
+  // --- 🔴 НОВОЕ (Fix #2): Computed для списка переводов ---
+  // =================================================================
+  const currentTransfers = computed(() => {
+    // Фильтруем только операции перевода из текущих
+    const transfers = currentOps.value.filter(op => isTransfer(op));
+    
+    // Сортируем по дате (новые сверху)
+    return transfers.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
+
+  const getCategoryById = (id) => {
+    return categories.value.find(c => c._id === id);
+  };
+  // =================================================================
 
   // --- (Computed: Breakdowns & Balances - без изменений) ---
   // ... (currentCategoryBreakdowns)
@@ -1392,6 +1395,10 @@ async function logout() {
     currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     currentOps, 
+    
+    // --- 🔴 НОВЫЕ COMPUTED ---
+    currentTransfers,
+    getCategoryById,
 
     // getters
     getOperationsForDay, // 🔴 (Теперь принимает dateKey)
