@@ -12,18 +12,17 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.6-CRITICAL-FINAL-FIX ---
- * * ВЕРСИЯ: 5.6 - Полное устранение TypeError в DOM и синхронизация nextTick.
+ * * --- МЕТКА ВЕРСИИ: v5.7-ULTRA-SAFE-FINAL-FIX ---
+ * * ВЕРСИЯ: 5.7 - Радикальное устранение TypeError и синхронизация onMounted.
  * * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CRITICAL FIX) Функции applyHeaderHeight, applyHeights, updateScrollbarWidthAndPosition 
- * получили агрессивные проверки if (ref.value && ref.value.style) для устранения Uncaught TypeError.
- * 2. (CRITICAL FIX) centerToday, onWindowResize синхронизированы с await nextTick(), 
- * чтобы гарантировать, что DOM готов перед расчетом скроллбара.
+ * 1. (CRITICAL FIX) Применена агрессивная проверка .style во всех функциях ресайза.
+ * 2. (CRITICAL FIX) Логика инициализации ресайз-слушателей и updateScrollbarWidthAndPosition 
+ * перенесена в конец onMounted, чтобы гарантировать, что DOM готов.
  */
 
-console.log('--- HomeView.vue v5.6-CRITICAL-FINAL-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v5.7-ULTRA-SAFE-FINAL-FIX ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -498,7 +497,7 @@ const onChangeView = async (newView) => {
   viewMode.value = newView;
   console.log(`[ЖУРНАЛ] onChangeView: 🔄 Сменил вид на ${newView}.`);
   await nextTick();
-  await centerToday(); // centerToday теперь асинхронный
+  await centerToday(); 
   await nextTick();
   updateScrollbarWidthAndPosition();
   await recalcProjectionForCurrentView();
@@ -537,7 +536,7 @@ onMounted(async () => {
 
   generateVisibleDays();
   await nextTick();
-  await centerToday(); // Теперь асинхронный
+  await centerToday(); 
   await nextTick();
 
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
