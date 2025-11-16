@@ -1,12 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v6.14-AUTOREFRESH-FIX ---
- * * ВЕРСИЯ: 6.14 - Восстановление startAutoRefresh
+ * * --- МЕТКА ВЕРСИИ: v6.14-SWAP-LOGIC ---
+ * * ВЕРСИЯ: 6.14 - Логика обмена местами (Swap) и фиксы
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (CRITICAL) Функции `startAutoRefresh`, `stopAutoRefresh` и `forceRefreshAll`
- * восстановлены и корректно экспортируются.
- * 2. Сохранена вся логика из v6.11-v6.13 (даты, переводы, фиксы).
+ * 1. (LOGIC) `moveOperation`:
+ * - Внутри дня: Если целевая ячейка занята -> меняем чипы местами (SWAP).
+ * - Между днями: Если целевая ячейка занята -> сдвигаем "хозяина" на свободное место.
+ * 2. (FIX) `moved.date` обновляется корректно при D&D.
+ * 3. (LOGIC) Сохранена логика поиска свободной ячейки при создании/редактировании.
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +34,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v6.14-AUTOREFRESH-FIX ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v6.14-SWAP-LOGIC ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -650,6 +652,7 @@ export const useMainStore = defineStore('mainStore', () => {
     };
   }
 
+  // 🔴 ВОССТАНОВЛЕННАЯ ФУНКЦИЯ: fetchAllEntities
   async function fetchAllEntities(){
     try{
       const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
@@ -944,6 +947,9 @@ export const useMainStore = defineStore('mainStore', () => {
     return { affected, self };
   }
 
+  // =================================================================
+  // --- 🔴 ИСПРАВЛЕНИЕ (v6.14): Реализация SWAP логики ---
+  // =================================================================
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) {
         console.error(`!!! moveOperation ОШИБКА:`, operation);
@@ -951,111 +957,104 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     console.log(`[ЖУРНАЛ] moveOperation: ➡️ Перемещение ID: ${operation._id}. Из ${oldDateKey} -> В ${newDateKey}`);
     
-    const desired = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
+    // 1. Определяем целевой индекс (если не передан, берем 0)
+    const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
 
+    // 2. Подгружаем данные, если их нет
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
-    if (!displayCache.value[newDateKey])   await fetchOperations(newDateKey);
-    if (!calculationCache.value[oldDateKey]) await refreshDay(oldDateKey);
-    if (!calculationCache.value[newDateKey])   await refreshDay(newDateKey);
+    if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
 
-
+    // 3. Логика перемещения
     if (oldDateKey === newDateKey) {
-      console.log(`[ЖУРНАЛ] moveOperation: ➡️ (Перемещение внутри ${newDateKey})`);
-      const fromIndex = Number(operation.cellIndex || 0);
-      const toIndex   = Math.max(0, desired);
-      const { affected, self } = _reorderWithinDayLocal(newDateKey, operation._id, fromIndex, toIndex);
-      
-      try{
-        if (self) {
-          for (const a of affected) {
-            await axios.put(`${API_BASE_URL}/events/${a._id}`, { dateKey: newDateKey, cellIndex: a.cellIndex });
+      // === ВНУТРИ ОДНОГО ДНЯ ===
+      // Ищем, занят ли целевой слот
+      const dayOps = displayCache.value[newDateKey];
+      const sourceIndex = operation.cellIndex;
+      const targetOp = dayOps.find(op => op.cellIndex === targetIndex && op._id !== operation._id);
+
+      if (targetOp) {
+          console.log(`[moveOperation] Swap внутри дня: ${operation._id} <-> ${targetOp._id}`);
+          // Обмен местами (Swap)
+          targetOp.cellIndex = sourceIndex; // Старый житель улетает на место пришедшего
+          operation.cellIndex = targetIndex; // Пришедший занимает место
+          
+          // Оптимистичное обновление UI
+          displayCache.value = { ...displayCache.value };
+          
+          // API вызовы для обоих
+          try {
+             await Promise.all([
+                 axios.put(`${API_BASE_URL}/events/${operation._id}`, { cellIndex: targetIndex }),
+                 axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: sourceIndex })
+             ]);
+          } catch(e) {
+              console.error("Ошибка Swap:", e);
+              await refreshDay(newDateKey);
           }
-          if (isTransfer(operation) && operation._id2) {
-            await Promise.all([
-              axios.put(`${API_BASE_URL}/events/${operation._id}`,  { dateKey: newDateKey, cellIndex: self.cellIndex }),
-              axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: self.cellIndex }),
-            ]);
-          } else {
-            await axios.put(`${API_BASE_URL}/events/${operation._id}`, { dateKey: newDateKey, cellIndex: self.cellIndex });
-          }
-        }
-      }catch(e){
-        console.error('Ошибка перестановки внутри дня — обновляю день из сервера', e);
-        await refreshDay(newDateKey);
-      }
-      
-      if (projection.value.mode) {
-        await updateProjectionFromCalculationData(
-          projection.value.mode, 
-          new Date(currentYear.value, 0, todayDayOfYear.value)
-        );
-      }
-      return;
-    }
-    
-    const oldArr_display = (displayCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
-    _compactIndices(oldArr_display);
-    displayCache.value[oldDateKey] = oldArr_display;
-
-    const oldArr_calc = (calculationCache.value[oldDateKey] || []).filter(o => o._id !== operation._id);
-    _compactIndices(oldArr_calc);
-    calculationCache.value[oldDateKey] = oldArr_calc;
-
-    let newArr_display = (displayCache.value[newDateKey] || []).filter(o => o._id !== operation._id);
-    _compactIndices(newArr_display);
-
-    let newArr_calc = (calculationCache.value[newDateKey] || []).filter(o => o._id !== operation._id);
-    _compactIndices(newArr_calc);
-
-    const targetIndex = await getFirstFreeCellIndex(newDateKey, desired);
-    
-    const shifted_display = [];
-    for (const o of newArr_display) {
-      if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_display.push(o); }
-    }
-    const shifted_calc = [];
-    for (const o of newArr_calc) {
-      if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
-    }
-
-    // --- 🔴 ИСПРАВЛЕНИЕ: Обновляем дату объекта перемещения ---
-    const moved = { 
-      ...operation, 
-      cellIndex: targetIndex, 
-      dateKey: newDateKey,
-      date: _parseDateKey(newDateKey) // <-- Теперь попап увидит новую дату
-    };
-    
-    const merged_display = [...newArr_display, moved].sort((a,b)=>a.cellIndex - b.cellIndex);
-    displayCache.value[newDateKey] = merged_display;
-    
-    const merged_calc = [...newArr_calc, { ...moved }].sort((a,b)=>a.cellIndex - b.cellIndex);
-    calculationCache.value[newDateKey] = merged_calc;
-
-    displayCache.value = { ...displayCache.value };
-    calculationCache.value = { ...calculationCache.value };
-    
-    try{
-      for (const s of shifted_display) {
-        await axios.put(`${API_BASE_URL}/events/${s._id}`, { dateKey: newDateKey, cellIndex: s.cellIndex });
-      }
-      if (isTransfer(operation) && operation._id2) {
-        await Promise.all([
-          axios.put(`${API_BASE_URL}/events/${moved._id}`,  { dateKey: newDateKey, cellIndex: moved.cellIndex }),
-          axios.put(`${API_BASE_URL}/events/${operation._id2}`, { dateKey: newDateKey, cellIndex: moved.cellIndex }),
-        ]);
       } else {
-        await axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: moved.cellIndex });
+          // Слот свободен - просто перемещаем
+          operation.cellIndex = targetIndex;
+          displayCache.value = { ...displayCache.value };
+          try {
+             await axios.put(`${API_BASE_URL}/events/${operation._id}`, { cellIndex: targetIndex });
+          } catch(e) {
+             await refreshDay(newDateKey);
+          }
       }
-      for (const o of oldArr_display){
-        await axios.put(`${API_BASE_URL}/events/${o._id}`, { dateKey: oldDateKey, cellIndex: o.cellIndex });
+      
+    } else {
+      // === МЕЖДУ ДНЯМИ ===
+      // Удаляем из старого дня (оптимистично)
+      const oldOps = displayCache.value[oldDateKey] || [];
+      displayCache.value[oldDateKey] = oldOps.filter(o => o._id !== operation._id);
+
+      // Проверяем коллизию в новом дне
+      const newOps = displayCache.value[newDateKey] || [];
+      const targetOp = newOps.find(op => op.cellIndex === targetIndex);
+      
+      if (targetOp) {
+          console.log(`[moveOperation] Коллизия в новом дне. Сдвигаю ${targetOp._id} на свободное место.`);
+          // Находим свободное место для "старожила"
+          const freeIndex = await getFirstFreeCellIndex(newDateKey);
+          targetOp.cellIndex = freeIndex;
+          
+          // API: сдвигаем старожила
+          try {
+            await axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: freeIndex });
+          } catch(e) {
+             console.error("Ошибка сдвига:", e);
+          }
       }
-    } catch(e) {
-      console.error('Ошибка переноса между днями — откатываю к серверному состоянию', e);
-      await refreshDay(oldDateKey);
-      await refreshDay(newDateKey);
+
+      // Добавляем пришедшего в новый день
+      const moved = { 
+          ...operation, 
+          cellIndex: targetIndex, 
+          dateKey: newDateKey,
+          date: _parseDateKey(newDateKey) 
+      };
+      
+      // Вставляем в массив нового дня
+      if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
+      displayCache.value[newDateKey].push(moved);
+      displayCache.value[newDateKey].sort((a,b) => a.cellIndex - b.cellIndex);
+      
+      displayCache.value = { ...displayCache.value }; // Триггер реактивности
+
+      // API: перемещаем новичка
+      try {
+          await axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
+              dateKey: newDateKey, 
+              cellIndex: targetIndex 
+          });
+      } catch(e) {
+          console.error("Ошибка перемещения меж дней:", e);
+          await refreshDay(oldDateKey);
+          await refreshDay(newDateKey);
+      }
     }
 
+    // Обновляем проекцию
     if (projection.value.mode) {
       await updateProjectionFromCalculationData(
         projection.value.mode, 
@@ -1063,6 +1062,7 @@ export const useMainStore = defineStore('mainStore', () => {
       );
     }
   }
+
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
@@ -1091,7 +1091,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // --- 🔴 ИСПРАВЛЕНИЕ (FIX #2): Обновление с поиском свободной ячейки (Переводы) ---
   async function updateTransfer(transferId, transferData) {
     try {
       const finalDate = new Date(transferData.date);
