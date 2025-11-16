@@ -1,12 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v4.8c-LOGOUT-FINALLY-FIX ---
- * * ВЕРСИЯ: 4.8c - Принудительный выход через 'finally'
- * ДАТА: 2025-11-14
+ * * --- МЕТКА ВЕРСИИ: v4.8d-SYNC-FIX ---
+ * * ВЕРСИЯ: 4.8d - Исправления синхронизации D&D и автообновления
+ * ДАТА: 2025-11-16
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Функция `logout` переписана с `try...catch...finally`.
- * `user.value = null` теперь находится в `finally`,
- * чтобы гарантировать выход, даже если `axios.post` упадет.
+ * 1. (FIX-BUG-3) `fetchCalculationRange` теперь обновляет `displayCache`
+ * одновременно с `calculationCache`.
+ * 2. (FIX-BUG-3) `startAutoRefresh` теперь вызывает `forceRefreshAll`,
+ * чтобы гарантировать полную очистку и синхронизацию кэшей
+ * между устройствами.
  */
 
 import { defineStore } from 'pinia';
@@ -38,7 +40,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v4.8c-LOGOUT-FINALLY-FIX ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
+  console.log('--- mainStore.js v4.8d-SYNC-FIX ЗАГРУЖЕН ---'); // !!! НОВАЯ ВЕРСИЯ !!!
   
   // ---------- STATE ----------
   
@@ -461,7 +463,7 @@ export const useMainStore = defineStore('mainStore', () => {
   // =================================================================
 
   // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: fetchCalculationRange (API v4.3) ---
+  // --- 🔴 ИСПРАВЛЕНИЕ: fetchCalculationRange (API v4.3 + FIX-BUG-3) ---
   // =================================================================
   async function fetchCalculationRange(startDate, endDate) {
     console.log(`[ЖУРНАЛ] fetchCalculationRange: 📊 Загрузка диапазона расчетов ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
@@ -491,7 +493,11 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
           tempCache[dateKey] = processedOps;
         }
+        
+        // 🔴 ИСПРАВЛЕНИЕ (BUG 3): Обновляем ОБА кэша для синхронизации D&D
         calculationCache.value = { ...calculationCache.value, ...tempCache };
+        displayCache.value = { ...displayCache.value, ...tempCache };
+        
       } else {
         console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
@@ -1123,7 +1129,7 @@ export const useMainStore = defineStore('mainStore', () => {
         categoryId: transferData.categoryId || transferCategory
       });
       
-      // await refreshDay(dateKey); // (v4.7: УДАЛЕНО)
+      // await refreshDay(dateKey); // (v4.7: УДАЛЕНО - popup теперь сам вызывает refresh)
       
       return response.data;
     } catch (error) {
@@ -1147,7 +1153,7 @@ export const useMainStore = defineStore('mainStore', () => {
         isTransfer: true
       });
       
-      // await refreshDay(dateKey); // (v4.7: УДАЛЕНО)
+      // await refreshDay(dateKey); // (v4.7: УДАЛЕНО - popup теперь сам вызывает refresh)
       
       return response.data;
     } catch (error) {
@@ -1194,27 +1200,41 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   // =================================================================
 
-  // ---------- АВТООБНОВЛЕНИЕ (Без изменений) ----------
+  // ---------- АВТООБНОВЛЕНИЕ (ИСПРАВЛЕНО) ----------
   let autoRefreshInterval = null;
+  
+  // =================================================================
+  // --- 🔴 ИСПРАВЛЕНИЕ (BUG 3): startAutoRefresh ---
+  // =================================================================
   function startAutoRefresh(intervalMs = 30000) {
     stopAutoRefresh();
     console.log(`[ЖУРНАЛ] startAutoRefresh: ⏱️ Запуск автообновления каждые ${intervalMs}ms`);
     autoRefreshInterval = setInterval(async () => {
-      console.log('[ЖУРНАЛ] AutoRefresh: 🔄 Выполняю автообновление...');
+      console.log('[ЖУРНАЛ] AutoRefresh: 🔄 Выполняю forceRefreshAll()...');
       try {
-        await fetchAllEntities();
-        if (projection.value.mode) {
-          await loadCalculationData( 
-            projection.value.mode,
-            new Date(currentYear.value, 0, todayDayOfYear.value)
-          );
-        }
+        // 🔴 FIX: Вызываем forceRefreshAll, который очищает 
+        // 🔴      ОБА кэша (display and calculation) и 
+        // 🔴      загружает все заново. Это гарантирует синхронизацию D&D.
+        await forceRefreshAll();
+        
+        // ВАЖНО: HomeView должен "увидеть" это обновление.
+        // `forceRefreshAll` очищает кэши, `rebuildVisibleDays` 
+        // в `HomeView` (который должен вызываться при обновлении) 
+        // должен запустить `debouncedFetchVisibleDays`.
+        
+        // (ПРИМЕЧАНИЕ: Если HomeView не обновляется сам, 
+        //  нам понадобится event bus, но `forceRefreshAll`
+        //  должен вызывать обновление computed-свойств, 
+        //  зависящих от кэшей)
+        
         console.log('[ЖУРНАЛ] AutoRefresh: ✅ Данные успешно обновлены');
       } catch (error) {
         console.error('Ошибка при автообновлении:', error);
       }
     }, intervalMs);
   }
+  // =================================================================
+
   function stopAutoRefresh() {
     if (autoRefreshInterval) {
       console.log('[ЖУРНАЛ] stopAutoRefresh: 🛑 Остановка автообновления.');
@@ -1225,6 +1245,7 @@ export const useMainStore = defineStore('mainStore', () => {
   async function forceRefreshAll() {
     console.log('Принудительное обновление всех данных...');
     try {
+      // 🔴 Очищаем ОБА кэша
       displayCache.value = {};
       calculationCache.value = {};
       
@@ -1400,4 +1421,3 @@ async function logout() {
     // --- КОНЕЦ НОВОГО КОДА ---
   };
 });
-
