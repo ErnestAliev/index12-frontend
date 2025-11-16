@@ -41,8 +41,9 @@ const filteredWidgets = computed(() => {
 
 // Обработчик выбора нового виджета
 const handleSelect = (newWidgetKey) => {
-  // Проверка на disabled состояние
+  // Проверка на disabled состояние (если виджет уже на дашборде в другом месте)
   if (mainStore.dashboardLayout.includes(newWidgetKey) && newWidgetKey !== props.widgetKey) {
+    // Если кликнули на disabled, ничего не делаем
     return;
   }
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
@@ -68,6 +69,7 @@ watch(isDropdownOpen, (isOpen) => {
 // --- Логика данных категории ---
 const categoryBreakdown = computed(() => {
   // Получаем данные из стора по ключу виджета (например, 'cat_654...')
+  // currentCategoryBreakdowns рассчитывается в mainStore на основе текущих операций.
   return mainStore.currentCategoryBreakdowns[props.widgetKey] || { income: 0, expense: 0, total: 0 };
 });
 </script>
@@ -94,6 +96,7 @@ const categoryBreakdown = computed(() => {
             :key="widget.key"
             :class="{
               'active': widget.key === props.widgetKey,
+              // Виджет disabled, если он уже есть на дашборде, но это не текущая карточка
               'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey
             }"
             @click.stop="handleSelect(widget.key)"
@@ -132,13 +135,14 @@ const categoryBreakdown = computed(() => {
 </template>
 
 <style scoped>
-/* Стили взяты из предоставленного вами файла, так как они были корректны для карточки */
+/* Стили взяты из оригинального запроса, так как они принадлежали этому компоненту */
 .dashboard-card {
   flex: 1;
   display: flex;
   flex-direction: column;
   padding-right: 1.5rem;
   border-right: 1px solid var(--color-border);
+  /* min-width: 150px; (🟢 УДАЛЕНО: Позволяем карточке сжиматься) */
   position: relative;
   min-height: 0;
 }
@@ -166,7 +170,7 @@ const categoryBreakdown = computed(() => {
   margin-left: 4px;
 }
 
-/* (Стили списка v4.1) */
+/* (Стили списка v4.1 - без изменений) */
 .category-breakdown-list {
   display: flex;
   flex-direction: column;
@@ -203,9 +207,11 @@ const categoryBreakdown = computed(() => {
   margin-top: 0.5rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--color-border);
+  /* font-weight: bold; (Убрано, так как цифры уже 500) */
 }
 
-/* (Стили скролла v4.1) */
+
+/* (Стили списка v4.1 - без изменений) */
 .category-items-list-scroll {
   flex-grow: 1;
   overflow-y: auto;
@@ -224,59 +230,72 @@ const categoryBreakdown = computed(() => {
 }
 
 
-/* --- Стили для Dropdown (v2.3-v2.5) --- */
+/* --- 🔴 ИСПРАВЛЕНИЕ v2.3: Стили для Dropdown --- */
 .widget-dropdown {
   position: absolute;
   top: 35px;
   left: 0;
-  width: 220px;
+  width: 220px; /* (Чуть шире) */
   background-color: #f4f4f4;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
   z-index: 100;
   padding: 8px;
   box-sizing: border-box;
+
+  /* 🔴 НОВОЕ: Ограничение высоты */
   max-height: 400px;
   display: flex;
   flex-direction: column;
 }
 
+/* 🔴 ИСПРАВЛЕНИЕ v2.4: Стили для поиска */
 .widget-search-input {
   flex-shrink: 0;
   padding: 8px 10px;
   border: 1px solid #ddd;
   border-radius: 6px;
   margin-bottom: 8px;
-  /* Увеличим шрифт для консистентности (было 0.7em) */
+  /* font-size: 0.7em; (ИЗМЕНЕНО на 0.9em для консистентности) */
   font-size: 0.9em;
   box-sizing: border-box;
   width: 100%;
+
+  /* --- 🔴 НОВОЕ: Исправление цвета --- */
   background-color: #FFFFFF;
   color: #333;
+  /* --- КОНЕЦ НОВОГО --- */
 }
 .widget-search-input:focus {
   outline: none;
-  border-color: #007AFF;
+  border-color: #007AFF; /* (Цвет как у "Создать") */
 }
+/* --- */
 
 .widget-dropdown ul {
   list-style: none;
   margin: 0;
   padding: 0;
+
+  /* 🔴 НОВОЕ: Скролл */
   flex-grow: 1;
   overflow-y: auto;
 }
+/* --- КОНЕЦ ИСПРАВЛЕНИЯ --- */
 
 .widget-dropdown li {
   padding: 10px 12px;
   border-radius: 6px;
-  /* Увеличим шрифт для консистентности (было 0.7em) */
+  /* font-size: 0.7em; (ИЗМЕНЕНО на 0.9em для консистентности) */
   font-size: 0.9em;
   color: #333;
   cursor: pointer;
-  font-weight: 500 !important; /* (v2.5 fix) */
+
+  /* --- 🔴 ИСПРАВЛЕНИЕ v2.5: !important --- */
+  font-weight: 500 !important;
 }
-.widget-dropdown li:hover {
+/* При клике на disabled не должно быть эффекта hover */
+.widget-dropdown li:not(.disabled):hover {
   background-color: #e9e9e9;
 }
 .widget-dropdown li.active {
@@ -289,21 +308,22 @@ const categoryBreakdown = computed(() => {
   cursor: not-allowed;
 }
 
-/* === Адаптация для планшета === */
+/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА) === */
 @media (max-height: 900px) {
   .dashboard-card {
-    min-width: 100px;
+    min-width: 100px; /* Уменьшаем мин. ширину */
     padding-right: 1rem;
   }
   .card-title {
     font-size: 0.8em;
   }
   .category-item {
-    font-size: 0.8em;
+    font-size: 0.8em; /* Уменьшаем шрифт списка */
     margin-bottom: 0.2rem;
   }
   .category-item span:first-child {
-    padding-right: 5px;
+    padding-right: 5px; /* Уменьшаем отступ у имени */
   }
 }
+/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
