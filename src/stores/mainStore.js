@@ -1,14 +1,15 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v6.11-DATE-LOGIC-FIX ---
- * * ВЕРСИЯ: 6.11 - Исправление логики дат и индексов
+ * * --- МЕТКА ВЕРСИИ: v6.12-CRITICAL-FIX ---
+ * * ВЕРСИЯ: 6.12 - Восстановление fetchAllEntities
  * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. (FIX #1 D&D) В `moveOperation` теперь явно обновляется поле `.date`.
- * Это исправляет баг, когда после переноса чипа в попапе отображалась старая дата.
- * 2. (FIX #2 Overlap) В `updateTransfer` и `updateOperation` добавлена проверка:
- * Если дата изменилась -> ищем `getFirstFreeCellIndex` в новом дне.
- * Это предотвращает наложение чипов друг на друга при редактировании даты.
+ * 1. (CRITICAL) Восстановлена функция `fetchAllEntities`, отсутствие которой
+ * ломало запуск приложения (ReferenceError).
+ * 2. Сохранены все предыдущие фиксы:
+ * - Дата при D&D (`moved.date`).
+ * - Проверка свободной ячейки при редактировании.
+ * - Геттеры для виджета переводов.
  */
 
 import { defineStore } from 'pinia';
@@ -34,7 +35,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v6.11-DATE-LOGIC-FIX ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v6.12-CRITICAL-FIX ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -62,7 +63,7 @@ export const useMainStore = defineStore('mainStore', () => {
   ]);
 
   // =================================================================
-  // 2. PERSISTED STATE & WATCHERS
+  // 2. WATCHERS & PERSISTENCE
   // =================================================================
   const allWidgets = computed(() => {
     const cats = categories.value.map(c => ({ key: `cat_${c._id}`, name: c.name }));
@@ -91,9 +92,6 @@ export const useMainStore = defineStore('mainStore', () => {
     localStorage.setItem('projection', JSON.stringify(newProjection));
   }, { deep: true });
   
-  // =================================================================
-  // 3. BASIC ACTIONS
-  // =================================================================
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
@@ -110,7 +108,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   
   // =================================================================
-  // 4. HELPERS
+  // 3. HELPERS
   // =================================================================
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
@@ -124,7 +122,7 @@ export const useMainStore = defineStore('mainStore', () => {
   };
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        console.error(`!!! mainStore._parseDateKey ОШИБКА: Получен неверный dateKey:`, dateKey);
+        console.error(`!!! mainStore._parseDateKey ОШИБКА:`, dateKey);
         return new Date(); 
     }
     const [year, doy] = dateKey.split('-').map(Number);
@@ -157,7 +155,7 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   // =================================================================
-  // 5. COMPUTED PROPERTIES
+  // 4. COMPUTED (Balances & Ops)
   // =================================================================
   const allOperationsFlat = computed(() => {
     const allOps = [];
@@ -168,15 +166,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
     return allOps;
   });
-  const displayOperationsFlat = computed(() => {
-    const displayOps = [];
-    Object.values(displayCache.value).forEach(dayOps => {
-      if (Array.isArray(dayOps)) {
-        displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
-      }
-    });
-    return displayOps;
-  });
+  
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
   const currentOps = computed(() =>
@@ -449,21 +439,28 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   // =================================================================
-  // 6. DATA LOADING ACTIONS
+  // 6. ACTIONS
   // =================================================================
   
   async function loadCalculationData(mode, baseDate = new Date()) {
+    console.log(`[ЖУРНАЛ] loadCalculationData: 🚀 Загрузка данных для расчетов (${mode})`);
+    
     const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
 
     const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
     const yearStartDate = new Date(currentYear.value, 0, 1);
     
+    console.log(`[ЖУРНАЛ] loadCalculationData:  memastikan (insuring) прошлое загружено...`);
     await fetchCalculationRange(yearStartDate, todayDate);
+    
+    console.log(`[ЖУРНАЛ] loadCalculationData: загружаю диапазон вида...`);
     await fetchCalculationRange(viewStartDate, viewEndDate);
+
     await updateProjectionFromCalculationData(mode, baseDate);
   }
 
   async function fetchCalculationRange(startDate, endDate) {
+    console.log(`[ЖУРНАЛ] fetchCalculationRange: 📊 Загрузка диапазона расчетов ${_formatDate(startDate)} - ${_formatDate(endDate)}`);
     try {
       const promises = [];
       const dateKeysToFetch = [];
@@ -477,6 +474,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
       if (promises.length > 0) {
+        console.log(`[ЖУРНАЛ] fetchCalculationRange: 🚚 Запрашиваю ${promises.length} новых дней...`);
         const responses = await Promise.all(promises);
         const tempCache = {};
         for (let i = 0; i < responses.length; i++) {
@@ -492,6 +490,9 @@ export const useMainStore = defineStore('mainStore', () => {
         
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
+        
+      } else {
+        console.log(`[ЖУРНАЛ] fetchCalculationRange: ✅ Диапазон уже в кеше.`);
       }
     } catch (error) {
       console.error('Ошибка загрузки данных для расчетов:', error);
@@ -635,6 +636,25 @@ export const useMainStore = defineStore('mainStore', () => {
     };
   }
 
+  // 🔴 ВОССТАНОВЛЕННАЯ ФУНКЦИЯ: fetchAllEntities
+  async function fetchAllEntities(){
+    try{
+      const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
+        axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
+        axios.get(`${API_BASE_URL}/categories`),
+      ]);
+      accounts.value    = accRes.data; companies.value   = compRes.data;
+      contractors.value = contrRes.data; projects.value    = projRes.data;
+      categories.value  = catRes.data;
+    }catch(e){ 
+        console.error('Pinia: Ошибка загрузки сущностей!', e); 
+        if (e.response && e.response.status === 401) {
+            user.value = null;
+        }
+    }
+  }
+
   function getOperationsForDay(dateKey) {
     if (typeof dateKey !== 'string') {
         console.warn(`[mainStore.getOperationsForDay] Получен неверный key: ${dateKey}`);
@@ -747,10 +767,6 @@ export const useMainStore = defineStore('mainStore', () => {
   
     updateFutureTotals();
   }
-
-  // =================================================================
-  // 7. CRUD OPERATIONS
-  // =================================================================
 
   async function deleteOperation(operation){
     const dateKey = operation.dateKey;
@@ -915,9 +931,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return { affected, self };
   }
 
-  // =================================================================
-  // --- 🔴 ИСПРАВЛЕНИЕ: moveOperation (Дата + Объект) ---
-  // =================================================================
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) {
         console.error(`!!! moveOperation ОШИБКА:`, operation);
@@ -992,12 +1005,12 @@ export const useMainStore = defineStore('mainStore', () => {
       if (o.cellIndex >= targetIndex) { o.cellIndex += 1; shifted_calc.push(o); }
     }
 
-    // --- 🔴 ИСПРАВЛЕНИЕ (FIX #1): Обновляем дату объекта перемещения ---
+    // --- 🔴 ИСПРАВЛЕНИЕ: Обновляем дату объекта перемещения ---
     const moved = { 
       ...operation, 
       cellIndex: targetIndex, 
       dateKey: newDateKey,
-      date: _parseDateKey(newDateKey) // <-- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+      date: _parseDateKey(newDateKey) // <-- Теперь попап увидит новую дату
     };
     
     const merged_display = [...newArr_display, moved].sort((a,b)=>a.cellIndex - b.cellIndex);
@@ -1100,13 +1113,12 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   // --- 🔴 ИСПРАВЛЕНИЕ (FIX #2): Обновление с поиском свободной ячейки (Операции) ---
-  // (Этой функции раньше не было, но она нужна для OperationPopup)
+  // (Этой функции раньше не было в экспорте, добавлена)
   async function updateOperation(opId, opData) {
     try {
       const finalDate = new Date(opData.date);
       const newDateKey = _getDateKey(finalDate);
       
-      // Находим старую операцию для сравнения дат
       const oldOp = allOperationsFlat.value.find(o => o._id === opId);
       
       let newCellIndex;
@@ -1121,7 +1133,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
         ...opData,
         dateKey: newDateKey,
-        cellIndex: newCellIndex // <-- Используем вычисленный индекс
+        cellIndex: newCellIndex
       });
       
       return response.data;
@@ -1177,6 +1189,77 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  let autoRefreshInterval = null;
+  function startAutoRefresh(intervalMs = 30000) {
+    stopAutoRefresh();
+    console.log(`[ЖУРНАЛ] startAutoRefresh: ⏱️ Запуск автообновления каждые ${intervalMs}ms`);
+    autoRefreshInterval = setInterval(async () => {
+      console.log('[ЖУРНАЛ] AutoRefresh: 🔄 Выполняю автообновление...');
+      try {
+        await fetchAllEntities();
+        if (projection.value.mode) {
+          await loadCalculationData( 
+            projection.value.mode,
+            new Date(currentYear.value, 0, todayDayOfYear.value)
+          );
+        }
+        console.log('[ЖУРНАЛ] AutoRefresh: ✅ Данные успешно обновлены');
+      } catch (error) {
+        console.error('Ошибка при автообновлении:', error);
+      }
+    }, intervalMs);
+  }
+  function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+      console.log('[ЖУРНАЛ] stopAutoRefresh: 🛑 Остановка автообновления.');
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+    }
+  }
+  async function forceRefreshAll() {
+    console.log('Принудительное обновление всех данных...');
+    try {
+      displayCache.value = {};
+      calculationCache.value = {};
+      
+      await fetchAllEntities();
+      
+      if (projection.value.mode) {
+        await loadCalculationData( 
+          projection.value.mode,
+          new Date(currentYear.value, 0, todayDayOfYear.value)
+        );
+      }
+      
+      console.log('Все данные успешно обновлены');
+    } catch (error) {
+      console.error('Ошибка при принудительном обновлении:', error);
+    }
+  }
+
+  async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
+    console.log(`[mainStore v4.6] importOperations: Начинаем импорт ${selectedIndices.length} операций...`);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
+        operations, 
+        selectedRows: selectedIndices 
+      });
+      const createdOps = response.data;
+      console.log(`[mainStore v4.6] importOperations: Сервер успешно создал ${createdOps.length} операций.`);
+      progressCallback(createdOps.length);
+      console.log('[mainStore v4.6] importOperations: Запускаю forceRefreshAll...');
+      await forceRefreshAll();
+      console.log('[mainStore v4.6] importOperations: Импорт и обновление завершены.');
+      return createdOps;
+    } catch (error) {
+      console.error('Ошибка импорта в mainStore (v4.6):', error);
+      if (error.response && error.response.status === 401) {
+        user.value = null;
+      }
+      throw error; 
+    }
+  }
+
   async function checkAuth() {
   console.log('[ЖУРНАЛ] checkAuth: 🔍 Проверяю сессию (GET /api/auth/me)...');
   try {
@@ -1193,7 +1276,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-async function logout() {
+  async function logout() {
     axios.post(`${API_BASE_URL}/auth/logout`)
       .then(() => {
         console.log('[ЖУРНАЛ] logout: ✅ Серверная сессия успешно завершена (в фоне).');
@@ -1243,7 +1326,7 @@ async function logout() {
     fetchCalculationRange, 
     updateProjectionFromCalculationData,
 
-    createTransfer, updateTransfer, updateOperation, // <-- Добавили updateOperation в экспорт
+    createTransfer, updateTransfer, updateOperation, // <-- Добавлена updateOperation
 
     fetchOperationsRange, 
     updateFutureProjectionWithData,
