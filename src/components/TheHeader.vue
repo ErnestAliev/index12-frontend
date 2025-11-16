@@ -3,118 +3,95 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.5-HEADER-1400 ---
- * * ВЕРСИЯ: 6.5 - Адаптация для iPad Pro (1400px)
+ * * --- МЕТКА ВЕРСИИ: v7.0-HEADER-ACTIONS ---
+ * * ВЕРСИЯ: 7.0 - Обработка действий категорий
  * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Порог `isTablet` увеличен до 1400px. Это включает iPad Pro 12.9"
- * и небольшие ноутбуки.
- * 2. При ширине < 1400px дата будет отображаться в формате "16.11.25".
+ * 1. Добавлена обработка событий `@add` и `@edit` от HeaderCategoryCard.
+ * 2. Реализована логика:
+ * - "Перевод" -> Add: Открыть TransferPopup (пустой).
+ * - "Перевод" -> Edit: (Опционально) Переименовать категорию.
+ * - Категория -> Add: (Опционально) Добавить новую категорию.
+ * - Категория -> Edit: Переименовать текущую.
  */
 
-console.log('--- TheHeader.vue v6.5-HEADER-1400 ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v7.0-HEADER-ACTIONS ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
+import TransferPopup from '@/components/TransferPopup.vue'; // 🟢 Импорт
 
 // Попапы
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 
 const mainStore = useMainStore();
+const isTransferPopupVisible = ref(false); // 🟢 Состояние для TransferPopup
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
 const updateWidth = () => { windowWidth.value = window.innerWidth; };
-
 onMounted(() => window.addEventListener('resize', updateWidth));
 onUnmounted(() => window.removeEventListener('resize', updateWidth));
-
-// 🔴 ИЗМЕНЕНО: Порог увеличен до 1400px (по запросу)
 const isTablet = computed(() => windowWidth.value < 1400);
-
-// Форматтеры
-const ruShort = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-}); // 16 нояб. 2025
-
-const ruSuperShort = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit',
-  month: '2-digit',
-  year: '2-digit',
-}); // 16.11.25
-
+const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 const todayStr = computed(() => {
   const d = new Date();
-  // Если планшет (<1400), используем супер-короткий формат
   return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d);
 });
-
 const futureUntilStr = computed(() => {
-  const d = mainStore.projection?.rangeEndDate
-    ? new Date(mainStore.projection.rangeEndDate)
-    : null;
-  
+  const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
   if (d && !isNaN(d.getTime())) {
     return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d);
   }
-  
   return todayStr.value;
 });
-/* ================================================================ */
 
-
-// "Всего (на тек. момент)"
-const loggedCurrentTotal = computed(() => {
-  return mainStore.currentTotalBalance;
-});
-
-// "Всего (с уч. будущих)"
-const loggedFutureTotal = computed(() => {
-  return mainStore.futureTotalBalance;
-});
-
-// Helper для слияния
+/* ======================= Данные ======================= */
+const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
+const loggedFutureTotal = computed(() => mainStore.futureTotalBalance);
 const mergeBalances = (currentBalances, futureBalances) => {
-  if (!currentBalances || !futureBalances) {
-    return currentBalances || []; 
-  }
+  if (!currentBalances || !futureBalances) return currentBalances || []; 
   const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
   return currentBalances.map(item => ({
     ...item,
     futureBalance: futureMap.get(item._id) ?? item.balance
   }));
 };
+const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances));
+const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
+const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
+const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
 
-// "Мои счета"
-const loggedAccountBalances = computed(() => {
-  return mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances);
-});
-
-const mergedCompanyBalances = computed(() => {
-  return mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances)
-});
-const mergedContractorBalances = computed(() => {
-  return mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances)
-});
-const mergedProjectBalances = computed(() => {
-  return mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances)
-});
-
-
-/* ======================= Попап «Добавить» ======================= */
+/* ======================= Попапы (Entity / List) ======================= */
 const isEntityPopupVisible = ref(false);
 const popupTitle = ref('');
 const saveHandler = ref(null);
+const editingEntity = ref(null); // Для переименования
 
 const openAddPopup = (title, storeAction) => {
   popupTitle.value = title;
   saveHandler.value = storeAction;
+  editingEntity.value = null; // Режим создания
+  isEntityPopupVisible.value = true;
+};
+
+// 🟢 НОВОЕ: Открытие попапа для РЕДАКТИРОВАНИЯ сущности (категории)
+const openRenamePopup = (title, entity, storeUpdateAction) => {
+  popupTitle.value = title;
+  // Создаем обертку, которая вызовет update вместо add
+  saveHandler.value = async (newName) => {
+      // Здесь мы предполагаем, что storeUpdateAction умеет обновлять по ID
+      // Но у нас есть batchUpdate. Для одной сущности проще сделать простой API вызов или batch из 1 элемента.
+      // Используем batchUpdateEntities для простоты, так как он уже есть.
+      // Нам нужно знать путь (categories).
+      const updatedItem = { ...entity, name: newName };
+      await mainStore.batchUpdateEntities('categories', [updatedItem]);
+  };
   isEntityPopupVisible.value = true;
 };
 
@@ -122,14 +99,11 @@ const onEntitySave = async (name) => {
   if (saveHandler.value) {
     try {
       await saveHandler.value(name);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
   isEntityPopupVisible.value = false;
 };
 
-/* ======================= Попап «Редактировать список» ======================= */
 const isListEditorVisible = ref(false);
 const editorTitle = ref('');
 const editorItems = ref([]);
@@ -144,17 +118,37 @@ const openEditPopup = (title, items, path) => {
 
 const onEntityListSave = async (updatedItems) => {
   if (editorSavePath.value) {
-    try {
-      await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems);
-    } catch (e) {
-      console.error(e);
-    }
+    try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); }
   }
   isListEditorVisible.value = false;
 };
 
-/* ======================= Виджеты ======================= */
+/* ======================= Обработчики Категорий ======================= */
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
+
+const onCategoryAdd = (widgetKey) => {
+    // Если это Перевод -> Открываем TransferPopup
+    if (getWidgetByKey(widgetKey)?.name.toLowerCase() === 'перевод') {
+        isTransferPopupVisible.value = true;
+    } else {
+        // Если это обычная категория -> Создаем НОВУЮ категорию
+        openAddPopup('Новая категория', mainStore.addCategory);
+    }
+};
+
+const onCategoryEdit = (widgetKey) => {
+    const catId = widgetKey.replace('cat_', '');
+    const category = mainStore.getCategoryById(catId);
+    if (category) {
+        openRenamePopup(`Переименовать ${category.name}`, category, null);
+    }
+};
+
+// Обработчик закрытия TransferPopup
+const handleTransferComplete = async (eventData) => {
+    if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
+    isTransferPopupVisible.value = false;
+};
 </script>
 
 <template>
@@ -222,11 +216,14 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
         :widgetIndex="index"
       />
 
+      <!-- 🟢 ОБНОВЛЕНО: Передаем обработчики событий -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
         :widgetIndex="index"
+        @add="onCategoryAdd(widgetKey)"
+        @edit="onCategoryEdit(widgetKey)"
       />
     </template>
   </div>
@@ -244,6 +241,16 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
     @close="isListEditorVisible = false"
     @save="onEntityListSave"
   />
+  
+  <!-- 🟢 НОВОЕ: Попап перевода -->
+  <TransferPopup
+      v-if="isTransferPopupVisible"
+      :date="new Date()"
+      :cellIndex="0"
+      @close="isTransferPopupVisible = false"
+      @transfer-complete="handleTransferComplete"
+    />
+
 </template>
 
 <style scoped>
@@ -256,14 +263,11 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
   border: 1px solid var(--color-border);
   margin-bottom: 0.4rem;
   gap: 1.5rem;
-  
   height: 100%;
   box-sizing: border-box;
   min-height: 0; 
   width: 100%;
 }
-
-/* === 🟢 АДАПТАЦИЯ ДЛЯ ПЛАНШЕТА (и небольших экранов) === */
 @media (max-height: 900px) {
   .header-dashboard {
     gap: 1rem;
