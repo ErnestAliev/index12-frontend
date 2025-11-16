@@ -14,10 +14,15 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
  * из `syncState`. Это устраняет "гонку состояний",
  * из-за которой `TheHeader.vue` падал с ошибкой `RangeError`.
  * 2. (NEW) Добавлено подробное логирование по всему файлу.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025 / 09:20) ---
+ * 1. (FIX #17) `onMounted` теперь корректно находит ID
+ * категории "Перевод" при редактировании,
+ * даже если `operation.categoryId._id` равен "transfer".
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- TransferPopup.vue v5.5 (Fix #3, #4) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v5.5 (Fix #17) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -140,6 +145,7 @@ onMounted(async () => {
   }
   // Устанавливаем ID по умолчанию
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
+  console.log(`[TransferPopup] onMounted: ID категории "Перевод" (defaultCategoryId): ${defaultCategoryId}`);
 
   // Если редактируем существующий перевод
   if (props.transferToEdit) {
@@ -162,8 +168,22 @@ onMounted(async () => {
       toCompanyId.value = transfer.toCompanyId?._id || transfer.toCompanyId;
     }
     
-    // (v4.1) Устанавливаем категорию из операции, если она есть, иначе - "Перевод"
-    categoryId.value = transfer.categoryId?._id || defaultCategoryId;
+    // =================================================================
+    // --- 🔴 ИСПРАВЛЕНИЕ (FIX #17): Категория "Перевод" ---
+    // =================================================================
+    const savedCategoryId = transfer.categoryId?._id;
+    console.log(`[TransferPopup] onMounted: Сохраненный ID категории: ${savedCategoryId}`);
+    
+    // Если у операции есть категория И ее ID НЕ 'transfer' (т.е. это настоящая, назначенная пользователем категория)
+    if (savedCategoryId && savedCategoryId !== 'transfer') {
+      categoryId.value = savedCategoryId;
+      console.log(`[TransferPopup] onMounted: Установлена категория из операции: ${savedCategoryId}`);
+    } else {
+      // Иначе (если это "Перевод" или категория не назначена), используем ID "Перевод"
+      categoryId.value = defaultCategoryId;
+      console.log(`[TransferPopup] onMounted: Установлена категория по умолчанию (Перевод): ${defaultCategoryId}`);
+    }
+    // =================================================================
 
     // 🔴 ИЗМЕНЕНО: Используем 'transfer.date' (mainStore v4.2 теперь это гарантирует)
     if (transfer.date) {
@@ -172,6 +192,7 @@ onMounted(async () => {
   } else {
     // Устанавливаем категорию "Перевод" для нового
     categoryId.value = defaultCategoryId;
+    console.log(`[TransferPopup] onMounted: Установлена категория для нового перевода: ${defaultCategoryId}`);
     
     // Автофокус для нового перевода
     setTimeout(() => {
