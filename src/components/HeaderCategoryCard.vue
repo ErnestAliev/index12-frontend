@@ -4,7 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderCategoryCard.vue v3.1-SMALL-DARK-BTNS ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v3.2-GAP-FIX ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -179,7 +179,7 @@ const handleEdit = () => { emit('edit'); };
            <div class="filter-group-title">Отображение</div>
            <ul>
              <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все строки</li>
-             <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нули</li>
+             <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нулевые</li>
            </ul>
         </div>
       </div>
@@ -242,7 +242,7 @@ const handleEdit = () => { emit('edit'); };
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- 🔴 ОБНОВЛЕННЫЕ СТИЛИ КНОПОК --- */
+/* --- СТИЛИ КНОПОК --- */
 .card-actions {
   display: flex;
   gap: 6px; 
@@ -250,22 +250,17 @@ const handleEdit = () => { emit('edit'); };
 }
 
 .action-square-btn {
-  /* 🔴 Размер уменьшен (~40% от 28px) */
   width: 18px;
   height: 18px;
   border: 1px solid transparent; 
   border-radius: 4px; 
-  
-  /* 🔴 Новый цвет фона */
   background-color: #1a1a1a; 
-  
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  
-  color: #888; 
+  color: #888;
   transition: all 0.2s ease;
 }
 
@@ -275,15 +270,13 @@ const handleEdit = () => { emit('edit'); };
 }
 
 .action-square-btn.active {
-  /* 🔴 Активный цвет */
-  background-color: #34c759; 
+  background-color: #34c759;
   color: #fff;
   border-color: transparent;
 }
 
 .icon-svg {
-  /* 🔴 Уменьшенный размер иконки */
-  width: 11px; 
+  width: 11px;
   height: 11px;
   display: block;
   object-fit: contain; 
@@ -340,6 +333,9 @@ const handleEdit = () => { emit('edit'); };
   .category-item span:first-child { padding-right: 5px; }
   .t-amount { font-size: 0.85em; }
   .t-bottom { font-size: 0.75em; }
+  
+  /* Уменьшаем расстояние между иконками */
+  .card-actions { gap: 3px; }
   
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
