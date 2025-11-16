@@ -935,7 +935,7 @@ onBeforeUnmount(() => {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  
   /* Эффект из вашего скриншота */
   transform: rotateY(-10deg) rotateX(5deg) rotateZ(-3deg) scale(1.1);
   opacity: 0.9;
