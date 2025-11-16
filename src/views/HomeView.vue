@@ -12,17 +12,18 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.5-FINAL-BUILD-FIX ---
- * * ВЕРСИЯ: 5.5 - Структурное исправление синтаксиса SFC и безопасного DOM.
+ * * --- МЕТКА ВЕРСИИ: v5.6-CRITICAL-FINAL-FIX ---
+ * * ВЕРСИЯ: 5.6 - Полное устранение TypeError в DOM и синхронизация nextTick.
  * * ДАТА: 2025-11-16
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CRITICAL FIX) Восстановлен синтаксис `<script setup>` и `<template>`.
- * 2. (CRITICAL FIX) В функциях applyHeaderHeight, applyHeights и updateScrollbarWidthAndPosition 
- * добавлены агрессивные проверки if (ref.value && ref.value.style) для устранения TypeError.
+ * 1. (CRITICAL FIX) Функции applyHeaderHeight, applyHeights, updateScrollbarWidthAndPosition 
+ * получили агрессивные проверки if (ref.value && ref.value.style) для устранения Uncaught TypeError.
+ * 2. (CRITICAL FIX) centerToday, onWindowResize синхронизированы с await nextTick(), 
+ * чтобы гарантировать, что DOM готов перед расчетом скроллбара.
  */
 
-console.log('--- HomeView.vue v5.5-FINAL-BUILD-FIX ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v5.6-CRITICAL-FINAL-FIX ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -480,27 +481,34 @@ const onWheelScroll = (event) => {
 };
 
 /* ===================== ЦЕНТРОВКА / СМЕНА МАСШТАБА ===================== */
-const centerToday = () => {
+// 🟢 ИСПРАВЛЕНО: Добавлена синхронизация nextTick
+const centerToday = async () => {
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
   virtualStartIndex.value = Math.min(
     Math.max(0, globalTodayIndex.value - CENTER_INDEX),
     maxVirtual
   );
   rebuildVisibleDays();
+  await nextTick(); 
   updateScrollbarWidthAndPosition();
 };
+
+// 🟢 ИСПРАВЛЕНО: Добавлена синхронизация nextTick
 const onChangeView = async (newView) => {
   viewMode.value = newView;
   console.log(`[ЖУРНАЛ] onChangeView: 🔄 Сменил вид на ${newView}.`);
   await nextTick();
-  centerToday();
+  await centerToday(); // centerToday теперь асинхронный
   await nextTick();
   updateScrollbarWidthAndPosition();
   await recalcProjectionForCurrentView();
 };
-const onWindowResize = () => {
+
+// 🟢 ИСПРАВЛЕНО: Добавлена синхронизация nextTick
+const onWindowResize = async () => {
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));
+  await nextTick();
   updateScrollbarWidthAndPosition();
 };
 
@@ -529,7 +537,7 @@ onMounted(async () => {
 
   generateVisibleDays();
   await nextTick();
-  centerToday(); 
+  await centerToday(); // Теперь асинхронный
   await nextTick();
 
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
