@@ -877,7 +877,7 @@ onBeforeUnmount(() => {
 
 .welcome-content {
   flex: 1;
-  max-width: 540px;
+ 
   padding-right: 2rem;
   z-index: 10;
 }
