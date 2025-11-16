@@ -929,6 +929,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   perspective: 1500px;
+  max-width: 50%;
 }
 
 .welcome-image {
