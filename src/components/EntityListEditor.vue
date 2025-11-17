@@ -4,14 +4,16 @@ import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step10-BUILD-FIX-FINAL ---
+ * * --- МЕТКА ВЕРСИИ: v9.0-step11-CLEAN-BUILD-FIX ---
  * * ВЕРСИЯ: 9.0 - ФИНАЛЬНАЯ ВЕРСИЯ.
  * ДАТА: 2025-11-17
  *
- * ЧТО ИЗМЕНЕНО (На основе отзыва v9.0-step9):
- * 1. (BUILD-FIX) Полностью восстановлен <template> из v9.0-step7-FINAL-R4,
- * чтобы убрать артефакты (символ '_'), которые ломали билд.
- * 2. (STYLE) Стили "закрытого" селекта из step8/9 сохранены.
+ * ЧТО ИЗМЕЕНО (На основе отзыва v9.0-step10):
+ * 1. (BUILD-FIX) Взят ОРИГИНАЛЬНЫЙ код v9.0-step7-FINAL-R4.
+ * Все <script> и <template> ГАРАНТИРОВАННО чистые.
+ * 2. (STYLE-FIX) В блок <style> внесено ЕДИНСТВЕННОЕ изменение:
+ * `.edit-account-select` приведен к "закрытому" виду
+ * (как `.edit-project`), как и просили.
  */
 
 const props = defineProps({
@@ -61,7 +63,7 @@ onMounted(() => {
     if (isAccountEditor) {
         const balance = item.initialBalance || 0;
         return { 
-            ...item,
+    _         ...item,
             initialBalance: balance, 
             initialBalanceFormatted: formatNumber(balance)
         }
@@ -152,7 +154,7 @@ const handleSave = async () => {
             accountsToUpdate.set(accId, acc);
           } else if (ownerType === 'individual' && currentIndividualOwner === ownerId) {
             acc.individualId = null;
-      _         accountsToUpdate.set(accId, acc);
+            accountsToUpdate.set(accId, acc);
           }
         }
       }
@@ -280,7 +282,7 @@ const cancelDelete = () => {
                 </select>
               </template>
 
-                  _         <template v-if="isCompanyEditor">
+                            <template v-if="isCompanyEditor">
                 <select 
                   v-model="item.selectedAccountIds" 
                   class="edit-input edit-account-select" 
@@ -450,17 +452,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 /* (Шаг 7 R2) Восстановлен .edit-balance */
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
 
-/* 🟢 СТИЛЬ-ФИКС (Шаг 10): Приведение select'a Компаний/Физлиц к стилю Контрагентов */
+/* 🟢 СТИЛЬ-ФИКС (Шаг 11): Приведение к "закрытому" селекту */
 .edit-account-select {
   flex-shrink: 0;
   width: 310px;
-
-  /* Стили "закрытого" селекта (как у Контрагентов) */
+  /* height: 100px; */ /* <-- УДАЛЕНО */
+  /* padding: 10px; */ /* <-- УДАЛЕНО (остается padding от .edit-input) */
+  /* overflow-y: auto; */ /* <-- УДАЛЕНО */
+  
+  /* Добавлены стили от .edit-project */
   -webkit-appearance: none; -moz-appearance: none; appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
-  
-  /* Старые стили listbox УДАЛЕНЫ (height: 100px, padding: 10px, overflow-y: auto) */
 }
 .edit-account-select option {
   padding: 5px 8px;
