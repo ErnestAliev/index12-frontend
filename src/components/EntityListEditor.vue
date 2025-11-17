@@ -4,21 +4,21 @@ import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step11-CLEAN-BUILD-FIX ---
- * * ВЕРСИЯ: 9.0 - ФИНАЛЬНАЯ ВЕРСИЯ.
- * ДАТА: 2025-11-17
- *
- * ЧТО ИЗМЕЕНО (На основе отзыва v9.0-step10):
- * 1. (BUILD-FIX) Взят ОРИГИНАЛЬНЫЙ код v9.0-step7-FINAL-R4.
+ * * --- МЕТКА ВЕРСИИ: v9.0-step11-CLEAN-BUILD-FIX ---
+ * * ВЕРСИЯ: 9.0 - ФИНАЛЬНАЯ ВЕРСИЯ.
+ * ДАТА: 2025-11-17
+ *
+ * ЧТО ИЗМЕЕНО (На основе отзыва v9.0-step10):
+ * 1. (BUILD-FIX) Взят ОРИГИНАЛЬНЫЙ код v9.0-step7-FINAL-R4.
  * Все <script> и <template> ГАРАНТИРОВАННО чистые.
- * 2. (STYLE-FIX) В блок <style> внесено ЕДИНСТВЕННОЕ изменение:
+ * 2. (STYLE-FIX) В блок <style> внесено ЕДИНСТВЕННОЕ изменение:
  * `.edit-account-select` приведен к "закрытому" виду
  * (как `.edit-project`), как и просили.
- */
+ */
 
 const props = defineProps({
-  title: { type: String, required: true },
-  items: { type: Array, required: true }
+  title: { type: String, required: true },
+  items: { type: Array, required: true }
 });
 const emit = defineEmits(['close', 'save']);
 
@@ -34,7 +34,7 @@ else if (t.includes('компании')) entityPath = 'companies';
 else if (t.includes('контрагент')) entityPath = 'contractors';
 else if (t.includes('проекты')) entityPath = 'projects';
 else if (t.includes('категор')) entityPath = 'categories';
-else if (t.includes('физлиц')) entityPath = 'individuals'; 
+else if (t.includes('физлиц')) entityPath = 'individuals';
 
 const isAccountEditor = props.title === 'Редактировать счета';
 const isContractorEditor = props.title === 'Редактировать контрагентов';
@@ -43,133 +43,133 @@ const isIndividualEditor = props.title === 'Редактировать Физл�
 
 // (Восстановлено для "Нач. баланса")
 const formatNumber = (numStr) => {
-  const clean = `${numStr}`.replace(/[^0-9]/g, '');
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const clean = `${numStr}`.replace(/[^0-9]/g, '');
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
 // (Восстановлено для "Нач. баланса")
 const onAmountInput = (item) => {
-  const rawValue = String(item.initialBalanceFormatted).replace(/[^0-9]/g, '');
-  item.initialBalanceFormatted = formatNumber(rawValue);
-  item.initialBalance = Number(rawValue) || 0;
+  const rawValue = String(item.initialBalanceFormatted).replace(/[^0-9]/g, '');
+  item.initialBalanceFormatted = formatNumber(rawValue);
+  item.initialBalance = Number(rawValue) || 0;
 };
 
 // (Логика onMounted из R2)
 onMounted(() => {
-  const allAccounts = mainStore.accounts; 
-  
-  localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
-    
-    if (isAccountEditor) {
-        const balance = item.initialBalance || 0;
-        return { 
-          ...item,
-            initialBalance: balance, 
-            initialBalanceFormatted: formatNumber(balance)
-        }
-    }
-    
-    if (isContractorEditor) {
-        const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
-        const cId = (item.defaultCategoryId && typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId;
-        return { ...item, defaultProjectId: pId || null, defaultCategoryId: cId || null }
-    }
-    
-    if (isCompanyEditor) {
-      const selectedAccountIds = allAccounts
-        .filter(a => (a.companyId?._id || a.companyId) === item._id)
-        .map(a => a._id);
-      return { ...item, selectedAccountIds: selectedAccountIds };
-    }
-    
-    if (isIndividualEditor) {
-      const selectedAccountIds = allAccounts
-        .filter(a => (a.individualId?._id || a.individualId) === item._id)
-        .map(a => a._id);
-      return { ...item, selectedAccountIds: selectedAccountIds };
-    }
-    
-    return item;
-  });
+  const allAccounts = mainStore.accounts;
+  
+  localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
+    
+    if (isAccountEditor) {
+      const balance = item.initialBalance || 0;
+      return {
+        ...item,
+        initialBalance: balance,
+        initialBalanceFormatted: formatNumber(balance)
+      }
+    }
+    
+    if (isContractorEditor) {
+      const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
+      const cId = (item.defaultCategoryId && typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId;
+      return { ...item, defaultProjectId: pId || null, defaultCategoryId: cId || null }
+    }
+    
+    if (isCompanyEditor) {
+      const selectedAccountIds = allAccounts
+        .filter(a => (a.companyId?._id || a.companyId) === item._id)
+        .map(a => a._id);
+      return { ...item, selectedAccountIds: selectedAccountIds };
+    }
+    
+    if (isIndividualEditor) {
+      const selectedAccountIds = allAccounts
+        .filter(a => (a.individualId?._id || a.individualId) === item._id)
+        .map(a => a._id);
+      return { ...item, selectedAccountIds: selectedAccountIds };
+    }
+    
+    return item;
+  });
 
-  if (isCompanyEditor || isIndividualEditor) {
-    localAccounts.value = JSON.parse(JSON.stringify(mainStore.accounts)).map(acc => {
-      const cId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-      const iId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-      return { ...acc, companyId: cId || null, individualId: iId || null };
-    });
-  }
+  if (isCompanyEditor || isIndividualEditor) {
+    localAccounts.value = JSON.parse(JSON.stringify(mainStore.accounts)).map(acc => {
+      const cId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+      const iId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+      return { ...acc, companyId: cId || null, individualId: iId || null };
+    });
+  }
 });
 
 // (Логика handleSave из R2)
 const handleSave = async () => {
-  
-  const itemsToSave = localItems.value.map((item, index) => {
-    const data = { _id: item._id, name: item.name, order: index };
-    
-    if (isAccountEditor) { 
-      data.initialBalance = item.initialBalance || 0; 
-    }
-    
-    if (isContractorEditor) { 
-      data.defaultProjectId = item.defaultProjectId || null; 
-      data.defaultCategoryId = item.defaultCategoryId || null; 
-    }
-    
-    return data;
-  });
-  
-  emit('save', itemsToSave);
+  
+  const itemsToSave = localItems.value.map((item, index) => {
+    const data = { _id: item._id, name: item.name, order: index };
+    
+    if (isAccountEditor) {
+      data.initialBalance = item.initialBalance || 0;
+    }
+    
+    if (isContractorEditor) {
+      data.defaultProjectId = item.defaultProjectId || null;
+      data.defaultCategoryId = item.defaultCategoryId || null;
+    }
+    
+    return data;
+  });
+  
+  emit('save', itemsToSave);
 
-  if (isCompanyEditor || isIndividualEditor) {
-    const accountsToUpdate = new Map();
-    const allStoreAccounts = JSON.parse(JSON.stringify(mainStore.accounts)); 
-    
-    for (const ownerItem of localItems.value) {
-      const ownerId = ownerItem._id;
-      const newAccountIds = new Set(ownerItem.selectedAccountIds);
-      const ownerType = isCompanyEditor ? 'company' : 'individual';
+  if (isCompanyEditor || isIndividualEditor) {
+    const accountsToUpdate = new Map();
+    const allStoreAccounts = JSON.parse(JSON.stringify(mainStore.accounts));
+    
+    for (const ownerItem of localItems.value) {
+      const ownerId = ownerItem._id;
+      const newAccountIds = new Set(ownerItem.selectedAccountIds);
+      const ownerType = isCompanyEditor ? 'company' : 'individual';
 
-      for (const acc of allStoreAccounts) {
-        const accId = acc._id;
-        const isSelected = newAccountIds.has(accId);
-        
-        const currentCompanyOwner = acc.companyId?._id || acc.companyId;
-        const currentIndividualOwner = acc.individualId?._id || acc.individualId;
-        
-        if (isSelected) {
-          if (ownerType === 'company' && currentCompanyOwner !== ownerId) {
-            acc.companyId = ownerId;
-            acc.individualId = null;
-            accountsToUpdate.set(accId, acc);
-          } else if (ownerType === 'individual' && currentIndividualOwner !== ownerId) {
-            acc.companyId = null;
-            acc.individualId = ownerId;
-            accountsToUpdate.set(accId, acc);
-          }
-        }
-        else {
-          if (ownerType === 'company' && currentCompanyOwner === ownerId) {
-            acc.companyId = null;
-            accountsToUpdate.set(accId, acc);
-          } else if (ownerType === 'individual' && currentIndividualOwner === ownerId) {
-            acc.individualId = null;
-            accountsToUpdate.set(accId, acc);
-          }
-        }
-      }
-    }
-    
-    const updates = Array.from(accountsToUpdate.values());
-    if (updates.length > 0) {
-      console.log(`[EntityListEditor] Обновление ${updates.length} счетов...`);
-      try {
-        await mainStore.batchUpdateEntities('accounts', updates);
-      } catch (e) {
-        console.error("Ошибка при обновлении привязок счетов:", e);
-      }
-    }
-  }
+      for (const acc of allStoreAccounts) {
+        const accId = acc._id;
+        const isSelected = newAccountIds.has(accId);
+        
+        const currentCompanyOwner = acc.companyId?._id || acc.companyId;
+        const currentIndividualOwner = acc.individualId?._id || acc.individualId;
+        
+        if (isSelected) {
+          if (ownerType === 'company' && currentCompanyOwner !== ownerId) {
+            acc.companyId = ownerId;
+            acc.individualId = null;
+            accountsToUpdate.set(accId, acc);
+          } else if (ownerType === 'individual' && currentIndividualOwner !== ownerId) {
+            acc.companyId = null;
+            acc.individualId = ownerId;
+            accountsToUpdate.set(accId, acc);
+          }
+        }
+        else {
+          if (ownerType === 'company' && currentCompanyOwner === ownerId) {
+            acc.companyId = null;
+            accountsToUpdate.set(accId, acc);
+          } else if (ownerType === 'individual' && currentIndividualOwner === ownerId) {
+            acc.individualId = null;
+            accountsToUpdate.set(accId, acc);
+          }
+        }
+      }
+    }
+    
+    const updates = Array.from(accountsToUpdate.values());
+    if (updates.length > 0) {
+      console.log(`[EntityListEditor] Обновление ${updates.length} счетов...`);
+      try {
+        await mainStore.batchUpdateEntities('accounts', updates);
+      } catch (e) {
+        console.error("Ошибка при обновлении привязок счетов:", e);
+      }
+    }
+  }
 };
 
 
@@ -179,30 +179,30 @@ const showDeletePopup = ref(false);
 const isDeleting = ref(false);
 
 const openDeleteDialog = (item) => {
-  itemToDelete.value = item;
-  showDeletePopup.value = true;
+  itemToDelete.value = item;
+  showDeletePopup.value = true;
 };
 
 const confirmDelete = async (deleteOperations) => {
-  if (!itemToDelete.value || !entityPath) return;
-  isDeleting.value = true;
-  try {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
-    localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-    showDeletePopup.value = false;
-    itemToDelete.value = null;
-  } catch (e) {
-    alert('Ошибка при удалении: ' + e.message);
-  } finally {
-    isDeleting.value = false;
-  }
+  if (!itemToDelete.value || !entityPath) return;
+  isDeleting.value = true;
+  try {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
+    localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
+    showDeletePopup.value = false;
+    itemToDelete.value = null;
+  } catch (e) {
+    alert('Ошибка при удалении: ' + e.message);
+  } finally {
+    isDeleting.value = false;
+  }
 };
 
 const cancelDelete = () => {
-  if (isDeleting.value) return;
-  showDeletePopup.value = false;
-  itemToDelete.value = null;
+  if (isDeleting.value) return;
+  showDeletePopup.value = false;
+  itemToDelete.value = null;
 };
 </script>
 
@@ -226,7 +226,7 @@ const cancelDelete = () => {
       <div v-if="isAccountEditor" class="editor-header account-header-simple">
         <span class="header-name">Название счета</span>
         <span class="header-balance">Нач. баланс</span>
-        <span class="header-trash"></span> 
+        <span class="header-trash"></span>
       </div>
       
       <div v-else-if="isCompanyEditor" class="editor-header owner-header">
@@ -255,9 +255,9 @@ const cancelDelete = () => {
       
       
       <div class="list-editor">
-        <draggable 
-          v-model="localItems" 
-          item-key="_id" 
+        <draggable
+          v-model="localItems"
+          item-key="_id"
           handle=".drag-handle"
           ghost-class="ghost"
         >
@@ -283,9 +283,9 @@ const cancelDelete = () => {
               </template>
 
               <template v-if="isCompanyEditor">
-                <select 
-                  v-model="item.selectedAccountIds" 
-                  class="edit-input edit-account-select" 
+                <select
+                  v-model="item.selectedAccountIds"
+                  class="edit-input edit-account-select"
                   multiple
                 >
                   <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">
@@ -295,9 +295,9 @@ const cancelDelete = () => {
               </template>
               
               <template v-if="isIndividualEditor">
-                <select 
-                  v-model="item.selectedAccountIds" 
-                  class="edit-input edit-account-select" 
+                <select
+                  v-model="item.selectedAccountIds"
+                  class="edit-input edit-account-select"
                   multiple
                 >
                   <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">
@@ -368,7 +368,7 @@ const cancelDelete = () => {
   z-index: 1000; overflow-y: auto;
 }
 .popup-content {
-  max-width: 580px; 
+  max-width: 580px;
   background: #F4F4F4; padding: 2rem; border-radius: 12px;
   color: #1a1a1a; width: 100%;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem;
@@ -410,20 +410,20 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
 .list-editor::-webkit-scrollbar { display: none; }
 
-.edit-item { 
-  display: flex; 
+.edit-item {
+  display: flex;
   /* 🟢 СТИЛЬ-ФИКС: Выравниваем по верху, как на скриншотах */
-  align-items: flex-start; 
+  align-items: flex-start;
   margin-bottom: 10px;
-  gap: 10px; 
+  gap: 10px;
 }
-.drag-handle { 
-  cursor: grab; 
-  font-size: 1.5em; 
-  color: #999; 
-  user-select: none; 
-  flex-shrink: 0; 
-  width: 22px; 
+.drag-handle {
+  cursor: grab;
+  font-size: 1.5em;
+  color: #999;
+  user-select: none;
+  flex-shrink: 0;
+  width: 22px;
   height: 48px; /* <-- Высота инпута */
   display: flex;
   align-items: center; /* Центрируем иконку по вертикали */
@@ -480,10 +480,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   height: 48px; /* <-- Высота как у инпута */
   flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
-  border-radius: 8px; 
+  border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
-  padding: 10px; 
+  padding: 10px;
   box-sizing: border-box; /* 🔴 Добавлено для корректного расчета высоты */
   
   /* transform УДАЛЕН. Выравнивание по align-items: flex-start */
@@ -494,8 +494,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   stroke: #999;
   transition: stroke 0.2s;
 }
-.delete-btn:hover { 
-  border-color: #FF3B30; background: #fff5f5; 
+.delete-btn:hover {
+  border-color: #FF3B30; background: #fff5f5;
 }
 .delete-btn:hover svg {
   stroke: #FF3B30;
