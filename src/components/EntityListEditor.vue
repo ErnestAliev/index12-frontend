@@ -484,6 +484,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
   padding: 10px;
+  positionY: 5px;
   box-sizing: border-box; /* 🔴 Добавлено для корректного расчета высоты */
   
   /* transform УДАЛЕН. Выравнивание по align-items: flex-start */
@@ -558,3 +559,4 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
