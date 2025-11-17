@@ -1,18 +1,15 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.0-TRANSFER-LOGIC ---
- * * ВЕРСИЯ: 10.0 - Новая логика импорта/экспорта переводов
- * ДАТА: 2025-11-17
+ * * --- МЕТКА ВЕРСИИ: v10.1-INDIVIDUALS ---
+ * * ВЕРСИЯ: 10.1 - Добавлена поддержка "Физлиц"
+ * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. normalizeType (Импорт): Теперь распознает
- * "Доход", "Расход", "Перевод".
- * 2. formatDataForExport (Экспорт): Полностью
- * переписана.
- * - 'income' -> "Доход", 'expense' -> "Расход".
- * - 'transfer' (1 строка из БД) теперь
- * превращается в 2 строки в CSV (Расход + Доход)
- * с правильной логикой Компании/Контрагента
- * согласно ТЗ.
+ * 1. (UPDATE) systemFields: Добавлен 'individual' (Физлицо) для сопоставления.
+ * 2. (UPDATE) newEntities: Добавлен 'individuals' для отслеживания при импорте.
+ * 3. (UPDATE) formatDataForExport (Income/Expense): Добавлена колонка "Физлицо".
+ * 4. (UPDATE) formatDataForExport (Transfer): Добавлена колонка "Физлицо"
+ * и исправлена логика 'Компания'/'Контрагент' для поддержки
+ * fromIndividualId / toIndividualId.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -284,6 +281,7 @@ const isAllSelected = computed(() => {
 
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({}); // { 'CSV Header Name': 'systemFieldKey' }
+// 🟢 v10.1: Добавлено 'individual'
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
@@ -292,16 +290,19 @@ const systemFields = [
   { key: 'project', label: 'Проект', entity: 'projects', aliases: ['проект', 'project', 'мои проекты'] },
   { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
   { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании'] },
+  { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
   { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
 ];
 
 // --- Подтверждение (Review) ---
+// 🟢 v10.1: Добавлено 'individuals'
 const newEntities = ref({
   categories: [],
   projects: [],
   accounts: [],
   companies: [],
   contractors: [],
+  individuals: [],
 });
 // Готовые к импорту операции
 const operationsToImport = ref([]);
@@ -533,6 +534,7 @@ function identifyNewEntities() {
     accounts: new Set(),
     companies: new Set(),
     contractors: new Set(),
+    individuals: new Set(), // 🟢 v10.1: Добавлено
   };
 
   // Поля, которые являются сущностями
@@ -571,18 +573,21 @@ function identifyNewEntities() {
   newEntities.value.accounts = Array.from(newFound.accounts);
   newEntities.value.companies = Array.from(newFound.companies);
   newEntities.value.contractors = Array.from(newFound.contractors);
+  newEntities.value.individuals = Array.from(newFound.individuals); // 🟢 v10.1: Добавлено
 }
 
 /**
  * Вспомогательная функция для отображения русских названий.
  */
 function getEntityName(entityType) {
+  // 🟢 v10.1: Добавлено 'individuals'
   const names = {
     categories: 'Категории',
     projects: 'Проекты',
     accounts: 'Счета',
     companies: 'Компании',
     contractors: 'Контрагенты',
+    individuals: 'Физлица',
   };
   return names[entityType] || entityType;
 }
@@ -840,7 +845,7 @@ async function handleExport() {
 }
 
 /**
- * 🔴 ИЗМЕНЕНИЕ v10.0: Новая логика
+ * 🔴 ИЗМЕНЕНИЕ v10.1: Добавлено поле "Физлицо"
  * Преобразует массив операций с сервера в плоский массив 
  * объектов для Papa.unparse
  */
@@ -870,12 +875,17 @@ function formatDataForExport(operations) {
         'Проект': op.projectId ? op.projectId.name : '',
         'Счет': op.accountId ? op.accountId.name : '',
         'Компания': op.companyId ? op.companyId.name : '',
+        'Физлицо': op.individualId ? op.individualId.name : '', // 🟢 v10.1
         'Контрагент': op.contractorId ? op.contractorId.name : '',
       });
     } 
     else if (op.type === 'transfer' || op.isTransfer) {
       // Это ОДНА операция "Перевод" из БД.
       // Создаем ДВЕ строки в CSV.
+
+      // 🟢 v10.1: Улучшенная логика определения Контрагента (Компании или Физлица)
+      const fromOwnerName = op.fromCompanyId ? op.fromCompanyId.name : (op.fromIndividualId ? op.fromIndividualId.name : '');
+      const toOwnerName = op.toCompanyId ? op.toCompanyId.name : (op.toIndividualId ? op.toIndividualId.name : '');
 
       // Строка 1: РАСХОД (Отправитель)
       const expenseRow = {
@@ -885,8 +895,9 @@ function formatDataForExport(operations) {
         'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
         'Проект': '', // Переводы обычно не имеют проектов
         'Счет': op.fromAccountId ? op.fromAccountId.name : '',
-        'Компания': op.fromCompanyId ? op.fromCompanyId.name : '',
-        'Контрагент': op.toCompanyId ? op.toCompanyId.name : '', // 🔴 Логика: Контрагент = Получатель
+        'Компания': op.fromCompanyId ? op.fromCompanyId.name : '', // 🟢 v10.1
+        'Физлицо': op.fromIndividualId ? op.fromIndividualId.name : '', // 🟢 v10.1
+        'Контрагент': toOwnerName, // 🟢 v10.1: Контрагент = Получатель (Компания или Физлицо)
       };
       
       // Строка 2: ДОХОД (Получатель)
@@ -897,8 +908,9 @@ function formatDataForExport(operations) {
         'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
         'Проект': '', // Переводы обычно не имеют проектов
         'Счет': op.toAccountId ? op.toAccountId.name : '',
-        'Компания': op.toCompanyId ? op.toCompanyId.name : '',
-        'Контрагент': op.fromCompanyId ? op.fromCompanyId.name : '', // 🔴 Логика: Контрагент = Отправитель
+        'Компания': op.toCompanyId ? op.toCompanyId.name : '', // 🟢 v10.1
+        'Физлицо': op.toIndividualId ? op.toIndividualId.name : '', // 🟢 v10.1
+        'Контрагент': fromOwnerName, // 🟢 v10.1: Контрагент = Отправитель (Компания или Физлицо)
       };
 
       csvRows.push(expenseRow, incomeRow);
