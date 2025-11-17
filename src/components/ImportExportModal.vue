@@ -1,30 +1,28 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.5-SUMMARY-EXPORT ---
- * * ВЕРСИЯ: 10.5 - Экспорт заменен на Сводный Отчет
+ * * --- МЕТКА ВЕРСИИ: v10.6-SUMMARY-DATE-FIX ---
+ * * ВЕРСИЯ: 10.6 - Исправление RangeError: Invalid time value
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлен импорт `formatNumber`.
- * 2. (NEW) Добавлен helper `_parseDateKey`
- * (т.к. он не экспортируется из mainStore).
- * 3. (REWRITE) `handleExport` полностью переписан.
- * - Он больше не вызывает `mainStore.exportAllOperations()`.
- * - Он берет `currentTotalBalance` и `allOperationsFlat`
- * из `mainStore`.
- * - Он вычисляет 5 дат в будущем (12д, 1м, 3м, 6м, 1г).
- * - Он суммирует будущие доходы (`income`) до каждой
- * из этих дат.
- * - Он формирует CSV-файл из 7 строк (Остаток + 5 прогнозов).
+ * 1. (REMOVED) Удален локальный helper `_parseDateKey`.
+ * 2. (UPDATE) `handleExport` (Export):
+ * - `today` теперь определяется через `new Date()`,
+ * а не через `mainStore.todayDayOfYear`,
+ * что предотвращает ошибку до инициализации.
+ * - Даты операций (`opDate`) теперь
+ * получаются из `new Date(op.date)`,
+ * а не через парсинг `op.dateKey`.
+ * - Добавлены проверки `if (!op.date)` и
+ * `if (isNaN(opDate.getTime()))`
+ * для защиты от некорректных данных.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
       
-      <!-- 🔴 ИЗМЕНЕНИЕ: Динамический заголовок -->
       <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт (Сводка)' }}</h2>
       
-      <!-- 🔴 НАЧАЛО: Переключатель вкладок -->
       <div class="modal-tabs">
         <button 
           class="tab-btn" 
@@ -41,7 +39,6 @@
           Экспорт (Сводка)
         </button>
       </div>
-      <!-- 🔴 КОНЕЦ: Переключатель вкладок -->
 
       <!-- ============================================= -->
       <!-- Вкладка "ИМПОРТ" (Без изменений)         -->
@@ -694,39 +691,34 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.5 - Сводка)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.6 - Исправление)
 // ----------------------------------------------
 
-// 🟢 v10.5: Helper для парсинга dateKey (т.к. он не экспортирован из mainStore)
-const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) { return new Date(); }
-    const [year, doy] = dateKey.split('-').map(Number);
-    const date = new Date(year, 0, 1);
-    date.setDate(doy);
-    return date;
-};
-
 /**
- * 🟢 v10.5: Полностью переписанная функция handleExport
+ * 🟢 v10.6: Полностью переписанная функция handleExport
  */
 async function handleExport() {
   isExporting.value = true;
   exportError.value = null;
   
   try {
-    // 1. Получаем "сегодня" (как в mainStore)
-    const today = new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear);
+    // 1. 🟢 FIX: Получаем "сегодня" надежным способом
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // 2. Получаем текущий баланс
     const currentBalance = mainStore.currentTotalBalance;
 
-    // 3. Получаем ВСЕ будущие операции (фильтруем вручную)
+    // 3. 🟢 FIX: Фильтруем будущие операции, используя op.date
     const allFutureOps = mainStore.allOperationsFlat.filter(op => {
-      if (!op.dateKey) return false;
-      const opDate = _parseDateKey(op.dateKey);
-      // Убеждаемся, что дата операции > today
-      return opDate.getTime() > today.getTime();
+      if (!op.date) return false; // Защита
+      try {
+        const opDate = new Date(op.date);
+        if (isNaN(opDate.getTime())) return false; // Защита от Invalid Date
+        return opDate.getTime() > today.getTime();
+      } catch (e) {
+        return false; // Защита от ошибки конструктора
+      }
     });
 
     // 4. Считаем даты для прогноза
@@ -754,7 +746,8 @@ async function handleExport() {
     for (const op of allFutureOps) {
       // Считаем только 'income'
       if (op.type === 'income' && op.amount > 0) {
-        const opDate = _parseDateKey(op.dateKey);
+        // 🟢 FIX: Используем op.date
+        const opDate = new Date(op.date);
         
         // Суммы кумулятивные (включают предыдущие)
         if (opDate <= date1y) income1y += op.amount;
@@ -792,74 +785,6 @@ async function handleExport() {
   }
 }
 
-/**
- * 🟢 v10.4: Эта функция (старый экспорт) больше не используется,
- * но мы ее оставляем на случай, если она нужна для импорта
- * (хотя она и не используется импортом).
- */
-function formatDataForExport(operations) {
-  // ... (логика v10.4)
-  const csvRows = [];
-
-  for (const op of operations) {
-    let dateStr = '';
-    if (op.date) {
-      try {
-        const d = new Date(op.date);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        dateStr = `${day}.${month}.${year}`;
-      } catch (e) {
-        dateStr = op.date; // fallback
-      }
-    }
-
-    if (op.type === 'income' || op.type === 'expense') {
-      csvRows.push({
-        'Тип': op.type === 'income' ? 'Доход' : 'Расход',
-        'Сумма': op.amount,
-        'Счет': op.accountId ? op.accountId.name : '',
-        'Компании/Физлица': op.companyId ? op.companyId.name : (op.individualId ? op.individualId.name : ''),
-        'Контрагент': op.contractorId ? op.contractorId.name : '',
-        'Проект': op.projectId ? op.projectId.name : '',
-        'Дата': dateStr,
-        'Категория': op.categoryId ? op.categoryId.name : '',
-      });
-    } 
-    else if (op.type === 'transfer' || op.isTransfer) {
-      
-      const fromOwnerName = op.fromCompanyId ? op.fromCompanyId.name : (op.fromIndividualId ? op.fromIndividualId.name : '');
-      const toOwnerName = op.toCompanyId ? op.toCompanyId.name : (op.toIndividualId ? op.toIndividualId.name : '');
-
-      const expenseRow = {
-        'Тип': 'Перевод',
-        'Сумма': -Math.abs(op.amount),
-        'Счет': op.fromAccountId ? op.fromAccountId.name : '',
-        'Компании/Физлица': fromOwnerName,
-        'Контрагент': toOwnerName, 
-        'Проект': '', 
-        'Дата': dateStr,
-        'Категория': 'Исходящий',
-      };
-      
-      const incomeRow = {
-        'Тип': 'Перевод',
-        'Сумма': Math.abs(op.amount),
-        'Счет': op.toAccountId ? op.toAccountId.name : '',
-        'Компании/Физлица': toOwnerName,
-        'Контрагент': fromOwnerName,
-        'Проект': '',
-        'Дата': dateStr,
-        'Категория': 'Входящий',
-      };
-
-      csvRows.push(expenseRow, incomeRow);
-    }
-  }
-
-  return csvRows;
-}
 
 /**
  * 🟢 v10.3: Имя файла включает время
