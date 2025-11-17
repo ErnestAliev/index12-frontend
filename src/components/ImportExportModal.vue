@@ -1,23 +1,30 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.4-TRANSFER-CATEGORY-NAMES ---
- * * ВЕРСИЯ: 10.4 - Категории "Входящий"/"Исходящий" для переводов
+ * * --- МЕТКА ВЕРСИИ: v10.5-SUMMARY-EXPORT ---
+ * * ВЕРСИЯ: 10.5 - Экспорт заменен на Сводный Отчет
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UPDATE) formatDataForExport (Export):
- * - Для строк "Перевод" (Тип)
- * - Колонка "Категория" теперь "Исходящий" для
- * строки списания (сумма < 0).
- * - Колонка "Категория" теперь "Входящий" для
- * строки зачисления (сумма > 0).
+ * 1. (NEW) Добавлен импорт `formatNumber`.
+ * 2. (NEW) Добавлен helper `_parseDateKey`
+ * (т.к. он не экспортируется из mainStore).
+ * 3. (REWRITE) `handleExport` полностью переписан.
+ * - Он больше не вызывает `mainStore.exportAllOperations()`.
+ * - Он берет `currentTotalBalance` и `allOperationsFlat`
+ * из `mainStore`.
+ * - Он вычисляет 5 дат в будущем (12д, 1м, 3м, 6м, 1г).
+ * - Он суммирует будущие доходы (`income`) до каждой
+ * из этих дат.
+ * - Он формирует CSV-файл из 7 строк (Остаток + 5 прогнозов).
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
       
-      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт операций' }}</h2>
+      <!-- 🔴 ИЗМЕНЕНИЕ: Динамический заголовок -->
+      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт (Сводка)' }}</h2>
       
+      <!-- 🔴 НАЧАЛО: Переключатель вкладок -->
       <div class="modal-tabs">
         <button 
           class="tab-btn" 
@@ -31,12 +38,13 @@
           :class="{ active: currentTab === 'export' }"
           @click="currentTab = 'export'"
         >
-          Экспорт (CSV)
+          Экспорт (Сводка)
         </button>
       </div>
+      <!-- 🔴 КОНЕЦ: Переключатель вкладок -->
 
       <!-- ============================================= -->
-      <!-- Вкладка "ИМПОРТ" (Mapping не изменен)         -->
+      <!-- Вкладка "ИМПОРТ" (Без изменений)         -->
       <!-- ============================================= -->
       <div v-if="currentTab === 'import'" class="import-content-wrapper">
         <div v-if="step === 'upload'" class="modal-step-content">
@@ -152,20 +160,19 @@
       </div>
       
       <!-- =========================================== -->
-      <!-- Вкладка "ЭКСПОРТ"                           -->
+      <!-- Вкладка "ЭКСПОРТ (СВОДКА)"                  -->
       <!-- =========================================== -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
         <p>
-          Вы можете экспортировать **все операции** из вашей базы данных в один CSV-файл.
+          Вы можете экспортировать **сводный отчет** с текущим балансом и прогнозом поступлений.
         </p>
         <p>
-          Этот процесс извлечет все записи о доходах, расходах и переводах (переводы будут раздвоены на 2 строки).
+          Отчет будет основан на данных, загруженных в приложение.
         </p>
         
         <div v-if="isExporting" class="loading-indicator">
           <div class="spinner"></div>
-          <p>Подготовка данных...</p>
-          <p class="small-text">Это может занять некоторое время, если у вас много операций.</p>
+          <p>Подготовка сводки...</p>
         </div>
         
         <button 
@@ -173,7 +180,7 @@
           class="btn-primary export-btn" 
           :disabled="isExporting"
         >
-          Экспортировать все операции
+          Экспортировать сводку
         </button>
         
         <div v-if="exportError" class="error-message">
@@ -237,6 +244,8 @@
 import { ref, computed } from 'vue';
 import Papa from 'papaparse';
 import { useMainStore } from '@/stores/mainStore';
+// 🟢 v10.5: Импортируем форматер чисел
+import { formatNumber } from '@/utils/formatters.js';
 
 // --- Компонент ---
 const emit = defineEmits(['close', 'import-complete']);
@@ -685,43 +694,111 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.4)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.5 - Сводка)
 // ----------------------------------------------
 
+// 🟢 v10.5: Helper для парсинга dateKey (т.к. он не экспортирован из mainStore)
+const _parseDateKey = (dateKey) => {
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) { return new Date(); }
+    const [year, doy] = dateKey.split('-').map(Number);
+    const date = new Date(year, 0, 1);
+    date.setDate(doy);
+    return date;
+};
+
+/**
+ * 🟢 v10.5: Полностью переписанная функция handleExport
+ */
 async function handleExport() {
   isExporting.value = true;
   exportError.value = null;
   
   try {
-    const operations = await mainStore.exportAllOperations();
+    // 1. Получаем "сегодня" (как в mainStore)
+    const today = new Date(mainStore.currentYear, 0, mainStore.todayDayOfYear);
+    today.setHours(0, 0, 0, 0);
+
+    // 2. Получаем текущий баланс
+    const currentBalance = mainStore.currentTotalBalance;
+
+    // 3. Получаем ВСЕ будущие операции (фильтруем вручную)
+    const allFutureOps = mainStore.allOperationsFlat.filter(op => {
+      if (!op.dateKey) return false;
+      const opDate = _parseDateKey(op.dateKey);
+      // Убеждаемся, что дата операции > today
+      return opDate.getTime() > today.getTime();
+    });
+
+    // 4. Считаем даты для прогноза
+    const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
     
-    if (!operations || operations.length === 0) {
-      exportError.value = "Нет операций для экспорта.";
-      isExporting.value = false;
-      return;
+    // Хелперы для дат
+    const addDays = (d, days) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
+    const addMonths = (d, months) => { const n = new Date(d); n.setMonth(n.getMonth() + months); return n; };
+    const addYears = (d, years) => { const n = new Date(d); n.setFullYear(n.getFullYear() + years); return n; };
+
+    // Рассчитываем 5 дат в будущем
+    const date12d = addDays(today, 12);
+    const date1m = addMonths(today, 1);
+    const date3m = addMonths(today, 3);
+    const date6m = addMonths(today, 6);
+    const date1y = addYears(today, 1);
+
+    // 5. Считаем КУМУЛЯТИВНЫЕ поступления
+    let income12d = 0;
+    let income1m = 0;
+    let income3m = 0;
+    let income6m = 0;
+    let income1y = 0;
+
+    for (const op of allFutureOps) {
+      // Считаем только 'income'
+      if (op.type === 'income' && op.amount > 0) {
+        const opDate = _parseDateKey(op.dateKey);
+        
+        // Суммы кумулятивные (включают предыдущие)
+        if (opDate <= date1y) income1y += op.amount;
+        if (opDate <= date6m) income6m += op.amount;
+        if (opDate <= date3m) income3m += op.amount;
+        if (opDate <= date1m) income1m += op.amount;
+        if (opDate <= date12d) income12d += op.amount;
+      }
     }
+
+    // 6. Форматируем данные для CSV (2 колонки)
+    const csvData = [
+      { "Параметр": `Сегодня`, "Значение": ruFormatter.format(today) },
+      { "Параметр": "Текущий Остаток", "Значение": formatNumber(currentBalance) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date12d)} (12 д)`, "Значение": formatNumber(income12d) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date1m)} (1 мес)`, "Значение": formatNumber(income1m) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date3m)} (3 мес)`, "Значение": formatNumber(income3m) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date6m)} (6 мес)`, "Значение": formatNumber(income6m) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date1y)} (1 год)`, "Значение": formatNumber(income1y) }
+    ];
     
-    // 🟢 v10.4: Форматируем с категориями "Входящий"/"Исходящий"
-    const formattedData = formatDataForExport(operations);
-    
-    const csvString = Papa.unparse(formattedData, {
+    // 7. Конвертируем в CSV
+    const csvString = Papa.unparse(csvData, {
       header: true,
     });
     
+    // 8. Скачиваем (имя файла с датой и временем)
     triggerCsvDownload(csvString);
     
   } catch (err) {
-    console.error("Ошибка экспорта:", err);
-    exportError.value = `Не удалось экспортировать данные: ${err.message || 'Ошибка сервера'}`;
+    console.error("Ошибка при экспорте сводки:", err);
+    exportError.value = `Не удалось создать сводку: ${err.message || 'Неизвестная ошибка'}`;
   } finally {
     isExporting.value = false;
   }
 }
 
 /**
- * 🟢 v10.4: Обновлена Категория для Переводов
+ * 🟢 v10.4: Эта функция (старый экспорт) больше не используется,
+ * но мы ее оставляем на случай, если она нужна для импорта
+ * (хотя она и не используется импортом).
  */
 function formatDataForExport(operations) {
+  // ... (логика v10.4)
   const csvRows = [];
 
   for (const op of operations) {
@@ -755,7 +832,6 @@ function formatDataForExport(operations) {
       const fromOwnerName = op.fromCompanyId ? op.fromCompanyId.name : (op.fromIndividualId ? op.fromIndividualId.name : '');
       const toOwnerName = op.toCompanyId ? op.toCompanyId.name : (op.toIndividualId ? op.toIndividualId.name : '');
 
-      // Строка 1: РАСХОД (Отправитель)
       const expenseRow = {
         'Тип': 'Перевод',
         'Сумма': -Math.abs(op.amount),
@@ -764,11 +840,9 @@ function formatDataForExport(operations) {
         'Контрагент': toOwnerName, 
         'Проект': '', 
         'Дата': dateStr,
-        // 🟢 v10.4: Категория "Исходящий"
         'Категория': 'Исходящий',
       };
       
-      // Строка 2: ДОХОД (Получатель)
       const incomeRow = {
         'Тип': 'Перевод',
         'Сумма': Math.abs(op.amount),
@@ -777,7 +851,6 @@ function formatDataForExport(operations) {
         'Контрагент': fromOwnerName,
         'Проект': '',
         'Дата': dateStr,
-        // 🟢 v10.4: Категория "Входящий"
         'Категория': 'Входящий',
       };
 
@@ -803,7 +876,8 @@ function triggerCsvDownload(csvString) {
   const pad = (num) => String(num).padStart(2, '0');
   const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   
-  link.setAttribute('download', `index12_export_${timestamp}.csv`);
+  // 🟢 v10.5: Меняем имя файла на "summary"
+  link.setAttribute('download', `index12_summary_${timestamp}.csv`);
   
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
