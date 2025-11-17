@@ -3,17 +3,20 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP3 ---
- * * ВЕРСИЯ: 8.2 - Добавление "Мои Физлица" (Шаг 3)
- * ДАТА: 17.11.2025
+ * * --- МЕТКА ВЕРСИИ: v9.0-step3-individuals ---
+ * * ВЕРСИЯ: 9.0 - Добавлен виджет "Физлица" (Шаг 3)
+ * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен `computed` `mergedIndividualBalances` (по аналогии с компаниями).
- * 2. В <template> добавлен блок `<HeaderBalanceCard>` для `widgetKey === 'individuals'`.
- * 3. Подключены `openAddPopup` и `openEditPopup` к `mainStore.addIndividual` и `mainStore.individuals`.
+ * 1. (NEW) Добавлен computed `mergedIndividualBalances`.
+ * 2. (NEW) В <template> добавлен блок <HeaderBalanceCard v-else-if="widgetKey === 'individuals'">.
+ * 3. (UPDATE) @add и @edit для "Физлиц" подключены к mainStore.addIndividual и 'individuals' path.
+ * 4. (FIX) @edit для Счетов, Компаний и т.д. теперь использует полный список (например, mainStore.accounts),
+ * а не отфильтрованный (mainStore.currentAccountBalances), чтобы обеспечить консистентность
+ * редактирования, как и планировалось для Физлиц.
  */
 
-console.log('--- TheHeader.vue v8.2-INDIVIDUALS-STEP3 (с Физлицами) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v9.0-step3-individuals ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -63,8 +66,9 @@ const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAcco
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
 const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
-// 🔴 ДОБАВЛЕНО: Computed для балансов Физлиц
+// 🟢 NEW (Шаг 3)
 const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
+
 
 /* ======================= Попапы (Entity / List) ======================= */
 const isEntityPopupVisible = ref(false);
@@ -105,6 +109,7 @@ const openAddCategoryPopup = (title, widgetIndex) => {
 };
 
 // Переименование + Удаление
+// 🟢 UPDATED (Шаг 3): Добавлена поддержка 'individuals'
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
   popupInitialValue.value = entity.name;
@@ -112,12 +117,11 @@ const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, en
   
   // Логика сохранения (переименования)
   saveHandler.value = async (newName) => {
-      if (entityType === 'categories') {
+      // Обновляем логику, чтобы она работала для всех сущностей (категорий, физлиц и т.д.)
+      if (entityType) {
           const updatedItem = { ...entity, name: newName };
-          await mainStore.batchUpdateEntities('categories', [updatedItem]);
+          await mainStore.batchUpdateEntities(entityType, [updatedItem]);
       }
-      // 🔴 ПРИМЕЧАНИЕ: 'individuals' (Физлица) редактируются через openEditPopup,
-      // так же, как 'companies' и 'projects'.
   };
 
   // Логика удаления (только если canDelete=true)
@@ -219,7 +223,7 @@ const handleTransferComplete = async (eventData) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
         @add="openAddPopup('Новый счет', mainStore.addAccount)"
-        @edit="openEditPopup('Редактировать счета', mainStore.currentAccountBalances, 'accounts')"
+        @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
       />
 
       <HeaderBalanceCard
@@ -229,19 +233,7 @@ const handleTransferComplete = async (eventData) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
         @add="openAddPopup('Новая компания', mainStore.addCompany)"
-        @edit="openEditPopup('Редактировать компании', mainStore.currentCompanyBalances, 'companies')"
-      />
-
-      <!-- 🔴 ДОБАВЛЕН НОВЫЙ БЛОК ДЛЯ ФИЗЛИЦ -->
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'individuals'"
-        title="Мои Физлица"
-        :items="mergedIndividualBalances" 
-        emptyText="...физлиц нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
-        @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
+        @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
       />
 
       <HeaderBalanceCard
@@ -251,7 +243,7 @@ const handleTransferComplete = async (eventData) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
         @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
-        @edit="openEditPopup('Редактировать контрагентов', mainStore.currentContractorBalances, 'contractors')"
+        @edit="openEditPopup('Редактировать контрагентов', mainStore.contractors, 'contractors')"
       />
 
       <HeaderBalanceCard
@@ -261,7 +253,19 @@ const handleTransferComplete = async (eventData) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
         @add="openAddPopup('Новый проект', mainStore.addProject)"
-        @edit="openEditPopup('Редактировать проекты', mainStore.currentProjectBalances, 'projects')"
+        @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
+      />
+
+      <!-- 🟢 NEW (Шаг 3): Блок "Мои Физлица" -->
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'individuals'"
+        title="Мои Физлица"
+        :items="mergedIndividualBalances" 
+        emptyText="...физлиц нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="index"
+        @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
+        @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
       />
 
       <HeaderTotalCard
