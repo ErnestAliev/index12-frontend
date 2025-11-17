@@ -10,13 +10,13 @@
  * 4. (NEW) Добавлена функция `addIndividual`.
  * 5. (UPDATE) `fetchAllEntities`, `deleteEntity`, `batchUpdateEntities`, `addAccount` и `_mergeTransfers`
  * обновлены для поддержки `individualId`.
- * * * --- МЕТКА ВЕРСИИ: v10.0-FIX-EXPORT ---
- * * ВЕРСИЯ: 10.0 - Добавлена недостающая функция exportAllOperations
+ * * * --- МЕТКА ВЕРСИИ: v10.5-EXPORT-BALANCE ---
+ * * ВЕРСИЯ: 10.5 - Передача `totalInitialBalance` для расчета "Остатка"
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлена функция `exportAllOperations`, которая вызывает /api/events/all-for-export.
- * 2. (UPDATE) `exportAllOperations` добавлена в `return` блока `defineStore`.
+ * 1. (UPDATE) `exportAllOperations` теперь возвращает объект
+ * `{ operations, initialBalance }` для расчета "Остатка".
  */
 
 import { defineStore } from 'pinia';
@@ -42,8 +42,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v9.0-step1-individuals ЗАГРУЖЕН ---'); 
-  // 🔴 V10.0 - Добавлен фикс экспорта
+  console.log('--- mainStore.js v10.5-EXPORT-BALANCE ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -261,6 +260,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return map;
   });
 
+  // 🔴 v10.5: Это значение нужно для экспорта "Остатка"
   const totalInitialBalance = computed(() =>
     (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
   );
@@ -1087,21 +1087,22 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🔴 НОВАЯ ФУНКЦИЯ ДЛЯ ЭКСПОРТА (v10.0)
+  // 🔴 ИЗМЕНЕНИЕ v10.5: Возвращаем объект с initialBalance
   async function exportAllOperations() {
     console.log('[mainStore] exportAllOperations: 🚀 Запрос всех операций для экспорта...');
     try {
-      // Этот эндпоинт должен быть добавлен в server.js (v10.0)
       const res = await axios.get(`${API_BASE_URL}/events/all-for-export`);
-      
-      // Важно: Бэкенд должен вернуть операции с 
-      // заполненными (populate) связями, как того ожидает ImportExportModal
       console.log(`[mainStore] exportAllOperations: ✅ Получено ${res.data.length} операций.`);
-      return res.data;
+      
+      // Возвращаем объект
+      return {
+        operations: res.data, // Это массив операций, отсортированный по date: 1
+        initialBalance: totalInitialBalance.value || 0
+      };
     } catch (e) {
       if (e.response && e.response.status === 401) user.value = null;
       console.error("❌ Ошибка при экспорте всех операций:", e);
-      throw e; // Пробрасываем ошибку, чтобы ImportExportModal мог ее поймать
+      throw e; 
     }
   }
 
@@ -1180,7 +1181,7 @@ export const useMainStore = defineStore('mainStore', () => {
     displayOperationsFlat,
     
     importOperations,
-    exportAllOperations, // 🔴 ДОБАВЛЕНО (v10.0)
+    exportAllOperations, 
     
     checkAuth,
     logout,
