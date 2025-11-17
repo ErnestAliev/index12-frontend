@@ -1,14 +1,4 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-EXPORT-API ---
- * * ВЕРСИЯ: 9.0 - Добавлена функция для экспорта
- * ДАТА: 2025-11-17
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. Добавлена новая асинхронная функция `exportAllOperations`.
- * 2. Эта функция добавлена в `return` стора.
- */
-
-/**
  * * --- МЕТКА ВЕРСИИ: v8.1-LOGIC-FIX-FUTURE-TOTAL ---
  * * ВЕРСИЯ: 8.1 - Исправление расчета будущего баланса
  * ДАТА: 2025-11-16
@@ -19,6 +9,13 @@
  * 2. (FIX) `updateProjectionFromCalculationData` теперь вручную фильтрует операции для
  * подсчета сумм Income/Expense, чтобы гарантировать использование НОВЫХ дат диапазона,
  * не дожидаясь реактивного обновления `futureOps`.
+ *
+ * * --- ИЗМЕНЕНИЯ (vFuture - Мои Физлица, Шаг 1) ---
+ * 1. Добавлена новая сущность `individuals` (Физлица).
+ * 2. Добавлены `computed` для балансов: `currentIndividualBalances`, `futureIndividualBalances`.
+ * 3. Добавлен `action`: `addIndividual`.
+ * 4. `fetchAllEntities`, `deleteEntity`, `batchUpdateEntities` обновлены для поддержки `individuals`.
+ * 5. Добавлен виджет `individuals` в `staticWidgets`.
  */
 
 import { defineStore } from 'pinia';
@@ -44,7 +41,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v8.1-LOGIC-FIX-FUTURE-TOTAL ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v8.1-LOGIC-FIX-FUTURE-TOTAL (С ИЗМЕНЕНИЯМИ ДЛЯ ФИЗЛИЦ) ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -59,6 +56,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const contractors = ref([]);
   const projects    = ref([]);
   const categories  = ref([]);
+  const individuals = ref([]); // 🔴 ДОБАВЛЕНО: Новая сущность "Физлица"
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
@@ -69,6 +67,7 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
+    { key: 'individuals',  name: 'Мои Физлица' }, // 🔴 ДОБАВЛЕНО: Новый системный виджет
   ]);
 
   // =================================================================
@@ -315,6 +314,22 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   };
 
+  // 🔴 ДОБАВЛЕНО: Логика для балансов Физлиц (копия логики Компаний)
+  const _applyTransferToIndividualBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
+    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
+    
+    if (fromId) { 
+        if (bal[fromId] === undefined) bal[fromId] = 0; 
+        bal[fromId] -= amt; 
+    }
+    if (toId) { 
+        if (bal[toId] === undefined) bal[toId] = 0; 
+        bal[toId] += amt; 
+    }
+  };
+
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -347,6 +362,43 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
+
+  // 🔴 ДОБАВЛЕНО: Computed-балансы для Физлиц
+  const currentIndividualBalances = computed(() => {
+    const bal = {};
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) {
+         _applyTransferToIndividualBalances(bal, op);
+         continue;
+      }
+      // Предполагаем, что у операции будет `individualId`
+      if (!op?.individualId?._id) continue; 
+      const id = op.individualId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
+  });
+  
+  // 🔴 ДОБАВЛЕНО: Computed-балансы для Физлиц (будущее)
+  const futureIndividualBalances = computed(() => {
+    const bal = {};
+    const currentBalances = currentIndividualBalances.value;
+    for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
+    
+    for (const op of futureOps.value) {
+      if (isTransfer(op)) {
+         _applyTransferToIndividualBalances(bal, op);
+         continue;
+      }
+      if (!op?.individualId?._id) continue;
+      const id = op.individualId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
+  });
+
 
   const currentContractorBalances = computed(() => {
     const bal = {};
@@ -602,6 +654,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const ___ = futureCompanyBalances.value;
     const ____ = futureContractorBalances.value;
     const _____ = futureProjectBalances.value;
+    const ______ = futureIndividualBalances.value; // 🔴 ДОБАВЛЕНО: Убедимся, что баланс физлиц тоже считается
   }
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
@@ -623,14 +676,16 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function fetchAllEntities(){
     try{
-      const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
+      const [accRes, compRes, contrRes, projRes, catRes, indRes] = await Promise.all([ // 🔴 Добавлен indRes
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
         axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
         axios.get(`${API_BASE_URL}/categories`),
+        axios.get(`${API_BASE_URL}/individuals`), // 🔴 ДОБАВЛЕНО: Запрос для Физлиц
       ]);
       accounts.value    = accRes.data; companies.value   = compRes.data;
       contractors.value = contrRes.data; projects.value    = projRes.data;
       categories.value  = catRes.data;
+      individuals.value = indRes.data; // 🔴 ДОБАВЛЕНО: Сохраняем Физлиц
     }catch(e){ 
         if (e.response && e.response.status === 401) user.value = null;
     }
@@ -661,6 +716,8 @@ export const useMainStore = defineStore('mainStore', () => {
             transferGroupId: groupId, amount: Math.abs(incomeOp.amount),
             fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
             fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
+            // 🔴 ПРЕДПОЛОЖЕНИЕ: Добавляем individualId для будущих переводов
+            fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId,
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
             categoryId: { _id: 'transfer', name: 'Перевод' },
@@ -915,6 +972,7 @@ export const useMainStore = defineStore('mainStore', () => {
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
           if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
+          if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); // 🔴 ДОБАВЛЕНО
 
           if (deleteOperations) {
               await forceRefreshAll();
@@ -936,13 +994,25 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addAccount(data) {
     let payload;
     if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
-    else { payload = { name: data.name, initialBalance: data.initialBalance || 0, companyId: data.companyId || null }; }
+    else { 
+        payload = { 
+            name: data.name, 
+            initialBalance: data.initialBalance || 0, 
+            companyId: data.companyId || null,
+            individualId: data.individualId || null // 🔴 ПРЕДПОЛОЖЕНИЕ: Добавляем individualId
+        }; 
+    }
     const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
     accounts.value.push(res.data); return res.data;
   }
   async function addCompany(name){
     const res = await axios.post(`${API_BASE_URL}/companies`, { name });
     companies.value.push(res.data); return res.data;
+  }
+  // 🔴 ДОБАВЛЕНО: Action для добавления Физлица
+  async function addIndividual(name){
+    const res = await axios.post(`${API_BASE_URL}/individuals`, { name });
+    individuals.value.push(res.data); return res.data;
   }
   async function addContractor(name){
     const res = await axios.post(`${API_BASE_URL}/contractors`, { name });
@@ -961,6 +1031,7 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='contractors') contractors.value = res.data;
       else if (path==='projects')    projects.value = res.data;
       else if (path==='categories')  categories.value = res.data; 
+      else if (path==='individuals') individuals.value = res.data; // 🔴 ДОБАВЛЕНО
     }catch(e){
       await fetchAllEntities();
     }
@@ -1051,21 +1122,10 @@ export const useMainStore = defineStore('mainStore', () => {
     calculationCache.value = {};
   }
   
-  // 🔴 НАЧАЛО: НОВАЯ ФУНКЦИЯ ДЛЯ ЭКСПОРТА
-  async function exportAllOperations() {
-    try {
-      // Вызываем новый эндпоинт, который мы создали в server.js
-      const response = await axios.get(`${API_BASE_URL}/operations/all`);
-      return response.data; // Возвращаем массив всех операций
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-      console.error("Ошибка при загрузке данных для экспорта:", error);
-      throw error; // Передаем ошибку компоненту
-    }
-  }
-  // 🔴 КОНЕЦ: НОВАЯ ФУНКЦИЯ ДЛЯ ЭКСПОРТА
-  
   return {
+    // 🔴 ДОБАВЛЕНО
+    individuals,
+    
     accounts, companies, contractors, projects, categories,
     operationsCache: displayCache,
     displayCache, calculationCache,
@@ -1076,8 +1136,10 @@ export const useMainStore = defineStore('mainStore', () => {
     isAuthLoading,
 
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
+    currentIndividualBalances, // 🔴 ДОБАВЛЕНО
     currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
+    futureIndividualBalances, // 🔴 ДОБАВЛЕНО
     currentOps, 
     
     currentTransfers, futureTransfers,
@@ -1092,6 +1154,7 @@ export const useMainStore = defineStore('mainStore', () => {
     
     addOperation, deleteOperation, moveOperation,
     addAccount, addCompany, addContractor, addProject, addCategory,
+    addIndividual, // 🔴 ДОБАВЛЕНО
     deleteEntity, // 🔴 Экспорт новой функции
     batchUpdateEntities,
 
@@ -1117,7 +1180,6 @@ export const useMainStore = defineStore('mainStore', () => {
     displayOperationsFlat,
     
     importOperations,
-    exportAllOperations, // 🔴 Экспортируем новую функцию
     
     checkAuth,
     logout,
