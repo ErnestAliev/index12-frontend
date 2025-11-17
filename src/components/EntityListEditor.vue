@@ -1,19 +1,24 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step4-REVISED ---
- * * ВЕРСИЯ: 9.0 (Ревизия Шага 4/7) - Возврат к логике Шага 4 + Фикс стилей
+ * * --- МЕТКА ВЕРСИИ: v9.0-step7-CORRECTED ---
+ * * ВЕРСИЯ: 9.0 - Корректная реализация Шага 7 (по новому уточнению)
  * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО (На основе отзыва):
- * 1. (REVERT) Логика Шага 7 (чекбоксы в Компании/Физлица) ОТМЕНЕНА.
- * 2. (RESTORE) Восстановлена логика Шага 4: Редактор "Мои Счета" снова содержит <select>
- * для "Компании" и "Физлица" с взаимным исключением.
- * 3. (STYLE-FIX) Восстановлен `transform: translateY(-5px);` для `.delete-btn`.
- * 4. (STYLE-FIX) Скорректированы стили SVG внутри `.delete-btn` для лучшего вида.
+ * 1. (REFACTOR) Редактор "Мои Счета" УПРОЩЕН. Удалены <select> "Компания" и "Физлицо".
+ * (Теперь он отвечает только за Имя, Баланс, Порядок, Удаление).
+ * 2. (NEW) Редактор "Мои Компании" и "Мои Физлица" теперь отображают
+ * список ВСЕХ СЧЕТОВ (`mainStore.accounts`) с выпадающим списком
+ * (как в "Мои Контрагенты") для привязки.
+ * 3. (LOGIC) `isCompanyEditor` / `isIndividualEditor` теперь используют
+ * `localAccounts = ref([])` для управления счетами.
+ * 4. (UPDATE) `handleSave` теперь сохраняет и сам список (Компании/Физлица),
+ * И обновляет все `localAccounts` через `batchUpdateEntities('accounts')`.
+ * 5. (STYLE-FIX) Исправлены стили кнопки "Удалить" (поднята, SVG заполняет).
  */
 
 const props = defineProps({
@@ -24,6 +29,12 @@ const emit = defineEmits(['close', 'save']);
 
 const mainStore = useMainStore();
 const localItems = ref([]);
+
+// --- 🟢 НОВЫЙ REF (Шаг 7) ---
+// Этот ref будет использоваться ТОЛЬКО в режимах Компания/Физлицо
+// Он будет хранить копию ВСЕХ счетов
+const localAccounts = ref([]);
+// ---
 
 // Определяем путь для API
 let entityPath = '';
@@ -37,7 +48,8 @@ else if (t.includes('физлиц')) entityPath = 'individuals';
 
 const isAccountEditor = props.title === 'Редактировать счета';
 const isContractorEditor = props.title === 'Редактировать контрагентов';
-// (Логика 'isCompanyEditor' / 'isIndividualEditor' больше не нужна для UI)
+const isCompanyEditor = props.title === 'Редактировать компании';
+const isIndividualEditor = props.title === 'Редактировать Физлиц';
 
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
@@ -50,21 +62,20 @@ const onAmountInput = (item) => {
   item.initialBalance = Number(rawValue) || 0;
 };
 
-// 🟢 Восстановлена логика onMounted из Шага 4
+// 🟢 UPDATED (Шаг 7): Полностью переработан onMounted
 onMounted(() => {
+  // 1. Загружаем основной редактируемый список (Компании, Физлица, Счета...)
   localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
     
-    // Режим "Счета": (Логика Шага 4)
+    // Режим "Счета": УПРОЩЕНО (Шаг 7)
+    // Оставляем только `initialBalance`
     if (isAccountEditor) {
         const balance = item.initialBalance || 0;
-        const cId = (item.companyId && typeof item.companyId === 'object') ? item.companyId._id : item.companyId;
-        const iId = (item.individualId && typeof item.individualId === 'object') ? item.individualId._id : item.individualId;
         return { 
             ...item, 
             initialBalance: balance, 
-            initialBalanceFormatted: formatNumber(balance), 
-            companyId: cId || null,
-            individualId: iId || null
+            initialBalanceFormatted: formatNumber(balance)
+            // Поля companyId/individualId УДАЛЕНЫ
         }
     }
     
@@ -78,22 +89,35 @@ onMounted(() => {
     // Другие редакторы (Компании, Физлица, Проекты...)
     return item;
   });
+
+  // 2. (НОВОЕ в Шаге 7)
+  // Если это редактор "Компании" или "Физлица",
+  // мы ДОПОЛНИТЕЛЬНО загружаем копию ВСЕХ счетов в `localAccounts`
+  if (isCompanyEditor || isIndividualEditor) {
+    localAccounts.value = JSON.parse(JSON.stringify(mainStore.accounts)).map(acc => {
+      // (Нормализуем ID, чтобы v-model работал)
+      const cId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+      const iId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+      return { ...acc, companyId: cId || null, individualId: iId || null };
+    });
+  }
 });
 
-// 🟢 Восстановлена логика handleSave из Шага 4
-const handleSave = () => {
+// 🟢 UPDATED (Шаг 7): Полностью переработан handleSave
+const handleSave = async () => {
+  // --- ЧАСТЬ 1: Сохранение самого списка (Компаний, Физлиц, Счетов...) ---
+  
   const itemsToSave = localItems.value.map((item, index) => {
     // Базовые данные
     const data = { _id: item._id, name: item.name, order: index };
     
-    // Данные для "Счетов"
+    // Данные для "Счетов" (УПРОЩЕНО в Шаге 7)
     if (isAccountEditor) { 
       data.initialBalance = item.initialBalance || 0; 
-      data.companyId = item.companyId || null; 
-      data.individualId = item.individualId || null;
+      // companyId и individualId здесь больше не сохраняются
     }
     
-    // Данные для "Контрагентов"
+    // Данные для "Контрагентов" (Без изменений)
     if (isContractorEditor) { 
       data.defaultProjectId = item.defaultProjectId || null; 
       data.defaultCategoryId = item.defaultCategoryId || null; 
@@ -102,8 +126,35 @@ const handleSave = () => {
     return data;
   });
   
-  // Отправляем ОДНО сохранение (Шаг 7 отменен)
+  // 1. Сохраняем основной список (Компаний, Физлиц, Счетов...)
   emit('save', itemsToSave);
+
+  // --- ЧАСТЬ 2: (НОВОЕ в Шаге 7) Обновление привязок Счетов ---
+  // Эта логика выполняется ТОЛЬКО для редакторов Компаний или Физлиц
+  
+  if (isCompanyEditor || isIndividualEditor) {
+    // 2. Сохраняем измененные Счета
+    // (Мы отправляем ВСЕ счета, т.к. пользователь мог изменить привязку любого из них)
+    const accountsToUpdate = localAccounts.value.map(acc => {
+      return {
+        _id: acc._id,
+        name: acc.name, // (Имя не менялось, но batchUpdate требует его)
+        order: acc.order, // (Порядок не менялся, но batchUpdate требует его)
+        initialBalance: acc.initialBalance, // (Баланс не менялся, но...)
+        companyId: acc.companyId || null,
+        individualId: acc.individualId || null
+      };
+    });
+    
+    if (accountsToUpdate.length > 0) {
+      console.log(`[EntityListEditor] Обновление ${accountsToUpdate.length} счетов...`);
+      try {
+        await mainStore.batchUpdateEntities('accounts', accountsToUpdate);
+      } catch (e) {
+        console.error("Ошибка при обновлении привязок счетов:", e);
+      }
+    }
+  }
 };
 
 
@@ -143,25 +194,26 @@ const cancelDelete = () => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     
-    <!-- 🟢 Восстановлен 'wider' для isAccountEditor -->
-    <div class="popup-content" :class="{ 'wide': isContractorEditor, 'wider': isAccountEditor }">
+    <!-- 🟢 UPDATED (Шаг 7): 'wider' теперь для Компаний/Физлиц -->
+    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor }">
       <h3>{{ title }}</h3>
       <p class="editor-hint">Перетащите для сортировки. Нажмите на корзину для удаления.</p>
       
       <!-- 
         // =================================================================
-        // --- 🟢 Восстановлены Заголовки из Шага 4 ---
+        // --- 🟢 UPDATED (Шаг 7): Заголовки ---
         // =================================================================
       -->
       
-      <!-- Режим "Счета" (с Физлицом) -->
-      <div v-if="isAccountEditor" class="editor-header account-header">
+      <!-- Режим "Счета" (УПРОЩЕНО) -->
+      <div v-if="isAccountEditor" class="editor-header account-header-simple">
         <span class="header-name">Название счета</span>
-        <span class="header-company">Компания</span>
-        <span class="header-individual">Физлицо</span>
         <span class="header-balance">Нач. баланс</span>
         <span class="header-trash"></span> 
       </div>
+      
+      <!-- Режим "Компании" / "Физлица" (НОВЫЙ) -->
+      <!-- (Этот режим не имеет заголовков для списка, т.к. список счетов ниже) -->
       
       <!-- Режим "Контрагенты" (Без изменений) -->
       <div v-else-if="isContractorEditor" class="editor-header contractor-header">
@@ -171,15 +223,15 @@ const cancelDelete = () => {
         <span class="header-trash"></span>
       </div>
       
-      <!-- Режим (Компании, Физлица, Проекты...) -->
-      <div v-else class="editor-header default-header">
+      <!-- Режим (Проекты, Категории) -->
+      <div v-else-if="!isCompanyEditor && !isIndividualEditor" class="editor-header default-header">
          <span class="header-name">Название</span>
          <span class="header-trash"></span>
       </div>
       
       <!-- 
         // =================================================================
-        // --- 🟢 Восстановлен Список Draggable из Шага 4 ---
+        // --- 🟢 UPDATED (Шаг 7): Список Draggable (Часть 1: Основной список) ---
         // =================================================================
       -->
       <div class="list-editor">
@@ -190,24 +242,13 @@ const cancelDelete = () => {
           ghost-class="ghost"
         >
           <template #item="{ element: item }">
-            <!-- Обертка 'list-item-container' из Шага 7 УДАЛЕНА -->
             <div class="edit-item">
               <span class="drag-handle">⠿</span>
               
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
-              <!-- Режим "Счета" (Логика Шага 4) -->
+              <!-- Режим "Счета" (УПРОЩЕНО) -->
               <template v-if="isAccountEditor">
-                <select v-model="item.companyId" class="edit-input edit-company" @change="item.individualId = null">
-                  <option :value="null">Без компании</option>
-                  <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
-                </select>
-                
-                <select v-model="item.individualId" class="edit-input edit-individual" @change="item.companyId = null">
-                  <option :value="null">Без физлица</option>
-                  <option v-for="ind in mainStore.individuals" :key="ind._id" :value="ind._id">{{ ind.name }}</option>
-                </select>
-                
                 <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" class="edit-input edit-balance" placeholder="0" />
               </template>
               
@@ -223,8 +264,6 @@ const cancelDelete = () => {
                 </select>
               </template>
               
-              <!-- (Чекбоксы из Шага 7 УДАЛЕНЫ) -->
-              
               <!-- КНОПКА УДАЛЕНИЯ -->
               <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
                 <!-- 🟢 СТИЛЬ-ФИКС: SVG без width/height -->
@@ -233,11 +272,57 @@ const cancelDelete = () => {
                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
               </button>
-              
             </div>
           </template>
         </draggable>
       </div>
+      
+      <!-- 
+        // =================================================================
+        // --- 🟢 NEW (Шаг 7): Список Счетов (для Компаний/Физлиц) ---
+        // =================================================================
+      -->
+      <template v-if="isCompanyEditor || isIndividualEditor">
+        <h4 class="account-list-title">Привязка Счетов к Владельцам</h4>
+        
+        <!-- Заголовки для списка счетов -->
+        <div class="editor-header account-binding-header">
+          <span class="header-name">Счет</span>
+          <span class="header-company">Компания</span>
+          <span class="header-individual">Физлицо</span>
+        </div>
+        
+        <div class="list-editor account-list-editor">
+          <!-- Этот список НЕ draggable -->
+          <div v-for="acc in localAccounts" :key="acc._id" class="edit-item account-binding-item">
+            
+            <!-- Имя счета (нередактируемое) -->
+            <span class="edit-name account-name-label">{{ acc.name }}</span>
+            
+            <!-- Селект "Компания" -->
+            <select v-model="acc.companyId" class="edit-input edit-company" @change="acc.individualId = null">
+              <option :value="null">Без компании</option>
+              <option v-for="comp in localItems" :key="comp._id" :value="comp._id">
+                {{ comp.name }}
+              </option>
+            </select>
+            
+            <!-- Селект "Физлицо" -->
+            <select v-model="acc.individualId" class="edit-input edit-individual" @change="acc.companyId = null">
+              <option :value="null">Без физлица</option>
+              <option v-for="ind in localItems" :key="ind._id" :value="ind._id">
+                {{ ind.name }}
+              </option>
+            </select>
+            
+          </div>
+          <span v-if="localAccounts.length === 0" class="no-accounts-note">
+            Сначала создайте счета в "Мои счета"
+          </span>
+        </div>
+      </template>
+      <!-- --- КОНЕЦ НОВОГО БЛОКА --- -->
+
           
       <div class="popup-actions">
         <button @click="handleSave" class="btn-submit btn-submit-edit">Сохранить изменения</button>
@@ -297,9 +382,9 @@ const cancelDelete = () => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem;
   transition: max-width 0.2s ease;
 }
-/* 🟢 Восстановлен 'wider' для isAccountEditor */
+/* 🟢 'wide' теперь для Контрагентов, Компаний, Физлиц */
 .popup-content.wide { max-width: 680px; }
-.popup-content.wider { max-width: 780px; }
+/* (wider больше не используется) */
 
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
@@ -314,14 +399,14 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .editor-hint { font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 1rem; }
 
-/* 🟢 Восстановлены Заголовки из Шага 4 */
+/* 🟢 UPDATED (Шаг 7): Стили заголовков */
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 
-.account-header .header-company { flex-shrink: 0; width: 130px; }
-.account-header .header-individual { flex-shrink: 0; width: 130px; }
-.account-header .header-balance { flex-shrink: 0; width: 100px; text-align: right; padding-right: 14px; }
+/* Упрощенный заголовок Счетов */
+.account-header-simple .header-balance { flex-shrink: 0; width: 100px; text-align: right; padding-right: 14px; }
 
+/* Заголовок Контрагентов (без изменений) */
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
 .header-trash { width: 48px; flex-shrink: 0; }
@@ -331,11 +416,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
 .list-editor::-webkit-scrollbar { display: none; }
 
-/* 🟢 Убрана обертка list-item-container */
 .edit-item { 
   display: flex; 
   align-items: center; 
-  margin-bottom: 10px; /* Восстановлен margin-bottom */
+  margin-bottom: 10px;
   gap: 10px; 
 }
 .drag-handle { cursor: grab; font-size: 1.5em; color: #999; user-select: none; flex-shrink: 0; width: 22px; padding-top: 10px; }
@@ -349,17 +433,17 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 
-/* 🟢 Восстановлены стили для .edit-company и .edit-individual (Логика Шага 4) */
-.edit-company, .edit-project, .edit-category, .edit-individual {
+/* 🟢 UPDATED (Шаг 7): Стили для селектов */
+.edit-project, .edit-category {
   flex-shrink: 0;
   -webkit-appearance: none; -moz-appearance: none; appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
 }
-.edit-company { width: 130px; }
-.edit-individual { width: 130px; }
 .edit-project, .edit-category { width: 150px; }
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
+/* --- */
+
 
 /* // =================================================================
 // --- 🟢 СТИЛЬ-ФИКС: Кнопка "Удалить" (по вашему запросу) ---
@@ -375,7 +459,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   cursor: pointer; transition: all 0.2s;
   padding: 10px; /* 🟢 NEW: Добавлен padding, чтобы SVG был меньше кнопки */
   
-  /* 🟢 СТИЛЬ-ФИКС: Восстановлен transform (как в оригинальном файле) */
+  /* 🟢 СТИЛЬ-ФИКС: Восстановлен transform */
   transform: translateY(-5px);
 }
 .delete-btn svg {
@@ -391,10 +475,69 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .delete-btn:hover svg {
   stroke: #FF3B30;
 }
+/* --- КОНЕЦ ФИКСА КНОПКИ --- */
 
 .ghost { opacity: 0.5; background: #c0c0c0; }
 
-/* 🟢 Чекбоксы из Шага 7 УДАЛЕНЫ */
+/* // =================================================================
+// --- 🟢 NEW (Шаг 7): Стили для списка привязки Счетов ---
+// =================================================================
+*/
+.account-list-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #1a1a1a;
+  border-top: 1px solid #E0E0E0;
+  padding-top: 1.5rem;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+/* Заголовки для списка счетов */
+.account-binding-header {
+  margin-left: 0; /* Без отступа для drag-handle */
+  margin-right: 0;
+}
+.account-binding-header .header-name { width: 100%; flex-grow: 1; }
+.account-binding-header .header-company { flex-shrink: 0; width: 150px; }
+.account-binding-header .header-individual { flex-shrink: 0; width: 150px; }
+
+/* Обертка для списка счетов */
+.account-list-editor {
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.02);
+  padding: 10px;
+}
+.account-binding-item {
+  margin-bottom: 5px;
+}
+.account-name-label {
+  flex-grow: 1;
+  min-width: 100px;
+  font-size: 0.95em;
+  font-weight: 500;
+  color: #333;
+  padding-left: 10px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edit-company, .edit-individual {
+  flex-shrink: 0; width: 150px;
+  /* (Стили селекта наследуются) */
+}
+.no-accounts-note {
+  font-size: 0.9em;
+  color: #888;
+  padding: 10px;
+  text-align: center;
+}
+/* --- КОНЕЦ СТИЛЕЙ ШАГА 7 --- */
+
 
 /* ВНУТРЕННИЙ МОДАЛ (Overlay внутри Overlay) */
 .inner-overlay {
