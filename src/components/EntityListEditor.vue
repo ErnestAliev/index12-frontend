@@ -247,7 +247,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .account-header .header-balance { flex-shrink: 0; width: 120px; text-align: right; padding-right: 14px; }
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
-.header-trash { width: 36px; flex-shrink: 0; }
+.header-trash { width: 48px; flex-shrink: 0; }
 
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
 .list-editor::-webkit-scrollbar { display: none; }
@@ -349,4 +349,5 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
 
