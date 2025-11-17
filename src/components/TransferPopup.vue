@@ -5,21 +5,24 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP6 ---
- * * ВЕРСИЯ: 8.2 - Добавление "Мои Физлица" (Шаг 6 - Кульминация)
- * ДАТА: 2025-11-17
+ * * --- МЕТКА ВЕРСИИ: v5.5 (Fix #3, #4) ---
+ * * ВЕРСИЯ: 5.5 - Устранение "гонки состояний" (Race Condition)
+ * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. Добавлены `ref`'ы: `fromIndividualId`, `toIndividualId`.
- * 2. Добавлены `ref`'ы для inline-create: `isCreatingFromIndividual`, `isCreatingToIndividual`.
- * 3. `onFromAccountSelected` / `onToAccountSelected` ОБНОВЛЕНЫ для авто-выбора (Company vs Individual) и взаимоисключения.
- * 4. `onMounted` (edit) теперь загружает `fromIndividualId` / `toIndividualId`.
- * 5. `handleSave` теперь отправляет `fromIndividualId` / `toIndividualId` в payload.
- * 6. В <template> добавлены селекты и inline-create для Физлиц (От/Куда).
+ * 1. (FIX-BUG-7 / ОШИБКА #3, #4) Удален `updateProjectionFromCalculationData`
+ * из `syncState`. Это устраняет "гонку состояний",
+ * из-за которой `TheHeader.vue` падал с ошибкой `RangeError`.
+ * 2. (NEW) Добавлено подробное логирование по всему файлу.
+ *
+ * --- 🔴 ИСПРАВЛЕНИЕ (17.11.2025 / 09:20) ---
+ * 1. (FIX #17) `onMounted` теперь корректно находит ID
+ * категории "Перевод" при редактировании,
+ * даже если `operation.categoryId._id` равен "transfer".
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- TransferPopup.vue v8.2-INDIVIDUALS-STEP6 (с Физлицами) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v5.5 (Fix #17) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -34,10 +37,8 @@ const emit = defineEmits(['close', 'transfer-complete']);
 const amount = ref('');
 const fromAccountId = ref(null);
 const fromCompanyId = ref(null);
-const fromIndividualId = ref(null); // 🔴 ДОБАВЛЕНО
 const toAccountId = ref(null);
 const toCompanyId = ref(null);
-const toIndividualId = ref(null); // 🔴 ДОБАВЛЕНО
 const categoryId = ref(null);
 
 const toInputDate = (date) => {
@@ -59,7 +60,7 @@ const amountInput = ref(null);
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-// --- INLINE CREATE STATES (v4.1 + v8.2) ---
+// --- INLINE CREATE STATES (v4.1) ---
 const isCreatingFromAccount = ref(false);
 const newFromAccountName = ref('');
 const newFromAccountInput = ref(null);
@@ -75,14 +76,6 @@ const newToCompanyInput = ref(null);
 const isCreatingCategory = ref(false);
 const newCategoryName = ref('');
 const newCategoryInput = ref(null);
-// 🔴 ДОБАВЛЕНО
-const isCreatingFromIndividual = ref(false);
-const newFromIndividualName = ref('');
-const newFromIndividualInput = ref(null);
-const isCreatingToIndividual = ref(false);
-const newToIndividualName = ref('');
-const newToIndividualInput = ref(null);
-
 
 // --- Форматирование суммы (без изменений) ---
 const formatNumber = (numStr) => {
@@ -106,65 +99,41 @@ const onAmountInput = (event) => {
   });
 };
 
-// =================================================================
-// --- 🔴 ОБНОВЛЕНО: Автоматическая привязка (v8.2) ---
-// =================================================================
+// --- Автоматическая привязка компании (без изменений) ---
 const onFromAccountSelected = (accountId) => {
+  // 🔴 ЛОГИРОВАНИЕ
   console.log(`[TransferPopup] onFromAccountSelected: Выбран счет ${accountId}`);
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
-  if (selectedAccount) {
-    if (selectedAccount.companyId) {
-      const cId = typeof selectedAccount.companyId === 'object'
-        ? selectedAccount.companyId._id
-        : selectedAccount.companyId;
-      fromCompanyId.value = cId;
-      fromIndividualId.value = null; // 🔴 Взаимоисключение
-      console.log(`[TransferPopup] onFromAccountSelected: Авто-установлена компания ${cId}`);
-    } else if (selectedAccount.individualId) { // 🔴 ДОБАВЛЕНО
-      const iId = typeof selectedAccount.individualId === 'object'
-        ? selectedAccount.individualId._id
-        : selectedAccount.individualId;
-      fromIndividualId.value = iId;
-      fromCompanyId.value = null; // 🔴 Взаимоисключение
-      console.log(`[TransferPopup] onFromAccountSelected: Авто-установлено Физлицо ${iId}`);
-    } else {
-      // Если у счета нет владельца
-      fromCompanyId.value = null;
-      fromIndividualId.value = null;
-    }
+  if (selectedAccount && selectedAccount.companyId) {
+    const cId = typeof selectedAccount.companyId === 'object'
+      ? selectedAccount.companyId._id
+      : selectedAccount.companyId;
+    fromCompanyId.value = cId;
+    console.log(`[TransferPopup] onFromAccountSelected: Авто-установлена компания ${cId}`);
   }
 };
 
 const onToAccountSelected = (accountId) => {
+  // 🔴 ЛОГИРОВАНИЕ
   console.log(`[TransferPopup] onToAccountSelected: Выбран счет ${accountId}`);
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
-  if (selectedAccount) {
-    if (selectedAccount.companyId) {
-      const cId = typeof selectedAccount.companyId === 'object'
-        ? selectedAccount.companyId._id
-        : selectedAccount.companyId;
-      toCompanyId.value = cId;
-      toIndividualId.value = null; // 🔴 Взаимоисключение
-      console.log(`[TransferPopup] onToAccountSelected: Авто-установлена компания ${cId}`);
-    } else if (selectedAccount.individualId) { // 🔴 ДОБАВЛЕНО
-      const iId = typeof selectedAccount.individualId === 'object'
-        ? selectedAccount.individualId._id
-        : selectedAccount.individualId;
-      toIndividualId.value = iId;
-      toCompanyId.value = null; // 🔴 Взаимоисключение
-      console.log(`[TransferPopup] onToAccountSelected: Авто-установлено Физлицо ${iId}`);
-    } else {
-      toCompanyId.value = null;
-      toIndividualId.value = null;
-    }
+  if (selectedAccount && selectedAccount.companyId) {
+    const cId = typeof selectedAccount.companyId === 'object'
+      ? selectedAccount.companyId._id
+      : selectedAccount.companyId;
+    toCompanyId.value = cId;
+    console.log(`[TransferPopup] onToAccountSelected: Авто-установлена компания ${cId}`);
   }
 };
-// =================================================================
 
 // --- Заполнение полей при редактировании ---
 onMounted(async () => {
-  // ... (логирование) ...
-  console.log('--- TransferPopup.vue v8.2 (с Физлицами) ЗАГРУЖЕН ---');
+  // 🔴 ЛОГИРОВАНИЕ
+  if (props.transferToEdit) {
+    console.log('[TransferPopup] onMounted: РЕЖИМ РЕДАКТИРОВАНИЯ', props.transferToEdit);
+  } else {
+    console.log('[TransferPopup] onMounted: РЕЖИМ СОЗДАНИЯ');
+  }
 
   // Находим категорию "Перевод"
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
@@ -180,13 +149,11 @@ onMounted(async () => {
 
   // Если редактируем существующий перевод
   if (props.transferToEdit) {
-    console.log('[TransferPopup] onMounted: РЕЖИМ РЕДАКТИРОВАНИЯ', props.transferToEdit);
     const transfer = props.transferToEdit;
     amount.value = formatNumber(Math.abs(transfer.amount));
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId;
     toAccountId.value = transfer.toAccountId?._id || transfer.toAccountId;
     
-    // 🔴 ОБНОВЛЕНО: Эти функции теперь сами выставят company/individual
     if (fromAccountId.value) {
       onFromAccountSelected(fromAccountId.value);
     }
@@ -194,14 +161,11 @@ onMounted(async () => {
       onToAccountSelected(toAccountId.value);
     }
 
-    // Ручная установка, если авто-установка не сработала (для старых переводов)
-    if (!fromCompanyId.value && !fromIndividualId.value) {
+    if (!fromCompanyId.value) {
       fromCompanyId.value = transfer.fromCompanyId?._id || transfer.fromCompanyId;
-      fromIndividualId.value = transfer.fromIndividualId?._id || transfer.fromIndividualId; // 🔴 ДОБАВЛЕНО
     }
-    if (!toCompanyId.value && !toIndividualId.value) {
+    if (!toCompanyId.value) {
       toCompanyId.value = transfer.toCompanyId?._id || transfer.toCompanyId;
-      toIndividualId.value = transfer.toIndividualId?._id || transfer.toIndividualId; // 🔴 ДОБАВЛЕНО
     }
     
     // =================================================================
@@ -210,15 +174,18 @@ onMounted(async () => {
     const savedCategoryId = transfer.categoryId?._id;
     console.log(`[TransferPopup] onMounted: Сохраненный ID категории: ${savedCategoryId}`);
     
+    // Если у операции есть категория И ее ID НЕ 'transfer' (т.е. это настоящая, назначенная пользователем категория)
     if (savedCategoryId && savedCategoryId !== 'transfer') {
       categoryId.value = savedCategoryId;
       console.log(`[TransferPopup] onMounted: Установлена категория из операции: ${savedCategoryId}`);
     } else {
+      // Иначе (если это "Перевод" или категория не назначена), используем ID "Перевод"
       categoryId.value = defaultCategoryId;
       console.log(`[TransferPopup] onMounted: Установлена категория по умолчанию (Перевод): ${defaultCategoryId}`);
     }
     // =================================================================
 
+    // 🔴 ИЗМЕНЕНО: Используем 'transfer.date' (mainStore v4.2 теперь это гарантирует)
     if (transfer.date) {
       editableDate.value = toInputDate(new Date(transfer.date));
     }
@@ -268,8 +235,10 @@ const onDeleteConfirmed = async () => {
       return;
     }
     
+    // 🔴 ИЗМЕНЕНО: Используем mainStore.deleteOperation
     await mainStore.deleteOperation(props.transferToEdit);
     
+    // 🔴 ИЗМЕНЕНО: Отправляем dateKey
     console.log('[TransferPopup] onDeleteConfirmed: Вызываю emit transfer-complete (для обновления UI)');
     emit('transfer-complete', { dateKey: props.transferToEdit.dateKey });
     emit('close');
@@ -283,6 +252,7 @@ const onDeleteConfirmed = async () => {
 const handleCopyClick = () => {
   console.log('[TransferPopup] handleCopyClick: Нажата кнопка "Копировать"');
   isCloneMode.value = true;
+  // 🔴 ИЗМЕНЕНО: Сбрасываем дату на дату ячейки
   editableDate.value = toInputDate(props.date); 
   nextTick(() => { amountInput.value?.focus(); });
 };
@@ -290,7 +260,7 @@ const handleCopyClick = () => {
 
 
 // =================================================================
-// --- 🔴 v4.1 + v8.2: Функции Inline-Create ---
+// --- 🔴 v4.1: Функции Inline-Create (с логами) ---
 // =================================================================
 const showCategoryInput = () => { console.log('[TransferPopup] showCategoryInput'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
 const cancelCreateCategory = () => { console.log('[TransferPopup] cancelCreateCategory'); isCreatingCategory.value = false; newCategoryName.value = ''; };
@@ -325,35 +295,12 @@ const saveNewFromAccount = async () => {
     onFromAccountSelected(existing._id);
   } else {
     try {
-      // 🔴 ОБНОВЛЕНО: Передаем владельца
-      const newItem = await mainStore.addAccount({ 
-        name: name, 
-        companyId: fromCompanyId.value, 
-        individualId: fromIndividualId.value 
-      });
+      const newItem = await mainStore.addAccount({ name: name, companyId: fromCompanyId.value });
       fromAccountId.value = newItem._id;
       onFromAccountSelected(newItem._id);
     } catch (e) { console.error('Ошибка создания счета (From):', e); }
   }
   cancelCreateFromAccount(); 
-};
-
-// 🔴 ДОБАВЛЕНО: Ручной выбор
-const onFromCompanySelected = (companyId) => {
-  if (companyId === '--CREATE_NEW--') {
-    showFromCompanyInput();
-  } else {
-    fromCompanyId.value = companyId;
-    fromIndividualId.value = null; // 🔴 Взаимоисключение
-  }
-};
-const onFromIndividualSelected = (individualId) => {
-  if (individualId === '--CREATE_NEW--') {
-    showFromIndividualInput();
-  } else {
-    fromIndividualId.value = individualId;
-    fromCompanyId.value = null; // 🔴 Взаимоисключение
-  }
 };
 
 const showFromCompanyInput = () => { console.log('[TransferPopup] showFromCompanyInput'); isCreatingFromCompany.value = true; nextTick(() => newFromCompanyInput.value?.focus()); };
@@ -365,36 +312,15 @@ const saveNewFromCompany = async () => {
   
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
-    onFromCompanySelected(existing._id);
+    fromCompanyId.value = existing._id;
   } else {
     try {
       const newItem = await mainStore.addCompany(name);
-      onFromCompanySelected(newItem._id);
+      fromCompanyId.value = newItem._id;
     } catch (e) { console.error(e); }
   }
   cancelCreateFromCompany();
 };
-
-// 🔴 ДОБАВЛЕНО: Inline-create для Физлица (From)
-const showFromIndividualInput = () => { console.log('[TransferPopup] showFromIndividualInput'); isCreatingFromIndividual.value = true; nextTick(() => newFromIndividualInput.value?.focus()); };
-const cancelCreateFromIndividual = () => { console.log('[TransferPopup] cancelCreateFromIndividual'); isCreatingFromIndividual.value = false; newFromIndividualName.value = ''; };
-const saveNewFromIndividual = async () => {
-  const name = newFromIndividualName.value.trim();
-  console.log(`[TransferPopup] saveNewFromIndividual: Сохраняю Физлицо (From) '${name}'`);
-  if (!name) return;
-  
-  const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    onFromIndividualSelected(existing._id);
-  } else {
-    try {
-      const newItem = await mainStore.addIndividual(name);
-      onFromIndividualSelected(newItem._id);
-    } catch (e) { console.error(e); }
-  }
-  cancelCreateFromIndividual();
-};
-
 
 // --- "TO" ---
 const showToAccountInput = () => { console.log('[TransferPopup] showToAccountInput'); isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
@@ -410,37 +336,13 @@ const saveNewToAccount = async () => {
     onToAccountSelected(existing._id);
   } else {
     try {
-      // 🔴 ОБНОВЛЕНО: Передаем владельца
-      const newItem = await mainStore.addAccount({ 
-        name: name, 
-        companyId: toCompanyId.value,
-        individualId: toIndividualId.value
-      });
+      const newItem = await mainStore.addAccount({ name: name, companyId: toCompanyId.value });
       toAccountId.value = newItem._id;
       onToAccountSelected(newItem._id);
     } catch (e) { console.error('Ошибка создания счета (To):', e); }
   }
   cancelCreateToAccount(); 
 };
-
-// 🔴 ДОБАВЛЕНО: Ручной выбор
-const onToCompanySelected = (companyId) => {
-  if (companyId === '--CREATE_NEW--') {
-    showToCompanyInput();
-  } else {
-    toCompanyId.value = companyId;
-    toIndividualId.value = null; // 🔴 Взаимоисключение
-  }
-};
-const onToIndividualSelected = (individualId) => {
-  if (individualId === '--CREATE_NEW--') {
-    showToIndividualInput();
-  } else {
-    toIndividualId.value = individualId;
-    toCompanyId.value = null; // 🔴 Взаимоисключение
-  }
-};
-
 
 const showToCompanyInput = () => { console.log('[TransferPopup] showToCompanyInput'); isCreatingToCompany.value = true; nextTick(() => newToCompanyInput.value?.focus()); };
 const cancelCreateToCompany = () => { console.log('[TransferPopup] cancelCreateToCompany'); isCreatingToCompany.value = false; newToCompanyName.value = ''; };
@@ -451,36 +353,16 @@ const saveNewToCompany = async () => {
   
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
-    onToCompanySelected(existing._id);
+    toCompanyId.value = existing._id;
   } else {
     try {
       const newItem = await mainStore.addCompany(name);
-      onToCompanySelected(newItem._id);
+      toCompanyId.value = newItem._id;
     } catch (e) { console.error(e); }
   }
   cancelCreateToCompany();
 };
-
-// 🔴 ДОБАВЛЕНО: Inline-create для Физлица (To)
-const showToIndividualInput = () => { console.log('[TransferPopup] showToIndividualInput'); isCreatingToIndividual.value = true; nextTick(() => newToIndividualInput.value?.focus()); };
-const cancelCreateToIndividual = () => { console.log('[TransferPopup] cancelCreateToIndividual'); isCreatingToIndividual.value = false; newToIndividualName.value = ''; };
-const saveNewToIndividual = async () => {
-  const name = newToIndividualName.value.trim();
-  console.log(`[TransferPopup] saveNewToIndividual: Сохраняю Физлицо (To) '${name}'`);
-  if (!name) return;
-  
-  const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    onToIndividualSelected(existing._id);
-  } else {
-    try {
-      const newItem = await mainStore.addIndividual(name);
-      onToIndividualSelected(newItem._id);
-    } catch (e) { console.error(e); }
-  }
-  cancelCreateToIndividual();
-};
-// --- КОНЕЦ v4.1 + v8.2 ---
+// --- КОНЕЦ v4.1 ---
 
 // =================================================================
 // --- 🔴 ИСПРАВЛЕНИЕ: Логика _getDateKey (v4.2) ---
@@ -502,7 +384,7 @@ const _getDateKey = (date) => {
 
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v8.2) ---
+// --- 🔴 ИСПРАВЛЕНИЕ: Логика Сохранения (v5.5) ---
 // =================================================================
 
 // 🔴 НОВЫЙ HELPER (ОШИБКА #2)
@@ -580,8 +462,6 @@ const handleSave = async () => {
         toAccountId: toAccountId.value, 
         fromCompanyId: fromCompanyId.value,
         toCompanyId: toCompanyId.value,
-        fromIndividualId: fromIndividualId.value, // 🔴 ДОБАВЛЕНО
-        toIndividualId: toIndividualId.value, // 🔴 ДОБАВЛЕНО
         categoryId: categoryId.value
     };
 
@@ -668,7 +548,10 @@ const closePopup = () => {
       <select 
         v-if="!isCreatingFromCompany" 
         v-model="fromCompanyId" 
-        @change="e => onFromCompanySelected(e.target.value)" 
+        @change="e => {
+          if (e.target.value === '--CREATE_NEW--') showFromCompanyInput();
+          else fromCompanyId = e.target.value;
+        }" 
         class="form-select"
       >
         <option :value="null">Без компании</option>
@@ -682,27 +565,6 @@ const closePopup = () => {
         <button @click="saveNewFromCompany" class="btn-inline-save">✓</button>
         <button @click="cancelCreateFromCompany" class="btn-inline-cancel">X</button>
       </div>
-
-      <!-- 🔴 ДОБАВЛЕНО: Физлицо (Отправитель) -->
-      <label>Мое Физлицо (Отправитель)</label>
-      <select 
-        v-if="!isCreatingFromIndividual" 
-        v-model="fromIndividualId" 
-        @change="e => onFromIndividualSelected(e.target.value)" 
-        class="form-select"
-      >
-        <option :value="null">Без физлица</option>
-        <option v-for="ind in mainStore.individuals" :key="ind._id" :value="ind._id">
-          {{ ind.name }}
-        </option>
-        <option value="--CREATE_NEW--">[ + Создать новое Физлицо ]</option>
-      </select>
-      <div v-else class="inline-create-form">
-        <input type="text" v-model="newFromIndividualName" placeholder="Название Физлица (От)" ref="newFromIndividualInput" @keyup.enter="saveNewFromIndividual" @keyup.esc="cancelCreateFromIndividual" />
-        <button @click="saveNewFromIndividual" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateFromIndividual" class="btn-inline-cancel">X</button>
-      </div>
-
 
       <label>На счет *</label>
       <select 
@@ -730,7 +592,10 @@ const closePopup = () => {
       <select 
         v-if="!isCreatingToCompany" 
         v-model="toCompanyId" 
-        @change="e => onToCompanySelected(e.target.value)" 
+        @change="e => {
+          if (e.target.value === '--CREATE_NEW--') showToCompanyInput();
+          else toCompanyId = e.target.value;
+        }" 
         class="form-select"
       >
         <option :value="null">Без компании</option>
@@ -743,26 +608,6 @@ const closePopup = () => {
         <input type="text" v-model="newToCompanyName" placeholder="Название компании (Куда)" ref="newToCompanyInput" @keyup.enter="saveNewToCompany" @keyup.esc="cancelCreateToCompany" />
         <button @click="saveNewToCompany" class="btn-inline-save">✓</button>
         <button @click="cancelCreateToCompany" class="btn-inline-cancel">X</button>
-      </div>
-
-      <!-- 🔴 ДОБАВЛЕНО: Физлицо (Получатель) -->
-      <label>Мое Физлицо (Получатель)</label>
-      <select 
-        v-if="!isCreatingToIndividual" 
-        v-model="toIndividualId" 
-        @change="e => onToIndividualSelected(e.target.value)" 
-        class="form-select"
-      >
-        <option :value="null">Без физлица</option>
-        <option v-for="ind in mainStore.individuals" :key="ind._id" :value="ind._id">
-          {{ ind.name }}
-        </option>
-        <option value="--CREATE_NEW--">[ + Создать новое Физлицо ]</option>
-      </select>
-      <div v-else class="inline-create-form">
-        <input type="text" v-model="newToIndividualName" placeholder="Название Физлица (Куда)" ref="newToIndividualInput" @keyup.enter="saveNewToIndividual" @keyup.esc="cancelCreateToIndividual" />
-        <button @click="saveNewToIndividual" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateToIndividual" class="btn-inline-cancel">X</button>
       </div>
       
       <label>Категория</label>
