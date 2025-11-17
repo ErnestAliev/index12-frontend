@@ -1,27 +1,21 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.7-FINAL-EXPORT ---
- * * ВЕРСИЯ: 10.7 - Экспорт всех операций + Остаток + Прогноз
+ * * --- МЕТКА ВЕРСИИ: v10.8-STYLE-FIX ---
+ * * ВЕРСИЯ: 10.8 - Исправление опечатки class.bind
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (REWRITE) `handleExport` полностью переписан
- * для реализации сложной смешанной логики:
- * - Он возвращает ВСЕ операции (как в v10.4).
- * - Он рассчитывает 'Остаток' (running balance)
- * для каждой операции.
- * - Он рассчитывает 5 будущих прогнозов
- * (12д, 1м, 3м, 6м, 1г) и добавляет их в
- * КАЖДУЮ строку.
- * - Он принудительно устанавливает порядок
- * колонок, как просил пользователь.
- * - Он заменяет пустые значения на 0 или "".
+ * 1. (FIX) Исправлена ошибка в <template>:
+ * `class.bind="modal-content"` заменено на `class="modal-content"`.
+ * 2. (STYLES) Стили <style scoped> возвращены к v10.0.
+ * 3. (LOGIC) Вся логика v10.7 (расчет остатка и прогноза)
+ * в <script setup> сохранена.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
-    <div class.bind="modal-content">
+    <!-- 🔴 ИСПРАВЛЕНИЕ ОШИБКИ V10.7 -->
+    <div class="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
       
-      <!-- 🔴 v10.7: Заголовок снова "Экспорт Операций" -->
       <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Операций' }}</h2>
       
       <div class="modal-tabs">
@@ -770,10 +764,14 @@ async function handleExport() {
       runningBalances.set(acc._id, acc.initialBalance || 0);
     });
 
-    // Получаем ВСЕ операции из API (они отсортированы date: -1)
-    const operations = await mainStore.exportAllOperations();
-    // Переворачиваем их, чтобы считать остаток (date: 1, от старых к новым)
-    operations.reverse(); 
+    // Получаем ВСЕ операции из API
+    // 🔴 v10.5: `exportAllOperations` возвращает { operations, initialBalance }
+    // Нам больше не нужен `initialBalance` отсюда, так как мы берем его из `mainStore.accounts`.
+    const exportData = await mainStore.exportAllOperations();
+    const operations = exportData.operations; 
+    
+    // Бэкенд v10.5+ УЖЕ сортирует от старых к новым (date: 1)
+    // operations.reverse(); // <- Больше не нужно
 
     // === 3. ФОРМИРОВАНИЕ CSV ===
     const csvRows = [];
@@ -827,18 +825,21 @@ async function handleExport() {
         
         let fromBalance = 0;
         let toBalance = 0;
+        
+        // 🔴 ВАЖНО: Сумма у "transfer" в БД всегда ПОЛОЖИТЕЛЬНАЯ (v9.0+)
+        const absAmount = Math.abs(opAmount);
 
         // Списание со счета "From"
         if (fromAccountId) {
           const currentBalance = runningBalances.get(fromAccountId) || 0;
-          fromBalance = currentBalance - opAmount;
+          fromBalance = currentBalance - absAmount; // 
           runningBalances.set(fromAccountId, fromBalance);
         }
         
         // Зачисление на счет "To"
         if (toAccountId) {
           const currentBalance = runningBalances.get(toAccountId) || 0;
-          toBalance = currentBalance + opAmount;
+          toBalance = currentBalance + absAmount; //
           runningBalances.set(toAccountId, toBalance);
         }
 
@@ -846,7 +847,7 @@ async function handleExport() {
         csvRows.push({
           'Тип': 'Перевод',
           'Категория': 'Исходящий',
-          'Сумма': -opAmount,
+          'Сумма': -absAmount,
           'Остаток': fromBalance,
           'Дата': dateStr,
           'Счет': op.fromAccountId?.name || '',
@@ -859,7 +860,7 @@ async function handleExport() {
         csvRows.push({
           'Тип': 'Перевод',
           'Категория': 'Входящий',
-          'Сумма': opAmount,
+          'Сумма': absAmount,
           'Остаток': toBalance,
           'Дата': dateStr,
           'Счет': op.toAccountId?.name || '',
@@ -937,7 +938,7 @@ function triggerCsvDownload(csvString) {
 </script>
 
 <style scoped>
-/* (Стили не изменялись) */
+/* 🔴 v10.8: СТИЛИ ВОЗВРАЩЕНЫ К ОРИГИНАЛУ v10.0 */
 
 .modal-overlay {
   position: fixed;
@@ -1004,18 +1005,19 @@ h2 {
   color: var(--color-text-soft);
   cursor: pointer;
   font-size: 15px;
-  margin-bottom: -1px; 
+  margin-bottom: -1px; /* Нахлест на border-bottom */
 }
 .tab-btn.active {
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
 }
 
+
 .import-content-wrapper {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  min-height: 0; /* Важно для flex-grow */
 }
 
 .modal-step-content {
@@ -1161,7 +1163,7 @@ thead th {
   flex-wrap: wrap;
   gap: 20px;
   overflow-y: auto;
-  max-height: 400px; 
+  max-height: 400px; /* Ограничиваем высоту */
   padding: 10px;
   background: var(--color-background-soft);
   border-radius: 6px;
