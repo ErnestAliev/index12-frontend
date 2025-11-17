@@ -1,121 +1,201 @@
+<!--
+ * * --- МЕТКА ВЕРСИИ: v9.0-EXPORT-UI ---
+ * * ВЕРСИЯ: 9.0 - UI для Импорта/Экспорта
+ * ДАТА: 2025-11-17
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. Добавлен `currentTab` ref для переключения между "import" и "export".
+ * 2. Добавлен UI вкладок (кнопки "Импорт" и "Экспорт").
+ * 3. Существующий UI импорта обернут в `v-if="currentTab === 'import'"`.
+ * 4. Добавлен новый UI для экспорта в `v-if="currentTab === 'export'"`.
+ * 5. Добавлена логика для `handleExport`, `formatDataForExport`, `triggerCsvDownload`.
+ * 6. `resetState` обновлен для сброса состояния экспорта.
+ * 7. Добавлены НОВЫЕ стили для вкладок и UI экспорта. Существующие стили НЕ ИЗМЕНЯЛИСЬ.
+ -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
-      <h2>Импорт операций</h2>
-
-      <div v-if="step === 'upload'" class="modal-step-content">
-        <div 
-          class="drop-zone" 
-          @dragover.prevent="dragOver = true"
-          @dragleave.prevent="dragOver = false"
-          @drop.prevent="handleDrop"
-          :class="{ 'drag-over': dragOver }"
+      
+      <!-- 🔴 ИЗМЕНЕНИЕ: Динамический заголовок -->
+      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт операций' }}</h2>
+      
+      <!-- 🔴 НАЧАЛО: Переключатель вкладок -->
+      <div class="modal-tabs">
+        <button 
+          class="tab-btn" 
+          :class="{ active: currentTab === 'import' }"
+          @click="currentTab = 'import'"
         >
-          <div v-if="!isLoading">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Перетащите CSV файл сюда</p>
-            <p class="small-text">или</p>
-            <label class="file-input-label">
-              Выберите файл
-              <input 
-                ref="fileInputRef"
-                type="file" 
-                accept=".csv" 
-                @change="handleFileSelect" 
-                class="file-input" 
-              />
-            </label>
-          </div>
-          <div v-if="isLoading" class="loading-indicator">
-            <div class="spinner"></div>
-            <p>Парсинг файла...</p>
-          </div>
-        </div>
-        <div v-if="error" class="error-message">{{ error }}</div>
+          Импорт (CSV)
+        </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: currentTab === 'export' }"
+          @click="currentTab = 'export'"
+        >
+          Экспорт (CSV)
+        </button>
       </div>
+      <!-- 🔴 КОНЕЦ: Переключатель вкладок -->
 
-      <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
-        <p class="step-description">
-          Сопоставьте колонки из вашего CSV-файла с полями системы.
-        </p>
-        <div class="mapping-table-container">
-          <table>
-            <thead>
-              <tr>
-                <th class="checkbox-col">
-                  <input 
-                    type="checkbox" 
-                    @change="toggleSelectAll" 
-                    :checked="isAllSelected"
-                    title="Выбрать все/Снять все"
-                  />
-                </th>
-                <th v-for="header in csvHeaders" :key="header">
-                  <div class="header-cell">
-                    <span class="csv-header-name" :title="header">{{ header }}</span>
-                    <select v-model="columnMapping[header]" class="mapping-select">
-                      <option :value="null">-- Не использовать --</option>
-                      <option disabled>-----------------</option>
-                      <option v-for="field in systemFields" :key="field.key" :value="field.key">
-                        {{ field.label }}
-                      </option>
-                    </select>
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, rowIndex) in previewData" :key="rowIndex" :class="{ 'row-disabled': !isValidRow(row) }">
-                <td class="checkbox-col">
-                  <input 
-                    type="checkbox" 
-                    :value="rowIndex" 
-                    v-model="selectedRows"
-                    :disabled="!isValidRow(row)"
-                  />
-                </td>
-                <td v-for="(header, colIndex) in csvHeaders" :key="colIndex" :title="row[header]">
-                  {{ row[header] }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-if="error" class="error-message">{{ error }}</div>
-      </div>
-
-      <div v-if="step === 'review'" class="modal-step-content review-step">
-        <p class="step-description">
-          Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
-        </p>
-        <p>Следующие новые элементы будут созданы автоматически. Пожалуйста, проверьте:</p>
-        
-        <div class="new-entities-container">
-          <div v-for="entityType in Object.keys(newEntities)" :key="entityType">
-            <div v-if="newEntities[entityType].length > 0" class="entity-list">
-              <h4>Новые {{ getEntityName(entityType) }}:</h4>
-              <ul>
-                <li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li>
-              </ul>
+      <!-- ============================================= -->
+      <!-- 🔴 НАЧАЛО: Вкладка "ИМПОРТ" (Существующий код) -->
+      <!-- ============================================= -->
+      <div v-if="currentTab === 'import'" class="import-content-wrapper">
+        <div v-if="step === 'upload'" class="modal-step-content">
+          <div 
+            class="drop-zone" 
+            @dragover.prevent="dragOver = true"
+            @dragleave.prevent="dragOver = false"
+            @drop.prevent="handleDrop"
+            :class="{ 'drag-over': dragOver }"
+          >
+            <div v-if="!isLoading">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p>Перетащите CSV файл сюда</p>
+              <p class="small-text">или</p>
+              <label class="file-input-label">
+                Выберите файл
+                <input 
+                  ref="fileInputRef"
+                  type="file" 
+                  accept=".csv" 
+                  @change="handleFileSelect" 
+                  class="file-input" 
+                />
+              </label>
+            </div>
+            <div v-if="isLoading" class="loading-indicator">
+              <div class="spinner"></div>
+              <p>Парсинг файла...</p>
             </div>
           </div>
-          <p v-if="Object.values(newEntities).every(arr => arr.length === 0)">
-            Новых элементов для создания не найдено. Все данные ссылаются на существующие сущности.
-          </p>
+          <div v-if="error" class="error-message">{{ error }}</div>
         </div>
-        <div v-if="error" class="error-message">{{ error }}</div>
-      </div>
-      
-      <div v-if="step === 'importing'" class="modal-step-content">
-        <div class="loading-indicator">
-          <div class="spinner"></div>
-          <p>Идет импорт данных... Пожалуйста, подождите.</p>
-          <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
-        </div>
-      </div>
 
-      <div class="modal-actions">
+        <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
+          <p class="step-description">
+            Сопоставьте колонки из вашего CSV-файла с полями системы.
+          </p>
+          <div class="mapping-table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      @change="toggleSelectAll" 
+                      :checked="isAllSelected"
+                      title="Выбрать все/Снять все"
+                    />
+                  </th>
+                  <th v-for="header in csvHeaders" :key="header">
+                    <div class="header-cell">
+                      <span class="csv-header-name" :title="header">{{ header }}</span>
+                      <select v-model="columnMapping[header]" class="mapping-select">
+                        <option :value="null">-- Не использовать --</option>
+                        <option disabled>-----------------</option>
+                        <option v-for="field in systemFields" :key="field.key" :value="field.key">
+                          {{ field.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in previewData" :key="rowIndex" :class="{ 'row-disabled': !isValidRow(row) }">
+                  <td class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      :value="rowIndex" 
+                      v-model="selectedRows"
+                      :disabled="!isValidRow(row)"
+                    />
+                  </td>
+                  <td v-for="(header, colIndex) in csvHeaders" :key="colIndex" :title="row[header]">
+                    {{ row[header] }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+
+        <div v-if="step === 'review'" class="modal-step-content review-step">
+          <p class="step-description">
+            Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
+          </p>
+          <p>Следующие новые элементы будут созданы автоматически. Пожалуйста, проверьте:</p>
+          
+          <div class="new-entities-container">
+            <div v-for="entityType in Object.keys(newEntities)" :key="entityType">
+              <div v-if="newEntities[entityType].length > 0" class="entity-list">
+                <h4>Новые {{ getEntityName(entityType) }}:</h4>
+                <ul>
+                  <li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+            <p v-if="Object.values(newEntities).every(arr => arr.length === 0)">
+              Новых элементов для создания не найдено. Все данные ссылаются на существующие сущности.
+            </p>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+        
+        <div v-if="step === 'importing'" class="modal-step-content">
+          <div class="loading-indicator">
+            <div class="spinner"></div>
+            <p>Идет импорт данных... Пожалуйста, подождите.</p>
+            <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
+          </div>
+        </div>
+      </div>
+      <!-- =========================================== -->
+      <!-- 🔴 КОНЕЦ: Вкладка "ИМПОРТ"                  -->
+      <!-- =========================================== -->
+      
+      <!-- =========================================== -->
+      <!-- 🔴 НАЧАЛО: Вкладка "ЭКСПОРТ" (Новый код)     -->
+      <!-- =========================================== -->
+      <div v-if="currentTab === 'export'" class="modal-step-content export-step">
+        <p>
+          Вы можете экспортировать **все операции** из вашей базы данных в один CSV-файл.
+        </p>
+        <p>
+          Этот процесс извлечет все записи о доходах и расходах (переводы не включаются в экспорт).
+        </p>
+        
+        <div v-if="isExporting" class="loading-indicator">
+          <div class="spinner"></div>
+          <p>Подготовка данных...</p>
+          <p class="small-text">Это может занять некоторое время, если у вас много операций.</p>
+        </div>
+        
+        <button 
+          @click="handleExport" 
+          class="btn-primary export-btn" 
+          :disabled="isExporting"
+        >
+          Экспортировать все операции
+        </button>
+        
+        <div v-if="exportError" class="error-message">
+          {{ exportError }}
+        </div>
+      </div>
+      <!-- =========================================== -->
+      <!-- 🔴 КОНЕЦ: Вкладка "ЭКСПОРТ"                 -->
+      <!-- =========================================== -->
+
+
+      <!-- 🔴 ИЗМЕНЕНИЕ: Футер теперь зависит от вкладки -->
+      
+      <!-- Футер для ИМПОРТА -->
+      <div v-if="currentTab === 'import'" class="modal-actions">
         <button 
           @click="closeModal" 
           class="btn-secondary"
@@ -151,6 +231,17 @@
           Начать импорт ({{ operationsToImport.length }})
         </button>
       </div>
+
+      <!-- Футер для ЭКСПОРТА -->
+      <div v-if="currentTab === 'export'" class="modal-actions">
+        <button 
+          @click="closeModal" 
+          class="btn-secondary"
+          :disabled="isExporting"
+        >
+          Закрыть
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -164,37 +255,33 @@ import { useMainStore } from '@/stores/mainStore';
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
 
-// --- Шаги ---
+// 🔴 НАЧАЛО: Новое состояние для вкладок и экспорта
+const currentTab = ref('import'); // 'import' or 'export'
+const isExporting = ref(false);
+const exportError = ref(null);
+// 🔴 КОНЕЦ: Новое состояние
+
+// --- Шаги (Импорт) ---
 const step = ref('upload'); // 'upload', 'mapping', 'review', 'importing'
 const error = ref(null);
 const isLoading = ref(false);
 
-// --- CSV Данные ---
+// --- CSV Данные (Импорт) ---
 const file = ref(null);
 const fileInputRef = ref(null); // <-- ref для input
 const dragOver = ref(false);
 const csvHeaders = ref([]);
 const csvData = ref([]); // Полный набор данных
-// !!! ИЗМЕНЕНИЕ: Убрано .slice(0, 5) !!!
 const previewData = computed(() => csvData.value); // Теперь показывает ВСЕ строки
-// --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
-// !!! НОВЫЙ КОД: Чекбоксы !!!
-// Храним ИНДЕКСЫ выбранных строк
 const selectedRows = ref(new Set()); 
 const isAllSelected = computed(() => {
   const validRowCount = csvData.value.filter(isValidRow).length;
   return validRowCount > 0 && selectedRows.value.size === validRowCount;
 });
-// --- КОНЕЦ НОВОГО КОДА ---
 
 
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({}); // { 'CSV Header Name': 'systemFieldKey' }
-
-/**
- * Определения полей нашей системы, с которыми мы можем сопоставить CSV.
- */
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
@@ -234,7 +321,6 @@ const isReviewDisabled = computed(() => {
 
 // --- Функции ---
 
-// !!! НОВЫЙ КОД: Функция принудительной очистки состояния !!!
 function resetState() {
   console.log("Очистка состояния ImportExportModal...");
   step.value = 'upload';
@@ -249,13 +335,16 @@ function resetState() {
   
   selectedRows.value.clear(); // <-- Очищаем чекбоксы
   
+  // 🔴 НАЧАЛО: Очистка состояния экспорта
+  isExporting.value = false;
+  exportError.value = null;
+  // 🔴 КОНЕЦ
+  
   // Очищаем <input type="file">
   if (fileInputRef.value) {
     fileInputRef.value.value = null;
   }
 }
-// --- КОНЕЦ НОВОГО КОДА ---
-
 
 function closeModal() {
   resetState(); // <-- !!! ИЗМЕНЕНИЕ: Очищаем состояние при закрытии
@@ -286,8 +375,6 @@ function handleFileSelect(event) {
     parseCsv();
   }
   
-  // !!! ИСПРАВЛЕНИЕ: Очищаем input, чтобы @change сработал,
-  // если пользователь выберет тот же файл снова.
   if (event.target) {
     event.target.value = null;
   }
@@ -313,7 +400,6 @@ function handleDrop(event) {
  * Парсинг CSV с помощью PapaParse
  */
 function parseCsv() {
-  // !!! ИСПРАВЛЕНИЕ: Очищаем старые данные перед парсингом
   csvData.value = [];
   csvHeaders.value = [];
   selectedRows.value.clear(); // <-- Очищаем чекбоксы
@@ -373,8 +459,6 @@ function autoMapHeaders() {
   columnMapping.value = mapping;
 }
 
-// --- !!! НОВЫЙ КОД: Функции для чекбоксов !!! ---
-
 /**
  * Проверяет, можно ли импортировать строку (есть ли у нее дата, сумма, тип)
  */
@@ -414,8 +498,6 @@ function toggleSelectAll() {
     autoSelectValidRows();
   }
 }
-// --- !!! КОНЕЦ НОВОГО КОДА ---
-
 
 /**
  * Переход к шагу "Подтверждение".
@@ -431,7 +513,6 @@ function goToReviewStep() {
   }
   
   // 2. Преобразуем данные (это заполнит operationsToImport)
-  // !!! ИЗМЕНЕНИЕ: Передаем 'selectedRows'
   operationsToImport.value = transformDataForImport(selectedRows.value);
   
   // 3. Идентификация новых сущностей (на основе operationsToImport)
@@ -511,13 +592,6 @@ async function startImport() {
   importProgress.value = 0;
 
   try {
-    // 1. Данные уже подготовлены в operationsToImport
-    
-    // 2. Отправить в mainStore (который отправит на сервер)
-    // !!! ИЗМЕНЕНИЕ v2.7:
-    // Мы отправляем *ВСЕ* operations (transformDataForImport)
-    // И *отдельно* индексы (selectedRows)
-    
     const allTransformedOperations = transformDataForImport(null); // Все операции
     const selectedIndices = Array.from(selectedRows.value); // Только индексы
 
@@ -591,8 +665,6 @@ function transformDataForImport(selectedIndices) {
         // Очистка и преобразование данных
         if (systemKey === 'amount') {
           value = cleanAmount(value);
-          // !!! ИСПРАВЛЕНИЕ: (Проблема с красным цветом) !!!
-          // Если тип 'expense' и сумма положительная, делаем ее отрицательной
           if (opType === 'expense' && value > 0) {
             value = -value;
           }
@@ -708,6 +780,110 @@ function normalizeType(value) {
   return null; // Неизвестный тип
 }
 
+
+// ----------------------------------------------
+// 🔴 НАЧАЛО: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА
+// ----------------------------------------------
+
+/**
+ * Главная функция экспорта
+ */
+async function handleExport() {
+  isExporting.value = true;
+  exportError.value = null;
+  
+  try {
+    // 1. Получаем все операции из store (который дергает API)
+    const operations = await mainStore.exportAllOperations();
+    
+    if (!operations || operations.length === 0) {
+      exportError.value = "Нет операций для экспорта.";
+      isExporting.value = false;
+      return;
+    }
+    
+    // 2. Форматируем данные для CSV
+    const formattedData = formatDataForExport(operations);
+    
+    // 3. Конвертируем JSON в CSV строку
+    const csvString = Papa.unparse(formattedData, {
+      header: true,
+    });
+    
+    // 4. Запускаем скачивание файла
+    triggerCsvDownload(csvString);
+    
+  } catch (err) {
+    console.error("Ошибка экспорта:", err);
+    exportError.value = `Не удалось экспортировать данные: ${err.message || 'Ошибка сервера'}`;
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+/**
+ * Преобразует массив операций с сервера в плоский массив 
+ * объектов для Papa.unparse
+ */
+function formatDataForExport(operations) {
+  return operations
+    // Фильтруем переводы, т.к. в импорте они тоже не участвуют
+    .filter(op => op.type !== 'transfer' && !op.isTransfer) 
+    .map(op => {
+      let dateStr = '';
+      if (op.date) {
+        try {
+          // Форматируем дату как dd.MM.yyyy (локальный формат)
+          const d = new Date(op.date);
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          dateStr = `${day}.${month}.${year}`;
+        } catch (e) {
+          dateStr = op.date; // fallback
+        }
+      }
+      
+      return {
+        'Дата': dateStr,
+        'Тип': op.type,
+        'Сумма': op.amount,
+        'Категория': op.categoryId ? op.categoryId.name : '',
+        'Проект': op.projectId ? op.projectId.name : '',
+        'Счет': op.accountId ? op.accountId.name : '',
+        'Компания': op.companyId ? op.companyId.name : '',
+        'Контрагент': op.contractorId ? op.contractorId.name : '',
+      };
+    });
+}
+
+/**
+ * Создает Blob и инициирует скачивание CSV файла
+ */
+function triggerCsvDownload(csvString) {
+  // \uFEFF - это BOM (Byte Order Mark), он помогает Excel
+  // правильно определить кодировку UTF-8 и отобразить кириллицу.
+  const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
+  
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  
+  // Генерируем имя файла
+  const formattedDate = new Date().toISOString().split('T')[0].replace(/-/g, '');
+  link.setAttribute('download', `index12_export_${formattedDate}.csv`);
+  
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+}
+// ----------------------------------------------
+// 🔴 КОНЕЦ: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА
+// ----------------------------------------------
 </script>
 
 <style scoped>
@@ -759,7 +935,41 @@ h2 {
   margin: 0;
   border-bottom: 1px solid var(--color-border);
   font-weight: 600;
+  flex-shrink: 0; /* 🔴 НОВОЕ */
 }
+
+/* 🔴 НАЧАЛО: Стили для вкладок */
+.modal-tabs {
+  display: flex;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.tab-btn {
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  font-size: 15px;
+  margin-bottom: -1px; /* Нахлест на border-bottom */
+}
+.tab-btn.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+/* 🔴 КОНЕЦ: Стили для вкладок */
+
+
+/* 🔴 НАЧАЛО: Обёртка для контента импорта */
+.import-content-wrapper {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Важно для flex-grow */
+}
+/* 🔴 КОНЕЦ */
 
 .modal-step-content {
   flex-grow: 1;
@@ -827,6 +1037,7 @@ h2 {
   margin: 0;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background-soft);
+  flex-shrink: 0; /* 🔴 НОВОЕ */
 }
 
 .mapping-table-container {
@@ -930,6 +1141,25 @@ thead th {
   color: var(--color-text-soft);
 }
 
+/* 🔴 НАЧАЛО: Стили для вкладки Экспорта */
+.export-step {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-size: 16px;
+}
+.export-step p {
+  max-width: 500px;
+  color: var(--color-text-soft);
+  line-height: 1.6;
+}
+.export-btn {
+  padding: 12px 24px;
+  font-size: 16px;
+  margin-top: 24px;
+}
+/* 🔴 КОНЕЦ: Стили для вкладки Экспорта */
+
 /* --- Загрузка / Спиннер --- */
 .loading-indicator {
   display: flex;
@@ -959,6 +1189,7 @@ thead th {
   justify-content: flex-end;
   gap: 12px;
   background: var(--color-background);
+  flex-shrink: 0; /* 🔴 НОВОЕ */
 }
 
 /* --- Общие элементы --- */
@@ -1006,5 +1237,4 @@ thead th {
   opacity: 0.6;
   cursor: not-allowed;
 }
-
 </style>
