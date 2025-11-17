@@ -408,9 +408,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .edit-item {
   display: flex;
-  /* 🟢 ГЛАВНОЕ ИСПРАВЛЕНИЕ:
-     Выравниваем все дочерние элементы по их вертикальному центру.
-     Это единое правило для всех. */
+  /* 🟢 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Выравниваем все по центру */
   align-items: center;
   margin-bottom: 10px;
   gap: 10px;
@@ -422,12 +420,12 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   user-select: none;
   flex-shrink: 0;
   width: 22px;
-  height: 48px; /* <-- Высота инпута */
+  height: 48px;
   display: flex;
-  align-items: center; /* Центрируем иконку по вертикали */
+  align-items: center;
   justify-content: center;
-  /* padding-top: 14px; <-- 🟢 УДАЛЕН ХАК */
   box-sizing: border-box;
+  margin: 0; /* 🟢 ИСПРАВЛЕНИЕ: Сброс отступов */
 }
 .edit-item:active { cursor: grabbing; }
 
@@ -435,13 +433,14 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   height: 48px; padding: 0 14px; background: #FFFFFF;
   border: 1px solid #E0E0E0; border-radius: 8px;
   color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box;
+  /* 🟢 ИСПРАВЛЕНИЕ: Сброс отступов из base.css */
+  margin: 0;
 }
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 
 .edit-name {
   flex-grow: 1;
   min-width: 100px;
-  /* transform: translateY(-3px); <-- 🟢 УДАЛЕН ХАК */
 }
 
 .edit-project, .edit-category {
@@ -453,7 +452,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-project, .edit-category { width: 150px; }
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
 
-/* 🟢 СТИЛИ ДЛЯ НОВОЙ КНОПКИ (v9.1) */
+/* Кнопка "Выбрать счета" */
 .edit-account-picker {
   flex-shrink: 0;
   width: 310px;
@@ -465,16 +464,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   background-position: right 14px center;
   padding-right: 40px;
   font-size: 15px;
-  
-  /* 🟢 ДОПОЛНЕНИЕ:
-     Гарантируем, что текст внутри кнопки
-     тоже будет выровнен по центру. */
   display: flex;
   align-items: center;
+  /* 🟢 ИСПРАВЛЕНИЕ: Сброс отступов (для <button>) */
+  margin: 0;
+  /* 🟢 ИСПРАВЛЕНИЕ: Сброс padding из base.css */
+  padding: 0 14px;
+  height: 48px;
 }
 .edit-account-picker:hover {
   border-color: #222222;
 }
+
 
 .delete-btn {
   width: 48px;
@@ -486,7 +487,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   cursor: pointer; transition: all 0.2s;
   padding: 10px;
   box-sizing: border-box;
-  /* transform: translateY(3px); <-- 🟢 УДАЛЕН ХАК (если он был) */
+  /* 🟢 ИСПРАВЛЕНИЕ: Сброс отступов (для <button>) */
+  margin: 0;
 }
 .delete-btn svg {
   width: 100%;
