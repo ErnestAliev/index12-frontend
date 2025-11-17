@@ -1,27 +1,28 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.6-SUMMARY-DATE-FIX ---
- * * ВЕРСИЯ: 10.6 - Исправление RangeError: Invalid time value
+ * * --- МЕТКА ВЕРСИИ: v10.7-FINAL-EXPORT ---
+ * * ВЕРСИЯ: 10.7 - Экспорт всех операций + Остаток + Прогноз
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (REMOVED) Удален локальный helper `_parseDateKey`.
- * 2. (UPDATE) `handleExport` (Export):
- * - `today` теперь определяется через `new Date()`,
- * а не через `mainStore.todayDayOfYear`,
- * что предотвращает ошибку до инициализации.
- * - Даты операций (`opDate`) теперь
- * получаются из `new Date(op.date)`,
- * а не через парсинг `op.dateKey`.
- * - Добавлены проверки `if (!op.date)` и
- * `if (isNaN(opDate.getTime()))`
- * для защиты от некорректных данных.
+ * 1. (REWRITE) `handleExport` полностью переписан
+ * для реализации сложной смешанной логики:
+ * - Он возвращает ВСЕ операции (как в v10.4).
+ * - Он рассчитывает 'Остаток' (running balance)
+ * для каждой операции.
+ * - Он рассчитывает 5 будущих прогнозов
+ * (12д, 1м, 3м, 6м, 1г) и добавляет их в
+ * КАЖДУЮ строку.
+ * - Он принудительно устанавливает порядок
+ * колонок, как просил пользователь.
+ * - Он заменяет пустые значения на 0 или "".
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
-    <div class="modal-content">
+    <div class.bind="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
       
-      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт (Сводка)' }}</h2>
+      <!-- 🔴 v10.7: Заголовок снова "Экспорт Операций" -->
+      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Операций' }}</h2>
       
       <div class="modal-tabs">
         <button 
@@ -36,7 +37,7 @@
           :class="{ active: currentTab === 'export' }"
           @click="currentTab = 'export'"
         >
-          Экспорт (Сводка)
+          Экспорт (CSV)
         </button>
       </div>
 
@@ -157,19 +158,19 @@
       </div>
       
       <!-- =========================================== -->
-      <!-- Вкладка "ЭКСПОРТ (СВОДКА)"                  -->
+      <!-- Вкладка "ЭКСПОРТ (CSV)"                     -->
       <!-- =========================================== -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
         <p>
-          Вы можете экспортировать **сводный отчет** с текущим балансом и прогнозом поступлений.
+          Экспорт **всех операций** с расчетом остатка по счету и прогнозом будущих поступлений.
         </p>
         <p>
-          Отчет будет основан на данных, загруженных в приложение.
+          Расчет остатка ведется от самой первой операции до последней.
         </p>
         
         <div v-if="isExporting" class="loading-indicator">
           <div class="spinner"></div>
-          <p>Подготовка сводки...</p>
+          <p>Подготовка отчета... (Это может занять время)</p>
         </div>
         
         <button 
@@ -177,7 +178,7 @@
           class="btn-primary export-btn" 
           :disabled="isExporting"
         >
-          Экспортировать сводку
+          Экспортировать все операции
         </button>
         
         <div v-if="exportError" class="error-message">
@@ -241,7 +242,7 @@
 import { ref, computed } from 'vue';
 import Papa from 'papaparse';
 import { useMainStore } from '@/stores/mainStore';
-// 🟢 v10.5: Импортируем форматер чисел
+// 🟢 v10.7: Импортируем форматер чисел
 import { formatNumber } from '@/utils/formatters.js';
 
 // --- Компонент ---
@@ -691,39 +692,23 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.6 - Исправление)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.7 - Сводка + Остаток)
 // ----------------------------------------------
 
 /**
- * 🟢 v10.6: Полностью переписанная функция handleExport
+ * 🟢 v10.7: Функция `handleExport`
+ * Генерирует CSV со ВСЕМИ операциями,
+ * добавляя к ним "Остаток" и 5 колонок прогноза.
  */
 async function handleExport() {
   isExporting.value = true;
   exportError.value = null;
   
   try {
-    // 1. 🟢 FIX: Получаем "сегодня" надежным способом
+    // === 1. ПОДГОТОВКА ПРОГНОЗА ===
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 2. Получаем текущий баланс
-    const currentBalance = mainStore.currentTotalBalance;
-
-    // 3. 🟢 FIX: Фильтруем будущие операции, используя op.date
-    const allFutureOps = mainStore.allOperationsFlat.filter(op => {
-      if (!op.date) return false; // Защита
-      try {
-        const opDate = new Date(op.date);
-        if (isNaN(opDate.getTime())) return false; // Защита от Invalid Date
-        return opDate.getTime() > today.getTime();
-      } catch (e) {
-        return false; // Защита от ошибки конструктора
-      }
-    });
-
-    // 4. Считаем даты для прогноза
-    const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
-    
     // Хелперы для дат
     const addDays = (d, days) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
     const addMonths = (d, months) => { const n = new Date(d); n.setMonth(n.getMonth() + months); return n; };
@@ -736,45 +721,181 @@ async function handleExport() {
     const date6m = addMonths(today, 6);
     const date1y = addYears(today, 1);
 
-    // 5. Считаем КУМУЛЯТИВНЫЕ поступления
-    let income12d = 0;
-    let income1m = 0;
-    let income3m = 0;
-    let income6m = 0;
-    let income1y = 0;
+    // Получаем ВСЕ будущие операции (фильтруем вручную)
+    const allFutureOps = mainStore.allOperationsFlat.filter(op => {
+      if (!op.date) return false;
+      try {
+        const opDate = new Date(op.date);
+        if (isNaN(opDate.getTime())) return false;
+        return opDate.getTime() > today.getTime();
+      } catch (e) { return false; }
+    });
+    
+    // Считаем КУМУЛЯТИВНЫЕ поступления
+    let totalIncome12d = 0;
+    let totalIncome1m = 0;
+    let totalIncome3m = 0;
+    let totalIncome6m = 0;
+    let totalIncome1y = 0;
 
     for (const op of allFutureOps) {
-      // Считаем только 'income'
-      if (op.type === 'income' && op.amount > 0) {
-        // 🟢 FIX: Используем op.date
+      if (op.type === 'income' && (op.amount || 0) > 0) {
         const opDate = new Date(op.date);
+        const amount = op.amount || 0;
         
-        // Суммы кумулятивные (включают предыдущие)
-        if (opDate <= date1y) income1y += op.amount;
-        if (opDate <= date6m) income6m += op.amount;
-        if (opDate <= date3m) income3m += op.amount;
-        if (opDate <= date1m) income1m += op.amount;
-        if (opDate <= date12d) income12d += op.amount;
+        if (opDate <= date1y) totalIncome1y += amount;
+        if (opDate <= date6m) totalIncome6m += amount;
+        if (opDate <= date3m) totalIncome3m += amount;
+        if (opDate <= date1m) totalIncome1m += amount;
+        if (opDate <= date12d) totalIncome12d += amount;
+      }
+    }
+    
+    // Форматируем для вставки в CSV
+    const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+    
+    const futureHeaders = {
+      [`Поступления до ${ruFormatter.format(date12d)} (12 д)`]: totalIncome12d,
+      [`Поступления до ${ruFormatter.format(date1m)} (1 мес)`]: totalIncome1m,
+      [`Поступления до ${ruFormatter.format(date3m)} (3 мес)`]: totalIncome3m,
+      [`Поступления до ${ruFormatter.format(date6m)} (6 мес)`]: totalIncome6m,
+      [`Поступления до ${ruFormatter.format(date1y)} (1 год)`]: totalIncome1y,
+    };
+    
+    // === 2. ПОДГОТОВКА ОСТАТКОВ ===
+    
+    // Инициализируем "бегущие" остатки
+    const runningBalances = new Map();
+    mainStore.accounts.forEach(acc => {
+      runningBalances.set(acc._id, acc.initialBalance || 0);
+    });
+
+    // Получаем ВСЕ операции из API (они отсортированы date: -1)
+    const operations = await mainStore.exportAllOperations();
+    // Переворачиваем их, чтобы считать остаток (date: 1, от старых к новым)
+    operations.reverse(); 
+
+    // === 3. ФОРМИРОВАНИЕ CSV ===
+    const csvRows = [];
+
+    for (const op of operations) {
+      // (A) Форматируем дату
+      let dateStr = '';
+      if (op.date) {
+        try {
+          const d = new Date(op.date);
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          dateStr = `${day}.${month}.${year}`;
+        } catch (e) { dateStr = op.date; }
+      }
+      
+      const opAmount = op.amount || 0;
+      let opBalance = 0; // Остаток ПОСЛЕ этой операции
+
+      if (op.type === 'income' || op.type === 'expense') {
+        // (B) Считаем остаток
+        const opAccountId = op.accountId?._id || null;
+        if (opAccountId) {
+          const currentBalance = runningBalances.get(opAccountId) || 0;
+          opBalance = currentBalance + opAmount;
+          runningBalances.set(opAccountId, opBalance);
+        }
+        
+        // (C) Собираем строку
+        csvRows.push({
+          'Тип': op.type === 'income' ? 'Доход' : 'Расход',
+          'Категория': op.categoryId?.name || '',
+          'Сумма': opAmount,
+          'Остаток': opBalance,
+          'Дата': dateStr,
+          'Счет': op.accountId?.name || '',
+          'Компании/Физлица': op.companyId?.name || op.individualId?.name || '',
+          'Контрагент': op.contractorId?.name || '',
+          'Проект': op.projectId?.name || '',
+          ...futureHeaders
+        });
+      } 
+      else if (op.type === 'transfer' || op.isTransfer) {
+        // (B) Считаем остатки для ДВУХ счетов
+        const fromAccountId = op.fromAccountId?._id || null;
+        const toAccountId = op.toAccountId?._id || null;
+        
+        const fromOwnerName = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
+        const toOwnerName = op.toCompanyId?.name || op.toIndividualId?.name || '';
+        
+        let fromBalance = 0;
+        let toBalance = 0;
+
+        // Списание со счета "From"
+        if (fromAccountId) {
+          const currentBalance = runningBalances.get(fromAccountId) || 0;
+          fromBalance = currentBalance - opAmount;
+          runningBalances.set(fromAccountId, fromBalance);
+        }
+        
+        // Зачисление на счет "To"
+        if (toAccountId) {
+          const currentBalance = runningBalances.get(toAccountId) || 0;
+          toBalance = currentBalance + opAmount;
+          runningBalances.set(toAccountId, toBalance);
+        }
+
+        // (C) Собираем ДВЕ строки
+        csvRows.push({
+          'Тип': 'Перевод',
+          'Категория': 'Исходящий',
+          'Сумма': -opAmount,
+          'Остаток': fromBalance,
+          'Дата': dateStr,
+          'Счет': op.fromAccountId?.name || '',
+          'Компании/Физлица': fromOwnerName,
+          'Контрагент': toOwnerName, // Контрагент = Получатель
+          'Проект': '',
+          ...futureHeaders
+        });
+        
+        csvRows.push({
+          'Тип': 'Перевод',
+          'Категория': 'Входящий',
+          'Сумма': opAmount,
+          'Остаток': toBalance,
+          'Дата': dateStr,
+          'Счет': op.toAccountId?.name || '',
+          'Компании/Физлица': toOwnerName,
+          'Контрагент': fromOwnerName, // Контрагент = Отправитель
+          'Проект': '',
+          ...futureHeaders
+        });
       }
     }
 
-    // 6. Форматируем данные для CSV (2 колонки)
-    const csvData = [
-      { "Параметр": `Сегодня`, "Значение": ruFormatter.format(today) },
-      { "Параметр": "Текущий Остаток", "Значение": formatNumber(currentBalance) },
-      { "Параметр": `Поступления до ${ruFormatter.format(date12d)} (12 д)`, "Значение": formatNumber(income12d) },
-      { "Параметр": `Поступления до ${ruFormatter.format(date1m)} (1 мес)`, "Значение": formatNumber(income1m) },
-      { "Параметр": `Поступления до ${ruFormatter.format(date3m)} (3 мес)`, "Значение": formatNumber(income3m) },
-      { "Параметр": `Поступления до ${ruFormatter.format(date6m)} (6 мес)`, "Значение": formatNumber(income6m) },
-      { "Параметр": `Поступления до ${ruFormatter.format(date1y)} (1 год)`, "Значение": formatNumber(income1y) }
-    ];
+    // === 4. ВЫГРУЗКА ===
     
-    // 7. Конвертируем в CSV
-    const csvString = Papa.unparse(csvData, {
+    // Определяем финальный порядок колонок
+    const finalColumns = [
+      'Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 
+      'Компании/Физлица', 'Контрагент', 'Проект',
+      ...Object.keys(futureHeaders) // Добавляем 5 колонок прогноза
+    ];
+
+    const csvString = Papa.unparse(csvRows, {
       header: true,
+      columns: finalColumns, // Принудительно задаем порядок
+      // 🟢 v10.7: Заменяем null/undefined на 0 или ""
+      transform: (value, field) => {
+        if (value === null || value === undefined) {
+          // Если поле числовое
+          if (['Сумма', 'Остаток', ...Object.keys(futureHeaders)].includes(field)) {
+            return 0;
+          }
+          return ""; // Для текстовых
+        }
+        return value;
+      }
     });
     
-    // 8. Скачиваем (имя файла с датой и временем)
     triggerCsvDownload(csvString);
     
   } catch (err) {
@@ -784,7 +905,6 @@ async function handleExport() {
     isExporting.value = false;
   }
 }
-
 
 /**
  * 🟢 v10.3: Имя файла включает время
@@ -801,8 +921,8 @@ function triggerCsvDownload(csvString) {
   const pad = (num) => String(num).padStart(2, '0');
   const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   
-  // 🟢 v10.5: Меняем имя файла на "summary"
-  link.setAttribute('download', `index12_summary_${timestamp}.csv`);
+  // 🟢 v10.7: Имя файла "export"
+  link.setAttribute('download', `index12_export_${timestamp}.csv`);
   
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
