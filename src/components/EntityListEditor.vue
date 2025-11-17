@@ -1,20 +1,24 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+// 1. ИМПОРТИРОВАН nextTick
+import { ref, onMounted, nextTick } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
-// 1. ИМПОРТИРУЕМ НОВЫЙ КОМПОНЕНТ
+// Импортируем модальное окно выбора счетов
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.1-PICKER-MODAL ---
- * * ВЕРСИЯ: 9.1 - Замена <select multiple> на модальное окно (Picker)
+ * * --- МЕТКА ВЕРСИИ: v9.2-MODAL-FIXES ---
+ * * ВЕРСИЯ: 9.2 - Исправление багов стилей и прогресс-бара
  * * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (REPLACE) Удален <select multiple> (класс .edit-account-select).
- * 2. (NEW) Добавлена кнопка .edit-account-picker.
- * 3. (NEW) Добавлена логика для открытия нового компонента AccountPickerModal.
- * 4. (NEW) Добавлен <AccountPickerModal> в шаблон.
+ * 1. (FIX) confirmDelete теперь использует nextTick для корректного
+ * отображения лоадера (isDeleting) перед закрытием.
+ * 2. (FIX) Стили <style scoped> полностью очищены от
+ * transform: translateY и других "хаков".
+ * 3. (FIX) Для .edit-item задано align-items: center.
+ * 4. (FIX) Для .edit-input, .edit-account-picker, .delete-btn
+ * принудительно сброшены margin: 0; для борьбы с base.css.
  */
 
 const props = defineProps({
@@ -27,7 +31,7 @@ const mainStore = useMainStore();
 const localItems = ref([]);
 const localAccounts = ref([]);
 
-// --- Логика для нового модального окна ---
+// --- Логика для модального окна выбора счетов ---
 const showAccountPicker = ref(false);
 const currentItemForPicker = ref(null);
 
@@ -43,7 +47,7 @@ const onAccountPickerSave = (newSelectedIds) => {
   showAccountPicker.value = false;
   currentItemForPicker.value = null;
 };
-// --- Конец новой логики ---
+// --- Конец логики ---
 
 // Определяем путь для API
 let entityPath = '';
@@ -198,20 +202,31 @@ const openDeleteDialog = (item) => {
   showDeletePopup.value = true;
 };
 
+// 🟢 2. ИСПРАВЛЕННАЯ ФУНКЦИЯ (с nextTick)
 const confirmDelete = async (deleteOperations) => {
   if (!itemToDelete.value || !entityPath) return;
-  isDeleting.value = true;
+  
+  isDeleting.value = true; // 1. Показываем лоадер
+
   try {
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500)); // Имитация задержки
     await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
+    
+    // Успех:
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-    showDeletePopup.value = false;
-    itemToDelete.value = null;
+    
   } catch (e) {
     alert('Ошибка при удалении: ' + e.message);
-  } finally {
+    // В случае ошибки, выключаем лоадер и остаемся в окне
     isDeleting.value = false;
+    return; // Прерываем
   }
+  
+  // Этот код выполнится ТОЛЬКО при успехе:
+  isDeleting.value = false;      // 2. Сначала выключаем лоадер
+  await nextTick();              // 3. Ждем, пока Vue это отрисует
+  showDeletePopup.value = false; // 4. Теперь закрываем попап
+  itemToDelete.value = null;
 };
 
 const cancelDelete = () => {
@@ -283,7 +298,7 @@ const cancelDelete = () => {
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
-                <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" class="edit-input edit-balance" placeholder="0"/>
+                <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" class="edit-input edit-balance" placeholder="0" />
               </template>
               
               <template v-if="isContractorEditor">
@@ -325,8 +340,15 @@ const cancelDelete = () => {
 
     <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
+        
         <div v-if="isDeleting" class="deleting-state">
+          <h4>Удаление...</h4>
+          <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
+          <div class="progress-container">
+            <div class="progress-bar"></div>
           </div>
+        </div>
+
         <div v-else>
           <h4>Удаление сущности</h4>
           <p>
@@ -360,6 +382,7 @@ const cancelDelete = () => {
 </template>
 
 <style scoped>
+/* 🟢 4. ПОЛНОСТЬЮ ОБНОВЛЕННЫЕ СТИЛИ */
 .popup-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background-color: rgba(0, 0, 0, 0.6);
@@ -425,7 +448,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  margin: 0; /* 🟢 ИСПРАВЛЕНИЕ: Сброс отступов */
+  margin: 0; /* 🟢 Сброс отступов */
 }
 .edit-item:active { cursor: grabbing; }
 
@@ -471,6 +494,11 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   /* 🟢 ИСПРАВЛЕНИЕ: Сброс padding из base.css */
   padding: 0 14px;
   height: 48px;
+  /* 🟢 ИСПРАВЛЕНИЕ: Наследование стилей для <button> */
+  background-color: #FFFFFF;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  font-family: inherit;
 }
 .edit-account-picker:hover {
   border-color: #222222;
@@ -495,7 +523,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   height: 100%;
   stroke: #999;
   transition: stroke 0.2s;
-  margin: 5px;
 }
 .delete-btn:hover {
   border-color: #FF3B30; background: #fff5f5;
@@ -542,7 +569,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-cancel { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; text-decoration: underline; }
 .btn-cancel:hover { color: #555; }
 
-/* ПРОГРЕСС БАР */
+/* 🟢 ПРОГРЕСС БАР */
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
 .sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
 .progress-container {
@@ -560,4 +587,3 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
-
