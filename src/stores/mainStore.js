@@ -349,6 +349,22 @@ export const useMainStore = defineStore('mainStore', () => {
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
+  // 🟢 НОВАЯ ФУНКЦИЯ (v10.12)
+  const _applyTransferToIndividualBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
+    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
+    
+    if (fromId) { 
+        if (bal[fromId] === undefined) bal[fromId] = 0; 
+        bal[fromId] -= amt; 
+    }
+    if (toId) { 
+        if (bal[toId] === undefined) bal[toId] = 0; 
+        bal[toId] += amt; 
+    }
+  };
+
   const currentContractorBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -405,7 +421,11 @@ export const useMainStore = defineStore('mainStore', () => {
   const currentIndividualBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) continue; 
+      // 🔴 ИСПРАВЛЕНИЕ v10.12: Учитываем переводы
+      if (isTransfer(op)) {
+         _applyTransferToIndividualBalances(bal, op);
+         continue; 
+      }
       if (!op?.individualId?._id) continue;
       const id = op.individualId._id;
       if (!bal[id]) bal[id] = 0;
@@ -421,7 +441,11 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
     
     for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
+      // 🔴 ИСПРАВЛЕНИЕ v10.12: Учитываем переводы
+      if (isTransfer(op)) {
+         _applyTransferToIndividualBalances(bal, op);
+         continue; 
+      }
       if (!op?.individualId?._id) continue;
       const id = op.individualId._id;
       if (!bal[id]) bal[id] = 0;
