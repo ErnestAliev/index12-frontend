@@ -14,6 +14,7 @@ import { useMainStore } from '@/stores/mainStore';
  * 3. `handleSave` (для isAccountEditor) сохраняет `individualId` и обеспечивает взаимоисключение (companyId ИЛИ individualId).
  * 4. В <template> (для isAccountEditor) добавлен <select> для выбора Физлица.
  * 5. Добавлены стили `.header-individual` и `.edit-individual`.
+ * 6. `.popup-content.wide` (для Счетов) сделан шире (800px).
  */
 
 const props = defineProps({
@@ -127,7 +128,8 @@ const cancelDelete = () => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     
-    <div class="popup-content" :class="{ 'wide': isContractorEditor || isAccountEditor }"> <!-- 🔴 ИЗМЕНЕНО: Сделал шире для Счетов -->
+    <!-- 🔴 ОБНОВЛЕНО: .wide теперь также для isAccountEditor -->
+    <div class="popup-content" :class="{ 'wide': isContractorEditor || isAccountEditor }"> 
       <h3>{{ title }}</h3>
       <p class="editor-hint">Перетащите для сортировки. Нажмите на корзину для удаления.</p>
       
@@ -164,7 +166,8 @@ const cancelDelete = () => {
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
-                <select v-model="item.companyId" class="edit-input edit-company" @change="item.individualId = null"> <!-- 🔴 ДОБАВЛЕНО @change -->
+                <!-- 🔴 ОБНОВЛЕНО: @change для взаимоисключения -->
+                <select v-model="item.companyId" class="edit-input edit-company" @change="item.individualId = null"> 
                   <option :value="null">Без компании</option>
                   <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
                 </select>
@@ -263,7 +266,8 @@ const cancelDelete = () => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem;
   transition: max-width 0.2s ease;
 }
-.popup-content.wide { max-width: 800px; } /* 🔴 ИЗМЕНЕНО: Увеличил ширину (было 680px) */
+/* 🔴 ОБНОВЛЕНО: Ширина для Счетов и Контрагентов */
+.popup-content.wide { max-width: 800px; } 
 
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
@@ -302,7 +306,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 
-.edit-company, .edit-project, .edit-category, .edit-individual { /* 🔴 ДОБАВЛЕНО .edit-individual */
+/* 🔴 ОБНОВЛЕНО: Добавлен .edit-individual */
+.edit-company, .edit-project, .edit-category, .edit-individual { 
   flex-shrink: 0; width: 150px;
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
