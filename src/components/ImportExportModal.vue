@@ -1,25 +1,24 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.1-INDIVIDUALS ---
- * * ВЕРСИЯ: 10.1 - Добавлена поддержка "Физлиц"
+ * * --- МЕТКА ВЕРСИИ: v10.2-MERGE-EXPORT-OWNER ---
+ * * ВЕРСИЯ: 10.2 - Объединена колонка "Компании/Физлица" при ЭКСПОРТЕ
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UPDATE) systemFields: Добавлен 'individual' (Физлицо) для сопоставления.
- * 2. (UPDATE) newEntities: Добавлен 'individuals' для отслеживания при импорте.
- * 3. (UPDATE) formatDataForExport (Income/Expense): Добавлена колонка "Физлицо".
- * 4. (UPDATE) formatDataForExport (Transfer): Добавлена колонка "Физлицо"
- * и исправлена логика 'Компания'/'Контрагент' для поддержки
- * fromIndividualId / toIndividualId.
+ * 1. (UPDATE) formatDataForExport (Export):
+ * - Удалены колонки "Компания" и "Физлицо".
+ * - Добавлена ОДНА колонка "Компании/Физлица",
+ * которая отображает либо компанию, либо физлицо.
+ * 2. (NO CHANGE) Import: systemFields по-прежнему
+ * различает 'company' и 'individual' для
+ * корректного сопоставления при импорте.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
       
-      <!-- 🔴 ИЗМЕНЕНИЕ: Динамический заголовок -->
       <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт операций' }}</h2>
       
-      <!-- 🔴 НАЧАЛО: Переключатель вкладок -->
       <div class="modal-tabs">
         <button 
           class="tab-btn" 
@@ -36,10 +35,9 @@
           Экспорт (CSV)
         </button>
       </div>
-      <!-- 🔴 КОНЕЦ: Переключатель вкладок -->
 
       <!-- ============================================= -->
-      <!-- 🔴 НАЧАЛО: Вкладка "ИМПОРТ" (Существующий код) -->
+      <!-- Вкладка "ИМПОРТ" (Mapping не изменен)         -->
       <!-- ============================================= -->
       <div v-if="currentTab === 'import'" class="import-content-wrapper">
         <div v-if="step === 'upload'" class="modal-step-content">
@@ -153,12 +151,9 @@
           </div>
         </div>
       </div>
-      <!-- =========================================== -->
-      <!-- 🔴 КОНЕЦ: Вкладка "ИМПОРТ"                  -->
-      <!-- =========================================== -->
       
       <!-- =========================================== -->
-      <!-- 🔴 НАЧАЛО: Вкладка "ЭКСПОРТ" (Новый код)     -->
+      <!-- Вкладка "ЭКСПОРТ"                           -->
       <!-- =========================================== -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
         <p>
@@ -186,13 +181,7 @@
           {{ exportError }}
         </div>
       </div>
-      <!-- =========================================== -->
-      <!-- 🔴 КОНЕЦ: Вкладка "ЭКСПОРТ"                 -->
-      <!-- =========================================== -->
 
-
-      <!-- 🔴 ИЗМЕНЕНИЕ: Футер теперь зависит от вкладки -->
-      
       <!-- Футер для ИМПОРТА -->
       <div v-if="currentTab === 'import'" class="modal-actions">
         <button 
@@ -254,11 +243,9 @@ import { useMainStore } from '@/stores/mainStore';
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
 
-// 🔴 НАЧАЛО: Новое состояние для вкладок и экспорта
 const currentTab = ref('import'); // 'import' or 'export'
 const isExporting = ref(false);
 const exportError = ref(null);
-// 🔴 КОНЕЦ: Новое состояние
 
 // --- Шаги (Импорт) ---
 const step = ref('upload'); // 'upload', 'mapping', 'review', 'importing'
@@ -267,11 +254,11 @@ const isLoading = ref(false);
 
 // --- CSV Данные (Импорт) ---
 const file = ref(null);
-const fileInputRef = ref(null); // <-- ref для input
+const fileInputRef = ref(null);
 const dragOver = ref(false);
 const csvHeaders = ref([]);
-const csvData = ref([]); // Полный набор данных
-const previewData = computed(() => csvData.value); // Теперь показывает ВСЕ строки
+const csvData = ref([]); 
+const previewData = computed(() => csvData.value);
 const selectedRows = ref(new Set()); 
 const isAllSelected = computed(() => {
   const validRowCount = csvData.value.filter(isValidRow).length;
@@ -280,8 +267,10 @@ const isAllSelected = computed(() => {
 
 
 // --- Сопоставление (Mapping) ---
-const columnMapping = ref({}); // { 'CSV Header Name': 'systemFieldKey' }
-// 🟢 v10.1: Добавлено 'individual'
+const columnMapping = ref({});
+// 🟢 v10.1: Добавлено 'individual'.
+// (v10.2: НЕ ОБЪЕДИНЯЕМ 'company' и 'individual' здесь, 
+// т.к. это сломает логику импорта)
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
@@ -304,19 +293,13 @@ const newEntities = ref({
   contractors: [],
   individuals: [],
 });
-// Готовые к импорту операции
 const operationsToImport = ref([]);
 
 // --- Импорт (Importing) ---
 const importProgress = ref(0);
 const isReviewDisabled = computed(() => {
-  // Блокируем импорт, если не сопоставлены обязательные поля
   const mappedKeys = Object.values(columnMapping.value);
   const hasMinFields = mappedKeys.includes('date') && mappedKeys.includes('amount') && mappedKeys.includes('type');
-  
-  // Кнопка "Проверить" активна, если:
-  // 1. Поля сопоставлены
-  // 2. Хотя бы одна строка выбрана
   return !hasMinFields || selectedRows.value.size === 0;
 });
 
@@ -335,37 +318,30 @@ function resetState() {
   columnMapping.value = {};
   operationsToImport.value = [];
   
-  selectedRows.value.clear(); // <-- Очищаем чекбоксы
+  selectedRows.value.clear(); 
   
-  // 🔴 НАЧАЛО: Очистка состояния экспорта
   isExporting.value = false;
   exportError.value = null;
-  // 🔴 КОНЕЦ
   
-  // Очищаем <input type="file">
   if (fileInputRef.value) {
     fileInputRef.value.value = null;
   }
 }
 
 function closeModal() {
-  resetState(); // <-- !!! ИЗМЕНЕНИЕ: Очищаем состояние при закрытии
+  resetState(); 
   emit('close');
 }
 
 function previousStep() {
   if (step.value === 'mapping') {
-    resetState(); // <-- !!! ИЗМЕНЕНИЕ: Очищаем состояние при возврате к загрузке
+    resetState(); 
   } else if (step.value === 'review') {
     step.value = 'mapping';
-    // Не очищаем, чтобы пользователь мог исправить сопоставление (но очищаем операции)
     operationsToImport.value = [];
   }
 }
 
-/**
- * Обработка выбора файла через input
- */
 function handleFileSelect(event) {
   const f = event.target.files[0];
   if (f) {
@@ -382,9 +358,6 @@ function handleFileSelect(event) {
   }
 }
 
-/**
- * Обработка файла через Drag-n-drop
- */
 function handleDrop(event) {
   dragOver.value = false;
   const f = event.dataTransfer.files[0];
@@ -398,13 +371,10 @@ function handleDrop(event) {
   }
 }
 
-/**
- * Парсинг CSV с помощью PapaParse
- */
 function parseCsv() {
   csvData.value = [];
   csvHeaders.value = [];
-  selectedRows.value.clear(); // <-- Очищаем чекбоксы
+  selectedRows.value.clear(); 
   
   isLoading.value = true;
   error.value = null;
@@ -423,7 +393,7 @@ function parseCsv() {
       csvData.value = results.data;
       
       autoMapHeaders();
-      autoSelectValidRows(); // <-- !!! НОВЫЙ КОД: Авто-выбор строк
+      autoSelectValidRows(); 
       
       isLoading.value = false;
       step.value = 'mapping';
@@ -435,10 +405,6 @@ function parseCsv() {
   });
 }
 
-/**
- * Автоматическое сопоставление заголовков CSV с полями системы.
- * Ищет совпадения в 'aliases' (в нижнем регистре).
- */
 function autoMapHeaders() {
   const mapping = {};
   const usedSystemKeys = new Set();
@@ -446,39 +412,31 @@ function autoMapHeaders() {
   for (const csvHeader of csvHeaders.value) {
     const csvHeaderLower = csvHeader.trim().toLowerCase();
     
-    // Ищем точное совпадение в псевдонимах
     const foundField = systemFields.find(field => 
       field.aliases.includes(csvHeaderLower) && !usedSystemKeys.has(field.key)
     );
     
     if (foundField) {
       mapping[csvHeader] = foundField.key;
-      usedSystemKeys.add(foundField.key); // Убеждаемся, что одно поле системы не сопоставлено дважды
+      usedSystemKeys.add(foundField.key); 
     } else {
-      mapping[csvHeader] = null; // Не сопоставлено
+      mapping[csvHeader] = null;
     }
   }
   columnMapping.value = mapping;
 }
 
-/**
- * Проверяет, можно ли импортировать строку (есть ли у нее дата, сумма, тип)
- */
 function isValidRow(row) {
   const reverseMapping = getReverseMapping();
   const dateHeader = reverseMapping['date'];
   const amountHeader = reverseMapping['amount'];
   const typeHeader = reverseMapping['type'];
   
-  // Проверяем, что необходимые колонки сопоставлены И что в строке есть данные
   return dateHeader && row[dateHeader] &&
          amountHeader && row[amountHeader] &&
          typeHeader && row[typeHeader];
 }
 
-/**
- * Автоматически выбирает все валидные строки при загрузке
- */
 function autoSelectValidRows() {
   selectedRows.value.clear();
   csvData.value.forEach((row, index) => {
@@ -488,45 +446,27 @@ function autoSelectValidRows() {
   });
 }
 
-/**
- * Логика для чекбокса "Выбрать все"
- */
 function toggleSelectAll() {
   if (isAllSelected.value) {
-    // Если все выбраны -> снять все
     selectedRows.value.clear();
   } else {
-    // Если выбраны не все -> выбрать все валидные
     autoSelectValidRows();
   }
 }
 
-/**
- * Переход к шагу "Подтверждение".
- * Анализирует данные и ищет новые сущности.
- */
 function goToReviewStep() {
   error.value = null;
   
-  // 1. Валидация: Проверяем, что обязательные поля сопоставлены
   if (isReviewDisabled.value) {
     error.value = 'Необходимо сопоставить обязательные поля (Дата, Сумма, Тип) и выбрать хотя бы одну строку.';
     return;
   }
   
-  // 2. Преобразуем данные (это заполнит operationsToImport)
   operationsToImport.value = transformDataForImport(selectedRows.value);
-  
-  // 3. Идентификация новых сущностей (на основе operationsToImport)
   identifyNewEntities();
-  
   step.value = 'review';
 }
 
-/**
- * Ищет сущности (категории, проекты и т.д.) в CSV, 
- * которых нет в mainStore.
- */
 function identifyNewEntities() {
   const newFound = {
     categories: new Set(),
@@ -537,29 +477,24 @@ function identifyNewEntities() {
     individuals: new Set(), // 🟢 v10.1: Добавлено
   };
 
-  // Поля, которые являются сущностями
   const entityFields = systemFields.filter(f => f.entity);
   
   for (const field of entityFields) {
-    const fieldKey = field.key; // 'category'
-    const entityName = field.entity; // 'categories'
+    const fieldKey = field.key; 
+    const entityName = field.entity;
 
-    // Получаем текущий список сущностей из store (v3.9/v4.4 mainStore[entityName] - это ref)
     const storeEntities = mainStore[entityName].value || [];
     const storeEntityNames = new Set(storeEntities.map(e => e.name.toLowerCase().trim()));
     
-    // Пробегаем по всем подготовленным операциям
     for (const op of operationsToImport.value) {
-      // Игнорируем "Перевод" при поиске новых категорий
       if (fieldKey === 'category' && op.type === 'transfer') continue;
 
-      const value = op[fieldKey]; // 'Название Категории'
+      const value = op[fieldKey]; 
       
       if (value) {
         const trimmedValue = value.trim();
         const lowerValue = trimmedValue.toLowerCase();
         
-        // Если в store нет такого имени, и мы еще не добавили его в Set
         if (!storeEntityNames.has(lowerValue) && !newFound[entityName].has(trimmedValue)) {
           newFound[entityName].add(trimmedValue);
         }
@@ -567,7 +502,6 @@ function identifyNewEntities() {
     }
   }
 
-  // Преобразуем Set'ы в массивы для ref
   newEntities.value.categories = Array.from(newFound.categories);
   newEntities.value.projects = Array.from(newFound.projects);
   newEntities.value.accounts = Array.from(newFound.accounts);
@@ -576,9 +510,6 @@ function identifyNewEntities() {
   newEntities.value.individuals = Array.from(newFound.individuals); // 🟢 v10.1: Добавлено
 }
 
-/**
- * Вспомогательная функция для отображения русских названий.
- */
 function getEntityName(entityType) {
   // 🟢 v10.1: Добавлено 'individuals'
   const names = {
@@ -592,46 +523,33 @@ function getEntityName(entityType) {
   return names[entityType] || entityType;
 }
 
-/**
- * Начинает процесс импорта.
- */
 async function startImport() {
   step.value = 'importing';
   error.value = null;
   importProgress.value = 0;
 
   try {
-    const allTransformedOperations = transformDataForImport(null); // Все операции
-    const selectedIndices = Array.from(selectedRows.value); // Только индексы
+    const allTransformedOperations = transformDataForImport(null); 
+    const selectedIndices = Array.from(selectedRows.value); 
 
     const createdDocs = await mainStore.importOperations(
       allTransformedOperations, 
-      selectedIndices, // <-- !!! НОВЫЙ КОД: Передаем индексы
+      selectedIndices,
       (progress) => {
-        // Эта коллбэк-функция больше не используется в v10,
-        // так как сервер обрабатывает все сразу.
-        // Оставим ее для обратной совместимости, если решим вернуть.
         importProgress.value = progress;
       }
     );
     
-    // Сервер v10 возвращает массив созданных документов.
-    // Мы можем использовать его длину для отображения прогресса.
     importProgress.value = createdDocs.length;
-
-    // 3. Успех
     emit('import-complete');
     
   } catch (err) {
     console.error('Ошибка импорта:', err);
     error.value = `Ошибка импорта: ${err.message || 'Неизвестная ошибка'}`;
-    step.value = 'review'; // Возвращаем на шаг подтверждения
+    step.value = 'review';
   }
 }
 
-/**
- * (Helper) Создает обратную карту (systemKey -> csvHeader)
- */
 function getReverseMapping() {
   const reverseMapping = {};
   for (const header in columnMapping.value) {
@@ -643,18 +561,10 @@ function getReverseMapping() {
   return reverseMapping;
 }
 
-/**
- * Преобразует `csvData` + `columnMapping` в массив объектов операций,
- * готовых для отправки на API.
- * @param {Set<number>|null} selectedIndices - Set индексов строк для обработки. 
- * Если null, обрабатывает ВСЕ строки.
- */
 function transformDataForImport(selectedIndices) {
   const operations = [];
   const reverseMapping = getReverseMapping();
   
-  // Если selectedIndices == null, обрабатываем ВСЕ строки (для отправки на бэк)
-  // Если selectedIndices != null, обрабатываем только ВЫБРАННЫЕ (для шага Review)
   const dataToProcess = selectedIndices 
     ? csvData.value.filter((_, index) => selectedIndices.has(index))
     : csvData.value;
@@ -662,7 +572,6 @@ function transformDataForImport(selectedIndices) {
   for (const row of dataToProcess) {
     const op = {};
     
-    // Сначала ищем ТИП, так как он влияет на СУММУ
     const typeHeader = reverseMapping['type'];
     let opType = null;
     if (typeHeader && row[typeHeader]) {
@@ -671,7 +580,6 @@ function transformDataForImport(selectedIndices) {
     }
 
     for (const field of systemFields) {
-      // Пропускаем 'type', так как мы его уже обработали
       if (field.key === 'type') continue; 
 
       const systemKey = field.key;
@@ -680,25 +588,19 @@ function transformDataForImport(selectedIndices) {
       if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== null && row[csvHeader] !== '') {
         let value = String(row[csvHeader]).trim();
         
-        // Очистка и преобразование данных
         if (systemKey === 'amount') {
           value = cleanAmount(value);
-          // !!! ИСПРАВЛЕНИЕ: (Проблема с красным цветом) !!!
-          // Если тип 'expense' и сумма положительная, делаем ее отрицательной
           if (opType === 'expense' && value > 0) {
             value = -value;
           }
-          // Для "Перевод" сумма может быть как < 0, так и > 0
-          
         } else if (systemKey === 'date') {
-          value = parseDate(value); // Должен вернуть ISO строку
+          value = parseDate(value); 
         }
         
         op[systemKey] = value;
       }
     }
     
-    // Пропускаем строки без даты, суммы или типа
     if (op.date && op.amount !== null && op.type) {
       operations.push(op);
     }
@@ -707,17 +609,13 @@ function transformDataForImport(selectedIndices) {
   return operations;
 }
 
-/**
- * Очищает строку с суммой от валюты, пробелов и приводит к числу.
- */
 function cleanAmount(value) {
   if (typeof value !== 'string') return null;
   
   let cleaned = value
-    .replace(/₸/g, '')      // Убираем символ тенге
-    .replace(/[^\d.,-]/g, ''); // Оставляем только цифры, точки, запятые и минус
+    .replace(/₸/g, '')      
+    .replace(/[^\d.,-]/g, ''); 
 
-  // Определяем, что используется как разделитель тысяч, а что - десятичный
   const lastComma = cleaned.lastIndexOf(',');
   const lastDot = cleaned.lastIndexOf('.');
   
@@ -746,25 +644,18 @@ function cleanAmount(value) {
   return isNaN(num) ? null : num;
 }
 
-/**
- * Преобразует дату из "dd.MM.yyyy" в ISO-строку.
- */
 function parseDate(value) {
   if (typeof value !== 'string') return null;
   
-  // Формат 1: dd.MM.yyyy
   let parts = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (parts) {
-    // parts = ["07.08.2025", "07", "08", "2025"]
     const day = parseInt(parts[1], 10);
-    const month = parseInt(parts[2], 10) - 1; // Месяцы в JS с 0
+    const month = parseInt(parts[2], 10) - 1; 
     const year = parseInt(parts[3], 10);
-    
     const date = new Date(year, month, day);
     return date.toISOString();
   }
   
-  // Формат 2: yyyy-MM-dd (ISO-like)
   parts = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (parts) {
      const year = parseInt(parts[1], 10);
@@ -774,7 +665,6 @@ function parseDate(value) {
      return date.toISOString();
   }
 
-  // Попробовать парсить как стандартный Date (может быть не надежно)
   const d = new Date(value);
   if (!isNaN(d.getTime())) {
     return d.toISOString();
@@ -783,10 +673,6 @@ function parseDate(value) {
   return null;
 }
 
-/**
- * 🔴 ИЗМЕНЕНИЕ v10.0: Добавлены русские варианты
- * Приводит тип операции к системным 'income', 'expense', 'transfer'.
- */
 function normalizeType(value) {
   if (typeof value !== 'string') return null;
   const lower = value.toLowerCase().trim();
@@ -800,23 +686,19 @@ function normalizeType(value) {
   if (['перевод', 'transfer'].includes(lower)) {
     return 'transfer';
   }
-  return null; // Неизвестный тип
+  return null;
 }
 
 
 // ----------------------------------------------
-// 🔴 НАЧАЛО: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.0)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.2)
 // ----------------------------------------------
 
-/**
- * Главная функция экспорта
- */
 async function handleExport() {
   isExporting.value = true;
   exportError.value = null;
   
   try {
-    // 1. Получаем все операции из store (который дергает API)
     const operations = await mainStore.exportAllOperations();
     
     if (!operations || operations.length === 0) {
@@ -825,15 +707,13 @@ async function handleExport() {
       return;
     }
     
-    // 2. Форматируем данные для CSV (🔴 ЛОГИКА v10.0)
+    // 🟢 v10.2: Форматируем с объединенной колонкой
     const formattedData = formatDataForExport(operations);
     
-    // 3. Конвертируем JSON в CSV строку
     const csvString = Papa.unparse(formattedData, {
       header: true,
     });
     
-    // 4. Запускаем скачивание файла
     triggerCsvDownload(csvString);
     
   } catch (err) {
@@ -845,9 +725,7 @@ async function handleExport() {
 }
 
 /**
- * 🔴 ИЗМЕНЕНИЕ v10.1: Добавлено поле "Физлицо"
- * Преобразует массив операций с сервера в плоский массив 
- * объектов для Papa.unparse
+ * 🟢 v10.2: Обновлено для объединения 'Компании' и 'Физлица'
  */
 function formatDataForExport(operations) {
   const csvRows = [];
@@ -874,16 +752,14 @@ function formatDataForExport(operations) {
         'Категория': op.categoryId ? op.categoryId.name : '',
         'Проект': op.projectId ? op.projectId.name : '',
         'Счет': op.accountId ? op.accountId.name : '',
-        'Компания': op.companyId ? op.companyId.name : '',
-        'Физлицо': op.individualId ? op.individualId.name : '', // 🟢 v10.1
+        // 🟢 v10.2: Объединенная колонка "Компании/Физлица"
+        'Компании/Физлица': op.companyId ? op.companyId.name : (op.individualId ? op.individualId.name : ''),
         'Контрагент': op.contractorId ? op.contractorId.name : '',
       });
     } 
     else if (op.type === 'transfer' || op.isTransfer) {
-      // Это ОДНА операция "Перевод" из БД.
-      // Создаем ДВЕ строки в CSV.
-
-      // 🟢 v10.1: Улучшенная логика определения Контрагента (Компании или Физлица)
+      
+      // 🟢 v10.2: Логика для Контрагента (как и раньше)
       const fromOwnerName = op.fromCompanyId ? op.fromCompanyId.name : (op.fromIndividualId ? op.fromIndividualId.name : '');
       const toOwnerName = op.toCompanyId ? op.toCompanyId.name : (op.toIndividualId ? op.toIndividualId.name : '');
 
@@ -893,11 +769,11 @@ function formatDataForExport(operations) {
         'Тип': 'Перевод',
         'Сумма': -Math.abs(op.amount),
         'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
-        'Проект': '', // Переводы обычно не имеют проектов
+        'Проект': '', 
         'Счет': op.fromAccountId ? op.fromAccountId.name : '',
-        'Компания': op.fromCompanyId ? op.fromCompanyId.name : '', // 🟢 v10.1
-        'Физлицо': op.fromIndividualId ? op.fromIndividualId.name : '', // 🟢 v10.1
-        'Контрагент': toOwnerName, // 🟢 v10.1: Контрагент = Получатель (Компания или Физлицо)
+        // 🟢 v10.2: Объединенная колонка "Компании/Физлица" (Отправитель)
+        'Компании/Физлица': fromOwnerName,
+        'Контрагент': toOwnerName, 
       };
       
       // Строка 2: ДОХОД (Получатель)
@@ -906,11 +782,11 @@ function formatDataForExport(operations) {
         'Тип': 'Перевод',
         'Сумма': Math.abs(op.amount),
         'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
-        'Проект': '', // Переводы обычно не имеют проектов
+        'Проект': '', 
         'Счет': op.toAccountId ? op.toAccountId.name : '',
-        'Компания': op.toCompanyId ? op.toCompanyId.name : '', // 🟢 v10.1
-        'Физлицо': op.toIndividualId ? op.toIndividualId.name : '', // 🟢 v10.1
-        'Контрагент': fromOwnerName, // 🟢 v10.1: Контрагент = Отправитель (Компания или Физлицо)
+        // 🟢 v10.2: Объединенная колонка "Компании/Физлица" (Получатель)
+        'Компании/Физлица': toOwnerName,
+        'Контрагент': fromOwnerName,
       };
 
       csvRows.push(expenseRow, incomeRow);
@@ -920,20 +796,12 @@ function formatDataForExport(operations) {
   return csvRows;
 }
 
-/**
- * Создает Blob и инициирует скачивание CSV файла
- */
 function triggerCsvDownload(csvString) {
-  // \uFEFF - это BOM (Byte Order Mark), он помогает Excel
-  // правильно определить кодировку UTF-8 и отобразить кириллицу.
   const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
-  
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   
   link.setAttribute('href', url);
-  
-  // Генерируем имя файла
   const formattedDate = new Date().toISOString().split('T')[0].replace(/-/g, '');
   link.setAttribute('download', `index12_export_${formattedDate}.csv`);
   
@@ -945,15 +813,12 @@ function triggerCsvDownload(csvString) {
   URL.revokeObjectURL(url);
 }
 // ----------------------------------------------
-// 🔴 КОНЕЦ: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА
+// 🔴 КОНЕЦ: ФУНКЦИИ ДЛЯ ЭКСПОРТА
 // ----------------------------------------------
 </script>
 
 <style scoped>
-/* * --- ПРИМЕЧАНИЕ ---
- * Стили не изменялись, только добавлялись новые.
- * Существующие стили сохранены без изменений.
- */
+/* (Стили не изменялись) */
 
 .modal-overlay {
   position: fixed;
@@ -1006,7 +871,6 @@ h2 {
   flex-shrink: 0; 
 }
 
-/* 🔴 НАЧАЛО: Стили для вкладок (Добавлено в v9.0) */
 .modal-tabs {
   display: flex;
   padding: 0 24px;
@@ -1021,23 +885,19 @@ h2 {
   color: var(--color-text-soft);
   cursor: pointer;
   font-size: 15px;
-  margin-bottom: -1px; /* Нахлест на border-bottom */
+  margin-bottom: -1px; 
 }
 .tab-btn.active {
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
 }
-/* 🔴 КОНЕЦ: Стили для вкладок */
 
-
-/* 🔴 НАЧАЛО: Обёртка для контента импорта (Добавлено в v9.0) */
 .import-content-wrapper {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Важно для flex-grow */
+  min-height: 0;
 }
-/* 🔴 КОНЕЦ */
 
 .modal-step-content {
   flex-grow: 1;
@@ -1182,7 +1042,7 @@ thead th {
   flex-wrap: wrap;
   gap: 20px;
   overflow-y: auto;
-  max-height: 400px; /* Ограничиваем высоту */
+  max-height: 400px; 
   padding: 10px;
   background: var(--color-background-soft);
   border-radius: 6px;
@@ -1207,7 +1067,6 @@ thead th {
   color: var(--color-text-soft);
 }
 
-/* 🔴 НАЧАЛО: Стили для вкладки Экспорта (Добавлено в v9.0) */
 .export-step {
   justify-content: center;
   align-items: center;
@@ -1224,7 +1083,6 @@ thead th {
   font-size: 16px;
   margin-top: 24px;
 }
-/* 🔴 КОНЕЦ: Стили для вкладки Экспорта */
 
 /* --- Загрузка / Спиннер --- */
 .loading-indicator {
