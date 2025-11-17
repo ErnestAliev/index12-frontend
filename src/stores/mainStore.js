@@ -1,16 +1,15 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP1 ---
- * * ВЕРСИЯ: 8.2 - Добавление "Мои Физлица" (Шаг 1)
- * ДАТА: 17.11.2025
+ * * --- МЕТКА ВЕРСИИ: v9.0-step1-individuals ---
+ * * ВЕРСИЯ: 9.0 - Добавлена сущность "Физлица" (Шаг 1)
+ * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлена новая сущность `individuals` (Физлица) в state (ref).
- * 2. Добавлены `computed` для балансов: `currentIndividualBalances`, `futureIndividualBalances`.
- * 3. Добавлен `action`: `addIndividual`.
- * 4. `fetchAllEntities`, `deleteEntity`, `batchUpdateEntities` обновлены для поддержки `individuals`.
- * 5. Добавлен виджет `{ key: 'individuals', name: 'Мои Физлица' }` в `staticWidgets`.
- * 6. `_mergeTransfers` обновлен для поддержки `fromIndividualId` / `toIndividualId`.
- * 7. `addAccount` обновлен для поддержки `individualId`.
+ * 1. (NEW) Добавлено `individuals = ref([])` в STATE.
+ * 2. (NEW) Добавлен виджет 'individuals' в `staticWidgets`.
+ * 3. (NEW) Добавлены computed `currentIndividualBalances` и `futureIndividualBalances`.
+ * 4. (NEW) Добавлена функция `addIndividual`.
+ * 5. (UPDATE) `fetchAllEntities`, `deleteEntity`, `batchUpdateEntities`, `addAccount` и `_mergeTransfers`
+ * обновлены для поддержки `individualId`.
  */
 
 import { defineStore } from 'pinia';
@@ -36,7 +35,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v8.2-INDIVIDUALS-STEP1 (с Физлицами) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v9.0-step1-individuals ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -50,8 +49,8 @@ export const useMainStore = defineStore('mainStore', () => {
   const companies   = ref([]);
   const contractors = ref([]);
   const projects    = ref([]);
+  const individuals = ref([]); // 🟢 NEW (Шаг 1)
   const categories  = ref([]);
-  const individuals = ref([]); // 🔴 ДОБАВЛЕНО: Новая сущность "Физлица"
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
@@ -61,8 +60,8 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'companies',    name: 'Мои компании' },
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
+    { key: 'individuals',  name: 'Мои Физлица' }, // 🟢 NEW (Шаг 1)
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
-    { key: 'individuals',  name: 'Мои Физлица' }, // 🔴 ДОБАВЛЕНО: Новый системный виджет
   ]);
 
   // =================================================================
@@ -74,7 +73,7 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const savedLayout = localStorage.getItem('dashboardLayout');
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','futureTotal']);
+  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','individuals','futureTotal']); // 🟢 UPDATED (Шаг 1)
   watch(dashboardLayout, (newLayout) => {
     localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
   }, { deep: true });
@@ -309,22 +308,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   };
 
-  // 🔴 ДОБАВЛЕНО: Логика для балансов Физлиц (копия логики Компаний)
-  const _applyTransferToIndividualBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
-    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
-    
-    if (fromId) { 
-        if (bal[fromId] === undefined) bal[fromId] = 0; 
-        bal[fromId] -= amt; 
-    }
-    if (toId) { 
-        if (bal[toId] === undefined) bal[toId] = 0; 
-        bal[toId] += amt; 
-    }
-  };
-
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -357,43 +340,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
-
-  // 🔴 ДОБАВЛЕНО: Computed-балансы для Физлиц
-  const currentIndividualBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToIndividualBalances(bal, op);
-         continue;
-      }
-      // Предполагаем, что у операции будет `individualId`
-      if (!op?.individualId?._id) continue; 
-      const id = op.individualId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
-  });
-  
-  // 🔴 ДОБАВЛЕНО: Computed-балансы для Физлиц (будущее)
-  const futureIndividualBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentIndividualBalances.value;
-    for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
-    
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToIndividualBalances(bal, op);
-         continue;
-      }
-      if (!op?.individualId?._id) continue;
-      const id = op.individualId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
-  });
-
 
   const currentContractorBalances = computed(() => {
     const bal = {};
@@ -445,6 +391,35 @@ export const useMainStore = defineStore('mainStore', () => {
       bal[id] += (op?.amount || 0);
     }
     return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
+  });
+
+  // 🟢 NEW (Шаг 1): currentIndividualBalances
+  const currentIndividualBalances = computed(() => {
+    const bal = {};
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue; 
+      if (!op?.individualId?._id) continue;
+      const id = op.individualId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
+  });
+  
+  // 🟢 NEW (Шаг 1): futureIndividualBalances
+  const futureIndividualBalances = computed(() => {
+    const bal = {};
+    const currentBalances = currentIndividualBalances.value;
+    for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
+    
+    for (const op of futureOps.value) {
+      if (isTransfer(op)) continue;
+      if (!op?.individualId?._id) continue;
+      const id = op.individualId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
   const currentTotalBalance = computed(() => {
@@ -644,12 +619,13 @@ export const useMainStore = defineStore('mainStore', () => {
      updateFutureTotals();
   }
   function updateFutureTotals() {
+    // 🟢 UPDATED (Шаг 1): Добавляем individual balances
     const _ = futureTotalBalance.value;
     const __ = futureAccountBalances.value;
     const ___ = futureCompanyBalances.value;
     const ____ = futureContractorBalances.value;
     const _____ = futureProjectBalances.value;
-    const ______ = futureIndividualBalances.value; // 🔴 ДОБАВЛЕНО: Убедимся, что баланс физлиц тоже считается
+    const ______ = futureIndividualBalances.value; // 🟢 NEW
   }
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
@@ -669,18 +645,19 @@ export const useMainStore = defineStore('mainStore', () => {
     };
   }
 
+  // 🟢 UPDATED (Шаг 1): fetchAllEntities
   async function fetchAllEntities(){
     try{
-      const [accRes, compRes, contrRes, projRes, catRes, indRes] = await Promise.all([ // 🔴 Добавлен indRes
+      const [accRes, compRes, contrRes, projRes, indRes, catRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
         axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
+        axios.get(`${API_BASE_URL}/individuals`), // 🟢 NEW
         axios.get(`${API_BASE_URL}/categories`),
-        axios.get(`${API_BASE_URL}/individuals`), // 🔴 ДОБАВЛЕНО: Запрос для Физлиц
       ]);
       accounts.value    = accRes.data; companies.value   = compRes.data;
       contractors.value = contrRes.data; projects.value    = projRes.data;
+      individuals.value = indRes.data; // 🟢 NEW
       categories.value  = catRes.data;
-      individuals.value = indRes.data; // 🔴 ДОБАВЛЕНО: Сохраняем Физлиц
     }catch(e){ 
         if (e.response && e.response.status === 401) user.value = null;
     }
@@ -690,6 +667,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return displayCache.value[dateKey] || [];
   }
 
+  // 🟢 UPDATED (Шаг 1): _mergeTransfers
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
     const transferGroups = new Map();
@@ -711,8 +689,7 @@ export const useMainStore = defineStore('mainStore', () => {
             transferGroupId: groupId, amount: Math.abs(incomeOp.amount),
             fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
             fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
-            // 🔴 ПРЕДПОЛОЖЕНИЕ: Добавляем individualId для будущих переводов
-            fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId,
+            fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, // 🟢 NEW
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
             categoryId: { _id: 'transfer', name: 'Перевод' },
@@ -956,6 +933,7 @@ export const useMainStore = defineStore('mainStore', () => {
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
+  // 🟢 UPDATED (Шаг 1): deleteEntity
   async function deleteEntity(path, id, deleteOperations = false) {
       try {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, {
@@ -966,8 +944,8 @@ export const useMainStore = defineStore('mainStore', () => {
           if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
           if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
+          if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); // 🟢 NEW
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
-          if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); // 🔴 ДОБАВЛЕНО
 
           if (deleteOperations) {
               await forceRefreshAll();
@@ -986,16 +964,18 @@ export const useMainStore = defineStore('mainStore', () => {
     return res.data;
   }
 
+  // 🟢 UPDATED (Шаг 1): addAccount
   async function addAccount(data) {
     let payload;
-    if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
-    else { 
-        payload = { 
-            name: data.name, 
-            initialBalance: data.initialBalance || 0, 
-            companyId: data.companyId || null,
-            individualId: data.individualId || null // 🔴 ДОБАВЛЕНО
-        }; 
+    if (typeof data === 'string') { 
+      payload = { name: data, initialBalance: 0 }; 
+    } else { 
+      payload = { 
+        name: data.name, 
+        initialBalance: data.initialBalance || 0, 
+        companyId: data.companyId || null,
+        individualId: data.individualId || null // 🟢 NEW
+      }; 
     }
     const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
     accounts.value.push(res.data); return res.data;
@@ -1003,11 +983,6 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addCompany(name){
     const res = await axios.post(`${API_BASE_URL}/companies`, { name });
     companies.value.push(res.data); return res.data;
-  }
-  // 🔴 ДОБАВЛЕНО: Action для добавления Физлица
-  async function addIndividual(name){
-    const res = await axios.post(`${API_BASE_URL}/individuals`, { name });
-    individuals.value.push(res.data); return res.data;
   }
   async function addContractor(name){
     const res = await axios.post(`${API_BASE_URL}/contractors`, { name });
@@ -1017,7 +992,13 @@ export const useMainStore = defineStore('mainStore', () => {
     const res = await axios.post(`${API_BASE_URL}/projects`, { name });
     projects.value.push(res.data); return res.data;
   }
+  // 🟢 NEW (Шаг 1): addIndividual
+  async function addIndividual(name){
+    const res = await axios.post(`${API_BASE_URL}/individuals`, { name });
+    individuals.value.push(res.data); return res.data;
+  }
 
+  // 🟢 UPDATED (Шаг 1): batchUpdateEntities
   async function batchUpdateEntities(path, items){
     try{
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
@@ -1025,8 +1006,8 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='companies')   companies.value = res.data;
       else if (path==='contractors') contractors.value = res.data;
       else if (path==='projects')    projects.value = res.data;
+      else if (path==='individuals') individuals.value = res.data; // 🟢 NEW
       else if (path==='categories')  categories.value = res.data; 
-      else if (path==='individuals') individuals.value = res.data; // 🔴 ДОБАВЛЕНО
     }catch(e){
       await fetchAllEntities();
     }
@@ -1118,10 +1099,8 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   
   return {
-    // 🔴 ДОБАВЛЕНО
-    individuals,
-    
     accounts, companies, contractors, projects, categories,
+    individuals, // 🟢 NEW
     operationsCache: displayCache,
     displayCache, calculationCache,
     allWidgets, dashboardLayout,
@@ -1131,10 +1110,10 @@ export const useMainStore = defineStore('mainStore', () => {
     isAuthLoading,
 
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
-    currentIndividualBalances, // 🔴 ДОБАВЛЕНО
+    currentIndividualBalances, // 🟢 NEW
     currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
-    futureIndividualBalances, // 🔴 ДОБАВЛЕНО
+    futureIndividualBalances, // 🟢 NEW
     currentOps, 
     
     currentTransfers, futureTransfers,
@@ -1149,8 +1128,8 @@ export const useMainStore = defineStore('mainStore', () => {
     
     addOperation, deleteOperation, moveOperation,
     addAccount, addCompany, addContractor, addProject, addCategory,
-    addIndividual, // 🔴 ДОБАВЛЕНО
-    deleteEntity, // 🔴 Экспорт новой функции
+    addIndividual, // 🟢 NEW
+    deleteEntity,
     batchUpdateEntities,
 
     computeTotalDaysForMode,
