@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue';
-import draggable from 'vuedaggable';
+import draggable from 'vuedraggable/dist/vuedraggable.esm-bundler.js';
 import { useMainStore } from '@/stores/mainStore';
 
 const props = defineProps({
@@ -452,3 +452,4 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
