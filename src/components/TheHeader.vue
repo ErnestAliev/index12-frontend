@@ -3,25 +3,25 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step3-individuals ---
- * * ВЕРСИЯ: 9.0 - Добавлен виджет "Физлица" (Шаг 3)
- * ДАТА: 2025-11-17
+ * * --- МЕТКА ВЕРСИИ: v11.0 - Единый виджет "Категории" ---
+ * * ВЕРСИЯ: 11.0 - Рефакторинг виджетов категорий
+ * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлен computed `mergedIndividualBalances`.
- * 2. (NEW) В <template> добавлен блок <HeaderBalanceCard v-else-if="widgetKey === 'individuals'">.
- * 3. (UPDATE) @add и @edit для "Физлиц" подключены к mainStore.addIndividual и 'individuals' path.
- * 4. (FIX) @edit для Счетов, Компаний и т.д. теперь использует полный список (например, mainStore.accounts),
- * а не отфильтрованный (mainStore.currentAccountBalances), чтобы обеспечить консистентность
- * редактирования, как и планировалось для Физлиц.
+ * 1. (REFACTOR) Удален импорт `HeaderCategoryCard.vue`.
+ * 2. (REFACTOR) Удален `v-else-if="widgetKey.startsWith('cat_')"` и связанные с ним методы (`onCategoryAdd`, `onCategoryEdit`, `openAddCategoryPopup`).
+ * 3. (NEW) Добавлен `v-else-if="widgetKey === 'categories'"` (Единый виджет "Категории").
+ * 4. (NEW) Этот виджет использует `HeaderBalanceCard` и new computed `mergedCategoryBalances` из mainStore (v11.0).
+ * 5. (NEW) Кнопки (+) и (edit) подключены к `openAddPopup` и `openEditPopup` (аналогично "Проектам").
  */
 
-console.log('--- TheHeader.vue v9.0-step3-individuals ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v11.0 (Единый виджет Категории) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
-import HeaderCategoryCard from './HeaderCategoryCard.vue';
+// 🔴 v11.0: Удаляем HeaderCategoryCard
+// import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 
 // Попапы
@@ -66,8 +66,10 @@ const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAcco
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
 const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
-// 🟢 NEW (Шаг 3)
 const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
+
+// 🟢 NEW (v11.0): Добавляем computed для балансов категорий
+const mergedCategoryBalances = computed(() => mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances));
 
 
 /* ======================= Попапы (Entity / List) ======================= */
@@ -91,25 +93,15 @@ const openAddPopup = (title, storeAction) => {
   isEntityPopupVisible.value = true;
 };
 
-// Добавление категории с заменой виджета
+// 🔴 v11.0: Удаляем openAddCategoryPopup
+// (Логика замены виджета больше не нужна)
+/*
 const openAddCategoryPopup = (title, widgetIndex) => {
-  popupTitle.value = title;
-  popupInitialValue.value = '';
-  showDeleteInPopup.value = false;
-  saveHandler.value = async (name) => {
-     const newCategory = await mainStore.addCategory(name); 
-     if (newCategory && newCategory._id && widgetIndex !== null) {
-         const newWidgetKey = `cat_${newCategory._id}`;
-         mainStore.replaceWidget(widgetIndex, newWidgetKey);
-     }
-  };
-  deleteHandler.value = null;
-  currentWidgetIndexForReplace.value = widgetIndex;
-  isEntityPopupVisible.value = true;
+  // ... (удаленный код)
 };
+*/
 
 // Переименование + Удаление
-// 🟢 UPDATED (Шаг 3): Добавлена поддержка 'individuals'
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
   popupInitialValue.value = entity.name;
@@ -174,26 +166,36 @@ const onEntityListSave = async (updatedItems) => {
   isListEditorVisible.value = false;
 };
 
-/* ======================= Обработчики Категорий ======================= */
+/* ======================= Обработчики Категорий (УДАЛЕНО v11.0) ======================= */
+// 🔴 v11.0: Удаляем getWidgetByKey, onCategoryAdd, onCategoryEdit
+/*
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
+const onCategoryAdd = (widgetKey, index) => {
+    // ... (удаленный код)
+};
+const onCategoryEdit = (widgetKey) => {
+    // ... (удаленный код)
+};
+*/
 
+// (Этот обработчик нужен для `cat_...` виджета "Перевод", который остался)
+const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 const onCategoryAdd = (widgetKey, index) => {
     const widget = getWidgetByKey(widgetKey);
+    // 🟢 v11.0: Упрощенная логика - только для Перевода
     if (widget?.name.toLowerCase() === 'перевод') {
         isTransferPopupVisible.value = true;
-    } else {
-        openAddCategoryPopup('Новая категория', index);
     }
 };
-
 const onCategoryEdit = (widgetKey) => {
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
-        // 🔴 Разрешаем удаление для категории
+        // 🟢 v11.0: Упрощенная логика - только для Перевода (и других кастомных cat_...)
         openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
     }
 };
+// ---
 
 const handleTransferComplete = async (eventData) => {
     if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
@@ -256,7 +258,6 @@ const handleTransferComplete = async (eventData) => {
         @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
       />
 
-      <!-- 🟢 NEW (Шаг 3): Блок "Мои Физлица" -->
       <HeaderBalanceCard
         v-else-if="widgetKey === 'individuals'"
         title="Мои Физлица"
@@ -266,6 +267,18 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
         @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
         @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
+      />
+      
+      <!-- 🟢 NEW (v11.0): Единый виджет "Категории" -->
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'categories'"
+        title="Категории"
+        :items="mergedCategoryBalances" 
+        emptyText="...категорий нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="index"
+        @add="openAddPopup('Новая категория', mainStore.addCategory)"
+        @edit="openEditPopup('Редактировать категории', mainStore.categories, 'categories')"
       />
 
       <HeaderTotalCard
@@ -278,6 +291,7 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
       />
 
+      <!-- 🔴 REFACTORED (v11.0): Этот блок теперь обрабатывает ТОЛЬКО 'cat_...' (например, "Перевод") -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
