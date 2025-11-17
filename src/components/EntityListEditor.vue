@@ -392,14 +392,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 
+/* (Шаг 7 R2) Заголовок Счетов (С БАЛАНСОМ) */
 .account-header-simple .header-name { width: 100%; }
 .account-header-simple .header-balance { flex-shrink: 0; width: 100px; text-align: right; padding-right: 14px; }
 
+/* (Шаг 7) Заголовок Компаний/Физлиц */
 .owner-header .header-accounts { flex-shrink: 0; width: 310px; }
 
+/* (Шаг 7) Заголовок Контрагентов */
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
 .header-trash { width: 48px; flex-shrink: 0; }
+/* --- */
 
 
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
@@ -407,7 +411,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .edit-item {
   display: flex;
-  align-items: flex-start;
+  /* 🟢 ИСПРАВЛЕНИЕ: Выравниваем по центру */
+  align-items: center;
   margin-bottom: 10px;
   gap: 10px;
 }
@@ -420,9 +425,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   width: 22px;
   height: 48px; /* <-- Высота инпута */
   display: flex;
-  align-items: center;
+  align-items: center; /* Центрируем иконку по вертикали */
   justify-content: center;
-  padding-top: 14px; /* Оптический хак для "⠿" */
+  /* padding-top: 14px; <-- УДАЛЕНО */
   box-sizing: border-box;
 }
 .edit-item:active { cursor: grabbing; }
@@ -433,7 +438,13 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box;
 }
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
-.edit-name { flex-grow: 1; min-width: 100px; }
+
+/* 🟢 ИСПРАВЛЕНИЕ: Поднимаем input */
+.edit-name {
+  flex-grow: 1;
+  min-width: 100px;
+  transform: translateY(-3px);
+}
 
 .edit-project, .edit-category {
   flex-shrink: 0;
@@ -444,7 +455,25 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-project, .edit-category { width: 150px; }
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
 
-/* 4. СТИЛИ ДЛЯ НОВОЙ КНОПКИ */
+/* 🟢 СТИЛЬ-ФИКС (Шаг 11): Приведение к "закрытому" селекту */
+/* (Это класс для <select multiple>, который мы заменили на кнопку) */
+.edit-account-select {
+  flex-shrink: 0;
+  width: 310px;
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
+}
+.edit-account-select option {
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+.edit-account-select option:checked {
+  background: #222222;
+  color: #FFFFFF;
+}
+
+/* 🟢 СТИЛИ ДЛЯ НОВОЙ КНОПКИ (v9.1) */
 .edit-account-picker {
   flex-shrink: 0;
   width: 310px;
@@ -456,7 +485,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 40px;
-  font-size: 15px; /* Убедимся, что шрифт как у инпута */
+  font-size: 15px;
 }
 .edit-account-picker:hover {
   border-color: #222222; /* Выделение при наведении */
