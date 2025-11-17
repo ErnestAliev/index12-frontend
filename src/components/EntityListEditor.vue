@@ -495,6 +495,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   height: 100%;
   stroke: #999;
   transition: stroke 0.2s;
+  margin: 5px;
 }
 .delete-btn:hover {
   border-color: #FF3B30; background: #fff5f5;
@@ -559,3 +560,4 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
