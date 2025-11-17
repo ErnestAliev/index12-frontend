@@ -1,1100 +1,1254 @@
+<template>
+  <div class="modal-overlay" @click.self="closeModal">
+    <div class="modal-content">
+      <button class="close-btn" @click="closeModal">&times;</button>
+      
+      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт операций' }}</h2>
+      
+      <div class="modal-tabs">
+        <button 
+          class="tab-btn" 
+          :class="{ active: currentTab === 'import' }"
+          @click="currentTab = 'import'"
+        >
+          Импорт (CSV)
+        </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: currentTab === 'export' }"
+          @click="currentTab = 'export'"
+        >
+          Экспорт (CSV)
+        </button>
+      </div>
+      <div v-if="currentTab === 'import'" class="import-content-wrapper">
+        <div v-if="step === 'upload'" class="modal-step-content">
+          <div 
+            class="drop-zone" 
+            @dragover.prevent="dragOver = true"
+            @dragleave.prevent="dragOver = false"
+            @drop.prevent="handleDrop"
+            :class="{ 'drag-over': dragOver }"
+          >
+            <div v-if="!isLoading">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p>Перетащите CSV файл сюда</p>
+              <p class="small-text">или</p>
+              <label class="file-input-label">
+                Выберите файл
+                <input 
+                  ref="fileInputRef"
+                  type="file" 
+                  accept=".csv" 
+                  @change="handleFileSelect" 
+                  class="file-input" 
+                />
+              </label>
+            </div>
+            <div v-if="isLoading" class="loading-indicator">
+              <div class="spinner"></div>
+              <p>Парсинг файла...</p>
+            </div>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+
+        <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
+          <p class="step-description">
+            Сопоставьте колонки из вашего CSV-файла с полями системы.
+          </p>
+          <div class="mapping-table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      @change="toggleSelectAll" 
+                      :checked="isAllSelected"
+                      title="Выбрать все/Снять все"
+                    />
+                  </th>
+                  <th v-for="header in csvHeaders" :key="header">
+                    <div class="header-cell">
+                      <span class="csv-header-name" :title="header">{{ header }}</span>
+                      <select v-model="columnMapping[header]" class="mapping-select">
+                        <option :value="null">-- Не использовать --</option>
+                        <option disabled>-----------------</option>
+                        <option v-for="field in systemFields" :key="field.key" :value="field.key">
+                          {{ field.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in previewData" :key="rowIndex" :class="{ 'row-disabled': !isValidRow(row) }">
+                  <td class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      :value="rowIndex" 
+                      v-model="selectedRows"
+                      :disabled="!isValidRow(row)"
+                    />
+                  </td>
+                  <td v-for="(header, colIndex) in csvHeaders" :key="colIndex" :title="row[header]">
+                    {{ row[header] }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+
+        <div v-if="step === 'review'" class="modal-step-content review-step">
+          <p class="step-description">
+            Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
+          </p>
+          <p>Следующие новые элементы будут созданы автоматически. Пожалуйста, проверьте:</p>
+          
+          <div class="new-entities-container">
+            <div v-for="entityType in Object.keys(newEntities)" :key="entityType">
+              <div v-if="newEntities[entityType].length > 0" class="entity-list">
+                <h4>Новые {{ getEntityName(entityType) }}:</h4>
+                <ul>
+                  <li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+            <p v-if="Object.values(newEntities).every(arr => arr.length === 0)">
+              Новых элементов для создания не найдено. Все данные ссылаются на существующие сущности.
+            </p>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+        
+        <div v-if="step === 'importing'" class="modal-step-content">
+          <div class="loading-indicator">
+            <div class="spinner"></div>
+            <p>Идет импорт данных... Пожалуйста, подождите.</p>
+            <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
+          </div>
+        </div>
+      </div>
+      <div v-if="currentTab === 'export'" class="modal-step-content export-step">
+        <p>
+          Вы можете экспортировать **все операции** из вашей базы данных в один CSV-файл.
+        </p>
+        <p>
+          Этот процесс извлечет все записи о доходах и расходах (переводы не включаются в экспорт).
+        </p>
+        
+        <div v-if="isExporting" class="loading-indicator">
+          <div class="spinner"></div>
+          <p>Подготовка данных...</p>
+          <p class="small-text">Это может занять некоторое время, если у вас много операций.</p>
+        </div>
+        
+        <button 
+          @click="handleExport" 
+          class="btn-primary export-btn" 
+          :disabled="isExporting"
+        >
+          Экспортировать все операции
+        </button>
+        
+        <div v-if="exportError" class="error-message">
+          {{ exportError }}
+        </div>
+      </div>
+      <div v-if="currentTab === 'import'" class="modal-actions">
+        <button 
+          @click="closeModal" 
+          class="btn-secondary"
+          :disabled="step === 'importing'"
+        >
+          Отмена
+        </button>
+        
+        <button 
+          @click="previousStep" 
+          v-if="step === 'mapping' || step === 'review'" 
+          class="btn-secondary"
+          :disabled="step === 'importing'"
+        >
+          Назад
+        </button>
+        
+        <button 
+          @click="goToReviewStep" 
+          v-if="step === 'mapping'" 
+          class="btn-primary"
+          :disabled="isReviewDisabled"
+        >
+          Проверить ({{ selectedRows.size }})
+        </button>
+        
+        <button 
+          @click="startImport" 
+          v-if="step === 'review'" 
+          class="btn-primary"
+          :disabled="operationsToImport.length === 0"
+        >
+          Начать импорт ({{ operationsToImport.length }})
+        </button>
+      </div>
+
+      <div v-if="currentTab === 'export'" class="modal-actions">
+        <button 
+          @click="closeModal" 
+          class="btn-secondary"
+          :disabled="isExporting"
+        >
+          Закрыть
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
 /**
- * * --- МЕТКА ВЕРСИИ: v8.1-LOGIC-FIX-FUTURE-TOTAL ---
- * * ВЕРСИЯ: 8.1 - Исправление расчета будущего баланса
- * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v2.0-TABS-EXPORT ---
+ * * ВЕРСИЯ: 2.0 - Рефакторинг (вкладки) и Экспорт
+ * ДАТА: 2025-11-17
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (CRITICAL) `futureTotalBalance` теперь отталкивается от `currentTotalBalance` (текущего итога),
- * а не от `totalInitialBalance` (стартового капитала). Теперь формула: Текущее + Будущее.
- * 2. (FIX) `updateProjectionFromCalculationData` теперь вручную фильтрует операции для
- * подсчета сумм Income/Expense, чтобы гарантировать использование НОВЫХ дат диапазона,
- * не дожидаясь реактивного обновления `futureOps`.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (РЕФАКТОРИНГ) Компонент перестроен для поддержки вкладок ("Импорт" / "Экспорт").
+ * 2. (НОВОЕ) Добавлена вкладка "Экспорт".
+ * 3. (НОВОЕ) Добавлена логика `handleExport`, использующая `mainStore.exportAllOperations`.
+ * 4. (НОВОЕ) `formatDataForExport`: Преобразует данные в CSV-совместимый JSON.
+ * 5. (НОВОЕ) `triggerCsvDownload`: Использует Papa.unparse для создания и скачивания
+ * CSV-файла с BOM (для поддержки кириллицы в Excel).
+ * 6. (СТИЛИ) Добавлены стили для вкладок и вкладки "Экспорт", существующие стили
+ * импорта сохранены без изменений.
  */
 
-import { defineStore } from 'pinia';
-import { ref, computed, watch } from 'vue';
-import axios from 'axios';
+import { ref, computed } from 'vue';
+import Papa from 'papaparse';
+import { useMainStore } from '@/stores/mainStore';
 
-// Глобальная настройка Axios
-axios.defaults.withCredentials = true; 
+// --- Компонент ---
+const emit = defineEmits(['close', 'import-complete']);
+const mainStore = useMainStore();
 
-// Адрес "Кухни"
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+// 🔴 НАЧАЛО: Новое состояние для вкладок и экспорта
+const currentTab = ref('import'); // 'import' or 'export'
+const isExporting = ref(false);
+const exportError = ref(null);
+// 🔴 КОНЕЦ: Новое состояние
 
-const VIEW_MODE_DAYS = {
-  '12d': { total: 12 },
-  '1m':  { total: 30 },
-  '3m':  { total: 90 },
-  '6m':  { total: 180 },
-  '1y':  { total: 360 }
-};
+// --- Шаги (Импорт) ---
+const step = ref('upload'); // 'upload', 'mapping', 'review', 'importing'
+const error = ref(null);
+const isLoading = ref(false);
 
-function getViewModeInfo(mode) {
-  return VIEW_MODE_DAYS[mode] || VIEW_MODE_DAYS['12d'];
+// --- CSV Данные (Импорт) ---
+const file = ref(null);
+const fileInputRef = ref(null); // <-- ref для input
+const dragOver = ref(false);
+const csvHeaders = ref([]);
+const csvData = ref([]); // Полный набор данных
+// !!! ИЗМЕНЕНИЕ: Убрано .slice(0, 5) !!!
+const previewData = computed(() => csvData.value); // Теперь показывает ВСЕ строки
+// --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
+// !!! НОВЫЙ КОД: Чекбоксы !!!
+// Храним ИНДЕКСЫ выбранных строк
+const selectedRows = ref(new Set()); 
+const isAllSelected = computed(() => {
+  const validRowCount = csvData.value.filter(isValidRow).length;
+  return validRowCount > 0 && selectedRows.value.size === validRowCount;
+});
+// --- КОНЕЦ НОВОГО КОДА ---
+
+
+// --- Сопоставление (Mapping) ---
+const columnMapping = ref({}); // { 'CSV Header Name': 'systemFieldKey' }
+
+/**
+ * Определения полей нашей системы, с которыми мы можем сопоставить CSV.
+ */
+const systemFields = [
+  { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
+  { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
+  { key: 'amount', label: 'Сумма', entity: null, aliases: ['сумма', 'amount'] },
+  { key: 'category', label: 'Категория', entity: 'categories', aliases: ['категория', 'category'] },
+  { key: 'project', label: 'Проект', entity: 'projects', aliases: ['проект', 'project', 'мои проекты'] },
+  { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
+  { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании'] },
+  { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
+  // TODO: Добавить поля для переводов (fromAccount, toAccount и т.д.)
+];
+
+// --- Подтверждение (Review) ---
+const newEntities = ref({
+  categories: [],
+  projects: [],
+  accounts: [],
+  companies: [],
+  contractors: [],
+});
+// Готовые к импорту операции
+const operationsToImport = ref([]);
+
+// --- Импорт (Importing) ---
+const importProgress = ref(0);
+const isReviewDisabled = computed(() => {
+  // Блокируем импорт, если не сопоставлены обязательные поля
+  const mappedKeys = Object.values(columnMapping.value);
+  const hasMinFields = mappedKeys.includes('date') && mappedKeys.includes('amount') && mappedKeys.includes('type');
+  
+  // Кнопка "Проверить" активна, если:
+  // 1. Поля сопоставлены
+  // 2. Хотя бы одна строка выбрана
+  return !hasMinFields || selectedRows.value.size === 0;
+});
+
+
+// --- Функции ---
+
+// !!! НОВЫЙ КОД: Функция принудительной очистки состояния !!!
+function resetState() {
+  console.log("Очистка состояния ImportExportModal...");
+  step.value = 'upload';
+  error.value = null;
+  isLoading.value = false;
+  
+  file.value = null;
+  csvHeaders.value = [];
+  csvData.value = [];
+  columnMapping.value = {};
+  operationsToImport.value = [];
+  
+  selectedRows.value.clear(); // <-- Очищаем чекбоксы
+  
+  // 🔴 НАЧАЛО: Очистка состояния экспорта
+  isExporting.value = false;
+  exportError.value = null;
+  // 🔴 КОНЕЦ
+  
+  // Очищаем <input type="file">
+  if (fileInputRef.value) {
+    fileInputRef.value.value = null;
+  }
+}
+// --- КОНЕЦ НОВОГО КОДА ---
+
+
+function closeModal() {
+  resetState(); // <-- !!! ИЗМЕНЕНИЕ: Очищаем состояние при закрытии
+  emit('close');
 }
 
-export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v8.1-LOGIC-FIX-FUTURE-TOTAL ЗАГРУЖЕН ---'); 
-  
-  // =================================================================
-  // 1. STATE
-  // =================================================================
-  const user = ref(null); 
-  const isAuthLoading = ref(true); 
-  
-  const displayCache = ref({});
-  const calculationCache = ref({});
-  const accounts    = ref([]);
-  const companies   = ref([]);
-  const contractors = ref([]);
-  const projects    = ref([]);
-  const categories  = ref([]);
-  const todayDayOfYear = ref(0);
-  const currentYear = ref(new Date().getFullYear());
-
-  const staticWidgets = ref([
-    { key: 'currentTotal', name: 'Всего (на тек. момент)' },
-    { key: 'accounts',     name: 'Мои счета' },
-    { key: 'companies',    name: 'Мои компании' },
-    { key: 'contractors',  name: 'Мои контрагенты' },
-    { key: 'projects',     name: 'Мои проекты' },
-    { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
-  ]);
-
-  // =================================================================
-  // 2. WATCHERS & PERSISTENCE
-  // =================================================================
-  const allWidgets = computed(() => {
-    const cats = categories.value.map(c => ({ key: `cat_${c._id}`, name: c.name }));
-    return [...staticWidgets.value, ...cats];
-  });
-
-  const savedLayout = localStorage.getItem('dashboardLayout');
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','futureTotal']);
-  watch(dashboardLayout, (newLayout) => {
-    localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
-  }, { deep: true });
-
-  const savedForecastState = localStorage.getItem('dashboardForecastState');
-  const dashboardForecastState = ref(savedForecastState ? JSON.parse(savedForecastState) : {});
-  watch(dashboardForecastState, (newState) => {
-    localStorage.setItem('dashboardForecastState', JSON.stringify(newState));
-  }, { deep: true });
-
-  const savedProjection = localStorage.getItem('projection');
-  const initialProjection = savedProjection ? JSON.parse(savedProjection) : {
-    mode: '12d', totalDays: 12, rangeStartDate: null, rangeEndDate: null,
-    futureIncomeSum: 0, futureExpenseSum: 0
-  };
-  const projection = ref(initialProjection);
-  watch(projection, (newProjection) => {
-    localStorage.setItem('projection', JSON.stringify(newProjection));
-  }, { deep: true });
-  
-  function replaceWidget(i, key){ 
-    if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
+function previousStep() {
+  if (step.value === 'mapping') {
+    resetState(); // <-- !!! ИЗМЕНЕНИЕ: Очищаем состояние при возврате к загрузке
+  } else if (step.value === 'review') {
+    step.value = 'mapping';
+    // Не очищаем, чтобы пользователь мог исправить сопоставление (но очищаем операции)
+    operationsToImport.value = [];
   }
-  function setForecastState(widgetKey, value) {
-    dashboardForecastState.value[widgetKey] = !!value;
-  }
-  function setToday(d){ 
-    todayDayOfYear.value = d; 
-    localStorage.setItem('todayDayOfYear', d.toString());
-  }
-  const savedToday = localStorage.getItem('todayDayOfYear');
-  if (savedToday) {
-    todayDayOfYear.value = parseInt(savedToday);
+}
+
+/**
+ * Обработка выбора файла через input
+ */
+function handleFileSelect(event) {
+  const f = event.target.files[0];
+  if (f) {
+    if (f.type !== 'text/csv' && !f.name.endsWith('.csv')) {
+      error.value = 'Пожалуйста, выберите файл в формате .csv';
+      return;
+    }
+    file.value = f;
+    parseCsv();
   }
   
-  // =================================================================
-  // 3. HELPERS
-  // =================================================================
-  const _getDayOfYear = (date) => {
-    const start = new Date(date.getFullYear(), 0, 0);
-    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
-    return Math.floor(diff / 86400000);
-  };
-  const _getDateKey = (date) => {
-    const year = date.getFullYear();
-    const doy = _getDayOfYear(date);
-    return `${year}-${doy}`;
-  };
-  const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        console.error(`!!! mainStore._parseDateKey ОШИБКА:`, dateKey);
-        return new Date(); 
-    }
-    const [year, doy] = dateKey.split('-').map(Number);
-    const date = new Date(year, 0, 1);
-    date.setDate(doy);
-    return date;
-  };
-  const _calculateDateRangeWithYear = (view, baseDate) => {
-    const startDate = new Date(baseDate);
-    const endDate = new Date(baseDate);
-    switch (view) {
-      case '12d': startDate.setDate(startDate.getDate() - 5); endDate.setDate(endDate.getDate() + 6); break;
-      case '1m':  startDate.setDate(startDate.getDate() - 15); endDate.setDate(endDate.getDate() + 14); break;
-      case '3m':  startDate.setDate(startDate.getDate() - 45); endDate.setDate(endDate.getDate() + 44); break;
-      case '6m':  startDate.setDate(startDate.getDate() - 90); endDate.setDate(endDate.getDate() + 89); break;
-      case '1y':  startDate.setDate(startDate.getDate() - 180); endDate.setDate(endDate.getDate() + 179); break;
-      default:    startDate.setDate(startDate.getDate() - 5); endDate.setDate(endDate.getDate() + 6);
-    }
-    return { startDate, endDate };
-  };
-  const _addDays = (base, n) => { 
-    const d = new Date(base); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; 
-  };
-
-  // =================================================================
-  // 4. COMPUTED (Balances & Ops)
-  // =================================================================
-  const allOperationsFlat = computed(() => {
-    const allOps = [];
-    Object.values(calculationCache.value).forEach(dayOps => {
-      if (Array.isArray(dayOps)) {
-        dayOps.forEach(op => { if (op && typeof op === 'object') { allOps.push(op); } });
-      }
-    });
-    return allOps;
-  });
-
-  const displayOperationsFlat = computed(() => {
-    const displayOps = [];
-    Object.values(displayCache.value).forEach(dayOps => {
-      if (Array.isArray(dayOps)) {
-        displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
-      }
-    });
-    return displayOps;
-  });
-  
-  const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
-  
-  const currentOps = computed(() =>
-    allOperationsFlat.value.filter(op => {
-      if (!op?.dateKey) return false;
-      const opDate = _parseDateKey(op.dateKey);
-      const opYear = opDate.getFullYear();
-      const opDoy = _getDayOfYear(opDate);
-      const currentDoy = todayDayOfYear.value || 0;
-      const currentYearVal = currentYear.value;
-      return opYear < currentYearVal || (opYear === currentYearVal && opDoy <= currentDoy);
-    })
-  );
-
-  const currentTransfers = computed(() => {
-    const transfers = currentOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateB.getTime() - dateA.getTime();
-    });
-  });
-
-  // --- Future Ops ---
-  const futureOps = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); }
-    const todayDate = new Date(currentYearVal, 0, baseToday);
-    return allOperationsFlat.value.filter(op => {
-      if (!op?.dateKey) return false;
-      const opDate = _parseDateKey(op.dateKey);
-      return opDate > todayDate && opDate <= endDate;
-    });
-  });
-
-  const futureTransfers = computed(() => {
-    const transfers = futureOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateA.getTime() - dateB.getTime();
-    });
-  });
-
-  const getCategoryById = (id) => {
-    return categories.value.find(c => c._id === id);
-  };
-
-  const currentCategoryBreakdowns = computed(() => {
-    const map = {};
-    for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const key = `cat_${op.categoryId._id}`;
-      if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      if (op.type === 'income') map[key].income += op.amount || 0;
-      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
-      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
-    }
-    return map;
-  });
-
-  const futureCategoryBreakdowns = computed(() => {
-    const map = {};
-    for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const key = `cat_${op.categoryId._id}`;
-      if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      if (op.type === 'income') map[key].income += op.amount || 0;
-      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
-      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
-    }
-    return map;
-  });
-
-  const totalInitialBalance = computed(() =>
-    (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
-  );
-  
-  const _applyTransferToBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromAccountId?._id || op?.fromAccountId || null;
-    const toId   = op?.toAccountId?._id   || op?.toAccountId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId)   { if (bal[toId]   === undefined) bal[toId]   = 0; bal[toId]   += amt; }
-  };
-
-  const currentAccountBalances = computed(() => {
-    const bal = {};
-    for (const a of accounts.value) bal[a._id] = a.initialBalance || 0;
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (!op?.accountId?._id) continue;
-      const id = op.accountId._id;
-      if (bal[id] === undefined) bal[id] = 0;
-      bal[id] += (op.amount || 0);
-    }
-    return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
-  });
-  
-  const futureAccountBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentAccountBalances.value;
-    for (const account of currentBalances) { bal[account._id] = account.balance || 0; }
-    
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (!op?.accountId?._id) continue;
-      const id = op.accountId._id;
-      if (bal[id] === undefined) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
-  });
-  
-  const _applyTransferToCompanyBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
-    const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
-    
-    if (fromId) { 
-        if (bal[fromId] === undefined) bal[fromId] = 0; 
-        bal[fromId] -= amt; 
-    }
-    if (toId) { 
-        if (bal[toId] === undefined) bal[toId] = 0; 
-        bal[toId] += amt; 
-    }
-  };
-
-  const currentCompanyBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToCompanyBalances(bal, op);
-         continue;
-      }
-      if (!op?.companyId?._id) continue;
-      const id = op.companyId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-  
-  const futureCompanyBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentCompanyBalances.value;
-    for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
-    
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToCompanyBalances(bal, op);
-         continue;
-      }
-      if (!op?.companyId?._id) continue;
-      const id = op.companyId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-
-  const currentContractorBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue; 
-      if (!op?.contractorId?._id) continue;
-      const id = op.contractorId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-  const futureContractorBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentContractorBalances.value;
-    for (const contractor of currentBalances) { bal[contractor._id] = contractor.balance || 0; }
-    
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.contractorId?._id) continue;
-      const id = op.contractorId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-
-  const currentProjectBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.projectId?._id) continue;
-      const id = op.projectId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
-  });
-  const futureProjectBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentProjectBalances.value;
-    for (const project of currentBalances) { bal[project._id] = project.balance || 0; }
-    
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.projectId?._id) continue;
-      const id = op.projectId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
-  });
-
-  const currentTotalBalance = computed(() => {
-    const opsTotal = currentOps.value.reduce((s,op)=> {
-      if (isTransfer(op)) return s;
-      return s + (op?.amount || 0);
-    }, 0);
-    return (totalInitialBalance.value || 0) + opsTotal;
-  });
-
-  // =================================================================
-  // 🔴 ИСПРАВЛЕНИЕ: Future Total Balance
-  // =================================================================
-  const futureTotalBalance = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); }
-    
-    const todayDate = new Date(currentYearVal, 0, baseToday);
-    
-    // Если дата окончания <= сегодня, значит будущего нет
-    if (endDate <= todayDate) { return currentTotalBalance.value || 0; }
-    
-    // 🔴 ГЛАВНОЕ ИСПРАВЛЕНИЕ: 
-    // Начинаем не с нуля (Initial), а с ТЕКУЩЕГО баланса
-    let total = currentTotalBalance.value || 0;
-    
-    // Прибавляем/отнимаем только то, что в будущем (от сегодня до endDate)
-    for (const op of futureOps.value) { 
-       if (!isTransfer(op)) total += (op?.amount || 0); 
-    }
-    return total;
-  });
-  // =================================================================
-
-  const dailyChartData = computed(() => {
-    const byDateKey = {};
-    for (const op of allOperationsFlat.value) {
-      if (!op?.dateKey) continue;
-      if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, expense:0, dayTotal:0 };
-      if (!isTransfer(op)) {
-        if (op.type === 'income') byDateKey[op.dateKey].income += (op?.amount || 0);
-        else if (op.type === 'expense') byDateKey[op.dateKey].expense += Math.abs(op.amount || 0);
-        byDateKey[op.dateKey].dayTotal += (op?.amount || 0);
-      }
-    }
-    const chart = new Map();
-    const sortedDateKeys = Object.keys(byDateKey).sort((a, b) => {
-      const dateA = _parseDateKey(a); const dateB = _parseDateKey(b);
-      return dateA.getTime() - dateB.getTime();
-    });
-    let running = totalInitialBalance.value || 0;
-    for (const dateKey of sortedDateKeys) {
-      const rec = byDateKey[dateKey];
-      running += rec.dayTotal;
-      chart.set(dateKey, { 
-        income: rec.income, expense: rec.expense, closingBalance: running,
-        date: _parseDateKey(dateKey)
-      });
-    }
-    return chart;
-  });
-
-  function computeTotalDaysForMode(mode, todayDate = new Date()) {
-    const info = getViewModeInfo(mode);
-    return info.total;
+  // !!! ИСПРАВЛЕНИЕ: Очищаем input, чтобы @change сработал,
+  // если пользователь выберет тот же файл снова.
+  if (event.target) {
+    event.target.value = null;
   }
+}
 
-  // =================================================================
-  // 6. ACTIONS
-  // =================================================================
+/**
+ * Обработка файла через Drag-n-drop
+ */
+function handleDrop(event) {
+  dragOver.value = false;
+  const f = event.dataTransfer.files[0];
+  if (f) {
+    if (f.type !== 'text/csv' && !f.name.endsWith('.csv')) {
+      error.value = 'Пожалуйста, выберите файл в формате .csv';
+      return;
+    }
+    file.value = f;
+    parseCsv();
+  }
+}
+
+/**
+ * Парсинг CSV с помощью PapaParse
+ */
+function parseCsv() {
+  // !!! ИСПРАВЛЕНИЕ: Очищаем старые данные перед парсингом
+  csvData.value = [];
+  csvHeaders.value = [];
+  selectedRows.value.clear(); // <-- Очищаем чекбоксы
   
-  async function loadCalculationData(mode, baseDate = new Date()) {
-    const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
-    const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
-    const yearStartDate = new Date(currentYear.value, 0, 1);
-    
-    await fetchCalculationRange(yearStartDate, todayDate);
-    await fetchCalculationRange(viewStartDate, viewEndDate);
-    await updateProjectionFromCalculationData(mode, baseDate);
-  }
+  isLoading.value = true;
+  error.value = null;
 
-  async function fetchCalculationRange(startDate, endDate) {
-    try {
-      const promises = [];
-      const dateKeysToFetch = [];
-      
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dateKey = _getDateKey(d);
-        if (!calculationCache.value[dateKey]) {
-          dateKeysToFetch.push(dateKey);
-          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
-        }
-      }
-      
-      if (promises.length > 0) {
-        const responses = await Promise.all(promises);
-        const tempCache = {};
-        for (let i = 0; i < responses.length; i++) {
-          const dateKey = dateKeysToFetch[i];
-          const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
-          const processedOps = _mergeTransfers(raw).map(op => ({
-            ...op,
-            dateKey: dateKey,
-            date: op.date || _parseDateKey(dateKey) 
-          }));
-          tempCache[dateKey] = processedOps;
-        }
-        
-        calculationCache.value = { ...calculationCache.value, ...tempCache };
-        displayCache.value = { ...displayCache.value, ...tempCache }; 
-      }
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-    }
-  }
-
-  async function updateProjectionFromCalculationData(mode, today = new Date()) {
-    const base = new Date(today);
-    base.setHours(0, 0, 0, 0);
-    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    let futureIncomeSum = 0;
-    let futureExpenseSum = 0;
-    
-    // 🔴 FIX: Вручную фильтруем операции, чтобы использовать АКТУАЛЬНЫЙ endDate,
-    // а не ждать пока computed futureOps обновится (это может произойти на следующем тике)
-    const opsInRange = allOperationsFlat.value.filter(op => {
-        if (!op?.dateKey) return false;
-        const opDate = _parseDateKey(op.dateKey);
-        return opDate > base && opDate <= endDate;
-    });
-
-    for (const op of opsInRange) { 
-        if (!isTransfer(op)) {
-            if (op.type === 'income') futureIncomeSum += op.amount || 0;
-            else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
-        }
-    }
-    projection.value = { 
-      mode, totalDays: computeTotalDaysForMode(mode, base),
-      rangeStartDate: startDate, rangeEndDate: endDate,
-      futureIncomeSum, futureExpenseSum 
-    };
-    updateFutureTotals();
-  }
-
-  async function fetchOperationsRange(startDate, endDate) {
-    try {
-      const promises = [];
-      const dateKeysToFetch = [];
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dateKey = _getDateKey(d);
-        if (!displayCache.value[dateKey]) {
-          dateKeysToFetch.push(dateKey);
-          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
-        }
-      }
-      if (promises.length === 0) {
-        displayCache.value = { ...displayCache.value };
+  Papa.parse(file.value, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (results) => {
+      if (results.errors.length) {
+        error.value = 'Ошибка парсинга CSV: ' + results.errors[0].message;
+        isLoading.value = false;
         return;
       }
-      const responses = await Promise.all(promises);
-      const tempCache = {};
-      for (let i = 0; i < responses.length; i++) {
-        const dateKey = dateKeysToFetch[i];
-        const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
-        const processedOps = _mergeTransfers(raw).map(op => ({
-          ...op,
-          dateKey: dateKey,
-          date: op.date || _parseDateKey(dateKey) 
-        }));
-        tempCache[dateKey] = processedOps;
-      }
-      displayCache.value = { ...displayCache.value, ...tempCache };
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
+      
+      csvHeaders.value = results.meta.fields;
+      csvData.value = results.data;
+      
+      autoMapHeaders();
+      autoSelectValidRows(); // <-- !!! НОВЫЙ КОД: Авто-выбор строк
+      
+      isLoading.value = false;
+      step.value = 'mapping';
+    },
+    error: (err) => {
+      error.value = 'Не удалось прочитать файл: ' + err.message;
+      isLoading.value = false;
     }
-  }
+  });
+}
 
-  // Функция синхронизации кэшей (Для мгновенного UI)
-  const _syncCaches = (key, ops) => {
-      displayCache.value[key] = [...ops];
-      calculationCache.value[key] = [...ops];
-      displayCache.value = { ...displayCache.value };
-      calculationCache.value = { ...calculationCache.value };
-  };
+/**
+ * Автоматическое сопоставление заголовков CSV с полями системы.
+ * Ищет совпадения в 'aliases' (в нижнем регистре).
+ */
+function autoMapHeaders() {
+  const mapping = {};
+  const usedSystemKeys = new Set();
 
-  async function updateFutureProjectionWithData(mode, today = new Date()) {
-    const base = new Date(today); base.setHours(0, 0, 0, 0);
-    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    await fetchOperationsRange(startDate, endDate); 
-    await updateProjectionFromCalculationData(mode, today); 
-  }
-  function updateFutureProjection({ mode, totalDays, today = new Date() }) {
-     updateFutureTotals();
-  }
-  function updateFutureTotals() {
-    const _ = futureTotalBalance.value;
-    const __ = futureAccountBalances.value;
-    const ___ = futureCompanyBalances.value;
-    const ____ = futureContractorBalances.value;
-    const _____ = futureProjectBalances.value;
-  }
-  function updateFutureProjectionByMode(mode, today = new Date()){
-    const base = new Date(today); base.setHours(0,0,0,0);
-    const info = getViewModeInfo(mode);
-    updateFutureProjection({ mode: mode, totalDays: info.total, today: base });
-  }
-  function setProjectionRange(startDate, endDate){
-    const t0 = new Date(); t0.setHours(0,0,0,0);
-    const start = new Date(startDate); start.setHours(0,0,0,0);
-    const end   = new Date(endDate); end.setHours(0,0,0,0);
-    projection.value = {
-      mode:'custom', 
-      totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
-      rangeStartDate:start, 
-      rangeEndDate:end, 
-      futureIncomeSum: 0 
-    };
-  }
-
-  async function fetchAllEntities(){
-    try{
-      const [accRes, compRes, contrRes, projRes, catRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
-        axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
-        axios.get(`${API_BASE_URL}/categories`),
-      ]);
-      accounts.value    = accRes.data; companies.value   = compRes.data;
-      contractors.value = contrRes.data; projects.value    = projRes.data;
-      categories.value  = catRes.data;
-    }catch(e){ 
-        if (e.response && e.response.status === 401) user.value = null;
-    }
-  }
-
-  function getOperationsForDay(dateKey) {
-    return displayCache.value[dateKey] || [];
-  }
-
-  function _mergeTransfers(list) {
-    const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
-    const transferGroups = new Map();
-    list.forEach(o => {
-      if (o?.isTransfer || o?.transferGroupId) {
-        const groupId = o.transferGroupId || `transfer_${o._id}`;
-        if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
-        transferGroups.get(groupId).push(o);
-      }
-    });
-    const mergedTransfers = [];
-    for (const [groupId, transferOps] of transferGroups) {
-      if (transferOps.length === 2) {
-        const expenseOp = transferOps.find(o => o.amount < 0);
-        const incomeOp = transferOps.find(o => o.amount > 0);
-        if (expenseOp && incomeOp) {
-          mergedTransfers.push({
-            _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true,
-            transferGroupId: groupId, amount: Math.abs(incomeOp.amount),
-            fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
-            fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
-            dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
-            cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            categoryId: { _id: 'transfer', name: 'Перевод' },
-            date: incomeOp.date || expenseOp.date
-          });
-          continue;
-        }
-      }
-      const firstOp = transferOps[0];
-      mergedTransfers.push({
-        ...firstOp, type: 'transfer', isTransfer: true,
-        transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        categoryId: { _id: 'transfer', name: 'Перевод' }
-      });
-    }
-    return [...normalOps, ...mergedTransfers];
-  }
-  async function _getOrCreateTransferCategory() {
-    let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
-    if (!transferCategory) {
-      transferCategory = await addCategory('Перевод');
-    }
-    return transferCategory._id;
-  }
-
-  async function fetchOperations(dateKey, force = false) {
-    if (!dateKey) return;
-    if (displayCache.value[dateKey] && !force) return;
-    try {
-      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
-      const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
-      }));
-      displayCache.value[dateKey] = processedOps;
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-    }
-  }
-
-  async function refreshDay(dateKey) {
-    if (!dateKey) return;
-    try {
-      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
-      const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
-      }));
-      _syncCaches(dateKey, processedOps);
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-    }
-    updateFutureTotals();
-  }
-
-  // --- SWAP & MOVE LOGIC ---
-  async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
-    if (!oldDateKey || !newDateKey) return;
+  for (const csvHeader of csvHeaders.value) {
+    const csvHeaderLower = csvHeader.trim().toLowerCase();
     
-    if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
-    if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
-
-    const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
-
-    if (oldDateKey === newDateKey) {
-       // SWAP WITHIN DAY
-       const ops = [...(displayCache.value[oldDateKey] || [])];
-       const sourceOp = ops.find(o => o._id === operation._id);
-       const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
-       
-       if (sourceOp) {
-           if (targetOp) {
-               const originalSourceIndex = sourceOp.cellIndex;
-               sourceOp.cellIndex = targetIndex;
-               targetOp.cellIndex = originalSourceIndex;
-               
-               _syncCaches(oldDateKey, ops);
-               Promise.all([
-                  axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
-                  axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
-               ]).catch(e => refreshDay(oldDateKey));
-           } else {
-               sourceOp.cellIndex = targetIndex;
-               _syncCaches(oldDateKey, ops);
-               axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
-                 .catch(e => refreshDay(oldDateKey));
-           }
-       }
-
+    // Ищем точное совпадение в псевдонимах
+    const foundField = systemFields.find(field => 
+      field.aliases.includes(csvHeaderLower) && !usedSystemKeys.has(field.key)
+    );
+    
+    if (foundField) {
+      mapping[csvHeader] = foundField.key;
+      usedSystemKeys.add(foundField.key); // Убеждаемся, что одно поле системы не сопоставлено дважды
     } else {
-       // MOVE BETWEEN DAYS (Collision -> Find Free)
-       let oldOps = [...(displayCache.value[oldDateKey] || [])];
-       const sourceOpData = oldOps.find(o => o._id === operation._id);
-       oldOps = oldOps.filter(o => o._id !== operation._id);
-       _syncCaches(oldDateKey, oldOps);
-       
-       let newOps = [...(displayCache.value[newDateKey] || [])];
-       const occupant = newOps.find(o => o.cellIndex === targetIndex);
-       
-       let finalIndex = targetIndex;
-       if (occupant) {
-           const usedIndices = new Set(newOps.map(o => o.cellIndex));
-           while(usedIndices.has(finalIndex)) finalIndex++;
-       }
-       
-       const moved = { 
-          ...sourceOpData, 
-          dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey),
-          cellIndex: finalIndex 
-       };
-       newOps.push(moved);
-       _syncCaches(newDateKey, newOps);
-       
-       axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
-          dateKey: newDateKey, 
-          cellIndex: finalIndex,
-          date: moved.date 
-       }).catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
-    }
-
-    if (projection.value.mode) {
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      mapping[csvHeader] = null; // Не сопоставлено
     }
   }
+  columnMapping.value = mapping;
+}
 
-  // --- CRUD ---
-  function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
+// --- !!! НОВЫЙ КОД: Функции для чекбоксов !!! ---
 
-  async function createTransfer(transferData) {
-    try {
-      const finalDate = new Date(transferData.date);
-      const dateKey = _getDateKey(finalDate);
-      const cellIndex = await getFirstFreeCellIndex(dateKey);
-      const transferCategory = await _getOrCreateTransferCategory();
-      
-      const response = await axios.post(`${API_BASE_URL}/transfers`, {
-        ...transferData,
-        dateKey: dateKey, 
-        cellIndex: cellIndex,
-        categoryId: transferData.categoryId || transferCategory
-      });
-      
-      await refreshDay(dateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      return response.data;
-    } catch (error) {
-      throw error;
+/**
+ * Проверяет, можно ли импортировать строку (есть ли у нее дата, сумма, тип)
+ */
+function isValidRow(row) {
+  const reverseMapping = getReverseMapping();
+  const dateHeader = reverseMapping['date'];
+  const amountHeader = reverseMapping['amount'];
+  const typeHeader = reverseMapping['type'];
+  
+  // Проверяем, что необходимые колонки сопоставлены И что в строке есть данные
+  return dateHeader && row[dateHeader] &&
+         amountHeader && row[amountHeader] &&
+         typeHeader && row[typeHeader];
+}
+
+/**
+ * Автоматически выбирает все валидные строки при загрузке
+ */
+function autoSelectValidRows() {
+  selectedRows.value.clear();
+  csvData.value.forEach((row, index) => {
+    if (isValidRow(row)) {
+      selectedRows.value.add(index);
     }
-  }
+  });
+}
 
-  async function updateTransfer(transferId, transferData) {
-    try {
-      const finalDate = new Date(transferData.date);
-      const newDateKey = _getDateKey(finalDate);
-      const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
-      let newCellIndex;
-      
-      if (oldOp && oldOp.dateKey === newDateKey) {
-        newCellIndex = oldOp.cellIndex || 0;
-      } else {
-        newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      }
-      
-      const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
-        ...transferData,
-        dateKey: newDateKey, 
-        cellIndex: newCellIndex,
-        type: 'transfer',
-        isTransfer: true
-      });
-      
-      if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-      await refreshDay(newDateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
+/**
+ * Логика для чекбокса "Выбрать все"
+ */
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    // Если все выбраны -> снять все
+    selectedRows.value.clear();
+  } else {
+    // Если выбраны не все -> выбрать все валидные
+    autoSelectValidRows();
   }
+}
+// --- !!! КОНЕЦ НОВОГО КОДА ---
 
-  async function updateOperation(opId, opData) {
-    try {
-      const finalDate = new Date(opData.date);
-      const newDateKey = _getDateKey(finalDate);
-      const oldOp = allOperationsFlat.value.find(o => o._id === opId);
-      let newCellIndex;
-      if (oldOp && oldOp.dateKey === newDateKey) {
-        newCellIndex = oldOp.cellIndex || 0;
-      } else {
-        newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      }
-      
-      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
-        ...opData,
-        dateKey: newDateKey,
-        cellIndex: newCellIndex
-      });
-      
-      if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-      await refreshDay(newDateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
 
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  async function deleteOperation(operation){
-    const dateKey = operation.dateKey;
-    if (!dateKey) return;
-    
-    const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
-    _syncCaches(dateKey, ops);
-    updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-
-    try {
-      if (isTransfer(operation) && operation._id2) {
-          await Promise.all([
-             axios.delete(`${API_BASE_URL}/events/${operation._id}`),
-             axios.delete(`${API_BASE_URL}/events/${operation._id2}`)
-          ]);
-      } else {
-          await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
-      }
-    } catch(e) {
-        refreshDay(dateKey);
-    }
-  }
-
-  async function addOperation(op){
-    if (!op.dateKey) return;
-    await refreshDay(op.dateKey); 
-    await fetchAllEntities();
-    updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-  }
-
-  async function deleteEntity(path, id, deleteOperations = false) {
-      try {
-          await axios.delete(`${API_BASE_URL}/${path}/${id}`, {
-              params: { deleteOperations }
-          });
-          
-          if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
-          if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
-          if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
-          if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
-          if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
-
-          if (deleteOperations) {
-              await forceRefreshAll();
-          } else {
-              await forceRefreshAll(); 
-          }
-      } catch (error) {
-          console.error('Ошибка удаления сущности:', error);
-          throw error; 
-      }
-  }
-
-  async function addCategory(name){
-    const res = await axios.post(`${API_BASE_URL}/categories`, { name });
-    categories.value.push(res.data); 
-    return res.data;
-  }
-
-  async function addAccount(data) {
-    let payload;
-    if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
-    else { payload = { name: data.name, initialBalance: data.initialBalance || 0, companyId: data.companyId || null }; }
-    const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
-    accounts.value.push(res.data); return res.data;
-  }
-  async function addCompany(name){
-    const res = await axios.post(`${API_BASE_URL}/companies`, { name });
-    companies.value.push(res.data); return res.data;
-  }
-  async function addContractor(name){
-    const res = await axios.post(`${API_BASE_URL}/contractors`, { name });
-    contractors.value.push(res.data); return res.data;
-  }
-  async function addProject(name){
-    const res = await axios.post(`${API_BASE_URL}/projects`, { name });
-    projects.value.push(res.data); return res.data;
-  }
-
-  async function batchUpdateEntities(path, items){
-    try{
-      const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
-      if (path==='accounts')         accounts.value = res.data;
-      else if (path==='companies')   companies.value = res.data;
-      else if (path==='contractors') contractors.value = res.data;
-      else if (path==='projects')    projects.value = res.data;
-      else if (path==='categories')  categories.value = res.data; 
-    }catch(e){
-      await fetchAllEntities();
-    }
-  }
-
-  async function getFirstFreeCellIndex(dateKey, startIndex=0){
-    if (!displayCache.value[dateKey]) await fetchOperations(dateKey); 
-    const arr = displayCache.value[dateKey] || [];
-    const used = new Set(arr.map(o => Number.isInteger(o?.cellIndex)? o.cellIndex : -1));
-    let idx = Math.max(0, startIndex|0);
-    while (used.has(idx)) idx++;
-    return idx;
+/**
+ * Переход к шагу "Подтверждение".
+ * Анализирует данные и ищет новые сущности.
+ */
+function goToReviewStep() {
+  error.value = null;
+  
+  // 1. Валидация: Проверяем, что обязательные поля сопоставлены
+  if (isReviewDisabled.value) {
+    error.value = 'Необходимо сопоставить обязательные поля (Дата, Сумма, Тип) и выбрать хотя бы одну строку.';
+    return;
   }
   
-  function _compactIndices(arr, excludeId=null){
-    const others = excludeId ? arr.filter(o => o._id !== excludeId) : arr.slice();
-    others.sort((a,b)=>a.cellIndex - b.cellIndex).forEach((o,i)=>{ o.cellIndex = i; });
-    return others;
-  }
-
-  let autoRefreshInterval = null;
-  function startAutoRefresh(intervalMs = 30000) {
-    stopAutoRefresh();
-    autoRefreshInterval = setInterval(async () => {
-      try {
-        await fetchAllEntities();
-        if (projection.value.mode) {
-          await loadCalculationData( 
-            projection.value.mode,
-            new Date(currentYear.value, 0, todayDayOfYear.value)
-          );
-        }
-      } catch (error) {}
-    }, intervalMs);
-  }
-  function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-      clearInterval(autoRefreshInterval);
-      autoRefreshInterval = null;
-    }
-  }
-  async function forceRefreshAll() {
-    try {
-      displayCache.value = {};
-      calculationCache.value = {};
-      await fetchAllEntities();
-      if (projection.value.mode) {
-        await loadCalculationData( 
-          projection.value.mode,
-          new Date(currentYear.value, 0, todayDayOfYear.value)
-        );
-      }
-    } catch (error) {}
-  }
-
-  async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
-    try {
-      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
-        operations, 
-        selectedRows: selectedIndices 
-      });
-      const createdOps = response.data;
-      progressCallback(createdOps.length);
-      await forceRefreshAll();
-      return createdOps;
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-      throw error; 
-    }
-  }
-
-  async function checkAuth() {
-  try {
-    isAuthLoading.value = true;
-    const res = await axios.get(`${API_BASE_URL}/auth/me`);
-      user.value = res.data; 
-    } catch (error) {
-      user.value = null;
-    } finally {
-      isAuthLoading.value = false;
-    }
-  }
-
-  async function logout() {
-    axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {});
-    user.value = null; 
-    displayCache.value = {};
-    calculationCache.value = {};
-  }
+  // 2. Преобразуем данные (это заполнит operationsToImport)
+  // !!! ИЗМЕНЕНИЕ: Передаем 'selectedRows'
+  operationsToImport.value = transformDataForImport(selectedRows.value);
   
-  return {
-    accounts, companies, contractors, projects, categories,
-    operationsCache: displayCache,
-    displayCache, calculationCache,
-    allWidgets, dashboardLayout,
-    projection,
-    dashboardForecastState,
-    user,
-    isAuthLoading,
+  // 3. Идентификация новых сущностей (на основе operationsToImport)
+  identifyNewEntities();
+  
+  step.value = 'review';
+}
 
-    currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
-    currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
-    futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
-    currentOps, 
-    
-    currentTransfers, futureTransfers,
-    getCategoryById,
-    currentCategoryBreakdowns, futureCategoryBreakdowns,
-
-    getOperationsForDay, 
-
-    setToday, replaceWidget,
-    setForecastState,
-    fetchAllEntities, fetchOperations, refreshDay, 
-    
-    addOperation, deleteOperation, moveOperation,
-    addAccount, addCompany, addContractor, addProject, addCategory,
-    deleteEntity, // 🔴 Экспорт новой функции
-    batchUpdateEntities,
-
-    computeTotalDaysForMode,
-    updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
-    
-    loadCalculationData,
-    fetchCalculationRange, 
-    updateProjectionFromCalculationData,
-
-    createTransfer, updateTransfer, updateOperation,
-
-    fetchOperationsRange, 
-    updateFutureProjectionWithData,
-
-    startAutoRefresh, stopAutoRefresh, forceRefreshAll,
-
-    getFirstFreeCellIndex, 
-    _parseDateKey, 
-    _getDateKey, 
-
-    allOperationsFlat,
-    displayOperationsFlat,
-    
-    importOperations,
-    
-    checkAuth,
-    logout,
+/**
+ * Ищет сущности (категории, проекты и т.д.) в CSV, 
+ * которых нет в mainStore.
+ */
+function identifyNewEntities() {
+  const newFound = {
+    categories: new Set(),
+    projects: new Set(),
+    accounts: new Set(),
+    companies: new Set(),
+    contractors: new Set(),
   };
-});
+
+  // Поля, которые являются сущностями
+  const entityFields = systemFields.filter(f => f.entity);
+  
+  for (const field of entityFields) {
+    const fieldKey = field.key; // 'category'
+    const entityName = field.entity; // 'categories'
+
+    // Получаем текущий список сущностей из store (v3.9/v4.4 mainStore[entityName] - это ref)
+    const storeEntities = mainStore[entityName].value || [];
+    const storeEntityNames = new Set(storeEntities.map(e => e.name.toLowerCase().trim()));
+    
+    // Пробегаем по всем подготовленным операциям
+    for (const op of operationsToImport.value) {
+      const value = op[fieldKey]; // 'Название Категории'
+      
+      if (value) {
+        const trimmedValue = value.trim();
+        const lowerValue = trimmedValue.toLowerCase();
+        
+        // Если в store нет такого имени, и мы еще не добавили его в Set
+        if (!storeEntityNames.has(lowerValue) && !newFound[entityName].has(trimmedValue)) {
+          newFound[entityName].add(trimmedValue);
+        }
+      }
+    }
+  }
+
+  // Преобразуем Set'ы в массивы для ref
+  newEntities.value.categories = Array.from(newFound.categories);
+  newEntities.value.projects = Array.from(newFound.projects);
+  newEntities.value.accounts = Array.from(newFound.accounts);
+  newEntities.value.companies = Array.from(newFound.companies);
+  newEntities.value.contractors = Array.from(newFound.contractors);
+}
+
+/**
+ * Вспомогательная функция для отображения русских названий.
+ */
+function getEntityName(entityType) {
+  const names = {
+    categories: 'Категории',
+    projects: 'Проекты',
+    accounts: 'Счета',
+    companies: 'Компании',
+    contractors: 'Контрагенты',
+  };
+  return names[entityType] || entityType;
+}
+
+/**
+ * Начинает процесс импорта.
+ */
+async function startImport() {
+  step.value = 'importing';
+  error.value = null;
+  importProgress.value = 0;
+
+  try {
+    // 1. Данные уже подготовлены в operationsToImport
+    
+    // 2. Отправить в mainStore (который отправит на сервер)
+    // !!! ИЗМЕНЕНИЕ v2.7:
+    // Мы отправляем *ВСЕ* operations (transformDataForImport)
+    // И *отдельно* индексы (selectedRows)
+    
+    const allTransformedOperations = transformDataForImport(null); // Все операции
+    const selectedIndices = Array.from(selectedRows.value); // Только индексы
+
+    await mainStore.importOperations(
+      allTransformedOperations, 
+      selectedIndices, // <-- !!! НОВЫЙ КОД: Передаем индексы
+      (progress) => {
+        importProgress.value = progress;
+      }
+    );
+
+    // 3. Успех
+    emit('import-complete');
+    
+  } catch (err) {
+    console.error('Ошибка импорта:', err);
+    error.value = `Ошибка импорта: ${err.message || 'Неизвестная ошибка'}`;
+    step.value = 'review'; // Возвращаем на шаг подтверждения
+  }
+}
+
+/**
+ * (Helper) Создает обратную карту (systemKey -> csvHeader)
+ */
+function getReverseMapping() {
+  const reverseMapping = {};
+  for (const header in columnMapping.value) {
+    const systemKey = columnMapping.value[header];
+    if (systemKey) {
+      reverseMapping[systemKey] = header;
+    }
+  }
+  return reverseMapping;
+}
+
+/**
+ * Преобразует `csvData` + `columnMapping` в массив объектов операций,
+ * готовых для отправки на API.
+ * @param {Set<number>|null} selectedIndices - Set индексов строк для обработки. 
+ * Если null, обрабатывает ВСЕ строки.
+ */
+function transformDataForImport(selectedIndices) {
+  const operations = [];
+  const reverseMapping = getReverseMapping();
+  
+  const dataToProcess = selectedIndices 
+    ? csvData.value.filter((_, index) => selectedIndices.has(index))
+    : csvData.value;
+    
+  for (const row of dataToProcess) {
+    const op = {};
+    
+    // Сначала ищем ТИП, так как он влияет на СУММУ
+    const typeHeader = reverseMapping['type'];
+    let opType = null;
+    if (typeHeader && row[typeHeader]) {
+      opType = normalizeType(String(row[typeHeader]).trim());
+      op['type'] = opType;
+    }
+
+    for (const field of systemFields) {
+      // Пропускаем 'type', так как мы его уже обработали
+      if (field.key === 'type') continue; 
+
+      const systemKey = field.key;
+      const csvHeader = reverseMapping[systemKey];
+      
+      if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== null && row[csvHeader] !== '') {
+        let value = String(row[csvHeader]).trim();
+        
+        // Очистка и преобразование данных
+        if (systemKey === 'amount') {
+          value = cleanAmount(value);
+          // !!! ИСПРАВЛЕНИЕ: (Проблема с красным цветом) !!!
+          // Если тип 'expense' и сумма положительная, делаем ее отрицательной
+          if (opType === 'expense' && value > 0) {
+            value = -value;
+          }
+        } else if (systemKey === 'date') {
+          value = parseDate(value); // Должен вернуть ISO строку
+        }
+        
+        op[systemKey] = value;
+      }
+    }
+    
+    // Пропускаем строки без даты, суммы или типа
+    if (op.date && op.amount !== null && op.type) {
+      operations.push(op);
+    }
+  }
+  
+  return operations;
+}
+
+/**
+ * Очищает строку с суммой от валюты, пробелов и приводит к числу.
+ */
+function cleanAmount(value) {
+  if (typeof value !== 'string') return null;
+  
+  let cleaned = value
+    .replace(/₸/g, '')      // Убираем символ тенге
+    .replace(/[^\d.,-]/g, ''); // Оставляем только цифры, точки, запятые и минус
+
+  // Определяем, что используется как разделитель тысяч, а что - десятичный
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastDot = cleaned.lastIndexOf('.');
+  
+  if (lastComma > lastDot) {
+    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+  } 
+  else if (lastDot > lastComma) {
+    cleaned = cleaned.replace(/,/g, '');
+  }
+  else if (lastComma !== -1 && lastDot === -1) {
+    if (cleaned.match(/,/g).length === 1 && lastComma > cleaned.length - 4) {
+      cleaned = cleaned.replace(',', '.');
+    } else {
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  }
+  else if (lastDot !== -1 && lastComma === -1) {
+    if (cleaned.match(/\./g).length > 1) {
+       cleaned = cleaned.replace(/\./g, (match, offset) => offset === lastDot ? '.' : '');
+    }
+  }
+  
+  cleaned = cleaned.replace(/\s/g, '');
+  
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Преобразует дату из "dd.MM.yyyy" в ISO-строку.
+ */
+function parseDate(value) {
+  if (typeof value !== 'string') return null;
+  
+  // Формат 1: dd.MM.yyyy
+  let parts = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (parts) {
+    // parts = ["07.08.2025", "07", "08", "2025"]
+    const day = parseInt(parts[1], 10);
+    const month = parseInt(parts[2], 10) - 1; // Месяцы в JS с 0
+    const year = parseInt(parts[3], 10);
+    
+    const date = new Date(year, month, day);
+    return date.toISOString();
+  }
+  
+  // Формат 2: yyyy-MM-dd (ISO-like)
+  parts = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (parts) {
+     const year = parseInt(parts[1], 10);
+     const month = parseInt(parts[2], 10) - 1;
+     const day = parseInt(parts[3], 10);
+     const date = new Date(year, month, day);
+     return date.toISOString();
+  }
+
+  // Попробовать парсить как стандартный Date (может быть не надежно)
+  const d = new Date(value);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString();
+  }
+  
+  return null;
+}
+
+/**
+ * Приводит тип операции к системным 'income', 'expense', 'transfer'.
+ */
+function normalizeType(value) {
+  if (typeof value !== 'string') return null;
+  const lower = value.toLowerCase().trim();
+  
+  if (['доход', 'income', 'приход', 'поступление'].includes(lower)) {
+    return 'income';
+  }
+  if (['расход', 'expense', 'убыток', 'трата', 'списание'].includes(lower)) {
+    return 'expense';
+  }
+  if (['перевод', 'transfer'].includes(lower)) {
+    return 'transfer';
+  }
+  return null; // Неизвестный тип
+}
+
+// ----------------------------------------------
+// 🔴 НАЧАЛО: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА (v2.0)
+// ----------------------------------------------
+
+/**
+ * Главная функция экспорта
+ */
+async function handleExport() {
+  isExporting.value = true;
+  exportError.value = null;
+  
+  try {
+    // 1. Получаем все операции из store (который дергает API)
+    const operations = await mainStore.exportAllOperations();
+    
+    if (!operations || operations.length === 0) {
+      exportError.value = "Нет операций для экспорта.";
+      isExporting.value = false;
+      return;
+    }
+    
+    // 2. Форматируем данные для CSV
+    const formattedData = formatDataForExport(operations);
+    
+    // 3. Конвертируем JSON в CSV строку
+    const csvString = Papa.unparse(formattedData, {
+      header: true,
+    });
+    
+    // 4. Запускаем скачивание файла
+    triggerCsvDownload(csvString);
+    
+  } catch (err) {
+    console.error("Ошибка экспорта:", err);
+    exportError.value = `Не удалось экспортировать данные: ${err.message || 'Ошибка сервера'}`;
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+/**
+ * Преобразует массив операций с сервера в плоский массив 
+ * объектов для Papa.unparse
+ */
+function formatDataForExport(operations) {
+  return operations
+    // Фильтруем переводы (на всякий случай, хотя сервер уже должен был)
+    .filter(op => op.type !== 'transfer' && !op.isTransfer) 
+    .map(op => {
+      let dateStr = '';
+      if (op.date) {
+        try {
+          // Форматируем дату как dd.MM.yyyy (локальный формат)
+          const d = new Date(op.date);
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          dateStr = `${day}.${month}.${year}`;
+        } catch (e) {
+          dateStr = op.date; // fallback
+        }
+      }
+      
+      return {
+        'Дата': dateStr,
+        'Тип': op.type,
+        'Сумма': op.amount,
+        'Категория': op.categoryId ? op.categoryId.name : '',
+        'Проект': op.projectId ? op.projectId.name : '',
+        'Счет': op.accountId ? op.accountId.name : '',
+        'Компания': op.companyId ? op.companyId.name : '',
+        'Контрагент': op.contractorId ? op.contractorId.name : '',
+      };
+    });
+}
+
+/**
+ * Создает Blob и инициирует скачивание CSV файла
+ */
+function triggerCsvDownload(csvString) {
+  // \uFEFF - это BOM (Byte Order Mark), он помогает Excel
+  // правильно определить кодировку UTF-8 и отобразить кириллицу.
+  const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
+  
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  
+  // Генерируем имя файла
+  const formattedDate = new Date().toISOString().split('T')[0].replace(/-/g, '');
+  link.setAttribute('download', `index12_export_${formattedDate}.csv`);
+  
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+}
+// ----------------------------------------------
+// 🔴 КОНЕЦ: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА
+// ----------------------------------------------
+</script>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 90vw;
+  max-width: 1200px;
+  height: 90vh;
+  max-height: 800px;
+  background: var(--color-background);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* 🔴 ИЗМЕНЕНИЕ: Убрали overflow-y, 
+     чтобы внутренние блоки могли скроллиться */
+}
+
+.close-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  padding: 5px;
+  line-height: 1;
+}
+.close-btn:hover {
+  color: var(--color-text);
+}
+
+h2 {
+  padding: 20px 24px;
+  margin: 0;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+  flex-shrink: 0; /* 🔴 НОВОЕ */
+}
+
+/* 🔴 НАЧАЛО: Стили для вкладок (v2.0) */
+.modal-tabs {
+  display: flex;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.tab-btn {
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  font-size: 15px;
+  margin-bottom: -1px; /* Нахлест на border-bottom */
+}
+.tab-btn.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+/* 🔴 КОНЕЦ: Стили для вкладок */
+
+
+/* 🔴 НАЧАЛО: Обёртка для контента импорта (v2.0) */
+.import-content-wrapper {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Важно для flex-grow */
+}
+/* 🔴 КОНЕЦ */
+
+.modal-step-content {
+  flex-grow: 1;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* 🔴 ИЗМЕНЕНИЕ */
+}
+
+/* --- Шаг 1: Загрузка --- */
+.drop-zone {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background-soft);
+  color: var(--color-text-soft);
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.drop-zone.drag-over {
+  border-color: var(--color-accent);
+  background: var(--color-background-mute);
+}
+.drop-zone p {
+  margin: 8px 0;
+  font-size: 16px;
+  color: var(--color-text);
+}
+.drop-zone .small-text {
+  font-size: 14px;
+  color: var(--color-text-soft);
+}
+.drop-zone svg {
+  color: var(--color-text-soft);
+  margin-bottom: 16px;
+}
+
+.file-input {
+  display: none;
+}
+.file-input-label {
+  display: inline-block;
+  padding: 10px 20px;
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  margin-top: 16px;
+}
+.file-input-label:hover {
+  background: var(--color-accent-hover);
+}
+
+/* --- Шаг 2: Сопоставление --- */
+.mapping-step {
+  padding: 0;
+  /* 🔴 ИЗМЕНЕНИЕ: flex-grow уже есть у родителя */
+}
+.step-description {
+  padding: 16px 24px;
+  margin: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  flex-shrink: 0; /* 🔴 НОВОЕ */
+}
+
+.mapping-table-container {
+  overflow: auto; /* 🔴 ИЗМЕНЕНИЕ: auto вместо x-auto */
+  flex-grow: 1;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+thead th {
+  background: var(--color-background-soft);
+  border-bottom: 2px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* !!! НОВЫЙ КОД: Стили для чекбоксов !!! */
+.checkbox-col {
+  width: 40px;
+  max-width: 40px;
+  padding: 10px;
+  text-align: center;
+}
+.row-disabled {
+  background-color: var(--color-background-soft);
+  color: var(--color-text-faded);
+  opacity: 0.6;
+}
+.row-disabled .mapping-select {
+  opacity: 0.7;
+}
+/* --- КОНЕЦ НОВЫХ СТИЛЕЙ --- */
+
+
+.header-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+}
+.csv-header-name {
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapping-select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border-hover);
+  border-radius: 4px;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+/* --- Шаг 3: Подтверждение (Импорт) --- */
+.review-step {
+  padding: 24px;
+}
+.new-entities-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  overflow-y: auto;
+  max-height: 400px; /* Ограничиваем высоту */
+  padding: 10px;
+  background: var(--color-background-soft);
+  border-radius: 6px;
+  margin-top: 16px;
+}
+.entity-list {
+  min-width: 200px;
+}
+.entity-list h4 {
+  margin: 0 0 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 5px;
+}
+.entity-list ul {
+  margin: 0;
+  padding-left: 20px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.entity-list li {
+  font-size: 14px;
+  color: var(--color-text-soft);
+}
+
+/* 🔴 НАЧАЛО: Стили для вкладки Экспорта (v2.0) */
+.export-step {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-size: 16px;
+}
+.export-step p {
+  max-width: 500px;
+  color: var(--color-text-soft);
+  line-height: 1.6;
+}
+.export-btn {
+  padding: 12px 24px;
+  font-size: 16px;
+  margin-top: 24px;
+}
+/* 🔴 КОНЕЦ: Стили для вкладки Экспорта */
+
+
+/* --- Загрузка / Спиннер --- */
+.loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+}
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Футер --- */
+.modal-actions {
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: var(--color-background);
+  flex-shrink: 0; /* 🔴 НОВОЕ */
+}
+
+/* --- Общие элементы --- */
+.error-message {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger);
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+/* --- Стили кнопок (для модалки) --- */
+.btn-primary, .btn-secondary {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
+.btn-primary:disabled {
+  background: var(--color-accent);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  background: var(--color-background-mute);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.btn-secondary:hover {
+  background: var(--color-background-soft);
+  border-color: var(--color-border-hover);
+}
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+</style>
