@@ -4,21 +4,26 @@ import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step7-FINAL-R3 ---
- * * ВЕРСИЯ: 9.0 - Исправлен стиль <select multiple>
+ * * --- МЕТКА ВЕРСИИ: v9.0-step7-FINAL-R4 ---
+ * * ВЕРСИЯ: 9.0 - ФИНАЛЬНАЯ ВЕРСИЯ. Исправлены стили listbox и выравнивание.
  * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО (На основе отзыва):
- * 1. (STYLE-FIX) Исправлены стили для `.edit-account-select` (multi-select).
- * - `height` изменена с `100px` на `48px` (чтобы выглядел как "закрытый").
- * - `padding` изменен на `0 14px` (чтобы соответствовать другим инпутам).
- * - `overflow-y` удален.
- * 2. (STYLE-FIX) Кнопка "Удалить" (`.delete-btn`):
- * - `transform: translateY(0px);` - Убран `translateY(-5px)`,
- * вместо этого выравниваем через `align-items: center;` в `.edit-item`.
- * - `height` оставлена `48px`, чтобы соответствовать инпутам.
- * 3. (STYLE-FIX) `.drag-handle` теперь использует `align-self: stretch;`
- * и `padding-top` для лучшего вертикального выравнивания.
+ * 1. (REVERT-STYLE) `.edit-account-select` (multi-select)
+ * - ВОЗВРАЩЕН `height: 100px;`
+ * - ВОЗВРАЩЕН `padding: 10px;`
+ * - ВОЗВРАЩЕН `overflow-y: auto;`
+ * - УБРАНЫ `appearance: none;` и `background-image: ...;`
+ * (Теперь это listbox, как на скриншотах).
+ * 2. (STYLE-FIX) `.edit-item`
+ * - `align-items` изменен на `flex-start` (для выравнивания по верху).
+ * 3. (STYLE-FIX) `.drag-handle` и `.delete-btn`
+ * - `transform: translateY(...)` УДАЛЕН.
+ * - `height` установлена в `48px` (как у .edit-name),
+ * чтобы они корректно выравнивались по верху.
+ * - `padding-top: 14px;` добавлен к `.drag-handle` для
+ * вертикального центрирования иконки.
+ * 4. (LOGIC) Вся логика из `R2` (с "Нач. балансом") сохранена.
  */
 
 const props = defineProps({
@@ -406,7 +411,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 
-/* 🟢 (Шаг 7 R2) Заголовок Счетов (С БАЛАНСОМ) */
+/* (Шаг 7 R2) Заголовок Счетов (С БАЛАНСОМ) */
 .account-header-simple .header-name { width: 100%; }
 .account-header-simple .header-balance { flex-shrink: 0; width: 100px; text-align: right; padding-right: 14px; }
 
@@ -425,7 +430,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .edit-item { 
   display: flex; 
-  align-items: center; /* 🟢 СТИЛЬ-ФИКС: Выравниваем по центру */
+  /* 🟢 СТИЛЬ-ФИКС: Выравниваем по верху, как на скриншотах */
+  align-items: flex-start; 
   margin-bottom: 10px;
   gap: 10px; 
 }
@@ -436,10 +442,13 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   user-select: none; 
   flex-shrink: 0; 
   width: 22px; 
-  height: 48px; 
+  height: 48px; /* <-- Высота инпута */
   display: flex;
-  align-items: center;
-  /* 🟢 СТИЛЬ-ФИКС: Убрано выравнивание по 'padding-top' */
+  align-items: center; /* Центрируем иконку по вертикали */
+  /* 🟢 СТИЛЬ-ФИКС: Выравниваем саму иконку внутри блока */
+  justify-content: center;
+  padding-top: 14px; /* Оптический хак для "⠿" */
+  box-sizing: border-box;
 }
 .edit-item:active { cursor: grabbing; }
 
@@ -458,33 +467,31 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
 }
 .edit-project, .edit-category { width: 150px; }
-/* 🟢 (Шаг 7 R2) Восстановлен .edit-balance */
+/* (Шаг 7 R2) Восстановлен .edit-balance */
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
 
-/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R3): Исправлен стиль <select multiple> */
+/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R4): Восстановлен стиль listbox (как на скриншотах) */
 .edit-account-select {
   flex-shrink: 0;
   width: 310px;
-  height: 48px; /* <-- ИСПРАВЛЕНО (было 100px) */
-  padding: 0 14px; /* <-- ИСПРАВЛЕНО (было 10px) */
-  /* overflow-y: auto; (УДАЛЕНО) */
-  
-  /* 🟢 NEW: Добавляем стрелку, как у обычного селекта */
-  -webkit-appearance: none; -moz-appearance: none; appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
+  height: 100px; /* <-- ВОЗВРАЩЕНО (как в R2) */
+  padding: 10px; /* <-- ВОЗВРАЩЕНО (как в R2) */
+  overflow-y: auto; /* <-- ВОЗВРАЩЕНО (как в R2) */
+  /* (appearance: none и background-image УДАЛЕНЫ) */
 }
 .edit-account-select option {
   padding: 5px 8px;
   border-radius: 4px;
-  /* (Стили :checked убраны, т.к. они видны только в "открытом" виде) */
+}
+.edit-account-select option:checked {
+  background: #222222;
+  color: #FFFFFF;
 }
 
-
-/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R3): Кнопка "Удалить" */
+/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R4): Кнопка "Удалить" */
 .delete-btn {
   width: 48px;
-  height: 48px; 
+  height: 48px; /* <-- Высота как у инпута */
   flex-shrink: 0;
   border: 1px solid #E0E0E0; background: #fff;
   border-radius: 8px; 
@@ -492,9 +499,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   cursor: pointer; transition: all 0.2s;
   padding: 10px; 
   
-  /* 🟢 СТИЛЬ-ФИКС: transform УДАЛЕН. 
-     Выравнивание теперь идет по 'align-items: center' в '.edit-item' */
-  /* transform: translateY(-5px); */ 
+  /* transform УДАЛЕН. Выравнивание по align-items: flex-start */
 }
 .delete-btn svg {
   width: 100%;
