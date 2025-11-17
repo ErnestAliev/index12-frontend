@@ -5,23 +5,20 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP5 ---
- * * ВЕРСЯ: 8.2 - Добавление "Мои Физлица" (Шаг 5)
- * ДАТА: 17.11.2025
+ * * --- МЕТКА ВЕРСИИ: v5.5-COMPLEX-FIX ---
+ * * ВЕРСИЯ: 5.5 - Комплексное исправление ошибок #13, #14.
+ * ДАТА: 2025-11-16
  *
  * ИСПРАВЛЕНИЯ:
- * 1. Добавлен `selectedIndividualId` и `isCreatingIndividual` в state.
- * 2. В <template> добавлен <select> для "Моему Физлицу" + inline-create.
- * 3. Добавлены `showIndividualInput`, `cancelCreateIndividual`, `saveNewIndividual`.
- * 4. `onAccountSelected` теперь распознает `individualId` и обеспечивает взаимоисключение.
- * 5. `handleSave` обновлен:
- * - Валидация: требует (companyId || individualId).
- * - Payload: отправляет `individualId`.
- * 6. `onMounted` (edit) теперь загружает `individualId`.
+ * 1. (FIX #14) Восстановлена функция `onAmountInput` и `formatNumber`
+ * для форматирования сумм (разделители тысячных).
+ * 2. (FIX #13) Полностью удален блок `<template v-else>` (форма перевода).
+ * 3. (FIX #13) Удалены связанные `ref` (`selectedFromAccountId`, `selectedToAccountId`).
+ * 4. (NEW) Добавлено логирование в `handleSave` и `onAmountInput`.
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- OperationPopup.vue v8.2-INDIVIDUALS-STEP5 (с Физлицами) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v5.5 (Fix #13, #14) ЗАГРУЖЕН ---');
 
 // !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -48,11 +45,14 @@ const amount = ref('');
 const selectedAccountId = ref(null);
 const selectedCompanyId = ref(null);
 const selectedContractorId = ref(null);
-const selectedIndividualId = ref(null); // 🔴 ДОБАВЛЕНО
 
 // --- НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ ---
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
+
+// --- 🔴 УДАЛЕНО (FIX #13) ---
+// const selectedFromAccountId = ref(null);
+// const selectedToAccountId   = ref(null);
 
 const errorMessage = ref('');
 const amountInput = ref(null);
@@ -73,9 +73,6 @@ const newProjectInput = ref(null);
 const isCreatingCategory = ref(false);
 const newCategoryName = ref('');
 const newCategoryInput = ref(null);
-const isCreatingIndividual = ref(false); // 🔴 ДОБАВЛЕНО
-const newIndividualName = ref(''); // 🔴 ДОБАВЛЕНО
-const newIndividualInput = ref(null); // 🔴 ДОБАВЛЕНО
 // --- (Конец Inline Create) ---
 
 
@@ -131,45 +128,17 @@ const onAmountInput = (event) => {
 // =================================================================
 
 
-// --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА КОМПАНИИ/ФИЗЛИЦА ПРИ ВЫБОРЕ СЧЕТА ---
+// --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА КОМПАНИИ ПРИ ВЫБОРЕ СЧЕТА ---
 const onAccountSelected = (accountId) => {
   console.log(`[OperationPopup] onAccountSelected: Выбран счет ${accountId}`);
   const account = mainStore.accounts.find(a => a._id === accountId);
-  if (account) {
-    if (account.companyId) {
-      const cId = (account.companyId && typeof account.companyId === 'object')
-        ? account.companyId._id
-        : account.companyId;
-      selectedCompanyId.value = cId;
-      selectedIndividualId.value = null; // 🔴 Взаимоисключение
-      console.log(`[OperationPopup] onAccountSelected: Авто-установлена компания ${cId}`);
-    } else if (account.individualId) { // 🔴 ДОБАВЛЕНО
-      const iId = (account.individualId && typeof account.individualId === 'object')
-        ? account.individualId._id
-        : account.individualId;
-      selectedIndividualId.value = iId;
-      selectedCompanyId.value = null; // 🔴 Взаимоисключение
-      console.log(`[OperationPopup] onAccountSelected: Авто-установлено Физлицо ${iId}`);
-    }
-  }
-};
-
-// 🔴 ДОБАВЛЕНО: Взаимоисключение при ручном выборе
-const onCompanySelected = (companyId) => {
-  if (companyId === '--CREATE_NEW--') {
-    showCompanyInput();
-  } else {
-    selectedCompanyId.value = companyId;
-    selectedIndividualId.value = null;
-  }
-};
-
-const onIndividualSelected = (individualId) => {
-  if (individualId === '--CREATE_NEW--') {
-    showIndividualInput();
-  } else {
-    selectedIndividualId.value = individualId;
-    selectedCompanyId.value = null;
+  if (account && account.companyId) {
+    // (v4.4) Убедимся, что companyId - это строка, а не объект
+    const cId = (account.companyId && typeof account.companyId === 'object')
+      ? account.companyId._id
+      : account.companyId;
+    selectedCompanyId.value = cId;
+    console.log(`[OperationPopup] onAccountSelected: Авто-установлена компания ${cId}`);
   }
 };
 
@@ -205,7 +174,6 @@ onMounted(() => {
     amount.value = formatNumber(Math.abs(op.amount || 0));
     selectedAccountId.value = op.accountId?._id || op.accountId;
     selectedCompanyId.value = op.companyId?._id || op.companyId;
-    selectedIndividualId.value = op.individualId?._id || op.individualId; // 🔴 ДОБАВЛЕНО
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
     selectedCategoryId.value = op.categoryId?._id || op.categoryId;
     selectedProjectId.value = op.projectId?._id || op.projectId;
@@ -232,7 +200,7 @@ onMounted(() => {
 // =================================================================
 const _getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000); // 60 * 1000 = 60000
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 60 * 1000);
   const oneDay = 1000 * 60 * 60 * 24;
   return Math.floor(diff / oneDay);
 };
@@ -246,7 +214,7 @@ const _getDateKey = (date) => {
 
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: handleSave (v8.2) ---
+// --- 🔴 ИСПРАВЛЕНИЕ: handleSave (v5.3) ---
 // =================================================================
 const handleSave = async () => {
   console.log('[OperationPopup] handleSave: НАЧАТО сохранение...');
@@ -256,23 +224,11 @@ const handleSave = async () => {
   const amountFromState = (amount.value || '').replace(/ /g, '');
   const amountParsed = parseFloat(amountFromState);
 
-  // --- 🔴 ОБНОВЛЕННАЯ ВАЛИДАЦИЯ ---
-  if (isNaN(amountParsed) || amountParsed <= 0) {
-    errorMessage.value = 'Пожалуйста, заполните Сумму.';
-    return;
-  }
-  if (!selectedAccountId.value) {
-    errorMessage.value = 'Пожалуйста, выберите Счет.';
-    return;
-  }
-  if (!selectedContractorId.value) {
-    errorMessage.value = 'Пожалуйста, выберите Контрагента.';
-    return;
-  }
-  // 🔴 Ключевая проверка: операция должна принадлежать ИЛИ компании, ИЛИ физлицу
-  if (!selectedCompanyId.value && !selectedIndividualId.value) {
-    errorMessage.value = 'Пожалуйста, выберите "Компанию" или "Физлицо".';
-    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ', { amountParsed, selectedAccountId: selectedAccountId.value, selectedCompanyId: selectedCompanyId.value, selectedIndividualId: selectedIndividualId.value, selectedContractorId: selectedContractorId.value });
+  // --- ВАЛИДАЦИЯ ДЛЯ ДОХОДОВ/РАСХОДОВ ---
+  // (Блок `props.type === 'transfer'` удален (Fix #13))
+  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedCompanyId.value || !selectedContractorId.value) {
+    errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания, Контрагент.';
+    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ', { amountParsed, selectedAccountId: selectedAccountId.value, selectedCompanyId: selectedCompanyId.value, selectedContractorId: selectedContractorId.value });
     return;
   }
   
@@ -291,8 +247,7 @@ const handleSave = async () => {
       amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed),
       categoryId: selectedCategoryId.value,
       accountId: selectedAccountId.value,
-      companyId: selectedCompanyId.value, // (будет null, если выбрано физлицо)
-      individualId: selectedIndividualId.value, // 🔴 ДОБАВЛЕНО (будет null, если выбрана компания)
+      companyId: selectedCompanyId.value,
       contractorId: selectedContractorId.value,
       projectId: selectedProjectId.value
     };
@@ -415,7 +370,6 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
 
 // =================================================================
 // --- 🔴 v2.3: Функции Inline-Create (с логированием) ---
-// 🔴 v8.2: Добавлены Физлица
 // =================================================================
 const showAccountInput = () => { console.log('[OperationPopup] showAccountInput'); isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { console.log('[OperationPopup] cancelCreateAccount'); isCreatingAccount.value = false; newAccountName.value = ''; };
@@ -429,12 +383,7 @@ const saveNewAccount = async () => {
     onAccountSelected(existing._id);
   } else {
     try {
-      // 🔴 ОБНОВЛЕНО: Передаем и companyId и individualId
-      const newItem = await mainStore.addAccount({ 
-        name: name, 
-        companyId: selectedCompanyId.value, 
-        individualId: selectedIndividualId.value 
-      });
+      const newItem = await mainStore.addAccount({ name: name, companyId: selectedCompanyId.value });
       selectedAccountId.value = newItem._id;
       onAccountSelected(newItem._id);
     } catch (e) { console.error(e); }
@@ -450,35 +399,15 @@ const saveNewCompany = async () => {
   console.log(`[OperationPopup] saveNewCompany: 💾 Сохранение компании ${name}`);
   const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
   if (existing) {
-    onCompanySelected(existing._id);
+    selectedCompanyId.value = existing._id;
   } else {
     try {
       const newItem = await mainStore.addCompany(name);
-      onCompanySelected(newItem._id);
+      selectedCompanyId.value = newItem._id;
     } catch (e) { console.error(e); }
   }
   cancelCreateCompany();
 };
-
-// 🔴 ДОБАВЛЕНО: Inline-create для Физлиц
-const showIndividualInput = () => { console.log('[OperationPopup] showIndividualInput'); isCreatingIndividual.value = true; nextTick(() => newIndividualInput.value?.focus()); };
-const cancelCreateIndividual = () => { console.log('[OperationPopup] cancelCreateIndividual'); isCreatingIndividual.value = false; newIndividualName.value = ''; };
-const saveNewIndividual = async () => {
-  const name = newIndividualName.value.trim();
-  if (!name) return;
-  console.log(`[OperationPopup] saveNewIndividual: 💾 Сохранение Физлица ${name}`);
-  const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    onIndividualSelected(existing._id);
-  } else {
-    try {
-      const newItem = await mainStore.addIndividual(name);
-      onIndividualSelected(newItem._id);
-    } catch (e) { console.error(e); }
-  }
-  cancelCreateIndividual();
-};
-
 
 const showContractorInput = () => { console.log('[OperationPopup] showContractorInput'); isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
 const cancelCreateContractor = () => { console.log('[OperationPopup] cancelCreateContractor'); isCreatingContractor.value = false; newContractorName.value = ''; };
@@ -618,8 +547,7 @@ const handleCopyClick = () => {
         @input="onAmountInput"
       />
 
-      <!-- 🔴 Блок Доход/Расход (удален v-if="props.type !== 'transfer'") -->
-      <template>
+      <template v-if="props.type !== 'transfer'">
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
         <select
           v-if="!isCreatingAccount"
@@ -643,15 +571,15 @@ const handleCopyClick = () => {
           <button @click="cancelCreateAccount" class="btn-inline-cancel">X</button>
         </div>
       
-        <!-- 🔴 ОБНОВЛЕН: Блок Компании -->
-        <label>Моей компании (ИЛИ Физлицу) *</label>
+        <label>Моей компании *</label>
         <select
           v-if="!isCreatingCompany"
           v-model="selectedCompanyId"
-          @change="e => onCompanySelected(e.target.value)"
+          @change="e => e.target.value === '--CREATE_NEW--' && showCompanyInput()"
           class="form-select"
+          :disabled="props.type === 'transfer'"
         >
-          <option :value="null">Выберите компанию</option>
+          <option :value="null" disabled>Выберите компанию</option>
           <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
           <option value="--CREATE_NEW--">[ + Создать новую компанию ]</option>
         </select>
@@ -659,24 +587,6 @@ const handleCopyClick = () => {
           <input type="text" v-model="newCompanyName" placeholder="Название компании" ref="newCompanyInput" @keyup.enter="saveNewCompany" @keyup.esc="cancelCreateCompany" />
           <button @click="saveNewCompany" class="btn-inline-save">✓</button>
           <button @click="cancelCreateCompany" class="btn-inline-cancel">X</button>
-        </div>
-
-        <!-- 🔴 ДОБАВЛЕНО: Блок Физлица -->
-        <label>Моему Физлицу (ИЛИ Компании) *</label>
-        <select
-          v-if="!isCreatingIndividual"
-          v-model="selectedIndividualId"
-          @change="e => onIndividualSelected(e.target.value)"
-          class="form-select"
-        >
-          <option :value="null">Выберите физлицо</option>
-          <option v-for="ind in mainStore.individuals" :key="ind._id" :value="ind._id">{{ ind.name }}</option>
-          <option value="--CREATE_NEW--">[ + Создать новое Физлицо ]</option>
-        </select>
-        <div v-else class="inline-create-form">
-          <input type="text" v-model="newIndividualName" placeholder="Название Физлица" ref="newIndividualInput" @keyup.enter="saveNewIndividual" @keyup.esc="cancelCreateIndividual" />
-          <button @click="saveNewIndividual" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateIndividual" class="btn-inline-cancel">X</button>
         </div>
 
         <label>{{ props.type === 'income' ? 'От контрагента' : 'Контрагенту' }} *</label>
@@ -691,6 +601,7 @@ const handleCopyClick = () => {
             }
           }"
           class="form-select"
+          :disabled="props.type === 'transfer'"
         >
           <option :value="null" disabled>Выберите контрагента</option>
           <option v-for="c in mainStore.contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
@@ -708,6 +619,7 @@ const handleCopyClick = () => {
           v-model="selectedProjectId"
           @change="e => e.target.value === '--CREATE_NEW--' && showProjectInput()"
           class="form-select"
+          :disabled="props.type === 'transfer'"
         >
           <option :value="null">Без проекта</option>
           <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
@@ -861,7 +773,7 @@ select option[value="--CREATE_NEW--"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* 🔴 УБРАН margin-bottom: 15px; чтобы он был консистентным */
+  margin-bottom: 15px;
 }
 .inline-create-form input {
   flex: 1;
