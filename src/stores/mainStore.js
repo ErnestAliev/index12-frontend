@@ -1,17 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.0 - Единый виджет "Категории" ---
- * * ВЕРСИЯ: 11.0 - Рефакторинг виджетов категорий
+ * * --- МЕТКА ВЕРСИИ: v11.1 - Фикс списка виджетов ---
+ * * ВЕРСИЯ: 11.1 - Исправление allWidgets и layout по умолчанию
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (REFACTOR) `staticWidgets` теперь включает `{ key: 'categories', name: 'Категории' }`.
- * 2. (REFACTOR) `dashboardLayout` по умолчанию теперь включает `'categories'` вместо `'individuals'`.
- * (Примечание: `individuals` остается в `staticWidgets` для выбора).
- * 3. (NEW) Добавлен `computed` `currentCategoryBalances` (по аналогии с `currentProjectBalances`).
- * Он преобразует `currentCategoryBreakdowns` в массив `[{ _id, name, balance }]`.
- * 4. (NEW) Добавлен `computed` `futureCategoryBalances` (по аналогии с `futureProjectBalances`).
- * Он преобразует `futureCategoryBreakdowns` в массив `[{ _id, name, balance }]`
- * и использует `currentCategoryBalances` для расчета `futureBalance`.
+ * 1. (FIX) `allWidgets` (список для замены) теперь включает
+ * `staticWidgets` + только категорию "Перевод" (если есть).
+ * Обычные категории (типа "Аренда") удалены из списка.
+ * 2. (FIX) `dashboardLayout` по умолчанию теперь содержит 6 виджетов.
+ * "Физлица" и "Категории" стали "добавочными" (add-on).
  */
 
 import { defineStore } from 'pinia';
@@ -37,7 +34,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.0 (Единый виджет Категории) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v11.1 (Фикс списка виджетов) ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -63,40 +60,32 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'individuals',  name: 'Мои Физлица' },
-    { key: 'categories',   name: 'Категории' }, // 🟢 NEW (v11.0)
+    { key: 'categories',   name: 'Категории' }, 
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
   ]);
 
   // =================================================================
   // 2. WATCHERS & PERSISTENCE
   // =================================================================
+  
+  // 🟢 FIX (v11.1): allWidgets теперь включает
+  // staticWidgets + только "Перевод" (cat_...)
   const allWidgets = computed(() => {
-    // 🔴 v11.0: Категории УДАЛЕНЫ отсюда, т.к. они теперь в staticWidgets
-    // и больше не являются динамическими `cat_...`
-    // const cats = categories.value.map(c => ({ key: `cat_${c._id}`, name: c.name }));
-    // return [...staticWidgets.value, ...cats];
+    // Ищем специальный виджет "Перевод"
+    const transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
+    const cats = [];
+    if (transferCategory) {
+       cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
+    }
     
-    // 🟢 v11.0: Возвращаем только статические виджеты
-    // (включая "Перевод", если он остался в `categories.value`)
-    // *Само-исправление: "Перевод" НЕ должен быть в allWidgets,
-    // он должен быть в `categories.value` и `HeaderBalanceCard` его отфильтрует.
-    // ...Нет, `allWidgets` используется для ВЫБОРА виджета.
-    // `cat_...` виджеты для "Перевод" и т.д. должны ОСТАТЬСЯ.
-    
-    // --- ВОЗВРАЩАЕМ ЛОГИКУ v9.0 ---
-     const cats = categories.value.map(c => ({ key: `cat_${c._id}`, name: c.name }));
+    // "АРЕНДА" и другие сюда не попадут
      return [...staticWidgets.value, ...cats];
-    // ---
-    // *Само-исправление 2 (v11.0):*
-    // allWidgets используется для *выпадающего списка замены*.
-    // `categories` (единый) - в staticWidgets.
-    // `cat_...` (индивидуальные) - тоже должны быть в списке для выбора.
-    // ЛОГИКА ОСТАЕТСЯ ПРЕЖНЕЙ.
   });
 
   const savedLayout = localStorage.getItem('dashboardLayout');
-  // 🟢 UPDATED (v11.0): 'categories' добавлен по умолчанию
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','categories','futureTotal']);
+  // 🟢 FIX (v11.1): Layout по умолчанию 6 виджетов.
+  // "Физлица" и "Категории" доступны в allWidgets для выбора.
+  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','futureTotal']);
   
   watch(dashboardLayout, (newLayout) => {
     localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
@@ -465,50 +454,42 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
-  // 🟢 NEW (v11.0): currentCategoryBalances
   const currentCategoryBalances = computed(() => {
     const bal = {};
-    // Инициализируем нулями
     for (const c of categories.value) bal[c._id] = 0;
     
-    // Считаем
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
-      if (bal[id] === undefined) bal[id] = 0; // На случай, если категория появилась, но ее нет в `categories.value`
+      if (bal[id] === undefined) bal[id] = 0; 
       bal[id] += (op?.amount || 0);
     }
     
-    // Преобразуем в массив, фильтруя "Перевод"
     return categories.value
       .filter(c => c.name.toLowerCase() !== 'перевод')
       .map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
-  // 🟢 NEW (v11.0): futureCategoryBalances
   const futureCategoryBalances = computed(() => {
-    // 1. Берем текущие балансы
     const bal = {};
     const currentBalances = currentCategoryBalances.value;
     for (const cat of currentBalances) { 
       bal[cat._id] = cat.balance || 0; 
     }
     
-    // 2. Прибавляем будущие операции
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
-      if (bal[id] === undefined) continue; // Игнорируем, если это не "текущая" категория (т.е. игнорируем "Перевод")
+      if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
     
-    // 3. Собираем итоговый массив, добавляя `futureBalance`
     return currentBalances.map(c => ({ 
       ...c, 
-      balance: c.balance || 0, // Текущий баланс
-      futureBalance: bal[c._id] || 0 // Баланс с учетом будущих
+      balance: c.balance || 0, 
+      futureBalance: bal[c._id] || 0 
     }));
   });
 
@@ -705,7 +686,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const ____ = futureContractorBalances.value;
     const _____ = futureProjectBalances.value;
     const ______ = futureIndividualBalances.value;
-    // 🟢 v11.0: Добавляем категории
     const _______ = futureCategoryBalances.value;
   }
   function updateFutureProjectionByMode(mode, today = new Date()){
@@ -1207,10 +1187,8 @@ export const useMainStore = defineStore('mainStore', () => {
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     futureIndividualBalances, 
     
-    // 🟢 NEW (v11.0)
     currentCategoryBalances,
     futureCategoryBalances,
-    // ---
     
     currentOps, 
     
