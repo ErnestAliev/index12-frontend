@@ -443,7 +443,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-name {
   flex-grow: 1;
   min-width: 100px;
-  
+  transform: translateY(-5px);
 }
 
 .edit-project, .edit-category {
@@ -572,4 +572,3 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
-
