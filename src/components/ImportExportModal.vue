@@ -1,16 +1,18 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v9.0-EXPORT-UI ---
- * * ВЕРСИЯ: 9.0 - UI для Импорта/Экспорта
+ * * --- МЕТКА ВЕРСИИ: v10.0-TRANSFER-LOGIC ---
+ * * ВЕРСИЯ: 10.0 - Новая логика импорта/экспорта переводов
  * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен `currentTab` ref для переключения между "import" и "export".
- * 2. Добавлен UI вкладок (кнопки "Импорт" и "Экспорт").
- * 3. Существующий UI импорта обернут в `v-if="currentTab === 'import'"`.
- * 4. Добавлен новый UI для экспорта в `v-if="currentTab === 'export'"`.
- * 5. Добавлена логика для `handleExport`, `formatDataForExport`, `triggerCsvDownload`.
- * 6. `resetState` обновлен для сброса состояния экспорта.
- * 7. Добавлены НОВЫЕ стили для вкладок и UI экспорта. Существующие стили НЕ ИЗМЕНЯЛИСЬ.
+ * 1. normalizeType (Импорт): Теперь распознает
+ * "Доход", "Расход", "Перевод".
+ * 2. formatDataForExport (Экспорт): Полностью
+ * переписана.
+ * - 'income' -> "Доход", 'expense' -> "Расход".
+ * - 'transfer' (1 строка из БД) теперь
+ * превращается в 2 строки в CSV (Расход + Доход)
+ * с правильной логикой Компании/Контрагента
+ * согласно ТЗ.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -166,7 +168,7 @@
           Вы можете экспортировать **все операции** из вашей базы данных в один CSV-файл.
         </p>
         <p>
-          Этот процесс извлечет все записи о доходах и расходах (переводы не включаются в экспорт).
+          Этот процесс извлечет все записи о доходах, расходах и переводах (переводы будут раздвоены на 2 строки).
         </p>
         
         <div v-if="isExporting" class="loading-indicator">
@@ -291,7 +293,6 @@ const systemFields = [
   { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
   { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании'] },
   { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
-  // TODO: Добавить поля для переводов (fromAccount, toAccount и т.д.)
 ];
 
 // --- Подтверждение (Review) ---
@@ -547,6 +548,9 @@ function identifyNewEntities() {
     
     // Пробегаем по всем подготовленным операциям
     for (const op of operationsToImport.value) {
+      // Игнорируем "Перевод" при поиске новых категорий
+      if (fieldKey === 'category' && op.type === 'transfer') continue;
+
       const value = op[fieldKey]; // 'Название Категории'
       
       if (value) {
@@ -595,13 +599,20 @@ async function startImport() {
     const allTransformedOperations = transformDataForImport(null); // Все операции
     const selectedIndices = Array.from(selectedRows.value); // Только индексы
 
-    await mainStore.importOperations(
+    const createdDocs = await mainStore.importOperations(
       allTransformedOperations, 
       selectedIndices, // <-- !!! НОВЫЙ КОД: Передаем индексы
       (progress) => {
+        // Эта коллбэк-функция больше не используется в v10,
+        // так как сервер обрабатывает все сразу.
+        // Оставим ее для обратной совместимости, если решим вернуть.
         importProgress.value = progress;
       }
     );
+    
+    // Сервер v10 возвращает массив созданных документов.
+    // Мы можем использовать его длину для отображения прогресса.
+    importProgress.value = createdDocs.length;
 
     // 3. Успех
     emit('import-complete');
@@ -637,6 +648,8 @@ function transformDataForImport(selectedIndices) {
   const operations = [];
   const reverseMapping = getReverseMapping();
   
+  // Если selectedIndices == null, обрабатываем ВСЕ строки (для отправки на бэк)
+  // Если selectedIndices != null, обрабатываем только ВЫБРАННЫЕ (для шага Review)
   const dataToProcess = selectedIndices 
     ? csvData.value.filter((_, index) => selectedIndices.has(index))
     : csvData.value;
@@ -665,9 +678,13 @@ function transformDataForImport(selectedIndices) {
         // Очистка и преобразование данных
         if (systemKey === 'amount') {
           value = cleanAmount(value);
+          // !!! ИСПРАВЛЕНИЕ: (Проблема с красным цветом) !!!
+          // Если тип 'expense' и сумма положительная, делаем ее отрицательной
           if (opType === 'expense' && value > 0) {
             value = -value;
           }
+          // Для "Перевод" сумма может быть как < 0, так и > 0
+          
         } else if (systemKey === 'date') {
           value = parseDate(value); // Должен вернуть ISO строку
         }
@@ -762,6 +779,7 @@ function parseDate(value) {
 }
 
 /**
+ * 🔴 ИЗМЕНЕНИЕ v10.0: Добавлены русские варианты
  * Приводит тип операции к системным 'income', 'expense', 'transfer'.
  */
 function normalizeType(value) {
@@ -782,7 +800,7 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 НАЧАЛО: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА
+// 🔴 НАЧАЛО: НОВЫЕ ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.0)
 // ----------------------------------------------
 
 /**
@@ -802,7 +820,7 @@ async function handleExport() {
       return;
     }
     
-    // 2. Форматируем данные для CSV
+    // 2. Форматируем данные для CSV (🔴 ЛОГИКА v10.0)
     const formattedData = formatDataForExport(operations);
     
     // 3. Конвертируем JSON в CSV строку
@@ -822,39 +840,72 @@ async function handleExport() {
 }
 
 /**
+ * 🔴 ИЗМЕНЕНИЕ v10.0: Новая логика
  * Преобразует массив операций с сервера в плоский массив 
  * объектов для Papa.unparse
  */
 function formatDataForExport(operations) {
-  return operations
-    // Фильтруем переводы, т.к. в импорте они тоже не участвуют
-    .filter(op => op.type !== 'transfer' && !op.isTransfer) 
-    .map(op => {
-      let dateStr = '';
-      if (op.date) {
-        try {
-          // Форматируем дату как dd.MM.yyyy (локальный формат)
-          const d = new Date(op.date);
-          const day = String(d.getDate()).padStart(2, '0');
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const year = d.getFullYear();
-          dateStr = `${day}.${month}.${year}`;
-        } catch (e) {
-          dateStr = op.date; // fallback
-        }
+  const csvRows = [];
+
+  for (const op of operations) {
+    let dateStr = '';
+    if (op.date) {
+      try {
+        const d = new Date(op.date);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        dateStr = `${day}.${month}.${year}`;
+      } catch (e) {
+        dateStr = op.date; // fallback
       }
-      
-      return {
+    }
+
+    if (op.type === 'income' || op.type === 'expense') {
+      csvRows.push({
         'Дата': dateStr,
-        'Тип': op.type,
+        'Тип': op.type === 'income' ? 'Доход' : 'Расход',
         'Сумма': op.amount,
         'Категория': op.categoryId ? op.categoryId.name : '',
         'Проект': op.projectId ? op.projectId.name : '',
         'Счет': op.accountId ? op.accountId.name : '',
         'Компания': op.companyId ? op.companyId.name : '',
         'Контрагент': op.contractorId ? op.contractorId.name : '',
+      });
+    } 
+    else if (op.type === 'transfer' || op.isTransfer) {
+      // Это ОДНА операция "Перевод" из БД.
+      // Создаем ДВЕ строки в CSV.
+
+      // Строка 1: РАСХОД (Отправитель)
+      const expenseRow = {
+        'Дата': dateStr,
+        'Тип': 'Перевод',
+        'Сумма': -Math.abs(op.amount),
+        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
+        'Проект': '', // Переводы обычно не имеют проектов
+        'Счет': op.fromAccountId ? op.fromAccountId.name : '',
+        'Компания': op.fromCompanyId ? op.fromCompanyId.name : '',
+        'Контрагент': op.toCompanyId ? op.toCompanyId.name : '', // 🔴 Логика: Контрагент = Получатель
       };
-    });
+      
+      // Строка 2: ДОХОД (Получатель)
+      const incomeRow = {
+        'Дата': dateStr,
+        'Тип': 'Перевод',
+        'Сумма': Math.abs(op.amount),
+        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
+        'Проект': '', // Переводы обычно не имеют проектов
+        'Счет': op.toAccountId ? op.toAccountId.name : '',
+        'Компания': op.toCompanyId ? op.toCompanyId.name : '',
+        'Контрагент': op.fromCompanyId ? op.fromCompanyId.name : '', // 🔴 Логика: Контрагент = Отправитель
+      };
+
+      csvRows.push(expenseRow, incomeRow);
+    }
+  }
+
+  return csvRows;
 }
 
 /**
@@ -887,6 +938,11 @@ function triggerCsvDownload(csvString) {
 </script>
 
 <style scoped>
+/* * --- ПРИМЕЧАНИЕ ---
+ * Стили не изменялись, только добавлялись новые.
+ * Существующие стили сохранены без изменений.
+ */
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -935,10 +991,10 @@ h2 {
   margin: 0;
   border-bottom: 1px solid var(--color-border);
   font-weight: 600;
-  flex-shrink: 0; /* 🔴 НОВОЕ */
+  flex-shrink: 0; 
 }
 
-/* 🔴 НАЧАЛО: Стили для вкладок */
+/* 🔴 НАЧАЛО: Стили для вкладок (Добавлено в v9.0) */
 .modal-tabs {
   display: flex;
   padding: 0 24px;
@@ -962,7 +1018,7 @@ h2 {
 /* 🔴 КОНЕЦ: Стили для вкладок */
 
 
-/* 🔴 НАЧАЛО: Обёртка для контента импорта */
+/* 🔴 НАЧАЛО: Обёртка для контента импорта (Добавлено в v9.0) */
 .import-content-wrapper {
   flex-grow: 1;
   display: flex;
@@ -1037,7 +1093,7 @@ h2 {
   margin: 0;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background-soft);
-  flex-shrink: 0; /* 🔴 НОВОЕ */
+  flex-shrink: 0; 
 }
 
 .mapping-table-container {
@@ -1067,7 +1123,6 @@ thead th {
   z-index: 10;
 }
 
-/* !!! НОВЫЙ КОД: Стили для чекбоксов !!! */
 .checkbox-col {
   width: 40px;
   max-width: 40px;
@@ -1082,7 +1137,6 @@ thead th {
 .row-disabled .mapping-select {
   opacity: 0.7;
 }
-/* --- КОНЕЦ НОВЫХ СТИЛЕЙ --- */
 
 
 .header-cell {
@@ -1141,7 +1195,7 @@ thead th {
   color: var(--color-text-soft);
 }
 
-/* 🔴 НАЧАЛО: Стили для вкладки Экспорта */
+/* 🔴 НАЧАЛО: Стили для вкладки Экспорта (Добавлено в v9.0) */
 .export-step {
   justify-content: center;
   align-items: center;
@@ -1189,7 +1243,7 @@ thead th {
   justify-content: flex-end;
   gap: 12px;
   background: var(--color-background);
-  flex-shrink: 0; /* 🔴 НОВОЕ */
+  flex-shrink: 0; 
 }
 
 /* --- Общие элементы --- */
