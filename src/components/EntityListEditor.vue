@@ -4,19 +4,21 @@ import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step7-FINAL-R2 ---
- * * ВЕРСЯ: 9.0 - Финальная реализация Шага 7 + ВОССТАНОВЛЕН БАЛАНС
+ * * --- МЕТКА ВЕРСИИ: v9.0-step7-FINAL-R3 ---
+ * * ВЕРСИЯ: 9.0 - Исправлен стиль <select multiple>
  * ДАТА: 2025-11-17
  *
  * ЧТО ИЗМЕНЕНО (На основе отзыва):
- * 1. (REVERT-FIX) Поле "Нач. баланс" (initialBalance) ВОЗВРАЩЕНО
- * в Редактор "Мои Счета", как требовалось.
- * 2. (NEW) Восстановлены `formatNumber` и `onAmountInput` для "Нач. баланса".
- * 3. (UPDATE) `onMounted` и `handleSave` для `isAccountEditor`
- * снова обрабатывают `initialBalance`.
- * 4. (STYLE-FIX) Стили кнопки "Удалить" исправлены.
- * 5. (KEPT) Логика Шага 7 (привязка счетов в Компании/Физлица)
- * остается без изменений, как в `v9.0-step7-FINAL`.
+ * 1. (STYLE-FIX) Исправлены стили для `.edit-account-select` (multi-select).
+ * - `height` изменена с `100px` на `48px` (чтобы выглядел как "закрытый").
+ * - `padding` изменен на `0 14px` (чтобы соответствовать другим инпутам).
+ * - `overflow-y` удален.
+ * 2. (STYLE-FIX) Кнопка "Удалить" (`.delete-btn`):
+ * - `transform: translateY(0px);` - Убран `translateY(-5px)`,
+ * вместо этого выравниваем через `align-items: center;` в `.edit-item`.
+ * - `height` оставлена `48px`, чтобы соответствовать инпутам.
+ * 3. (STYLE-FIX) `.drag-handle` теперь использует `align-self: stretch;`
+ * и `padding-top` для лучшего вертикального выравнивания.
  */
 
 const props = defineProps({
@@ -44,26 +46,25 @@ const isContractorEditor = props.title === 'Редактировать конт�
 const isCompanyEditor = props.title === 'Редактировать компании';
 const isIndividualEditor = props.title === 'Редактировать Физлиц';
 
-// 🟢 NEW (Шаг 7 R2): Восстановлено для "Нач. баланса"
+// (Восстановлено для "Нач. баланса")
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
-// 🟢 NEW (Шаг 7 R2): Восстановлено для "Нач. баланса"
+// (Восстановлено для "Нач. баланса")
 const onAmountInput = (item) => {
   const rawValue = String(item.initialBalanceFormatted).replace(/[^0-9]/g, '');
   item.initialBalanceFormatted = formatNumber(rawValue);
   item.initialBalance = Number(rawValue) || 0;
 };
 
-// 🟢 UPDATED (Шаг 7 R2):
+// (Логика onMounted из R2)
 onMounted(() => {
   const allAccounts = mainStore.accounts; 
   
   localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
     
-    // Режим "Счета": ВОССТАНОВЛЕН "Нач. баланс"
     if (isAccountEditor) {
         const balance = item.initialBalance || 0;
         return { 
@@ -73,14 +74,12 @@ onMounted(() => {
         }
     }
     
-    // Режим "Контрагенты": (Без изменений)
     if (isContractorEditor) {
         const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
         const cId = (item.defaultCategoryId && typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId;
         return { ...item, defaultProjectId: pId || null, defaultCategoryId: cId || null }
     }
     
-    // Режим "Компании": (Логика Шага 7)
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts
         .filter(a => (a.companyId?._id || a.companyId) === item._id)
@@ -88,7 +87,6 @@ onMounted(() => {
       return { ...item, selectedAccountIds: selectedAccountIds };
     }
     
-    // Режим "Физлица": (Логика Шага 7)
     if (isIndividualEditor) {
       const selectedAccountIds = allAccounts
         .filter(a => (a.individualId?._id || a.individualId) === item._id)
@@ -99,7 +97,6 @@ onMounted(() => {
     return item;
   });
 
-  // Логика Шага 7: (Без изменений)
   if (isCompanyEditor || isIndividualEditor) {
     localAccounts.value = JSON.parse(JSON.stringify(mainStore.accounts)).map(acc => {
       const cId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
@@ -109,19 +106,16 @@ onMounted(() => {
   }
 });
 
-// 🟢 UPDATED (Шаг 7 R2):
+// (Логика handleSave из R2)
 const handleSave = async () => {
   
-  // --- ЧАСТЬ 1: Сохранение самого списка (Компаний, Физлиц, Счетов...) ---
   const itemsToSave = localItems.value.map((item, index) => {
     const data = { _id: item._id, name: item.name, order: index };
     
-    // Данные для "Счетов" (ВОССТАНОВЛЕН "Нач. баланс")
     if (isAccountEditor) { 
       data.initialBalance = item.initialBalance || 0; 
     }
     
-    // Данные для "Контрагентов"
     if (isContractorEditor) { 
       data.defaultProjectId = item.defaultProjectId || null; 
       data.defaultCategoryId = item.defaultCategoryId || null; 
@@ -132,7 +126,6 @@ const handleSave = async () => {
   
   emit('save', itemsToSave);
 
-  // --- ЧАСТЬ 2: (Логика Шага 7) Обновление привязок Счетов ---
   if (isCompanyEditor || isIndividualEditor) {
     const accountsToUpdate = new Map();
     const allStoreAccounts = JSON.parse(JSON.stringify(mainStore.accounts)); 
@@ -149,7 +142,6 @@ const handleSave = async () => {
         const currentCompanyOwner = acc.companyId?._id || acc.companyId;
         const currentIndividualOwner = acc.individualId?._id || acc.individualId;
         
-        // 1. ЛОГИКА ПРИВЯЗКИ
         if (isSelected) {
           if (ownerType === 'company' && currentCompanyOwner !== ownerId) {
             acc.companyId = ownerId;
@@ -161,8 +153,6 @@ const handleSave = async () => {
             accountsToUpdate.set(accId, acc);
           }
         }
-        
-        // 2. ЛОГИКА ОТВЯЗКИ
         else {
           if (ownerType === 'company' && currentCompanyOwner === ownerId) {
             acc.companyId = null;
@@ -188,7 +178,7 @@ const handleSave = async () => {
 };
 
 
-// --- ЛОГИКА УДАЛЕНИЯ (Без изменений) ---
+// (Логика Удаления)
 const itemToDelete = ref(null);
 const showDeletePopup = ref(false);
 const isDeleting = ref(false);
@@ -224,11 +214,9 @@ const cancelDelete = () => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     
-    <!-- 🟢 'wide' для Контрагентов, Компаний, Физлиц -->
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor }">
       <h3>{{ title }}</h3>
       
-      <!-- 🟢 NEW (Шаг 7 FINAL): Хинты -->
       <p v-if="isCompanyEditor" class="editor-hint">
         Привяжите ваши компании к вашим счетам - это упростит вам жизнь )
       </p>
@@ -240,34 +228,25 @@ const cancelDelete = () => {
       </p>
       
       
-      <!-- 
-        // =================================================================
-        // --- 🟢 UPDATED (Шаг 7 R2): Заголовки ---
-        // =================================================================
-      -->
-      
-      <!-- Режим "Счета" (ВОССТАНОВЛЕН "Нач. баланс") -->
+      <!-- (Заголовки из R2) -->
       <div v-if="isAccountEditor" class="editor-header account-header-simple">
         <span class="header-name">Название счета</span>
-        <span class="header-balance">Нач. баланс</span> <!-- 🟢 Восстановлено -->
+        <span class="header-balance">Нач. баланс</span>
         <span class="header-trash"></span> 
       </div>
       
-      <!-- Режим "Компании" (Логика Шага 7) -->
       <div v-else-if="isCompanyEditor" class="editor-header owner-header">
         <span class="header-name">Название Компании</span>
         <span class="header-accounts">Привязанные счета (выбор нескольких)</span>
         <span class="header-trash"></span>
       </div>
 
-      <!-- Режим "Физлица" (Логика Шага 7) -->
       <div v-else-if="isIndividualEditor" class="editor-header owner-header">
         <span class="header-name">Имя Физлица</span>
         <span class="header-accounts">Привязанные счета (выбор нескольких)</span>
         <span class="header-trash"></span>
       </div>
       
-      <!-- Режим "Контрагенты" (Без изменений) -->
       <div v-else-if="isContractorEditor" class="editor-header contractor-header">
         <span class="header-name">Название</span>
         <span class="header-project">Проект</span>
@@ -275,17 +254,13 @@ const cancelDelete = () => {
         <span class="header-trash"></span>
       </div>
       
-      <!-- Режим (Проекты, Категории) -->
       <div v-else class="editor-header default-header">
          <span class="header-name">Название</span>
          <span class="header-trash"></span>
       </div>
       
-      <!-- 
-        // =================================================================
-        // --- 🟢 UPDATED (Шаг 7 R2): Список Draggable ---
-        // =================================================================
-      -->
+      
+      <!-- (Список Draggable из R2) -->
       <div class="list-editor">
         <draggable 
           v-model="localItems" 
@@ -299,12 +274,12 @@ const cancelDelete = () => {
               
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
-              <!-- Режим "Счета" (ВОССТАНОВЛЕН "Нач. баланс") -->
+              <!-- Режим "Счета" (С БАЛАНСОМ) -->
               <template v-if="isAccountEditor">
                 <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" class="edit-input edit-balance" placeholder="0" />
               </template>
               
-              <!-- Режим "Контрагенты" (Без изменений) -->
+              <!-- Режим "Контрагенты" -->
               <template v-if="isContractorEditor">
                 <select v-model="item.defaultProjectId" class="edit-input edit-project">
                   <option :value="null">Без проекта</option>
@@ -316,7 +291,7 @@ const cancelDelete = () => {
                 </select>
               </template>
 
-              <!-- Режим "Компании" (Логика Шага 7) -->
+              <!-- Режим "Компании" (select multiple) -->
               <template v-if="isCompanyEditor">
                 <select 
                   v-model="item.selectedAccountIds" 
@@ -329,7 +304,7 @@ const cancelDelete = () => {
                 </select>
               </template>
               
-              <!-- Режим "Физлица" (Логика Шага 7) -->
+              <!-- Режим "Физлица" (select multiple) -->
               <template v-if="isIndividualEditor">
                  <select 
                   v-model="item.selectedAccountIds" 
@@ -344,7 +319,6 @@ const cancelDelete = () => {
               
               <!-- КНОПКА УДАЛЕНИЯ -->
               <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
-                <!-- 🟢 СТИЛЬ-ФИКС: SVG без width/height -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                    <polyline points="3 6 5 6 21 6"></polyline>
                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -354,15 +328,13 @@ const cancelDelete = () => {
           </template>
         </draggable>
       </div>
-      
-      <!-- (Блок "Привязка Счетов" из прошлой версии УДАЛЕН) -->
           
       <div class="popup-actions">
         <button @click="handleSave" class="btn-submit btn-submit-edit">Сохранить изменения</button>
       </div>
     </div>
 
-    <!-- ВСТРОЕННЫЙ МОДАЛ ПОДТВЕРЖДЕНИЯ + ПРОГРЕСС (Без изменений) -->
+    <!-- (Модал подтверждения) -->
     <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         
@@ -415,9 +387,7 @@ const cancelDelete = () => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem;
   transition: max-width 0.2s ease;
 }
-/* 🟢 'wide' для Контрагентов, Компаний, Физлиц */
 .popup-content.wide { max-width: 680px; }
-/* (wider больше не используется) */
 
 
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
@@ -433,18 +403,17 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .editor-hint { font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 1rem; }
 
-/* 🟢 UPDATED (Шаг 7 R2): Стили заголовков */
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 
-/* Упрощенный заголовок Счетов (С БАЛАНСОМ) */
+/* 🟢 (Шаг 7 R2) Заголовок Счетов (С БАЛАНСОМ) */
 .account-header-simple .header-name { width: 100%; }
 .account-header-simple .header-balance { flex-shrink: 0; width: 100px; text-align: right; padding-right: 14px; }
 
-/* Новый заголовок Компаний/Физлиц */
+/* (Шаг 7) Заголовок Компаний/Физлиц */
 .owner-header .header-accounts { flex-shrink: 0; width: 310px; }
 
-/* Заголовок Контрагентов (без изменений) */
+/* (Шаг 7) Заголовок Контрагентов */
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
 .header-trash { width: 48px; flex-shrink: 0; }
@@ -456,11 +425,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .edit-item { 
   display: flex; 
-  align-items: center; 
+  align-items: center; /* 🟢 СТИЛЬ-ФИКС: Выравниваем по центру */
   margin-bottom: 10px;
   gap: 10px; 
 }
-/* 🟢 СТИЛЬ-ФИКС: .drag-handle теперь центрирован по .edit-input */
 .drag-handle { 
   cursor: grab; 
   font-size: 1.5em; 
@@ -468,10 +436,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   user-select: none; 
   flex-shrink: 0; 
   width: 22px; 
-  height: 48px; /* <-- Высота инпута */
+  height: 48px; 
   display: flex;
   align-items: center;
-  /* padding-top: 10px; (Удалено) */
+  /* 🟢 СТИЛЬ-ФИКС: Убрано выравнивание по 'padding-top' */
 }
 .edit-item:active { cursor: grabbing; }
 
@@ -483,7 +451,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 
-/* 🟢 UPDATED (Шаг 7 R2): Стили для селектов */
 .edit-project, .edit-category {
   flex-shrink: 0;
   -webkit-appearance: none; -moz-appearance: none; appearance: none;
@@ -491,30 +458,30 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
 }
 .edit-project, .edit-category { width: 150px; }
-/* 🟢 Восстановлен .edit-balance */
+/* 🟢 (Шаг 7 R2) Восстановлен .edit-balance */
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
 
-/* 🟢 NEW (Шаг 7): Стиль для <select multiple> */
+/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R3): Исправлен стиль <select multiple> */
 .edit-account-select {
   flex-shrink: 0;
   width: 310px;
-  height: 100px; /* <select multiple> требует высоты */
-  padding: 10px;
-  overflow-y: auto;
+  height: 48px; /* <-- ИСПРАВЛЕНО (было 100px) */
+  padding: 0 14px; /* <-- ИСПРАВЛЕНО (было 10px) */
+  /* overflow-y: auto; (УДАЛЕНО) */
+  
+  /* 🟢 NEW: Добавляем стрелку, как у обычного селекта */
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
 }
 .edit-account-select option {
   padding: 5px 8px;
   border-radius: 4px;
-}
-.edit-account-select option:checked {
-  background: #222222;
-  color: #FFFFFF;
+  /* (Стили :checked убраны, т.к. они видны только в "открытом" виде) */
 }
 
-/* // =================================================================
-// --- 🟢 СТИЛЬ-ФИКС: Кнопка "Удалить" (по вашему запросу) ---
-// =================================================================
-*/
+
+/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R3): Кнопка "Удалить" */
 .delete-btn {
   width: 48px;
   height: 48px; 
@@ -523,13 +490,13 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   border-radius: 8px; 
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
-  padding: 10px; /* 🟢 NEW: Добавлен padding, чтобы SVG был меньше кнопки */
+  padding: 10px; 
   
-  /* 🟢 СТИЛЬ-ФИКС: Восстановлен transform (как в оригинальном файле) */
-  transform: translateY(-5px);
+  /* 🟢 СТИЛЬ-ФИКС: transform УДАЛЕН. 
+     Выравнивание теперь идет по 'align-items: center' в '.edit-item' */
+  /* transform: translateY(-5px); */ 
 }
 .delete-btn svg {
-  /* 🟢 СТИЛЬ-ФИКС: SVG теперь растягивается на доступное место (с padding) */
   width: 100%;
   height: 100%;
   stroke: #999;
@@ -545,10 +512,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .ghost { opacity: 0.5; background: #c0c0c0; }
 
-/* (Блок "Привязка Счетов" из прошлой версии УДАЛЕН) */
 
-
-/* ВНУТРЕННИЙ МОДАЛ (Overlay внутри Overlay) */
+/* ВНУТРЕННИЙ МОДАЛ */
 .inner-overlay {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.3);
