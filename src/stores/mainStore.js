@@ -1,21 +1,16 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v8.1-LOGIC-FIX-FUTURE-TOTAL ---
- * * ВЕРСИЯ: 8.1 - Исправление расчета будущего баланса
- * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP1 ---
+ * * ВЕРСИЯ: 8.2 - Добавление "Мои Физлица" (Шаг 1)
+ * ДАТА: 17.11.2025
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (CRITICAL) `futureTotalBalance` теперь отталкивается от `currentTotalBalance` (текущего итога),
- * а не от `totalInitialBalance` (стартового капитала). Теперь формула: Текущее + Будущее.
- * 2. (FIX) `updateProjectionFromCalculationData` теперь вручную фильтрует операции для
- * подсчета сумм Income/Expense, чтобы гарантировать использование НОВЫХ дат диапазона,
- * не дожидаясь реактивного обновления `futureOps`.
- *
- * * --- ИЗМЕНЕНИЯ (vFuture - Мои Физлица, Шаг 1) ---
- * 1. Добавлена новая сущность `individuals` (Физлица).
+ * ЧТО ИЗМЕНЕНО:
+ * 1. Добавлена новая сущность `individuals` (Физлица) в state (ref).
  * 2. Добавлены `computed` для балансов: `currentIndividualBalances`, `futureIndividualBalances`.
  * 3. Добавлен `action`: `addIndividual`.
  * 4. `fetchAllEntities`, `deleteEntity`, `batchUpdateEntities` обновлены для поддержки `individuals`.
- * 5. Добавлен виджет `individuals` в `staticWidgets`.
+ * 5. Добавлен виджет `{ key: 'individuals', name: 'Мои Физлица' }` в `staticWidgets`.
+ * 6. `_mergeTransfers` обновлен для поддержки `fromIndividualId` / `toIndividualId`.
+ * 7. `addAccount` обновлен для поддержки `individualId`.
  */
 
 import { defineStore } from 'pinia';
@@ -41,7 +36,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v8.1-LOGIC-FIX-FUTURE-TOTAL (С ИЗМЕНЕНИЯМИ ДЛЯ ФИЗЛИЦ) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v8.2-INDIVIDUALS-STEP1 (с Физлицами) ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -999,7 +994,7 @@ export const useMainStore = defineStore('mainStore', () => {
             name: data.name, 
             initialBalance: data.initialBalance || 0, 
             companyId: data.companyId || null,
-            individualId: data.individualId || null // 🔴 ПРЕДПОЛОЖЕНИЕ: Добавляем individualId
+            individualId: data.individualId || null // 🔴 ДОБАВЛЕНО
         }; 
     }
     const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
