@@ -5,20 +5,20 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.5-COMPLEX-FIX ---
- * * ВЕРСИЯ: 5.5 - Комплексное исправление ошибок #13, #14.
- * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v9.0-step5-owner-merge ---
+ * * ВЕРСИЯ: 9.0 - Объединены поля Компания/Физлицо (Шаг 5)
+ * ДАТА: 2025-11-17
  *
- * ИСПРАВЛЕНИЯ:
- * 1. (FIX #14) Восстановлена функция `onAmountInput` и `formatNumber`
- * для форматирования сумм (разделители тысячных).
- * 2. (FIX #13) Полностью удален блок `<template v-else>` (форма перевода).
- * 3. (FIX #13) Удалены связанные `ref` (`selectedFromAccountId`, `selectedToAccountId`).
- * 4. (NEW) Добавлено логирование в `handleSave` и `onAmountInput`.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (REPLACE) Удален `selectedCompanyId`. Добавлен `selectedOwner`.
+ * 2. (REPLACE) <select> "Моей компании" заменен на <select> "Компании/Физлица" с <optgroup>.
+ * 3. (REPLACE) "Inline create" компании заменен на "Smart Create" модал (showCreateOwnerModal).
+ * 4. (UPDATE) onAccountSelected теперь автоматически устанавливает `selectedOwner` (company-ID или individual-ID).
+ * 5. (UPDATE) handleSave теперь валидирует и парсит `selectedOwner` для отправки `companyId` или `individualId` в API.
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- OperationPopup.vue v5.5 (Fix #13, #14) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v9.0-step5-owner-merge ЗАГРУЖЕН ---');
 
 // !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -43,16 +43,14 @@ const emit = defineEmits([
 // --- ОБЯЗАТЕЛЬНЫЕ ПОЛЯ ---
 const amount = ref('');
 const selectedAccountId = ref(null);
-const selectedCompanyId = ref(null);
+// 🔴 v9.0 (Шаг 5): `selectedCompanyId` УДАЛЕН.
+// const selectedCompanyId = ref(null); 
+const selectedOwner = ref(null); // 🟢 v9.0 (Шаг 5): НОВЫЙ ref (хранит 'company-ID' или 'individual-ID')
 const selectedContractorId = ref(null);
 
 // --- НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ ---
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
-
-// --- 🔴 УДАЛЕНО (FIX #13) ---
-// const selectedFromAccountId = ref(null);
-// const selectedToAccountId   = ref(null);
 
 const errorMessage = ref('');
 const amountInput = ref(null);
@@ -61,9 +59,10 @@ const amountInput = ref(null);
 const isCreatingAccount = ref(false);
 const newAccountName = ref('');
 const newAccountInput = ref(null);
-const isCreatingCompany = ref(false);
-const newCompanyName = ref('');
-const newCompanyInput = ref(null);
+// 🔴 v9.0 (Шаг 5): Старый inline-create компании УДАЛЕН.
+// const isCreatingCompany = ref(false);
+// const newCompanyName = ref('');
+// const newCompanyInput = ref(null);
 const isCreatingContractor = ref(false);
 const newContractorName = ref('');
 const newContractorInput = ref(null);
@@ -74,6 +73,12 @@ const isCreatingCategory = ref(false);
 const newCategoryName = ref('');
 const newCategoryInput = ref(null);
 // --- (Конец Inline Create) ---
+
+// 🟢 v9.0 (Шаг 5): "Smart Create" модал для Владельца (Компания/Физлицо)
+const showCreateOwnerModal = ref(false);
+const ownerTypeToCreate = ref('company'); // 'company' или 'individual'
+const newOwnerName = ref('');
+const newOwnerInputRef = ref(null);
 
 
 const isDeleteConfirmVisible = ref(false);
@@ -128,19 +133,32 @@ const onAmountInput = (event) => {
 // =================================================================
 
 
-// --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА КОМПАНИИ ПРИ ВЫБОРЕ СЧЕТА ---
+// =================================================================
+// --- 🟢 v9.0 (Шаг 5): АВТОМАТИЧЕСКАЯ ПРИВЯЗКА ВЛАДЕЛЬЦА ПРИ ВЫБОРЕ СЧЕТА ---
+// =================================================================
 const onAccountSelected = (accountId) => {
   console.log(`[OperationPopup] onAccountSelected: Выбран счет ${accountId}`);
   const account = mainStore.accounts.find(a => a._id === accountId);
-  if (account && account.companyId) {
-    // (v4.4) Убедимся, что companyId - это строка, а не объект
-    const cId = (account.companyId && typeof account.companyId === 'object')
-      ? account.companyId._id
-      : account.companyId;
-    selectedCompanyId.value = cId;
-    console.log(`[OperationPopup] onAccountSelected: Авто-установлена компания ${cId}`);
+  
+  if (account) {
+    // (Используем данные, добавленные в Шаге 4)
+    if (account.companyId) {
+      const cId = (typeof account.companyId === 'object') ? account.companyId._id : account.companyId;
+      selectedOwner.value = `company-${cId}`;
+      console.log(`[OperationPopup] onAccountSelected: Авто-установлен Владелец (Компания) ${selectedOwner.value}`);
+    } else if (account.individualId) {
+      const iId = (typeof account.individualId === 'object') ? account.individualId._id : account.individualId;
+      selectedOwner.value = `individual-${iId}`;
+      console.log(`[OperationPopup] onAccountSelected: Авто-установлен Владелец (Физлицо) ${selectedOwner.value}`);
+    } else {
+      selectedOwner.value = null;
+      console.log(`[OperationPopup] onAccountSelected: У счета нет владельца.`);
+    }
+  } else {
+    selectedOwner.value = null;
   }
 };
+// =================================================================
 
 // --- АВТОМАТИЧЕСКАЯ ПРИВЯЗКА (КОНТРАГЕНТ -> ПРОЕКТ / КАТЕГОРИЯ) ---
 const onContractorSelected = (contractorId, setProject, setCategory) => {
@@ -173,7 +191,17 @@ onMounted(() => {
     const op = props.operationToEdit;
     amount.value = formatNumber(Math.abs(op.amount || 0));
     selectedAccountId.value = op.accountId?._id || op.accountId;
-    selectedCompanyId.value = op.companyId?._id || op.companyId;
+    
+    // 🟢 v9.0 (Шаг 5): Устанавливаем selectedOwner
+    if (op.companyId) {
+      const cId = op.companyId?._id || op.companyId;
+      selectedOwner.value = `company-${cId}`;
+    } else if (op.individualId) {
+      const iId = op.individualId?._id || op.individualId;
+      selectedOwner.value = `individual-${iId}`;
+    }
+    // ---
+    
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
     selectedCategoryId.value = op.categoryId?._id || op.categoryId;
     selectedProjectId.value = op.projectId?._id || op.projectId;
@@ -214,46 +242,53 @@ const _getDateKey = (date) => {
 
 
 // =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: handleSave (v5.3) ---
+// --- 🟢 v9.0 (Шаг 5): handleSave ---
 // =================================================================
 const handleSave = async () => {
   console.log('[OperationPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
 
-  // 🔴 ИСПРАВЛЕНИЕ (FIX #14): Используем .value или amount, а не amountInput.value
   const amountFromState = (amount.value || '').replace(/ /g, '');
   const amountParsed = parseFloat(amountFromState);
 
   // --- ВАЛИДАЦИЯ ДЛЯ ДОХОДОВ/РАСХОДОВ ---
-  // (Блок `props.type === 'transfer'` удален (Fix #13))
-  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedCompanyId.value || !selectedContractorId.value) {
-    errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания, Контрагент.';
-    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ', { amountParsed, selectedAccountId: selectedAccountId.value, selectedCompanyId: selectedCompanyId.value, selectedContractorId: selectedContractorId.value });
+  // 🟢 v9.0 (Шаг 5): Проверяем selectedOwner
+  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorId.value) {
+    errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания/Физлицо, Контрагент.';
+    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ', { amountParsed, selectedAccountId: selectedAccountId.value, selectedOwner: selectedOwner.value, selectedContractorId: selectedContractorId.value });
     return;
   }
   
   try {
-    // 🔴 ИЗМЕНЕНО: Вычисляем dateKey
     const [year, month, day] = editableDate.value.split('-').map(Number);
-
-    // !!! ИСПРАВЛЕНИЕ (1A): Устанавливаем время на 12:00 (полдень) !!!
-    const finalDate = new Date(year, month - 1, day, 12, 0, 0); // ДОБАВЛЕНО
-
-    const dateKey = _getDateKey(finalDate); // 🔴 КЛЮЧЕВОЙ МОМЕНТ
+    const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
+    const dateKey = _getDateKey(finalDate); 
     console.log(`[OperationPopup] handleSave: Дата операции: ${finalDate.toISOString()}, dateKey: ${dateKey}`);
+    
+    // 🟢 v9.0 (Шаг 5): Парсим selectedOwner
+    let companyId = null;
+    let individualId = null;
+    if (selectedOwner.value) {
+      const [type, id] = selectedOwner.value.split('-');
+      if (type === 'company') {
+        companyId = id;
+      } else if (type === 'individual') {
+        individualId = id;
+      }
+    }
     
     const base = {
       type: props.type,
       amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed),
       categoryId: selectedCategoryId.value,
       accountId: selectedAccountId.value,
-      companyId: selectedCompanyId.value,
+      companyId: companyId, // 🟢 v9.0
+      individualId: individualId, // 🟢 v9.0
       contractorId: selectedContractorId.value,
       projectId: selectedProjectId.value
     };
 
     if (!props.operationToEdit || isCloneMode.value) {
-      // 🔴 ИЗМЕНЕНО: Передаем dateKey
       console.log('[OperationPopup] handleSave: РЕЖИМ СОЗДАНИЯ/КЛОНИРОВАНИЯ');
       await saveCreateOrClone(base, dateKey);
       emit('close');
@@ -264,7 +299,6 @@ const handleSave = async () => {
     const prev = props.operationToEdit;
     console.log('[OperationPopup] handleSave: РЕЖИМ РЕДАКТИРОВАНИЯ');
     
-    // 🔴 ИЗМЕНЕНО: Убедимся, что у операции есть dateKey
     const oldDateKey = prev.dateKey; 
     if (!oldDateKey) {
         console.error("!!! ОШИБКА: Редактируемая операция не имеет dateKey!", prev);
@@ -273,7 +307,6 @@ const handleSave = async () => {
     }
     const oldCellIndex = Number.isInteger(prev.cellIndex) ? prev.cellIndex : 0;
     
-    // 🔴 ИЗМЕНЕНО: Передаем dateKey
     await saveEdit(prev._id, base, oldDateKey, oldCellIndex, dateKey, oldCellIndex);
     emit('close');
     isCloneMode.value = false;
@@ -294,7 +327,6 @@ async function saveCreateOrClone(base, dateKey) {
   try {
     if (typeof mainStore.getFirstFreeCellIndex === 'function') {
       console.log(`[OperationPopup] saveCreateOrClone: 🔍 Поиск свободной ячейки для ${dateKey}...`);
-      // 🔴 ИЗМЕНЕНО: Используем dateKey (строку)
       const freeIndex = await mainStore.getFirstFreeCellIndex(dateKey, 0);
       cellIndexToUse = Number.isInteger(freeIndex) ? freeIndex : 0;
       console.log(`[OperationPopup] saveCreateOrClone: Ячейка найдена: ${cellIndexToUse}`);
@@ -304,13 +336,11 @@ async function saveCreateOrClone(base, dateKey) {
       cellIndexToUse = 0; // Fallback
   }
 
-  // 🔴 ИЗМЕНЕНО: Передаем dateKey
   const payload = { ...base, dateKey, cellIndex: cellIndexToUse };
   
   console.log('[OperationPopup] saveCreateOrClone: 🚀 Отправка POST /api/events', payload);
   const response = await axios.post(`${API_BASE_URL}/events`, payload);
   
-  // 🔴 ИЗМЕНЕНО: Обновляем HomeView с помощью полного объекта
   console.log('[OperationPopup] saveCreateOrClone: ✅ УСПЕХ. Вызов emit(operation-added)');
   emit('operation-added', response.data);
 }
@@ -321,14 +351,12 @@ async function saveCreateOrClone(base, dateKey) {
 // --- 🔴 ИСПРАВЛЕНИЕ: saveEdit (v2.4) ---
 // =================================================================
 async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desiredCellIndex) {
-  // 🔴 ИЗМЕНЕНО: Сравниваем dateKey
-  const positionChanged = (newDateKey !== oldDateKey); // (cellIndex не меняется при редактировании)
+  const positionChanged = (newDateKey !== oldDateKey); 
   const finalDateKey = positionChanged ? newDateKey : oldDateKey;
 
   if (positionChanged) {
     console.log(`[OperationPopup] saveEdit: ➡️ Обнаружено ПЕРЕМЕЩЕНИЕ ДАТЫ (${oldDateKey} -> ${newDateKey})`);
     try {
-      // 🔴 ИЗМЕНЕНО: Передаем dateKey
       await mainStore.moveOperation(
         { _id: opId, ...base, dateKey: oldDateKey, cellIndex: oldCellIndex },
         oldDateKey,
@@ -340,19 +368,16 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
       throw e;
     }
     
-    // Обновляем данные операции (позиция уже обновлена)
     console.log(`[OperationPopup] saveEdit: 🚀 Отправка PUT /api/events/${opId} (после перемещения)`);
     await axios.put(`${API_BASE_URL}/events/${opId}`, {
       ...base,
       dateKey: newDateKey,  
       cellIndex: desiredCellIndex
     });
-    // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
     console.log('[OperationPopup] saveEdit: ✅ УСПЕХ. Вызов emit(operation-updated)');
     emit('operation-updated', { dateKey: newDateKey, oldDateKey: oldDateKey });
     
   } else {
-    // Позиция не изменилась, просто обновляем данные
     console.log(`[OperationPopup] saveEdit: 🔄 Обнаружено ОБНОВЛЕНИЕ НА МЕСТЕ (${oldDateKey})`);
     console.log(`[OperationPopup] saveEdit: 🚀 Отправка PUT /api/events/${opId}`);
     await axios.put(`${API_BASE_URL}/events/${opId}`, {
@@ -360,7 +385,6 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
       dateKey: oldDateKey, 
       cellIndex: oldCellIndex
     });
-    // 🔴 ИЗМЕНЕНО: Уведомляем HomeView
     console.log('[OperationPopup] saveEdit: ✅ УСПЕХ. Вызов emit(operation-updated)');
     emit('operation-updated', { dateKey: oldDateKey, oldDateKey: null });
   }
@@ -369,8 +393,62 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
 
 
 // =================================================================
-// --- 🔴 v2.3: Функции Inline-Create (с логированием) ---
+// --- 🟢 v9.0 (Шаг 5): "Smart Create" для Владельца ---
 // =================================================================
+const openCreateOwnerModal = () => {
+  console.log('[OperationPopup] openCreateOwnerModal: Открыто модальное окно "Smart Create"');
+  ownerTypeToCreate.value = 'company'; // Сброс на "Компанию" по умолчанию
+  newOwnerName.value = '';
+  showCreateOwnerModal.value = true;
+  nextTick(() => newOwnerInputRef.value?.focus());
+};
+
+const cancelCreateOwner = () => {
+  console.log('[OperationPopup] cancelCreateOwner: Отмена "Smart Create"');
+  showCreateOwnerModal.value = false;
+  newOwnerName.value = '';
+  // Сбрасываем <select> обратно, если он был на "--CREATE_NEW--"
+  if (selectedOwner.value === '--CREATE_NEW--') {
+    selectedOwner.value = null;
+  }
+};
+
+const setOwnerTypeToCreate = (type) => {
+  ownerTypeToCreate.value = type;
+  newOwnerInputRef.value?.focus();
+};
+
+const saveNewOwner = async () => {
+  const name = newOwnerName.value.trim();
+  const type = ownerTypeToCreate.value; // 'company' или 'individual'
+  if (!name) return;
+  
+  console.log(`[OperationPopup] saveNewOwner: 💾 Сохранение (Тип: ${type}, Имя: ${name})`);
+
+  try {
+    let newItem;
+    if (type === 'company') {
+      const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
+      newItem = existing ? existing : await mainStore.addCompany(name);
+    } else { // 'individual'
+      const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase());
+      newItem = existing ? existing : await mainStore.addIndividual(name);
+    }
+    
+    // Устанавливаем новый `selectedOwner`
+    selectedOwner.value = `${type}-${newItem._id}`;
+    console.log(`[OperationPopup] saveNewOwner: ✅ УСПЕХ. Установлен selectedOwner: ${selectedOwner.value}`);
+
+  } catch (e) {
+    console.error(`[OperationPopup] saveNewOwner: ❌ Ошибка при создании ${type}`, e);
+  }
+  
+  cancelCreateOwner(); // Закрываем модальное окно
+};
+// =================================================================
+
+
+// --- (Inline Create для остальных - без изменений) ---
 const showAccountInput = () => { console.log('[OperationPopup] showAccountInput'); isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { console.log('[OperationPopup] cancelCreateAccount'); isCreatingAccount.value = false; newAccountName.value = ''; };
 const saveNewAccount = async () => {
@@ -378,35 +456,27 @@ const saveNewAccount = async () => {
   if (!name) return;
   console.log(`[OperationPopup] saveNewAccount: 💾 Сохранение счета ${name}`);
   const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
+  
+  // 🟢 v9.0 (Шаг 5): Определяем владельца для нового счета
+  let cId = null;
+  let iId = null;
+  if (selectedOwner.value) {
+      const [type, id] = selectedOwner.value.split('-');
+      if (type === 'company') cId = id;
+      if (type === 'individual') iId = id;
+  }
+
   if (existing) {
     selectedAccountId.value = existing._id;
-    onAccountSelected(existing._id);
+    onAccountSelected(existing._id); // Это также обновит `selectedOwner`
   } else {
     try {
-      const newItem = await mainStore.addAccount({ name: name, companyId: selectedCompanyId.value });
+      const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId });
       selectedAccountId.value = newItem._id;
-      onAccountSelected(newItem._id);
+      onAccountSelected(newItem._id); // Это также обновит `selectedOwner`
     } catch (e) { console.error(e); }
   }
   cancelCreateAccount();
-};
-
-const showCompanyInput = () => { console.log('[OperationPopup] showCompanyInput'); isCreatingCompany.value = true; nextTick(() => newCompanyInput.value?.focus()); };
-const cancelCreateCompany = () => { console.log('[OperationPopup] cancelCreateCompany'); isCreatingCompany.value = false; newCompanyName.value = ''; };
-const saveNewCompany = async () => {
-  const name = newCompanyName.value.trim();
-  if (!name) return;
-  console.log(`[OperationPopup] saveNewCompany: 💾 Сохранение компании ${name}`);
-  const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    selectedCompanyId.value = existing._id;
-  } else {
-    try {
-      const newItem = await mainStore.addCompany(name);
-      selectedCompanyId.value = newItem._id;
-    } catch (e) { console.error(e); }
-  }
-  cancelCreateCompany();
 };
 
 const showContractorInput = () => { console.log('[OperationPopup] showContractorInput'); isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
@@ -505,10 +575,8 @@ const onDeleteConfirmed = async () => {
   try {
     if (!props.operationToEdit?._id) return;
     
-    // 🔴 ИЗМЕНЕНО: Используем mainStore.deleteOperation
     await mainStore.deleteOperation(props.operationToEdit);
     
-    // 🔴 ИЗМЕНЕНО: Отправляем dateKey
     console.log('[OperationPopup] onDeleteConfirmed: ✅ УСПЕХ. Вызов emit(operation-deleted)');
     emit('operation-deleted', { dateKey: props.operationToEdit.dateKey });
     emit('close');
@@ -522,8 +590,6 @@ const onDeleteConfirmed = async () => {
 const handleCopyClick = () => {
   console.log('[OperationPopup] handleCopyClick: 📋 Клонирование операции');
   isCloneMode.value = true;
-  // 🔴 ИЗМЕНЕНО: При клонировании сбрасываем дату на ту,
-  // которая пришла из props (дата кликнутой ячейки)
   editableDate.value = toInputDate(props.date);
   nextTick(() => { amountInput.value?.focus(); });
 };
@@ -547,7 +613,12 @@ const handleCopyClick = () => {
         @input="onAmountInput"
       />
 
-      <template v-if="props.type !== 'transfer'">
+      <!-- 
+        // =================================================================
+        // --- 🟢 v9.0 (Шаг 5): Блок "Доход/Расход" (БЕЗ "Smart Create" модала) ---
+        // =================================================================
+      -->
+      <template v-if="props.type !== 'transfer' && !showCreateOwnerModal">
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
         <select
           v-if="!isCreatingAccount"
@@ -571,23 +642,23 @@ const handleCopyClick = () => {
           <button @click="cancelCreateAccount" class="btn-inline-cancel">X</button>
         </div>
       
-        <label>Моей компании *</label>
+        <!-- 🟢 v9.0 (Шаг 5): ЗАМЕНЕННЫЙ БЛОК "ВЛАДЕЛЕЦ" -->
+        <label>Моей Компании/Физлица *</label>
         <select
-          v-if="!isCreatingCompany"
-          v-model="selectedCompanyId"
-          @change="e => e.target.value === '--CREATE_NEW--' && showCompanyInput()"
+          v-model="selectedOwner"
+          @change="e => e.target.value === '--CREATE_NEW--' && openCreateOwnerModal()"
           class="form-select"
-          :disabled="props.type === 'transfer'"
         >
-          <option :value="null" disabled>Выберите компанию</option>
-          <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
-          <option value="--CREATE_NEW--">[ + Создать новую компанию ]</option>
+          <option :value="null" disabled>Выберите владельца</option>
+          <optgroup label="Компании">
+            <option v-for="comp in mainStore.companies" :key="comp._id" :value="`company-${comp._id}`">{{ comp.name }}</option>
+          </optgroup>
+          <optgroup label="Физлица">
+            <option v-for="ind in mainStore.individuals" :key="ind._id" :value="`individual-${ind._id}`">{{ ind.name }}</option>
+          </optgroup>
+          <option value="--CREATE_NEW--">[ + Создать... ]</option>
         </select>
-        <div v-else class="inline-create-form">
-          <input type="text" v-model="newCompanyName" placeholder="Название компании" ref="newCompanyInput" @keyup.enter="saveNewCompany" @keyup.esc="cancelCreateCompany" />
-          <button @click="saveNewCompany" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateCompany" class="btn-inline-cancel">X</button>
-        </div>
+        <!-- (Старый inline-create компании удален) -->
 
         <label>{{ props.type === 'income' ? 'От контрагента' : 'Контрагенту' }} *</label>
         <select
@@ -601,7 +672,6 @@ const handleCopyClick = () => {
             }
           }"
           class="form-select"
-          :disabled="props.type === 'transfer'"
         >
           <option :value="null" disabled>Выберите контрагента</option>
           <option v-for="c in mainStore.contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
@@ -619,7 +689,6 @@ const handleCopyClick = () => {
           v-model="selectedProjectId"
           @change="e => e.target.value === '--CREATE_NEW--' && showProjectInput()"
           class="form-select"
-          :disabled="props.type === 'transfer'"
         >
           <option :value="null">Без проекта</option>
           <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
@@ -649,30 +718,83 @@ const handleCopyClick = () => {
         </div>
       </template>
 
-      <label>Дата операции</label>
-      <input type="date" v-model="editableDate" class="form-input" />
+      <!-- 
+        // =================================================================
+        // --- 🟢 v9.0 (Шаг 5): Модал "Smart Create" (Вместо inline-create) ---
+        // =================================================================
+      -->
+      <template v-if="showCreateOwnerModal">
+        <div class="smart-create-owner">
+          <h4 class="smart-create-title">Что вы хотите создать?</h4>
+          
+          <div class="smart-create-tabs">
+            <button 
+              :class="{ active: ownerTypeToCreate === 'company' }"
+              @click="setOwnerTypeToCreate('company')">
+              Компанию
+            </button>
+            <button 
+              :class="{ active: ownerTypeToCreate === 'individual' }"
+              @click="setOwnerTypeToCreate('individual')">
+              Физлицо
+            </button>
+          </div>
 
-      <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+          <label>Название</label>
+          <input 
+            type="text" 
+            v-model="newOwnerName" 
+            :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" 
+            ref="newOwnerInputRef"
+            class="form-input"
+            @keyup.enter="saveNewOwner"
+            @keyup.esc="cancelCreateOwner"
+          />
 
-      <div class="popup-actions-row">
-        <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass">
-          {{ buttonText }}
-        </button>
-
-        <div v-if="props.operationToEdit && !isCloneMode.value" class="icon-actions">
-          <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/>
-            </svg>
-          </button>
-
-          <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/>
-            </svg>
-          </button>
+          <div class="smart-create-actions">
+            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary">
+              Отмена
+            </button>
+            <button @click="saveNewOwner" class="btn-submit btn-submit-edit">
+              Создать
+            </button>
+          </div>
         </div>
-      </div>
+      </template>
+
+
+      <!-- 
+        // =================================================================
+        // --- (Остальная часть формы - Дата, Кнопки...) ---
+        // =================================================================
+      -->
+      <template v-if="!showCreateOwnerModal">
+        <label>Дата операции</label>
+        <input type="date" v-model="editableDate" class="form-input" />
+
+        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+
+        <div class="popup-actions-row">
+          <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass">
+            {{ buttonText }}
+          </button>
+
+          <div v-if="props.operationToEdit && !isCloneMode.value" class="icon-actions">
+            <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/>
+              </svg>
+            </button>
+
+            <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </template>
+      
     </div>
   </div>
 
@@ -773,7 +895,6 @@ select option[value="--CREATE_NEW--"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 15px;
 }
 .inline-create-form input {
   flex: 1;
@@ -883,5 +1004,59 @@ select option[value="--CREATE_NEW--"] {
 }
 .btn-submit-edit:hover {
   background-color: #333333;
+}
+.btn-submit-secondary {
+  background-color: #e0e0e0;
+  color: #333;
+  font-weight: 500;
+}
+.btn-submit-secondary:hover {
+  background-color: #d1d1d1;
+}
+
+/* 🟢 v9.0 (Шаг 5): Стили для "Smart Create" */
+.smart-create-owner {
+  border-top: 1px solid #E0E0E0;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+}
+.smart-create-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+.smart-create-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 1.5rem;
+}
+.smart-create-tabs button {
+  flex: 1;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.smart-create-tabs button.active {
+  background: #222222;
+  color: #FFFFFF;
+  border-color: #222222;
+}
+.smart-create-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 1rem; /* Отступ перед кнопками */
+}
+.smart-create-actions .btn-submit {
+  flex: 1;
 }
 </style>
