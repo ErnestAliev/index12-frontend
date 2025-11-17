@@ -4,17 +4,14 @@ import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step8-STYLE-FIX ---
+ * * --- МЕТКА ВЕРСИИ: v9.0-step9-BUILD-FIX ---
  * * ВЕРСИЯ: 9.0 - ФИНАЛЬНАЯ ВЕРСИЯ.
- * ДАТА: 2025-11-17 (По запросу)
+ * ДАТА: 2025-11-17
  *
- * ЧТО ИЗМЕНЕНО (На основе отзыва v9.0-step7-FINAL-R4):
- * 1. (STYLE-FIX) `.edit-account-select` (multi-select)
- * - УБРАНЫ стили listbox (`height: 100px`, `padding: 10px`, `overflow-y: auto`).
- * - ДОБАВЛЕНЫ стили "закрытого" селекта (как у .edit-project в Контрагентах).
-* - `appearance: none;`, `background-image: ...`, `padding-right: 40px;`
- * (Теперь селект Компаний/Физлиц выглядит как "закрытый").
- * 2. (LOGIC) Вся остальная логика из `R4` сохранена.
+ * ЧТО ИЗМЕНЕНО (На основе отзыва v9.0-step8):
+ * 1. (BUILD-FIX) Исправлена ошибка 'Duplicate attribute' в <template>
+ * (которая была внесена в step8).
+ * 2. (STYLE) Стили "закрытого" селекта из step8 сохранены.
  */
 
 const props = defineProps({
@@ -252,7 +249,7 @@ const cancelDelete = () => {
       <div v-else class="editor-header default-header">
          <span class="header-name">Название</span>
          <span class="header-trash"></span>
-      </div>
+  _   </div>
       
       
             <div class="list-editor">
@@ -298,7 +295,7 @@ const cancelDelete = () => {
                             <template v-if="isIndividualEditor">
                  <select 
                   v-model="item.selectedAccountIds" 
-                  class="edit-input edit-account-select" 
+          _         class="edit-input edit-account-select" 
                   multiple
                 >
                   <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">
@@ -413,7 +410,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .edit-item { 
   display: flex; 
-  /* 🟢 СТИЛЬ-ФИКС: Выравниваем по верху, как на скриншотах */
   align-items: flex-start; 
   margin-bottom: 10px;
   gap: 10px; 
@@ -427,8 +423,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   width: 22px; 
   height: 48px; /* <-- Высота инпута */
   display: flex;
-  align-items: center; /* Центрируем иконку по вертикали */
-  /* 🟢 СТИЛЬ-ФИКС: Выравниваем саму иконку внутри блока */
+  align-items: center;
   justify-content: center;
   padding-top: 14px; /* Оптический хак для "⠿" */
   box-sizing: border-box;
@@ -450,10 +445,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
 }
 .edit-project, .edit-category { width: 150px; }
-/* (Шаг 7 R2) Восстановлен .edit-balance */
 .edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
 
-/* 🟢 СТИЛЬ-ФИКС (Шаг 8): Приведение select'a Компаний/Физлиц к стилю Контрагентов */
+/* 🟢 СТИЛЬ-ФИКС (Шаг 8/9): Приведение select'a Компаний/Физлиц к стилю Контрагентов */
 .edit-account-select {
   flex-shrink: 0;
   width: 310px;
@@ -474,7 +468,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   color: #FFFFFF;
 }
 
-/* 🟢 СТИЛЬ-ФИКС (Шаг 7 R4): Кнопка "Удалить" */
+/* Кнопка "Удалить" */
 .delete-btn {
   width: 48px;
   height: 48px; /* <-- Высота как у инпута */
@@ -484,8 +478,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
   padding: 10px; 
-  
-  /* transform УДАЛЕН. Выравнивание по align-items: flex-start */
 }
 .delete-btn svg {
   width: 100%;
@@ -499,7 +491,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .delete-btn:hover svg {
   stroke: #FF3B30;
 }
-/* --- КОНЕЦ ФИКСА КНОПКИ --- */
 
 .ghost { opacity: 0.5; background: #c0c0c0; }
 
