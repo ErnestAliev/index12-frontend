@@ -1,22 +1,34 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.8-STYLE-FIX ---
- * * ВЕРСИЯ: 10.8 - Исправление опечатки class.bind
+ * * --- МЕТКА ВЕРСИИ: v10.9-MULTI-EXPORT ---
+ * * ВЕРСИЯ: 10.9 - Экспорт разделен на 3 файла
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Исправлена ошибка в <template>:
- * `class.bind="modal-content"` заменено на `class="modal-content"`.
- * 2. (STYLES) Стили <style scoped> возвращены к v10.0.
- * 3. (LOGIC) Вся логика v10.7 (расчет остатка и прогноза)
- * в <script setup> сохранена.
+ * 1. (REWRITE) Вкладка "Экспорт" полностью
+ * переработана.
+ * 2. (NEW) Добавлена кнопка "Подготовить данные",
+ * которая запускает `prepareExportData`.
+ * 3. (NEW) `prepareExportData` выполняет ВСЕ
+ * расчеты (Остатки, Прогнозы) ОДИН РАЗ
+ * и сохраняет результаты в 3
+ * ref-переменные:
+ * `processedIncomeExpense`,
+ * `processedTransfers`, `processedSummary`.
+ * 4. (NEW) После подготовки появляются 3 новые
+ * кнопки для скачивания каждого CSV-файла
+ * по отдельности.
+ * 5. (FIX) Логика расчета остатков (v10.8)
+ * и прогнозов (v10.6) сохранена и
+ * используется в `prepareExportData`.
+ * 6. (UPDATE) `triggerCsvDownload` теперь
+ * принимает `filenamePrefix`.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
-    <!-- 🔴 ИСПРАВЛЕНИЕ ОШИБКИ V10.7 -->
     <div class="modal-content">
       <button class="close-btn" @click="closeModal">&times;</button>
       
-      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Операций' }}</h2>
+      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Отчетов' }}</h2>
       
       <div class="modal-tabs">
         <button 
@@ -39,6 +51,8 @@
       <!-- Вкладка "ИМПОРТ" (Без изменений)         -->
       <!-- ============================================= -->
       <div v-if="currentTab === 'import'" class="import-content-wrapper">
+        <!-- ... (весь код импорта v10.8) ... -->
+        
         <div v-if="step === 'upload'" class="modal-step-content">
           <div 
             class="drop-zone" 
@@ -149,31 +163,56 @@
             <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
           </div>
         </div>
+
       </div>
       
       <!-- =========================================== -->
-      <!-- Вкладка "ЭКСПОРТ (CSV)"                     -->
+      <!-- 🟢 v10.9: Вкладка "ЭКСПОРТ (CSV)"            -->
       <!-- =========================================== -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
+        
         <p>
-          Экспорт **всех операций** с расчетом остатка по счету и прогнозом будущих поступлений.
-        </p>
-        <p>
-          Расчет остатка ведется от самой первой операции до последней.
+          Экспорт разделен на 3 файла: Прошлые Доходы/Расходы, Прошлые Переводы и Будущая Сводка.
         </p>
         
-        <div v-if="isExporting" class="loading-indicator">
-          <div class="spinner"></div>
-          <p>Подготовка отчета... (Это может занять время)</p>
-        </div>
-        
+        <!-- Шаг 1: Кнопка подготовки -->
         <button 
-          @click="handleExport" 
+          v-if="!isDataReady"
+          @click="prepareExportData" 
           class="btn-primary export-btn" 
           :disabled="isExporting"
         >
-          Экспортировать все операции
+          1. Подготовить данные для экспорта
         </button>
+
+        <div v-if="isExporting" class="loading-indicator">
+          <div class="spinner"></div>
+          <p>Подготовка отчетов... (Это может занять время)</p>
+        </div>
+
+        <!-- Шаг 2: Кнопки скачивания -->
+        <div v-if="isDataReady && !isExporting" class="download-section">
+          <p class="step-description">
+            Данные готовы. Теперь вы можете скачать 3 отдельных CSV-файла:
+          </p>
+          <div class="download-buttons">
+            <button class="btn-primary export-btn" @click="downloadIncomeExpense">
+              Скачать Доходы/Расходы
+              <span>({{ processedIncomeExpense.length }} строк)</span>
+            </button>
+            <button class="btn-primary export-btn" @click="downloadTransfers">
+              Скачать Переводы
+              <span>({{ processedTransfers.length }} строк)</span>
+            </button>
+            <button class="btn-primary export-btn" @click="downloadSummary">
+              Скачать Будущую Сводку
+              <span>({{ processedSummary.length }} строк)</span>
+            </button>
+          </div>
+          <button class="btn-secondary" @click="resetExport" style="margin-top: 20px;">
+            Начать заново
+          </button>
+        </div>
         
         <div v-if="exportError" class="error-message">
           {{ exportError }}
@@ -182,6 +221,7 @@
 
       <!-- Футер для ИМПОРТА -->
       <div v-if="currentTab === 'import'" class="modal-actions">
+        <!-- ... (кнопки импорта) ... -->
         <button 
           @click="closeModal" 
           class="btn-secondary"
@@ -243,12 +283,19 @@ import { formatNumber } from '@/utils/formatters.js';
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
 
-const currentTab = ref('import'); // 'import' or 'export'
+const currentTab = ref('import');
 const isExporting = ref(false);
 const exportError = ref(null);
 
+// 🟢 v10.9: Новые состояния для 3-х файлов
+const isDataReady = ref(false);
+const processedIncomeExpense = ref([]);
+const processedTransfers = ref([]);
+const processedSummary = ref([]);
+
+
 // --- Шаги (Импорт) ---
-const step = ref('upload'); // 'upload', 'mapping', 'review', 'importing'
+const step = ref('upload'); 
 const error = ref(null);
 const isLoading = ref(false);
 
@@ -316,12 +363,27 @@ function resetState() {
   
   selectedRows.value.clear(); 
   
+  // 🟢 v10.9: Сброс состояния экспорта
   isExporting.value = false;
   exportError.value = null;
+  isDataReady.value = false;
+  processedIncomeExpense.value = [];
+  processedTransfers.value = [];
+  processedSummary.value = [];
   
   if (fileInputRef.value) {
     fileInputRef.value.value = null;
   }
+}
+
+// 🟢 v10.9: Отдельная функция сброса для экспорта
+function resetExport() {
+  isExporting.value = false;
+  exportError.value = null;
+  isDataReady.value = false;
+  processedIncomeExpense.value = [];
+  processedTransfers.value = [];
+  processedSummary.value = [];
 }
 
 function closeModal() {
@@ -686,98 +748,67 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.7 - Сводка + Остаток)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.9 - Multi-File)
 // ----------------------------------------------
 
 /**
- * 🟢 v10.7: Функция `handleExport`
- * Генерирует CSV со ВСЕМИ операциями,
- * добавляя к ним "Остаток" и 5 колонок прогноза.
+ * 🟢 v10.9: Шаг 1. Подготовка всех 3-х отчетов
  */
-async function handleExport() {
+async function prepareExportData() {
   isExporting.value = true;
   exportError.value = null;
   
   try {
-    // === 1. ПОДГОТОВКА ПРОГНОЗА ===
+    // === 1. ПОДГОТОВКА ДАТ И ПРОГНОЗА ===
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Хелперы для дат
+    // Хелперы
     const addDays = (d, days) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
     const addMonths = (d, months) => { const n = new Date(d); n.setMonth(n.getMonth() + months); return n; };
     const addYears = (d, years) => { const n = new Date(d); n.setFullYear(n.getFullYear() + years); return n; };
+    const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // Рассчитываем 5 дат в будущем
+    // Даты прогноза
     const date12d = addDays(today, 12);
     const date1m = addMonths(today, 1);
     const date3m = addMonths(today, 3);
     const date6m = addMonths(today, 6);
     const date1y = addYears(today, 1);
 
-    // Получаем ВСЕ будущие операции (фильтруем вручную)
-    const allFutureOps = mainStore.allOperationsFlat.filter(op => {
-      if (!op.date) return false;
+    // === 2. ПОЛУЧЕНИЕ И РАЗДЕЛЕНИЕ ДАННЫХ ===
+    
+    // Получаем ВСЕ операции, отсортированные по date: 1 (от старых к новым)
+    const { operations } = await mainStore.exportAllOperations();
+
+    const pastOps = [];
+    const futureOps = [];
+
+    for (const op of operations) {
+      if (!op.date) continue; // Защита
       try {
         const opDate = new Date(op.date);
-        if (isNaN(opDate.getTime())) return false;
-        return opDate.getTime() > today.getTime();
-      } catch (e) { return false; }
-    });
-    
-    // Считаем КУМУЛЯТИВНЫЕ поступления
-    let totalIncome12d = 0;
-    let totalIncome1m = 0;
-    let totalIncome3m = 0;
-    let totalIncome6m = 0;
-    let totalIncome1y = 0;
-
-    for (const op of allFutureOps) {
-      if (op.type === 'income' && (op.amount || 0) > 0) {
-        const opDate = new Date(op.date);
-        const amount = op.amount || 0;
+        if (isNaN(opDate.getTime())) continue; // Защита
         
-        if (opDate <= date1y) totalIncome1y += amount;
-        if (opDate <= date6m) totalIncome6m += amount;
-        if (opDate <= date3m) totalIncome3m += amount;
-        if (opDate <= date1m) totalIncome1m += amount;
-        if (opDate <= date12d) totalIncome12d += amount;
-      }
+        if (opDate.getTime() > today.getTime()) {
+          futureOps.push(op);
+        } else {
+          pastOps.push(op); // Включая "сегодня"
+        }
+      } catch (e) { continue; }
     }
-    
-    // Форматируем для вставки в CSV
-    const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
-    
-    const futureHeaders = {
-      [`Поступления до ${ruFormatter.format(date12d)} (12 д)`]: totalIncome12d,
-      [`Поступления до ${ruFormatter.format(date1m)} (1 мес)`]: totalIncome1m,
-      [`Поступления до ${ruFormatter.format(date3m)} (3 мес)`]: totalIncome3m,
-      [`Поступления до ${ruFormatter.format(date6m)} (6 мес)`]: totalIncome6m,
-      [`Поступления до ${ruFormatter.format(date1y)} (1 год)`]: totalIncome1y,
-    };
-    
-    // === 2. ПОДГОТОВКА ОСТАТКОВ ===
-    
-    // Инициализируем "бегущие" остатки
+
+    // === 3. ОБРАБОТКА ПРОШЛЫХ ОПЕРАЦИЙ (Файлы 1 и 2) ===
     const runningBalances = new Map();
     mainStore.accounts.forEach(acc => {
       runningBalances.set(acc._id, acc.initialBalance || 0);
     });
 
-    // Получаем ВСЕ операции из API
-    // 🔴 v10.5: `exportAllOperations` возвращает { operations, initialBalance }
-    // Нам больше не нужен `initialBalance` отсюда, так как мы берем его из `mainStore.accounts`.
-    const exportData = await mainStore.exportAllOperations();
-    const operations = exportData.operations; 
+    const incomeExpenseRows = [];
+    const transferRows = [];
+    const commonColumns = ['Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 'Компании/Физлица', 'Контрагент', 'Проект'];
     
-    // Бэкенд v10.5+ УЖЕ сортирует от старых к новым (date: 1)
-    // operations.reverse(); // <- Больше не нужно
-
-    // === 3. ФОРМИРОВАНИЕ CSV ===
-    const csvRows = [];
-
-    for (const op of operations) {
-      // (A) Форматируем дату
+    for (const op of pastOps) { // pastOps уже отсортированы по дате
       let dateStr = '';
       if (op.date) {
         try {
@@ -790,10 +821,9 @@ async function handleExport() {
       }
       
       const opAmount = op.amount || 0;
-      let opBalance = 0; // Остаток ПОСЛЕ этой операции
+      let opBalance = 0;
 
       if (op.type === 'income' || op.type === 'expense') {
-        // (B) Считаем остаток
         const opAccountId = op.accountId?._id || null;
         if (opAccountId) {
           const currentBalance = runningBalances.get(opAccountId) || 0;
@@ -801,8 +831,7 @@ async function handleExport() {
           runningBalances.set(opAccountId, opBalance);
         }
         
-        // (C) Собираем строку
-        csvRows.push({
+        incomeExpenseRows.push({
           'Тип': op.type === 'income' ? 'Доход' : 'Расход',
           'Категория': op.categoryId?.name || '',
           'Сумма': opAmount,
@@ -812,39 +841,31 @@ async function handleExport() {
           'Компании/Физлица': op.companyId?.name || op.individualId?.name || '',
           'Контрагент': op.contractorId?.name || '',
           'Проект': op.projectId?.name || '',
-          ...futureHeaders
         });
       } 
       else if (op.type === 'transfer' || op.isTransfer) {
-        // (B) Считаем остатки для ДВУХ счетов
         const fromAccountId = op.fromAccountId?._id || null;
         const toAccountId = op.toAccountId?._id || null;
-        
         const fromOwnerName = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
         const toOwnerName = op.toCompanyId?.name || op.toIndividualId?.name || '';
         
         let fromBalance = 0;
         let toBalance = 0;
-        
-        // 🔴 ВАЖНО: Сумма у "transfer" в БД всегда ПОЛОЖИТЕЛЬНАЯ (v9.0+)
         const absAmount = Math.abs(opAmount);
 
-        // Списание со счета "From"
         if (fromAccountId) {
           const currentBalance = runningBalances.get(fromAccountId) || 0;
-          fromBalance = currentBalance - absAmount; // 
+          fromBalance = currentBalance - absAmount; 
           runningBalances.set(fromAccountId, fromBalance);
         }
         
-        // Зачисление на счет "To"
         if (toAccountId) {
           const currentBalance = runningBalances.get(toAccountId) || 0;
-          toBalance = currentBalance + absAmount; //
+          toBalance = currentBalance + absAmount;
           runningBalances.set(toAccountId, toBalance);
         }
 
-        // (C) Собираем ДВЕ строки
-        csvRows.push({
+        transferRows.push({
           'Тип': 'Перевод',
           'Категория': 'Исходящий',
           'Сумма': -absAmount,
@@ -852,12 +873,11 @@ async function handleExport() {
           'Дата': dateStr,
           'Счет': op.fromAccountId?.name || '',
           'Компании/Физлица': fromOwnerName,
-          'Контрагент': toOwnerName, // Контрагент = Получатель
+          'Контрагент': toOwnerName, 
           'Проект': '',
-          ...futureHeaders
         });
         
-        csvRows.push({
+        transferRows.push({
           'Тип': 'Перевод',
           'Категория': 'Входящий',
           'Сумма': absAmount,
@@ -865,52 +885,91 @@ async function handleExport() {
           'Дата': dateStr,
           'Счет': op.toAccountId?.name || '',
           'Компании/Физлица': toOwnerName,
-          'Контрагент': fromOwnerName, // Контрагент = Отправитель
+          'Контрагент': fromOwnerName, 
           'Проект': '',
-          ...futureHeaders
         });
       }
     }
-
-    // === 4. ВЫГРУЗКА ===
     
-    // Определяем финальный порядок колонок
-    const finalColumns = [
-      'Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 
-      'Компании/Физлица', 'Контрагент', 'Проект',
-      ...Object.keys(futureHeaders) // Добавляем 5 колонок прогноза
-    ];
+    // Сохраняем результаты для кнопок 1 и 2
+    processedIncomeExpense.value = { data: incomeExpenseRows, columns: commonColumns };
+    processedTransfers.value = { data: transferRows, columns: commonColumns };
 
-    const csvString = Papa.unparse(csvRows, {
-      header: true,
-      columns: finalColumns, // Принудительно задаем порядок
-      // 🟢 v10.7: Заменяем null/undefined на 0 или ""
-      transform: (value, field) => {
-        if (value === null || value === undefined) {
-          // Если поле числовое
-          if (['Сумма', 'Остаток', ...Object.keys(futureHeaders)].includes(field)) {
-            return 0;
-          }
-          return ""; // Для текстовых
-        }
-        return value;
+    // === 4. ОБРАБОТКА БУДУЩЕЙ СВОДКИ (Файл 3) ===
+    let income12d = 0, income1m = 0, income3m = 0, income6m = 0, income1y = 0;
+
+    for (const op of futureOps) {
+      if (op.type === 'income' && (op.amount || 0) > 0) {
+        const opDate = new Date(op.date);
+        const amount = op.amount || 0;
+        
+        if (opDate <= date1y) income1y += amount;
+        if (opDate <= date6m) income6m += amount;
+        if (opDate <= date3m) income3m += amount;
+        if (opDate <= date1m) income1m += amount;
+        if (opDate <= date12d) income12d += amount;
       }
-    });
+    }
+
+    const summaryData = [
+      { "Параметр": `Сегодня`, "Значение": ruFormatter.format(today) },
+      { "Параметр": "Текущий Остаток", "Значение": formatNumber(mainStore.currentTotalBalance) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date12d)} (12 д)`, "Значение": formatNumber(income12d) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date1m)} (1 мес)`, "Значение": formatNumber(income1m) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date3m)} (3 мес)`, "Значение": formatNumber(income3m) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date6m)} (6 мес)`, "Значение": formatNumber(income6m) },
+      { "Параметр": `Поступления до ${ruFormatter.format(date1y)} (1 год)`, "Значение": formatNumber(income1y) }
+    ];
     
-    triggerCsvDownload(csvString);
+    // Сохраняем результат для кнопки 3
+    processedSummary.value = { data: summaryData, columns: ["Параметр", "Значение"] };
+
+    // === 5. ЗАВЕРШЕНИЕ ===
+    isDataReady.value = true;
     
   } catch (err) {
-    console.error("Ошибка при экспорте сводки:", err);
-    exportError.value = `Не удалось создать сводку: ${err.message || 'Неизвестная ошибка'}`;
+    console.error("Ошибка при подготовке экспорта:", err);
+    exportError.value = `Не удалось подготовить данные: ${err.message || 'Неизвестная ошибка'}`;
   } finally {
     isExporting.value = false;
   }
 }
 
 /**
- * 🟢 v10.3: Имя файла включает время
+ * 🟢 v10.9: Шаг 2. Функции скачивания
  */
-function triggerCsvDownload(csvString) {
+function downloadIncomeExpense() {
+  const csvString = Papa.unparse(processedIncomeExpense.value.data, {
+    header: true,
+    columns: processedIncomeExpense.value.columns,
+    transform: (value) => (value === null || value === undefined) ? "" : value,
+  });
+  triggerCsvDownload(csvString, "Income_Expense");
+}
+
+function downloadTransfers() {
+  const csvString = Papa.unparse(processedTransfers.value.data, {
+    header: true,
+    columns: processedTransfers.value.columns,
+    transform: (value) => (value === null || value === undefined) ? "" : value,
+  });
+  triggerCsvDownload(csvString, "Transfers");
+}
+
+function downloadSummary() {
+  const csvString = Papa.unparse(processedSummary.value.data, {
+    header: true,
+    columns: processedSummary.value.columns,
+    transform: (value) => (value === null || value === undefined) ? "" : value,
+  });
+  triggerCsvDownload(csvString, "Future_Summary");
+}
+
+
+/**
+ * 🟢 v10.9: triggerCsvDownload обновлен
+ */
+function triggerCsvDownload(csvString, filenamePrefix = "export") {
   const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
   
   const link = document.createElement('a');
@@ -922,8 +981,7 @@ function triggerCsvDownload(csvString) {
   const pad = (num) => String(num).padStart(2, '0');
   const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   
-  // 🟢 v10.7: Имя файла "export"
-  link.setAttribute('download', `index12_export_${timestamp}.csv`);
+  link.setAttribute('download', `index12_${filenamePrefix}_${timestamp}.csv`);
   
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
@@ -1088,6 +1146,43 @@ h2 {
   background: var(--color-background-soft);
   flex-shrink: 0; 
 }
+
+/* 🟢 v10.9: Стили для секции скачивания */
+.download-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.download-section .step-description {
+  border: none;
+  background: none;
+  padding-bottom: 0;
+  text-align: center;
+  color: var(--color-text);
+}
+.download-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 20px;
+}
+.download-buttons .export-btn {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  padding: 16px 24px;
+}
+.download-buttons .export-btn span {
+  font-size: 0.8em;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
 
 .mapping-table-container {
   overflow-x: auto;
