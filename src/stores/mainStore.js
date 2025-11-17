@@ -10,6 +10,13 @@
  * 4. (NEW) Добавлена функция `addIndividual`.
  * 5. (UPDATE) `fetchAllEntities`, `deleteEntity`, `batchUpdateEntities`, `addAccount` и `_mergeTransfers`
  * обновлены для поддержки `individualId`.
+ * * * --- МЕТКА ВЕРСИИ: v10.0-FIX-EXPORT ---
+ * * ВЕРСИЯ: 10.0 - Добавлена недостающая функция exportAllOperations
+ * ДАТА: 2025-11-18
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) Добавлена функция `exportAllOperations`, которая вызывает /api/events/all-for-export.
+ * 2. (UPDATE) `exportAllOperations` добавлена в `return` блока `defineStore`.
  */
 
 import { defineStore } from 'pinia';
@@ -36,6 +43,7 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   console.log('--- mainStore.js v9.0-step1-individuals ЗАГРУЖЕН ---'); 
+  // 🔴 V10.0 - Добавлен фикс экспорта
   
   // =================================================================
   // 1. STATE
@@ -1079,6 +1087,24 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // 🔴 НОВАЯ ФУНКЦИЯ ДЛЯ ЭКСПОРТА (v10.0)
+  async function exportAllOperations() {
+    console.log('[mainStore] exportAllOperations: 🚀 Запрос всех операций для экспорта...');
+    try {
+      // Этот эндпоинт должен быть добавлен в server.js (v10.0)
+      const res = await axios.get(`${API_BASE_URL}/events/all-for-export`);
+      
+      // Важно: Бэкенд должен вернуть операции с 
+      // заполненными (populate) связями, как того ожидает ImportExportModal
+      console.log(`[mainStore] exportAllOperations: ✅ Получено ${res.data.length} операций.`);
+      return res.data;
+    } catch (e) {
+      if (e.response && e.response.status === 401) user.value = null;
+      console.error("❌ Ошибка при экспорте всех операций:", e);
+      throw e; // Пробрасываем ошибку, чтобы ImportExportModal мог ее поймать
+    }
+  }
+
   async function checkAuth() {
   try {
     isAuthLoading.value = true;
@@ -1154,6 +1180,7 @@ export const useMainStore = defineStore('mainStore', () => {
     displayOperationsFlat,
     
     importOperations,
+    exportAllOperations, // 🔴 ДОБАВЛЕНО (v10.0)
     
     checkAuth,
     logout,
