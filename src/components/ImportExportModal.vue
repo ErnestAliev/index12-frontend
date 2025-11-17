@@ -1,16 +1,15 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.2-MERGE-EXPORT-OWNER ---
- * * ВЕРСИЯ: 10.2 - Объединена колонка "Компании/Физлица" при ЭКСПОРТЕ
+ * * --- МЕТКА ВЕРСИИ: v10.3-EXPORT-ORDER-TIME ---
+ * * ВЕРСИЯ: 10.3 - Изменен порядок колонок и формат имени файла
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
  * 1. (UPDATE) formatDataForExport (Export):
- * - Удалены колонки "Компания" и "Физлицо".
- * - Добавлена ОДНА колонка "Компании/Физлица",
- * которая отображает либо компанию, либо физлицо.
- * 2. (NO CHANGE) Import: systemFields по-прежнему
- * различает 'company' и 'individual' для
- * корректного сопоставления при импорте.
+ * - Изменен порядок ключей в объектах, чтобы
+ * соответствовать (Тип, Сумма, Счет, ... Дата).
+ * 2. (UPDATE) triggerCsvDownload (Export):
+ * - Имя файла теперь включает ЧЧ:ММ:СС,
+ * например: index12_export_20251118_123045.csv
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -268,9 +267,8 @@ const isAllSelected = computed(() => {
 
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({});
-// 🟢 v10.1: Добавлено 'individual'.
-// (v10.2: НЕ ОБЪЕДИНЯЕМ 'company' и 'individual' здесь, 
-// т.к. это сломает логику импорта)
+// (v10.3: Порядок в systemFields не влияет на экспорт, 
+// только на выпадающий список при импорте. Оставляем как есть.)
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
@@ -284,7 +282,6 @@ const systemFields = [
 ];
 
 // --- Подтверждение (Review) ---
-// 🟢 v10.1: Добавлено 'individuals'
 const newEntities = ref({
   categories: [],
   projects: [],
@@ -474,7 +471,7 @@ function identifyNewEntities() {
     accounts: new Set(),
     companies: new Set(),
     contractors: new Set(),
-    individuals: new Set(), // 🟢 v10.1: Добавлено
+    individuals: new Set(), 
   };
 
   const entityFields = systemFields.filter(f => f.entity);
@@ -507,11 +504,10 @@ function identifyNewEntities() {
   newEntities.value.accounts = Array.from(newFound.accounts);
   newEntities.value.companies = Array.from(newFound.companies);
   newEntities.value.contractors = Array.from(newFound.contractors);
-  newEntities.value.individuals = Array.from(newFound.individuals); // 🟢 v10.1: Добавлено
+  newEntities.value.individuals = Array.from(newFound.individuals); 
 }
 
 function getEntityName(entityType) {
-  // 🟢 v10.1: Добавлено 'individuals'
   const names = {
     categories: 'Категории',
     projects: 'Проекты',
@@ -691,7 +687,7 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.2)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.3)
 // ----------------------------------------------
 
 async function handleExport() {
@@ -707,13 +703,14 @@ async function handleExport() {
       return;
     }
     
-    // 🟢 v10.2: Форматируем с объединенной колонкой
+    // 🟢 v10.3: Форматируем с новым порядком колонок
     const formattedData = formatDataForExport(operations);
     
     const csvString = Papa.unparse(formattedData, {
       header: true,
     });
     
+    // 🟢 v10.3: triggerCsvDownload теперь генерирует имя с ВРЕМЕНЕМ
     triggerCsvDownload(csvString);
     
   } catch (err) {
@@ -725,7 +722,7 @@ async function handleExport() {
 }
 
 /**
- * 🟢 v10.2: Обновлено для объединения 'Компании' и 'Физлица'
+ * 🟢 v10.3: Изменен порядок колонок
  */
 function formatDataForExport(operations) {
   const csvRows = [];
@@ -746,47 +743,51 @@ function formatDataForExport(operations) {
 
     if (op.type === 'income' || op.type === 'expense') {
       csvRows.push({
-        'Дата': dateStr,
+        // 1. Тип
         'Тип': op.type === 'income' ? 'Доход' : 'Расход',
+        // 2. Сумма
         'Сумма': op.amount,
-        'Категория': op.categoryId ? op.categoryId.name : '',
-        'Проект': op.projectId ? op.projectId.name : '',
+        // 3. Счет
         'Счет': op.accountId ? op.accountId.name : '',
-        // 🟢 v10.2: Объединенная колонка "Компании/Физлица"
+        // 4. Компании/Физлица
         'Компании/Физлица': op.companyId ? op.companyId.name : (op.individualId ? op.individualId.name : ''),
+        // 5. Контрагент
         'Контрагент': op.contractorId ? op.contractorId.name : '',
+        // 6. Проект
+        'Проект': op.projectId ? op.projectId.name : '',
+        // 7. Дата
+        'Дата': dateStr,
+        // 8. Категория (Оставили)
+        'Категория': op.categoryId ? op.categoryId.name : '',
       });
     } 
     else if (op.type === 'transfer' || op.isTransfer) {
       
-      // 🟢 v10.2: Логика для Контрагента (как и раньше)
       const fromOwnerName = op.fromCompanyId ? op.fromCompanyId.name : (op.fromIndividualId ? op.fromIndividualId.name : '');
       const toOwnerName = op.toCompanyId ? op.toCompanyId.name : (op.toIndividualId ? op.toIndividualId.name : '');
 
       // Строка 1: РАСХОД (Отправитель)
       const expenseRow = {
-        'Дата': dateStr,
         'Тип': 'Перевод',
         'Сумма': -Math.abs(op.amount),
-        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
-        'Проект': '', 
         'Счет': op.fromAccountId ? op.fromAccountId.name : '',
-        // 🟢 v10.2: Объединенная колонка "Компании/Физлица" (Отправитель)
         'Компании/Физлица': fromOwnerName,
         'Контрагент': toOwnerName, 
+        'Проект': '', 
+        'Дата': dateStr,
+        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
       };
       
       // Строка 2: ДОХОД (Получатель)
       const incomeRow = {
-        'Дата': dateStr,
         'Тип': 'Перевод',
         'Сумма': Math.abs(op.amount),
-        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
-        'Проект': '', 
         'Счет': op.toAccountId ? op.toAccountId.name : '',
-        // 🟢 v10.2: Объединенная колонка "Компании/Физлица" (Получатель)
         'Компании/Физлица': toOwnerName,
         'Контрагент': fromOwnerName,
+        'Проект': '',
+        'Дата': dateStr,
+        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
       };
 
       csvRows.push(expenseRow, incomeRow);
@@ -796,14 +797,24 @@ function formatDataForExport(operations) {
   return csvRows;
 }
 
+/**
+ * 🟢 v10.3: Имя файла теперь включает время
+ */
 function triggerCsvDownload(csvString) {
   const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
+  
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   
   link.setAttribute('href', url);
-  const formattedDate = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  link.setAttribute('download', `index12_export_${formattedDate}.csv`);
+  
+  // 🟢 v10.3: Генерируем имя файла с датой и временем
+  const d = new Date();
+  const pad = (num) => String(num).padStart(2, '0');
+  const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  
+  link.setAttribute('download', `index12_export_${timestamp}.csv`);
+  // (Старый код: const formattedDate = ... .split('T')[0]...)
   
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
