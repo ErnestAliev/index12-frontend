@@ -1,15 +1,15 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.3-EXPORT-ORDER-TIME ---
- * * ВЕРСИЯ: 10.3 - Изменен порядок колонок и формат имени файла
+ * * --- МЕТКА ВЕРСИИ: v10.4-TRANSFER-CATEGORY-NAMES ---
+ * * ВЕРСИЯ: 10.4 - Категории "Входящий"/"Исходящий" для переводов
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
  * 1. (UPDATE) formatDataForExport (Export):
- * - Изменен порядок ключей в объектах, чтобы
- * соответствовать (Тип, Сумма, Счет, ... Дата).
- * 2. (UPDATE) triggerCsvDownload (Export):
- * - Имя файла теперь включает ЧЧ:ММ:СС,
- * например: index12_export_20251118_123045.csv
+ * - Для строк "Перевод" (Тип)
+ * - Колонка "Категория" теперь "Исходящий" для
+ * строки списания (сумма < 0).
+ * - Колонка "Категория" теперь "Входящий" для
+ * строки зачисления (сумма > 0).
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -267,8 +267,6 @@ const isAllSelected = computed(() => {
 
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({});
-// (v10.3: Порядок в systemFields не влияет на экспорт, 
-// только на выпадающий список при импорте. Оставляем как есть.)
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
@@ -687,7 +685,7 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.3)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.4)
 // ----------------------------------------------
 
 async function handleExport() {
@@ -703,14 +701,13 @@ async function handleExport() {
       return;
     }
     
-    // 🟢 v10.3: Форматируем с новым порядком колонок
+    // 🟢 v10.4: Форматируем с категориями "Входящий"/"Исходящий"
     const formattedData = formatDataForExport(operations);
     
     const csvString = Papa.unparse(formattedData, {
       header: true,
     });
     
-    // 🟢 v10.3: triggerCsvDownload теперь генерирует имя с ВРЕМЕНЕМ
     triggerCsvDownload(csvString);
     
   } catch (err) {
@@ -722,7 +719,7 @@ async function handleExport() {
 }
 
 /**
- * 🟢 v10.3: Изменен порядок колонок
+ * 🟢 v10.4: Обновлена Категория для Переводов
  */
 function formatDataForExport(operations) {
   const csvRows = [];
@@ -743,21 +740,13 @@ function formatDataForExport(operations) {
 
     if (op.type === 'income' || op.type === 'expense') {
       csvRows.push({
-        // 1. Тип
         'Тип': op.type === 'income' ? 'Доход' : 'Расход',
-        // 2. Сумма
         'Сумма': op.amount,
-        // 3. Счет
         'Счет': op.accountId ? op.accountId.name : '',
-        // 4. Компании/Физлица
         'Компании/Физлица': op.companyId ? op.companyId.name : (op.individualId ? op.individualId.name : ''),
-        // 5. Контрагент
         'Контрагент': op.contractorId ? op.contractorId.name : '',
-        // 6. Проект
         'Проект': op.projectId ? op.projectId.name : '',
-        // 7. Дата
         'Дата': dateStr,
-        // 8. Категория (Оставили)
         'Категория': op.categoryId ? op.categoryId.name : '',
       });
     } 
@@ -775,7 +764,8 @@ function formatDataForExport(operations) {
         'Контрагент': toOwnerName, 
         'Проект': '', 
         'Дата': dateStr,
-        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
+        // 🟢 v10.4: Категория "Исходящий"
+        'Категория': 'Исходящий',
       };
       
       // Строка 2: ДОХОД (Получатель)
@@ -787,7 +777,8 @@ function formatDataForExport(operations) {
         'Контрагент': fromOwnerName,
         'Проект': '',
         'Дата': dateStr,
-        'Категория': op.categoryId ? op.categoryId.name : 'Перевод',
+        // 🟢 v10.4: Категория "Входящий"
+        'Категория': 'Входящий',
       };
 
       csvRows.push(expenseRow, incomeRow);
@@ -798,7 +789,7 @@ function formatDataForExport(operations) {
 }
 
 /**
- * 🟢 v10.3: Имя файла теперь включает время
+ * 🟢 v10.3: Имя файла включает время
  */
 function triggerCsvDownload(csvString) {
   const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
@@ -808,13 +799,11 @@ function triggerCsvDownload(csvString) {
   
   link.setAttribute('href', url);
   
-  // 🟢 v10.3: Генерируем имя файла с датой и временем
   const d = new Date();
   const pad = (num) => String(num).padStart(2, '0');
   const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   
   link.setAttribute('download', `index12_export_${timestamp}.csv`);
-  // (Старый код: const formattedDate = ... .split('T')[0]...)
   
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
