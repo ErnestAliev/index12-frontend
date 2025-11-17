@@ -453,7 +453,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
 }
 .edit-project, .edit-category { width: 150px; }
-.edit-balance { flex-shrink: 0; width: 100px; text-align: right; transform: translateY(5px); }
+.edit-balance { flex-shrink: 0; width: 100px; text-align: right; transform: translateY(-5px); }
 
 /* 🟢 СТИЛЬ-ФИКС (Шаг 11): Приведение к "закрытому" селекту */
 /* (Это класс для <select multiple>, который мы заменили на кнопку) */
@@ -572,5 +572,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
 
 
