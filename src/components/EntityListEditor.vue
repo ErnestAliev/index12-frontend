@@ -3,6 +3,19 @@ import { ref, onMounted } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP4 ---
+ * * ВЕРСИЯ: 8.2 - Добавление "Мои Физлица" (Шаг 4)
+ * ДАТА: 17.11.2025
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. `entityPath` теперь распознает 'физлиц' (individuals).
+ * 2. `onMounted` (для isAccountEditor) теперь загружает `individualId`.
+ * 3. `handleSave` (для isAccountEditor) сохраняет `individualId` и обеспечивает взаимоисключение (companyId ИЛИ individualId).
+ * 4. В <template> (для isAccountEditor) добавлен <select> для выбора Физлица.
+ * 5. Добавлены стили `.header-individual` и `.edit-individual`.
+ */
+
 const props = defineProps({
   title: { type: String, required: true },
   items: { type: Array, required: true }
@@ -20,6 +33,7 @@ else if (t.includes('компании')) entityPath = 'companies';
 else if (t.includes('контрагент')) entityPath = 'contractors';
 else if (t.includes('проекты')) entityPath = 'projects';
 else if (t.includes('категор')) entityPath = 'categories';
+else if (t.includes('физлиц')) entityPath = 'individuals'; // 🔴 ДОБАВЛЕНО
 
 const isAccountEditor = props.title === 'Редактировать счета';
 const isContractorEditor = props.title === 'Редактировать контрагентов';
@@ -40,7 +54,8 @@ onMounted(() => {
     if (isAccountEditor) {
         const balance = item.initialBalance || 0;
         const cId = (item.companyId && typeof item.companyId === 'object') ? item.companyId._id : item.companyId;
-        return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), companyId: cId || null }
+        const iId = (item.individualId && typeof item.individualId === 'object') ? item.individualId._id : item.individualId; // 🔴 ДОБАВЛЕНО
+        return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), companyId: cId || null, individualId: iId || null } // 🔴 ДОБАВЛЕНО individualId
     }
     if (isContractorEditor) {
         const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
@@ -54,7 +69,21 @@ onMounted(() => {
 const handleSave = () => {
   const itemsToSave = localItems.value.map((item, index) => {
     const data = { _id: item._id, name: item.name, order: index };
-    if (isAccountEditor) { data.initialBalance = item.initialBalance || 0; data.companyId = item.companyId || null; }
+    if (isAccountEditor) { 
+        data.initialBalance = item.initialBalance || 0; 
+        
+        // 🔴 ДОБАВЛЕНО: Логика взаимоисключения
+        if (item.companyId) {
+            data.companyId = item.companyId;
+            data.individualId = null;
+        } else if (item.individualId) {
+            data.companyId = null;
+            data.individualId = item.individualId;
+        } else {
+            data.companyId = null;
+            data.individualId = null;
+        }
+    }
     if (isContractorEditor) { data.defaultProjectId = item.defaultProjectId || null; data.defaultCategoryId = item.defaultCategoryId || null; }
     return data;
   });
@@ -98,7 +127,7 @@ const cancelDelete = () => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     
-    <div class="popup-content" :class="{ 'wide': isContractorEditor }">
+    <div class="popup-content" :class="{ 'wide': isContractorEditor || isAccountEditor }"> <!-- 🔴 ИЗМЕНЕНО: Сделал шире для Счетов -->
       <h3>{{ title }}</h3>
       <p class="editor-hint">Перетащите для сортировки. Нажмите на корзину для удаления.</p>
       
@@ -106,6 +135,7 @@ const cancelDelete = () => {
       <div v-if="isAccountEditor" class="editor-header account-header">
         <span class="header-name">Название счета</span>
         <span class="header-company">Компания</span>
+        <span class="header-individual">Физлицо</span> <!-- 🔴 ДОБАВЛЕНО -->
         <span class="header-balance">Нач. баланс</span>
         <span class="header-trash"></span> 
       </div>
@@ -134,10 +164,17 @@ const cancelDelete = () => {
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
-                <select v-model="item.companyId" class="edit-input edit-company">
+                <select v-model="item.companyId" class="edit-input edit-company" @change="item.individualId = null"> <!-- 🔴 ДОБАВЛЕНО @change -->
                   <option :value="null">Без компании</option>
                   <option v-for="comp in mainStore.companies" :key="comp._id" :value="comp._id">{{ comp.name }}</option>
                 </select>
+                
+                <!-- 🔴 ДОБАВЛЕНО: Выбор Физлица -->
+                <select v-model="item.individualId" class="edit-input edit-individual" @change="item.companyId = null">
+                  <option :value="null">Без физлица</option>
+                  <option v-for="ind in mainStore.individuals" :key="ind._id" :value="ind._id">{{ ind.name }}</option>
+                </select>
+                
                 <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" class="edit-input edit-balance" placeholder="0" />
               </template>
               
@@ -226,7 +263,7 @@ const cancelDelete = () => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem;
   transition: max-width 0.2s ease;
 }
-.popup-content.wide { max-width: 680px; }
+.popup-content.wide { max-width: 800px; } /* 🔴 ИЗМЕНЕНО: Увеличил ширину (было 680px) */
 
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
@@ -244,6 +281,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 .account-header .header-company { flex-shrink: 0; width: 150px; }
+.account-header .header-individual { flex-shrink: 0; width: 150px; } /* 🔴 ДОБАВЛЕНО */
 .account-header .header-balance { flex-shrink: 0; width: 120px; text-align: right; padding-right: 14px; }
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
@@ -264,7 +302,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 
-.edit-company, .edit-project, .edit-category {
+.edit-company, .edit-project, .edit-category, .edit-individual { /* 🔴 ДОБАВЛЕНО .edit-individual */
   flex-shrink: 0; width: 150px;
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
@@ -296,7 +334,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .ghost { opacity: 0.5; background: #c0c0c0; }
 
-/* ВНУТРЕННИЙ МОДАЛ (Overlay внутри Overlay) */
+/* ВСТРОЕННЫЙ МОДАЛ (Overlay внутри Overlay) */
 .inner-overlay {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.3);
@@ -349,7 +387,3 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
-
-
-
-
