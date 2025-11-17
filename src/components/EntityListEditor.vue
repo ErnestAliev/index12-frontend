@@ -14,7 +14,7 @@ import { useMainStore } from '@/stores/mainStore';
  * 2. (STYLE-FIX) В блок <style> внесено ЕДИНСТВЕННОЕ изменение:
  * `.edit-account-select` приведен к "закрытому" виду
  * (как `.edit-project`), как и просили.
- */
+*/
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -63,7 +63,7 @@ onMounted(() => {
     if (isAccountEditor) {
         const balance = item.initialBalance || 0;
         return { 
-    _         ...item,
+            ...item,
             initialBalance: balance, 
             initialBalanceFormatted: formatNumber(balance)
         }
@@ -278,7 +278,7 @@ const cancelDelete = () => {
                 </select>
                 <select v-model="item.defaultCategoryId" class="edit-input edit-category">
                   <option :value="null">Без категории</option>
-                  <option v-for="c in mainStore.categories" :key="c._id" :value="c._id">{{ c.name }}</option>
+                                    <option v-for="c in mainStore.categories" :key="c._id" :value="c._id">{{ c.name }}</option>
                 </select>
               </template>
 
@@ -313,7 +313,7 @@ const cancelDelete = () => {
                 </svg>
               </button>
             </div>
-          </template>
+  _       </template>
         </draggable>
       </div>
           
@@ -331,7 +331,7 @@ const cancelDelete = () => {
           <div class="progress-container">
             <div class="progress-bar"></div>
           </div>
-        </div>
+    _   </div>
 
         <div v-else>
           <h4>Удаление сущности</h4>
