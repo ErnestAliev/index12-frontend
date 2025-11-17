@@ -21,7 +21,7 @@
     "vue": "^3.5.22",
     "vue-chartjs": "^5.3.2",
     "vue-router": "^4.6.3",
-    "vuedraggable": "^4.1.0"
+    "vue.draggable.next": "^2.24.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
