@@ -200,7 +200,7 @@ onMounted(() => {
 // =================================================================
 const _getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 60 * 1000);
   const oneDay = 1000 * 60 * 60 * 24;
   return Math.floor(diff / oneDay);
 };
@@ -536,7 +536,7 @@ const handleCopyClick = () => {
     <div class="popup-content" :class="popupTheme">
       <h3>{{ title }}</h3>
 
-      <label>Сумма, Т</label>
+      <label>Сумма</label>
       <input
         type="text"
         inputmode="decimal"
@@ -548,7 +548,7 @@ const handleCopyClick = () => {
       />
 
       <template v-if="props.type !== 'transfer'">
-        <label>{{ props.type === 'income' ? 'На счет' : 'Со счета' }} *</label>
+        <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
         <select
           v-if="!isCreatingAccount"
           v-model="selectedAccountId"
@@ -571,7 +571,7 @@ const handleCopyClick = () => {
           <button @click="cancelCreateAccount" class="btn-inline-cancel">X</button>
         </div>
       
-        <label>Компания *</label>
+        <label>Моей компании *</label>
         <select
           v-if="!isCreatingCompany"
           v-model="selectedCompanyId"
@@ -589,7 +589,7 @@ const handleCopyClick = () => {
           <button @click="cancelCreateCompany" class="btn-inline-cancel">X</button>
         </div>
 
-        <label>Контрагент *</label>
+        <label>{{ props.type === 'income' ? 'От контрагента' : 'Контрагенту' }} *</label>
         <select
           v-if="!isCreatingContractor"
           v-model="selectedContractorId"
@@ -613,7 +613,7 @@ const handleCopyClick = () => {
           <button @click="cancelCreateContractor" class="btn-inline-cancel">X</button>
         </div>
 
-        <label>Проект</label>
+        <label>{{ props.type === 'income' ? 'Из проекта' : 'В проект' }}</label>
         <select
           v-if="!isCreatingProject"
           v-model="selectedProjectId"
@@ -631,7 +631,7 @@ const handleCopyClick = () => {
           <button @click="cancelCreateProject" class="btn-inline-cancel">X</button>
         </div>
 
-        <label>Категория</label>
+        <label>По категории</label>
         <select
           v-if="!isCreatingCategory"
           v-model="selectedCategoryId"
