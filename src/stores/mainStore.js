@@ -1,14 +1,14 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.1 - Фикс списка виджетов ---
- * * ВЕРСИЯ: 11.1 - Исправление allWidgets и layout по умолчанию
+ * * --- МЕТКА ВЕРСИИ: v11.2 - Фикс прогноза Категорий ---
+ * * ВЕРСИЯ: 11.2 - Исправление futureCategoryBalances
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) `allWidgets` (список для замены) теперь включает
- * `staticWidgets` + только категорию "Перевод" (если есть).
- * Обычные категории (типа "Аренда") удалены из списка.
- * 2. (FIX) `dashboardLayout` по умолчанию теперь содержит 6 виджетов.
- * "Физлица" и "Категории" стали "добавочными" (add-on).
+ * 1. (FIX) `futureCategoryBalances` (computed) переписан.
+ * Раньше он возвращал { balance: (текущий), futureBalance: (будущий) }.
+ * Теперь он (как и все остальные виджеты) возвращает:
+ * { balance: (будущий) }, что исправляет работу
+ * переключателя прогноза в TheHeader.vue.
  */
 
 import { defineStore } from 'pinia';
@@ -34,7 +34,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.1 (Фикс списка виджетов) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v11.2 (Фикс прогноза Категорий) ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -471,26 +471,35 @@ export const useMainStore = defineStore('mainStore', () => {
       .map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
+  // 🟢 FIX (v11.2): Логика futureCategoryBalances
+  // приведена в соответствие с futureProjectBalances
   const futureCategoryBalances = computed(() => {
+    // 1. Начинаем с текущих балансов
     const bal = {};
     const currentBalances = currentCategoryBalances.value;
     for (const cat of currentBalances) { 
       bal[cat._id] = cat.balance || 0; 
     }
     
+    // 2. Прибавляем будущие операции
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
+      // Игнорируем операции "Перевод" или др. категории,
+      // которых нет в `bal`
       if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
     
-    return currentBalances.map(c => ({ 
-      ...c, 
-      balance: c.balance || 0, 
-      futureBalance: bal[c._id] || 0 
-    }));
+    // 3. Собираем массив, как и другие виджеты:
+    // `balance` теперь содержит ИТОГОВЫЙ (будущий) баланс.
+    return categories.value
+      .filter(c => c.name.toLowerCase() !== 'перевод')
+      .map(c => ({ 
+        ...c, 
+        balance: bal[c._id] || 0 
+      }));
   });
 
 
