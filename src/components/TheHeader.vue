@@ -3,16 +3,17 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.1-HEADER-DELETE-FIX ---
- * * ВЕРСИЯ: 8.1 - Фиксы удаления категорий и иконок
- * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v8.2-INDIVIDUALS-STEP3 ---
+ * * ВЕРСИЯ: 8.2 - Добавление "Мои Физлица" (Шаг 3)
+ * ДАТА: 17.11.2025
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлена обработка @delete в EntityPopup для категорий.
- * 2. Исправлена логика openRenamePopup (теперь принимает аргумент canDelete).
+ * 1. Добавлен `computed` `mergedIndividualBalances` (по аналогии с компаниями).
+ * 2. В <template> добавлен блок `<HeaderBalanceCard>` для `widgetKey === 'individuals'`.
+ * 3. Подключены `openAddPopup` и `openEditPopup` к `mainStore.addIndividual` и `mainStore.individuals`.
  */
 
-console.log('--- TheHeader.vue v8.1-HEADER-DELETE-FIX ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v8.2-INDIVIDUALS-STEP3 (с Физлицами) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -62,6 +63,8 @@ const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAcco
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
 const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
+// 🔴 ДОБАВЛЕНО: Computed для балансов Физлиц
+const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
 
 /* ======================= Попапы (Entity / List) ======================= */
 const isEntityPopupVisible = ref(false);
@@ -113,6 +116,8 @@ const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, en
           const updatedItem = { ...entity, name: newName };
           await mainStore.batchUpdateEntities('categories', [updatedItem]);
       }
+      // 🔴 ПРИМЕЧАНИЕ: 'individuals' (Физлица) редактируются через openEditPopup,
+      // так же, как 'companies' и 'projects'.
   };
 
   // Логика удаления (только если canDelete=true)
@@ -225,6 +230,18 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
         @add="openAddPopup('Новая компания', mainStore.addCompany)"
         @edit="openEditPopup('Редактировать компании', mainStore.currentCompanyBalances, 'companies')"
+      />
+
+      <!-- 🔴 ДОБАВЛЕН НОВЫЙ БЛОК ДЛЯ ФИЗЛИЦ -->
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'individuals'"
+        title="Мои Физлица"
+        :items="mergedIndividualBalances" 
+        emptyText="...физлиц нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="index"
+        @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
+        @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
       />
 
       <HeaderBalanceCard
