@@ -241,7 +241,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .editor-hint { font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 1rem; }
 
-.editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 32px }
+.editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 .account-header .header-company { flex-shrink: 0; width: 150px; }
 .account-header .header-balance { flex-shrink: 0; width: 120px; text-align: right; padding-right: 14px; }
@@ -349,6 +349,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   100% { left: 100%; width: 50%; }
 }
 </style>
+
 
 
 
