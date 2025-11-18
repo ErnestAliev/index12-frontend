@@ -3,24 +3,22 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v15.0 - SYSTEM WIDGET FIX ---
- * * ВЕРСИЯ: 15.0 - Восстановление "Переводов" и защита системных виджетов
+ * * --- МЕТКА ВЕРСИИ: v16.1 - USE VISIBLE CATEGORIES ---
+ * * ВЕРСИЯ: 16.1 - Использование visibleCategories в редакторе
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Раскомментирован `HeaderCategoryCard`, чтобы вернуть виджет "Переводы".
- * 2. (FIX) В `onCategoryEdit` добавлена проверка: системную категорию "Перевод"
- * переименовывать нельзя (игнорируем клик).
+ * 1. (FIX) В `@edit` для виджета 'categories' теперь передается `mainStore.visibleCategories`.
+ * Это гарантирует, что категория "Перевод" НЕ появится в списке для редактирования/удаления
+ * в общем виджете "Категории".
  */
 
-console.log('--- TheHeader.vue v15.0 (System Widget Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v16.1 (Use Visible Categories) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
-// 🟢 1. ВОССТАНОВЛЕН ИМПОРТ (обязательно для виджета "Перевод")
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
-
 import TransferPopup from '@/components/TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
@@ -160,13 +158,9 @@ const onCategoryEdit = (widgetKey) => {
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
-        // 🟢 2. ЗАЩИТА: Не даем переименовывать системный виджет "Перевод"
         const lowerName = category.name.toLowerCase();
-        if (lowerName === 'перевод' || lowerName === 'transfer') {
-            console.log('Попытка переименовать системный виджет "Перевод" заблокирована.');
-            return;
-        }
-        openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
+        const isTransfer = (lowerName === 'перевод' || lowerName === 'transfer');
+        openRenamePopup(`Категория: ${category.name}`, category, null, !isTransfer, 'categories');
     }
 };
 
@@ -242,6 +236,7 @@ const handleTransferComplete = async (eventData) => {
         @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
       />
       
+      <!-- 🟢 FIX: Используем visibleCategories -->
       <HeaderBalanceCard
         v-else-if="widgetKey === 'categories'"
         title="Категории"
@@ -250,7 +245,7 @@ const handleTransferComplete = async (eventData) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
         @add="openAddPopup('Новая категория', mainStore.addCategory)"
-        @edit="openEditPopup('Редактировать категории', mainStore.categories, 'categories')"
+        @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
       />
 
       <HeaderTotalCard
@@ -263,7 +258,6 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
       />
 
-      <!-- 🟢 ИСПОЛЬЗУЕМСЯ ДЛЯ ВИДЖЕТА ПЕРЕВОДОВ -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
