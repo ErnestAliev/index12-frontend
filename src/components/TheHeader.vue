@@ -3,19 +3,19 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v17.0 - TRANSFER LIST EDITOR ---
- * * ВЕРСИЯ: 17.0 - Внедрение редактора списка переводов
+ * * --- МЕТКА ВЕРСИИ: v18.0 - INCOME/EXPENSE WIDGETS SUPPORT ---
+ * * ВЕРСИЯ: 18.0 - Поддержка виджетов "Мои доходы" и "Мои расходы"
  * * ДАТА: 2025-11-19
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (NEW) Добавлен `TransferListEditor.vue` для управления операциями перевода.
- * 2. (LOGIC) В `onCategoryEdit` теперь проверка: если это виджет "Перевод",
- * открывается `TransferListEditor` (список операций), а не переименование категории.
- * Это соответствует требованию: "Я нажимаю редактировать переводы... нахожу нужный перевод... и удаляю его".
- * 3. (FIX) Виджет "Категории" теперь использует `visibleCategories`, чтобы исключить "Перевод" из списка.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) Импортирован `OperationListEditor.vue`.
+ * 2. (LOGIC) `onCategoryAdd` теперь обрабатывает `incomeList` и `expenseList`, открывая `OperationPopup`.
+ * 3. (LOGIC) `onCategoryEdit` теперь обрабатывает `incomeList` и `expenseList`, открывая `OperationListEditor`.
+ * 4. (TEMPLATE) Добавлен рендеринг `HeaderCategoryCard` для новых ключей.
+ * 5. (TEMPLATE) Добавлен компонент `<OperationListEditor>`.
  */
 
-console.log('--- TheHeader.vue v17.0 (Transfer List Editor) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v18.0 (Income/Expense Widgets) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -24,12 +24,25 @@ import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
-// 🟢 NEW: Новый компонент редактора списка переводов
 import TransferListEditor from '@/components/TransferListEditor.vue';
+// 🟢 NEW: Редактор списка операций
+import OperationListEditor from '@/components/OperationListEditor.vue';
+import OperationPopup from '@/components/OperationPopup.vue'; // Нужно для открытия из onCategoryAdd
 
 const mainStore = useMainStore();
+
+// Состояния попапов
 const isTransferPopupVisible = ref(false);
-const isTransferEditorVisible = ref(false); // 🟢 Состояние для нового окна
+const isTransferEditorVisible = ref(false);
+
+// 🟢 NEW: Состояния для редактора операций
+const isOperationListEditorVisible = ref(false);
+const operationListEditorType = ref('income'); // 'income' | 'expense'
+const operationListEditorTitle = ref('');
+
+// Для OperationPopup (используется, когда жмем "+" на виджете)
+const isOperationPopupVisible = ref(false);
+const operationPopupType = ref('income');
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
@@ -149,10 +162,23 @@ const onEntityListSave = async (updatedItems) => {
   isListEditorVisible.value = false;
 };
 
-/* ======================= Обработчики Категорий ======================= */
+/* ======================= Обработчики Виджетов ======================= */
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 const onCategoryAdd = (widgetKey, index) => {
+    // 1. Мои Доходы / Расходы
+    if (widgetKey === 'incomeList') {
+        operationPopupType.value = 'income';
+        isOperationPopupVisible.value = true;
+        return;
+    }
+    if (widgetKey === 'expenseList') {
+        operationPopupType.value = 'expense';
+        isOperationPopupVisible.value = true;
+        return;
+    }
+
+    // 2. Системный Перевод
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
         isTransferPopupVisible.value = true;
@@ -160,6 +186,22 @@ const onCategoryAdd = (widgetKey, index) => {
 };
 
 const onCategoryEdit = (widgetKey) => {
+    // 1. Мои Доходы
+    if (widgetKey === 'incomeList') {
+        operationListEditorTitle.value = 'Редактировать доходы';
+        operationListEditorType.value = 'income';
+        isOperationListEditorVisible.value = true;
+        return;
+    }
+    // 2. Мои Расходы
+    if (widgetKey === 'expenseList') {
+        operationListEditorTitle.value = 'Редактировать расходы';
+        operationListEditorType.value = 'expense';
+        isOperationListEditorVisible.value = true;
+        return;
+    }
+
+    // 3. Категории (вкл. Перевод)
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
@@ -167,10 +209,8 @@ const onCategoryEdit = (widgetKey) => {
         const isTransfer = (lowerName === 'перевод' || lowerName === 'transfer');
         
         if (isTransfer) {
-            // 🟢 FIX: Для перевода открываем специальный редактор списка
             isTransferEditorVisible.value = true;
         } else {
-            // Для остальных категорий - переименование
             openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
         }
     }
@@ -179,6 +219,11 @@ const onCategoryEdit = (widgetKey) => {
 const handleTransferComplete = async (eventData) => {
     if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
     isTransferPopupVisible.value = false;
+};
+
+const handleOperationAdded = async (newOp) => {
+    if (newOp?.dateKey) await mainStore.addOperation(newOp);
+    isOperationPopupVisible.value = false;
 };
 </script>
 
@@ -248,7 +293,6 @@ const handleTransferComplete = async (eventData) => {
         @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
       />
       
-      <!-- 🟢 FIX: Используем visibleCategories -->
       <HeaderBalanceCard
         v-else-if="widgetKey === 'categories'"
         title="Категории"
@@ -270,8 +314,9 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
       />
 
+      <!-- 🟢 FIX: Теперь здесь обрабатываются и cat_..., и incomeList/expenseList -->
       <HeaderCategoryCard
-        v-else-if="widgetKey.startsWith('cat_')"
+        v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
         :widgetIndex="index"
@@ -305,10 +350,27 @@ const handleTransferComplete = async (eventData) => {
       @transfer-complete="handleTransferComplete"
     />
     
-  <!-- 🟢 NEW: Попап списка переводов -->
   <TransferListEditor
     v-if="isTransferEditorVisible"
     @close="isTransferEditorVisible = false"
+  />
+
+  <!-- 🟢 NEW: Попап списка операций -->
+  <OperationListEditor
+    v-if="isOperationListEditorVisible"
+    :title="operationListEditorTitle"
+    :type="operationListEditorType"
+    @close="isOperationListEditorVisible = false"
+  />
+
+  <!-- 🟢 NEW: Попап добавления операции (для кнопок + в виджетах) -->
+  <OperationPopup
+    v-if="isOperationPopupVisible"
+    :type="operationPopupType"
+    :date="new Date()"
+    :cellIndex="0"
+    @close="isOperationPopupVisible = false"
+    @operation-added="handleOperationAdded"
   />
 </template>
 
