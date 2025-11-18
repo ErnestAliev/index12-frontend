@@ -1,14 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.2 - Фикс прогноза Категорий ---
- * * ВЕРСИЯ: 11.2 - Исправление futureCategoryBalances
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v11.4 - HIDE TRANSFER CAT ---
+ * * ВЕРСИЯ: 11.4 - Исключение категории "Перевод" из списков
+ * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) `futureCategoryBalances` (computed) переписан.
- * Раньше он возвращал { balance: (текущий), futureBalance: (будущий) }.
- * Теперь он (как и все остальные виджеты) возвращает:
- * { balance: (будущий) }, что исправляет работу
- * переключателя прогноза в TheHeader.vue.
+ * 1. (FIX) В `currentCategoryBalances` и `futureCategoryBalances` добавлена
+ * проверка `_isTransferCategory(c)`, чтобы гарантированно исключить "Перевод"
+ * из виджета "Категории".
+ * 2. (HELPER) Добавлен метод `_isTransferCategory` для надежной проверки.
  */
 
 import { defineStore } from 'pinia';
@@ -34,7 +33,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.2 (Фикс прогноза Категорий) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v11.4 (Hide Transfer Cat) ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -68,23 +67,23 @@ export const useMainStore = defineStore('mainStore', () => {
   // 2. WATCHERS & PERSISTENCE
   // =================================================================
   
-  // 🟢 FIX (v11.1): allWidgets теперь включает
-  // staticWidgets + только "Перевод" (cat_...)
+  // Хелпер для определения системной категории
+  const _isTransferCategory = (cat) => {
+    if (!cat) return false;
+    const name = cat.name.toLowerCase().trim();
+    return name === 'перевод' || name === 'transfer';
+  };
+
   const allWidgets = computed(() => {
-    // Ищем специальный виджет "Перевод"
-    const transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
+    const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
     if (transferCategory) {
        cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
     }
-    
-    // "АРЕНДА" и другие сюда не попадут
      return [...staticWidgets.value, ...cats];
   });
 
   const savedLayout = localStorage.getItem('dashboardLayout');
-  // 🟢 FIX (v11.1): Layout по умолчанию 6 виджетов.
-  // "Физлица" и "Категории" доступны в allWidgets для выбора.
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','futureTotal']);
   
   watch(dashboardLayout, (newLayout) => {
@@ -208,7 +207,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // --- Future Ops ---
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
     const currentYearVal = currentYear.value;
@@ -310,24 +308,14 @@ export const useMainStore = defineStore('mainStore', () => {
     const amt = Math.abs(Number(op?.amount) || 0);
     const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
     const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
-    
-    if (fromId) { 
-        if (bal[fromId] === undefined) bal[fromId] = 0; 
-        bal[fromId] -= amt; 
-    }
-    if (toId) { 
-        if (bal[toId] === undefined) bal[toId] = 0; 
-        bal[toId] += amt; 
-    }
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
   };
 
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToCompanyBalances(bal, op);
-         continue;
-      }
+      if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -342,10 +330,7 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
     
     for (const op of futureOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToCompanyBalances(bal, op);
-         continue;
-      }
+      if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -358,15 +343,8 @@ export const useMainStore = defineStore('mainStore', () => {
     const amt = Math.abs(Number(op?.amount) || 0);
     const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
     const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
-    
-    if (fromId) { 
-        if (bal[fromId] === undefined) bal[fromId] = 0; 
-        bal[fromId] -= amt; 
-    }
-    if (toId) { 
-        if (bal[toId] === undefined) bal[toId] = 0; 
-        bal[toId] += amt; 
-    }
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
   };
 
   const currentContractorBalances = computed(() => {
@@ -424,10 +402,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const currentIndividualBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToIndividualBalances(bal, op);
-         continue; 
-      }
+      if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
       if (!op?.individualId?._id) continue;
       const id = op.individualId._id;
       if (!bal[id]) bal[id] = 0;
@@ -442,10 +417,7 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
     
     for (const op of futureOps.value) {
-      if (isTransfer(op)) {
-         _applyTransferToIndividualBalances(bal, op);
-         continue; 
-      }
+      if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
       if (!op?.individualId?._id) continue;
       const id = op.individualId._id;
       if (!bal[id]) bal[id] = 0;
@@ -454,6 +426,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
+  // 🟢 FIX: Исключаем "Перевод" из списков категорий
   const currentCategoryBalances = computed(() => {
     const bal = {};
     for (const c of categories.value) bal[c._id] = 0;
@@ -467,42 +440,34 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     
     return categories.value
-      .filter(c => c.name.toLowerCase() !== 'перевод')
+      .filter(c => !_isTransferCategory(c)) // 🟢 Используем хелпер
       .map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
-  // 🟢 FIX (v11.2): Логика futureCategoryBalances
-  // приведена в соответствие с futureProjectBalances
   const futureCategoryBalances = computed(() => {
-    // 1. Начинаем с текущих балансов
     const bal = {};
     const currentBalances = currentCategoryBalances.value;
     for (const cat of currentBalances) { 
       bal[cat._id] = cat.balance || 0; 
     }
     
-    // 2. Прибавляем будущие операции
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
-      // Игнорируем операции "Перевод" или др. категории,
-      // которых нет в `bal`
       if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
     
-    // 3. Собираем массив, как и другие виджеты:
-    // `balance` теперь содержит ИТОГОВЫЙ (будущий) баланс.
     return categories.value
-      .filter(c => c.name.toLowerCase() !== 'перевод')
+      .filter(c => !_isTransferCategory(c)) // 🟢 Используем хелпер
       .map(c => ({ 
         ...c, 
         balance: bal[c._id] || 0 
       }));
   });
 
-
+  // Остальной код без изменений...
   const currentTotalBalance = computed(() => {
     const opsTotal = currentOps.value.reduce((s,op)=> {
       if (isTransfer(op)) return s;
@@ -517,13 +482,9 @@ export const useMainStore = defineStore('mainStore', () => {
     let endDate;
     if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
     else { endDate = new Date(currentYearVal, 0, baseToday); }
-    
     const todayDate = new Date(currentYearVal, 0, baseToday);
-    
     if (endDate <= todayDate) { return currentTotalBalance.value || 0; }
-    
     let total = currentTotalBalance.value || 0;
-    
     for (const op of futureOps.value) { 
        if (!isTransfer(op)) total += (op?.amount || 0); 
     }
@@ -563,15 +524,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return info.total;
   }
 
-  // =================================================================
-  // 6. ACTIONS
-  // =================================================================
-  
   async function loadCalculationData(mode, baseDate = new Date()) {
     const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
     const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
     const yearStartDate = new Date(currentYear.value, 0, 1);
-    
     await fetchCalculationRange(yearStartDate, todayDate);
     await fetchCalculationRange(viewStartDate, viewEndDate);
     await updateProjectionFromCalculationData(mode, baseDate);
@@ -581,7 +537,6 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const promises = [];
       const dateKeysToFetch = [];
-      
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!calculationCache.value[dateKey]) {
@@ -589,7 +544,6 @@ export const useMainStore = defineStore('mainStore', () => {
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
-      
       if (promises.length > 0) {
         const responses = await Promise.all(promises);
         const tempCache = {};
@@ -603,7 +557,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
           tempCache[dateKey] = processedOps;
         }
-        
         calculationCache.value = { ...calculationCache.value, ...tempCache };
         displayCache.value = { ...displayCache.value, ...tempCache }; 
       }
@@ -618,13 +571,11 @@ export const useMainStore = defineStore('mainStore', () => {
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     let futureIncomeSum = 0;
     let futureExpenseSum = 0;
-    
     const opsInRange = allOperationsFlat.value.filter(op => {
         if (!op?.dateKey) return false;
         const opDate = _parseDateKey(op.dateKey);
         return opDate > base && opDate <= endDate;
     });
-
     for (const op of opsInRange) { 
         if (!isTransfer(op)) {
             if (op.type === 'income') futureIncomeSum += op.amount || 0;
@@ -685,9 +636,7 @@ export const useMainStore = defineStore('mainStore', () => {
     await fetchOperationsRange(startDate, endDate); 
     await updateProjectionFromCalculationData(mode, today); 
   }
-  function updateFutureProjection({ mode, totalDays, today = new Date() }) {
-     updateFutureTotals();
-  }
+  function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
   function updateFutureTotals() {
     const _ = futureTotalBalance.value;
     const __ = futureAccountBalances.value;
@@ -731,10 +680,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (e.response && e.response.status === 401) user.value = null;
     }
   }
-
-  function getOperationsForDay(dateKey) {
-    return displayCache.value[dateKey] || [];
-  }
+  function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
@@ -817,27 +763,20 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureTotals();
   }
 
-  // --- SWAP & MOVE LOGIC ---
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
-    
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
-
     const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
-
     if (oldDateKey === newDateKey) {
-       // SWAP WITHIN DAY
        const ops = [...(displayCache.value[oldDateKey] || [])];
        const sourceOp = ops.find(o => o._id === operation._id);
        const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
-       
        if (sourceOp) {
            if (targetOp) {
                const originalSourceIndex = sourceOp.cellIndex;
                sourceOp.cellIndex = targetIndex;
                targetOp.cellIndex = originalSourceIndex;
-               
                _syncCaches(oldDateKey, ops);
                Promise.all([
                   axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
@@ -850,23 +789,18 @@ export const useMainStore = defineStore('mainStore', () => {
                  .catch(e => refreshDay(oldDateKey));
            }
        }
-
     } else {
-       // MOVE BETWEEN DAYS (Collision -> Find Free)
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
        const sourceOpData = oldOps.find(o => o._id === operation._id);
        oldOps = oldOps.filter(o => o._id !== operation._id);
        _syncCaches(oldDateKey, oldOps);
-       
        let newOps = [...(displayCache.value[newDateKey] || [])];
        const occupant = newOps.find(o => o.cellIndex === targetIndex);
-       
        let finalIndex = targetIndex;
        if (occupant) {
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
-       
        const moved = { 
           ...sourceOpData, 
           dateKey: newDateKey, 
@@ -875,20 +809,17 @@ export const useMainStore = defineStore('mainStore', () => {
        };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
-       
        axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
           dateKey: newDateKey, 
           cellIndex: finalIndex,
           date: moved.date 
        }).catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
     }
-
     if (projection.value.mode) {
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     }
   }
 
-  // --- CRUD ---
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
   async function createTransfer(transferData) {
@@ -897,14 +828,12 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateKey = _getDateKey(finalDate);
       const cellIndex = await getFirstFreeCellIndex(dateKey);
       const transferCategory = await _getOrCreateTransferCategory();
-      
       const response = await axios.post(`${API_BASE_URL}/transfers`, {
         ...transferData,
         dateKey: dateKey, 
         cellIndex: cellIndex,
         categoryId: transferData.categoryId || transferCategory
       });
-      
       await refreshDay(dateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
@@ -919,13 +848,11 @@ export const useMainStore = defineStore('mainStore', () => {
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
       let newCellIndex;
-      
       if (oldOp && oldOp.dateKey === newDateKey) {
         newCellIndex = oldOp.cellIndex || 0;
       } else {
         newCellIndex = await getFirstFreeCellIndex(newDateKey);
       }
-      
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
         ...transferData,
         dateKey: newDateKey, 
@@ -933,11 +860,9 @@ export const useMainStore = defineStore('mainStore', () => {
         type: 'transfer',
         isTransfer: true
       });
-      
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      
       return response.data;
     } catch (error) {
       throw error;
@@ -955,17 +880,14 @@ export const useMainStore = defineStore('mainStore', () => {
       } else {
         newCellIndex = await getFirstFreeCellIndex(newDateKey);
       }
-      
       const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
         ...opData,
         dateKey: newDateKey,
         cellIndex: newCellIndex
       });
-      
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-
       return response.data;
     } catch (error) {
       throw error;
@@ -975,11 +897,9 @@ export const useMainStore = defineStore('mainStore', () => {
   async function deleteOperation(operation){
     const dateKey = operation.dateKey;
     if (!dateKey) return;
-    
     const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
     _syncCaches(dateKey, ops);
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-
     try {
       if (isTransfer(operation) && operation._id2) {
           await Promise.all([
@@ -1006,19 +926,13 @@ export const useMainStore = defineStore('mainStore', () => {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, {
               params: { deleteOperations }
           });
-          
           if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
           if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
           if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
           if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
-
-          if (deleteOperations) {
-              await forceRefreshAll();
-          } else {
-              await forceRefreshAll(); 
-          }
+          if (deleteOperations) { await forceRefreshAll(); } else { await forceRefreshAll(); }
       } catch (error) {
           console.error('Ошибка удаления сущности:', error);
           throw error; 
@@ -1030,12 +944,10 @@ export const useMainStore = defineStore('mainStore', () => {
     categories.value.push(res.data); 
     return res.data;
   }
-
   async function addAccount(data) {
     let payload;
-    if (typeof data === 'string') { 
-      payload = { name: data, initialBalance: 0 }; 
-    } else { 
+    if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
+    else { 
       payload = { 
         name: data.name, 
         initialBalance: data.initialBalance || 0, 
@@ -1144,18 +1056,14 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function exportAllOperations() {
-    console.log('[mainStore] exportAllOperations: 🚀 Запрос всех операций для экспорта...');
     try {
       const res = await axios.get(`${API_BASE_URL}/events/all-for-export`);
-      console.log(`[mainStore] exportAllOperations: ✅ Получено ${res.data.length} операций.`);
-      
       return {
         operations: res.data, 
         initialBalance: totalInitialBalance.value || 0
       };
     } catch (e) {
       if (e.response && e.response.status === 401) user.value = null;
-      console.error("❌ Ошибка при экспорте всех операций:", e);
       throw e; 
     }
   }
