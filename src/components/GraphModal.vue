@@ -1,16 +1,17 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.6 - Styled Header Info ---
- * * ВЕРСИЯ: 13.6 - Обновлены стили заголовка (серый + зеленый)
+ * * --- МЕТКА ВЕРСИИ: v13.7 - Header Range Total ---
+ * * ВЕРСИЯ: 13.7 - Добавлена сумма диапазона в заголовок
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Разделил `headerInfoString` на две части: `accountsInfoPart` и `dateInfoPart`.
- * 2. (UI) В шаблоне теперь используются два `<span>` с разными классами (`text-grey`, `text-green`).
- * 3. (CSS) Добавлены соответствующие стили для цветов.
+ * 1. (LOGIC) Добавлен расчет `rangeTotal` (сумма всех операций за видимый период).
+ * 2. (UI) В `accountsInfoPart` добавлена сумма в скобках.
+ * 3. (UI) Добавлена условная раскраска суммы (зеленый/красный).
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { formatNumber } from '@/utils/formatters.js'; // Импортируем форматтер
 import NavigationPanel from './NavigationPanel.vue';
 import YAxisPanel from './YAxisPanel.vue';
 import GraphRenderer from './GraphRenderer.vue';
@@ -33,13 +34,52 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 NEW (v13.6): Часть 1 - Информация о счетах
-const accountsInfoPart = computed(() => {
-  const count = mainStore.accounts ? mainStore.accounts.length : 0;
-  return `Всего на ${count} счетах • `;
+// 🟢 NEW (v13.7): Расчет общей суммы за период
+const rangeTotal = computed(() => {
+  if (!visibleDays.value || visibleDays.value.length === 0) return 0;
+  
+  let total = 0;
+  
+  // Пробегаем по всем дням и суммируем Income + Expense (Expense обычно отрицательный, но проверим store)
+  // В mainStore.dailyChartData expense хранится как положительное число в поле expense, 
+  // но для баланса нам нужно (Income - Expense).
+  
+  for (const day of visibleDays.value) {
+    const dateKey = _getDateKey(day.date);
+    const data = mainStore.dailyChartData?.get(dateKey);
+    
+    if (data) {
+      // data.income - доход (положительный)
+      // data.expense - расход (положительное число по модулю, нужно вычесть)
+      total += (data.income || 0) - (data.expense || 0);
+    }
+  }
+  
+  return total;
 });
 
-// 🟢 NEW (v13.6): Часть 2 - Информация о дате
+// 🟢 NEW (v13.7): Форматированная строка суммы
+const rangeTotalString = computed(() => {
+  const val = rangeTotal.value;
+  const sign = val > 0 ? '+' : ''; // Минус formatNumber добавит сам, если число отрицательное
+  return `${sign} ${formatNumber(val)}`;
+});
+
+// 🟢 NEW (v13.7): Класс цвета для суммы
+const rangeTotalClass = computed(() => {
+  if (rangeTotal.value > 0) return 'text-income';
+  if (rangeTotal.value < 0) return 'text-expense';
+  return 'text-grey';
+});
+
+
+// Часть 1 - Информация о счетах + Сумма
+const accountsInfoPart = computed(() => {
+  const count = mainStore.accounts ? mainStore.accounts.length : 0;
+  return `Всего на ${count} счетах `;
+});
+
+// Часть 2 - Информация о дате
 const dateInfoPart = computed(() => {
   let endDateStr = '';
   if (visibleDays.value && visibleDays.value.length > 0) {
@@ -50,9 +90,7 @@ const dateInfoPart = computed(() => {
     const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     endDateStr = fullDate.format(new Date());
   }
-  // Убираем "г." если форматтер его уже добавил, чтобы не дублировать, или добавляем вручную если нет.
-  // Обычно Intl в ru локали добавляет "г.". Но если мы хотим жестко контролировать формат:
-  return `до ${endDateStr}`; // Intl обычно возвращает "16 мая 2026 г."
+  return `до ${endDateStr}`;
 });
 
 const generateVisibleDays = (mode) => {
@@ -119,8 +157,16 @@ onMounted(() => {
         <h2>
           Графики 
           <span class="header-subtitle">
-            <!-- 🟢 v13.6: Раздельные стили -->
+            <!-- Первая часть: "Всего на N счетах" -->
             <span class="text-grey">{{ accountsInfoPart }}</span>
+            
+            <!-- 🟢 v13.7: Сумма в скобках -->
+            <span class="range-total" :class="rangeTotalClass">({{ rangeTotalString }})</span>
+            
+            <!-- Разделитель -->
+            <span class="text-grey"> • </span>
+            
+            <!-- Вторая часть: "до ..." -->
             <span class="text-green">{{ dateInfoPart }}</span>
           </span>
         </h2>
@@ -188,13 +234,15 @@ onMounted(() => {
   font-weight: 400;
 }
 
-/* 🟢 v13.6: Цвета */
-.text-grey {
-  color: #888;
-}
-.text-green {
-  color: #34c759; /* Используем тот же зеленый, что и в графиках/иконках */
-}
+/* Цвета */
+.text-grey { color: #888; }
+.text-green { color: #34c759; }
+
+/* 🟢 v13.7: Цвета для суммы */
+.range-total { margin-left: 4px; font-weight: 500; }
+.text-income { color: #34c759; } /* Зеленый */
+.text-expense { color: #ff3b30; } /* Красный */
+
 
 .close-btn {
   background: none; border: none; font-size: 28px;
