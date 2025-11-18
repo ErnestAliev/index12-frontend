@@ -1,12 +1,3 @@
-<!--
- * * --- МЕТКА ВЕРСИИ: v11.0-ABOUT-MODAL ---
- * * ВЕРСИЯ: 11.0 - Новое окно "О сервисе"
- * * ДАТА: 2025-11-18
- *
- * ОПИСАНИЕ:
- * Модальное окно с информацией об авторе (Эрнест Алиев),
- * контактами, соцсетями и заглушками для уроков.
- -->
 <template>
   <div class="modal-overlay" @click.self="close">
     <div class="modal-content">
@@ -20,14 +11,27 @@
         
         <!-- Блок 1: Автор и Приветствие -->
         <div class="section author-section">
-          <div class="author-info">
-            <h3>Эрнест Алиев</h3>
-            <p class="subtitle">Основатель и создатель</p>
-            <div class="welcome-text">
-              <p><strong>Приветствую вас!</strong></p>
-              <p>Этот сервис создан для тех, кто хочет взять свои финансы под полный контроль. Здесь вы сможете наглядно видеть структуру своих доходов и расходов, планировать бюджет и избегать кассовых разрывов.</p>
-              <p>Наша основная польза — простота и наглядность управленческого учета.</p>
-              <p class="collab-text"><em>Открыт к предложениям о сотрудничестве и партнерстве.</em></p>
+          <div class="author-layout">
+            <!-- Левая колонка: Текст (2/3 ширины) -->
+            <div class="author-info">
+              <h3>Эрнест Алиев</h3>
+              <p class="subtitle">Основатель и создатель</p>
+              <div class="welcome-text">
+                <p><strong>Приветствую вас!</strong></p>
+                <p>Этот сервис создан для тех, кто хочет взять свои финансы под полный контроль. Здесь вы сможете наглядно видеть структуру своих доходов и расходов, планировать бюджет и избегать кассовых разрывов.</p>
+                <p>Наша основная польза — простота и наглядность управленческого учета.</p>
+                <p class="collab-text"><em>Открыт к предложениям о сотрудничестве и партнерстве.</em></p>
+              </div>
+            </div>
+
+            <!-- Правая колонка: Фото (1/3 ширины) -->
+            <div class="author-photo-wrapper">
+              <!-- Путь к файлу из папки public указывается от корня "/" -->
+              <img 
+                src="/Эрнест Алиев Основатель и создатель INDEX12.com.jpg" 
+                alt="Эрнест Алиев" 
+                class="author-photo"
+              />
             </div>
           </div>
         </div>
@@ -112,7 +116,7 @@ function close() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000; /* Поверх всего */
+  z-index: 2000;
   backdrop-filter: blur(2px);
 }
 
@@ -179,6 +183,51 @@ function close() {
   border-radius: 10px;
   border: 1px solid var(--color-border-hover);
 }
+
+/* --- Layout автора (Flex) --- */
+.author-layout {
+  display: flex;
+  gap: 25px; /* Отступ между текстом и фото */
+  align-items: flex-start; /* Выравнивание по верху */
+}
+
+.author-info {
+  flex: 2; /* Занимает 2 части пространства */
+  min-width: 0; /* Для предотвращения переполнения текстом */
+}
+
+.author-photo-wrapper {
+  flex: 1; /* Занимает 1 часть пространства (1/3) */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.author-photo {
+  width: 100%;
+  height: auto;
+  object-fit: cover; /* Чтобы фото заполняло пространство, не искажаясь */
+  border-radius: 8px; /* Скругленные углы */
+  border: 1px solid var(--color-border); /* Тонкая рамка, если нужно */
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2); /* Легкая тень */
+}
+
+/* Адаптив для мобилок: складываем в колонку */
+@media (max-width: 600px) {
+  .author-layout {
+    flex-direction: column-reverse; /* Фото сверху или снизу? Обычно текст важнее, но фото привлекает внимание. Пусть будет текст сверху на совсем узких, или column-reverse для фото сверху. Сделаем column-reverse чтобы фото было первым */
+    align-items: center;
+  }
+  .author-info, .author-photo-wrapper {
+    width: 100%;
+    flex: auto;
+  }
+  .author-photo {
+    max-width: 200px; /* Ограничим размер на мобилке */
+    margin-bottom: 15px;
+  }
+}
+
 
 h3 {
   margin: 0 0 5px 0;
