@@ -1,11 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.5 - VISIBLE CATEGORIES ---
- * * ВЕРСИЯ: 11.5 - Добавлен геттер visibleCategories
+ * * --- МЕТКА ВЕРСИИ: v11.6 - HIDE TRANSFER FROM CATS ---
+ * * ВЕРСИЯ: 11.6 - Полное исключение "Перевода" из списка категорий
  * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлен computed `visibleCategories`. Он возвращает список категорий
- * БЕЗ "Перевода". Это нужно для виджета "Категории", чтобы "Перевод" там не светился.
+ * 1. (HELPER) `_isTransferCategory`: проверка на 'перевод'/'transfer'.
+ * 2. (COMPUTED) `visibleCategories`: возвращает все категории КРОМЕ "Перевода".
+ * 3. (COMPUTED) `currentCategoryBalances` и `futureCategoryBalances` теперь фильтруют
+ * вывод, исключая категорию перевода. Это убирает её из виджета "Категории".
  */
 
 import { defineStore } from 'pinia';
@@ -31,11 +33,8 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.5 (Visible Categories) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v11.6 (Hide Transfer From Cats) ЗАГРУЖЕН ---'); 
   
-  // =================================================================
-  // 1. STATE
-  // =================================================================
   const user = ref(null); 
   const isAuthLoading = ref(true); 
   
@@ -61,23 +60,20 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
   ]);
 
-  // =================================================================
-  // 2. WATCHERS & PERSISTENCE
-  // =================================================================
-  
-  // Хелпер для определения системной категории
+  // --- ХЕЛПЕР: Это категория "Перевод"? ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer';
   };
 
-  // 🟢 NEW: Категории для отображения в списках (без Перевода)
+  // 🟢 NEW: Список категорий для UI (без "Перевода")
   const visibleCategories = computed(() => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
   const allWidgets = computed(() => {
+    // Ищем системную категорию для отдельного виджета
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
     if (transferCategory) {
@@ -124,9 +120,6 @@ export const useMainStore = defineStore('mainStore', () => {
     todayDayOfYear.value = parseInt(savedToday);
   }
   
-  // =================================================================
-  // 3. HELPERS
-  // =================================================================
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
     const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
@@ -139,7 +132,6 @@ export const useMainStore = defineStore('mainStore', () => {
   };
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        console.error(`!!! mainStore._parseDateKey ОШИБКА:`, dateKey);
         return new Date(); 
     }
     const [year, doy] = dateKey.split('-').map(Number);
@@ -164,9 +156,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const d = new Date(base); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; 
   };
 
-  // =================================================================
-  // 4. COMPUTED (Balances & Ops)
-  // =================================================================
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
@@ -429,21 +418,22 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
+  // 🟢 FIX: Балансы для виджета "Категории" теперь БЕЗ перевода
   const currentCategoryBalances = computed(() => {
     const bal = {};
-    for (const c of categories.value) bal[c._id] = 0;
+    // Инициализируем только видимые категории
+    for (const c of visibleCategories.value) bal[c._id] = 0;
     
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
-      if (bal[id] === undefined) bal[id] = 0; 
+      // Если категории нет в балансе (т.е. это "Перевод"), пропускаем
+      if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
     
-    return categories.value
-      .filter(c => !_isTransferCategory(c)) 
-      .map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
   const futureCategoryBalances = computed(() => {
@@ -461,13 +451,12 @@ export const useMainStore = defineStore('mainStore', () => {
       bal[id] += (op?.amount || 0);
     }
     
-    return categories.value
-      .filter(c => !_isTransferCategory(c)) 
-      .map(c => ({ 
+    return visibleCategories.value.map(c => ({ 
         ...c, 
         balance: bal[c._id] || 0 
       }));
   });
+
 
   const currentTotalBalance = computed(() => {
     const opsTotal = currentOps.value.reduce((s,op)=> {
