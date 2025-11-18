@@ -3,27 +3,25 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v14.1 - FIX MISSING WIDGET ---
- * * ВЕРСИЯ: 14.1 - Восстановлен импорт HeaderCategoryCard
- * * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v15.0 - SYSTEM WIDGET FIX ---
+ * * ВЕРСИЯ: 15.0 - Восстановление "Переводов" и защита системных виджетов
+ * * ДАТА: 2025-11-19
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (CRITICAL FIX) Раскомментирован импорт `HeaderCategoryCard.vue`.
- * Ранее он был отключен в v11.0, что приводило к исчезновению виджета "Перевод"
- * (и любых других виджетов категорий, использующих этот компонент).
- * Теперь виджет "Перевод" снова будет отображаться корректно.
+ * 1. (FIX) Раскомментирован `HeaderCategoryCard`, чтобы вернуть виджет "Переводы".
+ * 2. (FIX) В `onCategoryEdit` добавлена проверка: системную категорию "Перевод"
+ * переименовывать нельзя (игнорируем клик).
  */
 
-console.log('--- TheHeader.vue v14.1 (Fix Missing Widget) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v15.0 (System Widget Fix) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
-// 🟢 v14.1: Восстанавливаем импорт, так как он используется для виджета "Перевод"
+// 🟢 1. ВОССТАНОВЛЕН ИМПОРТ (обязательно для виджета "Перевод")
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
-import TransferPopup from '@/components/TransferPopup.vue';
 
-// Попапы
+import TransferPopup from '@/components/TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 
@@ -66,20 +64,15 @@ const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentComp
 const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
 const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
-
-// 🟢 NEW (v11.0): Добавляем computed для балансов категорий
 const mergedCategoryBalances = computed(() => mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances));
-
 
 /* ======================= Попапы (Entity / List) ======================= */
 const isEntityPopupVisible = ref(false);
 const popupTitle = ref('');
-const popupInitialValue = ref(''); // Для передачи имени при переименовании
+const popupInitialValue = ref(''); 
 const saveHandler = ref(null);
-const deleteHandler = ref(null); // 🔴 Обработчик удаления
-const showDeleteInPopup = ref(false); // 🔴 Флаг показа кнопки
-
-const currentWidgetIndexForReplace = ref(null);
+const deleteHandler = ref(null); 
+const showDeleteInPopup = ref(false); 
 
 // Обычное добавление
 const openAddPopup = (title, storeAction) => {
@@ -88,7 +81,6 @@ const openAddPopup = (title, storeAction) => {
   showDeleteInPopup.value = false;
   saveHandler.value = storeAction;
   deleteHandler.value = null;
-  currentWidgetIndexForReplace.value = null;
   isEntityPopupVisible.value = true;
 };
 
@@ -96,18 +88,15 @@ const openAddPopup = (title, storeAction) => {
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
   popupInitialValue.value = entity.name;
-  showDeleteInPopup.value = canDelete; // Показываем корзину?
+  showDeleteInPopup.value = canDelete; 
   
-  // Логика сохранения (переименования)
   saveHandler.value = async (newName) => {
-      // Обновляем логику, чтобы она работала для всех сущностей (категорий, физлиц и т.д.)
       if (entityType) {
           const updatedItem = { ...entity, name: newName };
           await mainStore.batchUpdateEntities(entityType, [updatedItem]);
       }
   };
 
-  // Логика удаления (только если canDelete=true)
   if (canDelete && entityType) {
       deleteHandler.value = async ({ deleteOperations, done }) => {
           try {
@@ -158,25 +147,28 @@ const onEntityListSave = async (updatedItems) => {
 };
 
 /* ======================= Обработчики Категорий ======================= */
-// (Этот обработчик нужен для `cat_...` виджета "Перевод", который остался)
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 const onCategoryAdd = (widgetKey, index) => {
     const widget = getWidgetByKey(widgetKey);
-    // 🟢 v11.0: Упрощенная логика - только для Перевода
-    if (widget?.name.toLowerCase() === 'перевод') {
+    if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
         isTransferPopupVisible.value = true;
     }
 };
+
 const onCategoryEdit = (widgetKey) => {
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
-        // 🟢 v11.0: Упрощенная логика - только для Перевода (и других кастомных cat_...)
+        // 🟢 2. ЗАЩИТА: Не даем переименовывать системный виджет "Перевод"
+        const lowerName = category.name.toLowerCase();
+        if (lowerName === 'перевод' || lowerName === 'transfer') {
+            console.log('Попытка переименовать системный виджет "Перевод" заблокирована.');
+            return;
+        }
         openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
     }
 };
-// ---
 
 const handleTransferComplete = async (eventData) => {
     if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
@@ -250,7 +242,6 @@ const handleTransferComplete = async (eventData) => {
         @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
       />
       
-      <!-- 🟢 NEW (v11.0): Единый виджет "Категории" -->
       <HeaderBalanceCard
         v-else-if="widgetKey === 'categories'"
         title="Категории"
@@ -272,8 +263,7 @@ const handleTransferComplete = async (eventData) => {
         :widgetIndex="index"
       />
 
-      <!-- 🔴 REFACTORED (v11.0): Этот блок теперь обрабатывает ТОЛЬКО 'cat_...' (например, "Перевод") -->
-      <!-- 🟢 FIX (v14.1): Компонент теперь импортирован и будет работать -->
+      <!-- 🟢 ИСПОЛЬЗУЕМСЯ ДЛЯ ВИДЖЕТА ПЕРЕВОДОВ -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
@@ -301,7 +291,6 @@ const handleTransferComplete = async (eventData) => {
     @close="isListEditorVisible = false"
     @save="onEntityListSave"
   />
-  
   <TransferPopup
       v-if="isTransferPopupVisible"
       :date="new Date()"
@@ -309,7 +298,6 @@ const handleTransferComplete = async (eventData) => {
       @close="isTransferPopupVisible = false"
       @transfer-complete="handleTransferComplete"
     />
-
 </template>
 
 <style scoped>
