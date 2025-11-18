@@ -1,12 +1,11 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.8 - Big Header Total ---
- * * ВЕРСИЯ: 13.8 - Обновлен стиль суммы в заголовке
+ * * --- МЕТКА ВЕРСИИ: v13.9 - Header Text Fix ---
+ * * ВЕРСИЯ: 13.9 - Убрано слово "Графики" из заголовка
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Сумма теперь отображается крупным белым шрифтом.
- * 2. (UI) Добавлен символ валюты "₸" перед суммой.
- * 3. (CSS) `.range-total` обновлен: font-size 1.3em, color white.
+ * 1. (UI) В `.modal-header h2` убрано старое название "Графики".
+ * 2. (UI) Теперь заголовок состоит только из информации о счетах и сумме.
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
@@ -48,15 +47,11 @@ const rangeTotal = computed(() => {
   return total;
 });
 
-// 🟢 v13.8: Форматированная строка суммы (без знака +, с символом валюты)
+// Форматированная строка суммы
 const rangeTotalString = computed(() => {
   const val = rangeTotal.value;
-  // Если число отрицательное, formatNumber может вернуть "- 100", 
-  // но нам нужно контролировать знак и валюту.
   const absVal = Math.abs(val);
   const formatted = formatNumber(absVal);
-  
-  // Символ тенге
   const currency = '₸'; 
   
   if (val < 0) return `- ${currency} ${formatted}`;
@@ -144,16 +139,11 @@ onMounted(() => {
       
       <div class="modal-header">
         <h2>
-          Графики 
+          <!-- 🟢 v13.9: Убрано слово "Графики", оставлен только subtitle -->
           <span class="header-subtitle">
             <span class="text-grey">{{ accountsInfoPart }}</span>
-            
-            <!-- 🟢 v13.8: Двоеточие -->
             <span class="text-grey separator"> : </span>
-            
-            <!-- 🟢 v13.8: Крупная белая сумма -->
             <span class="range-total">{{ rangeTotalString }}</span>
-            
             <span class="text-grey separator"> • </span>
             <span class="text-green">{{ dateInfoPart }}</span>
           </span>
@@ -210,7 +200,6 @@ onMounted(() => {
   padding: 15px 24px; border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
 }
-/* Выравнивание baseline важно для разного размера шрифта */
 .modal-header h2 { 
   margin: 0; 
   font-size: 1.2rem; 
@@ -219,9 +208,10 @@ onMounted(() => {
   align-items: baseline; 
 }
 
+/* 🟢 v13.9: Обновлен margin-left, так как это теперь первый элемент */
 .header-subtitle {
   font-size: 0.85em;
-  margin-left: 12px;
+  margin-left: 0; 
   font-weight: 400;
 }
 
@@ -229,11 +219,10 @@ onMounted(() => {
 .text-green { color: #34c759; }
 .separator { margin: 0 4px; }
 
-/* 🟢 v13.8: Новый стиль суммы */
 .range-total {
-  color: #FFFFFF;      /* Белый цвет */
-  font-weight: 700;    /* Жирный */
-  font-size: 1.3em;    /* На 30% больше (относительно базового 1em родителя) */
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 1.3em;
   margin: 0 4px;
 }
 
