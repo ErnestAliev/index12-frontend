@@ -6,14 +6,14 @@ import filterIcon from '@/assets/filter-edit.svg';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v7.0 - SUMMARY WIDGETS ---
- * * ВЕРСИЯ: 7.0 - Виджеты Доход/Расход переделаны в сводные
+ * * ВЕРСИЯ: 7.0 - Виджеты Доход/Расход/Перевод переделаны в сводные
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Для incomeList и expenseList убран список операций.
+ * 1. (UI) Для incomeList, expenseList и Transfer убран список операций.
  * 2. (UI) Отображается только строка "Всего" и сумма.
  * 3. (LOGIC) При включенном прогнозе отображается "Текущее > Прогноз".
- * 4. (STYLE) Цвета сумм соответствуют типу (Зеленый/Красный).
+ * 4. (STYLE) Цвета сумм соответствуют типу (Зеленый/Красный/Нейтральный).
  */
 
 console.log('--- HeaderCategoryCard.vue v7.0 (Summary Widgets) ЗАГРУЖЕН ---');
@@ -87,62 +87,40 @@ const isTransferWidget = computed(() => {
 
 const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
 const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
-// Группа "Сводные виджеты" (где показываем только Итого)
-const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value);
 
-// --- Данные для списков (остались только для Переводов) ---
-const transferList = computed(() => {
-  if (!isTransferWidget.value) return [];
-  let list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
-  if (!list) return [];
-  list = [...list];
-  // Сортировка для переводов
-  if (sortMode.value === 'desc') list.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-  else if (sortMode.value === 'asc') list.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
-  return list;
-});
+// Группа "Сводные виджеты" (где показываем только Итого)
+// Включаем сюда Доходы, Расходы и Переводы
+const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value || isTransferWidget.value);
 
 // --- Расчет сумм для Сводных виджетов ---
-// Текущая сумма (всегда)
+
+// 1. Текущая сумма (всегда отображается слева или как основная)
 const currentSum = computed(() => {
   let list = [];
   if (isIncomeListWidget.value) list = mainStore.currentIncomes;
   else if (isExpenseListWidget.value) list = mainStore.currentExpenses;
+  else if (isTransferWidget.value) list = mainStore.currentTransfers;
   
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// Сумма будущих операций (для добавления к прогнозу)
+// 2. Сумма будущих операций (для добавления к прогнозу)
 const futureOnlySum = computed(() => {
   let list = [];
   if (isIncomeListWidget.value) list = mainStore.futureIncomes;
   else if (isExpenseListWidget.value) list = mainStore.futureExpenses;
+  else if (isTransferWidget.value) list = mainStore.futureTransfers;
   
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// Прогнозная сумма = Текущие + Будущие
+// 3. Прогнозная сумма = Текущие + Будущие
 const projectedSum = computed(() => currentSum.value + futureOnlySum.value);
 
-// --- Хелперы ---
-const getAccountName = (accIdOrObj) => {
-  if (!accIdOrObj) return '???';
-  const id = typeof accIdOrObj === 'object' ? accIdOrObj._id : accIdOrObj;
-  const acc = mainStore.accounts.find(a => a._id === id);
-  return acc ? acc.name : 'Удален';
-};
 
-const formatOpDate = (dateVal) => {
-  if (!dateVal) return '';
-  const d = new Date(dateVal);
-  const day = d.getDate().toString().padStart(2, '0');
-  const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const year = d.getFullYear().toString().slice(-2);
-  return `${day}.${month}.${year}`;
-};
-
+// --- Данные для обычных категорий (не списочных) ---
 const categoryBreakdown = computed(() => {
-  if (isSummaryWidget.value || isTransferWidget.value) return { income: 0, expense: 0, total: 0 };
+  if (isSummaryWidget.value) return { income: 0, expense: 0, total: 0 };
   const source = showFutureBalance.value ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
   const data = source[props.widgetKey] || { income: 0, expense: 0, total: 0 };
   return data;
@@ -175,25 +153,28 @@ const handleEdit = () => { emit('edit'); };
       </div>
 
       <div class="card-actions">
-        <!-- Фильтр (скрываем для сводных, оставляем для остальных) -->
+        <!-- Фильтр (скрываем для сводных, так как списка нет) -->
         <button v-if="!isSummaryWidget" class="action-square-btn" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
           <img :src="filterIcon" alt="Filter" class="icon-svg" />
         </button>
+        
         <!-- Прогноз -->
         <button class="action-square-btn" :class="{ 'active': showFutureBalance }" @click.stop="showFutureBalance = !showFutureBalance" title="Прогноз">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
+        
         <!-- Добавить -->
         <button @click.stop="handleAdd" class="action-square-btn" title="Добавить">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
+        
         <!-- Редактировать -->
         <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
       </div>
 
-      <!-- Меню фильтра -->
+      <!-- Меню фильтра (только для обычных категорий) -->
       <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
         <div class="filter-group">
            <div class="filter-group-title">Отображение</div>
@@ -207,21 +188,44 @@ const handleEdit = () => { emit('edit'); };
 
     <div class="category-items-list-scroll">
       
-      <!-- 🟢 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД) -->
+      <!-- 🟢 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД / ПЕРЕВОД) -->
       <div v-if="isSummaryWidget" class="summary-container">
         <div class="summary-row">
+            <!-- ЛЕВАЯ ЧАСТЬ -->
             <span class="summary-label">Всего</span>
             
+            <!-- ПРАВАЯ ЧАСТЬ -->
             <span class="summary-value-block">
+                
                 <!-- Текущая сумма -->
-                <span :class="{ 'income': isIncomeListWidget, 'expense': isExpenseListWidget }">
-                    {{ isIncomeListWidget ? '+' : '-' }} {{ formatNumber(currentSum) }} ₸
+                <span 
+                  class="current-val"
+                  :class="{ 
+                    'income': isIncomeListWidget, 
+                    'expense': isExpenseListWidget,
+                    'transfer-neutral': isTransferWidget
+                  }"
+                >
+                    <!-- Знак -->
+                    <template v-if="isIncomeListWidget">+</template>
+                    <template v-else-if="isExpenseListWidget">-</template>
+                    
+                    <!-- Значение -->
+                    {{ formatNumber(currentSum) }} ₸
                 </span>
                 
-                <!-- Прогноз -->
+                <!-- Прогнозная часть (при переключении) -->
                 <template v-if="showFutureBalance">
                     <span class="summary-arrow"> &gt; </span>
-                    <span class="projected-value" :class="{ 'income': isIncomeListWidget, 'expense': isExpenseListWidget }">
+                    
+                    <span 
+                      class="projected-val"
+                      :class="{ 
+                        'income': isIncomeListWidget, 
+                        'expense': isExpenseListWidget,
+                        'transfer-neutral': isTransferWidget
+                      }"
+                    >
                         {{ formatNumber(projectedSum) }} ₸
                     </span>
                 </template>
@@ -229,26 +233,7 @@ const handleEdit = () => { emit('edit'); };
         </div>
       </div>
 
-      <!-- 2. СПИСОК ПЕРЕВОДОВ (Остался списком) -->
-      <div v-else-if="isTransferWidget" class="transfer-list">
-        <div v-for="t in transferList" :key="t._id" class="transfer-item">
-          <div class="t-row t-top">
-            <span class="t-amount expense">- {{ formatNumber(t.amount) }} ₸</span>
-            <span class="t-arrow">→</span>
-            <span class="t-amount income">+ {{ formatNumber(t.amount) }} ₸</span>
-          </div>
-          <div class="t-row t-bottom">
-            <span class="t-acc left" :title="getAccountName(t.fromAccountId)">{{ getAccountName(t.fromAccountId) }}</span>
-            <span class="t-date">{{ formatOpDate(t.date) }}</span>
-            <span class="t-acc right" :title="getAccountName(t.toAccountId)">{{ getAccountName(t.toAccountId) }}</span>
-          </div>
-        </div>
-        <div v-if="transferList.length === 0" class="category-item-empty">
-          {{ showFutureBalance ? 'Нет будущих переводов' : 'Нет переводов' }}
-        </div>
-      </div>
-
-      <!-- 3. ОБЫЧНЫЕ КАТЕГОРИИ (Списком) -->
+      <!-- 2. ОБЫЧНЫЕ КАТЕГОРИИ (Списком) -->
       <div v-else class="category-breakdown-list">
         <div class="category-item" v-if="filterMode === 'all' || categoryBreakdown.income !== 0">
           <span>Доходы</span>
@@ -313,32 +298,35 @@ const handleEdit = () => { emit('edit'); };
   flex-direction: column; 
   justify-content: flex-start; 
   height: 100%;
+  padding-top: 4px; /* Небольшой отступ сверху */
 }
 
 .summary-row {
   display: flex;
   justify-content: space-between;
-  align-items: center; /* Выравнивание по центру */
+  align-items: baseline; /* Выравнивание по базовой линии шрифта */
   width: 100%;
-  padding-top: 4px; /* Небольшой отступ */
 }
 
+/* Левая часть: "Всего" */
 .summary-label {
-  font-size: 0.9em; /* Стандартный размер текста списка */
+  font-size: 0.9em; /* Стандартный размер, как в списках */
   color: #ccc;
   white-space: nowrap;
 }
 
+/* Правая часть: Сумма [> Прогноз] */
 .summary-value-block {
-  font-size: 0.9em; /* Стандартный размер суммы в списке */
+  font-size: 0.9em; /* Стандартный размер */
   font-weight: 500;
   text-align: right;
   white-space: nowrap;
 }
 
-/* Цвета сумм */
+/* Цвета */
 .income { color: var(--color-primary); }
 .expense { color: var(--color-danger); }
+.transfer-neutral { color: var(--color-text); } /* Светлый нейтральный */
 
 .summary-arrow {
   color: #888;
@@ -346,27 +334,13 @@ const handleEdit = () => { emit('edit'); };
   font-size: 0.9em;
 }
 
-.projected-value {
-  opacity: 0.8;
+/* Прогнозная часть может быть чуть тусклее или такая же */
+.projected-val {
+  /* opacity: 0.9; */
 }
 
-/* --- Transfer List Styles --- */
-.transfer-list { display: flex; flex-direction: column; gap: 10px; }
-.transfer-item { display: flex; flex-direction: column; padding-bottom: 8px; border-bottom: 1px solid var(--color-border); }
-.transfer-item:last-child { border-bottom: none; }
-.t-row { display: flex; justify-content: space-between; align-items: center; line-height: 1.4; }
-.t-top { margin-bottom: 2px; }
-.t-amount { font-size: 0.9em; font-weight: 500; }
-.t-amount.expense { color: var(--color-danger); }
-.t-amount.income { color: var(--color-primary); }
-.t-arrow { color: #888; font-size: 0.8em; }
-.t-bottom { font-size: 0.8em; color: #aaa; }
-.t-acc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 35%; }
-.t-acc.left { text-align: left; }
-.t-acc.right { text-align: right; }
-.t-date { color: #666; font-size: 0.9em; white-space: nowrap; }
 
-/* --- Category Breakdown Styles --- */
+/* Стили для обычных категорий */
 .category-breakdown-list { display: flex; flex-direction: column; flex-grow: 1; gap: 0.25rem; }
 .category-item { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 0.25rem; }
 .category-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
@@ -390,8 +364,7 @@ const handleEdit = () => { emit('edit'); };
   .card-title { font-size: 0.8em; }
   .category-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .category-item span:first-child { padding-right: 5px; }
-  .t-amount { font-size: 0.85em; }
-  .t-bottom { font-size: 0.75em; }
+  .summary-value-block { font-size: 0.85em; } /* Адаптив размера */
   .card-actions { gap: 3px; }
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
