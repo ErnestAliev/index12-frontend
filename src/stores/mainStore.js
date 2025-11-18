@@ -1,13 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.4 - HIDE TRANSFER CAT ---
- * * ВЕРСИЯ: 11.4 - Исключение категории "Перевод" из списков
+ * * --- МЕТКА ВЕРСИИ: v11.5 - VISIBLE CATEGORIES ---
+ * * ВЕРСИЯ: 11.5 - Добавлен геттер visibleCategories
  * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В `currentCategoryBalances` и `futureCategoryBalances` добавлена
- * проверка `_isTransferCategory(c)`, чтобы гарантированно исключить "Перевод"
- * из виджета "Категории".
- * 2. (HELPER) Добавлен метод `_isTransferCategory` для надежной проверки.
+ * 1. (NEW) Добавлен computed `visibleCategories`. Он возвращает список категорий
+ * БЕЗ "Перевода". Это нужно для виджета "Категории", чтобы "Перевод" там не светился.
  */
 
 import { defineStore } from 'pinia';
@@ -33,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.4 (Hide Transfer Cat) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v11.5 (Visible Categories) ЗАГРУЖЕН ---'); 
   
   // =================================================================
   // 1. STATE
@@ -73,6 +71,11 @@ export const useMainStore = defineStore('mainStore', () => {
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer';
   };
+
+  // 🟢 NEW: Категории для отображения в списках (без Перевода)
+  const visibleCategories = computed(() => {
+    return categories.value.filter(c => !_isTransferCategory(c));
+  });
 
   const allWidgets = computed(() => {
     const transferCategory = categories.value.find(_isTransferCategory);
@@ -426,7 +429,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
-  // 🟢 FIX: Исключаем "Перевод" из списков категорий
   const currentCategoryBalances = computed(() => {
     const bal = {};
     for (const c of categories.value) bal[c._id] = 0;
@@ -440,7 +442,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     
     return categories.value
-      .filter(c => !_isTransferCategory(c)) // 🟢 Используем хелпер
+      .filter(c => !_isTransferCategory(c)) 
       .map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
@@ -460,14 +462,13 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     
     return categories.value
-      .filter(c => !_isTransferCategory(c)) // 🟢 Используем хелпер
+      .filter(c => !_isTransferCategory(c)) 
       .map(c => ({ 
         ...c, 
         balance: bal[c._id] || 0 
       }));
   });
 
-  // Остальной код без изменений...
   const currentTotalBalance = computed(() => {
     const opsTotal = currentOps.value.reduce((s,op)=> {
       if (isTransfer(op)) return s;
@@ -1089,6 +1090,7 @@ export const useMainStore = defineStore('mainStore', () => {
   
   return {
     accounts, companies, contractors, projects, categories,
+    visibleCategories, // 🟢 NEW: Экспортируем visibleCategories
     individuals, 
     operationsCache: displayCache,
     displayCache, calculationCache,
