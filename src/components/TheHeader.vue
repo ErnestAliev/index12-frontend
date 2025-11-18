@@ -3,25 +3,24 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v11.0 - Единый виджет "Категории" ---
- * * ВЕРСИЯ: 11.0 - Рефакторинг виджетов категорий
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v14.1 - FIX MISSING WIDGET ---
+ * * ВЕРСИЯ: 14.1 - Восстановлен импорт HeaderCategoryCard
+ * * ДАТА: 2025-11-18
  *
- * ЧТО ИЗМЕНЕНО:
- * 1. (REFACTOR) Удален импорт `HeaderCategoryCard.vue`.
- * 2. (REFACTOR) Удален `v-else-if="widgetKey.startsWith('cat_')"` и связанные с ним методы (`onCategoryAdd`, `onCategoryEdit`, `openAddCategoryPopup`).
- * 3. (NEW) Добавлен `v-else-if="widgetKey === 'categories'"` (Единый виджет "Категории").
- * 4. (NEW) Этот виджет использует `HeaderBalanceCard` и new computed `mergedCategoryBalances` из mainStore (v11.0).
- * 5. (NEW) Кнопки (+) и (edit) подключены к `openAddPopup` и `openEditPopup` (аналогично "Проектам").
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (CRITICAL FIX) Раскомментирован импорт `HeaderCategoryCard.vue`.
+ * Ранее он был отключен в v11.0, что приводило к исчезновению виджета "Перевод"
+ * (и любых других виджетов категорий, использующих этот компонент).
+ * Теперь виджет "Перевод" снова будет отображаться корректно.
  */
 
-console.log('--- TheHeader.vue v11.0 (Единый виджет Категории) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v14.1 (Fix Missing Widget) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
-// 🔴 v11.0: Удаляем HeaderCategoryCard
-// import HeaderCategoryCard from './HeaderCategoryCard.vue';
+// 🟢 v14.1: Восстанавливаем импорт, так как он используется для виджета "Перевод"
+import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 
 // Попапы
@@ -93,14 +92,6 @@ const openAddPopup = (title, storeAction) => {
   isEntityPopupVisible.value = true;
 };
 
-// 🔴 v11.0: Удаляем openAddCategoryPopup
-// (Логика замены виджета больше не нужна)
-/*
-const openAddCategoryPopup = (title, widgetIndex) => {
-  // ... (удаленный код)
-};
-*/
-
 // Переименование + Удаление
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
@@ -166,20 +157,10 @@ const onEntityListSave = async (updatedItems) => {
   isListEditorVisible.value = false;
 };
 
-/* ======================= Обработчики Категорий (УДАЛЕНО v11.0) ======================= */
-// 🔴 v11.0: Удаляем getWidgetByKey, onCategoryAdd, onCategoryEdit
-/*
-const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
-const onCategoryAdd = (widgetKey, index) => {
-    // ... (удаленный код)
-};
-const onCategoryEdit = (widgetKey) => {
-    // ... (удаленный код)
-};
-*/
-
+/* ======================= Обработчики Категорий ======================= */
 // (Этот обработчик нужен для `cat_...` виджета "Перевод", который остался)
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
+
 const onCategoryAdd = (widgetKey, index) => {
     const widget = getWidgetByKey(widgetKey);
     // 🟢 v11.0: Упрощенная логика - только для Перевода
@@ -292,6 +273,7 @@ const handleTransferComplete = async (eventData) => {
       />
 
       <!-- 🔴 REFACTORED (v11.0): Этот блок теперь обрабатывает ТОЛЬКО 'cat_...' (например, "Перевод") -->
+      <!-- 🟢 FIX (v14.1): Компонент теперь импортирован и будет работать -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_')"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
