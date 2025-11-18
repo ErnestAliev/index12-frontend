@@ -4,7 +4,19 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderBalanceCard.vue v3.3-BTN-BG-CHANGE ЗАГРУЖЕН ---');
+/**
+ * * --- МЕТКА ВЕРСИИ: v3.5 - FIX DROPDOWN CLOSURE ---
+ * * ВЕРСИЯ: 3.5 - Исправлено закрытие выпадающего списка по клику вне компонента
+ * ДАТА: 2025-11-18
+ *
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX) Улучшена логика `handleClickOutside` для выпадающего списка виджетов (`isDropdownOpen`),
+ * чтобы он гарантированно закрывался при клике вне карточки.
+ * 2. (REFACTOR) Убрана лишняя логика закрытия фильтра из `handleClickOutside`, так как
+ * она уже реализована в `handleFilterClickOutside` и `watch(isFilterOpen)`.
+ */
+
+console.log('--- HeaderBalanceCard.vue v3.5 (Fix Dropdown Closure) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -78,11 +90,16 @@ const formatBalance = (balance) => {
 
 const handleSelect = (newWidgetKey) => {
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
+  // Используем nextTick для предотвращения "проваливания" клика
   nextTick(() => { isDropdownOpen.value = false; });
 };
 
+// --- !!! ГЛАВНАЯ ЛОГИКА ЗАКРЫТИЯ (Fix Dropdown Closure) !!! ---
 const handleClickOutside = (event) => {
-  if (cardRef.value && !cardRef.value.contains(event.target)) isDropdownOpen.value = false;
+  // Проверяем, был ли клик СНАРУЖИ этого компонента
+  if (cardRef.value && !cardRef.value.contains(event.target)) {
+    isDropdownOpen.value = false; // Закрываем меню
+  }
 };
 
 watch(isDropdownOpen, (isOpen) => {
@@ -93,6 +110,7 @@ watch(isDropdownOpen, (isOpen) => {
     document.removeEventListener('mousedown', handleClickOutside);
   }
 });
+// --- КОНЕЦ ЛОГИКИ ЗАКРЫТИЯ ---
 
 const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 </script>
