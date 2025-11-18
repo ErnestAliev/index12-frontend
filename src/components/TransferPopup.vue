@@ -5,20 +5,20 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v12.0 - Лимит дат в попапах ---
- * * ВЕРСИЯ: 12.0 - Ограничение календаря
+ * * --- МЕТКА ВЕРСИИ: v12.1 - Fix Double Click Duplicate ---
+ * * ВЕРСИЯ: 12.1 - Исправление дублирования при быстром клике
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлены props `minAllowedDate` и `maxAllowedDate`.
- * 2. (NEW) Добавлены computed `minDateString` и `maxDateString`
- * (используя существующий helper `toInputDate`).
- * 3. (NEW) `<input type="date">` теперь имеет атрибуты
- * :min="minDateString" и :max="maxDateString".
+ * 1. (NEW) Добавлена переменная `isInlineSaving` для блокировки повторных кликов.
+ * 2. (FIX) Во все функции `saveNew...` (FromAccount, ToAccount, Category, Owner)
+ * добавлена проверка `if (isInlineSaving.value) return;` и блок `try/finally`.
+ * 3. (FIX) Функция `handleSave` также защищена флагом.
+ * 4. (UI) Кнопкам `.btn-inline-save` и основным кнопкам добавлен атрибут `:disabled="isInlineSaving"`.
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- TransferPopup.vue v12.0 (Лимит дат в попапах) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v12.1 (Fix Double Click) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -41,6 +41,9 @@ const categoryId = ref(null);
 // 🟢 v9.0 (Шаг 6): НОВЫЕ ref'ы
 const selectedFromOwner = ref(null); // (хранит 'company-ID' или 'individual-ID')
 const selectedToOwner = ref(null); // (хранит 'company-ID' или 'individual-ID')
+
+// 🟢 NEW (v12.1): Флаг блокировки
+const isInlineSaving = ref(false);
 
 
 const toInputDate = (date) => {
@@ -186,8 +189,6 @@ onMounted(async () => {
     toAccountId.value = transfer.toAccountId?._id || transfer.toAccountId;
     
     // 🟢 v9.0 (Шаг 6): Устанавливаем `selectedOwner` на основе данных операции
-    // (Логика авто-выбора при on...AccountSelected может не сработать, если счет был удален,
-    // поэтому устанавливаем владельца принудительно из данных самого перевода)
     
     // FROM
     if (transfer.fromCompanyId) {
@@ -307,6 +308,7 @@ const openCreateOwnerModal = (target) => {
 };
 
 const cancelCreateOwner = () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
   console.log('[TransferPopup] cancelCreateOwner: Отмена "Smart Create"');
   showCreateOwnerModal.value = false;
   newOwnerName.value = '';
@@ -326,11 +328,15 @@ const setOwnerTypeToCreate = (type) => {
 };
 
 const saveNewOwner = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newOwnerName.value.trim();
   const type = ownerTypeToCreate.value; // 'company' или 'individual'
   const target = creatingOwnerFor.value; // 'from' или 'to'
   if (!name) return;
   
+  isInlineSaving.value = true; // Ставим флаг
+
   console.log(`[TransferPopup] saveNewOwner: 💾 Сохранение (Target: ${target}, Тип: ${type}, Имя: ${name})`);
 
   try {
@@ -352,11 +358,12 @@ const saveNewOwner = async () => {
     }
     console.log(`[TransferPopup] saveNewOwner: ✅ УСПЕХ. Установлен ${target} owner: ${newOwnerKey}`);
 
+    cancelCreateOwner(); // Закрываем модальное окно только при успехе
   } catch (e) {
     console.error(`[TransferPopup] saveNewOwner: ❌ Ошибка при создании ${type}`, e);
+  } finally {
+    isInlineSaving.value = false; // Снимаем флаг
   }
-  
-  cancelCreateOwner(); // Закрываем модальное окно
 };
 // =================================================================
 
@@ -366,83 +373,110 @@ const saveNewOwner = async () => {
 // =================================================================
 const showCategoryInput = () => { console.log('[TransferPopup] showCategoryInput'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
 const cancelCreateCategory = () => { console.log('[TransferPopup] cancelCreateCategory'); isCreatingCategory.value = false; newCategoryName.value = ''; };
+
 const saveNewCategory = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newCategoryName.value.trim();
   console.log(`[TransferPopup] saveNewCategory: Сохраняю категорию '${name}'`);
   if (!name) return;
   
-  const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    categoryId.value = existing._id;
-  } else {
-    try {
+  isInlineSaving.value = true;
+
+  try {
+    const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      categoryId.value = existing._id;
+    } else {
       const newItem = await mainStore.addCategory(name);
       categoryId.value = newItem._id;
-    } catch (e) { console.error(e); }
+    }
+    cancelCreateCategory();
+  } catch (e) { 
+    console.error(e); 
+  } finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateCategory();
 };
 
 // --- "FROM" ---
 const showFromAccountInput = () => { console.log('[TransferPopup] showFromAccountInput'); isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
 const cancelCreateFromAccount = () => { console.log('[TransferPopup] cancelCreateFromAccount'); isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
+
 const saveNewFromAccount = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newFromAccountName.value.trim();
   console.log(`[TransferPopup] saveNewFromAccount: Сохраняю счет (From) '${name}'`);
   if (!name) return;
 
-  // 🟢 v9.0 (Шаг 6): Определяем владельца для нового счета
-  let cId = null;
-  let iId = null;
-  if (selectedFromOwner.value) {
-      const [type, id] = selectedFromOwner.value.split('-');
-      if (type === 'company') cId = id;
-      if (type === 'individual') iId = id;
-  }
+  isInlineSaving.value = true;
 
-  const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    fromAccountId.value = existing._id;
-    onFromAccountSelected(existing._id);
-  } else {
-    try {
+  try {
+    // 🟢 v9.0 (Шаг 6): Определяем владельца для нового счета
+    let cId = null;
+    let iId = null;
+    if (selectedFromOwner.value) {
+        const [type, id] = selectedFromOwner.value.split('-');
+        if (type === 'company') cId = id;
+        if (type === 'individual') iId = id;
+    }
+
+    const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      fromAccountId.value = existing._id;
+      onFromAccountSelected(existing._id);
+    } else {
       const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId });
       fromAccountId.value = newItem._id;
       onFromAccountSelected(newItem._id);
-    } catch (e) { console.error('Ошибка создания счета (From):', e); }
+    }
+    cancelCreateFromAccount(); 
+  } catch (e) { 
+    console.error('Ошибка создания счета (From):', e); 
+  } finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateFromAccount(); 
 };
 
 // --- "TO" ---
 const showToAccountInput = () => { console.log('[TransferPopup] showToAccountInput'); isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
 const cancelCreateToAccount = () => { console.log('[TransferPopup] cancelCreateToAccount'); isCreatingToAccount.value = false; newToAccountName.value = ''; };
+
 const saveNewToAccount = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newToAccountName.value.trim();
   console.log(`[TransferPopup] saveNewToAccount: Сохраняю счет (To) '${name}'`);
   if (!name) return;
   
-  // 🟢 v9.0 (Шаг 6): Определяем владельца для нового счета
-  let cId = null;
-  let iId = null;
-  if (selectedToOwner.value) {
-      const [type, id] = selectedToOwner.value.split('-');
-      if (type === 'company') cId = id;
-      if (type === 'individual') iId = id;
-  }
+  isInlineSaving.value = true;
 
-  const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    toAccountId.value = existing._id;
-    onToAccountSelected(existing._id);
-  } else {
-    try {
+  try {
+    // 🟢 v9.0 (Шаг 6): Определяем владельца для нового счета
+    let cId = null;
+    let iId = null;
+    if (selectedToOwner.value) {
+        const [type, id] = selectedToOwner.value.split('-');
+        if (type === 'company') cId = id;
+        if (type === 'individual') iId = id;
+    }
+
+    const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      toAccountId.value = existing._id;
+      onToAccountSelected(existing._id);
+    } else {
       const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId });
       toAccountId.value = newItem._id;
       onToAccountSelected(newItem._id);
-    } catch (e) { console.error('Ошибка создания счета (To):', e); }
+    }
+    cancelCreateToAccount(); 
+  } catch (e) { 
+    console.error('Ошибка создания счета (To):', e); 
+  } finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateToAccount(); 
 };
 
 // 🔴 v9.0 (Шаг 6): `showFromCompanyInput` / `saveNewFromCompany` / `showToCompanyInput` / `saveNewToCompany` УДАЛЕНЫ.
@@ -498,6 +532,8 @@ const syncState = async (dateKey, oldDateKey = null) => {
 
 
 const handleSave = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   console.log('[TransferPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
   
@@ -520,6 +556,8 @@ const handleSave = async () => {
     console.warn('[TransferPopup] handleSave: Ошибка валидации: Счета совпадают');
     return;
   }
+
+  isInlineSaving.value = true; // Ставим флаг
 
   try {
     const [year, month, day] = editableDate.value.split('-').map(Number);
@@ -581,11 +619,14 @@ const handleSave = async () => {
   } catch (error) { 
     console.error('❌ Ошибка при сохранении перевода:', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
+  } finally {
+    isInlineSaving.value = false; // Снимаем флаг
   }
 };
 // =================================================================
 
 const closePopup = () => { 
+  if (isInlineSaving.value) return; // Блокировка закрытия во время сохранения
   console.log('[TransferPopup] closePopup: 🛑 Закрытие попапа (через overlay или отмену)');
   emit('close'); 
 };
@@ -632,8 +673,8 @@ const closePopup = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newFromAccountName" placeholder="Название счета (От)" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
-          <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateFromAccount" class="btn-inline-cancel">X</button>
+          <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
         
         <!-- 🟢 v9.0 (Шаг 6): ЗАМЕНЕННЫЙ БЛОК "ВЛАДЕЛЕЦ (ОТПРАВИТЕЛЬ)" -->
@@ -674,8 +715,8 @@ const closePopup = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newToAccountName" placeholder="Название счета (Куда)" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
-          <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateToAccount" class="btn-inline-cancel">X</button>
+          <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
         
         <!-- 🟢 v9.0 (Шаг 6): ЗАМЕНЕННЫЙ БЛОК "ВЛАДЕЛЕЦ (ПОЛУЧАТЕЛЬ)" -->
@@ -714,8 +755,8 @@ const closePopup = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
-          <button @click="saveNewCategory" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateCategory" class="btn-inline-cancel">X</button>
+          <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
 
 
@@ -732,18 +773,18 @@ const closePopup = () => {
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
-          <button @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'">
+          <button @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving">
             {{ buttonText }}
           </button>
 
           <div v-if="props.transferToEdit && !isCloneMode.value" class="icon-actions">
-            <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать">
+            <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/>
               </svg>
             </button>
 
-            <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить">
+            <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/>
               </svg>
@@ -786,10 +827,10 @@ const closePopup = () => {
           />
 
           <div class="smart-create-actions">
-            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary">
+            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">
               Отмена
             </button>
-            <button @click="saveNewOwner" class="btn-submit btn-submit-edit">
+            <button @click="saveNewOwner" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">
               Создать
             </button>
           </div>
@@ -928,7 +969,9 @@ select option[value="--CREATE_NEW--"] {
   line-height: 1;
 }
 .inline-create-form button.btn-inline-save { background-color: #34C759; }
+.inline-create-form button.btn-inline-save:disabled { background-color: #9bd6a8; cursor: not-allowed; } /* Светлее */
 .inline-create-form button.btn-inline-cancel { background-color: #FF3B30; }
+.inline-create-form button.btn-inline-cancel:disabled { background-color: #f0a19c; cursor: not-allowed; } /* Светлее */
 
 
 /* НОВОЕ: Стили для строки действий */
@@ -984,19 +1027,23 @@ select option[value="--CREATE_NEW--"] {
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
+.btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* (v4.1) Изменена кнопка "Добавить" */
 .btn-submit-transfer {
   background-color: #2f3340;
 }
-.btn-submit-transfer:hover {
+.btn-submit-transfer:hover:not(:disabled) {
   background-color: #2f3d6bff;
 }
 
 .btn-submit-edit {
   background-color: #222222;
 }
-.btn-submit-edit:hover {
+.btn-submit-edit:hover:not(:disabled) {
   background-color: #444444;
 }
 
@@ -1052,7 +1099,7 @@ select option[value="--CREATE_NEW--"] {
   color: #333;
   font-weight: 500;
 }
-.btn-submit-secondary:hover {
+.btn-submit-secondary:hover:not(:disabled) {
   background-color: #d1d1d1;
 }
 </style>
