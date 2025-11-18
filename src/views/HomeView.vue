@@ -1171,10 +1171,18 @@ onBeforeUnmount(() => {
 .about-btn {
   position: absolute;
   bottom: 64px; /* Приподнята над профилем пользователя */
-  right: 8px; 
+  
+  /* 🟢 FIX: Центрирование (в панели 60px) */
+  left: 50%;
+  transform: translateX(-50%);
+  
   z-index: 20; 
-  background: var(--color-background-soft);
-  border: 1px solid var(--color-border);
+  
+  /* 🟢 FIX: Зеленый цвет для внимания */
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  color: #ffffff; /* Белая иконка */
+  
   border-radius: 50%;
   width: 32px;
   height: 32px;
@@ -1182,13 +1190,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--color-text);
   padding: 0;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); /* Тень для привлечения внимания */
 }
+
 .about-btn:hover {
-  background: var(--color-background-mute);
-  border-color: var(--color-border-hover);
+  background: #28a745; /* Темнее зеленый */
+  border-color: #28a745;
+  transform: translateX(-50%) scale(1.1); /* Легкое увеличение при наведении + сохраняем центрирование */
 }
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
