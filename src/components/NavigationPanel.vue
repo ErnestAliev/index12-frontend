@@ -1,13 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v11.0-NAV-UPDATE ---
- * * ВЕРСИЯ: 11.0 - Добавлена кнопка "О сервисе"
+ * * --- МЕТКА ВЕРСИИ: v11.1-NAV-FIX ---
+ * * ВЕРСИЯ: 11.1 - Исправление расположения кнопки "О сервисе"
  * * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлена кнопка `about-btn` (знак вопроса) над кнопкой пользователя.
- * 2. (NEW) Импортирован компонент `AboutModal`.
- * 3. (NEW) Добавлено состояние `showAboutModal` для управления видимостью окна.
- * 4. (STYLE) Добавлены стили для кнопки `about-btn`, чтобы она выглядела гармонично.
+ * 1. (FIX) Кнопка "О сервисе" (?) перемещена внутрь `user-menu-wrapper`.
+ * 2. (STYLE) Обновлены стили `user-menu-wrapper` и `about-btn` для
+ * корректного позиционирования кнопки НАД аватаром.
  -->
 <template>
   <nav class="nav-panel">
@@ -30,13 +29,14 @@
     <!-- Нижняя часть: О сервисе и Профиль -->
     <div class="nav-footer">
       
-      <!-- 🟢 v11.0: Кнопка "О сервисе" (?) -->
-      <button class="nav-item about-btn" @click="showAboutModal = true" title="О сервисе">
-        <span class="question-mark">?</span>
-      </button>
-
       <!-- Меню пользователя -->
       <div class="user-menu-wrapper" ref="userMenuRef">
+        
+        <!-- 🟢 v11.1: Кнопка "О сервисе" перенесена сюда, НАД аватаром -->
+        <button class="nav-item about-btn" @click="showAboutModal = true" title="О сервисе">
+          <span class="question-mark">?</span>
+        </button>
+        
         <button class="user-avatar-btn" @click="toggleUserMenu">
           <div class="avatar-placeholder">
             {{ userInitials }}
@@ -63,7 +63,6 @@
       </div>
     </div>
 
-    <!-- 🟢 v11.0: Модальное окно "О сервисе" -->
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
     
   </nav>
@@ -73,14 +72,14 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { useRouter } from 'vue-router';
-import AboutModal from '@/components/AboutModal.vue'; // Импорт компонента
+import AboutModal from '@/components/AboutModal.vue';
 
 const mainStore = useMainStore();
 const router = useRouter();
 
 const isUserMenuOpen = ref(false);
 const userMenuRef = ref(null);
-const showAboutModal = ref(false); // Состояние модального окна
+const showAboutModal = ref(false);
 
 const user = computed(() => mainStore.user);
 const userName = computed(() => user.value?.name || 'Пользователь');
@@ -104,16 +103,15 @@ function closeUserMenu(event) {
 
 function openSettings() {
   isUserMenuOpen.value = false;
-  router.push('/settings'); // Предполагаем наличие роута /settings
-  // Если роута нет, можно показать уведомление или модалку настроек
+  router.push('/settings');
   console.log("Open settings clicked");
 }
 
 async function handleLogout() {
   isUserMenuOpen.value = false;
   await mainStore.logout();
-  router.push('/login'); // Перенаправление на логин (если есть такая страница)
-  window.location.reload(); // Полная перезагрузка для очистки состояния
+  router.push('/login');
+  window.location.reload();
 }
 
 onMounted(() => {
@@ -193,10 +191,20 @@ onUnmounted(() => {
   width: 100%;
 }
 
-/* 🟢 v11.0: Стили кнопки "О сервисе" */
+/* --- User Menu --- */
+.user-menu-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px; /* Отступ между знаком ? и аватаром */
+}
+
+/* 🟢 v11.1: Стили кнопки "О сервисе" */
 .about-btn {
   border: 1px solid var(--color-border);
   color: var(--color-text);
+  /* Размер и форма такие же, как у nav-item */
 }
 .question-mark {
   font-weight: 700;
@@ -208,10 +216,6 @@ onUnmounted(() => {
   color: var(--color-accent);
 }
 
-/* --- User Menu --- */
-.user-menu-wrapper {
-  position: relative;
-}
 
 .user-avatar-btn {
   width: 40px;
