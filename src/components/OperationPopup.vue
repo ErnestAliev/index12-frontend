@@ -5,18 +5,18 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v12.3 - Validation Restored ---
- * * ВЕРСИЯ: 12.3 - Обязательные поля восстановлены
+ * * --- МЕТКА ВЕРСИИ: v12.4 - Fix Modal Close Logic ---
+ * * ВЕРСИЯ: 12.4 - Исправление закрытия окна "Smart Create"
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Восстановлена СТРОГАЯ валидация в `handleSave`.
- * Поля `selectedOwner` и `selectedContractorId` снова обязательны.
- * 2. (UI) Вернулись звездочки (*) в названия полей.
- * 3. (LOGIC) Сохранена защита от двойного клика (`isInlineSaving`).
+ * 1. (FIX) В функции `saveNewOwner` заменен вызов `cancelCreateOwner()`
+ * на прямое закрытие `showCreateOwnerModal.value = false`.
+ * Ранее `cancelCreateOwner` блокировался флагом `isInlineSaving`,
+ * из-за чего окно не закрывалось после успешного создания.
  */
 
-console.log('--- OperationPopup.vue v12.3 (Validation Restored) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v12.4 (Fix Modal Close) ЗАГРУЖЕН ---');
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -196,7 +196,7 @@ const _getDateKey = (date) => {
 // --- 🟢 HANDLE SAVE ---
 // =================================================================
 const handleSave = async () => {
-  if (isInlineSaving.value) return; // Защита от двойного клика
+  if (isInlineSaving.value) return;
 
   console.log('[OperationPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
@@ -204,14 +204,14 @@ const handleSave = async () => {
   const amountFromState = (amount.value || '').replace(/ /g, '');
   const amountParsed = parseFloat(amountFromState);
 
-  // 🔴 ВАЛИДАЦИЯ ВОССТАНОВЛЕНА: Все 4 поля обязательны
+  // 🔴 ВАЛИДАЦИЯ: Все 4 поля обязательны
   if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorId.value) {
     errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания/Физлицо, Контрагент.';
-    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ - не все поля заполнены');
+    console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ');
     return;
   }
   
-  isInlineSaving.value = true; // Блокируем интерфейс
+  isInlineSaving.value = true;
 
   try {
     const [year, month, day] = editableDate.value.split('-').map(Number);
@@ -260,7 +260,7 @@ const handleSave = async () => {
     console.error('OperationPopup: Error', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
   } finally {
-    isInlineSaving.value = false; // Разблокируем
+    isInlineSaving.value = false;
   }
 };
 
@@ -301,22 +301,27 @@ const openCreateOwnerModal = () => {
   showCreateOwnerModal.value = true;
   nextTick(() => newOwnerInputRef.value?.focus());
 };
+
 const cancelCreateOwner = () => {
-  if (isInlineSaving.value) return;
+  if (isInlineSaving.value) return; // Блокировка
   showCreateOwnerModal.value = false;
   newOwnerName.value = '';
   if (selectedOwner.value === '--CREATE_NEW--') selectedOwner.value = null;
 };
+
 const setOwnerTypeToCreate = (type) => {
   ownerTypeToCreate.value = type;
   newOwnerInputRef.value?.focus();
 };
+
 const saveNewOwner = async () => {
   if (isInlineSaving.value) return;
   const name = newOwnerName.value.trim();
   const type = ownerTypeToCreate.value; 
   if (!name) return;
-  isInlineSaving.value = true;
+  
+  isInlineSaving.value = true; // Блокируем повторы
+
   try {
     let newItem;
     if (type === 'company') {
@@ -327,9 +332,16 @@ const saveNewOwner = async () => {
       newItem = existing ? existing : await mainStore.addIndividual(name);
     }
     selectedOwner.value = `${type}-${newItem._id}`;
-    cancelCreateOwner();
-  } catch (e) { console.error(e); } 
-  finally { isInlineSaving.value = false; }
+    
+    // 🟢 FIX (v12.4): Закрываем окно напрямую, так как cancelCreateOwner заблокирован
+    showCreateOwnerModal.value = false;
+    newOwnerName.value = '';
+
+  } catch (e) { 
+    console.error(e); 
+  } finally { 
+    isInlineSaving.value = false; 
+  }
 };
 
 // --- INLINE CREATE (Остальные) ---
