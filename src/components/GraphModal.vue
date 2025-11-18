@@ -1,351 +1,241 @@
-<script setup>
-import { computed, ref, watch, nextTick } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
-import { formatNumber } from '@/utils/formatters.js';
-import { Bar } from 'vue-chartjs';
-import {
-  Chart as ChartJS,
-  Title,
-  Tooltip,
-  Legend,
-  BarElement,
-  CategoryScale,
-  LinearScale
-} from 'chart.js/auto';
-
-ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
-
-/**
- * * --- МЕТКА ВЕРСИИ: v4.5-HIDE-SUMMARIES ---
- * * ВЕРСИЯ: 4.5 - Возможность скрыть блок итогов
+<!--
+ * * --- МЕТКА ВЕРСИИ: v13.3 - GraphModal Logic Fix ---
+ * * ВЕРСИЯ: 13.3 - Улучшенная логика загрузки и верстки
  * ДАТА: 2025-11-18
  *
- * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлен prop `showSummaries` (default: true).
- * 2. (UPDATE) Блок `.summaries-wrapper` теперь скрывается через v-if.
- */
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (LOGIC) Убрано `visibleDays.value = []` в начале загрузки для стабильности.
+ * 2. (FIX) `nav-panel-container` имеет фиксированную высоту 320px (кнопки не обрезаются).
+ * 3. (PROPS) В GraphRenderer передается :show-summaries="false".
+ * 4. (PROPS) В YAxisPanel передается :bottom-padding="0".
+ -->
+<script setup>
+import { ref, onMounted, nextTick } from 'vue';
+import { useMainStore } from '@/stores/mainStore';
+import NavigationPanel from './NavigationPanel.vue';
+import YAxisPanel from './YAxisPanel.vue';
+import GraphRenderer from './GraphRenderer.vue';
 
-/* ── Пропсы ─────────────────────────────────────────────────────────────── */
-const props = defineProps({
-  visibleDays: { type: Array, required: true },
-  animate: { type: Boolean, default: false },
-  // 🟢 v4.5: Флаг показа итогов (внизу)
-  showSummaries: { type: Boolean, default: true }
-});
-const emit = defineEmits(['update:yLabels']);
-
+const emit = defineEmits(['close']);
 const mainStore = useMainStore();
 
-// =================================================================
-// --- Хелперы для dateKey (v3.7+) ---
-// =================================================================
-const _getDayOfYear = (date) => {
+const isLoading = ref(true);
+const yAxisLabels = ref([]);
+const currentViewMode = ref('12d');
+const today = ref(new Date());
+// Инициализируем пустым массивом, чтобы избежать ошибок доступа
+const visibleDays = ref([]);
+
+// --- Хелперы ---
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
-  return Math.floor(diff / 86400000);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
 };
-const _getDateKey = (date) => {
-  const year = date.getFullYear();
-  const doy = _getDayOfYear(date);
-  return `${year}-${doy}`;
-};
-// --- КОНЕЦ ХЕЛПЕРОВ ---
+const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-
-/* ── Максимум по данным ─────────────────────────────────────────────────── */
-const rawMaxY = computed(() => {
-  let max = 0;
-  for (const [, data] of mainStore.dailyChartData) {
-    if (data.income > max) max = data.income;
-    if (Math.abs(data.expense) > max) max = Math.abs(data.expense);
-  }
-  return max || 1;
-});
-
-/* ── «Красивые» шаг/максимум по ряду 1/2/5×10^n на 8 интервалов ─────────── */
-function niceStep(rawStep) {
-  if (rawStep <= 0) return 1;
-  const exp = Math.floor(Math.log10(rawStep));
-  const base = Math.pow(10, exp);
-  const frac = rawStep / base;
-
-  let niceFrac;
-  if (frac <= 1)      niceFrac = 1;
-  else if (frac <= 2) niceFrac = 2;
-  else if (frac <= 5) niceFrac = 5;
-  else                niceFrac = 10;
-
-  return niceFrac * base;
-}
-
-const axisStep = computed(() => {
-  const desired = rawMaxY.value / 8;
-  return niceStep(desired);
-});
-
-const axisMax = computed(() => {
-  const maxNeeded = rawMaxY.value;
-  const step = axisStep.value;
-  const minNiceMax = step * 8;
-  if (maxNeeded <= minNiceMax) return minNiceMax;
-  const k = Math.ceil(maxNeeded / step);
-  const kAligned = Math.max(8, k);
-  const kAligned8 = Math.ceil(kAligned / 8) * 8;
-  return kAligned8 * step;
-});
-
-/* ── Тики для Y-оси (ЧИСЛА, сверху вниз) ────────────────────────────────── */
-const yAxisTicks = computed(() => {
-  const ticks = [];
-  const step = axisStep.value;
-  const max = axisMax.value;
-  for (let v = max; v >= 0; v -= step) {
-    ticks.push(v);
-  }
-  if (ticks.length > 9) return ticks.slice(0, 9);
-  if (ticks.length < 9) {
-    while (ticks.length < 9) ticks.push(0);
-  }
-  return ticks;
-});
-
-watch(yAxisTicks, (ticks) => {
-  emit('update:yLabels', ticks);
-}, { immediate: true });
-
-/* ── Сводки по дням ─────────────────────────────────────────────────────── */
-const summaries = computed(() => {
-  if (!props.showSummaries) return []; // Оптимизация
-  return props.visibleDays.map(day => {
-    const dateKey = _getDateKey(day.date);
-    const data = mainStore.dailyChartData.get(dateKey) || { income: 0, expense: 0, closingBalance: 0 };
-    
-    return {
-      date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
-      income: data.income,
-      expense: data.expense,
-      balance: data.closingBalance
-    };
-  });
-});
-
-// --- Логика для группировки в подсказке ---
-const getTooltipOperationList = (ops) => {
-  if (!ops || ops.length === 0) return [];
-  const sortedOps = [...ops].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-  return sortedOps.map(op => {
-    if (op.isTransfer) return null;
-    return {
-      isIncome: op.type === 'income',
-      accName: op.accountId?.name || '???',
-      contName: op.contractorId?.name || '---',
-      projName: op.projectId?.name || '---',
-      catName: op.categoryId?.name || 'Без категории',
-      amount: op.amount
-    };
-  }).filter(Boolean);
-};
-
-/* ── Данные графика ─────────────────────────────────────────────────────── */
-const chartData = computed(() => {
-  const labels = [];
-  const incomeData = [];
-  const expenseData = [];
-  const incomeDetails = []; 
-  const expenseDetails = [];
-
-  for (const day of props.visibleDays) {
-    const dateKey = _getDateKey(day.date);
-    const data = mainStore.dailyChartData.get(dateKey) || { income: 0, expense: 0 };
-    
-    const allOps = (mainStore.allOperationsFlat || []);
-    const incomeOps = allOps.filter(op => op.dateKey === dateKey && op.type === 'income');
-    const expenseOps = allOps.filter(op => op.dateKey === dateKey && op.type === 'expense');
-    
-    incomeDetails.push(getTooltipOperationList(incomeOps));
-    expenseDetails.push(getTooltipOperationList(expenseOps));
-
-    labels.push(day.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
-    incomeData.push(data.income);
-    expenseData.push(Math.abs(data.expense));
-  }
-
-  return {
-    labels,
-    datasets: [
-      { 
-        label: 'Доход',
-        backgroundColor: '#34c759', 
-        data: incomeData,  
-        stack: 'stack1',
-        details: incomeDetails 
-      },
-      { 
-        label: 'Расход', 
-        backgroundColor: '#ff3b30', 
-        data: expenseData, 
-        stack: 'stack1',
-        details: expenseDetails 
-      }
-    ]
-  };
-});
-
-/* ── Опции графика ──────────────────────────────────────────────────────── */
-const chartOptions = computed(() => {
-  const yMax = axisMax.value;
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: true,
-        callbacks: {
-          title: () => null,
-          label: (context) => {
-            const dataset = context.dataset;
-            const index = context.dataIndex;
-            const totalLabel = dataset.label || '';
-            const totalValue = context.raw;
-            const formattedTotal = totalLabel === 'Расход' 
-              ? formatNumber(-Math.abs(totalValue)) 
-              : formatNumber(totalValue);
-            
-            const lines = [`${totalLabel}: ${formattedTotal} т`];
-
-            const opsList = dataset.details?.[index];
-            if (!opsList || opsList.length === 0) {
-              return lines; 
-            }
-            
-            lines.push('---'); 
-
-            opsList.forEach(op => {
-              const amountStr = formatNumber(Math.abs(op.amount)) + ' т';
-              const acc = op.accName || '???';
-              const cont = op.contName || '---';
-              const proj = op.projName || '---';
-              const cat = op.catName || 'Без кат.';
-              
-              lines.push('');
-
-              if (op.isIncome) {
-                lines.push(`${amountStr} < ${acc} < ${cont} < ${proj} < ${cat}`);
-              } else {
-                lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
-              }
-            });
-            return lines;
-          },
-          footer: () => null
-        }
-      }
-    },
-    scales: {
-      x: { stacked: true, display: false },
-      y: { stacked: true, max: yMax, min: 0, display: false }
-    }
-  };
+const generateVisibleDays = (mode) => {
+  // Защита: если метод стора недоступен, фоллбек на 12
+  const modeDays = mainStore.computeTotalDaysForMode ? mainStore.computeTotalDaysForMode(mode, today.value) : 12;
   
-  if (!props.animate) {
-    options.animation = false;
-    options.animations = { colors: false, x: false, y: false, tension: false, numbers: false };
-    options.transitions = {
-      active: { animation: { duration: 0 } },
-      resize: { animation: { duration: 0 } },
-      show: { animations: { x: { duration: 0 }, y: { duration: 0 } } },
-      hide: { animations: { x: { duration: 0 }, y: { duration: 0 } } }
-    };
-    options.datasets = { bar: { animations: { x: { duration: 0 }, y: { duration: 0 } } } };
-    options.plugins.tooltip.animation = { duration: 0 };
-  }
+  const baseDate = new Date(today.value);
+  let startDate = new Date(baseDate);
   
-  return options;
-});
+  // Сдвигаем дату старта в зависимости от режима
+  switch (mode) {
+    case '12d': startDate.setDate(startDate.getDate() - 5); break;
+    case '1m':  startDate.setDate(startDate.getDate() - 15); break;
+    case '3m':  startDate.setDate(startDate.getDate() - 45); break;
+    case '6m':  startDate.setDate(startDate.getDate() - 90); break;
+    case '1y':  startDate.setDate(startDate.getDate() - 180); break;
+    default:    startDate.setDate(startDate.getDate() - 5);
+  }
 
-const chartRef = ref(null);
-watch([chartData, chartOptions], async () => {
+  const days = [];
+  for (let i = 0; i < modeDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+    days.push({
+      id: i,
+      date: d,
+      isToday: sameDay(d, today.value),
+      dayOfYear: getDayOfYear(d),
+      dateKey: _getDateKey(d)
+    });
+  }
+  visibleDays.value = days;
+};
+
+const loadGraphData = async (mode) => {
+  isLoading.value = true;
+  // 🔴 УБРАНО: visibleDays.value = []; 
+  // Мы не очищаем массив мгновенно, чтобы не передавать "пустоту" в дочерние компоненты
+  // до того, как isLoading скроет их (или если мы решим убрать v-if).
+  
   await nextTick();
-  const chart = chartRef.value?.chart;
-  if (chart) chart.update('none');
+  
+  try {
+    if (mainStore.loadCalculationData) {
+      await mainStore.loadCalculationData(mode, today.value);
+    }
+    generateVisibleDays(mode);
+  } catch (error) {
+    console.error("GraphModal: Ошибка загрузки данных:", error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const onChangeView = (newMode) => {
+  if (newMode === currentViewMode.value) return;
+  currentViewMode.value = newMode;
+  loadGraphData(newMode);
+};
+
+onMounted(() => {
+  const t = new Date(); t.setHours(0, 0, 0, 0); today.value = t;
+  loadGraphData('12d');
 });
 </script>
 
 <template>
-  <div class="graph-area" :class="{'no-anim': !animate}">
-    <div class="chart-wrapper">
-      <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
-    </div>
+  <div class="modal-overlay" @click.self="$emit('close')">
+    <div class="modal-content graph-modal-content">
+      
+      <div class="modal-header">
+        <h2>Графики</h2>
+        <button class="close-btn" @click="$emit('close')">&times;</button>
+      </div>
+      
+      <div class="graph-modal-body">
+        
+        <aside class="modal-left-panel">
+          <!-- 
+            🟢 FIX: Фиксированная высота 320px предотвращает сплющивание кнопок
+          -->
+          <div class="nav-panel-container">
+            <NavigationPanel @change-view="onChangeView" />
+          </div>
+          <div class="divider-placeholder"></div>
+          
+          <!-- 
+            🟢 FIX: bottom-padding="0", т.к. итоги скрыты, ось Y идет до низа
+          -->
+          <div class="y-axis-wrapper">
+             <YAxisPanel :yLabels="yAxisLabels" :bottom-padding="0" />
+          </div>
+        </aside>
 
-    <!-- 🟢 v4.5: Условный рендеринг итогов -->
-    <div v-if="showSummaries" class="summaries-wrapper">
-      <div
-        v-for="(day, index) in summaries"
-        :key="index"
-        class="day-summary"
-      >
-        <div class="day-date">{{ day.date }}</div>
-        <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
-        <div class="day-expense">₸ {{ formatNumber(day.expense) }}</div>
-        <div class="day-balance">₸ {{ formatNumber(day.balance) }}</div>
+        <main class="modal-main-content">
+          <div v-if="isLoading" class="loading-indicator">
+            <div class="spinner"></div>
+            <p>Загрузка данных...</p>
+          </div>
+          
+          <div v-else class="graph-wrapper">
+            <!-- 
+              🟢 FIX: :show-summaries="false" скрывает блок итогов дня
+              v-if="visibleDays.length" - дополнительная защита от рендера без данных
+            -->
+            <GraphRenderer
+              v-if="visibleDays.length"
+              :visibleDays="visibleDays"
+              @update:yLabels="yAxisLabels = $event"
+              :animate="true"
+              :show-summaries="false"
+            />
+          </div>
+        </main>
+        
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.graph-area {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000; backdrop-filter: blur(3px);
+}
+.modal-content {
+  width: 95vw; max-width: 1600px; height: 85vh; max-height: 900px;
+  background: var(--color-background); border-radius: 12px;
+  border: 1px solid var(--color-border); box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 15px 24px; border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-background-soft);
+}
+.modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--color-heading); }
+.close-btn {
+  background: none; border: none; font-size: 28px;
+  color: var(--color-text-soft); cursor: pointer; padding: 0; line-height: 1;
+}
+.close-btn:hover { color: var(--color-text); }
+
+.graph-modal-body {
+  flex-grow: 1; display: flex; overflow: hidden;
+  background-color: var(--color-background);
 }
 
-.no-anim, .no-anim * {
-  transition: none !important;
-  animation: none !important;
-}
-
-.chart-wrapper {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* Зона сводок */
-.summaries-wrapper {
-  flex: 0 0 90px;
-  height: 90px;
-  border-top: 1px solid var(--color-border);
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  width: 100%;
-}
-
-:deep(canvas) {
-  display: block !important;
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.day-summary {
-  padding: 8px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  font-size: 0.8em;
+/* --- ЛЕВАЯ ПАНЕЛЬ --- */
+.modal-left-panel {
+  width: 60px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  background-color: var(--color-background-soft);
   border-right: 1px solid var(--color-border);
+}
+
+/* 🟢 ФИКС ВЕРСТКИ: Задаем жесткую высоту и запрещаем сжатие */
+.nav-panel-container {
+  flex: 0 0 320px; 
+  min-height: 320px;
+  border-bottom: 1px solid var(--color-border);
   overflow: hidden;
 }
-.day-date   { color: #aaa; font-weight: bold; margin-bottom: 5px; }
-.day-income { color: var(--color-primary); font-weight: 500; }
-.day-expense{ color: var(--color-danger);  font-weight: 500; }
-.day-balance{ color: #ccc; font-weight: 500; margin-top: 5px; }
+
+.divider-placeholder {
+  flex-shrink: 0; height: 15px;
+  background-color: var(--color-background-soft);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* YAxisPanel занимает все оставшееся место */
+.y-axis-wrapper {
+  flex-grow: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* --- ОСНОВНАЯ ОБЛАСТЬ --- */
+.modal-main-content {
+  flex-grow: 1; display: flex; flex-direction: column;
+  overflow: hidden; position: relative;
+}
+.graph-wrapper {
+  flex-grow: 1; width: 100%; height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.loading-indicator {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--color-text);
+}
+.spinner {
+  width: 40px; height: 40px;
+  border: 4px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
