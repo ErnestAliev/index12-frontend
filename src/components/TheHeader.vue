@@ -3,31 +3,25 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.0 - INCOME/EXPENSE WIDGETS SUPPORT ---
- * * ВЕРСИЯ: 18.0 - Поддержка виджетов "Мои доходы" и "Мои расходы"
+ * * --- МЕТКА ВЕРСИИ: v18.1 - FIX BUILD ---
+ * * ВЕРСИЯ: 18.1 - Исправлены импорты для сборки Vercel
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Импортирован `OperationListEditor.vue`.
- * 2. (LOGIC) `onCategoryAdd` теперь обрабатывает `incomeList` и `expenseList`, открывая `OperationPopup`.
- * 3. (LOGIC) `onCategoryEdit` теперь обрабатывает `incomeList` и `expenseList`, открывая `OperationListEditor`.
- * 4. (TEMPLATE) Добавлен рендеринг `HeaderCategoryCard` для новых ключей.
- * 5. (TEMPLATE) Добавлен компонент `<OperationListEditor>`.
+ * 1. (FIX) Все импорты компонентов из текущей папки заменены на относительные './'.
+ * Это гарантирует, что Vite найдет их, даже если алиас '@' глючит.
  */
 
-console.log('--- TheHeader.vue v18.0 (Income/Expense Widgets) ЗАГРУЖЕН ---');
-
-// Карточки
+// Импортируем компоненты относительно текущей папки (./)
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
-import TransferPopup from '@/components/TransferPopup.vue';
+import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
-import TransferListEditor from '@/components/TransferListEditor.vue';
-// 🟢 NEW: Редактор списка операций (ВАЖНО: Имя с заглавной буквы!)
-import OperationListEditor from '@/components/OperationListEditor.vue';
-import OperationPopup from '@/components/OperationPopup.vue'; // Нужно для открытия из onCategoryAdd
+import TransferListEditor from './TransferListEditor.vue';
+import OperationListEditor from './OperationListEditor.vue';
+import OperationPopup from './OperationPopup.vue'; 
 
 const mainStore = useMainStore();
 
@@ -35,7 +29,6 @@ const mainStore = useMainStore();
 const isTransferPopupVisible = ref(false);
 const isTransferEditorVisible = ref(false);
 
-// 🟢 NEW: Состояния для редактора операций
 const isOperationListEditorVisible = ref(false);
 const operationListEditorType = ref('income'); // 'income' | 'expense'
 const operationListEditorTitle = ref('');
