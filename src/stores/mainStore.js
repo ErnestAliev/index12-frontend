@@ -1,13 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.7 - INCOME/EXPENSE LIST WIDGETS ---
- * * ВЕРСИЯ: 11.7 - Добавлены виджеты списков "Мои доходы" и "Мои расходы"
- * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v12.0 - STRICT 6 WIDGETS ---
+ * * ВЕРСИЯ: 12.0 - Исправлен состав виджетов по умолчанию
+ * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CONFIG) В `staticWidgets` добавлены `incomeList` и `expenseList`.
- * 2. (COMPUTED) Добавлены геттеры `currentIncomes`, `futureIncomes`, `currentExpenses`, `futureExpenses`.
- * Они возвращают плоские списки операций, отсортированные по дате (новые сверху),
- * для использования в виджетах-списках.
+ * 1. (FIX) `dashboardLayout` теперь строго содержит 6 элементов по умолчанию:
+ * CurrentTotal, Accounts, Companies, Contractors, Projects, FutureTotal.
+ * 2. (CONFIG) В `staticWidgets` зарегистрированы ВСЕ возможные типы виджетов,
+ * чтобы их можно было выбрать из меню (включая скрытые Income/Expense/Individuals).
  */
 
 import { defineStore } from 'pinia';
@@ -33,7 +33,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.7 (Income/Expense List Widgets) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v12.0 (Strict 6 Widgets) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -49,17 +49,20 @@ export const useMainStore = defineStore('mainStore', () => {
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
+  // Полный список доступных виджетов (для меню выбора)
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего (на тек. момент)' },
-    { key: 'incomeList',   name: 'Мои доходы' },   // 🟢 NEW
-    { key: 'expenseList',  name: 'Мои расходы' },  // 🟢 NEW
     { key: 'accounts',     name: 'Мои счета' },
     { key: 'companies',    name: 'Мои компании' },
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
+    { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
+    
+    // Скрытые по умолчанию:
+    { key: 'incomeList',   name: 'Мои доходы' },
+    { key: 'expenseList',  name: 'Мои расходы' },
     { key: 'individuals',  name: 'Мои Физлица' },
     { key: 'categories',   name: 'Категории' }, 
-    { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
   ]);
 
   // --- ХЕЛПЕР: Это категория "Перевод"? ---
@@ -69,13 +72,13 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer';
   };
 
-  // 🟢 NEW: Список категорий для UI (без "Перевода")
+  // Список категорий для UI (без "Перевода")
   const visibleCategories = computed(() => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
+  // Динамический список всех виджетов (статика + категория "Перевод" если есть)
   const allWidgets = computed(() => {
-    // Ищем системную категорию для отдельного виджета
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
     if (transferCategory) {
@@ -84,8 +87,16 @@ export const useMainStore = defineStore('mainStore', () => {
      return [...staticWidgets.value, ...cats];
   });
 
+  // 🟢 FIX: Железное правило - 6 виджетов по умолчанию
   const savedLayout = localStorage.getItem('dashboardLayout');
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','incomeList','expenseList','accounts','companies','contractors','projects','futureTotal']);
+  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
+    'currentTotal', // 1
+    'accounts',     // 2
+    'companies',    // 3
+    'contractors',  // 4
+    'projects',     // 5
+    'futureTotal'   // 6
+  ]);
   
   watch(dashboardLayout, (newLayout) => {
     localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
@@ -107,6 +118,7 @@ export const useMainStore = defineStore('mainStore', () => {
     localStorage.setItem('projection', JSON.stringify(newProjection));
   }, { deep: true });
   
+  // Логика замены виджета (сохраняет общее количество)
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
@@ -192,8 +204,8 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  // --- СПИСКИ ОПЕРАЦИЙ (Current) ---
-  
+  // --- СПИСКИ ОПЕРАЦИЙ ---
+
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
@@ -203,7 +215,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // 🟢 NEW: Текущие доходы
   const currentIncomes = computed(() => {
     const incomes = currentOps.value.filter(op => !isTransfer(op) && op.type === 'income');
     return incomes.sort((a, b) => {
@@ -213,7 +224,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // 🟢 NEW: Текущие расходы
   const currentExpenses = computed(() => {
     const expenses = currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
     return expenses.sort((a, b) => {
@@ -222,7 +232,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return dateB.getTime() - dateA.getTime();
     });
   });
-
 
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
@@ -238,8 +247,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // --- СПИСКИ ОПЕРАЦИЙ (Future) ---
-
   const futureTransfers = computed(() => {
     const transfers = futureOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
@@ -249,7 +256,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // 🟢 NEW: Будущие доходы
   const futureIncomes = computed(() => {
     const incomes = futureOps.value.filter(op => !isTransfer(op) && op.type === 'income');
     return incomes.sort((a, b) => {
@@ -259,7 +265,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // 🟢 NEW: Будущие расходы
   const futureExpenses = computed(() => {
     const expenses = futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
     return expenses.sort((a, b) => {
@@ -465,7 +470,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
-  // 🟢 FIX: Балансы для виджета "Категории" теперь БЕЗ перевода
+  // 🟢 Балансы для виджета "Категории" теперь БЕЗ перевода
   const currentCategoryBalances = computed(() => {
     const bal = {};
     // Инициализируем только видимые категории
@@ -1149,7 +1154,7 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentTransfers, futureTransfers,
     
-    // 🟢 NEW: Экспорт списков доходов и расходов
+    // 🟢 Экспорт списков доходов и расходов
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
 
