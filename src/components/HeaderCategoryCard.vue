@@ -5,19 +5,18 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.4 - SIMPLE LAYOUT ---
- * * ВЕРСИЯ: 4.4 - Упрощенный макет: Счет > Дата > Сумма
+ * * --- МЕТКА ВЕРСИИ: v4.5 - CENTERED DATE FIX ---
+ * * ВЕРСИЯ: 4.5 - Дата строго по центру (absolute positioning)
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Макет списка (Доход/Расход) упрощен по требованию:
- * Слева: Мой счет.
- * Центр: Дата.
- * Справа: Только сумма (без второй строки).
- * 2. (CLEANUP) Убрана лишняя логика отображения "Второй стороны".
+ * 1. (CSS) .custom-item получил position: relative.
+ * 2. (CSS) .col-center теперь position: absolute; left: 50%; transform: translateX(-50%).
+ * Это гарантирует, что дата всегда ровно посередине, независимо от длины текста слева/справа.
+ * 3. (CSS) Добавлены защитные отступы (padding/max-width) для боковых колонок, чтобы текст не наезжал на дату.
  */
 
-console.log('--- HeaderCategoryCard.vue v4.4 (Simple Layout) ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v4.5 (Centered Date Fix) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -228,7 +227,7 @@ const handleEdit = () => { emit('edit'); };
         </div>
       </div>
 
-      <!-- 🟢 2. УПРОЩЕННЫЙ СПИСОК ДОХОДОВ / РАСХОДОВ -->
+      <!-- 2. УПРОЩЕННЫЙ СПИСОК ДОХОДОВ / РАСХОДОВ (Абсолютное центрирование даты) -->
       <div v-else-if="isIncomeListWidget || isExpenseListWidget" class="custom-list-container">
         <div class="custom-list">
             <div v-for="op in operationList" :key="op._id" class="custom-item">
@@ -238,7 +237,7 @@ const handleEdit = () => { emit('edit'); };
                   {{ getAccountName(op.accountId) }}
               </div>
 
-              <!-- ЦЕНТР: Дата -->
+              <!-- 🟢 ЦЕНТР: Дата (Абсолютное позиционирование) -->
               <div class="col-center">
                   {{ formatOpDate(op.date) }}
               </div>
@@ -340,16 +339,22 @@ const handleEdit = () => { emit('edit'); };
 .t-acc.right { text-align: right; }
 .t-date { color: #666; font-size: 0.9em; white-space: nowrap; }
 
-/* --- 🟢 УПРОЩЕННЫЕ СТИЛИ ДЛЯ ДОХОДОВ/РАСХОДОВ --- */
+/* --- 🟢 УПРОЩЕННЫЕ СТИЛИ ДЛЯ ДОХОДОВ/РАСХОДОВ (АБСОЛЮТНОЕ ЦЕНТРИРОВАНИЕ) --- */
 .custom-list-container {
   display: flex; flex-direction: column; height: 100%;
 }
 .custom-list {
   flex-grow: 1; display: flex; flex-direction: column; gap: 14px;
 }
+
+/* Контейнер строки теперь имеет relative */
 .custom-item {
-  display: flex; align-items: center; justify-content: space-between;
+  position: relative; /* 🟢 Важно для абсолютного позиционирования даты */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 0.85em;
+  height: 24px; /* Фиксируем высоту, чтобы дата встала ровно */
 }
 
 /* СЛЕВА: Счет */
@@ -357,23 +362,25 @@ const handleEdit = () => { emit('edit'); };
   flex: 1; min-width: 0;
   color: var(--color-text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  padding-right: 8px;
+  padding-right: 40px; /* 🟢 Отступ, чтобы длинный текст не наехал на дату */
   font-size: 1.05em;
 }
 
 /* ЦЕНТР: Дата */
 .col-center {
+  position: absolute; /* 🟢 Вырываем из потока */
+  left: 50%;
+  transform: translateX(-50%); /* 🟢 Центрируем строго по середине родителя */
   color: #666;
   font-size: 0.9em;
-  flex-shrink: 0;
-  text-align: center;
-  min-width: 60px;
+  white-space: nowrap;
+  pointer-events: none; /* Чтобы клики проходили, если нужно */
 }
 
 /* СПРАВА: Сумма */
 .col-right {
-  flex: 0 0 auto; /* Занимает ровно столько места, сколько нужно сумме */
-  padding-left: 8px;
+  flex: 0 0 auto;
+  padding-left: 40px; /* 🟢 Отступ, чтобы не наехало на дату */
   text-align: right;
 }
 
