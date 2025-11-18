@@ -1,16 +1,15 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.3 - GraphModal Logic Fix ---
- * * ВЕРСИЯ: 13.3 - Улучшенная логика загрузки и верстки
+ * * --- МЕТКА ВЕРСИИ: v13.4 - Header Date Range ---
+ * * ВЕРСИЯ: 13.4 - Добавлено отображение дат диапазона в заголовке
  * ДАТА: 2025-11-18
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (LOGIC) Убрано `visibleDays.value = []` в начале загрузки для стабильности.
- * 2. (FIX) `nav-panel-container` имеет фиксированную высоту 320px (кнопки не обрезаются).
- * 3. (PROPS) В GraphRenderer передается :show-summaries="false".
- * 4. (PROPS) В YAxisPanel передается :bottom-padding="0".
+ * 1. (NEW) `headerDateRange`: computed-свойство для форматирования дат (с... по...).
+ * 2. (UI) В `.modal-header` добавлен вывод диапазона дат.
+ * 3. (CSS) Добавлен стиль `.header-subtitle` для красивого отображения даты.
  -->
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import NavigationPanel from './NavigationPanel.vue';
 import YAxisPanel from './YAxisPanel.vue';
@@ -23,7 +22,7 @@ const isLoading = ref(true);
 const yAxisLabels = ref([]);
 const currentViewMode = ref('12d');
 const today = ref(new Date());
-// Инициализируем пустым массивом, чтобы избежать ошибок доступа
+// Инициализируем пустым массивом
 const visibleDays = ref([]);
 
 // --- Хелперы ---
@@ -35,14 +34,32 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
+// 🟢 NEW (v13.4): Вычисляем текст диапазона для заголовка
+const headerDateRange = computed(() => {
+  if (!visibleDays.value || visibleDays.value.length === 0) return '';
+  
+  const start = visibleDays.value[0].date;
+  const end = visibleDays.value[visibleDays.value.length - 1].date;
+  
+  // Форматтеры
+  const dayMonth = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
+  const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  
+  // Если годы разные, показываем год для обеих дат
+  if (start.getFullYear() !== end.getFullYear()) {
+     return `${fullDate.format(start)} — ${fullDate.format(end)}`;
+  }
+  
+  // Иначе год только в конце
+  return `${dayMonth.format(start)} — ${fullDate.format(end)}`;
+});
+
 const generateVisibleDays = (mode) => {
-  // Защита: если метод стора недоступен, фоллбек на 12
   const modeDays = mainStore.computeTotalDaysForMode ? mainStore.computeTotalDaysForMode(mode, today.value) : 12;
   
   const baseDate = new Date(today.value);
   let startDate = new Date(baseDate);
   
-  // Сдвигаем дату старта в зависимости от режима
   switch (mode) {
     case '12d': startDate.setDate(startDate.getDate() - 5); break;
     case '1m':  startDate.setDate(startDate.getDate() - 15); break;
@@ -69,10 +86,6 @@ const generateVisibleDays = (mode) => {
 
 const loadGraphData = async (mode) => {
   isLoading.value = true;
-  // 🔴 УБРАНО: visibleDays.value = []; 
-  // Мы не очищаем массив мгновенно, чтобы не передавать "пустоту" в дочерние компоненты
-  // до того, как isLoading скроет их (или если мы решим убрать v-if).
-  
   await nextTick();
   
   try {
@@ -104,24 +117,22 @@ onMounted(() => {
     <div class="modal-content graph-modal-content">
       
       <div class="modal-header">
-        <h2>Графики</h2>
+        <!-- 🟢 v13.4: Добавлен subtitle с датами -->
+        <h2>
+          Графики 
+          <span class="header-subtitle" v-if="headerDateRange">{{ headerDateRange }}</span>
+        </h2>
         <button class="close-btn" @click="$emit('close')">&times;</button>
       </div>
       
       <div class="graph-modal-body">
         
         <aside class="modal-left-panel">
-          <!-- 
-            🟢 FIX: Фиксированная высота 320px предотвращает сплющивание кнопок
-          -->
           <div class="nav-panel-container">
             <NavigationPanel @change-view="onChangeView" />
           </div>
           <div class="divider-placeholder"></div>
           
-          <!-- 
-            🟢 FIX: bottom-padding="0", т.к. итоги скрыты, ось Y идет до низа
-          -->
           <div class="y-axis-wrapper">
              <YAxisPanel :yLabels="yAxisLabels" :bottom-padding="0" />
           </div>
@@ -134,10 +145,6 @@ onMounted(() => {
           </div>
           
           <div v-else class="graph-wrapper">
-            <!-- 
-              🟢 FIX: :show-summaries="false" скрывает блок итогов дня
-              v-if="visibleDays.length" - дополнительная защита от рендера без данных
-            -->
             <GraphRenderer
               v-if="visibleDays.length"
               :visibleDays="visibleDays"
@@ -171,7 +178,16 @@ onMounted(() => {
   padding: 15px 24px; border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
 }
-.modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--color-heading); }
+.modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--color-heading); display: flex; align-items: baseline; }
+
+/* 🟢 v13.4: Стиль для дат */
+.header-subtitle {
+  font-size: 0.85em;
+  color: #888; /* Тусклый цвет */
+  margin-left: 12px;
+  font-weight: 400;
+}
+
 .close-btn {
   background: none; border: none; font-size: 28px;
   color: var(--color-text-soft); cursor: pointer; padding: 0; line-height: 1;
@@ -191,7 +207,6 @@ onMounted(() => {
   border-right: 1px solid var(--color-border);
 }
 
-/* 🟢 ФИКС ВЕРСТКИ: Задаем жесткую высоту и запрещаем сжатие */
 .nav-panel-container {
   flex: 0 0 320px; 
   min-height: 320px;
@@ -205,7 +220,6 @@ onMounted(() => {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* YAxisPanel занимает все оставшееся место */
 .y-axis-wrapper {
   flex-grow: 1;
   min-height: 0;
@@ -239,3 +253,6 @@ onMounted(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
+```
+
+Я завершил изменения. Теперь в заголовке модального окна будет отображаться точный диапазон дат (например, "10 ноября — 22 ноября 2025"), что устраняет неопределенность относительно периода, показанного на графике.
