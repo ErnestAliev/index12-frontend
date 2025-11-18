@@ -5,16 +5,17 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.6 - SCOPED CLICK FIX ---
- * * ВЕРСИЯ: 3.6 - Исправлена зона закрытия меню
- * * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v3.7 - FIX SYSTEM WIDGET UI ---
+ * * ВЕРСИЯ: 3.7 - Скрытие кнопки редактирования для Переводов
+ * * ДАТА: 2025-11-19
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) `handleClickOutside` использует `menuRef`.
- * Теперь клик в пустое место карточки ЗАКРЫВАЕТ меню.
+ * 1. (FIX) Добавлено условие `v-if="!isTransferWidget"` для кнопки "Редактировать".
+ * Теперь у системного виджета "Переводы" нет кнопки переименования.
+ * 2. (LOGIC) Улучшена логика определения `isTransferWidget` (учет 'transfer').
  */
 
-console.log('--- HeaderCategoryCard.vue v3.6 (Scoped Click Fix) ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v3.7 (System Widget UI Fix) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -26,9 +27,7 @@ const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
 
 const isDropdownOpen = ref(false);
-// 🟢 NEW: Ref для заголовка
 const menuRef = ref(null);
-
 const searchQuery = ref('');
 
 const isFilterOpen = ref(false);
@@ -54,14 +53,10 @@ const handleSelect = (newWidgetKey) => {
   nextTick(() => { isDropdownOpen.value = false; });
 };
 
-// --- 🟢 УЛУЧШЕННАЯ ЛОГИКА ЗАКРЫТИЯ ---
 const handleClickOutside = (event) => {
-  // Закрываем виджет-меню, если клик не по заголовку
   if (isDropdownOpen.value && menuRef.value && !menuRef.value.contains(event.target)) {
     isDropdownOpen.value = false;
   }
-  
-  // Логика для фильтра (оставляем как было, она работает корректно с кнопками)
   if (isFilterOpen.value && 
       filterDropdownRef.value && !filterDropdownRef.value.contains(event.target) && 
       filterBtnRef.value && !filterBtnRef.value.contains(event.target)) {
@@ -78,10 +73,13 @@ watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
   }
 });
 
+// 🟢 УЛУЧШЕНО: Более гибкая проверка на системный виджет
 const isTransferWidget = computed(() => {
   const catId = props.widgetKey.replace('cat_', '');
   const category = mainStore.getCategoryById(catId); 
-  return category && category.name.toLowerCase() === 'перевод';
+  if (!category) return false;
+  const name = category.name.toLowerCase();
+  return name === 'перевод' || name === 'transfer';
 });
 
 const transferList = computed(() => {
@@ -127,7 +125,6 @@ const handleEdit = () => { emit('edit'); };
   <div class="dashboard-card" ref="cardRef">
 
     <div class="card-title-container">
-      <!-- 🟢 Ref на заголовок -->
       <div class="card-title" ref="menuRef" @click.stop="toggleDropdown">
         {{ title }} <span>▽</span>
         
@@ -166,7 +163,9 @@ const handleEdit = () => { emit('edit'); };
         <button @click.stop="handleAdd" class="action-square-btn" title="Добавить">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
-        <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
+        
+        <!-- 🟢 СКРЫВАЕМ КНОПКУ, ЕСЛИ ЭТО ПЕРЕВОД -->
+        <button v-if="!isTransferWidget" @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
       </div>
@@ -257,7 +256,7 @@ const handleEdit = () => { emit('edit'); };
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
-.filter-dropdown { position: absolute; top: 35px; right: 0; width: 160px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; }
+.filter-dropdown { position: absolute; top: 35px; right: 0; width: 160px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
 .filter-group-title { font-size: 0.75em; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 6px; padding-left: 2px; }
 .filter-dropdown ul { list-style: none; margin: 0; padding: 0; }
 .filter-dropdown li { padding: 8px 10px; border-radius: 6px; font-size: 0.85em; color: #333; cursor: pointer; font-weight: 500 !important; transition: background-color 0.2s; }
