@@ -1,17 +1,17 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.7 - Header Range Total ---
- * * ВЕРСИЯ: 13.7 - Добавлена сумма диапазона в заголовок
+ * * --- МЕТКА ВЕРСИИ: v13.8 - Big Header Total ---
+ * * ВЕРСИЯ: 13.8 - Обновлен стиль суммы в заголовке
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлен расчет `rangeTotal` (сумма всех операций за видимый период).
- * 2. (UI) В `accountsInfoPart` добавлена сумма в скобках.
- * 3. (UI) Добавлена условная раскраска суммы (зеленый/красный).
+ * 1. (UI) Сумма теперь отображается крупным белым шрифтом.
+ * 2. (UI) Добавлен символ валюты "₸" перед суммой.
+ * 3. (CSS) `.range-total` обновлен: font-size 1.3em, color white.
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import { formatNumber } from '@/utils/formatters.js'; // Импортируем форматтер
+import { formatNumber } from '@/utils/formatters.js';
 import NavigationPanel from './NavigationPanel.vue';
 import YAxisPanel from './YAxisPanel.vue';
 import GraphRenderer from './GraphRenderer.vue';
@@ -34,52 +34,41 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 NEW (v13.7): Расчет общей суммы за период
+// Расчет общей суммы за период
 const rangeTotal = computed(() => {
   if (!visibleDays.value || visibleDays.value.length === 0) return 0;
-  
   let total = 0;
-  
-  // Пробегаем по всем дням и суммируем Income + Expense (Expense обычно отрицательный, но проверим store)
-  // В mainStore.dailyChartData expense хранится как положительное число в поле expense, 
-  // но для баланса нам нужно (Income - Expense).
-  
   for (const day of visibleDays.value) {
     const dateKey = _getDateKey(day.date);
     const data = mainStore.dailyChartData?.get(dateKey);
-    
     if (data) {
-      // data.income - доход (положительный)
-      // data.expense - расход (положительное число по модулю, нужно вычесть)
       total += (data.income || 0) - (data.expense || 0);
     }
   }
-  
   return total;
 });
 
-// 🟢 NEW (v13.7): Форматированная строка суммы
+// 🟢 v13.8: Форматированная строка суммы (без знака +, с символом валюты)
 const rangeTotalString = computed(() => {
   const val = rangeTotal.value;
-  const sign = val > 0 ? '+' : ''; // Минус formatNumber добавит сам, если число отрицательное
-  return `${sign} ${formatNumber(val)}`;
+  // Если число отрицательное, formatNumber может вернуть "- 100", 
+  // но нам нужно контролировать знак и валюту.
+  const absVal = Math.abs(val);
+  const formatted = formatNumber(absVal);
+  
+  // Символ тенге
+  const currency = '₸'; 
+  
+  if (val < 0) return `- ${currency} ${formatted}`;
+  return `${currency} ${formatted}`;
 });
 
-// 🟢 NEW (v13.7): Класс цвета для суммы
-const rangeTotalClass = computed(() => {
-  if (rangeTotal.value > 0) return 'text-income';
-  if (rangeTotal.value < 0) return 'text-expense';
-  return 'text-grey';
-});
 
-
-// Часть 1 - Информация о счетах + Сумма
 const accountsInfoPart = computed(() => {
   const count = mainStore.accounts ? mainStore.accounts.length : 0;
-  return `Всего на ${count} счетах `;
+  return `Всего на ${count} счетах`;
 });
 
-// Часть 2 - Информация о дате
 const dateInfoPart = computed(() => {
   let endDateStr = '';
   if (visibleDays.value && visibleDays.value.length > 0) {
@@ -157,16 +146,15 @@ onMounted(() => {
         <h2>
           Графики 
           <span class="header-subtitle">
-            <!-- Первая часть: "Всего на N счетах" -->
             <span class="text-grey">{{ accountsInfoPart }}</span>
             
-            <!-- 🟢 v13.7: Сумма в скобках -->
-            <span class="range-total" :class="rangeTotalClass">({{ rangeTotalString }})</span>
+            <!-- 🟢 v13.8: Двоеточие -->
+            <span class="text-grey separator"> : </span>
             
-            <!-- Разделитель -->
-            <span class="text-grey"> • </span>
+            <!-- 🟢 v13.8: Крупная белая сумма -->
+            <span class="range-total">{{ rangeTotalString }}</span>
             
-            <!-- Вторая часть: "до ..." -->
+            <span class="text-grey separator"> • </span>
             <span class="text-green">{{ dateInfoPart }}</span>
           </span>
         </h2>
@@ -174,7 +162,6 @@ onMounted(() => {
       </div>
       
       <div class="graph-modal-body">
-        
         <aside class="modal-left-panel">
           <div class="nav-panel-container">
             <NavigationPanel @change-view="onChangeView" />
@@ -190,7 +177,6 @@ onMounted(() => {
             <div class="spinner"></div>
             <p>Загрузка данных...</p>
           </div>
-          
           <div v-else class="graph-wrapper">
             <GraphRenderer
               v-if="visibleDays.length"
@@ -201,7 +187,6 @@ onMounted(() => {
             />
           </div>
         </main>
-        
       </div>
     </div>
   </div>
@@ -225,24 +210,32 @@ onMounted(() => {
   padding: 15px 24px; border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
 }
-.modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--color-heading); display: flex; align-items: baseline; }
+/* Выравнивание baseline важно для разного размера шрифта */
+.modal-header h2 { 
+  margin: 0; 
+  font-size: 1.2rem; 
+  color: var(--color-heading); 
+  display: flex; 
+  align-items: baseline; 
+}
 
-/* Общий контейнер подзаголовка */
 .header-subtitle {
   font-size: 0.85em;
   margin-left: 12px;
   font-weight: 400;
 }
 
-/* Цвета */
 .text-grey { color: #888; }
 .text-green { color: #34c759; }
+.separator { margin: 0 4px; }
 
-/* 🟢 v13.7: Цвета для суммы */
-.range-total { margin-left: 4px; font-weight: 500; }
-.text-income { color: #34c759; } /* Зеленый */
-.text-expense { color: #ff3b30; } /* Красный */
-
+/* 🟢 v13.8: Новый стиль суммы */
+.range-total {
+  color: #FFFFFF;      /* Белый цвет */
+  font-weight: 700;    /* Жирный */
+  font-size: 1.3em;    /* На 30% больше (относительно базового 1em родителя) */
+  margin: 0 4px;
+}
 
 .close-btn {
   background: none; border: none; font-size: 28px;
