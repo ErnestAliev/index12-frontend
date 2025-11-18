@@ -3,17 +3,19 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.1 - USE VISIBLE CATEGORIES ---
- * * ВЕРСИЯ: 16.1 - Использование visibleCategories в редакторе
+ * * --- МЕТКА ВЕРСИИ: v17.0 - TRANSFER LIST EDITOR ---
+ * * ВЕРСИЯ: 17.0 - Внедрение редактора списка переводов
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) В `@edit` для виджета 'categories' теперь передается `mainStore.visibleCategories`.
- * Это гарантирует, что категория "Перевод" НЕ появится в списке для редактирования/удаления
- * в общем виджете "Категории".
+ * 1. (NEW) Добавлен `TransferListEditor.vue` для управления операциями перевода.
+ * 2. (LOGIC) В `onCategoryEdit` теперь проверка: если это виджет "Перевод",
+ * открывается `TransferListEditor` (список операций), а не переименование категории.
+ * Это соответствует требованию: "Я нажимаю редактировать переводы... нахожу нужный перевод... и удаляю его".
+ * 3. (FIX) Виджет "Категории" теперь использует `visibleCategories`, чтобы исключить "Перевод" из списка.
  */
 
-console.log('--- TheHeader.vue v16.1 (Use Visible Categories) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v17.0 (Transfer List Editor) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -22,9 +24,12 @@ import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
+// 🟢 NEW: Новый компонент редактора списка переводов
+import TransferListEditor from '@/components/TransferListEditor.vue';
 
 const mainStore = useMainStore();
 const isTransferPopupVisible = ref(false);
+const isTransferEditorVisible = ref(false); // 🟢 Состояние для нового окна
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
@@ -160,7 +165,14 @@ const onCategoryEdit = (widgetKey) => {
     if (category) {
         const lowerName = category.name.toLowerCase();
         const isTransfer = (lowerName === 'перевод' || lowerName === 'transfer');
-        openRenamePopup(`Категория: ${category.name}`, category, null, !isTransfer, 'categories');
+        
+        if (isTransfer) {
+            // 🟢 FIX: Для перевода открываем специальный редактор списка
+            isTransferEditorVisible.value = true;
+        } else {
+            // Для остальных категорий - переименование
+            openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
+        }
     }
 };
 
@@ -292,6 +304,12 @@ const handleTransferComplete = async (eventData) => {
       @close="isTransferPopupVisible = false"
       @transfer-complete="handleTransferComplete"
     />
+    
+  <!-- 🟢 NEW: Попап списка переводов -->
+  <TransferListEditor
+    v-if="isTransferEditorVisible"
+    @close="isTransferEditorVisible = false"
+  />
 </template>
 
 <style scoped>
