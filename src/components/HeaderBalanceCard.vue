@@ -5,18 +5,16 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.5 - FIX DROPDOWN CLOSURE ---
- * * ВЕРСИЯ: 3.5 - Исправлено закрытие выпадающего списка по клику вне компонента
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v3.6 - SCOPED CLICK FIX ---
+ * * ВЕРСИЯ: 3.6 - Исправлена зона закрытия меню
+ * * ДАТА: 2025-11-18
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Улучшена логика `handleClickOutside` для выпадающего списка виджетов (`isDropdownOpen`),
- * чтобы он гарантированно закрывался при клике вне карточки.
- * 2. (REFACTOR) Убрана лишняя логика закрытия фильтра из `handleClickOutside`, так как
- * она уже реализована в `handleFilterClickOutside` и `watch(isFilterOpen)`.
+ * 1. (FIX) `handleClickOutside` использует `menuRef` вместо `cardRef`.
+ * Теперь клик по списку элементов или кнопкам действий ЗАКРЫВАЕТ меню выбора виджета.
  */
 
-console.log('--- HeaderBalanceCard.vue v3.5 (Fix Dropdown Closure) ЗАГРУЖЕН ---');
+console.log('--- HeaderBalanceCard.vue v3.6 (Scoped Click Fix) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -27,9 +25,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['add', 'edit']);
-
 const mainStore = useMainStore();
-const cardRef = ref(null);
+
+// 🟢 NEW: Ref только для зоны заголовка (где лежит меню)
+const menuRef = ref(null);
 
 // --- Прогноз ---
 const showFutureBalance = computed({
@@ -90,15 +89,15 @@ const formatBalance = (balance) => {
 
 const handleSelect = (newWidgetKey) => {
   mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
-  // Используем nextTick для предотвращения "проваливания" клика
   nextTick(() => { isDropdownOpen.value = false; });
 };
 
-// --- !!! ГЛАВНАЯ ЛОГИКА ЗАКРЫТИЯ (Fix Dropdown Closure) !!! ---
+// --- 🟢 УЛУЧШЕННАЯ ЛОГИКА ЗАКРЫТИЯ ---
 const handleClickOutside = (event) => {
-  // Проверяем, был ли клик СНАРУЖИ этого компонента
-  if (cardRef.value && !cardRef.value.contains(event.target)) {
-    isDropdownOpen.value = false; // Закрываем меню
+  // Закрываем, если клик НЕ по заголовку (menuRef)
+  // Это значит клик по списку, по кнопкам или в пустое место карточки - закроет меню.
+  if (menuRef.value && !menuRef.value.contains(event.target)) {
+    isDropdownOpen.value = false; 
   }
 };
 
@@ -110,16 +109,16 @@ watch(isDropdownOpen, (isOpen) => {
     document.removeEventListener('mousedown', handleClickOutside);
   }
 });
-// --- КОНЕЦ ЛОГИКИ ЗАКРЫТИЯ ---
 
 const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 </script>
 
 <template>
-  <div class="dashboard-card" ref="cardRef" @click.stop="isFilterOpen = false">
+  <div class="dashboard-card" @click.stop="isFilterOpen = false">
     
     <div class="card-title-container">
-      <div class="card-title" @click.stop="toggleDropdown">
+      <!-- 🟢 Ref вешаем сюда, так как меню внутри -->
+      <div class="card-title" ref="menuRef" @click.stop="toggleDropdown">
         {{ props.title }} <span>▽</span>
         <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
           <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." @click.stop />
@@ -199,6 +198,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
       </div>
     </div>
     
+    <!-- Клик сюда теперь тоже закроет меню виджетов -->
     <div class="card-items-list">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
         <span>{{ item.name }}</span>
@@ -240,43 +240,19 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 .card-title:hover { color: #ddd; }
 .card-title span { font-size: 0.8em; margin-left: 4px; }
 
-/* --- ОБНОВЛЕННЫЕ СТИЛИ КНОПОК --- */
-.card-actions {
-  display: flex;
-  gap: 6px; 
-  position: relative; z-index: 101;
-}
-
-.action-square-btn {
-  width: 18px;
-  height: 18px;
-  border: 1px solid transparent; 
-  border-radius: 4px; 
-  /* 🔴 Новый цвет фона */
-  background-color: #3D3B3B; 
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; padding: 0;
-  color: #888; 
-  transition: all 0.2s ease;
-}
-
-.action-square-btn:hover { background-color: #555; color: #ccc; } /* Чуть светлее при наведении */
+.card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
+.action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
+.action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
-
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
-/* ----------------------------------- */
-
-.card-items-list {
-  flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; min-height: 0;
-}
+.card-items-list { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; min-height: 0; }
 .card-items-list::-webkit-scrollbar { display: none; }
 .card-item { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 0.25rem; }
 .card-item-empty { font-size: 0.9em; color: #666; }
 .card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
 .card-item span:last-child { color: var(--color-text); font-weight: 500; white-space: nowrap; }
 .card-item span.expense { color: var(--color-danger); }
-
 .forecast-display { display: flex; align-items: center; gap: 4px; color: var(--color-text); font-weight: 500; white-space: nowrap; }
 .forecast-arrow { font-size: 0.9em; color: #777; }
 .forecast-display span.expense { color: var(--color-danger); }
@@ -303,9 +279,7 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
   .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .card-item span:first-child { padding-right: 5px; }
   .forecast-display { gap: 2px; }
-  
   .card-actions { gap: 3px; }
-  
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
 }
