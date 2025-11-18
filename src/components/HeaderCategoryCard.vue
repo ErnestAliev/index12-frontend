@@ -5,16 +5,18 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.8 - ENABLE EDIT BTN ---
- * * ВЕРСИЯ: 3.8 - Возврат кнопки редактирования
+ * * --- МЕТКА ВЕРСИИ: v4.0 - INCOME/EXPENSE LISTS ---
+ * * ВЕРСИЯ: 4.0 - Поддержка списков "Мои доходы" и "Мои расходы"
  * * ДАТА: 2025-11-19
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Убрана проверка `v-if="!isTransferWidget"` с кнопки редактирования.
- * Теперь кнопка доступна для ВСЕХ виджетов, включая системный "Перевод".
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) Добавлены computed `isIncomeListWidget` и `isExpenseListWidget`.
+ * 2. (LOGIC) Добавлен `operationList` для получения списка операций доходов/расходов.
+ * 3. (UI) В шаблон добавлен блок вывода списка для доходов/расходов (по аналогии с переводами).
+ * 4. (UI) Реализована логика отображения "Откуда -> Куда" для разных типов операций.
  */
 
-console.log('--- HeaderCategoryCard.vue v3.8 (Enable Edit Btn) ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v4.0 (Income/Expense Lists) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -72,24 +74,53 @@ watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
   }
 });
 
+// --- Определяем тип виджета ---
 const isTransferWidget = computed(() => {
+  // Проверка по ключу категории или имени
   const catId = props.widgetKey.replace('cat_', '');
   const category = mainStore.getCategoryById(catId); 
-  if (!category) return false;
-  const name = category.name.toLowerCase();
-  return name === 'перевод' || name === 'transfer';
+  if (category) {
+      const name = category.name.toLowerCase();
+      return name === 'перевод' || name === 'transfer';
+  }
+  return false;
 });
 
+const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
+const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
+const isListWidget = computed(() => isTransferWidget.value || isIncomeListWidget.value || isExpenseListWidget.value);
+
+// --- Списки данных ---
 const transferList = computed(() => {
   if (!isTransferWidget.value) return [];
   let list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
   if (!list) return [];
   list = [...list];
-  if (sortMode.value === 'desc') list.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-  else if (sortMode.value === 'asc') list.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
+  applySort(list);
   return list;
 });
 
+const operationList = computed(() => {
+  let list = [];
+  if (isIncomeListWidget.value) {
+    list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes;
+  } else if (isExpenseListWidget.value) {
+    list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses;
+  }
+  if (!list) return [];
+  // Копируем и сортируем
+  let sorted = [...list];
+  applySort(sorted);
+  return sorted;
+});
+
+function applySort(list) {
+  if (sortMode.value === 'desc') list.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  else if (sortMode.value === 'asc') list.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
+  // Default уже отсортирован по дате в сторе
+}
+
+// --- Хелперы отображения ---
 const getAccountName = (accIdOrObj) => {
   if (!accIdOrObj) return '???';
   const id = typeof accIdOrObj === 'object' ? accIdOrObj._id : accIdOrObj;
@@ -97,7 +128,33 @@ const getAccountName = (accIdOrObj) => {
   return acc ? acc.name : 'Удален';
 };
 
-const formatTransferDate = (dateVal) => {
+const getEntityName = (entityIdOrObj, type) => {
+  if (!entityIdOrObj) return '---';
+  const id = typeof entityIdOrObj === 'object' ? entityIdOrObj._id : entityIdOrObj;
+  if (type === 'contractor') {
+      const c = mainStore.contractors.find(x => x._id === id);
+      return c ? c.name : 'Контрагент';
+  }
+  if (type === 'company') {
+      const c = mainStore.companies.find(x => x._id === id);
+      return c ? c.name : 'Компания';
+  }
+  if (type === 'individual') {
+      const i = mainStore.individuals.find(x => x._id === id);
+      return i ? i.name : 'Физлицо';
+  }
+  return '???';
+};
+
+// Универсальный метод получения имени "Второй стороны"
+const getCounterpartyName = (op) => {
+    if (op.contractorId) return getEntityName(op.contractorId, 'contractor');
+    if (op.companyId) return getEntityName(op.companyId, 'company');
+    if (op.individualId) return getEntityName(op.individualId, 'individual');
+    return 'Без контрагента';
+};
+
+const formatOpDate = (dateVal) => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
   const day = d.getDate().toString().padStart(2, '0');
@@ -107,6 +164,8 @@ const formatTransferDate = (dateVal) => {
 };
 
 const categoryBreakdown = computed(() => {
+  // Только для обычных категорий
+  if (isListWidget.value) return { income: 0, expense: 0, total: 0 };
   const source = showFutureBalance.value ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
   const data = source[props.widgetKey] || { income: 0, expense: 0, total: 0 };
   return data;
@@ -151,18 +210,19 @@ const handleEdit = () => { emit('edit'); };
       </div>
 
       <div class="card-actions">
-        <!-- Buttons... -->
+        <!-- Фильтр -->
         <button class="action-square-btn" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
           <img :src="filterIcon" alt="Filter" class="icon-svg" />
         </button>
+        <!-- Прогноз -->
         <button class="action-square-btn" :class="{ 'active': showFutureBalance }" @click.stop="showFutureBalance = !showFutureBalance" title="Прогноз">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
+        <!-- Добавить -->
         <button @click.stop="handleAdd" class="action-square-btn" title="Добавить">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
-        
-        <!-- 🟢 ВЕРНУЛИ КНОПКУ ДЛЯ ВСЕХ (включая Перевод) -->
+        <!-- Редактировать -->
         <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
@@ -170,7 +230,7 @@ const handleEdit = () => { emit('edit'); };
 
       <!-- FILTER DROPDOWN -->
       <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
-        <div v-if="isTransferWidget" class="filter-group">
+        <div v-if="isListWidget" class="filter-group">
           <div class="filter-group-title">Сортировка</div>
           <ul>
             <li :class="{ active: sortMode === 'default' }" @click="setSortMode('default')">По дате</li>
@@ -189,6 +249,8 @@ const handleEdit = () => { emit('edit'); };
     </div>
 
     <div class="category-items-list-scroll">
+      
+      <!-- 1. СПИСОК ПЕРЕВОДОВ -->
       <div v-if="isTransferWidget" class="transfer-list">
         <div v-for="t in transferList" :key="t._id" class="transfer-item">
           <div class="t-row t-top">
@@ -198,7 +260,7 @@ const handleEdit = () => { emit('edit'); };
           </div>
           <div class="t-row t-bottom">
             <span class="t-acc left" :title="getAccountName(t.fromAccountId)">{{ getAccountName(t.fromAccountId) }}</span>
-            <span class="t-date">{{ formatTransferDate(t.date) }}</span>
+            <span class="t-date">{{ formatOpDate(t.date) }}</span>
             <span class="t-acc right" :title="getAccountName(t.toAccountId)">{{ getAccountName(t.toAccountId) }}</span>
           </div>
         </div>
@@ -207,6 +269,41 @@ const handleEdit = () => { emit('edit'); };
         </div>
       </div>
 
+      <!-- 2. СПИСОК ДОХОДОВ / РАСХОДОВ (Новые виджеты) -->
+      <div v-else-if="isIncomeListWidget || isExpenseListWidget" class="transfer-list">
+        <div v-for="op in operationList" :key="op._id" class="transfer-item">
+          
+          <!-- Верхняя строка: Сумма (справа или по центру) -->
+          <div class="t-row t-top" style="justify-content: flex-end;">
+             <span class="t-amount" :class="op.type === 'income' ? 'income' : 'expense'">
+               {{ op.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(op.amount)) }} ₸
+             </span>
+          </div>
+          
+          <!-- Нижняя строка: Детали -->
+          <div class="t-row t-bottom">
+            <!-- Для ДОХОДА: От кого (Слева) -> Куда (Справа) -->
+            <template v-if="op.type === 'income'">
+               <span class="t-acc left" :title="getCounterpartyName(op)">{{ getCounterpartyName(op) }}</span>
+               <span class="t-date">{{ formatOpDate(op.date) }}</span>
+               <span class="t-acc right" :title="getAccountName(op.accountId)">{{ getAccountName(op.accountId) }}</span>
+            </template>
+
+            <!-- Для РАСХОДА: Откуда (Слева) -> Кому (Справа) -->
+            <template v-else>
+               <span class="t-acc left" :title="getAccountName(op.accountId)">{{ getAccountName(op.accountId) }}</span>
+               <span class="t-date">{{ formatOpDate(op.date) }}</span>
+               <span class="t-acc right" :title="getCounterpartyName(op)">{{ getCounterpartyName(op) }}</span>
+            </template>
+          </div>
+        </div>
+
+        <div v-if="operationList.length === 0" class="category-item-empty">
+          {{ showFutureBalance ? 'Нет будущих операций' : 'Нет операций' }}
+        </div>
+      </div>
+
+      <!-- 3. ОБЫЧНЫЙ СПИСОК КАТЕГОРИИ (Старый) -->
       <div v-else class="category-breakdown-list">
         <div class="category-item" v-if="filterMode === 'all' || categoryBreakdown.income !== 0">
           <span>Доходы</span>
