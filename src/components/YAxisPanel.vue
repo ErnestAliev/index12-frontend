@@ -2,33 +2,29 @@
 import { computed } from 'vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.1-DEFENSIVE ---
- * * ВЕРСИЯ: 1.1 - Добавлено значение по умолчанию
- * ДАТА: 2025-11-07
+ * * --- МЕТКА ВЕРСИИ: v1.2-DYNAMIC-PADDING ---
+ * * ВЕРСИЯ: 1.2 - Добавлен проп bottomPadding
+ * ДАТА: 2025-11-18
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Добавлено `default: () => []` в prop `yLabels`.
- * 2. Это предотвращает сбой "Cannot read... (reading 'map')"
- * при первом рендеринге, если HomeView передает `undefined`.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) Добавлен prop `bottomPadding` (default: 90).
+ * 2. (UPDATE) `.y-axis-content` теперь использует стиль `bottom: ...px`.
+ * Это нужно, чтобы убирать отступ в модальном окне графиков, где нет итогов дня.
  */
 
 const props = defineProps({
-  // ОЖИДАЕМ ЧИСЛА (например: [16000000, 14000000, ..., 0])
   yLabels: { 
     type: Array, 
     required: true,
-    default: () => [] // <-- 🔴 ИСПРАВЛЕНИЕ (v1.1)
+    default: () => [] 
+  },
+  // 🟢 v1.2: Отступ снизу (для учета блока итогов или его отсутствия)
+  bottomPadding: {
+    type: Number,
+    default: 90 // По умолчанию для HomeView (высота итогов)
   }
 });
 
-/**
- * Компактное форматирование БЕЗ десятичных:
- * - >= 1 000 000 000  -> "N млрд"
- * - >= 1 000 000      -> "N млн"
- * - >= 1 000          -> "N тыс"
- * - иначе целое число
- * Пример: 1_000_000 -> "1 млн", 100_000 -> "100 тыс", 2_000_000_000 -> "2 млрд"
- */
 function formatCompact(n) {
   if (n === null || n === undefined) return '';
   const sign = n < 0 ? '-' : '';
@@ -49,7 +45,8 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
 
 <template>
   <div class="y-axis-panel">
-    <div class="y-axis-content">
+    <!-- 🟢 v1.2: Динамический bottom -->
+    <div class="y-axis-content" :style="{ bottom: props.bottomPadding + 'px' }">
       <div v-for="(label, index) in formattedLabels" :key="index" class="y-label">
         {{ label }}
       </div>
@@ -60,11 +57,9 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
 <style scoped>
 .y-axis-panel {
   width: 100%;
-  height: 100%; /* Занимает 100% родителя */
+  height: 100%;
   overflow: hidden; 
   position: relative; 
-  
-  /* Стилизация */
   background-color: var(--color-background-soft);
   border-right: 1px solid var(--color-border);
   box-sizing: border-box;
@@ -75,10 +70,8 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
   top: 0;
   left: 0;
   right: 0;
-
-  /* ВАЖНО: оставляем ровно как у вас,
-     чтобы низ НЕ смещался и учитывал высоту блока итогов */
-  bottom: 90px; 
+  
+  /* bottom задается инлайново через style */
   
   display: flex;
   flex-direction: column;
@@ -87,7 +80,7 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
   padding: 0 5px;
   box-sizing: border-box;
 
-  /* Отступы, чтобы выровнять метки с графиком — оставляю без изменений */
+  /* Отступы для выравнивания тиков с линиями графика ChartJS */
   padding-top: 10px; 
   padding-bottom: 10px;
 }
