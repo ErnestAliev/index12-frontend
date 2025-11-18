@@ -1,3 +1,15 @@
+<!--
+ * * --- МЕТКА ВЕРСИИ: v13.0 - Интеграция GraphModal ---
+ * * ВЕРСИЯ: 13.0 - Добавлена кнопка и подключено модальное окно
+ * ДАТА: 2025-11-18
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) Импорт `GraphModal.vue`.
+ * 2. (NEW) Ref `showGraphModal`.
+ * 3. (NEW) Кнопка ".graph-btn" в правой панели (под Import/Export).
+ * 4. (NEW) Компонент <GraphModal> в шаблоне.
+ * 5. (CSS) Стили для позиционирования кнопки графиков.
+ -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import OperationPopup from '@/components/OperationPopup.vue';
@@ -10,23 +22,15 @@ import GraphRenderer from '@/components/GraphRenderer.vue';
 import YAxisPanel from '@/components/YAxisPanel.vue';
 import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
+// 🟢 v13.0: Импорт нового компонента
+import GraphModal from '@/components/GraphModal.vue';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v12.0 - Лимит дат в попапах ---
- * * ВЕРСИЯ: 12.0 - Ограничение календаря в попапах
- * ДАТА: 2025-11-18
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлены `computed` `minDateFromProjection` и `maxDateFromProjection`
- * (получают `rangeStartDate` / `rangeEndDate` из `mainStore`).
- * 2. (NEW) `OperationPopup` и `TransferPopup` теперь
- * получают `min-allowed-date` и `max-allowed-date` как props.
- */
-
-console.log('--- HomeView.vue v12.0 (Лимит дат в попапах) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v13.0 (GraphModal Integration) ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
+// 🟢 v13.0: Управление видимостью модального окна графиков
+const showGraphModal = ref(false);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -105,6 +109,7 @@ const _parseDateKey = (dateKey) => {
         return new Date(); 
     }
     const [year, doy] = dateKey.split('-').map(Number);
+    if (isNaN(year) || isNaN(doy)) return new Date();
     const date = new Date(year, 0, 1);
     date.setDate(doy);
     return date;
@@ -155,7 +160,6 @@ const selectedDay = ref(null);
 const selectedCellIndex = ref(0);
 const operationToEdit = ref(null);
 
-// 🟢 NEW (v12.0): Получаем min/max даты из store
 const minDateFromProjection = computed(() => {
   return mainStore.projection.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null;
 });
@@ -184,7 +188,6 @@ const headerResizerRef = ref(null);
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
-// 🔴 ИЗМЕНЕНО: Стартовая высота 130px
 const HEADER_MIN_H = 130; 
 const HEADER_MAX_H_RATIO = 0.5; 
 const headerHeightPx = ref(HEADER_MIN_H); 
@@ -632,7 +635,6 @@ onMounted(async () => {
   centerToday(); 
   await nextTick();
 
-  // 🔴 ИСПРАВЛЕНИЕ: Стартовая высота 130px
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height)
     ? parseFloat(timelineGridRef.value.style.height)
@@ -788,6 +790,15 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         
+        <!-- 🟢 v13.0: Кнопка "Графики" -->
+        <button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </button>
+        
         <div class="user-profile-widget">
           <button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu">
             <img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" />
@@ -815,7 +826,6 @@ onBeforeUnmount(() => {
       <button class="user-menu-item" @click="handleLogout">Выйти</button>
     </div>
     
-    <!-- 🟢 UPDATED (v12.0): Добавлены props min-allowed-date / max-allowed-date -->
     <OperationPopup
       v-if="isPopupVisible"
       :type="operationType"
@@ -830,7 +840,7 @@ onBeforeUnmount(() => {
       @operation-moved="handleOperationMoved"
       @operation-updated="handleOperationUpdated"
     />
-    <!-- 🟢 UPDATED (v12.0): Добавлены props min-allowed-date / max-allowed-date -->
+
     <TransferPopup
       v-if="isTransferPopupVisible"
       :date="selectedDay ? selectedDay.date : new Date()"
@@ -841,10 +851,17 @@ onBeforeUnmount(() => {
       @close="handleCloseTransferPopup"
       @transfer-complete="handleTransferComplete"
     />
+    
     <ImportExportModal 
       v-if="showImportModal"
       @close="showImportModal = false"
       @import-complete="handleImportComplete"
+    />
+    
+    <!-- 🟢 v13.0: Подключение компонента модального окна -->
+    <GraphModal
+      v-if="showGraphModal"
+      @close="showGraphModal = false"
     />
     
   </div>
@@ -878,42 +895,27 @@ onBeforeUnmount(() => {
 /* =========================================== */
 /* === СТИЛИ ДЛЯ ЭКРАНА ВХОДА (LOGIN-SCREEN) === */
 /* =========================================== */
-
-/* Этот класс отвечает за полноэкранный контейнер, 
-  который центрирует .login-box 
-*/
 .login-screen {
   width: 100vw;
   height: 100vh;
-  height: 100dvh; /* Для лучшей поддержки мобильных */
+  height: 100dvh; 
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
   box-sizing: border-box;
-  /* Используем #1a1a1a как фон всего экрана */
   background-color: var(--color-background); 
 }
-
-/* Это сама карточка входа 
-*/
 .login-box {
   width: 100%;
-  max-width: 500px; /* Адаптивность: на десктопе макс. 500px, на мобильном 100% */
+  max-width: 500px;
   padding: 2.5rem 2rem;
-  
-  /* Используем #282828 (soft) для самой карточки,
-     чтобы она немного выделялась на фоне #1a1a1a */
   background: var(--color-background-soft);
-  
   border: 1px solid var(--color-border);
   border-radius: 12px;
   text-align: center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
-
-/* Стили для заголовка 
-*/
 .login-box h1 {
   color: var(--color-heading);
   font-size: 1.75rem;
@@ -921,26 +923,20 @@ onBeforeUnmount(() => {
   line-height: 1.3;
   margin-bottom: 1rem;
 }
-
-/* Стили для параграфа 
-*/
 .login-box p {
   color: var(--color-text);
   font-size: 1rem;
   line-height: 1.5;
   opacity: 0.8;
-  margin-bottom: 2.5rem; /* Больше отступ перед кнопкой */
+  margin-bottom: 2.5rem;
 }
-
-/* Стили для кнопки "Войти через Google" 
-*/
 .google-login-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 12px 24px;
-  background-color: #ffffff; /* Кнопки Google обычно белые */
-  color: #333333; /* Темный текст на белой кнопке */
+  background-color: #ffffff;
+  color: #333333;
   border: 1px solid #ddd;
   border-radius: 8px;
   font-size: 1rem;
@@ -950,14 +946,12 @@ onBeforeUnmount(() => {
   transition: background-color 0.2s, box-shadow 0.2s;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-
 .google-login-button:hover {
   background-color: #f9f9f9;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-
-/* --- Стили остального приложения (для залогиненного пользователя) --- */
+/* --- Стили остального приложения --- */
 .user-profile-widget {
   position: absolute;
   bottom: 0;
@@ -995,7 +989,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 50%;
   margin-right: 8px;
-  background-color: var(--color-primary); /* Зеленый акцент */
+  background-color: var(--color-primary);
   color: #fff;
   display: flex;
   align-items: center;
@@ -1051,7 +1045,6 @@ onBeforeUnmount(() => {
   z-index: 100;
   background-color: var(--color-background);
   display: flex; 
-  /* 🔴 ИСПРАВЛЕНИЕ: Фиксированная стартовая высота 130px */
   height: 130px;
 }
 .header-resizer {
@@ -1106,6 +1099,8 @@ onBeforeUnmount(() => {
   position: relative; 
 }
 .home-right-panel::-webkit-scrollbar { display: none; }
+
+/* Кнопка Импорт/Экспорт */
 .import-export-btn {
   position: absolute;
   top: 8px; 
@@ -1130,6 +1125,32 @@ onBeforeUnmount(() => {
 }
 .import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
+/* 🟢 v13.0: Новая кнопка "Графики" */
+.graph-btn {
+  position: absolute;
+  top: 48px; /* 8px + 32px + 8px отступ */
+  right: 8px; 
+  z-index: 20; 
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text);
+  padding: 0;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.graph-btn:hover {
+  background: var(--color-background-mute);
+  border-color: var(--color-border-hover);
+}
+.graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
+
 .home-main-content {
   flex-grow: 1;
   display: flex;
@@ -1145,10 +1166,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
   scrollbar-width: none;
   -ms-overflow-style: none;
-  
-  /* Запрещаем навигацию "Назад" */
   overscroll-behavior-x: none;
-  /* Разрешаем только вертикальный скролл */
   touch-action: pan-y;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
@@ -1245,3 +1263,4 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
 }
 </style>
+```
