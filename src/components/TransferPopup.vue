@@ -5,17 +5,17 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v12.4 - Fix Modal Close Logic ---
- * * ВЕРСИЯ: 12.4 - Исправление закрытия окна "Smart Create"
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v16.0 - REMOVE CATEGORY UI ---
+ * * ВЕРСИЯ: 16.0 - Удаление выбора категории из попапа перевода
+ * * ДАТА: 2025-11-19
  *
- * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В функции `saveNewOwner` заменен вызов `cancelCreateOwner()`
- * на прямое закрытие `showCreateOwnerModal.value = false`.
- * Это решает проблему с блокировкой окна после успешного создания.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (UI) Из шаблона полностью удален блок выбора/создания категории.
+ * 2. (LOGIC) Категория "Перевод" теперь устанавливается только автоматически
+ * в onMounted и не может быть изменена пользователем.
  */
 
-console.log('--- TransferPopup.vue v12.4 (Fix Modal Close) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v16.0 (Remove Category UI) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -71,9 +71,6 @@ const newFromAccountInput = ref(null);
 const isCreatingToAccount = ref(false);
 const newToAccountName = ref('');
 const newToAccountInput = ref(null);
-const isCreatingCategory = ref(false);
-const newCategoryName = ref('');
-const newCategoryInput = ref(null);
 
 // "Smart Create" Owner
 const showCreateOwnerModal = ref(false);
@@ -138,6 +135,7 @@ const onToAccountSelected = (accountId) => {
 
 // --- MOUNTED ---
 onMounted(async () => {
+  // 🟢 Автоматическая установка категории "Перевод"
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
   if (!transferCategory) {
     try {
@@ -168,12 +166,8 @@ onMounted(async () => {
       selectedToOwner.value = `individual-${iId}`;
     }
     
-    const savedCategoryId = transfer.categoryId?._id;
-    if (savedCategoryId && savedCategoryId !== 'transfer') {
-      categoryId.value = savedCategoryId;
-    } else {
-      categoryId.value = defaultCategoryId;
-    }
+    // Всегда используем ID категории "Перевод", даже если в операции было что-то другое (коррекция старых данных)
+    categoryId.value = defaultCategoryId;
 
     if (transfer.date) {
       editableDate.value = toInputDate(new Date(transfer.date));
@@ -224,7 +218,7 @@ const openCreateOwnerModal = (target) => {
 };
 
 const cancelCreateOwner = () => {
-  if (isInlineSaving.value) return; // Блокировка
+  if (isInlineSaving.value) return;
   showCreateOwnerModal.value = false;
   newOwnerName.value = '';
   if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null;
@@ -259,7 +253,6 @@ const saveNewOwner = async () => {
     if (target === 'from') selectedFromOwner.value = newOwnerKey;
     else selectedToOwner.value = newOwnerKey;
 
-    // 🟢 FIX (v12.4): Закрываем окно напрямую
     showCreateOwnerModal.value = false;
     newOwnerName.value = '';
 
@@ -267,25 +260,7 @@ const saveNewOwner = async () => {
   finally { isInlineSaving.value = false; }
 };
 
-// --- INLINE CREATE (Остальные) ---
-const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
-const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
-const saveNewCategory = async () => {
-  if (isInlineSaving.value) return;
-  const name = newCategoryName.value.trim();
-  if (!name) return;
-  isInlineSaving.value = true;
-  try {
-    const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
-    if (existing) categoryId.value = existing._id;
-    else {
-      const newItem = await mainStore.addCategory(name);
-      categoryId.value = newItem._id;
-    }
-    cancelCreateCategory();
-  } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
-};
-
+// --- INLINE CREATE (Счета) ---
 const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
 const cancelCreateFromAccount = () => { isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
 const saveNewFromAccount = async () => {
@@ -406,7 +381,7 @@ const handleSave = async () => {
         toCompanyId: toCompanyId, 
         fromIndividualId: fromIndividualId, 
         toIndividualId: toIndividualId, 
-        categoryId: categoryId.value
+        categoryId: categoryId.value // Используем системную категорию
     };
 
     let savedOperation;
@@ -497,17 +472,7 @@ const closePopup = () => {
           <option value="--CREATE_NEW--">[ + Создать... ]</option>
         </select>
         
-        <label>Категория</label>
-        <select v-if="!isCreatingCategory" v-model="categoryId" @change="e => e.target.value === '--CREATE_NEW--' ? showCategoryInput() : categoryId = e.target.value" class="form-select">
-          <option :value="null">Без категории</option>
-          <option v-for="cat in mainStore.categories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
-          <option value="--CREATE_NEW--">[ + Создать новую категорию ]</option>
-        </select>
-        <div v-else class="inline-create-form">
-          <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
-          <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
-        </div>
+        <!-- 🟢 v16.0: UI ВЫБОРА КАТЕГОРИИ УДАЛЕН. Она задается системно. -->
 
         <label>Дата поступления денег</label>
         <input type="date" v-model="editableDate" class="form-input" :min="minDateString" :max="maxDateString" />
