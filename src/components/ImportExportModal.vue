@@ -1,19 +1,17 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.12-IMPORT-TEMPLATE ---
- * * ВЕРСИЯ: 10.12 - Добавлена кнопка
- * "Скачать шаблон" для импорта
- * Доходов/Расходов.
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v10.13-FIX-TEMPLATE-COLUMNS ---
+ * * ВЕРСИЯ: 10.13 - Исправление пустого шаблона и строгий порядок колонок
+ * * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) В <template> (step === 'upload')
- * добавлена кнопка "Скачать шаблон".
- * 2. (NEW) Добавлена функция `downloadTemplate`,
- * которая генерирует CSV-строку
- * с правильными заголовками и примерами
- * для Дохода/Расхода.
- * 3. (NEW) Эта функция использует
- * существующий `triggerCsvDownload`.
+ * 1. (FIX) `downloadTemplate`: Исправлен баг с пустым файлом.
+ * Теперь заголовки генерируются явно и в строгом порядке:
+ * Тип, Сумма, Счет, Компания/Физлицо, Контрагент, Проект, Категория, Дата.
+ * 2. (FIX) `prepareExportData`: Данные для экспорта "Доход/Расход"
+ * теперь формируются с ключами, соответствующими строгим заголовкам.
+ * 3. (FIX) `downloadIncomeExpense`: Используется строгий массив колонок `STRICT_COLUMNS`.
+ * 4. (UPDATE) `systemFields`: Добавлен алиас 'компания/физлицо' к полю 'company'
+ * для авто-маппинга.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -40,7 +38,7 @@
       </div>
 
       <!-- ============================================= -->
-      <!-- Вкладка "ИМПОРТ" (🟢 ИЗМЕНЕНО v10.12)       -->
+      <!-- Вкладка "ИМПОРТ"                            -->
       <!-- ============================================= -->
       <div v-if="currentTab === 'import'" class="import-content-wrapper">
         
@@ -67,7 +65,6 @@
                 />
               </label>
               
-              <!-- 🟢 v10.12: НОВАЯ КНОПКА СКАЧАТЬ ШАБЛОН -->
               <button 
                 type="button" 
                 class="btn-secondary download-template-btn" 
@@ -86,7 +83,6 @@
         </div>
 
         <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
-          <!-- ... (mapping content) ... -->
           <p class="step-description">
             Сопоставьте колонки из вашего CSV-файла с полями системы.
           </p>
@@ -137,7 +133,6 @@
         </div>
 
         <div v-if="step === 'review'" class="modal-step-content review-step">
-          <!-- ... (review content) ... -->
           <p class="step-description">
             Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
           </p>
@@ -160,7 +155,6 @@
         </div>
         
         <div v-if="step === 'importing'" class="modal-step-content">
-          <!-- ... (importing content) ... -->
           <div class="loading-indicator">
             <div class="spinner"></div>
             <p>Идет импорт данных... Пожалуйста, подождите.</p>
@@ -171,7 +165,7 @@
       </div>
       
       <!-- =========================================== -->
-      <!-- 🟢 v10.9: Вкладка "ЭКСПОРТ (CSV)"            -->
+      <!-- Вкладка "ЭКСПОРТ (CSV)"                     -->
       <!-- =========================================== -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
         
@@ -225,7 +219,6 @@
 
       <!-- Футер для ИМПОРТА -->
       <div v-if="currentTab === 'import'" class="modal-actions">
-        <!-- ... (кнопки импорта) ... -->
         <button 
           @click="closeModal" 
           class="btn-secondary"
@@ -280,7 +273,6 @@
 import { ref, computed } from 'vue';
 import Papa from 'papaparse';
 import { useMainStore } from '@/stores/mainStore';
-// 🟢 v10.7: Импортируем форматер чисел
 import { formatNumber } from '@/utils/formatters.js';
 
 // --- Компонент ---
@@ -291,12 +283,11 @@ const currentTab = ref('import');
 const isExporting = ref(false);
 const exportError = ref(null);
 
-// 🟢 v10.9: Новые состояния для 3-х файлов
+// Новые состояния для 3-х файлов
 const isDataReady = ref(false);
 const processedIncomeExpense = ref({}); // { data: [], columns: [] }
 const processedTransfers = ref({}); // { data: [], columns: [] }
 const processedSummary = ref({}); // { data: [], columns: [], title: "" }
-
 
 // --- Шаги (Импорт) ---
 const step = ref('upload'); 
@@ -316,17 +307,19 @@ const isAllSelected = computed(() => {
   return validRowCount > 0 && selectedRows.value.size === validRowCount;
 });
 
-
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({});
+
+// 🟢 v10.13: Обновлены алиасы для авто-маппинга с учетом новых заголовков
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
-  { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type'] },
+  { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type', 'тип операции'] },
   { key: 'amount', label: 'Сумма', entity: null, aliases: ['сумма', 'amount'] },
   { key: 'category', label: 'Категория', entity: 'categories', aliases: ['категория', 'category'] },
   { key: 'project', label: 'Проект', entity: 'projects', aliases: ['проект', 'project', 'мои проекты'] },
   { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
-  { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании'] },
+  // Добавили 'компания/физлицо' как алиас для Компании по умолчанию
+  { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании', 'компания/физлицо'] },
   { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
   { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
 ];
@@ -367,7 +360,6 @@ function resetState() {
   
   selectedRows.value.clear(); 
   
-  // 🟢 v10.9: Сброс состояния экспорта
   isExporting.value = false;
   exportError.value = null;
   isDataReady.value = false;
@@ -380,7 +372,6 @@ function resetState() {
   }
 }
 
-// 🟢 v10.9: Отдельная функция сброса для экспорта
 function resetExport() {
   isExporting.value = false;
   exportError.value = null;
@@ -752,40 +743,35 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.11 - TODAY FIX)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.13)
 // ----------------------------------------------
 
+// 🟢 v10.13: Строгая последовательность колонок
+const STRICT_COLUMNS = [
+  'Тип',
+  'Сумма',
+  'Счет',
+  'Компания/Физлицо',
+  'Контрагент',
+  'Проект',
+  'Категория',
+  'Дата'
+];
+
 /**
- * 🟢 v10.12: Новая функция для скачивания шаблона
+ * 🟢 v10.13: Обновленная функция для скачивания шаблона.
+ * Теперь генерирует файл со строгим набором заголовков.
  */
 function downloadTemplate() {
-  const headers = [
-    "Дата",
-    "Тип",
-    "Сумма",
-    "Категория",
-    "Проект",
-    "Счет",
-    "Компания",
-    "Физлицо",
-    "Контрагент"
-  ];
-  
-  // 🔴 ИЗМЕНЕНИЕ: Удаляем примеры, оставляем пустой массив
-  //               чтобы Papa.unparse вывел только заголовки
-  const exampleData = [];
-
-  const csvString = Papa.unparse(exampleData, {
-    header: true,
-    columns: headers,
-  });
+  // Создаем CSV строку вручную, чтобы гарантировать наличие заголовков
+  // даже если данных нет. Papa.unparse([]) может вести себя некорректно.
+  const csvString = STRICT_COLUMNS.join(",");
 
   triggerCsvDownload(csvString, "Import_Template_IncomeExpense");
 }
 
-
 /**
- * 🟢 v10.11: Шаг 1. Подготовка всех 3-х отчетов
+ * 🟢 v10.11/v10.13: Подготовка всех 3-х отчетов
  */
 async function prepareExportData() {
   isExporting.value = true;
@@ -795,16 +781,13 @@ async function prepareExportData() {
     // === 1. ПОДГОТОВКА ДАТ И ПРОГНОЗА ===
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    // 🟢 v10.11: Получаем timestamp (T00:00:00) для СЕГОДНЯ
     const todayTimestamp = today.getTime();
 
-    // Хелперы
     const addDays = (d, days) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
     const addMonths = (d, months) => { const n = new Date(d); n.setMonth(n.getMonth() + months); return n; };
     const addYears = (d, years) => { const n = new Date(d); n.setFullYear(n.getFullYear() + years); return n; };
     const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // Даты прогноза
     const periods = [
       { label: '12 д', date: addDays(today, 12) },
       { label: '1 мес', date: addMonths(today, 1) },
@@ -814,25 +797,23 @@ async function prepareExportData() {
     ];
 
     // === 2. ПОЛУЧЕНИЕ И РАЗДЕЛЕНИЕ ДАННЫХ ===
-    const { operations } = await mainStore.exportAllOperations(); // date: 1
+    const { operations } = await mainStore.exportAllOperations(); 
 
     const pastOps = [];
-    const futureOps = []; // Уже отсортированы по date: 1
+    const futureOps = [];
 
     for (const op of operations) {
       if (!op.date) continue; 
       try {
         const opDate = new Date(op.date);
-        // 🟢 v10.11: Нормализуем дату операции до 00:00:00
         opDate.setHours(0, 0, 0, 0); 
         
         if (isNaN(opDate.getTime())) continue; 
         
-        // 🟢 v10.11: Сравниваем T00 > T00
         if (opDate.getTime() > todayTimestamp) {
           futureOps.push(op);
         } else {
-          pastOps.push(op); // Включая "сегодня"
+          pastOps.push(op); 
         }
       } catch (e) { continue; }
     }
@@ -845,9 +826,10 @@ async function prepareExportData() {
 
     const incomeExpenseRows = [];
     const transferRows = [];
-    const commonColumns = ['Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 'Компании/Физлица', 'Контрагент', 'Проект'];
+    // Для переводов оставим свои колонки, как было в задаче (только Доход/Расход строгие)
+    const transferColumns = ['Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 'Компании/Физлица', 'Контрагент', 'Проект'];
     
-    for (const op of pastOps) { // pastOps уже отсортированы по дате
+    for (const op of pastOps) {
       let dateStr = '';
       if (op.date) {
         try {
@@ -870,19 +852,20 @@ async function prepareExportData() {
           runningBalances.set(opAccountId, opBalance);
         }
         
+        // 🟢 v10.13: Формируем объект СТРОГО по ключам STRICT_COLUMNS
         incomeExpenseRows.push({
           'Тип': op.type === 'income' ? 'Доход' : 'Расход',
-          'Категория': op.categoryId?.name || '',
           'Сумма': opAmount,
-          'Остаток': opBalance,
-          'Дата': dateStr,
           'Счет': op.accountId?.name || '',
-          'Компании/Физлица': op.companyId?.name || op.individualId?.name || '',
+          'Компания/Физлицо': op.companyId?.name || op.individualId?.name || '',
           'Контрагент': op.contractorId?.name || '',
           'Проект': op.projectId?.name || '',
+          'Категория': op.categoryId?.name || '',
+          'Дата': dateStr,
         });
       } 
       else if (op.type === 'transfer' || op.isTransfer) {
+        // Логика переводов остается старой (по требованию "не трогать")
         const fromAccountId = op.fromAccountId?._id || null;
         const toAccountId = op.toAccountId?._id || null;
         const fromOwnerName = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
@@ -930,33 +913,26 @@ async function prepareExportData() {
       }
     }
     
-    // Сохраняем результаты для кнопок 1 и 2
-    processedIncomeExpense.value = { data: incomeExpenseRows, columns: commonColumns };
-    processedTransfers.value = { data: transferRows, columns: commonColumns };
+    // Сохраняем результаты
+    processedIncomeExpense.value = { data: incomeExpenseRows, columns: STRICT_COLUMNS };
+    processedTransfers.value = { data: transferRows, columns: transferColumns };
 
-    // === 4. 🔴 v10.10: ОБРАБОТКА БУДУЩЕЙ СВОДКИ (Файл 3 - PIVOT) ===
-    
-    const accounts = mainStore.accounts; // [ { _id, name }, ... ]
-    const accountNames = accounts.map(a => a.name); // [ "Счет 1", "Счет 2" ]
+    // === 4. ОБРАБОТКА БУДУЩЕЙ СВОДКИ ===
+    // (Логика "Будущих" не меняется, как указано в задании)
+    const accounts = mainStore.accounts;
+    const accountNames = accounts.map(a => a.name);
     const summaryColumns = ["Период", ...accountNames];
     const summaryRows = [];
-
-    // Базовые балансы = Текущие балансы на "сегодня"
-    // 🟢 v10.11: Мы используем `runningBalances`, так как они 
-    // УЖЕ включают операции на "сегодня"
     const baseBalances = new Map(runningBalances);
 
-    // 1. Строка "Текущий Остаток"
     const todayRow = { "Период": "Текущий Остаток" };
     accounts.forEach(acc => {
       todayRow[acc.name] = formatNumber(baseBalances.get(acc._id) || 0);
     });
     summaryRows.push(todayRow);
     
-    // Хелпер для применения операции к карте балансов
     const applyOpToBalances = (balances, op) => {
       const absAmount = Math.abs(op.amount || 0);
-      
       if (op.type === 'income') {
         const accId = op.accountId?._id || null;
         if (accId) balances.set(accId, (balances.get(accId) || 0) + absAmount);
@@ -973,38 +949,30 @@ async function prepareExportData() {
       }
     };
 
-    // 2. Строки "Будущих Периодов"
     for (const period of periods) {
       const periodLabel = `до ${ruFormatter.format(period.date)} (${period.label})`;
       const periodRow = { "Период": periodLabel };
-      
-      // Создаем КОПИЮ текущих балансов для этого периода
       const periodBalances = new Map(baseBalances);
       
-      // Пробегаем по ВСЕМ будущим операциям
       for (const op of futureOps) {
         const opDate = new Date(op.date);
-        // Если операция попадает в этот период
         if (opDate <= period.date) {
           applyOpToBalances(periodBalances, op);
         }
       }
       
-      // Заполняем строку
       accounts.forEach(acc => {
         periodRow[acc.name] = formatNumber(periodBalances.get(acc._id) || 0);
       });
       summaryRows.push(periodRow);
     }
     
-    // Сохраняем результат для кнопки 3
     processedSummary.value = {
       data: summaryRows,
       columns: summaryColumns,
-      title: "Всего на счетах с учетом будущих операций" // 🟢 v10.10
+      title: "Всего на счетах с учетом будущих операций"
     };
 
-    // === 5. ЗАВЕРШЕНИЕ ===
     isDataReady.value = true;
     
   } catch (err) {
@@ -1016,7 +984,8 @@ async function prepareExportData() {
 }
 
 /**
- * 🟢 v10.9: Шаг 2. Функции скачивания
+ * 🟢 v10.13: Экспорт Доходов/Расходов
+ * Использует STRICT_COLUMNS для заголовков.
  */
 function downloadIncomeExpense() {
   const csvString = Papa.unparse(processedIncomeExpense.value.data, {
@@ -1036,33 +1005,21 @@ function downloadTransfers() {
   triggerCsvDownload(csvString, "Transfers");
 }
 
-/**
- * 🟢 v10.10: Обновлено для скачивания Сводки (с заголовком)
- */
 function downloadSummary() {
-  // 1. Создаем CSV-строку (без BOM)
   let csvString = Papa.unparse(processedSummary.value.data, {
     header: true,
     columns: processedSummary.value.columns,
     transform: (value) => (value === null || value === undefined) ? 0 : value,
   });
   
-  // 2. Добавляем кастомный заголовок
   const title = processedSummary.value.title || "Сводный отчет";
-  // Создаем пустые запятые для выравнивания
   const commas = ",".repeat(processedSummary.value.columns.length - 1);
-  const titleRow = `"${title}"${commas}\n\n`; // Две новых строки для отступа
+  const titleRow = `"${title}"${commas}\n\n`; 
 
-  // 3. Передаем в скачивание (BOM + Заголовок + CSV)
   triggerCsvDownload(titleRow + csvString, "Future_Summary");
 }
 
-
-/**
- * 🟢 v10.10: triggerCsvDownload (обновлен)
- */
 function triggerCsvDownload(csvString, filenamePrefix = "export") {
-  // 🟢 v10.10: BOM добавляется здесь, чтобы titleRow не сломал его
   const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
   
   const link = document.createElement('a');
@@ -1083,9 +1040,6 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
   
   URL.revokeObjectURL(url);
 }
-// ----------------------------------------------
-// 🔴 КОНЕЦ: ФУНКЦИИ ДЛЯ ЭКСПОРТА
-// ----------------------------------------------
 </script>
 
 <style scoped>
@@ -1228,7 +1182,6 @@ h2 {
   background: var(--color-accent-hover);
 }
 
-/* 🟢 v10.12: Стили для кнопки "Скачать шаблон" */
 .download-template-btn {
   margin-top: 16px;
   font-size: 14px;
@@ -1255,7 +1208,6 @@ h2 {
   flex-shrink: 0; 
 }
 
-/* 🟢 v10.9: Стили для секции скачивания */
 .download-section {
   display: flex;
   flex-direction: column;
