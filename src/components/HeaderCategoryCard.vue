@@ -5,17 +5,16 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.7 - FIX SYSTEM WIDGET UI ---
- * * ВЕРСИЯ: 3.7 - Скрытие кнопки редактирования для Переводов
+ * * --- МЕТКА ВЕРСИИ: v3.8 - ENABLE EDIT BTN ---
+ * * ВЕРСИЯ: 3.8 - Возврат кнопки редактирования
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Добавлено условие `v-if="!isTransferWidget"` для кнопки "Редактировать".
- * Теперь у системного виджета "Переводы" нет кнопки переименования.
- * 2. (LOGIC) Улучшена логика определения `isTransferWidget` (учет 'transfer').
+ * 1. (FIX) Убрана проверка `v-if="!isTransferWidget"` с кнопки редактирования.
+ * Теперь кнопка доступна для ВСЕХ виджетов, включая системный "Перевод".
  */
 
-console.log('--- HeaderCategoryCard.vue v3.7 (System Widget UI Fix) ЗАГРУЖЕН ---');
+console.log('--- HeaderCategoryCard.vue v3.8 (Enable Edit Btn) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -73,7 +72,6 @@ watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
   }
 });
 
-// 🟢 УЛУЧШЕНО: Более гибкая проверка на системный виджет
 const isTransferWidget = computed(() => {
   const catId = props.widgetKey.replace('cat_', '');
   const category = mainStore.getCategoryById(catId); 
@@ -164,8 +162,8 @@ const handleEdit = () => { emit('edit'); };
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
         
-        <!-- 🟢 СКРЫВАЕМ КНОПКУ, ЕСЛИ ЭТО ПЕРЕВОД -->
-        <button v-if="!isTransferWidget" @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
+        <!-- 🟢 ВЕРНУЛИ КНОПКУ ДЛЯ ВСЕХ (включая Перевод) -->
+        <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
       </div>
