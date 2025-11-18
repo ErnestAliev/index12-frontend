@@ -25,7 +25,7 @@ import TransferPopup from '@/components/TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from '@/components/TransferListEditor.vue';
-// 🟢 NEW: Редактор списка операций
+// 🟢 NEW: Редактор списка операций (ВАЖНО: Имя с заглавной буквы!)
 import OperationListEditor from '@/components/OperationListEditor.vue';
 import OperationPopup from '@/components/OperationPopup.vue'; // Нужно для открытия из onCategoryAdd
 
