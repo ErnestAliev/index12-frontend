@@ -4,7 +4,18 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-console.log('--- HeaderCategoryCard.vue v3.4-FULL-FIX ЗАГРУЖЕН ---');
+/**
+ * * --- МЕТКА ВЕРСИИ: v3.5 - FIX DROPDOWN CLOSURE ---
+ * * ВЕРСИЯ: 3.5 - Исправлено закрытие выпадающего списка по клику вне компонента
+ * ДАТА: 2025-11-18
+ *
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX) Добавлена логика `handleClickOutside` и `watch(isDropdownOpen)`
+ * для выпадающего списка виджетов, чтобы он гарантированно закрывался
+ * при клике вне карточки.
+ */
+
+console.log('--- HeaderCategoryCard.vue v3.5 (Fix Dropdown Closure) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -46,13 +57,13 @@ const handleSelect = (newWidgetKey) => {
   nextTick(() => { isDropdownOpen.value = false; });
 };
 
-// --- Клик снаружи ---
+// --- !!! ГЛАВНАЯ ЛОГИКА ЗАКРЫТИЯ (Fix Dropdown Closure) !!! ---
 const handleClickOutside = (event) => {
   // Закрываем выбор виджета
   if (isDropdownOpen.value && cardRef.value && !cardRef.value.contains(event.target)) {
     isDropdownOpen.value = false;
   }
-  // Закрываем фильтр
+  // Закрываем фильтр (оставляем старую логику, она работает)
   if (isFilterOpen.value && 
       filterDropdownRef.value && !filterDropdownRef.value.contains(event.target) && 
       filterBtnRef.value && !filterBtnRef.value.contains(event.target)) {
@@ -60,14 +71,26 @@ const handleClickOutside = (event) => {
   }
 };
 
-watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
-  if (widgetOpen || filterOpen) {
-    if (widgetOpen) searchQuery.value = '';
+watch(isDropdownOpen, (isOpen) => {
+  if (isOpen) {
+    searchQuery.value = '';
     document.addEventListener('mousedown', handleClickOutside);
   } else {
     document.removeEventListener('mousedown', handleClickOutside);
   }
 });
+
+watch(isFilterOpen, (isOpen) => {
+  // Добавляем/удаляем слушатель для фильтра только если меню виджета закрыто,
+  // чтобы не было двойных слушателей.
+  if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+  } else if (!isDropdownOpen.value) {
+      document.removeEventListener('mousedown', handleClickOutside);
+  }
+});
+// --- КОНЕЦ ЛОГИКИ ЗАКРЫТИЯ ---
+
 
 // --- Данные ---
 
