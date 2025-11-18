@@ -1,14 +1,14 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.0 - Интеграция GraphModal ---
- * * ВЕРСИЯ: 13.0 - Добавлена кнопка и подключено модальное окно
+ * * --- МЕТКА ВЕРСИИ: v14.0 - About Modal Integration ---
+ * * ВЕРСИЯ: 14.0 - Добавлена кнопка "О сервисе"
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Импорт `GraphModal.vue`.
- * 2. (NEW) Ref `showGraphModal`.
- * 3. (NEW) Кнопка ".graph-btn" в правой панели (под Import/Export).
- * 4. (NEW) Компонент <GraphModal> в шаблоне.
- * 5. (CSS) Стили для позиционирования кнопки графиков.
+ * 1. (NEW) Импорт `AboutModal.vue`.
+ * 2. (NEW) Ref `showAboutModal`.
+ * 3. (NEW) Кнопка ".about-btn" в правой панели (над профилем).
+ * 4. (NEW) Компонент <AboutModal> в шаблоне.
+ * 5. (CSS) Стили для позиционирования кнопки (bottom: 64px).
  -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
@@ -22,15 +22,17 @@ import GraphRenderer from '@/components/GraphRenderer.vue';
 import YAxisPanel from '@/components/YAxisPanel.vue';
 import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
-// 🟢 v13.0: Импорт нового компонента
 import GraphModal from '@/components/GraphModal.vue';
+// 🟢 v14.0: Импорт компонента "О сервисе"
+import AboutModal from '@/components/AboutModal.vue';
 
-console.log('--- HomeView.vue v13.0 (GraphModal Integration) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v14.0 (About Modal Integration) ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
-// 🟢 v13.0: Управление видимостью модального окна графиков
 const showGraphModal = ref(false);
+// 🟢 v14.0: Управление видимостью модального окна "О сервисе"
+const showAboutModal = ref(false);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -790,12 +792,21 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         
-        <!-- 🟢 v13.0: Кнопка "Графики" -->
+        <!-- Кнопка "Графики" -->
         <button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </button>
+        
+        <!-- 🟢 v14.0: Кнопка "О сервисе" -->
+        <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
           </svg>
         </button>
         
@@ -858,10 +869,16 @@ onBeforeUnmount(() => {
       @import-complete="handleImportComplete"
     />
     
-    <!-- 🟢 v13.0: Подключение компонента модального окна -->
+    <!-- 🟢 v13.0: Модальное окно графиков -->
     <GraphModal
       v-if="showGraphModal"
       @close="showGraphModal = false"
+    />
+    
+    <!-- 🟢 v14.0: Модальное окно "О сервисе" -->
+    <AboutModal
+      v-if="showAboutModal"
+      @close="showAboutModal = false"
     />
     
   </div>
@@ -1125,7 +1142,7 @@ onBeforeUnmount(() => {
 }
 .import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-/* 🟢 v13.0: Новая кнопка "Графики" */
+/* Кнопка "Графики" */
 .graph-btn {
   position: absolute;
   top: 48px; /* 8px + 32px + 8px отступ */
@@ -1149,6 +1166,31 @@ onBeforeUnmount(() => {
   border-color: var(--color-border-hover);
 }
 .graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
+/* 🟢 v14.0: Кнопка "О сервисе" */
+.about-btn {
+  position: absolute;
+  bottom: 64px; /* Приподнята над профилем пользователя */
+  right: 8px; 
+  z-index: 20; 
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text);
+  padding: 0;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.about-btn:hover {
+  background: var(--color-background-mute);
+  border-color: var(--color-border-hover);
+}
+.about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
 
 .home-main-content {
@@ -1263,4 +1305,3 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
 }
 </style>
-```
