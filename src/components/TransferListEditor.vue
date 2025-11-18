@@ -1,18 +1,18 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.1 - FULL EDITOR GRID ---
- * * ВЕРСИЯ: 18.1 - Полноценный табличный редактор переводов
+ * * --- МЕТКА ВЕРСИИ: v18.2 - FIX ALIGNMENT ---
+ * * ВЕРСИЯ: 18.2 - Исправление "пляшущих" инпутов
  * * ДАТА: 2025-11-19
  *
- * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Полная переработка верстки под Grid-таблицу.
- * 2. (FEAT) Добавлено редактирование всех полей: Дата, Сумма, Счета, Владельцы.
- * 3. (LOGIC) Добавлена кнопка "Сохранить изменения" с пакетным обновлением.
- * 4. (LOGIC) Добавлена авто-подстановка владельца при смене счета.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (STYLE) В класс `.edit-input` добавлено свойство `margin: 0`.
+ * Это убирает влияние глобальных стилей (base.css), которые добавляли
+ * разные отступы для select и input, из-за чего они были на разной высоте.
+ * Теперь все поля выровнены идеально по центру строки.
  */
 
 const props = defineProps({
@@ -28,14 +28,12 @@ const isDeleting = ref(false);
 
 // --- Данные для селектов ---
 const accounts = computed(() => mainStore.accounts);
-// Объединяем Компании и Физлица для селекта "Владелец"
 const owners = computed(() => {
   const comps = mainStore.companies.map(c => ({ ...c, type: 'company', label: c.name }));
   const inds = mainStore.individuals.map(i => ({ ...i, type: 'individual', label: i.name }));
   return [...comps, ...inds];
 });
 
-// Форматирование даты для input type="date" (YYYY-MM-DD)
 const toInputDate = (dateVal) => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
@@ -45,21 +43,23 @@ const toInputDate = (dateVal) => {
   return `${year}-${month}-${day}`;
 };
 
-// Инициализация данных
+const getOwnerId = (compId, indId) => {
+  if (compId) return typeof compId === 'object' ? `company-${compId._id}` : `company-${compId}`;
+  if (indId) return typeof indId === 'object' ? `individual-${indId._id}` : `individual-${indId}`;
+  return null;
+};
+
 onMounted(() => {
   const allOps = mainStore.allOperationsFlat;
-  // Фильтруем только переводы
   const onlyTransfers = allOps.filter(op => 
     op.type === 'transfer' || 
     op.isTransfer === true || 
     (op.categoryId && (op.categoryId.name === 'Перевод' || op.categoryId.name === 'Transfer'))
   );
 
-  // Сортируем (новые сверху) и маппим в локальную структуру
   localItems.value = onlyTransfers
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .map(t => {
-      // Определяем ID владельцев
       const fromOwnerId = getOwnerId(t.fromCompanyId, t.fromIndividualId);
       const toOwnerId = getOwnerId(t.toCompanyId, t.toIndividualId);
 
@@ -67,7 +67,7 @@ onMounted(() => {
         _id: t._id,
         originalOp: t,
         date: toInputDate(t.date),
-        amount: t.amount,
+        amount: Math.abs(t.amount),
         amountFormatted: formatNumber(Math.abs(t.amount)),
         
         fromAccountId: t.fromAccountId?._id || t.fromAccountId,
@@ -81,22 +81,12 @@ onMounted(() => {
     });
 });
 
-// Хелпер для получения ID владельца из полей операции
-const getOwnerId = (compId, indId) => {
-  if (compId) return typeof compId === 'object' ? `company-${compId._id}` : `company-${compId}`;
-  if (indId) return typeof indId === 'object' ? `individual-${indId._id}` : `individual-${indId}`;
-  return null;
-};
-
-// --- Обработчики изменений ---
-
 const onAmountInput = (item) => {
   const raw = item.amountFormatted.replace(/[^0-9]/g, '');
   item.amountFormatted = formatNumber(raw);
   item.amount = Number(raw);
 };
 
-// При смене счета пытаемся найти его владельца и подставить
 const onAccountChange = (item, direction) => {
   const accId = direction === 'from' ? item.fromAccountId : item.toAccountId;
   const account = accounts.value.find(a => a._id === accId);
@@ -118,20 +108,16 @@ const onAccountChange = (item, direction) => {
   }
 };
 
-// --- Сохранение ---
 const handleSave = async () => {
   isSaving.value = true;
   try {
     const updates = [];
     
     for (const item of localItems.value) {
-      // Пропускаем удаленные (они удаляются сразу)
       if (item.isDeleted) continue;
 
       const original = item.originalOp;
-      const newDate = new Date(item.date);
       
-      // Парсим владельцев
       let fromComp = null, fromInd = null;
       if (item.fromOwnerId) {
         const [type, id] = item.fromOwnerId.split('-');
@@ -143,8 +129,10 @@ const handleSave = async () => {
         const [type, id] = item.toOwnerId.split('-');
         if (type === 'company') toComp = id; else toInd = id;
       }
+      
+      const [year, month, day] = item.date.split('-').map(Number);
+      const newDateObj = new Date(year, month - 1, day, 12, 0, 0);
 
-      // Проверяем, изменилось ли что-то
       const isChanged = 
         toInputDate(original.date) !== item.date ||
         Math.abs(original.amount) !== item.amount ||
@@ -155,7 +143,7 @@ const handleSave = async () => {
 
       if (isChanged) {
         updates.push(mainStore.updateTransfer(item._id, {
-          date: newDate,
+          date: newDateObj,
           amount: item.amount,
           fromAccountId: item.fromAccountId,
           toAccountId: item.toAccountId,
@@ -179,13 +167,11 @@ const handleSave = async () => {
   }
 };
 
-// --- Удаление ---
 const handleDelete = async (item) => {
   if (!confirm('Удалить этот перевод?')) return;
-  isDeleting.value = true; // Можно добавить индикатор на конкретную строку, но пока общий
+  isDeleting.value = true; 
   try {
     await mainStore.deleteOperation(item.originalOp);
-    // Удаляем из локального списка
     localItems.value = localItems.value.filter(i => i._id !== item._id);
   } catch (e) {
     console.error(e);
@@ -193,7 +179,6 @@ const handleDelete = async (item) => {
     isDeleting.value = false;
   }
 };
-
 </script>
 
 <template>
@@ -208,7 +193,6 @@ const handleDelete = async (item) => {
         Редактируйте параметры переводов. Нажмите на корзину для удаления.
       </p>
       
-      <!-- Шапка таблицы -->
       <div class="grid-header">
         <span class="col-date">Дата</span>
         <span class="col-owner">Отправитель</span>
@@ -228,7 +212,7 @@ const handleDelete = async (item) => {
           
           <!-- Дата -->
           <div class="col-date">
-            <input type="date" v-model="item.date" class="edit-input" />
+            <input type="date" v-model="item.date" class="edit-input date-input" />
           </div>
 
           <!-- Владелец От -->
@@ -313,7 +297,7 @@ const handleDelete = async (item) => {
   border-radius: 12px; display: flex; flex-direction: column;
   max-height: 85vh; margin: 2rem 1rem;
   box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-  width: 95%; max-width: 1100px; /* Широкий попап для таблицы */
+  width: 95%; max-width: 1100px;
 }
 
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
@@ -321,9 +305,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
 
 /* --- ТАБЛИЦА (GRID) --- */
-/* Определяем колонки: 
-   Date (110px) | Owner (1fr) | Acc (1fr) | Amount (100px) | Acc (1fr) | Owner (1fr) | Trash (50px) 
-*/
+/* Align items: center выравнивает содержимое ячеек по вертикали */
 .grid-header, .grid-row {
   display: grid;
   grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 50px;
@@ -337,6 +319,11 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 }
 .grid-row {
   margin-bottom: 8px;
+  background: #fff; 
+  border: 1px solid #E0E0E0; 
+  border-radius: 8px;
+  /* 🟢 Важно: Убираем вертикальные паддинги внутри строки, чтобы высоту задавали инпуты */
+  padding: 10px 1.5rem; 
 }
 
 .list-scroll {
@@ -345,12 +332,21 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-/* Стили инпутов (как в EntityListEditor) */
+/* 🟢 FIX: Стили инпутов - СБРОС MARGIN */
 .edit-input {
-  width: 100%; height: 44px;
-  background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px;
-  padding: 0 10px; font-size: 0.9em; color: #333;
+  width: 100%; 
+  height: 40px; /* Единая высота для всех */
+  background: #FFFFFF; 
+  border: 1px solid #E0E0E0; 
+  border-radius: 6px;
+  padding: 0 10px; 
+  font-size: 0.9em; 
+  color: #333;
   box-sizing: border-box;
+  
+  /* СБРОС ОТСТУПОВ ИЗ BASE.CSS */
+  margin: 0; 
+  display: block;
 }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
 
@@ -359,17 +355,21 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
   background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 10px center;
   padding-right: 30px;
+  white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
 }
-.amount-input { text-align: right; font-weight: 600; }
+
+.amount-input { text-align: right; font-weight: 600; color: #333; }
+.date-input { color: #555; }
 
 /* Кнопка удаления */
 .delete-btn {
-  width: 44px; height: 44px;
-  border: 1px solid #E0E0E0; background: #fff; border-radius: 8px;
+  width: 40px; height: 40px; /* Такая же высота, как у инпутов */
+  border: 1px solid #E0E0E0; background: #fff; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s;
+  padding: 0; margin: 0; /* Сброс отступов */
 }
-.delete-btn svg { width: 20px; height: 20px; stroke: #999; }
+.delete-btn svg { width: 18px; height: 18px; stroke: #999; }
 .delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
@@ -394,16 +394,17 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 
 .empty-state { text-align: center; padding: 2rem; color: #888; }
 
-/* Адаптив для малых экранов */
-@media (max-width: 1024px) {
+/* Адаптив */
+@media (max-width: 1200px) {
   .popup-content { max-width: 95vw; margin: 1rem; }
-  .grid-header { display: none; /* Скрываем шапку на узких экранах */ }
+  .grid-header { display: none; }
   .grid-row {
     display: flex; flex-direction: column; height: auto;
-    background: #fff; padding: 1rem; border: 1px solid #eee; border-radius: 8px;
-    gap: 10px;
+    padding: 1rem; gap: 10px;
   }
-  .edit-input { height: 40px; }
-  .delete-btn { width: 100%; margin-top: 5px; background-color: #FFF0F0; border-color: #FFD0D0; }
+  .grid-row > div { width: 100%; }
+  .col-date, .col-amount, .col-trash { width: 100%; }
+  .delete-btn { width: 100%; margin-top: 5px; background-color: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
+  .delete-btn svg { stroke: #FF3B30; }
 }
 </style>
