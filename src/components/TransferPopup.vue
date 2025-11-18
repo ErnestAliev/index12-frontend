@@ -5,28 +5,29 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step6-owner-merge ---
- * * ВЕРСИЯ: 9.0 - Объединены поля Владельца для Перевода (Шаг 6)
- * ДАТА: 2025-11-17
+ * * --- МЕТКА ВЕРСИИ: v12.0 - Лимит дат в попапах ---
+ * * ВЕРСИЯ: 12.0 - Ограничение календаря
+ * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (REPLACE) Удалены ref'ы `fromCompanyId` и `toCompanyId`.
- * 2. (NEW) Добавлены ref'ы `selectedFromOwner` и `selectedToOwner`.
- * 3. (REPLACE) 2 селекта "Мои компании" заменены на 2 селекта "Компании/Физлица" с <optgroup>.
- * 4. (REPLACE) "Inline create" компании заменен на "Smart Create" модал (showCreateOwnerModal).
- * 5. (UPDATE) on...AccountSelected теперь автоматически устанавливает `selectedFromOwner` / `selectedToOwner`.
- * 6. (UPDATE) onMounted обновлен для установки `selectedFromOwner` / `selectedToOwner` при редактировании.
- * 7. (UPDATE) handleSave теперь валидирует и парсит `selected...Owner` для отправки `...CompanyId` / `...IndividualId` в API.
+ * 1. (NEW) Добавлены props `minAllowedDate` и `maxAllowedDate`.
+ * 2. (NEW) Добавлены computed `minDateString` и `maxDateString`
+ * (используя существующий helper `toInputDate`).
+ * 3. (NEW) `<input type="date">` теперь имеет атрибуты
+ * :min="minDateString" и :max="maxDateString".
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- TransferPopup.vue v9.0-step6-owner-merge ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v12.0 (Лимит дат в попапах) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
-  transferToEdit: { type: Object, default: null }
+  transferToEdit: { type: Object, default: null },
+  // 🟢 NEW (v12.0)
+  minAllowedDate: { type: Date, default: null },
+  maxAllowedDate: { type: Date, default: null }
 });
 
 const emit = defineEmits(['close', 'transfer-complete']);
@@ -34,11 +35,7 @@ const emit = defineEmits(['close', 'transfer-complete']);
 // --- Данные для полей ---
 const amount = ref('');
 const fromAccountId = ref(null);
-// 🔴 v9.0 (Шаг 6): `fromCompanyId` УДАЛЕН.
-// const fromCompanyId = ref(null);
 const toAccountId = ref(null);
-// 🔴 v9.0 (Шаг 6): `toCompanyId` УДАЛЕН.
-// const toCompanyId = ref(null);
 const categoryId = ref(null);
 
 // 🟢 v9.0 (Шаг 6): НОВЫЕ ref'ы
@@ -58,6 +55,15 @@ const toInputDate = (date) => {
   return result;
 };
 const editableDate = ref(toInputDate(props.date));
+
+// 🟢 NEW (v12.0): Ограничения для <input type="date">
+const minDateString = computed(() => {
+  return props.minAllowedDate ? toInputDate(props.minAllowedDate) : null;
+});
+const maxDateString = computed(() => {
+  return props.maxAllowedDate ? toInputDate(props.maxAllowedDate) : null;
+});
+
 const errorMessage = ref('');
 const amountInput = ref(null);
 
@@ -72,13 +78,6 @@ const newFromAccountInput = ref(null);
 const isCreatingToAccount = ref(false);
 const newToAccountName = ref('');
 const newToAccountInput = ref(null);
-// 🔴 v9.0 (Шаг 6): Старый inline-create компании УДАЛЕН.
-// const isCreatingFromCompany = ref(false);
-// const newFromCompanyName = ref('');
-// const newFromCompanyInput = ref(null);
-// const isCreatingToCompany = ref(false);
-// const newToCompanyName = ref('');
-// const newToCompanyInput = ref(null);
 const isCreatingCategory = ref(false);
 const newCategoryName = ref('');
 const newCategoryInput = ref(null);
@@ -721,7 +720,14 @@ const closePopup = () => {
 
 
         <label>Дата поступления денег</label>
-        <input type="date" v-model="editableDate" class="form-input" />
+        <!-- 🟢 UPDATED (v12.0): Добавлены :min и :max -->
+        <input 
+          type="date" 
+          v-model="editableDate" 
+          class="form-input"
+          :min="minDateString"
+          :max="maxDateString"
+        />
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
