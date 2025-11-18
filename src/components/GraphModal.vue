@@ -1,12 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.5 - Header Accounts Info ---
- * * ВЕРСИЯ: 13.5 - Обновлен формат заголовка (кол-во счетов + дата)
+ * * --- МЕТКА ВЕРСИИ: v13.6 - Styled Header Info ---
+ * * ВЕРСИЯ: 13.6 - Обновлены стили заголовка (серый + зеленый)
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) `headerDateRange` теперь возвращает строку:
- * "Всего на N счетах • до D MMMM YYYY г."
- * 2. (UI) Обновлен вывод в заголовке.
+ * 1. (LOGIC) Разделил `headerInfoString` на две части: `accountsInfoPart` и `dateInfoPart`.
+ * 2. (UI) В шаблоне теперь используются два `<span>` с разными классами (`text-grey`, `text-green`).
+ * 3. (CSS) Добавлены соответствующие стили для цветов.
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
@@ -33,24 +33,26 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 NEW (v13.5): Новый формат заголовка
-const headerInfoString = computed(() => {
-  // 1. Количество счетов
-  const accountsCount = mainStore.accounts ? mainStore.accounts.length : 0;
-  
-  // 2. Дата окончания
+// 🟢 NEW (v13.6): Часть 1 - Информация о счетах
+const accountsInfoPart = computed(() => {
+  const count = mainStore.accounts ? mainStore.accounts.length : 0;
+  return `Всего на ${count} счетах • `;
+});
+
+// 🟢 NEW (v13.6): Часть 2 - Информация о дате
+const dateInfoPart = computed(() => {
   let endDateStr = '';
   if (visibleDays.value && visibleDays.value.length > 0) {
     const end = visibleDays.value[visibleDays.value.length - 1].date;
     const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     endDateStr = fullDate.format(end);
   } else {
-      // Фолбек на "сегодня" или пустую строку, если данных нет
-      const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-      endDateStr = fullDate.format(new Date());
+    const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    endDateStr = fullDate.format(new Date());
   }
-
-  return `Всего на ${accountsCount} счетах • до ${endDateStr} г.`;
+  // Убираем "г." если форматтер его уже добавил, чтобы не дублировать, или добавляем вручную если нет.
+  // Обычно Intl в ru локали добавляет "г.". Но если мы хотим жестко контролировать формат:
+  return `до ${endDateStr}`; // Intl обычно возвращает "16 мая 2026 г."
 });
 
 const generateVisibleDays = (mode) => {
@@ -114,10 +116,13 @@ onMounted(() => {
     <div class="modal-content graph-modal-content">
       
       <div class="modal-header">
-        <!-- 🟢 v13.5: Используем headerInfoString -->
         <h2>
           Графики 
-          <span class="header-subtitle">{{ headerInfoString }}</span>
+          <span class="header-subtitle">
+            <!-- 🟢 v13.6: Раздельные стили -->
+            <span class="text-grey">{{ accountsInfoPart }}</span>
+            <span class="text-green">{{ dateInfoPart }}</span>
+          </span>
         </h2>
         <button class="close-btn" @click="$emit('close')">&times;</button>
       </div>
@@ -176,12 +181,19 @@ onMounted(() => {
 }
 .modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--color-heading); display: flex; align-items: baseline; }
 
-/* Стиль подзаголовка (дата) */
+/* Общий контейнер подзаголовка */
 .header-subtitle {
   font-size: 0.85em;
-  color: #888; /* Тусклый цвет */
   margin-left: 12px;
   font-weight: 400;
+}
+
+/* 🟢 v13.6: Цвета */
+.text-grey {
+  color: #888;
+}
+.text-green {
+  color: #34c759; /* Используем тот же зеленый, что и в графиках/иконках */
 }
 
 .close-btn {
@@ -243,6 +255,3 @@ onMounted(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
-```
-
-Теперь заголовок окна "Графики" будет содержать информацию о количестве счетов и дате окончания расчета в запрошенном формате.
