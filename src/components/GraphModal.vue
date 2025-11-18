@@ -1,12 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.4 - Header Date Range ---
- * * ВЕРСИЯ: 13.4 - Добавлено отображение дат диапазона в заголовке
+ * * --- МЕТКА ВЕРСИИ: v13.5 - Header Accounts Info ---
+ * * ВЕРСИЯ: 13.5 - Обновлен формат заголовка (кол-во счетов + дата)
  * ДАТА: 2025-11-18
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (NEW) `headerDateRange`: computed-свойство для форматирования дат (с... по...).
- * 2. (UI) В `.modal-header` добавлен вывод диапазона дат.
- * 3. (CSS) Добавлен стиль `.header-subtitle` для красивого отображения даты.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) `headerDateRange` теперь возвращает строку:
+ * "Всего на N счетах • до D MMMM YYYY г."
+ * 2. (UI) Обновлен вывод в заголовке.
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
@@ -22,7 +22,6 @@ const isLoading = ref(true);
 const yAxisLabels = ref([]);
 const currentViewMode = ref('12d');
 const today = ref(new Date());
-// Инициализируем пустым массивом
 const visibleDays = ref([]);
 
 // --- Хелперы ---
@@ -34,29 +33,28 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 NEW (v13.4): Вычисляем текст диапазона для заголовка
-const headerDateRange = computed(() => {
-  if (!visibleDays.value || visibleDays.value.length === 0) return '';
+// 🟢 NEW (v13.5): Новый формат заголовка
+const headerInfoString = computed(() => {
+  // 1. Количество счетов
+  const accountsCount = mainStore.accounts ? mainStore.accounts.length : 0;
   
-  const start = visibleDays.value[0].date;
-  const end = visibleDays.value[visibleDays.value.length - 1].date;
-  
-  // Форматтеры
-  const dayMonth = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
-  const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-  
-  // Если годы разные, показываем год для обеих дат
-  if (start.getFullYear() !== end.getFullYear()) {
-     return `${fullDate.format(start)} — ${fullDate.format(end)}`;
+  // 2. Дата окончания
+  let endDateStr = '';
+  if (visibleDays.value && visibleDays.value.length > 0) {
+    const end = visibleDays.value[visibleDays.value.length - 1].date;
+    const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    endDateStr = fullDate.format(end);
+  } else {
+      // Фолбек на "сегодня" или пустую строку, если данных нет
+      const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+      endDateStr = fullDate.format(new Date());
   }
-  
-  // Иначе год только в конце
-  return `${dayMonth.format(start)} — ${fullDate.format(end)}`;
+
+  return `Всего на ${accountsCount} счетах • до ${endDateStr} г.`;
 });
 
 const generateVisibleDays = (mode) => {
   const modeDays = mainStore.computeTotalDaysForMode ? mainStore.computeTotalDaysForMode(mode, today.value) : 12;
-  
   const baseDate = new Date(today.value);
   let startDate = new Date(baseDate);
   
@@ -87,7 +85,6 @@ const generateVisibleDays = (mode) => {
 const loadGraphData = async (mode) => {
   isLoading.value = true;
   await nextTick();
-  
   try {
     if (mainStore.loadCalculationData) {
       await mainStore.loadCalculationData(mode, today.value);
@@ -117,10 +114,10 @@ onMounted(() => {
     <div class="modal-content graph-modal-content">
       
       <div class="modal-header">
-        <!-- 🟢 v13.4: Добавлен subtitle с датами -->
+        <!-- 🟢 v13.5: Используем headerInfoString -->
         <h2>
           Графики 
-          <span class="header-subtitle" v-if="headerDateRange">{{ headerDateRange }}</span>
+          <span class="header-subtitle">{{ headerInfoString }}</span>
         </h2>
         <button class="close-btn" @click="$emit('close')">&times;</button>
       </div>
@@ -132,7 +129,6 @@ onMounted(() => {
             <NavigationPanel @change-view="onChangeView" />
           </div>
           <div class="divider-placeholder"></div>
-          
           <div class="y-axis-wrapper">
              <YAxisPanel :yLabels="yAxisLabels" :bottom-padding="0" />
           </div>
@@ -180,7 +176,7 @@ onMounted(() => {
 }
 .modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--color-heading); display: flex; align-items: baseline; }
 
-/* 🟢 v13.4: Стиль для дат */
+/* Стиль подзаголовка (дата) */
 .header-subtitle {
   font-size: 0.85em;
   color: #888; /* Тусклый цвет */
@@ -199,42 +195,36 @@ onMounted(() => {
   background-color: var(--color-background);
 }
 
-/* --- ЛЕВАЯ ПАНЕЛЬ --- */
+/* ЛЕВАЯ ПАНЕЛЬ */
 .modal-left-panel {
   width: 60px; flex-shrink: 0;
   display: flex; flex-direction: column;
   background-color: var(--color-background-soft);
   border-right: 1px solid var(--color-border);
 }
-
 .nav-panel-container {
   flex: 0 0 320px; 
   min-height: 320px;
   border-bottom: 1px solid var(--color-border);
   overflow: hidden;
 }
-
 .divider-placeholder {
   flex-shrink: 0; height: 15px;
   background-color: var(--color-background-soft);
   border-bottom: 1px solid var(--color-border);
 }
-
 .y-axis-wrapper {
-  flex-grow: 1;
-  min-height: 0;
-  position: relative;
+  flex-grow: 1; min-height: 0; position: relative;
 }
 
-/* --- ОСНОВНАЯ ОБЛАСТЬ --- */
+/* ОСНОВНАЯ ОБЛАСТЬ */
 .modal-main-content {
   flex-grow: 1; display: flex; flex-direction: column;
   overflow: hidden; position: relative;
 }
 .graph-wrapper {
   flex-grow: 1; width: 100%; height: 100%;
-  padding: 0;
-  box-sizing: border-box;
+  padding: 0; box-sizing: border-box;
 }
 
 .loading-indicator {
@@ -255,4 +245,4 @@ onMounted(() => {
 </style>
 ```
 
-Я завершил изменения. Теперь в заголовке модального окна будет отображаться точный диапазон дат (например, "10 ноября — 22 ноября 2025"), что устраняет неопределенность относительно периода, показанного на графике.
+Теперь заголовок окна "Графики" будет содержать информацию о количестве счетов и дате окончания расчета в запрошенном формате.
