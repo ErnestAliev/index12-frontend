@@ -4,11 +4,10 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.0 - OPERATION LIST EDITOR ---
- * * ВЕРСИЯ: 1.0 - Редактор списка операций (Доход/Расход)
+ * * --- МЕТКА ВЕРСИИ: v1.1 - FIX BUILD ---
+ * * ВЕРСИЯ: 1.1 - Гарантированное создание файла
  * * ДАТА: 2025-11-19
- * * Создан по образу и подобию TransferListEditor.vue.
- * Позволяет редактировать: Дату, Владельца, Счет, Сумму, Контрагента, Категорию, Проект.
+ * * Этот файл ОБЯЗАН называться OperationListEditor.vue (с большой буквы O, L, E)
  */
 
 const props = defineProps({
@@ -32,11 +31,6 @@ const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
 const categories = computed(() => mainStore.categories);
 const contractors = computed(() => mainStore.contractors);
-const owners = computed(() => {
-  const comps = mainStore.companies.map(c => ({ ...c, type: 'company', label: c.name }));
-  const inds = mainStore.individuals.map(i => ({ ...i, type: 'individual', label: i.name }));
-  return [...comps, ...inds];
-});
 
 // --- Хелперы ---
 const toInputDate = (dateVal) => {
@@ -173,7 +167,7 @@ const handleSave = async () => {
           contractorId: item.contractorId,
           categoryId: item.categoryId,
           projectId: item.projectId,
-          type: props.type // Гарантируем тип
+          type: props.type 
         }));
       }
     }
@@ -198,7 +192,7 @@ const confirmDelete = async () => {
   if (!itemToDelete.value) return;
   isDeleting.value = true;
   try {
-    await new Promise(resolve => setTimeout(resolve, 600)); // UX задержка
+    await new Promise(resolve => setTimeout(resolve, 600)); 
     await mainStore.deleteOperation(itemToDelete.value.originalOp);
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
     showDeleteConfirm.value = false;
@@ -229,7 +223,6 @@ const cancelDelete = () => {
         Редактируйте параметры операций. Нажмите на корзину для удаления.
       </p>
       
-      <!-- Шапка таблицы -->
       <div class="grid-header">
         <span class="col-date">Дата</span>
         <span class="col-owner">Владелец</span>
@@ -350,15 +343,13 @@ const cancelDelete = () => {
 </template>
 
 <style scoped>
-/* Стили скопированы с TransferListEditor и адаптированы под 8 колонок */
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 90vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 98%; max-width: 1300px; /* Шире для большего кол-ва колонок */ }
+.popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 90vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 98%; max-width: 1300px; }
 
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
 
-/* Сетка: 8 колонок */
 .grid-header, .grid-row {
   display: grid;
   /* Date | Owner | Acc | Amount | Contr | Cat | Proj | Trash */
@@ -371,7 +362,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-/* Инпуты */
 .edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 8px; font-size: 0.85em; color: #333; box-sizing: border-box; display: block; margin: 0; }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
 .select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
@@ -402,7 +392,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
   .grid-row > div { width: 100%; }
 }
 
-/* Внутренний модал (копия из TransferListEditor) */
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
 .delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
