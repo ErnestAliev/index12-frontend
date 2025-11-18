@@ -3,16 +3,18 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.1 - FIX BUILD ---
- * * ВЕРСИЯ: 18.1 - Исправлены импорты для сборки Vercel
+ * * --- МЕТКА ВЕРСИИ: v18.2 - FIX BUILD IMPORTS ---
+ * * ВЕРСИЯ: 18.2 - Исправлены импорты на относительные для гарантии сборки
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Все импорты компонентов из текущей папки заменены на относительные './'.
- * Это гарантирует, что Vite найдет их, даже если алиас '@' глючит.
+ * 1. (FIX) Все импорты теперь используют './' (текущая папка),
+ * чтобы исключить проблемы с алиасами и регистром при сборке на Linux/Vercel.
  */
 
-// Импортируем компоненты относительно текущей папки (./)
+console.log('--- TheHeader.vue v18.2 (Build Fix) ЗАГРУЖЕН ---');
+
+// Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
@@ -20,6 +22,7 @@ import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
+// 🟢 ВАЖНО: Убедитесь, что файл называется OperationListEditor.vue (с большой буквы)
 import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue'; 
 
@@ -33,7 +36,6 @@ const isOperationListEditorVisible = ref(false);
 const operationListEditorType = ref('income'); // 'income' | 'expense'
 const operationListEditorTitle = ref('');
 
-// Для OperationPopup (используется, когда жмем "+" на виджете)
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
 
