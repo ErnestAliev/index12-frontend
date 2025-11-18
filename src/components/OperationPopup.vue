@@ -5,20 +5,20 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0-step5-owner-merge ---
- * * ВЕРСИЯ: 9.0 - Объединены поля Компания/Физлицо (Шаг 5)
- * ДАТА: 2025-11-17
+ * * --- МЕТКА ВЕРСИИ: v12.0 - Лимит дат в попапах ---
+ * * ВЕРСИЯ: 12.0 - Ограничение календаря
+ * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (REPLACE) Удален `selectedCompanyId`. Добавлен `selectedOwner`.
- * 2. (REPLACE) <select> "Моей компании" заменен на <select> "Компании/Физлица" с <optgroup>.
- * 3. (REPLACE) "Inline create" компании заменен на "Smart Create" модал (showCreateOwnerModal).
- * 4. (UPDATE) onAccountSelected теперь автоматически устанавливает `selectedOwner` (company-ID или individual-ID).
- * 5. (UPDATE) handleSave теперь валидирует и парсит `selectedOwner` для отправки `companyId` или `individualId` в API.
+ * 1. (NEW) Добавлены props `minAllowedDate` и `maxAllowedDate`.
+ * 2. (NEW) Добавлены computed `minDateString` и `maxDateString`
+ * для форматирования дат в YYYY-MM-DD.
+ * 3. (NEW) `<input type="date">` теперь имеет атрибуты
+ * :min="minDateString" и :max="maxDateString".
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- OperationPopup.vue v9.0-step5-owner-merge ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v12.0 (Лимит дат в попапах) ЗАГРУЖЕН ---');
 
 // !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -29,7 +29,10 @@ const props = defineProps({
   type: { type: String, required: true },
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
-  operationToEdit: { type: Object, default: null }
+  operationToEdit: { type: Object, default: null },
+  // 🟢 NEW (v12.0)
+  minAllowedDate: { type: Date, default: null },
+  maxAllowedDate: { type: Date, default: null }
 });
 
 const emit = defineEmits([
@@ -43,9 +46,7 @@ const emit = defineEmits([
 // --- ОБЯЗАТЕЛЬНЫЕ ПОЛЯ ---
 const amount = ref('');
 const selectedAccountId = ref(null);
-// 🔴 v9.0 (Шаг 5): `selectedCompanyId` УДАЛЕН.
-// const selectedCompanyId = ref(null); 
-const selectedOwner = ref(null); // 🟢 v9.0 (Шаг 5): НОВЫЙ ref (хранит 'company-ID' или 'individual-ID')
+const selectedOwner = ref(null); // (хранит 'company-ID' или 'individual-ID')
 const selectedContractorId = ref(null);
 
 // --- НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ ---
@@ -59,10 +60,6 @@ const amountInput = ref(null);
 const isCreatingAccount = ref(false);
 const newAccountName = ref('');
 const newAccountInput = ref(null);
-// 🔴 v9.0 (Шаг 5): Старый inline-create компании УДАЛЕН.
-// const isCreatingCompany = ref(false);
-// const newCompanyName = ref('');
-// const newCompanyInput = ref(null);
 const isCreatingContractor = ref(false);
 const newContractorName = ref('');
 const newContractorInput = ref(null);
@@ -74,7 +71,7 @@ const newCategoryName = ref('');
 const newCategoryInput = ref(null);
 // --- (Конец Inline Create) ---
 
-// 🟢 v9.0 (Шаг 5): "Smart Create" модал для Владельца (Компания/Физлицо)
+// "Smart Create" модал для Владельца (Компания/Физлицо)
 const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); // 'company' или 'individual'
 const newOwnerName = ref('');
@@ -85,6 +82,21 @@ const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
 // --- ДАТА ---
+// Форматирует Date -> YYYY-MM-DD (для <input type="date">)
+const toInputDateString = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// 🟢 NEW (v12.0): Ограничения для <input type="date">
+const minDateString = computed(() => toInputDateString(props.minAllowedDate));
+const maxDateString = computed(() => toInputDateString(props.maxAllowedDate));
+
+// Форматирует Date -> YYYY-MM-DD (для v-model)
 const toInputDate = (date) => {
   const d = new Date(date);
   const year = d.getFullYear();
@@ -770,7 +782,14 @@ const handleCopyClick = () => {
       -->
       <template v-if="!showCreateOwnerModal">
         <label>Дата операции</label>
-        <input type="date" v-model="editableDate" class="form-input" />
+        <!-- 🟢 UPDATED (v12.0): Добавлены :min и :max -->
+        <input 
+          type="date" 
+          v-model="editableDate" 
+          class="form-input"
+          :min="minDateString"
+          :max="maxDateString"
+        />
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
