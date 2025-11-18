@@ -1,13 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v11.6 - HIDE TRANSFER FROM CATS ---
- * * ВЕРСИЯ: 11.6 - Полное исключение "Перевода" из списка категорий
+ * * --- МЕТКА ВЕРСИИ: v11.7 - INCOME/EXPENSE LIST WIDGETS ---
+ * * ВЕРСИЯ: 11.7 - Добавлены виджеты списков "Мои доходы" и "Мои расходы"
  * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (HELPER) `_isTransferCategory`: проверка на 'перевод'/'transfer'.
- * 2. (COMPUTED) `visibleCategories`: возвращает все категории КРОМЕ "Перевода".
- * 3. (COMPUTED) `currentCategoryBalances` и `futureCategoryBalances` теперь фильтруют
- * вывод, исключая категорию перевода. Это убирает её из виджета "Категории".
+ * 1. (CONFIG) В `staticWidgets` добавлены `incomeList` и `expenseList`.
+ * 2. (COMPUTED) Добавлены геттеры `currentIncomes`, `futureIncomes`, `currentExpenses`, `futureExpenses`.
+ * Они возвращают плоские списки операций, отсортированные по дате (новые сверху),
+ * для использования в виджетах-списках.
  */
 
 import { defineStore } from 'pinia';
@@ -33,7 +33,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v11.6 (Hide Transfer From Cats) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v11.7 (Income/Expense List Widgets) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -51,6 +51,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего (на тек. момент)' },
+    { key: 'incomeList',   name: 'Мои доходы' },   // 🟢 NEW
+    { key: 'expenseList',  name: 'Мои расходы' },  // 🟢 NEW
     { key: 'accounts',     name: 'Мои счета' },
     { key: 'companies',    name: 'Мои компании' },
     { key: 'contractors',  name: 'Мои контрагенты' },
@@ -83,7 +85,7 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const savedLayout = localStorage.getItem('dashboardLayout');
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','accounts','companies','contractors','projects','futureTotal']);
+  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : ['currentTotal','incomeList','expenseList','accounts','companies','contractors','projects','futureTotal']);
   
   watch(dashboardLayout, (newLayout) => {
     localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
@@ -190,6 +192,8 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
+  // --- СПИСКИ ОПЕРАЦИЙ (Current) ---
+  
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
@@ -198,6 +202,27 @@ export const useMainStore = defineStore('mainStore', () => {
       return dateB.getTime() - dateA.getTime();
     });
   });
+
+  // 🟢 NEW: Текущие доходы
+  const currentIncomes = computed(() => {
+    const incomes = currentOps.value.filter(op => !isTransfer(op) && op.type === 'income');
+    return incomes.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
+
+  // 🟢 NEW: Текущие расходы
+  const currentExpenses = computed(() => {
+    const expenses = currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
+    return expenses.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
+
 
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
@@ -213,9 +238,31 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
+  // --- СПИСКИ ОПЕРАЦИЙ (Future) ---
+
   const futureTransfers = computed(() => {
     const transfers = futureOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateA.getTime() - dateB.getTime();
+    });
+  });
+
+  // 🟢 NEW: Будущие доходы
+  const futureIncomes = computed(() => {
+    const incomes = futureOps.value.filter(op => !isTransfer(op) && op.type === 'income');
+    return incomes.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateA.getTime() - dateB.getTime();
+    });
+  });
+
+  // 🟢 NEW: Будущие расходы
+  const futureExpenses = computed(() => {
+    const expenses = futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
+    return expenses.sort((a, b) => {
       const dateA = _parseDateKey(a.dateKey); 
       const dateB = _parseDateKey(b.dateKey);
       return dateA.getTime() - dateB.getTime();
@@ -1079,7 +1126,7 @@ export const useMainStore = defineStore('mainStore', () => {
   
   return {
     accounts, companies, contractors, projects, categories,
-    visibleCategories, // 🟢 NEW: Экспортируем visibleCategories
+    visibleCategories,
     individuals, 
     operationsCache: displayCache,
     displayCache, calculationCache,
@@ -1101,6 +1148,11 @@ export const useMainStore = defineStore('mainStore', () => {
     currentOps, 
     
     currentTransfers, futureTransfers,
+    
+    // 🟢 NEW: Экспорт списков доходов и расходов
+    currentIncomes, futureIncomes,
+    currentExpenses, futureExpenses,
+
     getCategoryById,
     futureCategoryBreakdowns,
 
