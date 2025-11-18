@@ -5,20 +5,19 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v12.0 - Лимит дат в попапах ---
- * * ВЕРСИЯ: 12.0 - Ограничение календаря
+ * * --- МЕТКА ВЕРСИИ: v12.1 - Fix Double Click Duplicate ---
+ * * ВЕРСИЯ: 12.1 - Исправление дублирования при быстром клике
  * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлены props `minAllowedDate` и `maxAllowedDate`.
- * 2. (NEW) Добавлены computed `minDateString` и `maxDateString`
- * для форматирования дат в YYYY-MM-DD.
- * 3. (NEW) `<input type="date">` теперь имеет атрибуты
- * :min="minDateString" и :max="maxDateString".
+ * 1. (NEW) Добавлена переменная `isInlineSaving` для блокировки повторных кликов.
+ * 2. (FIX) Во все функции `saveNew...` (Account, Contractor, Project, Category, Owner)
+ * добавлена проверка `if (isInlineSaving.value) return;` и блок `try/finally`.
+ * 3. (UI) Кнопкам `.btn-inline-save` добавлен атрибут `:disabled="isInlineSaving"`.
  */
 
 // 🔴 НОВАЯ УСТАНОВКА: ЛОГИРОВАНИЕ
-console.log('--- OperationPopup.vue v12.0 (Лимит дат в попапах) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v12.1 (Fix Double Click) ЗАГРУЖЕН ---');
 
 // !!! ИСПРАВЛЕНИЕ: Читаем "боевой" URL из Vercel !!!
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -55,6 +54,9 @@ const selectedProjectId = ref(null);
 
 const errorMessage = ref('');
 const amountInput = ref(null);
+
+// 🟢 NEW (v12.1): Флаг блокировки для предотвращения двойного создания
+const isInlineSaving = ref(false);
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false);
@@ -257,6 +259,8 @@ const _getDateKey = (date) => {
 // --- 🟢 v9.0 (Шаг 5): handleSave ---
 // =================================================================
 const handleSave = async () => {
+  if (isInlineSaving.value) return; // Защита от двойного нажатия на основную кнопку
+  
   console.log('[OperationPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
 
@@ -271,6 +275,8 @@ const handleSave = async () => {
     return;
   }
   
+  isInlineSaving.value = true; // Блокируем UI
+
   try {
     const [year, month, day] = editableDate.value.split('-').map(Number);
     const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
@@ -326,6 +332,8 @@ const handleSave = async () => {
   } catch (error) {
     console.error('OperationPopup: ❌ КРИТИЧЕСКАЯ ОШИБКА handleSave', error);
     errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
+  } finally {
+    isInlineSaving.value = false; // Разблокируем
   }
 };
 // =================================================================
@@ -416,6 +424,7 @@ const openCreateOwnerModal = () => {
 };
 
 const cancelCreateOwner = () => {
+  if (isInlineSaving.value) return; // Блокировка отмены во время сохранения
   console.log('[OperationPopup] cancelCreateOwner: Отмена "Smart Create"');
   showCreateOwnerModal.value = false;
   newOwnerName.value = '';
@@ -431,10 +440,14 @@ const setOwnerTypeToCreate = (type) => {
 };
 
 const saveNewOwner = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА ПОВТОРНОГО КЛИКА
+
   const name = newOwnerName.value.trim();
   const type = ownerTypeToCreate.value; // 'company' или 'individual'
   if (!name) return;
   
+  isInlineSaving.value = true; // Ставим флаг
+
   console.log(`[OperationPopup] saveNewOwner: 💾 Сохранение (Тип: ${type}, Имя: ${name})`);
 
   try {
@@ -451,100 +464,137 @@ const saveNewOwner = async () => {
     selectedOwner.value = `${type}-${newItem._id}`;
     console.log(`[OperationPopup] saveNewOwner: ✅ УСПЕХ. Установлен selectedOwner: ${selectedOwner.value}`);
 
+    cancelCreateOwner(); // Закрываем модальное окно только при успехе
   } catch (e) {
     console.error(`[OperationPopup] saveNewOwner: ❌ Ошибка при создании ${type}`, e);
+  } finally {
+    isInlineSaving.value = false; // Снимаем флаг
   }
-  
-  cancelCreateOwner(); // Закрываем модальное окно
 };
 // =================================================================
 
 
-// --- (Inline Create для остальных - без изменений) ---
+// --- (Inline Create для остальных - FIX v12.1) ---
 const showAccountInput = () => { console.log('[OperationPopup] showAccountInput'); isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { console.log('[OperationPopup] cancelCreateAccount'); isCreatingAccount.value = false; newAccountName.value = ''; };
+
 const saveNewAccount = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newAccountName.value.trim();
   if (!name) return;
-  console.log(`[OperationPopup] saveNewAccount: 💾 Сохранение счета ${name}`);
-  const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
   
-  // 🟢 v9.0 (Шаг 5): Определяем владельца для нового счета
-  let cId = null;
-  let iId = null;
-  if (selectedOwner.value) {
-      const [type, id] = selectedOwner.value.split('-');
-      if (type === 'company') cId = id;
-      if (type === 'individual') iId = id;
-  }
+  isInlineSaving.value = true;
+  
+  try {
+    console.log(`[OperationPopup] saveNewAccount: 💾 Сохранение счета ${name}`);
+    const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
+    
+    // 🟢 v9.0 (Шаг 5): Определяем владельца для нового счета
+    let cId = null;
+    let iId = null;
+    if (selectedOwner.value) {
+        const [type, id] = selectedOwner.value.split('-');
+        if (type === 'company') cId = id;
+        if (type === 'individual') iId = id;
+    }
 
-  if (existing) {
-    selectedAccountId.value = existing._id;
-    onAccountSelected(existing._id); // Это также обновит `selectedOwner`
-  } else {
-    try {
+    if (existing) {
+      selectedAccountId.value = existing._id;
+      onAccountSelected(existing._id); 
+    } else {
       const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId });
       selectedAccountId.value = newItem._id;
-      onAccountSelected(newItem._id); // Это также обновит `selectedOwner`
-    } catch (e) { console.error(e); }
+      onAccountSelected(newItem._id); 
+    }
+    cancelCreateAccount();
+  } catch (e) { console.error(e); }
+  finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateAccount();
 };
 
 const showContractorInput = () => { console.log('[OperationPopup] showContractorInput'); isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
 const cancelCreateContractor = () => { console.log('[OperationPopup] cancelCreateContractor'); isCreatingContractor.value = false; newContractorName.value = ''; };
+
 const saveNewContractor = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newContractorName.value.trim();
   if (!name) return;
-  console.log(`[OperationPopup] saveNewContractor: 💾 Сохранение контрагента ${name}`);
-  const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    selectedContractorId.value = existing._id;
-    onContractorSelected(existing._id, true, true);
-  } else {
-    try {
+  
+  isInlineSaving.value = true;
+
+  try {
+    console.log(`[OperationPopup] saveNewContractor: 💾 Сохранение контрагента ${name}`);
+    const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      selectedContractorId.value = existing._id;
+      onContractorSelected(existing._id, true, true);
+    } else {
       const newItem = await mainStore.addContractor(name);
       selectedContractorId.value = newItem._id;
       onContractorSelected(newItem._id, true, true);
-    } catch (e) { console.error(e); }
+    }
+    cancelCreateContractor();
+  } catch (e) { console.error(e); }
+  finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateContractor();
 };
 
 const showProjectInput = () => { console.log('[OperationPopup] showProjectInput'); isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); };
 const cancelCreateProject = () => { console.log('[OperationPopup] cancelCreateProject'); isCreatingProject.value = false; newProjectName.value = ''; };
+
 const saveNewProject = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newProjectName.value.trim();
   if (!name) return;
-  console.log(`[OperationPopup] saveNewProject: 💾 Сохранение проекта ${name}`);
-  const existing = mainStore.projects.find(p => p.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    selectedProjectId.value = existing._id;
-  } else {
-    try {
+  
+  isInlineSaving.value = true;
+
+  try {
+    console.log(`[OperationPopup] saveNewProject: 💾 Сохранение проекта ${name}`);
+    const existing = mainStore.projects.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      selectedProjectId.value = existing._id;
+    } else {
       const newItem = await mainStore.addProject(name);
       selectedProjectId.value = newItem._id;
-    } catch (e) { console.error(e); }
+    }
+    cancelCreateProject();
+  } catch (e) { console.error(e); }
+  finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateProject();
 };
 
 const showCategoryInput = () => { console.log('[OperationPopup] showCategoryInput'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
 const cancelCreateCategory = () => { console.log('[OperationPopup] cancelCreateCategory'); isCreatingCategory.value = false; newCategoryName.value = ''; };
+
 const saveNewCategory = async () => {
+  if (isInlineSaving.value) return; // 🟢 БЛОКИРОВКА
+
   const name = newCategoryName.value.trim();
   if (!name) return;
-  console.log(`[OperationPopup] saveNewCategory: 💾 Сохранение категории ${name}`);
-  const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
-  if (existing) {
-    selectedCategoryId.value = existing._id;
-  } else {
-    try {
+  
+  isInlineSaving.value = true;
+
+  try {
+    console.log(`[OperationPopup] saveNewCategory: 💾 Сохранение категории ${name}`);
+    const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      selectedCategoryId.value = existing._id;
+    } else {
       const newItem = await mainStore.addCategory(name);
       selectedCategoryId.value = newItem._id;
-    } catch (e) { console.error(e); }
+    }
+    cancelCreateCategory();
+  } catch (e) { console.error(e); }
+  finally {
+    isInlineSaving.value = false;
   }
-  cancelCreateCategory();
 };
 // =================================================================
 
@@ -570,6 +620,7 @@ const buttonClass = computed(() => {
 // =================================================================
 
 const closePopup = () => {
+  if (isInlineSaving.value) return; // Запрет закрытия во время сохранения
   console.log('[OperationPopup] closePopup: 🛑 Закрытие попапа');
   emit('close');
 };
@@ -650,8 +701,8 @@ const handleCopyClick = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" />
-          <button @click="saveNewAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateAccount" class="btn-inline-cancel">X</button>
+          <button @click="saveNewAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
       
         <!-- 🟢 v9.0 (Шаг 5): ЗАМЕНЕННЫЙ БЛОК "ВЛАДЕЛЕЦ" -->
@@ -691,8 +742,8 @@ const handleCopyClick = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newContractorName" placeholder="Название контрагента" ref="newContractorInput" @keyup.enter="saveNewContractor" @keyup.esc="cancelCreateContractor" />
-          <button @click="saveNewContractor" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateContractor" class="btn-inline-cancel">X</button>
+          <button @click="saveNewContractor" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateContractor" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
 
         <label>{{ props.type === 'income' ? 'Из проекта' : 'В проект' }}</label>
@@ -708,8 +759,8 @@ const handleCopyClick = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
-          <button @click="saveNewProject" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateProject" class="btn-inline-cancel">X</button>
+          <button @click="saveNewProject" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateProject" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
 
         <label>По категории</label>
@@ -725,8 +776,8 @@ const handleCopyClick = () => {
         </select>
         <div v-else class="inline-create-form">
           <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
-          <button @click="saveNewCategory" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateCategory" class="btn-inline-cancel">X</button>
+          <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
       </template>
 
@@ -764,10 +815,10 @@ const handleCopyClick = () => {
           />
 
           <div class="smart-create-actions">
-            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary">
+            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">
               Отмена
             </button>
-            <button @click="saveNewOwner" class="btn-submit btn-submit-edit">
+            <button @click="saveNewOwner" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">
               Создать
             </button>
           </div>
@@ -794,18 +845,18 @@ const handleCopyClick = () => {
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
-          <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass">
+          <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">
             {{ buttonText }}
           </button>
 
           <div v-if="props.operationToEdit && !isCloneMode.value" class="icon-actions">
-            <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать">
+            <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/>
               </svg>
             </button>
 
-            <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить">
+            <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/>
               </svg>
@@ -945,7 +996,9 @@ select option[value="--CREATE_NEW--"] {
   line-height: 1;
 }
 .inline-create-form button.btn-inline-save { background-color: #34C759; }
+.inline-create-form button.btn-inline-save:disabled { background-color: #9bd6a8; cursor: not-allowed; } /* Светлее */
 .inline-create-form button.btn-inline-cancel { background-color: #FF3B30; }
+.inline-create-form button.btn-inline-cancel:disabled { background-color: #f0a19c; cursor: not-allowed; } /* Светлее */
 
 .error-message {
   color: #FF3B30;
@@ -1006,22 +1059,26 @@ select option[value="--CREATE_NEW--"] {
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
+.btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .btn-submit-income {
   background-color: #28B8A0;
 }
-.btn-submit-income:hover {
+.btn-submit-income:hover:not(:disabled) {
   background-color: #1f9c88;
 }
 .btn-submit-expense {
   background-color: #F36F3F;
 }
-.btn-submit-expense:hover {
+.btn-submit-expense:hover:not(:disabled) {
   background-color: #d95a30;
 }
 .btn-submit-edit {
   background-color: #222222;
 }
-.btn-submit-edit:hover {
+.btn-submit-edit:hover:not(:disabled) {
   background-color: #333333;
 }
 .btn-submit-secondary {
@@ -1029,7 +1086,7 @@ select option[value="--CREATE_NEW--"] {
   color: #333;
   font-weight: 500;
 }
-.btn-submit-secondary:hover {
+.btn-submit-secondary:hover:not(:disabled) {
   background-color: #d1d1d1;
 }
 
