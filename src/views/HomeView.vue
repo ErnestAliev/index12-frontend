@@ -12,16 +12,18 @@ import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v6.8-HEADER-130 ---
- * * ВЕРСИЯ: 6.8 - Высота хедера 130px
- * ДАТА: 2025-11-16
+ * * --- МЕТКА ВЕРСИИ: v12.0 - Лимит дат в попапах ---
+ * * ВЕРСИЯ: 12.0 - Ограничение календаря в попапах
+ * ДАТА: 2025-11-18
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. HEADER_MIN_H установлено в 130.
- * 2. CSS .home-header height установлено в 130px.
+ * 1. (NEW) Добавлены `computed` `minDateFromProjection` и `maxDateFromProjection`
+ * (получают `rangeStartDate` / `rangeEndDate` из `mainStore`).
+ * 2. (NEW) `OperationPopup` и `TransferPopup` теперь
+ * получают `min-allowed-date` и `max-allowed-date` как props.
  */
 
-console.log('--- HomeView.vue v6.8-HEADER-130 ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v12.0 (Лимит дат в попапах) ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
@@ -152,6 +154,14 @@ const contextMenuPosition = ref({ top: '0px', left: '0px' });
 const selectedDay = ref(null);
 const selectedCellIndex = ref(0);
 const operationToEdit = ref(null);
+
+// 🟢 NEW (v12.0): Получаем min/max даты из store
+const minDateFromProjection = computed(() => {
+  return mainStore.projection.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null;
+});
+const maxDateFromProjection = computed(() => {
+  return mainStore.projection.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
+});
 
 /* ===================== REFS LAYOUT ===================== */
 const mainContentRef = ref(null);
@@ -805,23 +815,29 @@ onBeforeUnmount(() => {
       <button class="user-menu-item" @click="handleLogout">Выйти</button>
     </div>
     
+    <!-- 🟢 UPDATED (v12.0): Добавлены props min-allowed-date / max-allowed-date -->
     <OperationPopup
       v-if="isPopupVisible"
       :type="operationType"
       :date="selectedDay ? selectedDay.date : new Date()"
       :cellIndex="selectedDay ? selectedCellIndex : 0"
       :operation-to-edit="operationToEdit"
+      :min-allowed-date="minDateFromProjection"
+      :max-allowed-date="maxDateFromProjection"
       @close="handleClosePopup"
       @operation-added="handleOperationAdded"
       @operation-deleted="handleOperationDelete(operationToEdit)"
       @operation-moved="handleOperationMoved"
       @operation-updated="handleOperationUpdated"
     />
+    <!-- 🟢 UPDATED (v12.0): Добавлены props min-allowed-date / max-allowed-date -->
     <TransferPopup
       v-if="isTransferPopupVisible"
       :date="selectedDay ? selectedDay.date : new Date()"
       :cellIndex="selectedDay ? selectedCellIndex : 0"
       :transferToEdit="operationToEdit"
+      :min-allowed-date="minDateFromProjection"
+      :max-allowed-date="maxDateFromProjection"
       @close="handleCloseTransferPopup"
       @transfer-complete="handleTransferComplete"
     />
