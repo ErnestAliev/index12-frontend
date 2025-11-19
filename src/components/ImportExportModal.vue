@@ -1,15 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.14-STYLES-FIX ---
- * * ВЕРСИЯ: 10.14 - Улучшение стилей кнопок экспорта
- * * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v11.0-POSTING-RENAME ---
+ * * ВЕРСИЯ: 11.0 - Ренейминг "Перевод" -> "Проводки"
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Обновлены стили `.download-buttons .export-btn`.
- * - Добавлена анимация `transition`.
- * - При наведении (:hover) кнопка приподнимается и отбрасывает тень,
- * чтобы было четко видно взаимодействие.
- * - Добавлен `brightness(1.05)` для подсветки цвета.
- * 2. (LOGIC) Сохранена вся логика v10.13 (строгие колонки, непустой шаблон).
+ * 1. (UI) Текст кнопок: "Скачать Переводы" -> "Скачать Проводки".
+ * 2. (LOGIC) normalizeType: добавлен алиас 'проводки'.
+ * 3. (LOGIC) CSV Export: Тип 'Перевод' заменен на 'Проводка'.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -168,7 +165,7 @@
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
         
         <p>
-          Экспорт разделен на 3 файла: Прошлые Доходы/Расходы, Прошлые Переводы и Будущая Сводка.
+          Экспорт разделен на 3 файла: Прошлые Доходы/Расходы, Прошлые Проводки и Будущая Сводка.
         </p>
         
         <!-- Шаг 1: Кнопка подготовки -->
@@ -196,10 +193,13 @@
               Скачать Доходы/Расходы
               <span>({{ processedIncomeExpense.data.length }} строк)</span>
             </button>
+            
+            <!-- 🟢 РЕНЕЙМИНГ -->
             <button class="btn-primary export-btn" @click="downloadTransfers">
-              Скачать Переводы
+              Скачать Проводки
               <span>({{ processedTransfers.data.length }} строк)</span>
             </button>
+            
             <button class="btn-primary export-btn" @click="downloadSummary">
               Скачать Будущую Сводку
               <span>({{ processedSummary.data.length }} строк)</span>
@@ -308,7 +308,6 @@ const isAllSelected = computed(() => {
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({});
 
-// 🟢 v10.13: Обновлены алиасы для авто-маппинга с учетом новых заголовков
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type', 'тип операции'] },
@@ -316,7 +315,6 @@ const systemFields = [
   { key: 'category', label: 'Категория', entity: 'categories', aliases: ['категория', 'category'] },
   { key: 'project', label: 'Проект', entity: 'projects', aliases: ['проект', 'project', 'мои проекты'] },
   { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
-  // Добавили 'компания/физлицо' как алиас для Компании по умолчанию
   { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании', 'компания/физлицо'] },
   { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
   { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
@@ -733,7 +731,8 @@ function normalizeType(value) {
   if (['расход', 'expense', 'убыток', 'трата', 'списание'].includes(lower)) {
     return 'expense';
   }
-  if (['перевод', 'transfer'].includes(lower)) {
+  // 🟢 ДОБАВЛЕНО: проводки
+  if (['перевод', 'transfer', 'проводки', 'проводка'].includes(lower)) {
     return 'transfer';
   }
   return null;
@@ -741,10 +740,9 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.13)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА
 // ----------------------------------------------
 
-// 🟢 v10.13: Строгая последовательность колонок
 const STRICT_COLUMNS = [
   'Тип',
   'Сумма',
@@ -756,21 +754,11 @@ const STRICT_COLUMNS = [
   'Дата'
 ];
 
-/**
- * 🟢 v10.13: Обновленная функция для скачивания шаблона.
- * Теперь генерирует файл со строгим набором заголовков.
- */
 function downloadTemplate() {
-  // Создаем CSV строку вручную, чтобы гарантировать наличие заголовков
-  // даже если данных нет. Papa.unparse([]) может вести себя некорректно.
   const csvString = STRICT_COLUMNS.join(",");
-
   triggerCsvDownload(csvString, "Import_Template_IncomeExpense");
 }
 
-/**
- * 🟢 v10.11/v10.13: Подготовка всех 3-х отчетов
- */
 async function prepareExportData() {
   isExporting.value = true;
   exportError.value = null;
@@ -816,7 +804,7 @@ async function prepareExportData() {
       } catch (e) { continue; }
     }
 
-    // === 3. ОБРАБОТКА ПРОШЛЫХ ОПЕРАЦИЙ (Файлы 1 и 2) ===
+    // === 3. ОБРАБОТКА ПРОШЛЫХ ОПЕРАЦИЙ ===
     const runningBalances = new Map();
     mainStore.accounts.forEach(acc => {
       runningBalances.set(acc._id, acc.initialBalance || 0);
@@ -824,7 +812,6 @@ async function prepareExportData() {
 
     const incomeExpenseRows = [];
     const transferRows = [];
-    // Для переводов оставим свои колонки, как было в задаче (только Доход/Расход строгие)
     const transferColumns = ['Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 'Компании/Физлица', 'Контрагент', 'Проект'];
     
     for (const op of pastOps) {
@@ -850,7 +837,6 @@ async function prepareExportData() {
           runningBalances.set(opAccountId, opBalance);
         }
         
-        // 🟢 v10.13: Формируем объект СТРОГО по ключам STRICT_COLUMNS
         incomeExpenseRows.push({
           'Тип': op.type === 'income' ? 'Доход' : 'Расход',
           'Сумма': opAmount,
@@ -863,7 +849,6 @@ async function prepareExportData() {
         });
       } 
       else if (op.type === 'transfer' || op.isTransfer) {
-        // Логика переводов остается старой (по требованию "не трогать")
         const fromAccountId = op.fromAccountId?._id || null;
         const toAccountId = op.toAccountId?._id || null;
         const fromOwnerName = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
@@ -885,8 +870,9 @@ async function prepareExportData() {
           runningBalances.set(toAccountId, toBalance);
         }
 
+        // 🟢 РЕНЕЙМИНГ ТИПА ДЛЯ CSV
         transferRows.push({
-          'Тип': 'Перевод',
+          'Тип': 'Проводка',
           'Категория': 'Исходящий',
           'Сумма': -absAmount,
           'Остаток': fromBalance,
@@ -898,7 +884,7 @@ async function prepareExportData() {
         });
         
         transferRows.push({
-          'Тип': 'Перевод',
+          'Тип': 'Проводка',
           'Категория': 'Входящий',
           'Сумма': absAmount,
           'Остаток': toBalance,
@@ -911,12 +897,10 @@ async function prepareExportData() {
       }
     }
     
-    // Сохраняем результаты
     processedIncomeExpense.value = { data: incomeExpenseRows, columns: STRICT_COLUMNS };
     processedTransfers.value = { data: transferRows, columns: transferColumns };
 
     // === 4. ОБРАБОТКА БУДУЩЕЙ СВОДКИ ===
-    // (Логика "Будущих" не меняется, как указано в задании)
     const accounts = mainStore.accounts;
     const accountNames = accounts.map(a => a.name);
     const summaryColumns = ["Период", ...accountNames];
@@ -981,10 +965,6 @@ async function prepareExportData() {
   }
 }
 
-/**
- * 🟢 v10.13: Экспорт Доходов/Расходов
- * Использует STRICT_COLUMNS для заголовков.
- */
 function downloadIncomeExpense() {
   const csvString = Papa.unparse(processedIncomeExpense.value.data, {
     header: true,
@@ -1000,7 +980,8 @@ function downloadTransfers() {
     columns: processedTransfers.value.columns,
     transform: (value) => (value === null || value === undefined) ? "" : value,
   });
-  triggerCsvDownload(csvString, "Transfers");
+  // 🟢 РЕНЕЙМИНГ ФАЙЛА
+  triggerCsvDownload(csvString, "Postings"); 
 }
 
 function downloadSummary() {
@@ -1041,8 +1022,7 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
 </script>
 
 <style scoped>
-/* 🔴 v10.8: СТИЛИ ВОЗВРАЩЕНЫ К ОРИГИНАЛУ v10.0 */
-
+/* ...старые стили без изменений... */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1226,7 +1206,7 @@ h2 {
   margin-top: 20px;
 }
 
-/* 🟢 v10.14: Улучшенные стили для кнопок экспорта */
+/* Улучшенные стили для кнопок экспорта */
 .download-buttons .export-btn {
   margin-top: 0;
   display: flex;
@@ -1235,16 +1215,15 @@ h2 {
   justify-content: center;
   min-width: 200px;
   padding: 16px 24px;
-  transition: all 0.2s ease-in-out; /* Плавный переход */
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Легкая тень по умолчанию */
+  transition: all 0.2s ease-in-out; 
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
 }
 
-/* 🟢 v10.14: Явная реакция на наведение */
 .download-buttons .export-btn:hover {
-  transform: translateY(-2px); /* Приподнимаем кнопку */
-  box-shadow: 0 6px 12px rgba(0,0,0,0.15); /* Усиливаем тень */
-  background-color: var(--color-accent-hover); /* Убеждаемся в смене цвета */
-  filter: brightness(1.05); /* Дополнительная подсветка */
+  transform: translateY(-2px); 
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15); 
+  background-color: var(--color-accent-hover); 
+  filter: brightness(1.05); 
 }
 
 .download-buttons .export-btn span {
