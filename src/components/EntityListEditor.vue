@@ -5,13 +5,13 @@ import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.3 - DYNAMIC HINT ---
- * * ВЕРСИЯ: 10.3 - Динамическая подсказка с именем сущности
+ * * --- МЕТКА ВЕРСИИ: v10.4 - COLORED HINT ---
+ * * ВЕРСИЯ: 10.4 - Выделение имени цветом в подсказке
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) `pickerHintText` теперь подставляет имя конкретной компании или физлица
- * (currentItemForPicker.name) вместо общего текста.
+ * 1. (LOGIC) `pickerHintText` теперь возвращает HTML-строку.
+ * 2. (STYLE) Имя сущности обернуто в <span> с цветом var(--color-primary).
  */
 
 const props = defineProps({
@@ -66,11 +66,15 @@ else if (isProjectEditor) entityNameSingular = 'проект';
 else if (isCategoryEditor) entityNameSingular = 'категорию';
 else if (isIndividualEditor) entityNameSingular = 'физлицо';
 
-// 🟢 Динамический текст подсказки
+// 🟢 Динамический текст подсказки с HTML для цвета
 const pickerHintText = computed(() => {
     const name = currentItemForPicker.value?.name || '...';
-    if (isCompanyEditor) return `Привяжите ${name} к вашим счетам.`;
-    if (isIndividualEditor) return `Привяжите ${name} к вашим счетам.`;
+    // Используем встроенный стиль для надежности или класс, если он доступен глобально.
+    // var(--color-primary) - это зеленый цвет из base.css (#34c759)
+    const coloredName = `<span style="color: var(--color-primary); font-weight: 600;">${name}</span>`;
+    
+    if (isCompanyEditor) return `Привяжите ${coloredName} к вашим счетам.`;
+    if (isIndividualEditor) return `Привяжите ${coloredName} к вашим счетам.`;
     return "";
 });
 
