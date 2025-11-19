@@ -5,16 +5,16 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.6 - SCOPED CLICK FIX ---
- * * ВЕРСИЯ: 3.6 - Исправлена зона закрытия меню
- * * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v3.7 - REMOVE ADD BTN ---
+ * * ВЕРСИЯ: 3.7 - Удалена кнопка "Добавить" из заголовка
+ * * ДАТА: 2025-11-19
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) `handleClickOutside` использует `menuRef` вместо `cardRef`.
- * Теперь клик по списку элементов или кнопкам действий ЗАКРЫВАЕТ меню выбора виджета.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (UX) Удалена кнопка action-square-btn с иконкой плюса.
+ * Функционал добавления теперь находится внутри окна редактирования.
  */
 
-console.log('--- HeaderBalanceCard.vue v3.6 (Scoped Click Fix) ЗАГРУЖЕН ---');
+console.log('--- HeaderBalanceCard.vue v3.7 (Remove Add Btn) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -27,7 +27,6 @@ const props = defineProps({
 const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
 
-// 🟢 NEW: Ref только для зоны заголовка (где лежит меню)
 const menuRef = ref(null);
 
 // --- Прогноз ---
@@ -92,10 +91,7 @@ const handleSelect = (newWidgetKey) => {
   nextTick(() => { isDropdownOpen.value = false; });
 };
 
-// --- 🟢 УЛУЧШЕННАЯ ЛОГИКА ЗАКРЫТИЯ ---
 const handleClickOutside = (event) => {
-  // Закрываем, если клик НЕ по заголовку (menuRef)
-  // Это значит клик по списку, по кнопкам или в пустое место карточки - закроет меню.
   if (menuRef.value && !menuRef.value.contains(event.target)) {
     isDropdownOpen.value = false; 
   }
@@ -117,7 +113,6 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
   <div class="dashboard-card" @click.stop="isFilterOpen = false">
     
     <div class="card-title-container">
-      <!-- 🟢 Ref вешаем сюда, так как меню внутри -->
       <div class="card-title" ref="menuRef" @click.stop="toggleDropdown">
         {{ props.title }} <span>▽</span>
         <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
@@ -133,7 +128,8 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
       </div>
 
       <div class="card-actions">
-        <!-- 1. ФИЛЬТР --><button 
+        <!-- 1. ФИЛЬТР -->
+        <button 
           class="action-square-btn" 
           ref="filterBtnRef" 
           @click.stop="isFilterOpen = !isFilterOpen"
@@ -142,7 +138,8 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
           <img :src="filterIcon" alt="Filter" class="icon-svg" />
         </button>
         
-        <!-- 2. ПРОГНОЗ (SVG стрелка) --><button 
+        <!-- 2. ПРОГНОЗ -->
+        <button 
           class="action-square-btn"
           :class="{ 'active': showFutureBalance }"
           @click.stop="showFutureBalance = !showFutureBalance"
@@ -154,18 +151,10 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
           </svg>
         </button>
         
-        <!-- 3. ДОБАВИТЬ (SVG плюс) --><button 
-          @click.stop="$emit('add')" 
-          class="action-square-btn"
-          title="Добавить"
-        >
-          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-        </button>
+        <!-- 🟢 v3.7: Кнопка "Добавить" (+) УДАЛЕНА отсюда -->
         
-        <!-- 4. РЕДАКТИРОВАТЬ (SVG карандаш) --><button 
+        <!-- 3. РЕДАКТИРОВАТЬ -->
+        <button 
           @click.stop="$emit('edit')" 
           class="action-square-btn"
           title="Редактировать список"
@@ -177,7 +166,8 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
         </button>
       </div>
 
-      <!-- ВЫПАДАШКА ФИЛЬТРА --><div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
+      <!-- ВЫПАДАШКА ФИЛЬТРА -->
+      <div v-if="isFilterOpen" class="filter-dropdown" ref="filterDropdownRef" @click.stop>
         <div class="filter-group">
           <div class="filter-group-title">Сортировка</div>
           <ul>
@@ -198,7 +188,6 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
       </div>
     </div>
     
-    <!-- Клик сюда теперь тоже закроет меню виджетов -->
     <div class="card-items-list">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
         <span>{{ item.name }}</span>
