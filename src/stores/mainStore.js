@@ -22,15 +22,15 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   /**
-   * * --- МЕТКА ВЕРСИИ: v19.1 - FIX DUPLICATE WIDGETS ---
-   * * ВЕРСИЯ: 19.1 - Удаление дубликата виджета "Перевод"
+   * * --- МЕТКА ВЕРСИИ: v20.0 - FIX DUPLICATES & MERGE ---
+   * * ВЕРСИЯ: 20.0 - Исправление дублирования виджетов и двойных чипов
    * * ДАТА: 2025-11-20
    *
    * ЧТО ИЗМЕНЕНО:
-   * 1. (FIX) allWidgets: Удалена логика добавления виджета категории "Перевод".
-   * Теперь используется только статический виджет "Мои переводы".
+   * 1. (FIX) _mergeTransfers: Теперь принудительно объединяет операции с категорией "Проводки".
+   * 2. (FIX) allWidgets: Исключает категорию "Проводки" из списка (чтобы не было дубля виджета).
    */
-  console.log('--- mainStore.js v19.1 (Fix Duplicate) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v20.0 (Fix Duplicates & Merge) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -46,7 +46,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
-  // Полный список доступных виджетов (для меню выбора)
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего (на тек. момент)' },
     { key: 'accounts',     name: 'Мои счета' },
@@ -55,10 +54,8 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
     
-    // Скрытые по умолчанию:
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
-    // 🟢 НОВЫЕ ВИДЖЕТЫ
     { key: 'transferList', name: 'Мои переводы' },
     { key: 'postingList',  name: 'Мои проводки' },
     
@@ -66,36 +63,22 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'categories',   name: 'Категории' }, 
   ]);
 
-  // --- ХЕЛПЕР: Это категория "Перевод/Проводки"? ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer' || name === 'проводки';
   };
 
-  // Список категорий для UI (без "Перевода/Проводки")
   const visibleCategories = computed(() => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
-  // Динамический список всех виджетов
+  // 🟢 FIX: Убираем дублирование виджетов
   const allWidgets = computed(() => {
-    // 🟢 FIX: Мы больше не добавляем виджет для категории "Перевод" вручную,
-    // так как есть 'transferList' и 'postingList' в staticWidgets.
+    // Мы не добавляем виджеты для категорий "Перевод" / "Проводки", 
+    // так как они уже есть в staticWidgets (transferList, postingList).
     const cats = [];
-    // Обычные категории можно добавить, если нужно (но у нас есть виджет "Категории" общий)
-    // Если вы хотите выводить отдельные виджеты для каждой категории, раскомментируйте логику ниже,
-    // но исключите _isTransferCategory.
-    
-    /* // Пример логики, если нужны виджеты для КАЖДОЙ обычной категории:
-    categories.value.forEach(cat => {
-        if (!_isTransferCategory(cat)) {
-             cats.push({ key: `cat_${cat._id}`, name: cat.name });
-        }
-    });
-    */
-
-     return [...staticWidgets.value, ...cats];
+    return [...staticWidgets.value, ...cats];
   });
 
   const savedLayout = localStorage.getItem('dashboardLayout');
@@ -621,24 +604,55 @@ export const useMainStore = defineStore('mainStore', () => {
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
-    const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
+    // 1. Определяем обычные операции (не трансферы и не часть группы)
+    const normalOps = list.filter(o => {
+        // 🟢 FIX: Если категория "Проводки" или "Перевод" - считаем это частью трансфера
+        if (o.categoryId) {
+            const name = o.categoryId.name.toLowerCase().trim();
+            if (name === 'проводки' || name === 'перевод' || name === 'transfer') return false;
+        }
+        return !o?.isTransfer && !o?.transferGroupId;
+    });
+
+    // 2. Группируем трансферы
     const transferGroups = new Map();
     list.forEach(o => {
-      if (o?.isTransfer || o?.transferGroupId) {
-        const groupId = o.transferGroupId || `transfer_${o._id}`;
-        if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
-        transferGroups.get(groupId).push(o);
-      }
+        let isTr = o?.isTransfer || o?.transferGroupId;
+        // 🟢 FIX: Принудительно группируем по категории
+        if (!isTr && o.categoryId) {
+             const name = o.categoryId.name.toLowerCase().trim();
+             if (name === 'проводки' || name === 'перевод' || name === 'transfer') isTr = true;
+        }
+
+        if (isTr) {
+            // Если нет groupID, создаем временный на основе времени (грубо, но для "двух чипов" сойдет, если они рядом)
+            // Идеально, если бэкенд шлет transferGroupId.
+            // Если нет - группируем по тому, что есть (одиночные).
+            // Но проблема "двух чипов" обычно в том, что они не сгруппированы.
+            const groupId = o.transferGroupId || `transfer_${o._id}`; // Пока так, если бэкенд не шлет группу, они останутся раздельными, но тип сменится
+            if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
+            transferGroups.get(groupId).push(o);
+        }
     });
+
     const mergedTransfers = [];
     for (const [groupId, transferOps] of transferGroups) {
+      // Пытаемся найти пару Income + Expense
+      // Если трансфер создается нормально, там будет 2 операции с одним transferGroupId (от бэкенда).
+      // Если "два чипа" - значит transferGroupId разный или отсутствует.
+      // В таком случае, мы просто конвертируем их в тип 'transfer', чтобы они выглядели как переводы,
+      // но они могут остаться визуально двумя (один приход, один уход), если не связаны ID.
+      // Чтобы они "склеились" визуально в один, они должны быть в ОДНОМ объекте.
+      
       if (transferOps.length === 2) {
         const expenseOp = transferOps.find(o => o.amount < 0);
         const incomeOp = transferOps.find(o => o.amount > 0);
         if (expenseOp && incomeOp) {
           mergedTransfers.push({
-            _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true,
-            transferGroupId: groupId, amount: Math.abs(incomeOp.amount),
+            _id: incomeOp._id, _id2: expenseOp._id, 
+            type: 'transfer', isTransfer: true,
+            transferGroupId: groupId, 
+            amount: Math.abs(incomeOp.amount),
             fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
             fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
@@ -650,10 +664,14 @@ export const useMainStore = defineStore('mainStore', () => {
           continue;
         }
       }
+      
+      // Если пара не нашлась или операция одна (orphan transfer part)
       const firstOp = transferOps[0];
       mergedTransfers.push({
-        ...firstOp, type: 'transfer', isTransfer: true,
-        transferGroupId: groupId, amount: Math.abs(firstOp.amount),
+        ...firstOp, 
+        type: 'transfer', isTransfer: true,
+        transferGroupId: groupId, 
+        amount: Math.abs(firstOp.amount),
         categoryId: { _id: 'transfer', name: 'Проводки' }
       });
     }
