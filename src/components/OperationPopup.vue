@@ -5,18 +5,17 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v12.4 - Fix Modal Close Logic ---
- * * ВЕРСИЯ: 12.4 - Исправление закрытия окна "Smart Create"
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v12.5 - HIDE TRANSFER CATEGORY ---
+ * * ВЕРСИЯ: 12.5 - Скрытие категории "Перевод" из списка
+ * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В функции `saveNewOwner` заменен вызов `cancelCreateOwner()`
- * на прямое закрытие `showCreateOwnerModal.value = false`.
- * Ранее `cancelCreateOwner` блокировался флагом `isInlineSaving`,
- * из-за чего окно не закрывалось после успешного создания.
+ * 1. (LOGIC) Добавлено computed свойство `availableCategories`.
+ * 2. (LOGIC) Оно фильтрует `mainStore.categories`, исключая "перевод" и "transfer".
+ * 3. (UI) В `<select>` категорий теперь используется `availableCategories` вместо полного списка.
  */
 
-console.log('--- OperationPopup.vue v12.4 (Fix Modal Close) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v12.5 (Hide Transfer Category) ЗАГРУЖЕН ---');
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -72,6 +71,14 @@ const newOwnerInputRef = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
+
+// 🟢 ФИЛЬТРАЦИЯ КАТЕГОРИЙ (Исключаем Перевод)
+const availableCategories = computed(() => {
+  return mainStore.categories.filter(c => {
+    const name = c.name.toLowerCase().trim();
+    return name !== 'перевод' && name !== 'transfer';
+  });
+});
 
 // --- ДАТА ---
 const toInputDateString = (date) => {
@@ -149,7 +156,17 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
       const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object')
         ? contractor.defaultCategoryId._id
         : contractor.defaultCategoryId;
-      selectedCategoryId.value = cId;
+      
+      // Проверка: если дефолтная категория - Перевод, игнорируем её
+      const catObj = mainStore.categories.find(c => c._id === cId);
+      if (catObj) {
+         const name = catObj.name.toLowerCase().trim();
+         if (name !== 'перевод' && name !== 'transfer') {
+             selectedCategoryId.value = cId;
+         }
+      } else {
+          selectedCategoryId.value = cId;
+      }
     }
   }
 };
@@ -193,7 +210,7 @@ const _getDateKey = (date) => {
 };
 
 // =================================================================
-// --- 🟢 HANDLE SAVE ---
+// --- HANDLE SAVE ---
 // =================================================================
 const handleSave = async () => {
   if (isInlineSaving.value) return;
@@ -204,7 +221,7 @@ const handleSave = async () => {
   const amountFromState = (amount.value || '').replace(/ /g, '');
   const amountParsed = parseFloat(amountFromState);
 
-  // 🔴 ВАЛИДАЦИЯ: Все 4 поля обязательны
+  // ВАЛИДАЦИЯ: Все 4 поля обязательны
   if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorId.value) {
     errorMessage.value = 'Пожалуйста, заполните все обязательные поля: Сумма, Счет, Компания/Физлицо, Контрагент.';
     console.error('[OperationPopup] handleSave: ОШИБКА ВАЛИДАЦИИ');
@@ -332,11 +349,8 @@ const saveNewOwner = async () => {
       newItem = existing ? existing : await mainStore.addIndividual(name);
     }
     selectedOwner.value = `${type}-${newItem._id}`;
-    
-    // 🟢 FIX (v12.4): Закрываем окно напрямую, так как cancelCreateOwner заблокирован
     showCreateOwnerModal.value = false;
     newOwnerName.value = '';
-
   } catch (e) { 
     console.error(e); 
   } finally { 
@@ -487,7 +501,6 @@ const handleCopyClick = () => {
           <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
         </div>
       
-        <!-- 🟢 v12.3: Вернул звездочку '*' -->
         <label>Моей Компании/Физлица *</label>
         <select v-model="selectedOwner" @change="e => e.target.value === '--CREATE_NEW--' && openCreateOwnerModal()" class="form-select">
           <option :value="null" disabled>Выберите владельца</option>
@@ -500,7 +513,6 @@ const handleCopyClick = () => {
           <option value="--CREATE_NEW--">[ + Создать... ]</option>
         </select>
 
-        <!-- 🟢 v12.3: Вернул звездочку '*' -->
         <label>{{ props.type === 'income' ? 'От контрагента' : 'Контрагенту' }} *</label>
         <select v-if="!isCreatingContractor" v-model="selectedContractorId" @change="e => e.target.value === '--CREATE_NEW--' ? showContractorInput() : onContractorSelected(e.target.value, true, true)" class="form-select">
           <option :value="null" disabled>Выберите контрагента</option>
@@ -528,7 +540,8 @@ const handleCopyClick = () => {
         <label>По категории</label>
         <select v-if="!isCreatingCategory" v-model="selectedCategoryId" @change="e => e.target.value === '--CREATE_NEW--' && showCategoryInput()" class="form-select">
           <option :value="null">Без категории</option>
-          <option v-for="cat in mainStore.categories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
+          <!-- 🟢 ИСПОЛЬЗУЕМ ОТФИЛЬТРОВАННЫЙ СПИСОК -->
+          <option v-for="cat in availableCategories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
           <option value="--CREATE_NEW--">[ + Создать новую категорию ]</option>
         </select>
         <div v-else class="inline-create-form">
