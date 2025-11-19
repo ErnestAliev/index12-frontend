@@ -3,12 +3,12 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.0 - RESTORE TRANSFER LABEL ---
- * * ВЕРСИЯ: 4.0 - Возврат названия "Перевод" для денежных операций
+ * * --- МЕТКА ВЕРСИИ: v4.1 - CALM COLORS ---
+ * * ВЕРСИЯ: 4.1 - Изменение цвета "Исполнение" на спокойный синий
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) isTransferOp теперь отображается как "Перевод" (не "Проводка").
+ * 1. (STYLE) .act background изменен с #4a48b8 на #466C95.
  */
 
 const props = defineProps({
@@ -81,7 +81,7 @@ const onDrop = (event) => {
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
-      <!-- 🟢 Перевод (Деньги) -->
+      <!-- Перевод (Деньги) -->
       <template v-if="isTransferOp">
         <span class="op-title">Перевод</span>
         <span class="op-meta">
@@ -133,11 +133,11 @@ const onDrop = (event) => {
 .transfer .op-title { font-weight:600; margin-right:6px; color:#d4d8e3; }
 .transfer .op-meta { color:#98a2b3; }
 
-/* Акт (Фиолетовый) */
-.act { background: #4a48b8; }
-.act:hover { background: #5b59d8; }
+/* 🟢 Акт (Спокойный синий) */
+.act { background: #466C95; } /* Был фиолетовый #4a48b8 */
+.act:hover { background: #587BA6; }
 .act .op-title { font-weight:600; margin-right:6px; color: #fff; }
-.act .op-meta { color: #e0e0ff; }
+.act .op-meta { color: #e0f0ff; }
 
 @media (max-height: 900px) {
   .hour-cell { padding: 2px 4px; height: 28px; }
