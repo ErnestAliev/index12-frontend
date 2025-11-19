@@ -3,18 +3,17 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.2 - FIX BUILD IMPORTS ---
- * * ВЕРСИЯ: 18.2 - Исправлены импорты на относительные для гарантии сборки
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v19.0 - HEADER WIDGETS BINDING ---
+ * * ВЕРСИЯ: 19.0 - Привязка новых виджетов "Мои переводы" и "Мои проводки"
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Все импорты теперь используют './' (текущая папка),
- * чтобы исключить проблемы с алиасами и регистром при сборке на Linux/Vercel.
+ * 1. (LOGIC) onCategoryAdd: раздельная логика для transferList и postingList.
+ * 2. (LOGIC) onCategoryEdit: раздельная логика для transferList и postingList.
  */
 
-console.log('--- TheHeader.vue v18.2 (Build Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v19.0 (Widget Bindings) ЗАГРУЖЕН ---');
 
-// Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
@@ -22,7 +21,6 @@ import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
-// 🟢 ВАЖНО: Убедитесь, что файл называется OperationListEditor.vue (с большой буквы)
 import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue'; 
 
@@ -30,10 +28,15 @@ const mainStore = useMainStore();
 
 // Состояния попапов
 const isTransferPopupVisible = ref(false);
+// 🟢 NEW: Начальный режим для TransferPopup
+const transferPopupInitialMode = ref('transfer'); 
+
 const isTransferEditorVisible = ref(false);
+// 🟢 NEW: Режим редактора (transfer/act)
+const transferEditorMode = ref('transfer');
 
 const isOperationListEditorVisible = ref(false);
-const operationListEditorType = ref('income'); // 'income' | 'expense'
+const operationListEditorType = ref('income'); 
 const operationListEditorTitle = ref('');
 
 const isOperationPopupVisible = ref(false);
@@ -85,7 +88,6 @@ const saveHandler = ref(null);
 const deleteHandler = ref(null); 
 const showDeleteInPopup = ref(false); 
 
-// Обычное добавление
 const openAddPopup = (title, storeAction) => {
   popupTitle.value = title;
   popupInitialValue.value = '';
@@ -95,7 +97,6 @@ const openAddPopup = (title, storeAction) => {
   isEntityPopupVisible.value = true;
 };
 
-// Переименование + Удаление
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
   popupInitialValue.value = entity.name;
@@ -173,9 +174,22 @@ const onCategoryAdd = (widgetKey, index) => {
         return;
     }
 
-    // 2. Системный Перевод
+    // 🟢 2. Переводы и Проводки
+    if (widgetKey === 'transferList') {
+        transferPopupInitialMode.value = 'transfer';
+        isTransferPopupVisible.value = true;
+        return;
+    }
+    if (widgetKey === 'postingList') {
+        transferPopupInitialMode.value = 'act';
+        isTransferPopupVisible.value = true;
+        return;
+    }
+
+    // 3. Системный Перевод (Legacy/Fallback)
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
+        transferPopupInitialMode.value = 'transfer';
         isTransferPopupVisible.value = true;
     }
 };
@@ -196,7 +210,19 @@ const onCategoryEdit = (widgetKey) => {
         return;
     }
 
-    // 3. Категории (вкл. Перевод)
+    // 🟢 3. Переводы и Проводки
+    if (widgetKey === 'transferList') {
+        transferEditorMode.value = 'transfer';
+        isTransferEditorVisible.value = true;
+        return;
+    }
+    if (widgetKey === 'postingList') {
+        transferEditorMode.value = 'act';
+        isTransferEditorVisible.value = true;
+        return;
+    }
+
+    // 4. Категории (Legacy Перевод)
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
@@ -204,6 +230,7 @@ const onCategoryEdit = (widgetKey) => {
         const isTransfer = (lowerName === 'перевод' || lowerName === 'transfer');
         
         if (isTransfer) {
+            transferEditorMode.value = 'transfer';
             isTransferEditorVisible.value = true;
         } else {
             openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
@@ -309,9 +336,9 @@ const handleOperationAdded = async (newOp) => {
         :widgetIndex="index"
       />
 
-      <!-- 🟢 FIX: Теперь здесь обрабатываются и cat_..., и incomeList/expenseList -->
+      <!-- 🟢 FIX: Теперь здесь обрабатываются и cat_..., и новые виджеты -->
       <HeaderCategoryCard
-        v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
+        v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'transferList' || widgetKey === 'postingList'"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
         :widgetIndex="index"
@@ -337,20 +364,22 @@ const handleOperationAdded = async (newOp) => {
     @close="isListEditorVisible = false"
     @save="onEntityListSave"
   />
+  
   <TransferPopup
       v-if="isTransferPopupVisible"
       :date="new Date()"
       :cellIndex="0"
+      :initialMode="transferPopupInitialMode"
       @close="isTransferPopupVisible = false"
       @transfer-complete="handleTransferComplete"
     />
     
   <TransferListEditor
     v-if="isTransferEditorVisible"
+    :mode="transferEditorMode"
     @close="isTransferEditorVisible = false"
   />
 
-  <!-- 🟢 NEW: Попап списка операций -->
   <OperationListEditor
     v-if="isOperationListEditorVisible"
     :title="operationListEditorTitle"
@@ -358,7 +387,6 @@ const handleOperationAdded = async (newOp) => {
     @close="isOperationListEditorVisible = false"
   />
 
-  <!-- 🟢 NEW: Попап добавления операции (для кнопок + в виджетах) -->
   <OperationPopup
     v-if="isOperationPopupVisible"
     :type="operationPopupType"
