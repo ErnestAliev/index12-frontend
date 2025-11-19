@@ -2,12 +2,17 @@
 import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import OperationPopup from './OperationPopup.vue'; // 🟢 Импорт попапа создания
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.1 - FIX BUILD ---
- * * ВЕРСИЯ: 1.1 - Гарантированное создание файла
+ * * --- МЕТКА ВЕРСИИ: v12.0-ADD-BTN ---
+ * * ВЕРСИЯ: 12.0 - Добавлена кнопка "Создать"
  * * ДАТА: 2025-11-19
- * * Этот файл ОБЯЗАН называться OperationListEditor.vue (с большой буквы O, L, E)
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FEAT) Добавлена кнопка "+ Создать [тип]" вверху списка.
+ * 2. (LOGIC) Интегрирован OperationPopup для создания новых операций из этого списка.
+ * 3. (STYLE) Стили кнопки унифицированы с EntityListEditor.
  */
 
 const props = defineProps({
@@ -20,6 +25,9 @@ const mainStore = useMainStore();
 
 const localItems = ref([]);
 const isSaving = ref(false);
+
+// --- Состояние создания (попап) ---
+const isCreatePopupVisible = ref(false);
 
 // --- Удаление ---
 const isDeleting = ref(false);
@@ -54,11 +62,10 @@ const getOwnerId = (compId, indId) => {
   return null;
 };
 
-// --- Инициализация ---
-onMounted(() => {
+// --- Загрузка данных ---
+const loadOperations = () => {
   const allOps = mainStore.allOperationsFlat;
   
-  // Фильтруем только нужный тип и исключаем переводы
   const targetOps = allOps.filter(op => 
     op.type === props.type && 
     !op.isTransfer && 
@@ -87,16 +94,36 @@ onMounted(() => {
         isDeleted: false
       };
     });
+};
+
+onMounted(() => {
+  loadOperations();
 });
 
-// --- Обработчики ---
+// --- Обработчики создания ---
+const openCreatePopup = () => {
+  isCreatePopupVisible.value = true;
+};
+
+const handleOperationAdded = async (newOp) => {
+  // Закрываем попап создания
+  isCreatePopupVisible.value = false;
+  
+  // Добавляем в список, если она уже загружена в стор, 
+  // но для надежности перезагрузим список из стора
+  await mainStore.fetchAllEntities(); 
+  if (newOp && newOp.dateKey) await mainStore.refreshDay(newOp.dateKey);
+  
+  loadOperations(); // Обновляем локальный список
+};
+
+// --- Обработчики редактирования ---
 const onAmountInput = (item) => {
   const raw = item.amountFormatted.replace(/[^0-9]/g, '');
   item.amountFormatted = formatNumber(raw);
   item.amount = Number(raw);
 };
 
-// Авто-выбор владельца при смене счета
 const onAccountChange = (item) => {
   const account = accounts.value.find(a => a._id === item.accountId);
   if (account) {
@@ -112,7 +139,6 @@ const onAccountChange = (item) => {
   }
 };
 
-// Авто-выбор категории/проекта при смене контрагента
 const onContractorChange = (item) => {
   const contr = contractors.value.find(c => c._id === item.contractorId);
   if (contr) {
@@ -135,7 +161,6 @@ const handleSave = async () => {
       if (item.isDeleted) continue;
       const original = item.originalOp;
       
-      // Парсинг владельца
       let compId = null, indId = null;
       if (item.ownerId) {
         const [type, id] = item.ownerId.split('-');
@@ -145,7 +170,6 @@ const handleSave = async () => {
       const [year, month, day] = item.date.split('-').map(Number);
       const newDateObj = new Date(year, month - 1, day, 12, 0, 0);
       
-      // Проверка изменений
       const isChanged = 
         toInputDate(original.date) !== item.date ||
         Math.abs(original.amount) !== item.amount ||
@@ -222,6 +246,13 @@ const cancelDelete = () => {
       <p class="editor-hint">
         Редактируйте параметры операций. Нажмите на корзину для удаления.
       </p>
+      
+      <!-- 🟢 КНОПКА СОЗДАНИЯ -->
+      <div class="create-section">
+        <button class="btn-add-new" @click="openCreatePopup">
+          + Создать {{ type === 'income' ? 'Доход' : 'Расход' }}
+        </button>
+      </div>
       
       <div class="grid-header">
         <span class="col-date">Дата</span>
@@ -317,6 +348,16 @@ const cancelDelete = () => {
 
     </div>
 
+    <!-- Попап создания новой операции -->
+    <OperationPopup
+      v-if="isCreatePopupVisible"
+      :type="type"
+      :date="new Date()"
+      :cellIndex="0"
+      @close="isCreatePopupVisible = false"
+      @operation-added="handleOperationAdded"
+    />
+
     <!-- Внутреннее окно подтверждения -->
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
@@ -349,6 +390,11 @@ const cancelDelete = () => {
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
+
+/* --- 🟢 СТИЛИ КНОПКИ СОЗДАНИЯ (как в EntityListEditor) --- */
+.create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+.btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
+.btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
 
 .grid-header, .grid-row {
   display: grid;
@@ -407,4 +453,3 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
 </style>
-
