@@ -22,16 +22,15 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   /**
-   * * --- МЕТКА ВЕРСИИ: v17.0 - RENAMING TO POSTINGS ---
-   * * ВЕРСИЯ: 17.0 - Глобальный ренейминг "Перевод" -> "Проводки"
+   * * --- МЕТКА ВЕРСИИ: v18.0 - WIDGETS SEPARATION ---
+   * * ВЕРСИЯ: 18.0 - Разделение на "Мои переводы" и "Мои проводки"
    * * ДАТА: 2025-11-20
    *
    * ЧТО ИЗМЕНЕНО:
-   * 1. (LOGIC) _isTransferCategory: поддерживает 'проводки'.
-   * 2. (LOGIC) _mergeTransfers: название группы теперь 'Проводки'.
-   * 3. (LOGIC) _getOrCreateTransferCategory: создает 'Проводки' по умолчанию.
+   * 1. (CONFIG) staticWidgets: добавлены 'transferList' и 'postingList'.
+   * 2. (LOGIC) Добавлены computed currentActs/futureActs для виджета проводок.
    */
-  console.log('--- mainStore.js v17.0 (Postings Rename) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v18.0 (Widgets Separation) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -59,6 +58,10 @@ export const useMainStore = defineStore('mainStore', () => {
     // Скрытые по умолчанию:
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
+    // 🟢 НОВЫЕ ВИДЖЕТЫ
+    { key: 'transferList', name: 'Мои переводы' },
+    { key: 'postingList',  name: 'Мои проводки' },
+    
     { key: 'individuals',  name: 'Мои Физлица' },
     { key: 'categories',   name: 'Категории' }, 
   ]);
@@ -67,7 +70,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
-    // 🟢 Поддержка старого 'перевод' и нового 'проводки'
     return name === 'перевод' || name === 'transfer' || name === 'проводки';
   };
 
@@ -76,14 +78,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
-  // Динамический список всех виджетов (статика + категория "Проводки" если есть)
+  // Динамический список всех виджетов
   const allWidgets = computed(() => {
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
     if (transferCategory) {
-       // Используем имя из базы, но для UI можем форсировать "Проводки", 
-       // хотя лучше показывать как есть, чтобы не путать пользователя, если он сам переименовал.
-       // Но здесь мы просто берем имя категории.
        cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
     }
      return [...staticWidgets.value, ...cats];
@@ -190,7 +189,11 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
+  // 🟢 СПИСКИ ОПЕРАЦИЙ
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
+  // 🟢 АКТЫ (ПРОВОДКИ)
+  const currentActs = computed(() => currentOps.value.filter(op => isAct(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
+  
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
 
@@ -209,6 +212,9 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
+  // 🟢 БУДУЩИЕ АКТЫ
+  const futureActs = computed(() => futureOps.value.filter(op => isAct(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
+  
   const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
 
@@ -569,7 +575,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
   function updateFutureTotals() {
-    // 🟢 FORCE REACTIVITY: Trigger recalculation of all computed totals
     const _ = futureTotalBalance.value;
   }
   function updateFutureProjectionByMode(mode, today = new Date()){
@@ -632,7 +637,6 @@ export const useMainStore = defineStore('mainStore', () => {
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            // 🟢 РЕНЕЙМИНГ: Виртуальная категория 'Проводки' для списка
             categoryId: { _id: 'transfer', name: 'Проводки' },
             date: incomeOp.date || expenseOp.date
           });
@@ -643,19 +647,15 @@ export const useMainStore = defineStore('mainStore', () => {
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        // 🟢 РЕНЕЙМИНГ: Виртуальная категория 'Проводки' для списка
         categoryId: { _id: 'transfer', name: 'Проводки' }
       });
     }
     return [...normalOps, ...mergedTransfers];
   }
 
-  // 🟢 РЕНЕЙМИНГ: Создание категории 'Проводки' по умолчанию
   async function _getOrCreateTransferCategory() {
-    // Ищем 'перевод', 'transfer' или 'проводки'
     let transferCategory = categories.value.find(_isTransferCategory);
     if (!transferCategory) {
-      // Если нет - создаем именно 'Проводки'
       transferCategory = await addCategory('Проводки');
     }
     return transferCategory._id;
@@ -782,7 +782,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateKey = _getDateKey(finalDate);
       const cellIndex = await getFirstFreeCellIndex(dateKey);
       
-      // 🟢 Ищем или создаем 'Проводки'
       const transferCategoryId = await _getOrCreateTransferCategory();
 
       const response = await axios.post(`${API_BASE_URL}/transfers`, {
@@ -1044,7 +1043,6 @@ export const useMainStore = defineStore('mainStore', () => {
     calculationCache.value = {};
   }
   
-  // 🟢 Expose fetchOperationsRange for completeness
   async function fetchOperationsRange(startDate, endDate) {
       await fetchCalculationRange(startDate, endDate);
   }
@@ -1073,6 +1071,7 @@ export const useMainStore = defineStore('mainStore', () => {
     currentOps, 
     
     currentTransfers, futureTransfers,
+    currentActs, futureActs, // 🟢 EXPORTED
     
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
