@@ -4,14 +4,13 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.0 - TRANSFERS & POSTINGS POPUP ---
- * * ВЕРСИЯ: 4.0 - Обновление текстов и табов
+ * * --- МЕТКА ВЕРСИИ: v5.0 - COPY FEEDBACK ---
+ * * ВЕРСИЯ: 5.0 - Визуальная обратная связь при копировании
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Таб "Деньги" переименован в "Перевод".
- * 2. (UI) Добавлена подсказка "Вы переводите деньги между своими счетами".
- * 3. (UI) Улучшены тексты подсказок.
+ * 1. (UI) Добавлено уведомление "Режим создания копии" при нажатии кнопки копировать.
+ * 2. (UI) Заголовок меняется на "Создание копии..." при isCloneMode.
  */
 
 const mainStore = useMainStore();
@@ -21,13 +20,12 @@ const props = defineProps({
   transferToEdit: { type: Object, default: null },
   minAllowedDate: { type: Date, default: null },
   maxAllowedDate: { type: Date, default: null },
-  // 🟢 NEW: Возможность задать начальный режим ('transfer' | 'act')
   initialMode: { type: String, default: 'transfer' }
 });
 
 const emit = defineEmits(['close', 'transfer-complete']);
 
-const mode = ref('transfer'); // 'transfer' (бывш. money) | 'act'
+const mode = ref('transfer'); // 'transfer' | 'act'
 
 // --- Данные для полей ---
 const amount = ref('');
@@ -61,6 +59,8 @@ const amountInput = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
+// 🟢 NEW: Флаг для анимации уведомления
+const showCopyMessage = ref(false);
 
 const isCreatingFromAccount = ref(false);
 const newFromAccountName = ref('');
@@ -184,7 +184,6 @@ onMounted(async () => {
       editableDate.value = toInputDate(new Date(op.date));
     }
   } else {
-    // Инициализация режима из пропсов, если это создание новой операции
     mode.value = props.initialMode || 'transfer';
     setTimeout(() => {
       if (amountInput.value) amountInput.value.focus();
@@ -193,13 +192,17 @@ onMounted(async () => {
 });
 
 const title = computed(() => {
-  if (mode.value === 'act') return props.transferToEdit && !isCloneMode.value ? 'Редактировать Исполнение' : 'Новое Исполнение';
-  return props.transferToEdit && !isCloneMode.value ? 'Редактировать Перевод' : 'Новый Перевод';
+  if (isCloneMode.value) {
+      return mode.value === 'act' ? 'Создание копии Исполнения' : 'Создание копии Перевода';
+  }
+  if (mode.value === 'act') return props.transferToEdit ? 'Редактировать Исполнение' : 'Новое Исполнение';
+  return props.transferToEdit ? 'Редактировать Перевод' : 'Новый Перевод';
 });
 
 const buttonText = computed(() => {
-  if (mode.value === 'act') return 'Создать Исполнение'; // Или просто "Исполнить"
-  return 'Перевести';
+  if (isCloneMode.value) return 'Подтвердить копию'; // 🟢 Явный текст
+  if (mode.value === 'act') return 'Создать Исполнение';
+  return 'Провести';
 });
 
 const actionButtonClass = computed(() => {
@@ -221,8 +224,13 @@ const onDeleteConfirmed = async () => {
 
 const handleCopyClick = () => {
   isCloneMode.value = true;
-  editableDate.value = toInputDate(props.date); 
+  showCopyMessage.value = true;
+  editableDate.value = toInputDate(props.date); // Сбрасываем дату на текущую (в ячейке) или оставляем старую? Обычно при копировании хотят на сегодня/выбранный день.
+  
   nextTick(() => { amountInput.value?.focus(); });
+  
+  // Скрываем сообщение через 3 сек
+  setTimeout(() => { showCopyMessage.value = false; }, 3000);
 };
 
 const openCreateOwnerModal = (target) => {
@@ -474,7 +482,6 @@ const closePopup = () => {
              <svg class="mode-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                  <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
              </svg>
-             <!-- 🟢 "Деньги" -> "Перевод" -->
              <span>Перевод</span>
           </button>
           <button class="mode-btn" :class="{ active: mode === 'act' }" @click="mode = 'act'">
@@ -489,15 +496,19 @@ const closePopup = () => {
 
       <h3>{{ title }}</h3>
 
+      <!-- 🟢 Блок уведомления о копировании -->
+      <transition name="fade">
+          <div v-if="showCopyMessage" class="copy-notification">
+              <span class="icon">📋</span> Режим создания копии активирован
+          </div>
+      </transition>
+
       <template v-if="!showCreateOwnerModal">
         
-        <!-- ОБЩЕЕ ПОЛЕ: СУММА -->
-        <!-- 🟢 Меняем лейбл суммы в зависимости от режима -->
         <label>Сумма {{ mode === 'transfer' ? 'Перевода' : 'Исполнения' }}</label>
         <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
         
-        <!-- 🟢 Подсказка для суммы -->
-        <p v-if="mode === 'transfer'" class="hint-text">
+        <p v-if="mode === 'transfer'" class="input-hint">
            Вы переводите деньги между своими счетами.
         </p>
         
@@ -675,15 +686,36 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
     line-height: 1.4;
 }
 
-/* NEW: Подсказка под инпутом */
-.hint-text {
-    font-size: 13px;
-    color: #666;
-    margin-bottom: 15px;
-    background: #eaeaea;
-    padding: 10px;
+.input-hint {
+    font-size: 12px;
+    color: #888;
+    margin-top: -10px;
+    margin-bottom: 10px;
+    font-style: italic;
+}
+
+/* 🟢 Уведомление о копировании */
+.copy-notification {
+    background-color: #e6f4ea;
+    border: 1px solid #34c759;
+    color: #1e7e34;
+    padding: 10px 15px;
     border-radius: 6px;
-    line-height: 1.4;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+}
+.copy-notification .icon { font-size: 16px; }
+
+/* Анимация появления/исчезновения */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
 }
 
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
@@ -729,6 +761,3 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
 .btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
 .btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 </style>
-
-
-
