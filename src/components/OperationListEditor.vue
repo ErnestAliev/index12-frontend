@@ -1,18 +1,18 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v13.0-FILTERS-TOTALS ---
- * * ВЕРСИЯ: 13.0 - Фильтры и Итоги в редакторе операций
+ * * --- МЕТКА ВЕРСИИ: v14.0-FILTERS-SELECTS ---
+ * * ВЕРСИЯ: 14.0 - Фильтры-селекты и цветные итоги
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлен блок фильтров над таблицей.
- * 2. (FEAT) Добавлен расчет и отображение Итогов (Общее / Отфильтрованное).
- * 3. (LOGIC) Список операций теперь фильтруется на лету.
+ * 1. (UI) Инпуты фильтров заменены на <select>.
+ * 2. (LOGIC) Фильтрация теперь идет по ID (точное совпадение).
+ * 3. (UI) Итоги: Доходы зеленые (+), Расходы красные (-).
  */
 
 const props = defineProps({
@@ -29,12 +29,12 @@ const isSaving = ref(false);
 // --- Состояние фильтров ---
 const filters = ref({
   date: '',
-  owner: '',
-  account: '',
-  amount: '',
-  contractor: '',
-  category: '',
-  project: ''
+  owner: '',       // ID (company-ID / individual-ID)
+  account: '',     // ID
+  amount: '',      // Text (поиск подстроки)
+  contractor: '',  // ID
+  category: '',    // ID
+  project: ''      // ID
 });
 
 // --- Состояние создания (попап) ---
@@ -45,10 +45,14 @@ const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
 const itemToDelete = ref(null);
 
-// --- Справочники ---
+// --- Справочники (для селектов) ---
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
-const categories = computed(() => mainStore.categories);
+// Исключаем "Перевод" из фильтра категорий, если это доход/расход
+const categories = computed(() => mainStore.categories.filter(c => {
+    const name = c.name.toLowerCase();
+    return name !== 'перевод' && name !== 'transfer';
+}));
 const contractors = computed(() => mainStore.contractors);
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
@@ -90,31 +94,6 @@ const loadOperations = () => {
     .map(op => {
       const ownerId = getOwnerId(op.companyId, op.individualId);
       
-      // Получаем имена для фильтрации (чтобы не искать каждый раз в шаблоне)
-      const accObj = accounts.value.find(a => a._id === (op.accountId?._id || op.accountId));
-      const accName = accObj ? accObj.name : '';
-      
-      let ownerName = '';
-      if (ownerId) {
-        const [type, id] = ownerId.split('-');
-        if (type === 'company') {
-           const c = companies.value.find(x => x._id === id);
-           if (c) ownerName = c.name;
-        } else {
-           const i = individuals.value.find(x => x._id === id);
-           if (i) ownerName = i.name;
-        }
-      }
-
-      const contrObj = contractors.value.find(c => c._id === (op.contractorId?._id || op.contractorId));
-      const contrName = contrObj ? contrObj.name : '';
-
-      const catObj = categories.value.find(c => c._id === (op.categoryId?._id || op.categoryId));
-      const catName = catObj ? catObj.name : '';
-
-      const projObj = projects.value.find(p => p._id === (op.projectId?._id || op.projectId));
-      const projName = projObj ? projObj.name : '';
-
       return {
         _id: op._id,
         originalOp: op,
@@ -128,15 +107,6 @@ const loadOperations = () => {
         contractorId: op.contractorId?._id || op.contractorId,
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
-        
-        // Поля для фильтрации (текстовые)
-        filterData: {
-            account: accName.toLowerCase(),
-            owner: ownerName.toLowerCase(),
-            contractor: contrName.toLowerCase(),
-            category: catName.toLowerCase(),
-            project: projName.toLowerCase()
-        },
         
         isDeleted: false
       };
@@ -152,22 +122,22 @@ const filteredItems = computed(() => {
   return localItems.value.filter(item => {
     if (item.isDeleted) return false;
 
-    // Дата (точное совпадение, если введена)
+    // Дата
     if (filters.value.date && item.date !== filters.value.date) return false;
 
-    // Сумма (содержит подстроку)
+    // Сумма (поиск подстроки)
     if (filters.value.amount) {
-        const searchAmount = filters.value.amount.replace(/\s/g, ''); // убираем пробелы из поиска
+        const searchAmount = filters.value.amount.replace(/\s/g, '');
         const itemAmount = String(item.amount);
         if (!itemAmount.includes(searchAmount)) return false;
     }
 
-    // Остальные текстовые поля (частичное совпадение)
-    if (filters.value.owner && !item.filterData.owner.includes(filters.value.owner.toLowerCase())) return false;
-    if (filters.value.account && !item.filterData.account.includes(filters.value.account.toLowerCase())) return false;
-    if (filters.value.contractor && !item.filterData.contractor.includes(filters.value.contractor.toLowerCase())) return false;
-    if (filters.value.category && !item.filterData.category.includes(filters.value.category.toLowerCase())) return false;
-    if (filters.value.project && !item.filterData.project.includes(filters.value.project.toLowerCase())) return false;
+    // Селекты (точное совпадение ID)
+    if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
+    if (filters.value.account && item.accountId !== filters.value.account) return false;
+    if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
+    if (filters.value.category && item.categoryId !== filters.value.category) return false;
+    if (filters.value.project && item.projectId !== filters.value.project) return false;
 
     return true;
   });
@@ -177,21 +147,38 @@ const isFilterActive = computed(() => {
   return Object.values(filters.value).some(val => val !== '');
 });
 
-// --- ИТОГИ ---
+// --- ИТОГИ (Сумма) ---
 const totalSum = computed(() => {
-  return localItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
+    // Считаем сырую сумму (учитываем знак типа операции)
+    // Но в localItems amount хранится как Math.abs.
+    // Если это расход (props.type === 'expense'), то реальная сумма отрицательная.
+    const rawSum = localItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
+    return props.type === 'expense' ? -rawSum : rawSum;
 });
 
 const filteredSum = computed(() => {
-  return filteredItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
+    const rawSum = filteredItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
+    return props.type === 'expense' ? -rawSum : rawSum;
 });
 
-
-// --- Обработчики создания ---
-const openCreatePopup = () => {
-  isCreatePopupVisible.value = true;
+// Форматтер для итогов (цвет + знак)
+const formatTotal = (val) => {
+    const absVal = Math.abs(val);
+    const formatted = formatNumber(absVal);
+    
+    if (val > 0) return `+ ${formatted} ₸`;
+    if (val < 0) return `- ${formatted} ₸`;
+    return `${formatted} ₸`;
 };
 
+const getTotalClass = (val) => {
+    if (val > 0) return 'total-income';
+    if (val < 0) return 'total-expense';
+    return '';
+};
+
+// --- Обработчики создания ---
+const openCreatePopup = () => { isCreatePopupVisible.value = true; };
 const handleOperationAdded = async (newOp) => {
   isCreatePopupVisible.value = false;
   await mainStore.fetchAllEntities(); 
@@ -218,68 +205,26 @@ const onAccountChange = (item) => {
       newOwnerId = `individual-${iId}`;
     }
     if (newOwnerId) item.ownerId = newOwnerId;
-    
-    // Обновляем данные для фильтра
-    item.filterData.account = account.name.toLowerCase();
-    updateOwnerFilterData(item, newOwnerId);
   }
 };
-
-const updateOwnerFilterData = (item, ownerId) => {
-    if (!ownerId) { item.filterData.owner = ''; return; }
-    const [type, id] = ownerId.split('-');
-    let name = '';
-    if (type === 'company') {
-        const c = companies.value.find(x => x._id === id);
-        if (c) name = c.name;
-    } else {
-        const i = individuals.value.find(x => x._id === id);
-        if (i) name = i.name;
-    }
-    item.filterData.owner = name.toLowerCase();
-}
-
-const onOwnerChange = (item) => {
-    updateOwnerFilterData(item, item.ownerId);
-}
 
 const onContractorChange = (item) => {
   const contr = contractors.value.find(c => c._id === item.contractorId);
   if (contr) {
       if (contr.defaultCategoryId) {
           item.categoryId = (typeof contr.defaultCategoryId === 'object') ? contr.defaultCategoryId._id : contr.defaultCategoryId;
-          // update cat filter
-          const cat = categories.value.find(c => c._id === item.categoryId);
-          if (cat) item.filterData.category = cat.name.toLowerCase();
       }
       if (contr.defaultProjectId) {
           item.projectId = (typeof contr.defaultProjectId === 'object') ? contr.defaultProjectId._id : contr.defaultProjectId;
-          // update proj filter
-          const proj = projects.value.find(p => p._id === item.projectId);
-          if (proj) item.filterData.project = proj.name.toLowerCase();
       }
-      item.filterData.contractor = contr.name.toLowerCase();
-  } else {
-      item.filterData.contractor = '';
   }
 };
-
-const onCategoryChange = (item) => {
-    const cat = categories.value.find(c => c._id === item.categoryId);
-    item.filterData.category = cat ? cat.name.toLowerCase() : '';
-}
-const onProjectChange = (item) => {
-    const proj = projects.value.find(p => p._id === item.projectId);
-    item.filterData.project = proj ? proj.name.toLowerCase() : '';
-}
-
 
 // --- Сохранение ---
 const handleSave = async () => {
   isSaving.value = true;
   try {
     const updates = [];
-    
     for (const item of localItems.value) {
       if (item.isDeleted) continue;
       const original = item.originalOp;
@@ -317,7 +262,6 @@ const handleSave = async () => {
         }));
       }
     }
-
     if (updates.length > 0) await Promise.all(updates);
     emit('close');
   } catch (e) {
@@ -328,12 +272,7 @@ const handleSave = async () => {
   }
 };
 
-// --- Удаление ---
-const askDelete = (item) => {
-  itemToDelete.value = item;
-  showDeleteConfirm.value = true;
-};
-
+const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => {
   if (!itemToDelete.value) return;
   isDeleting.value = true;
@@ -341,20 +280,10 @@ const confirmDelete = async () => {
     await new Promise(resolve => setTimeout(resolve, 600)); 
     await mainStore.deleteOperation(itemToDelete.value.originalOp);
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-    showDeleteConfirm.value = false;
-    itemToDelete.value = null;
-  } catch (e) {
-    alert('Ошибка при удалении: ' + e.message);
-  } finally {
-    isDeleting.value = false;
-  }
+    showDeleteConfirm.value = false; itemToDelete.value = null;
+  } catch (e) { alert('Ошибка при удалении: ' + e.message); } finally { isDeleting.value = false; }
 };
-
-const cancelDelete = () => {
-  if (isDeleting.value) return;
-  showDeleteConfirm.value = false;
-  itemToDelete.value = null;
-};
+const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.value = false; itemToDelete.value = null; };
 </script>
 
 <template>
@@ -376,44 +305,72 @@ const cancelDelete = () => {
         </button>
       </div>
 
-      <!-- 🟢 БЛОК ИТОГОВ (Если есть операции) -->
+      <!-- 🟢 ИТОГИ -->
       <div v-if="localItems.length > 0" class="totals-bar">
           <div class="total-item">
               <span class="total-label">Всего:</span>
-              <span class="total-value">{{ formatNumber(totalSum) }} ₸</span>
+              <span class="total-value" :class="getTotalClass(totalSum)">{{ formatTotal(totalSum) }}</span>
           </div>
           <div class="total-item" v-if="isFilterActive">
               <span class="total-label">Итого (по фильтру):</span>
-              <span class="total-value filtered">{{ formatNumber(filteredSum) }} ₸</span>
+              <span class="total-value filtered" :class="getTotalClass(filteredSum)">{{ formatTotal(filteredSum) }}</span>
           </div>
       </div>
       
-      <!-- 🟢 ФИЛЬТРЫ -->
+      <!-- 🟢 ФИЛЬТРЫ (СЕЛЕКТЫ) -->
       <div class="filters-row">
         <div class="filter-col col-date">
            <input type="date" v-model="filters.date" class="filter-input" placeholder="Фильтр..." />
         </div>
+        
         <div class="filter-col col-owner">
-           <input type="text" v-model="filters.owner" class="filter-input" placeholder="Владелец..." />
+           <select v-model="filters.owner" class="filter-input filter-select">
+              <option value="">Все</option>
+              <optgroup label="Компании">
+                  <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
+              </optgroup>
+              <optgroup label="Физлица">
+                  <option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
+              </optgroup>
+           </select>
         </div>
+        
         <div class="filter-col col-acc">
-           <input type="text" v-model="filters.account" class="filter-input" placeholder="Счет..." />
+           <select v-model="filters.account" class="filter-input filter-select">
+              <option value="">Все</option>
+              <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
+           </select>
         </div>
+        
         <div class="filter-col col-amount">
            <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
         </div>
+        
         <div class="filter-col col-contr">
-           <input type="text" v-model="filters.contractor" class="filter-input" placeholder="Контрагент..." />
+           <select v-model="filters.contractor" class="filter-input filter-select">
+              <option value="">Все</option>
+              <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+           </select>
         </div>
+        
         <div class="filter-col col-cat">
-           <input type="text" v-model="filters.category" class="filter-input" placeholder="Категория..." />
+           <select v-model="filters.category" class="filter-input filter-select">
+              <option value="">Все</option>
+              <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
+           </select>
         </div>
+        
         <div class="filter-col col-proj">
-           <input type="text" v-model="filters.project" class="filter-input" placeholder="Проект..." />
+           <select v-model="filters.project" class="filter-input filter-select">
+              <option value="">Все</option>
+              <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
+           </select>
         </div>
-        <div class="filter-col col-trash"></div> <!-- Пустое место для выравнивания с кнопкой удаления -->
+        
+        <div class="filter-col col-trash"></div>
       </div>
       
+      <!-- ЗАГОЛОВКИ -->
       <div class="grid-header">
         <span class="col-date">Дата</span>
         <span class="col-owner">Владелец</span>
@@ -442,13 +399,13 @@ const cancelDelete = () => {
 
           <!-- 2. Владелец -->
           <div class="col-owner">
-             <select v-model="item.ownerId" @change="onOwnerChange(item)" class="edit-input select-input">
+             <select v-model="item.ownerId" class="edit-input select-input">
                 <option :value="null">-</option>
                 <optgroup label="Компании">
-                   <option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
+                   <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
                 </optgroup>
                 <optgroup label="Физлица">
-                   <option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
+                   <option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
                 </optgroup>
              </select>
           </div>
@@ -475,7 +432,7 @@ const cancelDelete = () => {
 
           <!-- 6. Категория -->
           <div class="col-cat">
-             <select v-model="item.categoryId" @change="onCategoryChange(item)" class="edit-input select-input">
+             <select v-model="item.categoryId" class="edit-input select-input">
                 <option :value="null">-</option>
                 <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
              </select>
@@ -483,7 +440,7 @@ const cancelDelete = () => {
 
           <!-- 7. Проект -->
           <div class="col-proj">
-             <select v-model="item.projectId" @change="onProjectChange(item)" class="edit-input select-input">
+             <select v-model="item.projectId" class="edit-input select-input">
                 <option :value="null">-</option>
                 <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
              </select>
@@ -511,34 +468,17 @@ const cancelDelete = () => {
 
     </div>
 
-    <!-- Попап создания новой операции -->
-    <OperationPopup
-      v-if="isCreatePopupVisible"
-      :type="type"
-      :date="new Date()"
-      :cellIndex="0"
-      @close="isCreatePopupVisible = false"
-      @operation-added="handleOperationAdded"
-    />
-
-    <!-- Внутреннее окно подтверждения -->
+    <OperationPopup v-if="isCreatePopupVisible" :type="type" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @operation-added="handleOperationAdded" />
+    
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         <div v-if="isDeleting" class="deleting-state">
-          <h4>Удаление...</h4>
-          <p class="sub-note">Пожалуйста, подождите.</p>
-          <div class="progress-container"><div class="progress-bar"></div></div>
+          <h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите.</p><div class="progress-container"><div class="progress-bar"></div></div>
         </div>
         <div v-else>
           <h4>Подтвердите удаление</h4>
-          <p class="confirm-text" v-if="itemToDelete">
-            Удалить операцию от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>
-            на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?
-          </p>
-          <div class="delete-actions">
-            <button class="btn-cancel" @click="cancelDelete">Отмена</button>
-            <button class="btn-delete-confirm" @click="confirmDelete">Удалить</button>
-          </div>
+          <p class="confirm-text" v-if="itemToDelete">Удалить операцию от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?</p>
+          <div class="delete-actions"><button class="btn-cancel" @click="cancelDelete">Отмена</button><button class="btn-delete-confirm" @click="confirmDelete">Удалить</button></div>
         </div>
       </div>
     </div>
@@ -559,63 +499,24 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
 
-/* --- 🟢 СТИЛИ ИТОГОВ --- */
-.totals-bar {
-    display: flex;
-    justify-content: flex-start;
-    gap: 30px;
-    padding: 0 1.5rem 1rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid #e0e0e0;
-}
-.total-item {
-    font-size: 16px;
-    color: #333;
-}
-.total-label {
-    margin-right: 8px;
-    color: #666;
-}
-.total-value {
-    font-weight: 700;
-}
-.total-value.filtered {
-    color: var(--color-primary); /* Зеленый акцент */
-}
+/* --- ИТОГИ --- */
+.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+.total-item { font-size: 16px; color: #333; }
+.total-label { margin-right: 8px; color: #666; }
+.total-value { font-weight: 700; }
 
-/* --- 🟢 СТИЛИ ФИЛЬТРОВ --- */
-.filters-row {
-  display: grid;
-  /* Сетка идентична таблице */
-  grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px;
-  gap: 8px; 
-  align-items: center; 
-  padding: 0 1.5rem;
-  margin-bottom: 8px;
-}
-.filter-input {
-    width: 100%;
-    height: 32px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    padding: 0 6px;
-    font-size: 0.8em;
-    color: #333;
-    box-sizing: border-box;
-    background-color: #fff;
-    margin: 0; /* Сброс глобальных стилей */
-}
-.filter-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-}
+/* 🟢 ЦВЕТА ИТОГОВ */
+.total-income { color: var(--color-primary); }
+.total-expense { color: var(--color-danger); }
 
-/* СЕТКА ТАБЛИЦЫ */
-.grid-header, .grid-row {
-  display: grid;
-  grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px;
-  gap: 8px; align-items: center; padding: 0 1.5rem;
-}
+/* --- ФИЛЬТРЫ --- */
+.filters-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; margin-bottom: 8px; }
+.filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
+.filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; padding-right: 20px; }
+.filter-input:focus { outline: none; border-color: var(--color-primary); }
+
+/* СЕТКА */
+.grid-header, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; }
 .grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
 .grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
 
@@ -647,13 +548,13 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 }
 @media (max-width: 1100px) {
   .popup-content { max-width: 98vw; margin: 0.5rem; }
-  .grid-header, .filters-row { display: none; } /* Скрываем фильтры на совсем узких */
+  .grid-header, .filters-row { display: none; } 
   .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; }
   .grid-row > div { width: 100%; }
 }
 
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
-.delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
+.delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); text-align: center; }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
 .confirm-text { font-size: 14px; margin-bottom: 20px; color: #555; line-height: 1.5; }
 .delete-actions { display: flex; gap: 10px; justify-content: center; }
