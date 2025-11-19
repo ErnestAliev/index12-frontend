@@ -134,8 +134,8 @@ const onDrop = (event) => {
 .transfer .op-meta { color:#98a2b3; }
 
 /* 🟢 Акт (Спокойный синий) */
-.act { background: #466C95; } /* Был фиолетовый #4a48b8 */
-.act:hover { background: #587BA6; }
+.act { background: #3C5455; } /* Был фиолетовый #4a48b8 */
+.act:hover { background: #497273; }
 .act .op-title { font-weight:600; margin-right:6px; color: #fff; }
 .act .op-meta { color: #e0f0ff; }
 
@@ -149,3 +149,4 @@ const onDrop = (event) => {
   .operation-chip { font-size: 0.7em; padding: 3px 6px; }
 }
 </style>
+
