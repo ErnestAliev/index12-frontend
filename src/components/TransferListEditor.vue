@@ -2,21 +2,21 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
-import TransferPopup from './TransferPopup.vue'; // 🟢 Импорт
+import TransferPopup from './TransferPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v20.0 - ADD-BTN ---
- * * ВЕРСИЯ: 20.0 - Добавлена кнопка "Создать перевод"
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v21.0 - POSTINGS RENAME ---
+ * * ВЕРСИЯ: 21.0 - Ренейминг "Перевод" -> "Проводки"
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлена кнопка "+ Создать перевод".
- * 2. (LOGIC) Интегрирован TransferPopup для создания.
- * 3. (STYLE) Унификация стилей с другими редакторами.
+ * 1. (UI) Заменены все текстовые упоминания "Перевод" на "Проводка".
+ * 2. (LOGIC) loadTransfers: добавлена фильтрация по имени 'Проводки'.
  */
 
 const props = defineProps({
-  title: { type: String, default: 'Редактировать переводы' }
+  // 🟢 РЕНЕЙМИНГ
+  title: { type: String, default: 'Редактировать проводки' }
 });
 
 const emit = defineEmits(['close']);
@@ -62,7 +62,11 @@ const loadTransfers = () => {
   const onlyTransfers = allOps.filter(op => 
     op.type === 'transfer' || 
     op.isTransfer === true || 
-    (op.categoryId && (op.categoryId.name === 'Перевод' || op.categoryId.name === 'Transfer'))
+    (op.categoryId && (
+        op.categoryId.name === 'Перевод' || 
+        op.categoryId.name === 'Transfer' || 
+        op.categoryId.name === 'Проводки' // 🟢 Добавлено
+    ))
   );
 
   localItems.value = onlyTransfers
@@ -235,13 +239,14 @@ const cancelDelete = () => {
       </div>
       
       <p class="editor-hint">
-        Редактируйте параметры переводов. Нажмите на корзину для удаления.
+        <!-- 🟢 РЕНЕЙМИНГ -->
+        Редактируйте параметры проводок. Нажмите на корзину для удаления.
       </p>
       
-      <!-- 🟢 КНОПКА СОЗДАНИЯ -->
       <div class="create-section">
         <button class="btn-add-new" @click="openCreatePopup">
-          + Создать перевод
+          <!-- 🟢 РЕНЕЙМИНГ -->
+          + Создать проводку
         </button>
       </div>
       
@@ -257,7 +262,8 @@ const cancelDelete = () => {
       
       <div class="list-scroll">
         <div v-if="localItems.length === 0" class="empty-state">
-          Нет переводов.
+          <!-- 🟢 РЕНЕЙМИНГ -->
+          Нет проводок.
         </div>
 
         <div v-for="item in localItems" :key="item._id" class="grid-row">
@@ -356,7 +362,8 @@ const cancelDelete = () => {
         <div v-else>
           <h4>Подтвердите удаление</h4>
           <p class="confirm-text" v-if="itemToDelete">
-            Вы действительно хотите удалить перевод от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>
+            <!-- 🟢 РЕНЕЙМИНГ -->
+            Вы действительно хотите удалить проводку от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>
             на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?
           </p>
           <div class="delete-actions">
@@ -378,7 +385,7 @@ const cancelDelete = () => {
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
 
-/* --- 🟢 СТИЛИ КНОПКИ СОЗДАНИЯ --- */
+/* --- СТИЛИ КНОПКИ СОЗДАНИЯ --- */
 .create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 .btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
