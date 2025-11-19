@@ -666,20 +666,24 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 }
 
 .hint-text {
-    font-size: 12px;
-    color: #888;
-    margin-top: -10px;
-    margin-bottom: 10px;
-    font-style: italic;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 15px;
+    background: #eaeaea;
+    padding: 10px;
+    border-radius: 6px;
+    line-height: 1.4;
 }
 
 /* NEW: Подсказка под инпутом */
 .hint-text {
-    font-size: 12px;
-    color: #888;
-    margin-top: -10px;
-    margin-bottom: 10px;
-    font-style: italic;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 15px;
+    background: #eaeaea;
+    padding: 10px;
+    border-radius: 6px;
+    line-height: 1.4;
 }
 
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
@@ -725,5 +729,6 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
 .btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
 .btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 </style>
+
 
 
