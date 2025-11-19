@@ -5,12 +5,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v9.0 - POSTING RENAME ---
- * * ВЕРСИЯ: 9.0 - Поддержка категории "Проводки"
+ * * --- МЕТКА ВЕРСИИ: v10.0 - SPLIT TRANSFERS/POSTINGS ---
+ * * ВЕРСИЯ: 10.0 - Поддержка раздельных виджетов "Мои переводы" и "Мои проводки"
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) isTransferWidget: добавлена проверка на 'проводки'.
+ * 1. (LOGIC) Добавлена поддержка ключей `transferList` и `postingList`.
+ * 2. (LOGIC) Отдельный расчет сумм для Переводов (Transfers) и Проводок (Acts).
  */
 
 const props = defineProps({
@@ -71,19 +72,29 @@ watch([isDropdownOpen, isFilterOpen], ([widgetOpen, filterOpen]) => {
 
 // --- Типы виджетов ---
 const isTransferWidget = computed(() => {
-  const catId = props.widgetKey.replace('cat_', '');
-  const category = mainStore.getCategoryById(catId); 
-  if (category) {
-      const name = category.name.toLowerCase();
-      // 🟢 Добавлено 'проводки'
-      return name === 'перевод' || name === 'transfer' || name === 'проводки';
-  }
-  return false;
+    // Старая логика для обратной совместимости, если кто-то выбрал категорию вручную
+    const catId = props.widgetKey.replace('cat_', '');
+    const category = mainStore.getCategoryById(catId); 
+    if (category) {
+        const name = category.name.toLowerCase();
+        return name === 'перевод' || name === 'transfer' || name === 'проводки';
+    }
+    return false;
 });
 
 const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
 const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
-const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value || isTransferWidget.value);
+// 🟢 НОВЫЕ ТИПЫ
+const isTransferListWidget = computed(() => props.widgetKey === 'transferList');
+const isPostingListWidget = computed(() => props.widgetKey === 'postingList');
+
+const isSummaryWidget = computed(() => 
+    isIncomeListWidget.value || 
+    isExpenseListWidget.value || 
+    isTransferListWidget.value || 
+    isPostingListWidget.value ||
+    isTransferWidget.value
+);
 
 // --- Расчет сумм для Сводных виджетов ---
 
@@ -92,7 +103,10 @@ const currentSum = computed(() => {
   let list = [];
   if (isIncomeListWidget.value) list = mainStore.currentIncomes;
   else if (isExpenseListWidget.value) list = mainStore.currentExpenses;
-  else if (isTransferWidget.value) list = mainStore.currentTransfers;
+  // 🟢 Разделение данных
+  else if (isTransferListWidget.value) list = mainStore.currentTransfers;
+  else if (isPostingListWidget.value) list = mainStore.currentActs;
+  else if (isTransferWidget.value) list = mainStore.currentTransfers; // Fallback
   
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
@@ -102,12 +116,15 @@ const futureOnlySum = computed(() => {
   let list = [];
   if (isIncomeListWidget.value) list = mainStore.futureIncomes;
   else if (isExpenseListWidget.value) list = mainStore.futureExpenses;
+  // 🟢 Разделение данных
+  else if (isTransferListWidget.value) list = mainStore.futureTransfers;
+  else if (isPostingListWidget.value) list = mainStore.futureActs;
   else if (isTransferWidget.value) list = mainStore.futureTransfers;
-  
+
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// 3. Прогнозная сумма = Текущие + Будущие
+// 3. Прогнозная сумма
 const projectedSum = computed(() => currentSum.value + futureOnlySum.value);
 
 
@@ -176,7 +193,7 @@ const handleEdit = () => { emit('edit'); };
 
     <div class="category-items-list-scroll">
       
-      <!-- 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД / ПЕРЕВОД) -->
+      <!-- 1. СВОДНЫЙ ВИД -->
       <div v-if="isSummaryWidget" class="summary-container">
         <div class="summary-row">
             <!-- ЛЕВАЯ ЧАСТЬ -->
@@ -191,7 +208,8 @@ const handleEdit = () => { emit('edit'); };
                   :class="{ 
                     'normal-text': isIncomeListWidget,      
                     'expense': isExpenseListWidget,    
-                    'transfer-neutral': isTransferWidget 
+                    'transfer-neutral': isTransferListWidget || isTransferWidget,
+                    'posting-neutral': isPostingListWidget
                   }"
                 >
                     <!-- Знак -->
@@ -210,7 +228,8 @@ const handleEdit = () => { emit('edit'); };
                       :class="{ 
                         'normal-text': isIncomeListWidget, 
                         'expense': isExpenseListWidget, 
-                        'transfer-neutral': isTransferWidget 
+                        'transfer-neutral': isTransferListWidget || isTransferWidget,
+                        'posting-neutral': isPostingListWidget
                       }"
                     >
                         <!-- Знак для прогноза (Расход тоже с минусом) -->
@@ -326,6 +345,7 @@ const handleEdit = () => { emit('edit'); };
 .income { color: var(--color-primary); } /* Зеленый */
 .expense { color: var(--color-danger); } /* Красный */
 .transfer-neutral { color: var(--color-text); } /* Светлый/Нейтральный */
+.posting-neutral { color: #fff; } /* Проводки - белый */
 .normal-text { color: var(--color-heading); } /* Обычный светлый (белый/светло-серый) */
 
 .summary-arrow {
