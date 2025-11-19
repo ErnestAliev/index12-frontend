@@ -92,7 +92,7 @@ const onDrop = (event) => {
       
       <!-- Акт (Исполнение) -->
       <template v-else-if="isActOp">
-        <span class="op-title">Исполнение</span>
+        <span class="op-title">Испл..</span>
         <span class="op-meta">
           {{ operation.contractorId?.name || '?' }} · {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
@@ -149,4 +149,5 @@ const onDrop = (event) => {
   .operation-chip { font-size: 0.7em; padding: 3px 6px; }
 }
 </style>
+
 
