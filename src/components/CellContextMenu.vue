@@ -1,5 +1,3 @@
-[file name]: CellContextMenu.vue
-[file content begin]
 <script setup>
 const emit = defineEmits(['select']);
 </script>
@@ -13,7 +11,7 @@ const emit = defineEmits(['select']);
       - Расход
     </button>
     <button class="btn-transfer" @click="emit('select', 'transfer')">
-      Перевод
+      Проводки
     </button>
   </div>
 </template>
@@ -59,4 +57,3 @@ const emit = defineEmits(['select']);
   background-color: #7a7a80;
 }
 </style>
-[file content end]
