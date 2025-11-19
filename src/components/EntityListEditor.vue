@@ -1,18 +1,17 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, computed } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.1 - UX IMPROVEMENTS ---
- * * ВЕРСИЯ: 10.1 - Улучшение UI редактора
+ * * --- МЕТКА ВЕРСИИ: v10.2 - MOVE HINT TO PICKER ---
+ * * ВЕРСИЯ: 10.2 - Перенос подсказки в модал выбора счетов
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Удален текст-подсказка "Перетащите для сортировки...".
- * 2. (UI) Заголовки таблиц скрыты, если список пуст.
- * 3. (CSS) Принудительное центрирование инпута и кнопок в create-section (сброс margin).
+ * 1. (UI) Удалены подсказки "Привяжите ваши компании..." из этого компонента.
+ * 2. (LOGIC) Вычисляется `pickerHintText` для передачи в AccountPickerModal.
  */
 
 const props = defineProps({
@@ -58,7 +57,7 @@ const isIndividualEditor = props.title.includes('Физлиц');
 const isProjectEditor = props.title.includes('проекты');
 const isCategoryEditor = props.title.includes('категории');
 
-// Название сущности для кнопки (в ед. числе)
+// Название сущности для кнопки
 let entityNameSingular = 'объект';
 if (isAccountEditor) entityNameSingular = 'счет';
 else if (isCompanyEditor) entityNameSingular = 'компанию';
@@ -67,7 +66,14 @@ else if (isProjectEditor) entityNameSingular = 'проект';
 else if (isCategoryEditor) entityNameSingular = 'категорию';
 else if (isIndividualEditor) entityNameSingular = 'физлицо';
 
-// --- ЛОГИКА СОЗДАНИЯ (NEW) ---
+// 🟢 Текст подсказки для передачу в Picker
+const pickerHintText = computed(() => {
+    if (isCompanyEditor) return "Привяжите ваши компании к вашим счетам.";
+    if (isIndividualEditor) return "Привяжите ваших физлиц к вашим счетам.";
+    return "";
+});
+
+// --- ЛОГИКА СОЗДАНИЯ ---
 const isCreating = ref(false);
 const newItemName = ref('');
 const newItemInputRef = ref(null);
@@ -93,48 +99,26 @@ const handleCreateNew = async () => {
   isSavingNew.value = true;
   try {
     let newItem = null;
-    
-    if (isAccountEditor) {
-      newItem = await mainStore.addAccount(name);
-    } else if (isCompanyEditor) {
-      newItem = await mainStore.addCompany(name);
-    } else if (isContractorEditor) {
-      newItem = await mainStore.addContractor(name);
-    } else if (isProjectEditor) {
-      newItem = await mainStore.addProject(name);
-    } else if (isCategoryEditor) {
-      newItem = await mainStore.addCategory(name);
-    } else if (isIndividualEditor) {
-      newItem = await mainStore.addIndividual(name);
-    }
+    if (isAccountEditor) newItem = await mainStore.addAccount(name);
+    else if (isCompanyEditor) newItem = await mainStore.addCompany(name);
+    else if (isContractorEditor) newItem = await mainStore.addContractor(name);
+    else if (isProjectEditor) newItem = await mainStore.addProject(name);
+    else if (isCategoryEditor) newItem = await mainStore.addCategory(name);
+    else if (isIndividualEditor) newItem = await mainStore.addIndividual(name);
 
     if (newItem) {
       const mappedItem = { ...newItem };
-      
-      if (isAccountEditor) {
-        mappedItem.initialBalance = 0;
-        mappedItem.initialBalanceFormatted = '0';
-      }
-      if (isContractorEditor) {
-        mappedItem.defaultProjectId = null;
-        mappedItem.defaultCategoryId = null;
-      }
-      if (isCompanyEditor || isIndividualEditor) {
-        mappedItem.selectedAccountIds = [];
-      }
+      if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; }
+      if (isContractorEditor) { mappedItem.defaultProjectId = null; mappedItem.defaultCategoryId = null; }
+      if (isCompanyEditor || isIndividualEditor) { mappedItem.selectedAccountIds = []; }
       
       localItems.value.push(mappedItem);
       cancelCreation();
     }
-  } catch (e) {
-    console.error(e);
-    alert('Ошибка при создании: ' + e.message);
-  } finally {
-    isSavingNew.value = false;
-  }
+  } catch (e) { console.error(e); alert('Ошибка при создании: ' + e.message); } 
+  finally { isSavingNew.value = false; }
 };
 
-// --- Форматирование ---
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -151,11 +135,7 @@ onMounted(() => {
   localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
     if (isAccountEditor) {
       const balance = item.initialBalance || 0;
-      return {
-        ...item,
-        initialBalance: balance,
-        initialBalanceFormatted: formatNumber(balance)
-      }
+      return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance) }
     }
     if (isContractorEditor) {
       const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
@@ -163,15 +143,11 @@ onMounted(() => {
       return { ...item, defaultProjectId: pId || null, defaultCategoryId: cId || null }
     }
     if (isCompanyEditor) {
-      const selectedAccountIds = allAccounts
-        .filter(a => (a.companyId?._id || a.companyId) === item._id)
-        .map(a => a._id);
+      const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
       return { ...item, selectedAccountIds: selectedAccountIds };
     }
     if (isIndividualEditor) {
-      const selectedAccountIds = allAccounts
-        .filter(a => (a.individualId?._id || a.individualId) === item._id)
-        .map(a => a._id);
+      const selectedAccountIds = allAccounts.filter(a => (a.individualId?._id || a.individualId) === item._id).map(a => a._id);
       return { ...item, selectedAccountIds: selectedAccountIds };
     }
     return item;
@@ -190,10 +166,7 @@ const handleSave = async () => {
   const itemsToSave = localItems.value.map((item, index) => {
     const data = { _id: item._id, name: item.name, order: index }; 
     if (isAccountEditor) data.initialBalance = item.initialBalance || 0;
-    if (isContractorEditor) {
-      data.defaultProjectId = item.defaultProjectId || null;
-      data.defaultCategoryId = item.defaultCategoryId || null;
-    }
+    if (isContractorEditor) { data.defaultProjectId = item.defaultProjectId || null; data.defaultCategoryId = item.defaultCategoryId || null; }
     return data;
   });
   
@@ -216,20 +189,15 @@ const handleSave = async () => {
         
         if (isSelected) {
           if (ownerType === 'company' && currentCompanyOwner !== ownerId) {
-            acc.companyId = ownerId; acc.individualId = null;
-            accountsToUpdate.set(accId, acc);
+            acc.companyId = ownerId; acc.individualId = null; accountsToUpdate.set(accId, acc);
           } else if (ownerType === 'individual' && currentIndividualOwner !== ownerId) {
-            acc.companyId = null; acc.individualId = ownerId;
-            accountsToUpdate.set(accId, acc);
+            acc.companyId = null; acc.individualId = ownerId; accountsToUpdate.set(accId, acc);
           }
-        }
-        else {
+        } else {
           if (ownerType === 'company' && currentCompanyOwner === ownerId) {
-            acc.companyId = null;
-            accountsToUpdate.set(accId, acc);
+            acc.companyId = null; accountsToUpdate.set(accId, acc);
           } else if (ownerType === 'individual' && currentIndividualOwner === ownerId) {
-            acc.individualId = null;
-            accountsToUpdate.set(accId, acc);
+            acc.individualId = null; accountsToUpdate.set(accId, acc);
           }
         }
       }
@@ -239,16 +207,11 @@ const handleSave = async () => {
   }
 };
 
-// --- Удаление ---
 const itemToDelete = ref(null);
 const showDeletePopup = ref(false);
 const isDeleting = ref(false);
 
-const openDeleteDialog = (item) => {
-  itemToDelete.value = item;
-  showDeletePopup.value = true;
-};
-
+const openDeleteDialog = (item) => { itemToDelete.value = item; showDeletePopup.value = true; };
 const confirmDelete = async (deleteOperations) => {
   if (!itemToDelete.value || !entityPath) return;
   isDeleting.value = true;
@@ -256,55 +219,31 @@ const confirmDelete = async (deleteOperations) => {
     await new Promise(resolve => setTimeout(resolve, 500)); 
     await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-  } catch (e) {
-    alert('Ошибка при удалении: ' + e.message);
-    isDeleting.value = false; return;
-  }
-  isDeleting.value = false;
-  await nextTick();
-  showDeletePopup.value = false;
-  itemToDelete.value = null;
+  } catch (e) { alert('Ошибка при удалении: ' + e.message); isDeleting.value = false; return; }
+  isDeleting.value = false; await nextTick(); showDeletePopup.value = false; itemToDelete.value = null;
 };
-
-const cancelDelete = () => {
-  if (isDeleting.value) return;
-  showDeletePopup.value = false;
-  itemToDelete.value = null;
-};
+const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value = false; itemToDelete.value = null; };
 </script>
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
-    
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor }">
       <h3>{{ title }}</h3>
       
-      <p v-if="isCompanyEditor" class="editor-hint">Привяжите ваши компании к вашим счетам.</p>
-      <p v-else-if="isIndividualEditor" class="editor-hint">Привяжите ваших физлиц к вашим счетам.</p>
-      <!-- 🟢 v10.1: Удалена подсказка "Перетащите для сортировки..." -->
+      <!-- 🟢 v10.2: Удалены подсказки "Привяжите..." отсюда -->
       
-      <!-- Кнопка создания -->
       <div class="create-section">
         <button v-if="!isCreating" class="btn-add-new" @click="startCreation">
           + Создать {{ entityNameSingular }}
         </button>
         
         <div v-else class="inline-create-row">
-           <input 
-             type="text" 
-             v-model="newItemName" 
-             :placeholder="`Название (${entityNameSingular})`" 
-             ref="newItemInputRef"
-             class="create-input"
-             @keyup.enter="handleCreateNew"
-             @keyup.esc="cancelCreation"
-           />
+           <input type="text" v-model="newItemName" :placeholder="`Название (${entityNameSingular})`" ref="newItemInputRef" class="create-input" @keyup.enter="handleCreateNew" @keyup.esc="cancelCreation" />
            <button class="btn-icon-save" @click="handleCreateNew" :disabled="isSavingNew">✓</button>
            <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
         </div>
       </div>
 
-      <!-- 🟢 v10.1: Заголовки скрываются, если список пуст -->
       <template v-if="localItems.length > 0">
         <div v-if="isAccountEditor" class="editor-header account-header-simple">
           <span class="header-name">Название счета</span>
@@ -334,16 +273,10 @@ const cancelDelete = () => {
       </template>
       
       <div class="list-editor">
-        <draggable
-          v-model="localItems"
-          item-key="_id"
-          handle=".drag-handle"
-          ghost-class="ghost"
-        >
+        <draggable v-model="localItems" item-key="_id" handle=".drag-handle" ghost-class="ghost">
           <template #item="{ element: item }">
             <div class="edit-item">
               <span class="drag-handle">⠿</span>
-              
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
@@ -368,10 +301,7 @@ const cancelDelete = () => {
               </template>
               
               <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
               </button>
             </div>
           </template>
@@ -387,7 +317,7 @@ const cancelDelete = () => {
       <div class="delete-confirm-box">
         <div v-if="isDeleting" class="deleting-state">
           <h4>Удаление...</h4>
-          <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
+          <p class="sub-note">Пожалуйста, подождите.</p>
           <div class="progress-container"><div class="progress-bar"></div></div>
         </div>
         <div v-else>
@@ -408,10 +338,12 @@ const cancelDelete = () => {
       </div>
     </div>
 
+    <!-- 🟢 Передаем текст подсказки -->
     <AccountPickerModal
       v-if="showAccountPicker"
       :all-accounts="mainStore.accounts"
       :initial-selected-ids="currentItemForPicker ? currentItemForPicker.selectedAccountIds : []"
+      :hint-text="pickerHintText"
       @close="showAccountPicker = false"
       @save="onAccountPickerSave"
     />
@@ -422,7 +354,6 @@ const cancelDelete = () => {
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
 .popup-content.wide { max-width: 680px; }
-
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
@@ -430,31 +361,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-submit-edit:hover { background-color: #444444; }
 .editor-hint { font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 1rem; }
 
-/* --- STYLES FOR CREATE NEW --- */
+/* Create */
 .create-section { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 .btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
-
 .inline-create-row { display: flex; gap: 8px; align-items: center; }
-.create-input { 
-  flex-grow: 1; 
-  height: 44px; 
-  padding: 0 14px; 
-  background: #fff; 
-  border: 1px solid #222; 
-  border-radius: 8px; 
-  font-size: 15px; 
-  color: #1a1a1a; 
-  /* 🟢 v10.1: FIX ALIGNMENT - Убираем отступ снизу, чтобы выровнять с кнопками */
-  margin-bottom: 0 !important; 
-}
+.create-input { flex-grow: 1; height: 44px; padding: 0 14px; background: #fff; border: 1px solid #222; border-radius: 8px; font-size: 15px; color: #1a1a1a; margin-bottom: 0 !important; }
 .create-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(34,34,34,0.2); }
 .btn-icon-save, .btn-icon-cancel { width: 44px; height: 44px; border: none; border-radius: 8px; cursor: pointer; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .btn-icon-save { background-color: #34C759; }
 .btn-icon-save:hover { background-color: #2da84e; }
 .btn-icon-cancel { background-color: #FF3B30; }
 .btn-icon-cancel:hover { background-color: #d63025; }
-/* --- END CREATE STYLES --- */
 
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
