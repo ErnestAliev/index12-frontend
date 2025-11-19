@@ -3,12 +3,12 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.0-POSTING-LABEL ---
- * * ВЕРСИЯ: 3.0 - Ренейминг "Перевод" -> "Проводка"
+ * * --- МЕТКА ВЕРСИИ: v4.0 - RESTORE TRANSFER LABEL ---
+ * * ВЕРСИЯ: 4.0 - Возврат названия "Перевод" для денежных операций
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Лейбл "Перевод" изменен на "Проводка".
+ * 1. (UI) isTransferOp теперь отображается как "Перевод" (не "Проводка").
  */
 
 const props = defineProps({
@@ -81,9 +81,9 @@ const onDrop = (event) => {
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
-      <!-- 🟢 Перевод -> Проводка -->
+      <!-- 🟢 Перевод (Деньги) -->
       <template v-if="isTransferOp">
-        <span class="op-title">Проводка</span>
+        <span class="op-title">Перевод</span>
         <span class="op-meta">
           {{ fromAccountName }} → {{ toAccountName }}
           <template v-if="operation.amount"> · {{ formatNumber(Math.abs(operation.amount)) }}</template>
