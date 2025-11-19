@@ -5,13 +5,12 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.3 - REMOVE ADD BTN ---
- * * ВЕРСИЯ: 8.3 - Удалена кнопка "Добавить" из заголовка
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v9.0 - POSTING RENAME ---
+ * * ВЕРСИЯ: 9.0 - Поддержка категории "Проводки"
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Удалена кнопка action-square-btn с иконкой плюса.
- * Функционал добавления теперь находится внутри окна редактирования.
+ * 1. (LOGIC) isTransferWidget: добавлена проверка на 'проводки'.
  */
 
 const props = defineProps({
@@ -76,7 +75,8 @@ const isTransferWidget = computed(() => {
   const category = mainStore.getCategoryById(catId); 
   if (category) {
       const name = category.name.toLowerCase();
-      return name === 'перевод' || name === 'transfer';
+      // 🟢 Добавлено 'проводки'
+      return name === 'перевод' || name === 'transfer' || name === 'проводки';
   }
   return false;
 });
@@ -156,8 +156,6 @@ const handleEdit = () => { emit('edit'); };
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
         
-        <!-- 🟢 v8.3: Кнопка "Добавить" (+) УДАЛЕНА отсюда -->
-        
         <!-- Редактировать -->
         <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
@@ -178,7 +176,7 @@ const handleEdit = () => { emit('edit'); };
 
     <div class="category-items-list-scroll">
       
-      <!-- 🟢 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД / ПЕРЕВОД) -->
+      <!-- 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД / ПЕРЕВОД) -->
       <div v-if="isSummaryWidget" class="summary-container">
         <div class="summary-row">
             <!-- ЛЕВАЯ ЧАСТЬ -->
@@ -191,9 +189,9 @@ const handleEdit = () => { emit('edit'); };
                 <span 
                   class="current-val"
                   :class="{ 
-                    'normal-text': isIncomeListWidget,      /* Доход: обычный светлый */
-                    'expense': isExpenseListWidget,    /* Расход: красный */
-                    'transfer-neutral': isTransferWidget /* Перевод: нейтральный */
+                    'normal-text': isIncomeListWidget,      
+                    'expense': isExpenseListWidget,    
+                    'transfer-neutral': isTransferWidget 
                   }"
                 >
                     <!-- Знак -->
@@ -293,7 +291,7 @@ const handleEdit = () => { emit('edit'); };
 .category-items-list-scroll::-webkit-scrollbar { display: none; }
 
 
-/* --- 🟢 СТИЛИ ДЛЯ СВОДНОГО ВИДА (SUMMARY) --- */
+/* --- СТИЛИ ДЛЯ СВОДНОГО ВИДА (SUMMARY) --- */
 .summary-container {
   display: flex; 
   flex-direction: column; 
