@@ -4,40 +4,40 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.0 - RENAMING UI ---
- * * ВЕРСИЯ: 3.0 - Ренейминг "Перевод" -> "Проводки"
+ * * --- МЕТКА ВЕРСИИ: v4.0 - TRANSFERS & POSTINGS POPUP ---
+ * * ВЕРСИЯ: 4.0 - Обновление текстов и табов
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Все тексты "Перевод" заменены на "Проводка".
- * 2. (UI) Текст кнопки "Перевести" -> "Провести".
+ * 1. (UI) Таб "Деньги" переименован в "Перевод".
+ * 2. (UI) Добавлена подсказка "Вы переводите деньги между своими счетами".
+ * 3. (UI) Улучшены тексты подсказок.
  */
 
 const mainStore = useMainStore();
 const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
-  transferToEdit: { type: Object, default: null }, // Может быть и Act
+  transferToEdit: { type: Object, default: null },
   minAllowedDate: { type: Date, default: null },
-  maxAllowedDate: { type: Date, default: null }
+  maxAllowedDate: { type: Date, default: null },
+  // 🟢 NEW: Возможность задать начальный режим ('transfer' | 'act')
+  initialMode: { type: String, default: 'transfer' }
 });
 
 const emit = defineEmits(['close', 'transfer-complete']);
 
-// --- Режим работы ---
-const mode = ref('money'); // 'money' | 'act'
+const mode = ref('transfer'); // 'transfer' (бывш. money) | 'act'
 
 // --- Данные для полей ---
 const amount = ref('');
 const fromAccountId = ref(null);
 const toAccountId = ref(null);
 
-// Поля для Актов
 const contractorId = ref(null);
 const categoryId = ref(null);
 const projectId = ref(null);
 
-// Владельцы (для переводов денег)
 const selectedFromOwner = ref(null); 
 const selectedToOwner = ref(null); 
 
@@ -59,11 +59,9 @@ const maxDateString = computed(() => props.maxAllowedDate ? toInputDate(props.ma
 const errorMessage = ref('');
 const amountInput = ref(null);
 
-// --- Состояние кнопок ---
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-// --- INLINE CREATE STATES ---
 const isCreatingFromAccount = ref(false);
 const newFromAccountName = ref('');
 const newFromAccountInput = ref(null);
@@ -71,15 +69,12 @@ const isCreatingToAccount = ref(false);
 const newToAccountName = ref('');
 const newToAccountInput = ref(null);
 
-// "Smart Create" Owner
 const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); 
 const newOwnerName = ref('');
 const newOwnerInputRef = ref(null);
 const creatingOwnerFor = ref('from'); 
 
-// --- COMPUTED: Списки ---
-// Исключаем "Перевод" из списка категорий для Актов
 const availableCategories = computed(() => {
   return mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
@@ -87,7 +82,6 @@ const availableCategories = computed(() => {
   });
 });
 
-// --- FORMATTERS ---
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -107,7 +101,6 @@ const onAmountInput = (event) => {
   });
 };
 
-// --- AUTO-SELECT LOGIC ---
 const onFromAccountSelected = (accountId) => {
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount) {
@@ -142,7 +135,6 @@ const onToAccountSelected = (accountId) => {
   }
 };
 
-// Контрагент может иметь дефолтный проект/категорию
 const onContractorSelected = (cId) => {
   const contr = mainStore.contractors.find(c => c._id === cId);
   if (contr) {
@@ -156,20 +148,18 @@ const onContractorSelected = (cId) => {
   }
 };
 
-// --- MOUNTED ---
 onMounted(async () => {
   if (props.transferToEdit) {
     const op = props.transferToEdit;
     amount.value = formatNumber(Math.abs(op.amount));
     
-    // Определяем режим по типу операции
     if (op.type === 'act') {
         mode.value = 'act';
         contractorId.value = op.contractorId?._id || op.contractorId;
         categoryId.value = op.categoryId?._id || op.categoryId;
         projectId.value = op.projectId?._id || op.projectId;
     } else {
-        mode.value = 'money';
+        mode.value = 'transfer';
         fromAccountId.value = op.fromAccountId?._id || op.fromAccountId;
         toAccountId.value = op.toAccountId?._id || op.toAccountId;
         
@@ -194,8 +184,8 @@ onMounted(async () => {
       editableDate.value = toInputDate(new Date(op.date));
     }
   } else {
-    // Default mode is money
-    mode.value = 'money';
+    // Инициализация режима из пропсов, если это создание новой операции
+    mode.value = props.initialMode || 'transfer';
     setTimeout(() => {
       if (amountInput.value) amountInput.value.focus();
     }, 100);
@@ -203,15 +193,13 @@ onMounted(async () => {
 });
 
 const title = computed(() => {
-  if (mode.value === 'act') return props.transferToEdit && !isCloneMode.value ? 'Редактировать Акт' : 'Новое Исполнение';
-  // 🟢 РЕНЕЙМИНГ
-  return props.transferToEdit && !isCloneMode.value ? 'Редактировать Проводку' : 'Новая Проводка';
+  if (mode.value === 'act') return props.transferToEdit && !isCloneMode.value ? 'Редактировать Исполнение' : 'Новое Исполнение';
+  return props.transferToEdit && !isCloneMode.value ? 'Редактировать Перевод' : 'Новый Перевод';
 });
 
 const buttonText = computed(() => {
-  if (mode.value === 'act') return 'Исполнить';
-  // 🟢 РЕНЕЙМИНГ
-  return 'Провести';
+  if (mode.value === 'act') return 'Создать Исполнение'; // Или просто "Исполнить"
+  return 'Перевести';
 });
 
 const actionButtonClass = computed(() => {
@@ -237,7 +225,6 @@ const handleCopyClick = () => {
   nextTick(() => { amountInput.value?.focus(); });
 };
 
-// --- SMART CREATE OWNER ---
 const openCreateOwnerModal = (target) => {
   creatingOwnerFor.value = target; 
   ownerTypeToCreate.value = 'company'; 
@@ -289,7 +276,6 @@ const saveNewOwner = async () => {
   finally { isInlineSaving.value = false; }
 };
 
-// --- INLINE CREATE (Счета) ---
 const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
 const cancelCreateFromAccount = () => { isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
 const saveNewFromAccount = async () => {
@@ -371,8 +357,7 @@ const handleSave = async () => {
     return;
   }
 
-  // --- Валидация для режима ДЕНЬГИ ---
-  if (mode.value === 'money') {
+  if (mode.value === 'transfer') {
       if (!fromAccountId.value || !toAccountId.value) {
         errorMessage.value = 'Выберите счета отправителя и получателя';
         return;
@@ -382,7 +367,6 @@ const handleSave = async () => {
         return;
       }
   }
-  // --- Валидация для режима ИСПОЛНЕНИЕ (АКТ) ---
   else {
       if (!contractorId.value) {
           errorMessage.value = 'Выберите контрагента';
@@ -405,8 +389,7 @@ const handleSave = async () => {
     const oldDateKey = props.transferToEdit ? props.transferToEdit.dateKey : null;
     const isEdit = !!(props.transferToEdit && !isCloneMode.value);
 
-    if (mode.value === 'money') {
-        // --- СОХРАНЕНИЕ ПЕРЕВОДА (ПРОВОДКИ) ---
+    if (mode.value === 'transfer') {
         let fromCompanyId = null, fromIndividualId = null;
         if (selectedFromOwner.value) {
           const [type, id] = selectedFromOwner.value.split('-');
@@ -419,8 +402,7 @@ const handleSave = async () => {
           if (type === 'company') toCompanyId = id; else toIndividualId = id;
         }
         
-        // 🟢 Ищем или создаем 'Проводки' (перевод)
-        const transferCategory = await mainStore.addCategory('Проводки'); // метод addCategory вернет существующую если есть
+        const transferCategory = await mainStore.addCategory('Проводки'); 
 
         const transferPayload = {
             date: finalDate,
@@ -441,7 +423,6 @@ const handleSave = async () => {
         }
 
     } else {
-        // --- СОХРАНЕНИЕ АКТА (ИСПОЛНЕНИЕ) ---
         const actPayload = {
             date: finalDate,
             amount: -amountParsed, 
@@ -489,11 +470,12 @@ const closePopup = () => {
       
       <!-- ТАБЫ ПЕРЕКЛЮЧЕНИЯ -->
       <div class="mode-switcher">
-          <button class="mode-btn" :class="{ active: mode === 'money' }" @click="mode = 'money'">
+          <button class="mode-btn" :class="{ active: mode === 'transfer' }" @click="mode = 'transfer'">
              <svg class="mode-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                  <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
              </svg>
-             <span>Деньги</span>
+             <!-- 🟢 "Деньги" -> "Перевод" -->
+             <span>Перевод</span>
           </button>
           <button class="mode-btn" :class="{ active: mode === 'act' }" @click="mode = 'act'">
              <svg class="mode-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -510,11 +492,17 @@ const closePopup = () => {
       <template v-if="!showCreateOwnerModal">
         
         <!-- ОБЩЕЕ ПОЛЕ: СУММА -->
-        <label>Сумма ({{ mode === 'money' ? 'Проводки' : 'Обязательства' }})</label>
+        <!-- 🟢 Меняем лейбл суммы в зависимости от режима -->
+        <label>Сумма {{ mode === 'transfer' ? 'Перевода' : 'Исполнения' }}</label>
         <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
         
-        <!-- РЕЖИМ ДЕНЬГИ -->
-        <template v-if="mode === 'money'">
+        <!-- 🟢 Подсказка для суммы -->
+        <p v-if="mode === 'transfer'" class="input-hint">
+           Вы переводите деньги между своими счетами.
+        </p>
+        
+        <!-- РЕЖИМ ПЕРЕВОД -->
+        <template v-if="mode === 'transfer'">
             <label>Со счета *</label>
             <select v-if="!isCreatingFromAccount" v-model="fromAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showFromAccountInput() : onFromAccountSelected(e.target.value)" class="form-select">
               <option :value="null" disabled>Выберите счет</option>
@@ -587,7 +575,7 @@ const closePopup = () => {
             </select>
         </template>
 
-        <label>Дата {{ mode === 'money' ? 'поступления денег' : 'подписания акта' }}</label>
+        <label>Дата {{ mode === 'transfer' ? 'поступления денег' : 'подписания акта' }}</label>
         <input type="date" v-model="editableDate" class="form-input" :min="minDateString" :max="maxDateString" />
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -671,11 +659,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 }
 .mode-btn.active .mode-icon {
     opacity: 1;
-    stroke: var(--color-primary); /* Зеленый для денег, можно переопределить */
+    stroke: var(--color-primary); 
 }
-/* Специфика для таба Актов */
 .mode-btn:nth-child(2).active .mode-icon {
-    stroke: #5856D6; /* Индиго для актов */
+    stroke: #5856D6; 
 }
 
 .hint-text {
@@ -686,6 +673,15 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
     padding: 10px;
     border-radius: 6px;
     line-height: 1.4;
+}
+
+/* NEW: Подсказка под инпутом */
+.input-hint {
+    font-size: 12px;
+    color: #888;
+    margin-top: -10px;
+    margin-bottom: 10px;
+    font-style: italic;
 }
 
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
@@ -715,7 +711,7 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-submit-transfer { background-color: #2f3340; }
 .btn-submit-transfer:hover:not(:disabled) { background-color: #2f3d6bff; }
-.btn-submit-act { background-color: #5856D6; } /* Фиолетовый для актов */
+.btn-submit-act { background-color: #5856D6; } 
 .btn-submit-act:hover:not(:disabled) { background-color: #4a48b8; }
 
 .btn-submit-edit { background-color: #222222; }
