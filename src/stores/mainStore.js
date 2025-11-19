@@ -21,7 +21,17 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v13.1 (Act Reactivity Fix) ЗАГРУЖЕН ---'); 
+  /**
+   * * --- МЕТКА ВЕРСИИ: v16.0 - RENAMING TRANSFER TO POSTING ---
+   * * ВЕРСИЯ: 16.0 - Ренейминг "Перевод" -> "Проводки"
+   * * ДАТА: 2025-11-20
+   *
+   * ЧТО ИЗМЕНЕНО:
+   * 1. (LOGIC) _isTransferCategory: добавлена проверка на 'проводки'.
+   * 2. (LOGIC) _getOrCreateTransferCategory: теперь создает категорию 'Проводки' по умолчанию.
+   * 3. (LOGIC) _mergeTransfers: при объединении создает категорию 'Проводки'.
+   */
+  console.log('--- mainStore.js v16.0 (Renaming) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -53,19 +63,20 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'categories',   name: 'Категории' }, 
   ]);
 
-  // --- ХЕЛПЕР: Это категория "Перевод"? ---
+  // --- ХЕЛПЕР: Это категория "Перевод/Проводки"? ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
-    return name === 'перевод' || name === 'transfer';
+    // 🟢 Добавлено 'проводки'
+    return name === 'перевод' || name === 'transfer' || name === 'проводки';
   };
 
-  // Список категорий для UI (без "Перевода")
+  // Список категорий для UI (без "Перевода/Проводки")
   const visibleCategories = computed(() => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
-  // Динамический список всех виджетов (статика + категория "Перевод" если есть)
+  // Динамический список всех виджетов (статика + категория "Проводки" если есть)
   const allWidgets = computed(() => {
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
@@ -619,7 +630,8 @@ export const useMainStore = defineStore('mainStore', () => {
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            categoryId: { _id: 'transfer', name: 'Перевод' },
+            // 🟢 Перевод -> Проводки
+            categoryId: { _id: 'transfer', name: 'Проводки' },
             date: incomeOp.date || expenseOp.date
           });
           continue;
@@ -629,15 +641,18 @@ export const useMainStore = defineStore('mainStore', () => {
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        categoryId: { _id: 'transfer', name: 'Перевод' }
+        categoryId: { _id: 'transfer', name: 'Проводки' }
       });
     }
     return [...normalOps, ...mergedTransfers];
   }
+
+  // 🟢 Переименование: Создание категории 'Проводки'
   async function _getOrCreateTransferCategory() {
-    let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
+    // Ищем 'перевод' или 'проводки'
+    let transferCategory = categories.value.find(_isTransferCategory);
     if (!transferCategory) {
-      transferCategory = await addCategory('Перевод');
+      transferCategory = await addCategory('Проводки');
     }
     return transferCategory._id;
   }
@@ -715,16 +730,14 @@ export const useMainStore = defineStore('mainStore', () => {
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
-       // 🟢 FIX: Correctly format date object for reactivity
        const moved = { 
           ...sourceOpData, 
           dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey), // Ensures proper Date object
+          date: _parseDateKey(newDateKey), 
           cellIndex: finalIndex 
        };
        newOps.push(moved);
        
-       // 🟢 FIX: Sync caches triggers getters update for futureOps/currentOps
        _syncCaches(newDateKey, newOps);
        
        axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
@@ -764,14 +777,15 @@ export const useMainStore = defineStore('mainStore', () => {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
       const cellIndex = await getFirstFreeCellIndex(dateKey);
-      let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
-      if (!transferCategory) { transferCategory = await addCategory('Перевод'); }
+      
+      // 🟢 Ищем или создаем 'Проводки'
+      const transferCategoryId = await _getOrCreateTransferCategory();
 
       const response = await axios.post(`${API_BASE_URL}/transfers`, {
         ...transferData,
         dateKey: dateKey, 
         cellIndex: cellIndex,
-        categoryId: transferData.categoryId || transferCategory._id
+        categoryId: transferData.categoryId || transferCategoryId
       });
       await refreshDay(dateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
