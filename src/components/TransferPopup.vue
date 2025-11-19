@@ -4,13 +4,12 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.0 - COPY FEEDBACK ---
- * * ВЕРСИЯ: 5.0 - Визуальная обратная связь при копировании
+ * * --- МЕТКА ВЕРСИИ: v7.0 - ICON SWAP ---
+ * * ВЕРСИЯ: 7.0 - Замена иконки перевода на стрелки
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Добавлено уведомление "Режим создания копии" при нажатии кнопки копировать.
- * 2. (UI) Заголовок меняется на "Создание копии..." при isCloneMode.
+ * 1. (UI) Иконка "Деньги" заменена на "Стрелки" (обмен).
  */
 
 const mainStore = useMainStore();
@@ -59,8 +58,6 @@ const amountInput = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
-// 🟢 NEW: Флаг для анимации уведомления
-const showCopyMessage = ref(false);
 
 const isCreatingFromAccount = ref(false);
 const newFromAccountName = ref('');
@@ -200,7 +197,7 @@ const title = computed(() => {
 });
 
 const buttonText = computed(() => {
-  if (isCloneMode.value) return 'Подтвердить копию'; // 🟢 Явный текст
+  if (isCloneMode.value) return 'Подтвердить копию'; 
   if (mode.value === 'act') return 'Создать Исполнение';
   return 'Провести';
 });
@@ -224,13 +221,8 @@ const onDeleteConfirmed = async () => {
 
 const handleCopyClick = () => {
   isCloneMode.value = true;
-  showCopyMessage.value = true;
-  editableDate.value = toInputDate(props.date); // Сбрасываем дату на текущую (в ячейке) или оставляем старую? Обычно при копировании хотят на сегодня/выбранный день.
-  
+  editableDate.value = toInputDate(props.date); 
   nextTick(() => { amountInput.value?.focus(); });
-  
-  // Скрываем сообщение через 3 сек
-  setTimeout(() => { showCopyMessage.value = false; }, 3000);
 };
 
 const openCreateOwnerModal = (target) => {
@@ -479,8 +471,10 @@ const closePopup = () => {
       <!-- ТАБЫ ПЕРЕКЛЮЧЕНИЯ -->
       <div class="mode-switcher">
           <button class="mode-btn" :class="{ active: mode === 'transfer' }" @click="mode = 'transfer'">
+             <!-- 🟢 ИКОНКА СТРЕЛОК (ОБМЕН) -->
              <svg class="mode-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                 <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                 <path d="M7 10h14l-4-4"></path>
+                 <path d="M17 14H3l4 4"></path>
              </svg>
              <span>Перевод</span>
           </button>
@@ -495,13 +489,6 @@ const closePopup = () => {
       </div>
 
       <h3>{{ title }}</h3>
-
-      <!-- 🟢 Блок уведомления о копировании -->
-      <transition name="fade">
-          <div v-if="showCopyMessage" class="copy-notification">
-              <span class="icon">📋</span> Режим создания копии активирован
-          </div>
-      </transition>
 
       <template v-if="!showCreateOwnerModal">
         
@@ -686,32 +673,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
     line-height: 1.4;
 }
 
-
-
-/* 🟢 Уведомление о копировании */
-.copy-notification {
-    background-color: #e6f4ea;
-    border: 1px solid #34c759;
-    color: #1e7e34;
-    padding: 10px 15px;
-    border-radius: 6px;
-    margin-bottom: 15px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    font-weight: 500;
-}
-.copy-notification .icon { font-size: 16px; }
-
-/* Анимация появления/исчезновения */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
-}
-
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
 .form-input, .form-select { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; -webkit-appearance: none; -moz-appearance: none; appearance: none; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .form-select { background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
@@ -755,4 +716,3 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
 .btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
 .btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 </style>
-
