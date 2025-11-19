@@ -5,13 +5,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.2 - SUMMARY STYLES UPDATE ---
- * * ВЕРСИЯ: 8.2 - Корректировка стилей и знаков (Доход светлый, Расход с минусами)
+ * * --- МЕТКА ВЕРСИИ: v8.3 - REMOVE ADD BTN ---
+ * * ВЕРСИЯ: 8.3 - Удалена кнопка "Добавить" из заголовка
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Доход: Цвет изменен на обычный светлый (.normal-text). Убран знак "+".
- * 2. (LOGIC) Расход: Добавлен знак "-" перед суммой прогноза. Цвет остался красным.
+ * 1. (UX) Удалена кнопка action-square-btn с иконкой плюса.
+ * Функционал добавления теперь находится внутри окна редактирования.
  */
 
 const props = defineProps({
@@ -156,10 +156,7 @@ const handleEdit = () => { emit('edit'); };
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
         
-        <!-- Добавить -->
-        <button @click.stop="handleAdd" class="action-square-btn" title="Добавить">
-          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        </button>
+        <!-- 🟢 v8.3: Кнопка "Добавить" (+) УДАЛЕНА отсюда -->
         
         <!-- Редактировать -->
         <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
