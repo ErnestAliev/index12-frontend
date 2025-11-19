@@ -22,15 +22,15 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   /**
-   * * --- МЕТКА ВЕРСИИ: v18.0 - WIDGETS SEPARATION ---
-   * * ВЕРСИЯ: 18.0 - Разделение на "Мои переводы" и "Мои проводки"
+   * * --- МЕТКА ВЕРСИИ: v19.1 - FIX DUPLICATE WIDGETS ---
+   * * ВЕРСИЯ: 19.1 - Удаление дубликата виджета "Перевод"
    * * ДАТА: 2025-11-20
    *
    * ЧТО ИЗМЕНЕНО:
-   * 1. (CONFIG) staticWidgets: добавлены 'transferList' и 'postingList'.
-   * 2. (LOGIC) Добавлены computed currentActs/futureActs для виджета проводок.
+   * 1. (FIX) allWidgets: Удалена логика добавления виджета категории "Перевод".
+   * Теперь используется только статический виджет "Мои переводы".
    */
-  console.log('--- mainStore.js v18.0 (Widgets Separation) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v19.1 (Fix Duplicate) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -80,11 +80,21 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // Динамический список всех виджетов
   const allWidgets = computed(() => {
-    const transferCategory = categories.value.find(_isTransferCategory);
+    // 🟢 FIX: Мы больше не добавляем виджет для категории "Перевод" вручную,
+    // так как есть 'transferList' и 'postingList' в staticWidgets.
     const cats = [];
-    if (transferCategory) {
-       cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
-    }
+    // Обычные категории можно добавить, если нужно (но у нас есть виджет "Категории" общий)
+    // Если вы хотите выводить отдельные виджеты для каждой категории, раскомментируйте логику ниже,
+    // но исключите _isTransferCategory.
+    
+    /* // Пример логики, если нужны виджеты для КАЖДОЙ обычной категории:
+    categories.value.forEach(cat => {
+        if (!_isTransferCategory(cat)) {
+             cats.push({ key: `cat_${cat._id}`, name: cat.name });
+        }
+    });
+    */
+
      return [...staticWidgets.value, ...cats];
   });
 
@@ -189,9 +199,7 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  // 🟢 СПИСКИ ОПЕРАЦИЙ
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
-  // 🟢 АКТЫ (ПРОВОДКИ)
   const currentActs = computed(() => currentOps.value.filter(op => isAct(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
   
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
@@ -212,7 +220,6 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
-  // 🟢 БУДУЩИЕ АКТЫ
   const futureActs = computed(() => futureOps.value.filter(op => isAct(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
   
   const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
@@ -1071,7 +1078,7 @@ export const useMainStore = defineStore('mainStore', () => {
     currentOps, 
     
     currentTransfers, futureTransfers,
-    currentActs, futureActs, // 🟢 EXPORTED
+    currentActs, futureActs, 
     
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
