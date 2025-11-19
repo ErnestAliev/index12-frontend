@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, triggerRef } from 'vue';
 import axios from 'axios';
 
 // Глобальная настройка Axios
@@ -21,7 +21,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v13.0 (Smart Act Logic) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v13.1 (Act Reactivity Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -105,7 +105,6 @@ export const useMainStore = defineStore('mainStore', () => {
     localStorage.setItem('projection', JSON.stringify(newProjection));
   }, { deep: true });
   
-  // Логика замены виджета (сохраняет общее количество)
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
@@ -132,9 +131,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return `${year}-${doy}`;
   };
   const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        return new Date(); 
-    }
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); 
     const [year, doy] = dateKey.split('-').map(Number);
     const date = new Date(year, 0, 1);
     date.setDate(doy);
@@ -154,6 +151,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return { startDate, endDate };
   };
 
+  // 🟢 FIX RE-TRIGGER: Force dependency check by ensuring a new array is created
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
@@ -165,7 +163,6 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
-  // 🟢 Helper for Act detection
   const isAct = (op) => !!op && op.type === 'act';
   
   const currentOps = computed(() =>
@@ -180,22 +177,9 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  // --- СПИСКИ ОПЕРАЦИЙ ---
-
-  const currentTransfers = computed(() => {
-    const transfers = currentOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey));
-  });
-
-  const currentIncomes = computed(() => {
-    const incomes = currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income');
-    return incomes.sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey));
-  });
-
-  const currentExpenses = computed(() => {
-    const expenses = currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense');
-    return expenses.sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey));
-  });
+  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
+  const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
+  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
 
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
@@ -211,26 +195,12 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  const futureTransfers = computed(() => {
-    const transfers = futureOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey));
-  });
+  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
+  const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
+  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
 
-  const futureIncomes = computed(() => {
-    const incomes = futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income');
-    return incomes.sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey));
-  });
+  const getCategoryById = (id) => { return categories.value.find(c => c._id === id); };
 
-  const futureExpenses = computed(() => {
-    const expenses = futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense');
-    return expenses.sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey));
-  });
-
-  const getCategoryById = (id) => {
-    return categories.value.find(c => c._id === id);
-  };
-
-  // 🟢 ОБНОВЛЕНА ЛОГИКА КАТЕГОРИЙ: Income (+), Expense (+), Act (-)
   const currentCategoryBreakdowns = computed(() => {
     const map = {};
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
@@ -240,24 +210,9 @@ export const useMainStore = defineStore('mainStore', () => {
       const key = `cat_${op.categoryId._id}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
       
-      if (op.type === 'income') {
-          map[key].income += op.amount || 0;
-          map[key].total += op.amount || 0; // Income increases obligations (advance)
-      }
-      else if (op.type === 'expense') {
-          map[key].expense += Math.abs(op.amount || 0);
-          map[key].total -= Math.abs(op.amount || 0); // Expense decreases
-      }
-      else if (op.type === 'act') {
-          // Acts are usually "virtual expense" to close advance
-          map[key].expense += Math.abs(op.amount || 0); // Show as expense in breakdown? Or separate?
-          // Task says: "Widget should show remaining obligations". 
-          // Income: +400k. Act: -200k. Result: 200k.
-          // Since Act amount is negative in DB (from TransferPopup logic), we add it directly?
-          // Wait, in popup I set `amount: -amountParsed`. So `op.amount` is negative.
-          // Income `amount` is positive.
-          map[key].total += (op.amount || 0); 
-      }
+      if (op.type === 'income') { map[key].income += op.amount || 0; map[key].total += op.amount || 0; }
+      else if (op.type === 'expense') { map[key].expense += Math.abs(op.amount || 0); map[key].total -= Math.abs(op.amount || 0); }
+      else if (op.type === 'act') { map[key].expense += Math.abs(op.amount || 0); map[key].total += (op.amount || 0); }
     }
     return map;
   });
@@ -271,25 +226,14 @@ export const useMainStore = defineStore('mainStore', () => {
       const key = `cat_${op.categoryId._id}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
       
-      if (op.type === 'income') {
-          map[key].income += op.amount || 0;
-          map[key].total += op.amount || 0;
-      }
-      else if (op.type === 'expense') {
-          map[key].expense += Math.abs(op.amount || 0);
-          map[key].total -= Math.abs(op.amount || 0);
-      }
-      else if (op.type === 'act') {
-          map[key].expense += Math.abs(op.amount || 0);
-          map[key].total += (op.amount || 0);
-      }
+      if (op.type === 'income') { map[key].income += op.amount || 0; map[key].total += op.amount || 0; }
+      else if (op.type === 'expense') { map[key].expense += Math.abs(op.amount || 0); map[key].total -= Math.abs(op.amount || 0); }
+      else if (op.type === 'act') { map[key].expense += Math.abs(op.amount || 0); map[key].total += (op.amount || 0); }
     }
     return map;
   });
 
-  const totalInitialBalance = computed(() =>
-    (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
-  );
+  const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0));
   
   const _applyTransferToBalances = (bal, op) => {
     const amt = Math.abs(Number(op?.amount) || 0);
@@ -299,14 +243,12 @@ export const useMainStore = defineStore('mainStore', () => {
     if (toId)   { if (bal[toId]   === undefined) bal[toId]   = 0; bal[toId]   += amt; }
   };
 
-  // 🟢 ОБНОВЛЕНА ЛОГИКА БАЛАНСОВ: Игнорируем type 'act'
   const currentAccountBalances = computed(() => {
     const bal = {};
     for (const a of accounts.value) bal[a._id] = a.initialBalance || 0;
     for (const op of currentOps.value) {
       if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (isAct(op)) continue; // Acts do not affect cash balance
-      
+      if (isAct(op)) continue; 
       if (!op?.accountId?._id) continue;
       const id = op.accountId._id;
       if (bal[id] === undefined) bal[id] = 0;
@@ -319,11 +261,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const bal = {};
     const currentBalances = currentAccountBalances.value;
     for (const account of currentBalances) { bal[account._id] = account.balance || 0; }
-    
     for (const op of futureOps.value) {
       if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
       if (isAct(op)) continue;
-      
       if (!op?.accountId?._id) continue;
       const id = op.accountId._id;
       if (bal[id] === undefined) bal[id] = 0;
@@ -332,11 +272,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
   });
   
-  // ... Company/Contractor/Project/Individual Balances logic should also handle 'act'
-  // Acts DO affect Contractors/Projects/Companies balances in terms of obligations?
-  // "They affect ONLY balances of Categories, Projects and Contractors".
-  // Let's update Project Balances to include Acts.
-
   const currentProjectBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -344,7 +279,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.projectId?._id) continue;
       const id = op.projectId._id;
       if (!bal[id]) bal[id] = 0;
-      // Acts are included here (negative amount decreases project balance/obligation)
       bal[id] += (op?.amount || 0); 
     }
     return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
@@ -371,7 +305,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.contractorId?._id) continue;
       const id = op.contractorId._id;
       if (!bal[id]) bal[id] = 0;
-      // Acts included
       bal[id] += (op?.amount || 0);
     }
     return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
@@ -390,13 +323,26 @@ export const useMainStore = defineStore('mainStore', () => {
     return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
-  // Company/Individual Balances (Owners) usually reflect CASH holding. 
-  // Acts should NOT affect owner cash balance.
+  const _applyTransferToCompanyBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
+    const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
+  };
+  const _applyTransferToIndividualBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
+    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
+  };
+
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
       if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
-      if (isAct(op)) continue; // 🟢 Exclude Act
+      if (isAct(op)) continue; 
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -404,7 +350,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
-  // (Future Company Balances similarly updated...)
   const futureCompanyBalances = computed(() => {
     const bal = {};
     const currentBalances = currentCompanyBalances.value;
@@ -420,21 +365,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
-  // (Individual Balances similarly updated...)
-  const _applyTransferToCompanyBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
-    const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
-  };
-  const _applyTransferToIndividualBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
-    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
-  };
   const currentIndividualBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -470,10 +400,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
       if (bal[id] === undefined) continue; 
-      // Income (+), Act (-), Expense (-) in terms of obligations?
-      // Widget usually shows "How much we have left".
-      // But this specific widget is likely just "Balance of category". 
-      // Let's keep simple sum.
       bal[id] += (op?.amount || 0);
     }
     return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
@@ -493,7 +419,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
-  // 🟢 ОБЩИЙ БАЛАНС: Игнорируем акты
   const currentTotalBalance = computed(() => {
     const opsTotal = currentOps.value.reduce((s,op)=> {
       if (isTransfer(op) || isAct(op)) return s;
@@ -521,7 +446,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const byDateKey = {};
     for (const op of allOperationsFlat.value) {
       if (!op?.dateKey) continue;
-      // Exclude acts from daily cash flow chart
       if (!isTransfer(op) && !isAct(op)) {
         if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, expense:0, dayTotal:0 };
         if (op.type === 'income') byDateKey[op.dateKey].income += (op?.amount || 0);
@@ -604,7 +528,6 @@ export const useMainStore = defineStore('mainStore', () => {
         return opDate > base && opDate <= endDate;
     });
     for (const op of opsInRange) { 
-        // Acts ignored in future projection cash sums
         if (!isTransfer(op) && !isAct(op)) {
             if (op.type === 'income') futureIncomeSum += op.amount || 0;
             else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
@@ -618,7 +541,41 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureTotals();
   }
 
-  // (fetchOperationsRange, _syncCaches, updateFutureProjectionWithData... same)
+  const _syncCaches = (key, ops) => {
+      displayCache.value[key] = [...ops];
+      calculationCache.value[key] = [...ops];
+      displayCache.value = { ...displayCache.value };
+      calculationCache.value = { ...calculationCache.value };
+  };
+
+  async function updateFutureProjectionWithData(mode, today = new Date()) {
+    const base = new Date(today); base.setHours(0, 0, 0, 0);
+    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
+    await fetchOperationsRange(startDate, endDate); 
+    await updateProjectionFromCalculationData(mode, today); 
+  }
+  function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
+  function updateFutureTotals() {
+    // 🟢 FORCE REACTIVITY: Trigger recalculation of all computed totals
+    const _ = futureTotalBalance.value;
+  }
+  function updateFutureProjectionByMode(mode, today = new Date()){
+    const base = new Date(today); base.setHours(0,0,0,0);
+    const info = getViewModeInfo(mode);
+    updateFutureProjection({ mode: mode, totalDays: info.total, today: base });
+  }
+  function setProjectionRange(startDate, endDate){
+    const t0 = new Date(); t0.setHours(0,0,0,0);
+    const start = new Date(startDate); start.setHours(0,0,0,0);
+    const end   = new Date(endDate); end.setHours(0,0,0,0);
+    projection.value = {
+      mode:'custom', 
+      totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
+      rangeStartDate:start, 
+      rangeEndDate:end, 
+      futureIncomeSum: 0 
+    };
+  }
 
   async function fetchAllEntities(){
     try{
@@ -636,6 +593,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (e.response && e.response.status === 401) user.value = null;
     }
   }
+  function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
@@ -676,22 +634,123 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return [...normalOps, ...mergedTransfers];
   }
+  async function _getOrCreateTransferCategory() {
+    let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
+    if (!transferCategory) {
+      transferCategory = await addCategory('Перевод');
+    }
+    return transferCategory._id;
+  }
 
-  // 🟢 ACTION: createAct
+  async function fetchOperations(dateKey, force = false) {
+    if (!dateKey) return;
+    if (displayCache.value[dateKey] && !force) return;
+    try {
+      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
+      const raw = Array.isArray(res.data) ? res.data.slice() : [];
+      const processedOps = _mergeTransfers(raw).map(op => ({
+        ...op,
+        dateKey: dateKey,
+        date: op.date || _parseDateKey(dateKey) 
+      }));
+      displayCache.value[dateKey] = processedOps;
+    } catch (e) {
+      if (e.response && e.response.status === 401) user.value = null;
+    }
+  }
+
+  async function refreshDay(dateKey) {
+    if (!dateKey) return;
+    try {
+      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
+      const raw = Array.isArray(res.data) ? res.data.slice() : [];
+      const processedOps = _mergeTransfers(raw).map(op => ({
+        ...op,
+        dateKey: dateKey,
+        date: op.date || _parseDateKey(dateKey) 
+      }));
+      _syncCaches(dateKey, processedOps);
+    } catch (e) {
+      if (e.response && e.response.status === 401) user.value = null;
+    }
+    updateFutureTotals();
+  }
+
+  async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
+    if (!oldDateKey || !newDateKey) return;
+    if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
+    if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
+    const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
+    if (oldDateKey === newDateKey) {
+       const ops = [...(displayCache.value[oldDateKey] || [])];
+       const sourceOp = ops.find(o => o._id === operation._id);
+       const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
+       if (sourceOp) {
+           if (targetOp) {
+               const originalSourceIndex = sourceOp.cellIndex;
+               sourceOp.cellIndex = targetIndex;
+               targetOp.cellIndex = originalSourceIndex;
+               _syncCaches(oldDateKey, ops);
+               Promise.all([
+                  axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
+                  axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
+               ]).catch(e => refreshDay(oldDateKey));
+           } else {
+               sourceOp.cellIndex = targetIndex;
+               _syncCaches(oldDateKey, ops);
+               axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
+                 .catch(e => refreshDay(oldDateKey));
+           }
+       }
+    } else {
+       let oldOps = [...(displayCache.value[oldDateKey] || [])];
+       const sourceOpData = oldOps.find(o => o._id === operation._id);
+       oldOps = oldOps.filter(o => o._id !== operation._id);
+       _syncCaches(oldDateKey, oldOps);
+       
+       let newOps = [...(displayCache.value[newDateKey] || [])];
+       const occupant = newOps.find(o => o.cellIndex === targetIndex);
+       let finalIndex = targetIndex;
+       if (occupant) {
+           const usedIndices = new Set(newOps.map(o => o.cellIndex));
+           while(usedIndices.has(finalIndex)) finalIndex++;
+       }
+       // 🟢 FIX: Correctly format date object for reactivity
+       const moved = { 
+          ...sourceOpData, 
+          dateKey: newDateKey, 
+          date: _parseDateKey(newDateKey), // Ensures proper Date object
+          cellIndex: finalIndex 
+       };
+       newOps.push(moved);
+       
+       // 🟢 FIX: Sync caches triggers getters update for futureOps/currentOps
+       _syncCaches(newDateKey, newOps);
+       
+       axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
+          dateKey: newDateKey, 
+          cellIndex: finalIndex,
+          date: moved.date 
+       }).catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
+    }
+    if (projection.value.mode) {
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+    }
+  }
+
+  function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
+
   async function createAct(actData) {
       try {
           const finalDate = new Date(actData.date);
           const dateKey = _getDateKey(finalDate);
           const cellIndex = await getFirstFreeCellIndex(dateKey);
-          
-          // For acts, we use regular /events endpoint but with type='act'
           const response = await axios.post(`${API_BASE_URL}/events`, {
               ...actData,
               dateKey: dateKey,
               cellIndex: cellIndex,
               type: 'act'
           });
-          
           await refreshDay(dateKey);
           updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
           return response.data;
@@ -700,8 +759,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
-  // (createTransfer, updateTransfer, updateOperation, deleteOperation etc... mostly same)
-  
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
@@ -723,38 +780,45 @@ export const useMainStore = defineStore('mainStore', () => {
       throw error;
     }
   }
-  
-  // Helper to refresh day and sync caches
-  async function refreshDay(dateKey) {
-    if (!dateKey) return;
+
+  async function updateTransfer(transferId, transferData) {
     try {
-      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
-      const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
-      }));
-      displayCache.value[dateKey] = [...processedOps];
-      calculationCache.value[dateKey] = [...processedOps];
-      displayCache.value = { ...displayCache.value };
-      calculationCache.value = { ...calculationCache.value };
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
+      const finalDate = new Date(transferData.date);
+      const newDateKey = _getDateKey(finalDate);
+      const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
+      let newCellIndex;
+      if (oldOp && oldOp.dateKey === newDateKey) {
+        newCellIndex = oldOp.cellIndex || 0;
+      } else {
+        newCellIndex = await getFirstFreeCellIndex(newDateKey);
+      }
+      const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
+        ...transferData,
+        dateKey: newDateKey, 
+        cellIndex: newCellIndex,
+        type: 'transfer',
+        isTransfer: true
+      });
+      if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
+      await refreshDay(newDateKey);
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      return response.data;
+    } catch (error) {
+      throw error;
     }
-    updateFutureTotals();
   }
-  
-  // (Rest of existing functions: updateOperation, deleteOperation, addOperation, deleteEntity, etc.)
+
   async function updateOperation(opId, opData) {
     try {
       const finalDate = new Date(opData.date);
       const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === opId);
       let newCellIndex;
-      if (oldOp && oldOp.dateKey === newDateKey) { newCellIndex = oldOp.cellIndex || 0; } 
-      else { newCellIndex = await getFirstFreeCellIndex(newDateKey); }
-      
+      if (oldOp && oldOp.dateKey === newDateKey) {
+        newCellIndex = oldOp.cellIndex || 0;
+      } else {
+        newCellIndex = await getFirstFreeCellIndex(newDateKey);
+      }
       const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
         ...opData,
         dateKey: newDateKey,
@@ -764,37 +828,17 @@ export const useMainStore = defineStore('mainStore', () => {
       await refreshDay(newDateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
-    } catch (error) { throw error; }
-  }
-
-  async function updateTransfer(transferId, transferData) {
-      try {
-        const finalDate = new Date(transferData.date);
-        const newDateKey = _getDateKey(finalDate);
-        const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
-        let newCellIndex;
-        if (oldOp && oldOp.dateKey === newDateKey) { newCellIndex = oldOp.cellIndex || 0; } 
-        else { newCellIndex = await getFirstFreeCellIndex(newDateKey); }
-        const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
-          ...transferData,
-          dateKey: newDateKey, 
-          cellIndex: newCellIndex,
-          type: 'transfer',
-          isTransfer: true
-        });
-        if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-        await refreshDay(newDateKey);
-        updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-        return response.data;
-      } catch (error) { throw error; }
+    } catch (error) {
+      throw error;
     }
+  }
 
   async function deleteOperation(operation){
     const dateKey = operation.dateKey;
     if (!dateKey) return;
     const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
-    displayCache.value[dateKey] = ops; // Optimistic update
-    
+    _syncCaches(dateKey, ops);
+    updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     try {
       if (isTransfer(operation) && operation._id2) {
           await Promise.all([
@@ -804,9 +848,9 @@ export const useMainStore = defineStore('mainStore', () => {
       } else {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      await refreshDay(dateKey); // Correct sync
-    } catch(e) { refreshDay(dateKey); }
+    } catch(e) {
+        refreshDay(dateKey);
+    }
   }
 
   async function addOperation(op){
@@ -815,54 +859,75 @@ export const useMainStore = defineStore('mainStore', () => {
     await fetchAllEntities();
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
-  
-  // ... (Other CRUDs: addAccount, addCompany, deleteEntity, etc. - kept same)
-  async function addAccount(data) {
-      let payload;
-      if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
-      else { 
-        payload = { 
-          name: data.name, 
-          initialBalance: data.initialBalance || 0, 
-          companyId: data.companyId || null,
-          individualId: data.individualId || null 
-        }; 
-      }
-      const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
-      accounts.value.push(res.data); return res.data;
-  }
-  async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); companies.value.push(res.data); return res.data; }
-  async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); contractors.value.push(res.data); return res.data; }
-  async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); projects.value.push(res.data); return res.data; }
-  async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); individuals.value.push(res.data); return res.data; }
-  async function addCategory(name){ const res = await axios.post(`${API_BASE_URL}/categories`, { name }); categories.value.push(res.data); return res.data; }
-
-  async function batchUpdateEntities(path, items){
-      try{
-        const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
-        if (path==='accounts')         accounts.value = res.data;
-        else if (path==='companies')   companies.value = res.data;
-        else if (path==='contractors') contractors.value = res.data;
-        else if (path==='projects')    projects.value = res.data;
-        else if (path==='individuals') individuals.value = res.data; 
-        else if (path==='categories')  categories.value = res.data; 
-      }catch(e){ await fetchAllEntities(); }
-  }
 
   async function deleteEntity(path, id, deleteOperations = false) {
       try {
-          await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
+          await axios.delete(`${API_BASE_URL}/${path}/${id}`, {
+              params: { deleteOperations }
+          });
           if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
           if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
           if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
           if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
-          await forceRefreshAll();
-      } catch (error) { console.error('Ошибка удаления сущности:', error); throw error; }
+          if (deleteOperations) { await forceRefreshAll(); } else { await forceRefreshAll(); }
+      } catch (error) {
+          console.error('Ошибка удаления сущности:', error);
+          throw error; 
+      }
   }
 
-  // (Common utils)
+  async function addCategory(name){
+    const res = await axios.post(`${API_BASE_URL}/categories`, { name });
+    categories.value.push(res.data); 
+    return res.data;
+  }
+  async function addAccount(data) {
+    let payload;
+    if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
+    else { 
+      payload = { 
+        name: data.name, 
+        initialBalance: data.initialBalance || 0, 
+        companyId: data.companyId || null,
+        individualId: data.individualId || null 
+      }; 
+    }
+    const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
+    accounts.value.push(res.data); return res.data;
+  }
+  async function addCompany(name){
+    const res = await axios.post(`${API_BASE_URL}/companies`, { name });
+    companies.value.push(res.data); return res.data;
+  }
+  async function addContractor(name){
+    const res = await axios.post(`${API_BASE_URL}/contractors`, { name });
+    contractors.value.push(res.data); return res.data;
+  }
+  async function addProject(name){
+    const res = await axios.post(`${API_BASE_URL}/projects`, { name });
+    projects.value.push(res.data); return res.data;
+  }
+  async function addIndividual(name){
+    const res = await axios.post(`${API_BASE_URL}/individuals`, { name });
+    individuals.value.push(res.data); return res.data;
+  }
+
+  async function batchUpdateEntities(path, items){
+    try{
+      const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
+      if (path==='accounts')         accounts.value = res.data;
+      else if (path==='companies')   companies.value = res.data;
+      else if (path==='contractors') contractors.value = res.data;
+      else if (path==='projects')    projects.value = res.data;
+      else if (path==='individuals') individuals.value = res.data; 
+      else if (path==='categories')  categories.value = res.data; 
+    }catch(e){
+      await fetchAllEntities();
+    }
+  }
+
   async function getFirstFreeCellIndex(dateKey, startIndex=0){
     if (!displayCache.value[dateKey]) await fetchOperations(dateKey); 
     const arr = displayCache.value[dateKey] || [];
@@ -872,70 +937,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return idx;
   }
   
-  async function fetchOperations(dateKey, force = false) {
-      if (!dateKey) return;
-      if (displayCache.value[dateKey] && !force) return;
-      try {
-        const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
-        const raw = Array.isArray(res.data) ? res.data.slice() : [];
-        const processedOps = _mergeTransfers(raw).map(op => ({
-          ...op,
-          dateKey: dateKey,
-          date: op.date || _parseDateKey(dateKey) 
-        }));
-        displayCache.value[dateKey] = processedOps;
-      } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
-  }
-
-  async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
-      if (!oldDateKey || !newDateKey) return;
-      if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
-      if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
-      const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
-      
-      // Optimistic move logic (simplified for brevity, same as original)
-      if (oldDateKey === newDateKey) {
-         const ops = [...(displayCache.value[oldDateKey] || [])];
-         const sourceOp = ops.find(o => o._id === operation._id);
-         const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
-         if (sourceOp) {
-             if (targetOp) {
-                 const originalSourceIndex = sourceOp.cellIndex;
-                 sourceOp.cellIndex = targetIndex;
-                 targetOp.cellIndex = originalSourceIndex;
-                 displayCache.value[oldDateKey] = ops;
-                 Promise.all([
-                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
-                    axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
-                 ]).catch(e => refreshDay(oldDateKey));
-             } else {
-                 sourceOp.cellIndex = targetIndex;
-                 displayCache.value[oldDateKey] = ops;
-                 axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
-                   .catch(e => refreshDay(oldDateKey));
-             }
-         }
-      } else {
-         let oldOps = [...(displayCache.value[oldDateKey] || [])];
-         const sourceOpData = oldOps.find(o => o._id === operation._id);
-         oldOps = oldOps.filter(o => o._id !== operation._id);
-         displayCache.value[oldDateKey] = oldOps;
-         let newOps = [...(displayCache.value[newDateKey] || [])];
-         const occupant = newOps.find(o => o.cellIndex === targetIndex);
-         let finalIndex = targetIndex;
-         if (occupant) {
-             const usedIndices = new Set(newOps.map(o => o.cellIndex));
-             while(usedIndices.has(finalIndex)) finalIndex++;
-         }
-         const moved = { ...sourceOpData, dateKey: newDateKey, date: _parseDateKey(newDateKey), cellIndex: finalIndex };
-         newOps.push(moved);
-         displayCache.value[newDateKey] = newOps;
-         axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date })
-           .catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
-      }
-      if (projection.value.mode) {
-        updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      }
+  function _compactIndices(arr, excludeId=null){
+    const others = excludeId ? arr.filter(o => o._id !== excludeId) : arr.slice();
+    others.sort((a,b)=>a.cellIndex - b.cellIndex).forEach((o,i)=>{ o.cellIndex = i; });
+    return others;
   }
 
   let autoRefreshInterval = null;
@@ -945,92 +950,154 @@ export const useMainStore = defineStore('mainStore', () => {
       try {
         await fetchAllEntities();
         if (projection.value.mode) {
-          await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+          await loadCalculationData( 
+            projection.value.mode,
+            new Date(currentYear.value, 0, todayDayOfYear.value)
+          );
         }
       } catch (error) {}
     }, intervalMs);
   }
-  function stopAutoRefresh() { if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; } }
-  
+  function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+    }
+  }
   async function forceRefreshAll() {
     try {
-      displayCache.value = {}; calculationCache.value = {};
+      displayCache.value = {};
+      calculationCache.value = {};
       await fetchAllEntities();
       if (projection.value.mode) {
-        await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+        await loadCalculationData( 
+          projection.value.mode,
+          new Date(currentYear.value, 0, todayDayOfYear.value)
+        );
       }
     } catch (error) {}
   }
 
-  function updateFutureTotals() {
-    // Trigger re-computation of computed properties
-    const _ = futureTotalBalance.value;
-  }
-  
-  // (Import/Export functions kept same)
   async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
-      try {
-        const response = await axios.post(`${API_BASE_URL}/import/operations`, { operations, selectedRows: selectedIndices });
-        const createdOps = response.data;
-        progressCallback(createdOps.length);
-        await forceRefreshAll();
-        return createdOps;
-      } catch (error) {
-        if (error.response && error.response.status === 401) user.value = null;
-        throw error; 
-      }
+    try {
+      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
+        operations, 
+        selectedRows: selectedIndices 
+      });
+      const createdOps = response.data;
+      progressCallback(createdOps.length);
+      await forceRefreshAll();
+      return createdOps;
+    } catch (error) {
+      if (error.response && error.response.status === 401) user.value = null;
+      throw error; 
+    }
   }
+
   async function exportAllOperations() {
-      try {
-        const res = await axios.get(`${API_BASE_URL}/events/all-for-export`);
-        return { operations: res.data, initialBalance: totalInitialBalance.value || 0 };
-      } catch (e) { if (e.response && e.response.status === 401) user.value = null; throw e; }
+    try {
+      const res = await axios.get(`${API_BASE_URL}/events/all-for-export`);
+      return {
+        operations: res.data, 
+        initialBalance: totalInitialBalance.value || 0
+      };
+    } catch (e) {
+      if (e.response && e.response.status === 401) user.value = null;
+      throw e; 
+    }
   }
 
   async function checkAuth() {
-    try {
-      isAuthLoading.value = true;
-      const res = await axios.get(`${API_BASE_URL}/auth/me`);
+  try {
+    isAuthLoading.value = true;
+    const res = await axios.get(`${API_BASE_URL}/auth/me`);
       user.value = res.data; 
-    } catch (error) { user.value = null; } finally { isAuthLoading.value = false; }
+    } catch (error) {
+      user.value = null;
+    } finally {
+      isAuthLoading.value = false;
+    }
   }
+
   async function logout() {
     axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {});
-    user.value = null; displayCache.value = {}; calculationCache.value = {};
+    user.value = null; 
+    displayCache.value = {};
+    calculationCache.value = {};
   }
-
+  
+  // 🟢 Expose fetchOperationsRange for completeness
+  async function fetchOperationsRange(startDate, endDate) {
+      await fetchCalculationRange(startDate, endDate);
+  }
+  
   return {
-    accounts, companies, contractors, projects, categories, visibleCategories, individuals,
-    operationsCache: displayCache, displayCache, calculationCache,
-    allWidgets, dashboardLayout, projection, dashboardForecastState, user, isAuthLoading,
+    accounts, companies, contractors, projects, categories,
+    visibleCategories,
+    individuals, 
+    operationsCache: displayCache,
+    displayCache, calculationCache,
+    allWidgets, dashboardLayout,
+    projection,
+    dashboardForecastState,
+    user,
+    isAuthLoading,
 
-    currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances, currentIndividualBalances, 
+    currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
+    currentIndividualBalances, 
     currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
-    futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances, futureIndividualBalances, 
+    futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
+    futureIndividualBalances, 
     
-    currentCategoryBalances, futureCategoryBalances,
+    currentCategoryBalances,
+    futureCategoryBalances,
     
-    currentOps, currentTransfers, futureTransfers, currentIncomes, futureIncomes, currentExpenses, futureExpenses,
+    currentOps, 
+    
+    currentTransfers, futureTransfers,
+    
+    currentIncomes, futureIncomes,
+    currentExpenses, futureExpenses,
 
-    getCategoryById, futureCategoryBreakdowns, getOperationsForDay: (key) => displayCache.value[key] || [],
+    getCategoryById,
+    futureCategoryBreakdowns,
 
-    setToday, replaceWidget, setForecastState,
+    getOperationsForDay, 
+
+    setToday, replaceWidget,
+    setForecastState,
     fetchAllEntities, fetchOperations, refreshDay, 
     
     addOperation, deleteOperation, moveOperation,
-    addAccount, addCompany, addContractor, addProject, addCategory, addIndividual, 
-    deleteEntity, batchUpdateEntities,
-    createAct, // 🟢 Export createAct
+    addAccount, addCompany, addContractor, addProject, addCategory,
+    addIndividual, 
+    deleteEntity,
+    batchUpdateEntities,
 
-    computeTotalDaysForMode, updateFutureProjection: updateFutureTotals, updateFutureProjectionByMode: (m,t) => updateFutureTotals(), setProjectionRange: (s,e) => {},
+    computeTotalDaysForMode,
+    updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
     
-    loadCalculationData, fetchCalculationRange, updateProjectionFromCalculationData,
+    loadCalculationData,
+    fetchCalculationRange, 
+    updateProjectionFromCalculationData,
 
-    createTransfer, updateTransfer, updateOperation,
-    fetchOperationsRange: () => {}, updateFutureProjectionWithData: () => {},
+    createTransfer, updateTransfer, updateOperation, createAct,
+
+    fetchOperationsRange, 
+    updateFutureProjectionWithData,
 
     startAutoRefresh, stopAutoRefresh, forceRefreshAll,
-    getFirstFreeCellIndex, _parseDateKey, _getDateKey, allOperationsFlat,
-    importOperations, exportAllOperations, checkAuth, logout,
+
+    getFirstFreeCellIndex, 
+    _parseDateKey, 
+    _getDateKey, 
+
+    allOperationsFlat,
+    
+    importOperations,
+    exportAllOperations, 
+    
+    checkAuth,
+    logout,
   };
 });
