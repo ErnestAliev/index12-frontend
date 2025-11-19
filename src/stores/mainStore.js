@@ -22,16 +22,16 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   /**
-   * * --- МЕТКА ВЕРСИИ: v16.0 - RENAMING TRANSFER TO POSTING ---
-   * * ВЕРСИЯ: 16.0 - Ренейминг "Перевод" -> "Проводки"
+   * * --- МЕТКА ВЕРСИИ: v17.0 - RENAMING TO POSTINGS ---
+   * * ВЕРСИЯ: 17.0 - Глобальный ренейминг "Перевод" -> "Проводки"
    * * ДАТА: 2025-11-20
    *
    * ЧТО ИЗМЕНЕНО:
-   * 1. (LOGIC) _isTransferCategory: добавлена проверка на 'проводки'.
-   * 2. (LOGIC) _getOrCreateTransferCategory: теперь создает категорию 'Проводки' по умолчанию.
-   * 3. (LOGIC) _mergeTransfers: при объединении создает категорию 'Проводки'.
+   * 1. (LOGIC) _isTransferCategory: поддерживает 'проводки'.
+   * 2. (LOGIC) _mergeTransfers: название группы теперь 'Проводки'.
+   * 3. (LOGIC) _getOrCreateTransferCategory: создает 'Проводки' по умолчанию.
    */
-  console.log('--- mainStore.js v16.0 (Renaming) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v17.0 (Postings Rename) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -67,7 +67,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
-    // 🟢 Добавлено 'проводки'
+    // 🟢 Поддержка старого 'перевод' и нового 'проводки'
     return name === 'перевод' || name === 'transfer' || name === 'проводки';
   };
 
@@ -81,6 +81,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
     if (transferCategory) {
+       // Используем имя из базы, но для UI можем форсировать "Проводки", 
+       // хотя лучше показывать как есть, чтобы не путать пользователя, если он сам переименовал.
+       // Но здесь мы просто берем имя категории.
        cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
     }
      return [...staticWidgets.value, ...cats];
@@ -162,7 +165,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return { startDate, endDate };
   };
 
-  // 🟢 FIX RE-TRIGGER: Force dependency check by ensuring a new array is created
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
@@ -630,7 +632,7 @@ export const useMainStore = defineStore('mainStore', () => {
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            // 🟢 Перевод -> Проводки
+            // 🟢 РЕНЕЙМИНГ: Виртуальная категория 'Проводки' для списка
             categoryId: { _id: 'transfer', name: 'Проводки' },
             date: incomeOp.date || expenseOp.date
           });
@@ -641,17 +643,19 @@ export const useMainStore = defineStore('mainStore', () => {
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
+        // 🟢 РЕНЕЙМИНГ: Виртуальная категория 'Проводки' для списка
         categoryId: { _id: 'transfer', name: 'Проводки' }
       });
     }
     return [...normalOps, ...mergedTransfers];
   }
 
-  // 🟢 Переименование: Создание категории 'Проводки'
+  // 🟢 РЕНЕЙМИНГ: Создание категории 'Проводки' по умолчанию
   async function _getOrCreateTransferCategory() {
-    // Ищем 'перевод' или 'проводки'
+    // Ищем 'перевод', 'transfer' или 'проводки'
     let transferCategory = categories.value.find(_isTransferCategory);
     if (!transferCategory) {
+      // Если нет - создаем именно 'Проводки'
       transferCategory = await addCategory('Проводки');
     }
     return transferCategory._id;
