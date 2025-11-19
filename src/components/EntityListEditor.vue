@@ -5,14 +5,14 @@ import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.0-ADD-BUTTON ---
- * * ВЕРСИЯ: 10.0 - Добавлена кнопка "Создать [сущность]"
+ * * --- МЕТКА ВЕРСИИ: v10.1 - UX IMPROVEMENTS ---
+ * * ВЕРСИЯ: 10.1 - Улучшение UI редактора
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлена логика "Inline Create" в самом верху списка.
- * 2. (FEAT) Кнопка "+ Создать [имя сущности]" раскрывает поле ввода.
- * 3. (LOGIC) Обработка создания для всех типов (Счета, Компании, Проекты и т.д.).
+ * 1. (UI) Удален текст-подсказка "Перетащите для сортировки...".
+ * 2. (UI) Заголовки таблиц скрыты, если список пуст.
+ * 3. (CSS) Принудительное центрирование инпута и кнопок в create-section (сброс margin).
  */
 
 const props = defineProps({
@@ -109,10 +109,8 @@ const handleCreateNew = async () => {
     }
 
     if (newItem) {
-      // Добавляем в локальный список для отображения
       const mappedItem = { ...newItem };
       
-      // Инициализируем доп. поля для UI
       if (isAccountEditor) {
         mappedItem.initialBalance = 0;
         mappedItem.initialBalanceFormatted = '0';
@@ -125,11 +123,7 @@ const handleCreateNew = async () => {
         mappedItem.selectedAccountIds = [];
       }
       
-      // Добавляем в начало списка (или в конец, но лучше в начало, чтобы видно было)
-      // Обычно новые элементы добавляются в конец бэкендом (order), 
-      // но в UI удобно видеть их сразу.
       localItems.value.push(mappedItem);
-      
       cancelCreation();
     }
   } catch (e) {
@@ -194,7 +188,7 @@ onMounted(() => {
 
 const handleSave = async () => {
   const itemsToSave = localItems.value.map((item, index) => {
-    const data = { _id: item._id, name: item.name, order: index }; // Сохраняем порядок
+    const data = { _id: item._id, name: item.name, order: index }; 
     if (isAccountEditor) data.initialBalance = item.initialBalance || 0;
     if (isContractorEditor) {
       data.defaultProjectId = item.defaultProjectId || null;
@@ -287,7 +281,7 @@ const cancelDelete = () => {
       
       <p v-if="isCompanyEditor" class="editor-hint">Привяжите ваши компании к вашим счетам.</p>
       <p v-else-if="isIndividualEditor" class="editor-hint">Привяжите ваших физлиц к вашим счетам.</p>
-      <p v-else class="editor-hint">Перетащите для сортировки. Нажмите на корзину для удаления.</p>
+      <!-- 🟢 v10.1: Удалена подсказка "Перетащите для сортировки..." -->
       
       <!-- Кнопка создания -->
       <div class="create-section">
@@ -310,32 +304,34 @@ const cancelDelete = () => {
         </div>
       </div>
 
-      <!-- Заголовки таблиц -->
-      <div v-if="isAccountEditor" class="editor-header account-header-simple">
-        <span class="header-name">Название счета</span>
-        <span class="header-balance">Нач. баланс</span>
-        <span class="header-trash"></span>
-      </div>
-      <div v-else-if="isCompanyEditor" class="editor-header owner-header">
-        <span class="header-name">Название Компании</span>
-        <span class="header-accounts">Привязанные счета</span>
-        <span class="header-trash"></span>
-      </div>
-      <div v-else-if="isIndividualEditor" class="editor-header owner-header">
-        <span class="header-name">Имя Физлица</span>
-        <span class="header-accounts">Привязанные счета</span>
-        <span class="header-trash"></span>
-      </div>
-      <div v-else-if="isContractorEditor" class="editor-header contractor-header">
-        <span class="header-name">Название</span>
-        <span class="header-project">Проект</span>
-        <span class="header-category">Категория</span>
-        <span class="header-trash"></span>
-      </div>
-      <div v-else class="editor-header default-header">
-        <span class="header-name">Название</span>
-        <span class="header-trash"></span>
-      </div>
+      <!-- 🟢 v10.1: Заголовки скрываются, если список пуст -->
+      <template v-if="localItems.length > 0">
+        <div v-if="isAccountEditor" class="editor-header account-header-simple">
+          <span class="header-name">Название счета</span>
+          <span class="header-balance">Нач. баланс</span>
+          <span class="header-trash"></span>
+        </div>
+        <div v-else-if="isCompanyEditor" class="editor-header owner-header">
+          <span class="header-name">Название Компании</span>
+          <span class="header-accounts">Привязанные счета</span>
+          <span class="header-trash"></span>
+        </div>
+        <div v-else-if="isIndividualEditor" class="editor-header owner-header">
+          <span class="header-name">Имя Физлица</span>
+          <span class="header-accounts">Привязанные счета</span>
+          <span class="header-trash"></span>
+        </div>
+        <div v-else-if="isContractorEditor" class="editor-header contractor-header">
+          <span class="header-name">Название</span>
+          <span class="header-project">Проект</span>
+          <span class="header-category">Категория</span>
+          <span class="header-trash"></span>
+        </div>
+        <div v-else class="editor-header default-header">
+          <span class="header-name">Название</span>
+          <span class="header-trash"></span>
+        </div>
+      </template>
       
       <div class="list-editor">
         <draggable
@@ -440,7 +436,18 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
 
 .inline-create-row { display: flex; gap: 8px; align-items: center; }
-.create-input { flex-grow: 1; height: 44px; padding: 0 14px; background: #fff; border: 1px solid #222; border-radius: 8px; font-size: 15px; color: #1a1a1a; }
+.create-input { 
+  flex-grow: 1; 
+  height: 44px; 
+  padding: 0 14px; 
+  background: #fff; 
+  border: 1px solid #222; 
+  border-radius: 8px; 
+  font-size: 15px; 
+  color: #1a1a1a; 
+  /* 🟢 v10.1: FIX ALIGNMENT - Убираем отступ снизу, чтобы выровнять с кнопками */
+  margin-bottom: 0 !important; 
+}
 .create-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(34,34,34,0.2); }
 .btn-icon-save, .btn-icon-cancel { width: 44px; height: 44px; border: none; border-radius: 8px; cursor: pointer; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .btn-icon-save { background-color: #34C759; }
