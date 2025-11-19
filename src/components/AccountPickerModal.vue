@@ -2,13 +2,12 @@
 import { ref } from 'vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.0 - HINT SUPPORT ---
- * * ВЕРСИЯ: 2.0 - Добавлен текст-подсказка
+ * * --- МЕТКА ВЕРСИИ: v2.1 - HTML HINT ---
+ * * ВЕРСИЯ: 2.1 - Поддержка HTML в подсказке
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлен prop `hintText`.
- * 2. (UI) Отображение `hintText` перед списком счетов.
+ * 1. (UI) `hintText` теперь рендерится через `v-html`, чтобы поддерживать цвета.
  */
 
 const props = defineProps({
@@ -20,7 +19,6 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  // 🟢 Новое свойство для подсказки
   hintText: {
     type: String,
     default: ''
@@ -55,10 +53,8 @@ const handleCancel = () => {
       
       <h4>Выберите счета</h4>
       
-      <!-- 🟢 Подсказка внутри модала -->
-      <div v-if="hintText" class="picker-hint">
-        {{ hintText }}
-      </div>
+      <!-- 🟢 v2.1: Используем v-html для цветного текста -->
+      <div v-if="hintText" class="picker-hint" v-html="hintText"></div>
       
       <div class="account-list-scroll">
         <label v-for="acc in allAccounts" :key="acc._id" class="account-item">
@@ -125,7 +121,6 @@ h4 {
   border-bottom: 1px solid #E0E0E0;
 }
 
-/* 🟢 Стиль для подсказки */
 .picker-hint {
   padding: 0.8rem 1.5rem 0;
   font-size: 0.9em;
