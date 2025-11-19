@@ -4,14 +4,13 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.0 - SMART TRANSFER (Money/Act) ---
- * * ВЕРСИЯ: 2.0 - Реализация режима "Умный Перевод"
+ * * --- МЕТКА ВЕРСИИ: v3.0 - RENAMING UI ---
+ * * ВЕРСИЯ: 3.0 - Ренейминг "Перевод" -> "Проводки"
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Добавлены табы "Деньги" и "Исполнение".
- * 2. (LOGIC) В режиме "Исполнение" скрываются счета, появляются Контрагент/Категория.
- * 3. (API) Вызов mainStore.createAct() для актов.
+ * 1. (UI) Все тексты "Перевод" заменены на "Проводка".
+ * 2. (UI) Текст кнопки "Перевести" -> "Провести".
  */
 
 const mainStore = useMainStore();
@@ -84,7 +83,7 @@ const creatingOwnerFor = ref('from');
 const availableCategories = computed(() => {
   return mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
-    return name !== 'перевод' && name !== 'transfer';
+    return name !== 'перевод' && name !== 'transfer' && name !== 'проводки';
   });
 });
 
@@ -149,7 +148,6 @@ const onContractorSelected = (cId) => {
   if (contr) {
       if (contr.defaultCategoryId) {
           const catId = (typeof contr.defaultCategoryId === 'object') ? contr.defaultCategoryId._id : contr.defaultCategoryId;
-          // Проверка на "Перевод" не нужна, т.к. select фильтрует
           if (availableCategories.value.some(c => c._id === catId)) categoryId.value = catId;
       }
       if (contr.defaultProjectId) {
@@ -206,12 +204,14 @@ onMounted(async () => {
 
 const title = computed(() => {
   if (mode.value === 'act') return props.transferToEdit && !isCloneMode.value ? 'Редактировать Акт' : 'Новое Исполнение';
-  return props.transferToEdit && !isCloneMode.value ? 'Редактировать Перевод' : 'Новый Перевод';
+  // 🟢 РЕНЕЙМИНГ
+  return props.transferToEdit && !isCloneMode.value ? 'Редактировать Проводку' : 'Новая Проводка';
 });
 
 const buttonText = computed(() => {
   if (mode.value === 'act') return 'Исполнить';
-  return 'Перевести';
+  // 🟢 РЕНЕЙМИНГ
+  return 'Провести';
 });
 
 const actionButtonClass = computed(() => {
@@ -406,7 +406,7 @@ const handleSave = async () => {
     const isEdit = !!(props.transferToEdit && !isCloneMode.value);
 
     if (mode.value === 'money') {
-        // --- СОХРАНЕНИЕ ПЕРЕВОДА ---
+        // --- СОХРАНЕНИЕ ПЕРЕВОДА (ПРОВОДКИ) ---
         let fromCompanyId = null, fromIndividualId = null;
         if (selectedFromOwner.value) {
           const [type, id] = selectedFromOwner.value.split('-');
@@ -419,9 +419,8 @@ const handleSave = async () => {
           if (type === 'company') toCompanyId = id; else toIndividualId = id;
         }
         
-        // Системная категория Перевод
-        let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
-        if (!transferCategory) transferCategory = await mainStore.addCategory('Перевод');
+        // 🟢 Ищем или создаем 'Проводки' (перевод)
+        const transferCategory = await mainStore.addCategory('Проводки'); // метод addCategory вернет существующую если есть
 
         const transferPayload = {
             date: finalDate,
@@ -445,19 +444,17 @@ const handleSave = async () => {
         // --- СОХРАНЕНИЕ АКТА (ИСПОЛНЕНИЕ) ---
         const actPayload = {
             date: finalDate,
-            amount: -amountParsed, // Акты - это "списание" обязательств, технически расход по категории
+            amount: -amountParsed, 
             contractorId: contractorId.value,
             categoryId: categoryId.value,
             projectId: projectId.value,
             type: 'act',
-            // Важно: счета null
             accountId: null,
             fromAccountId: null,
             toAccountId: null
         };
 
         if (isEdit) {
-             // Для обновления используем updateOperation, т.к. это не трансферная группа
              savedOperation = await mainStore.updateOperation(props.transferToEdit._id, actPayload);
         } else {
              savedOperation = await mainStore.createAct(actPayload);
@@ -513,7 +510,7 @@ const closePopup = () => {
       <template v-if="!showCreateOwnerModal">
         
         <!-- ОБЩЕЕ ПОЛЕ: СУММА -->
-        <label>Сумма ({{ mode === 'money' ? 'Перевода' : 'Обязательства' }})</label>
+        <label>Сумма ({{ mode === 'money' ? 'Проводки' : 'Обязательства' }})</label>
         <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
         
         <!-- РЕЖИМ ДЕНЬГИ -->
