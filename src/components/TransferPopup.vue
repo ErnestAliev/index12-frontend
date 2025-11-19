@@ -497,7 +497,7 @@ const closePopup = () => {
         <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
         
         <!-- 🟢 Подсказка для суммы -->
-        <p v-if="mode === 'transfer'" class="input-hint">
+        <p v-if="mode === 'transfer'" class="hint-text">
            Вы переводите деньги между своими счетами.
         </p>
         
@@ -676,7 +676,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 }
 
 /* NEW: Подсказка под инпутом */
-.input-hint {
+.hint-text {
     font-size: 12px;
     color: #888;
     margin-top: -10px;
@@ -727,3 +727,4 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
 .btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
 .btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 </style>
+
