@@ -5,14 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import TransferPopup from './TransferPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v22.0 - UNIVERSAL EDITOR ---
- * * ВЕРСИЯ: 22.0 - Универсальный редактор (Переводы + Проводки)
+ * * --- МЕТКА ВЕРСИИ: v23.0 - EDITOR FIXES ---
+ * * ВЕРСИЯ: 23.0 - Исправление фильтров, итогов и порядка
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Поддержка двух режимов: 'transfer' (Деньги) и 'act' (Исполнение).
- * 2. (UI) Добавлены фильтры (по аналогии с OperationListEditor).
- * 3. (UI) Динамические колонки таблицы.
+ * 1. (UI) Добавлены фильтры "Счет (Куда)" и "Получатель".
+ * 2. (UI) Добавлена панель итогов (Всего / По фильтру).
+ * 3. (UI) Дата гарантированно первая в сетке.
  */
 
 const props = defineProps({
@@ -44,12 +44,17 @@ const availableCategories = computed(() => mainStore.categories.filter(c => {
 // --- Фильтры ---
 const filters = ref({
   date: '',
-  owner: '',
-  account: '',
-  amount: '',
+  // Transfer filters
+  fromOwner: '',
+  fromAccount: '',
+  toAccount: '', // NEW
+  toOwner: '',   // NEW
+  // Act filters
   contractor: '',
   category: '',
-  project: ''
+  project: '',
+  // Common
+  amount: ''
 });
 
 // --- Заголовки и тексты ---
@@ -87,7 +92,6 @@ const loadItems = () => {
   if (props.mode === 'transfer') {
       targetOps = allOps.filter(op => op.type === 'transfer' || op.isTransfer === true);
   } else {
-      // mode === 'act'
       targetOps = allOps.filter(op => op.type === 'act');
   }
 
@@ -129,8 +133,7 @@ onMounted(() => {
 
 watch(() => props.mode, () => {
     loadItems();
-    // Сброс фильтров при смене режима (хотя компонент скорее всего пересоздастся)
-    filters.value = { date: '', owner: '', account: '', amount: '', contractor: '', category: '', project: '' };
+    filters.value = { date: '', fromOwner: '', fromAccount: '', toAccount: '', toOwner: '', amount: '', contractor: '', category: '', project: '' };
 });
 
 // --- Фильтрация ---
@@ -150,12 +153,10 @@ const filteredItems = computed(() => {
 
     // Transfer Specific Filters
     if (props.mode === 'transfer') {
-        if (filters.value.owner) {
-            if (item.fromOwnerId !== filters.value.owner && item.toOwnerId !== filters.value.owner) return false;
-        }
-        if (filters.value.account) {
-            if (item.fromAccountId !== filters.value.account && item.toAccountId !== filters.value.account) return false;
-        }
+        if (filters.value.fromOwner && item.fromOwnerId !== filters.value.fromOwner) return false;
+        if (filters.value.toOwner && item.toOwnerId !== filters.value.toOwner) return false;
+        if (filters.value.fromAccount && item.fromAccountId !== filters.value.fromAccount) return false;
+        if (filters.value.toAccount && item.toAccountId !== filters.value.toAccount) return false;
     } 
     // Act Specific Filters
     else {
@@ -167,6 +168,19 @@ const filteredItems = computed(() => {
     return true;
   });
 });
+
+const isFilterActive = computed(() => {
+  return Object.values(filters.value).some(val => val !== '');
+});
+
+// --- ИТОГИ ---
+const totalSum = computed(() => {
+    return localItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
+});
+const filteredSum = computed(() => {
+    return filteredItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
+});
+const formatTotal = (val) => `${formatNumber(val)} ₸`;
 
 // --- Редактирование ---
 const onAmountInput = (item) => {
@@ -201,7 +215,6 @@ const onContractorChange = (item) => {
   if (contr) {
       if (contr.defaultCategoryId) {
           const cId = (typeof contr.defaultCategoryId === 'object') ? contr.defaultCategoryId._id : contr.defaultCategoryId;
-          // Проверяем, не является ли эта категория системной (Перевод)
           if (availableCategories.value.some(c => c._id === cId)) item.categoryId = cId;
       }
       if (contr.defaultProjectId) {
@@ -250,7 +263,6 @@ const handleSave = async () => {
             }));
           }
       } else {
-          // Act
           isChanged = 
             toInputDate(original.date) !== item.date ||
             Math.abs(original.amount) !== item.amount ||
@@ -280,7 +292,6 @@ const handleSave = async () => {
   }
 };
 
-// --- Удаление ---
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => {
   if (!itemToDelete.value) return;
@@ -292,7 +303,6 @@ const confirmDelete = async () => {
     showDeleteConfirm.value = false;
     itemToDelete.value = null;
   } catch (e) {
-    console.error(e);
     alert('Ошибка при удалении: ' + e.message);
   } finally {
     isDeleting.value = false;
@@ -300,7 +310,6 @@ const confirmDelete = async () => {
 };
 const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.value = false; itemToDelete.value = null; };
 
-// --- Создание ---
 const openCreatePopup = () => { isCreatePopupVisible.value = true; };
 const handleTransferComplete = async (eventData) => {
   isCreatePopupVisible.value = false;
@@ -328,16 +337,32 @@ const handleTransferComplete = async (eventData) => {
         </button>
       </div>
       
+      <!-- 🟢 ИТОГИ -->
+      <div v-if="localItems.length > 0" class="totals-bar">
+          <div class="total-item">
+              <span class="total-label">Всего:</span>
+              <!-- Сумма переводов/проводок нейтральная или зеленая, не красная (это не убыток) -->
+              <span class="total-value">{{ formatTotal(totalSum) }}</span>
+          </div>
+          <div class="total-item" v-if="isFilterActive">
+              <span class="total-label">Итого (по фильтру):</span>
+              <span class="total-value filtered">{{ formatTotal(filteredSum) }}</span>
+          </div>
+      </div>
+
       <!-- ФИЛЬТРЫ -->
       <div class="filters-row" :class="{ 'act-grid': mode === 'act' }">
+        
+        <!-- 1. ДАТА (Всегда первая) -->
         <div class="filter-col col-date">
            <input type="date" v-model="filters.date" class="filter-input" />
         </div>
         
         <template v-if="mode === 'transfer'">
+            <!-- 2. Отправитель -->
             <div class="filter-col col-owner">
-               <select v-model="filters.owner" class="filter-input filter-select">
-                  <option value="">Все Владельцы</option>
+               <select v-model="filters.fromOwner" class="filter-input filter-select">
+                  <option value="">Все (От)</option>
                   <optgroup label="Компании">
                       <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
                   </optgroup>
@@ -346,10 +371,34 @@ const handleTransferComplete = async (eventData) => {
                   </optgroup>
                </select>
             </div>
+            <!-- 3. Счет От -->
             <div class="filter-col col-acc">
-               <select v-model="filters.account" class="filter-input filter-select">
-                  <option value="">Все Счета</option>
+               <select v-model="filters.fromAccount" class="filter-input filter-select">
+                  <option value="">Все (От)</option>
                   <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
+               </select>
+            </div>
+            <!-- 4. Сумма -->
+            <div class="filter-col col-amount">
+               <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
+            </div>
+            <!-- 5. Счет Куда -->
+            <div class="filter-col col-acc">
+               <select v-model="filters.toAccount" class="filter-input filter-select">
+                  <option value="">Все (Куда)</option>
+                  <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
+               </select>
+            </div>
+            <!-- 6. Получатель -->
+            <div class="filter-col col-owner">
+               <select v-model="filters.toOwner" class="filter-input filter-select">
+                  <option value="">Все (Куда)</option>
+                  <optgroup label="Компании">
+                      <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
+                  </optgroup>
+                  <optgroup label="Физлица">
+                      <option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
+                  </optgroup>
                </select>
             </div>
         </template>
@@ -374,12 +423,11 @@ const handleTransferComplete = async (eventData) => {
                   <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
                </select>
             </div>
+            <div class="filter-col col-amount">
+               <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
+            </div>
         </template>
 
-        <div class="filter-col col-amount">
-           <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
-        </div>
-        
         <div class="filter-col col-trash"></div>
       </div>
 
@@ -558,6 +606,12 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 .btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
+
+/* ИТОГИ */
+.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+.total-item { font-size: 16px; color: #333; }
+.total-label { margin-right: 8px; color: #666; }
+.total-value { font-weight: 700; }
 
 /* СЕТКА */
 .filters-row, .grid-header, .grid-row {
