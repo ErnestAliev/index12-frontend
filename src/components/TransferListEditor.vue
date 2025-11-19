@@ -2,18 +2,17 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import TransferPopup from './TransferPopup.vue'; // 🟢 Импорт
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.0 - CONFIRM & PROGRESS ---
- * * ВЕРСИЯ: 19.0 - Добавлено стилизованное окно подтверждения с прогресс-баром
+ * * --- МЕТКА ВЕРСИИ: v20.0 - ADD-BTN ---
+ * * ВЕРСИЯ: 20.0 - Добавлена кнопка "Создать перевод"
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Удален нативный confirm(). Теперь открывается кастомное окно.
- * 2. (FEAT) Реализована логика удаления с прогресс-баром (isDeleting).
- * 3. (STYLE) Окно подтверждения стилизовано под общий дизайн (как в EntityListEditor).
- * 4. (UI) Формат строки списка перевода приведен к виду:
- * Дата (слева), детали (центр), корзина (справа).
+ * 1. (FEAT) Добавлена кнопка "+ Создать перевод".
+ * 2. (LOGIC) Интегрирован TransferPopup для создания.
+ * 3. (STYLE) Унификация стилей с другими редакторами.
  */
 
 const props = defineProps({
@@ -26,6 +25,9 @@ const mainStore = useMainStore();
 const localItems = ref([]);
 const isSaving = ref(false);
 
+// --- Попап создания ---
+const isCreatePopupVisible = ref(false);
+
 // --- Удаление ---
 const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
@@ -33,11 +35,6 @@ const itemToDelete = ref(null);
 
 // --- Данные для селектов ---
 const accounts = computed(() => mainStore.accounts);
-const owners = computed(() => {
-  const comps = mainStore.companies.map(c => ({ ...c, type: 'company', label: c.name }));
-  const inds = mainStore.individuals.map(i => ({ ...i, type: 'individual', label: i.name }));
-  return [...comps, ...inds];
-});
 
 const toInputDate = (dateVal) => {
   if (!dateVal) return '';
@@ -48,7 +45,6 @@ const toInputDate = (dateVal) => {
   return `${year}-${month}-${day}`;
 };
 
-// Формат даты для отображения в сообщении об удалении
 const formatDateReadable = (dateVal) => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
@@ -61,12 +57,7 @@ const getOwnerId = (compId, indId) => {
   return null;
 };
 
-const getAccountName = (id) => {
-  const acc = accounts.value.find(a => a._id === id);
-  return acc ? acc.name : '???';
-};
-
-onMounted(() => {
+const loadTransfers = () => {
   const allOps = mainStore.allOperationsFlat;
   const onlyTransfers = allOps.filter(op => 
     op.type === 'transfer' || 
@@ -96,8 +87,27 @@ onMounted(() => {
         isDeleted: false
       };
     });
+};
+
+onMounted(() => {
+  loadTransfers();
 });
 
+// --- Создание ---
+const openCreatePopup = () => {
+  isCreatePopupVisible.value = true;
+};
+
+const handleTransferComplete = async (eventData) => {
+  isCreatePopupVisible.value = false;
+  
+  await mainStore.fetchAllEntities();
+  if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
+  
+  loadTransfers();
+};
+
+// --- Редактирование ---
 const onAmountInput = (item) => {
   const raw = item.amountFormatted.replace(/[^0-9]/g, '');
   item.amountFormatted = formatNumber(raw);
@@ -184,7 +194,7 @@ const handleSave = async () => {
   }
 };
 
-// --- Логика удаления (с попапом) ---
+// --- Логика удаления ---
 
 const askDelete = (item) => {
   itemToDelete.value = item;
@@ -193,17 +203,12 @@ const askDelete = (item) => {
 
 const confirmDelete = async () => {
   if (!itemToDelete.value) return;
-  isDeleting.value = true; // Включаем прогресс-бар
+  isDeleting.value = true;
 
   try {
-    // Небольшая задержка для визуализации прогресса (UX)
     await new Promise(resolve => setTimeout(resolve, 600));
-    
     await mainStore.deleteOperation(itemToDelete.value.originalOp);
-    
-    // Удаляем из списка UI
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-    
     showDeleteConfirm.value = false;
     itemToDelete.value = null;
   } catch (e) {
@@ -215,7 +220,7 @@ const confirmDelete = async () => {
 };
 
 const cancelDelete = () => {
-  if (isDeleting.value) return; // Нельзя отменить, пока идет процесс
+  if (isDeleting.value) return;
   showDeleteConfirm.value = false;
   itemToDelete.value = null;
 };
@@ -232,6 +237,13 @@ const cancelDelete = () => {
       <p class="editor-hint">
         Редактируйте параметры переводов. Нажмите на корзину для удаления.
       </p>
+      
+      <!-- 🟢 КНОПКА СОЗДАНИЯ -->
+      <div class="create-section">
+        <button class="btn-add-new" @click="openCreatePopup">
+          + Создать перевод
+        </button>
+      </div>
       
       <div class="grid-header">
         <span class="col-date">Дата</span>
@@ -322,11 +334,18 @@ const cancelDelete = () => {
 
     </div>
 
-    <!-- 🟢 ВНУТРЕННЕЕ ОКНО ПОДТВЕРЖДЕНИЯ (Стилизованное) -->
+    <!-- Попап создания -->
+    <TransferPopup
+      v-if="isCreatePopupVisible"
+      :date="new Date()"
+      :cellIndex="0"
+      @close="isCreatePopupVisible = false"
+      @transfer-complete="handleTransferComplete"
+    />
+
+    <!-- Окно подтверждения -->
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
-        
-        <!-- Состояние удаления (Прогресс) -->
         <div v-if="isDeleting" class="deleting-state">
           <h4>Удаление...</h4>
           <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
@@ -334,21 +353,17 @@ const cancelDelete = () => {
             <div class="progress-bar"></div>
           </div>
         </div>
-
-        <!-- Состояние подтверждения -->
         <div v-else>
           <h4>Подтвердите удаление</h4>
           <p class="confirm-text" v-if="itemToDelete">
             Вы действительно хотите удалить перевод от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>
             на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?
           </p>
-          
           <div class="delete-actions">
             <button class="btn-cancel" @click="cancelDelete">Отмена</button>
             <button class="btn-delete-confirm" @click="confirmDelete">Удалить</button>
           </div>
         </div>
-        
       </div>
     </div>
 
@@ -356,97 +371,45 @@ const cancelDelete = () => {
 </template>
 
 <style scoped>
-/* Основной оверлей */
-.popup-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.6);
-  display: flex; justify-content: center; align-items: center;
-  z-index: 1200; overflow-y: auto;
-}
-
-.popup-content {
-  background: #F4F4F4; 
-  border-radius: 12px; display: flex; flex-direction: column;
-  max-height: 85vh; margin: 2rem 1rem;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-  width: 95%; max-width: 1100px;
-}
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
+.popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 95%; max-width: 1100px; }
 
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
 
-/* Сетка таблицы */
-.grid-header, .grid-row {
-  display: grid;
-  grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 50px;
-  gap: 10px;
-  align-items: center;
-  padding: 0 1.5rem;
-}
-.grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
-.grid-row {
-  margin-bottom: 8px;
-  background: #fff; border: 1px solid #E0E0E0; border-radius: 8px;
-  padding: 10px 1.5rem; 
-}
+/* --- 🟢 СТИЛИ КНОПКИ СОЗДАНИЯ --- */
+.create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+.btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
+.btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
 
-.list-scroll {
-  flex-grow: 1; overflow-y: auto; padding-bottom: 1rem;
-  scrollbar-width: none; -ms-overflow-style: none;
-}
+/* Сетка */
+.grid-header, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 50px; gap: 10px; align-items: center; padding: 0 1.5rem; }
+.grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
+.grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
+
+.list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-/* Инпуты */
-.edit-input {
-  width: 100%; height: 40px;
-  background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px;
-  padding: 0 10px; font-size: 0.9em; color: #333;
-  box-sizing: border-box; margin: 0; display: block;
-}
+.edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 10px; font-size: 0.9em; color: #333; box-sizing: border-box; margin: 0; display: block; }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
-
-.select-input {
-  -webkit-appearance: none; appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 10px center;
-  padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
-}
+.select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .amount-input { text-align: right; font-weight: 600; color: #333; }
 .date-input { color: #555; }
 
-/* Кнопка удаления */
-.delete-btn {
-  width: 40px; height: 40px;
-  border: 1px solid #E0E0E0; background: #fff; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.2s;
-  padding: 0; margin: 0;
-}
+.delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 18px; height: 18px; stroke: #999; }
 .delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
-/* Футер */
-.popup-footer {
-  padding: 1.5rem; border-top: 1px solid #E0E0E0;
-  display: flex; justify-content: flex-end; gap: 10px;
-  background-color: #F9F9F9; border-radius: 0 0 12px 12px;
-}
-.btn-close {
-  padding: 12px 24px; border: 1px solid #ccc; background: transparent;
-  border-radius: 8px; cursor: pointer; font-weight: 500; color: #555;
-}
+.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; gap: 10px; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
+.btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; font-weight: 500; color: #555; }
 .btn-close:hover { background: #eee; }
-.btn-save {
-  padding: 12px 24px; border: none; background: #222;
-  border-radius: 8px; cursor: pointer; font-weight: 600; color: #fff;
-}
+.btn-save { padding: 12px 24px; border: none; background: #222; border-radius: 8px; cursor: pointer; font-weight: 600; color: #fff; }
 .btn-save:hover:not(:disabled) { background: #444; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .empty-state { text-align: center; padding: 2rem; color: #888; }
 
-/* Адаптив */
 @media (max-width: 1200px) {
   .popup-content { max-width: 95vw; margin: 1rem; }
   .grid-header { display: none; }
@@ -457,49 +420,18 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
   .delete-btn svg { stroke: #FF3B30; }
 }
 
-
-/* --- 🟢 ВНУТРЕННЕЕ ОКНО ПОДТВЕРЖДЕНИЯ (СТИЛИЗОВАННОЕ) --- */
-.inner-overlay {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.4); border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 1210;
-}
-.delete-confirm-box {
-  background: #fff; padding: 24px; border-radius: 12px;
-  width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-}
+.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
+.delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
 .confirm-text { font-size: 14px; margin-bottom: 20px; color: #555; line-height: 1.5; }
-
 .delete-actions { display: flex; gap: 10px; justify-content: center; }
-.btn-cancel {
-  background: #e0e0e0; color: #333; border: none;
-  padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500;
-}
+.btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
 .btn-cancel:hover { background: #d1d1d1; }
-
-.btn-delete-confirm {
-  background: #ff3b30; color: #fff; border: none;
-  padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600;
-}
+.btn-delete-confirm { background: #ff3b30; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-delete-confirm:hover { background: #e02e24; }
-
-/* Прогресс бар */
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
 .sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
-.progress-container {
-  width: 100%; height: 6px; background-color: #eee; border-radius: 3px;
-  overflow: hidden; position: relative;
-}
-.progress-bar {
-  width: 100%; height: 100%; background-color: #222;
-  position: absolute; left: -100%;
-  animation: indeterminate 1.5s infinite ease-in-out;
-}
-@keyframes indeterminate {
-  0% { left: -100%; width: 50%; }
-  50% { left: 25%; width: 50%; }
-  100% { left: 100%; width: 50%; }
-}
+.progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
+.progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
+@keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
 </style>
