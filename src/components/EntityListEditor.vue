@@ -5,13 +5,13 @@ import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.2 - MOVE HINT TO PICKER ---
- * * ВЕРСИЯ: 10.2 - Перенос подсказки в модал выбора счетов
+ * * --- МЕТКА ВЕРСИИ: v10.3 - DYNAMIC HINT ---
+ * * ВЕРСИЯ: 10.3 - Динамическая подсказка с именем сущности
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Удалены подсказки "Привяжите ваши компании..." из этого компонента.
- * 2. (LOGIC) Вычисляется `pickerHintText` для передачи в AccountPickerModal.
+ * 1. (LOGIC) `pickerHintText` теперь подставляет имя конкретной компании или физлица
+ * (currentItemForPicker.name) вместо общего текста.
  */
 
 const props = defineProps({
@@ -66,10 +66,11 @@ else if (isProjectEditor) entityNameSingular = 'проект';
 else if (isCategoryEditor) entityNameSingular = 'категорию';
 else if (isIndividualEditor) entityNameSingular = 'физлицо';
 
-// 🟢 Текст подсказки для передачу в Picker
+// 🟢 Динамический текст подсказки
 const pickerHintText = computed(() => {
-    if (isCompanyEditor) return "Привяжите ваши компании к вашим счетам.";
-    if (isIndividualEditor) return "Привяжите ваших физлиц к вашим счетам.";
+    const name = currentItemForPicker.value?.name || '...';
+    if (isCompanyEditor) return `Привяжите ${name} к вашим счетам.`;
+    if (isIndividualEditor) return `Привяжите ${name} к вашим счетам.`;
     return "";
 });
 
@@ -230,8 +231,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor }">
       <h3>{{ title }}</h3>
       
-      <!-- 🟢 v10.2: Удалены подсказки "Привяжите..." отсюда -->
-      
       <div class="create-section">
         <button v-if="!isCreating" class="btn-add-new" @click="startCreation">
           + Создать {{ entityNameSingular }}
@@ -317,7 +316,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       <div class="delete-confirm-box">
         <div v-if="isDeleting" class="deleting-state">
           <h4>Удаление...</h4>
-          <p class="sub-note">Пожалуйста, подождите.</p>
+          <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
           <div class="progress-container"><div class="progress-bar"></div></div>
         </div>
         <div v-else>
@@ -338,7 +337,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       </div>
     </div>
 
-    <!-- 🟢 Передаем текст подсказки -->
     <AccountPickerModal
       v-if="showAccountPicker"
       :all-accounts="mainStore.accounts"
