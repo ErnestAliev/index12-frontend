@@ -3,14 +3,12 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.0-ACT-VISUALS ---
- * * ВЕРСИЯ: 2.0 - Поддержка визуализации Актов
+ * * --- МЕТКА ВЕРСИИ: v3.0-POSTING-LABEL ---
+ * * ВЕРСИЯ: 3.0 - Ренейминг "Перевод" -> "Проводка"
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлена проверка на type === 'act'.
- * 2. (STYLE) Добавлен класс .act (фиолетовый фон).
- * 3. (UI) Отображение "Исполнение: [Контрагент]" для актов.
+ * 1. (UI) Лейбл "Перевод" изменен на "Проводка".
  */
 
 const props = defineProps({
@@ -30,10 +28,10 @@ const isTransferOp = computed(() => {
   if (op.isTransfer === true) return true;
   if (op.transferGroupId) return true;
   const cat = op.categoryId?.name?.toLowerCase?.() || '';
-  return cat === 'перевод' || cat === 'transfer';
+  return cat === 'перевод' || cat === 'transfer' || cat === 'проводки';
 });
 
-/* 🟢 UI-детектор Акта */
+/* UI-детектор Акта */
 const isActOp = computed(() => {
   return props.operation?.type === 'act';
 });
@@ -83,16 +81,16 @@ const onDrop = (event) => {
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
-      <!-- Перевод -->
+      <!-- 🟢 Перевод -> Проводка -->
       <template v-if="isTransferOp">
-        <span class="op-title">Перевод</span>
+        <span class="op-title">Проводка</span>
         <span class="op-meta">
           {{ fromAccountName }} → {{ toAccountName }}
           <template v-if="operation.amount"> · {{ formatNumber(Math.abs(operation.amount)) }}</template>
         </span>
       </template>
       
-      <!-- 🟢 Акт (Исполнение) -->
+      <!-- Акт (Исполнение) -->
       <template v-else-if="isActOp">
         <span class="op-title">Исполнение</span>
         <span class="op-meta">
@@ -135,8 +133,8 @@ const onDrop = (event) => {
 .transfer .op-title { font-weight:600; margin-right:6px; color:#d4d8e3; }
 .transfer .op-meta { color:#98a2b3; }
 
-/* 🟢 Акт (Фиолетовый) */
-.act { background: #4a48b8; } /* #5856D6 немного затемненный для фона */
+/* Акт (Фиолетовый) */
+.act { background: #4a48b8; }
 .act:hover { background: #5b59d8; }
 .act .op-title { font-weight:600; margin-right:6px; color: #fff; }
 .act .op-meta { color: #e0e0ff; }
