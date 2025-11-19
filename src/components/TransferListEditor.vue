@@ -5,14 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import TransferPopup from './TransferPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v23.0 - EDITOR FIXES ---
- * * ВЕРСИЯ: 23.0 - Исправление фильтров, итогов и порядка
+ * * --- МЕТКА ВЕРСИИ: v23.1 - COMPACT STYLE ---
+ * * ВЕРСИЯ: 23.1 - Приведение стилей к виду "Зебра" (как в OperationListEditor)
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Добавлены фильтры "Счет (Куда)" и "Получатель".
- * 2. (UI) Добавлена панель итогов (Всего / По фильтру).
- * 3. (UI) Дата гарантированно первая в сетке.
+ * 1. (STYLE) Внедрено чередование цветов строк ("зебра").
+ * 2. (STYLE) Убраны отступы между строками, список стал слитным.
+ * 3. (STYLE) Уменьшена высота полей ввода.
  */
 
 const props = defineProps({
@@ -44,17 +44,14 @@ const availableCategories = computed(() => mainStore.categories.filter(c => {
 // --- Фильтры ---
 const filters = ref({
   date: '',
-  // Transfer filters
   fromOwner: '',
   fromAccount: '',
-  toAccount: '', // NEW
-  toOwner: '',   // NEW
-  // Act filters
+  toAccount: '', 
+  toOwner: '',   
+  amount: '',
   contractor: '',
   category: '',
-  project: '',
-  // Common
-  amount: ''
+  project: ''
 });
 
 // --- Заголовки и тексты ---
@@ -141,24 +138,20 @@ const filteredItems = computed(() => {
   return localItems.value.filter(item => {
     if (item.isDeleted) return false;
 
-    // Date
     if (filters.value.date && item.date !== filters.value.date) return false;
     
-    // Amount
     if (filters.value.amount) {
         const searchAmount = filters.value.amount.replace(/\s/g, '');
         const itemAmount = String(item.amount);
         if (!itemAmount.includes(searchAmount)) return false;
     }
 
-    // Transfer Specific Filters
     if (props.mode === 'transfer') {
         if (filters.value.fromOwner && item.fromOwnerId !== filters.value.fromOwner) return false;
         if (filters.value.toOwner && item.toOwnerId !== filters.value.toOwner) return false;
         if (filters.value.fromAccount && item.fromAccountId !== filters.value.fromAccount) return false;
         if (filters.value.toAccount && item.toAccountId !== filters.value.toAccount) return false;
     } 
-    // Act Specific Filters
     else {
         if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
         if (filters.value.category && item.categoryId !== filters.value.category) return false;
@@ -189,7 +182,6 @@ const onAmountInput = (item) => {
   item.amount = Number(raw);
 };
 
-// Transfer logic
 const onAccountChange = (item, direction) => {
   const accId = direction === 'from' ? item.fromAccountId : item.toAccountId;
   const account = accounts.value.find(a => a._id === accId);
@@ -209,7 +201,6 @@ const onAccountChange = (item, direction) => {
   }
 };
 
-// Act logic
 const onContractorChange = (item) => {
   const contr = contractors.value.find(c => c._id === item.contractorId);
   if (contr) {
@@ -317,6 +308,11 @@ const handleTransferComplete = async (eventData) => {
   if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
   loadItems();
 };
+
+const getTotalClass = (val) => {
+    if (val > 0) return 'total-income'; // Хотя переводы технически нейтральны, оставим позитивный цвет
+    return 'total-neutral'; 
+};
 </script>
 
 <template>
@@ -337,29 +333,24 @@ const handleTransferComplete = async (eventData) => {
         </button>
       </div>
       
-      <!-- 🟢 ИТОГИ -->
       <div v-if="localItems.length > 0" class="totals-bar">
           <div class="total-item">
               <span class="total-label">Всего:</span>
-              <!-- Сумма переводов/проводок нейтральная или зеленая, не красная (это не убыток) -->
-              <span class="total-value">{{ formatTotal(totalSum) }}</span>
+              <span class="total-value" :class="getTotalClass(totalSum)">{{ formatTotal(totalSum) }}</span>
           </div>
           <div class="total-item" v-if="isFilterActive">
               <span class="total-label">Итого (по фильтру):</span>
-              <span class="total-value filtered">{{ formatTotal(filteredSum) }}</span>
+              <span class="total-value filtered" :class="getTotalClass(filteredSum)">{{ formatTotal(filteredSum) }}</span>
           </div>
       </div>
 
-      <!-- ФИЛЬТРЫ -->
-      <div class="filters-row" :class="{ 'act-grid': mode === 'act' }">
-        
-        <!-- 1. ДАТА (Всегда первая) -->
+      <!-- ФИЛЬТРЫ (Фикс сетки: Дата первая) -->
+      <div class="filters-row table-grid" :class="{ 'act-grid': mode === 'act' }">
         <div class="filter-col col-date">
            <input type="date" v-model="filters.date" class="filter-input" />
         </div>
         
         <template v-if="mode === 'transfer'">
-            <!-- 2. Отправитель -->
             <div class="filter-col col-owner">
                <select v-model="filters.fromOwner" class="filter-input filter-select">
                   <option value="">Все (От)</option>
@@ -371,25 +362,21 @@ const handleTransferComplete = async (eventData) => {
                   </optgroup>
                </select>
             </div>
-            <!-- 3. Счет От -->
             <div class="filter-col col-acc">
                <select v-model="filters.fromAccount" class="filter-input filter-select">
                   <option value="">Все (От)</option>
                   <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
                </select>
             </div>
-            <!-- 4. Сумма -->
             <div class="filter-col col-amount">
                <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
             </div>
-            <!-- 5. Счет Куда -->
             <div class="filter-col col-acc">
                <select v-model="filters.toAccount" class="filter-input filter-select">
                   <option value="">Все (Куда)</option>
                   <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
                </select>
             </div>
-            <!-- 6. Получатель -->
             <div class="filter-col col-owner">
                <select v-model="filters.toOwner" class="filter-input filter-select">
                   <option value="">Все (Куда)</option>
@@ -404,7 +391,6 @@ const handleTransferComplete = async (eventData) => {
         </template>
         
         <template v-else>
-            <!-- Act Filters -->
             <div class="filter-col col-contr">
                <select v-model="filters.contractor" class="filter-input filter-select">
                   <option value="">Все Контрагенты</option>
@@ -432,7 +418,7 @@ const handleTransferComplete = async (eventData) => {
       </div>
 
       <!-- ЗАГОЛОВКИ -->
-      <div class="grid-header" :class="{ 'act-grid': mode === 'act' }">
+      <div class="grid-header table-grid" :class="{ 'act-grid': mode === 'act' }">
         <span class="col-date">Дата</span>
         
         <template v-if="mode === 'transfer'">
@@ -453,20 +439,22 @@ const handleTransferComplete = async (eventData) => {
         <span class="col-trash"></span>
       </div>
       
+      <!-- СПИСОК -->
       <div class="list-scroll">
-        <div v-if="filteredItems.length === 0" class="empty-state">
+        <div v-if="localItems.length === 0" class="empty-state">
           {{ emptyStateText }}
         </div>
+        <div v-else-if="filteredItems.length === 0" class="empty-state">
+            Нет записей по фильтру.
+        </div>
 
-        <div v-for="item in filteredItems" :key="item._id" class="grid-row" :class="{ 'act-grid': mode === 'act' }">
+        <div v-for="item in filteredItems" :key="item._id" class="grid-row table-grid" :class="{ 'act-grid': mode === 'act' }">
           
-          <!-- Дата -->
           <div class="col-date">
             <input type="date" v-model="item.date" class="edit-input date-input" />
           </div>
 
           <template v-if="mode === 'transfer'">
-              <!-- Владелец От -->
               <div class="col-owner">
                  <select v-model="item.fromOwnerId" class="edit-input select-input">
                     <option :value="null">-</option>
@@ -479,26 +467,22 @@ const handleTransferComplete = async (eventData) => {
                  </select>
               </div>
     
-              <!-- Счет От -->
               <div class="col-acc">
                 <select v-model="item.fromAccountId" @change="onAccountChange(item, 'from')" class="edit-input select-input">
                    <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
                 </select>
               </div>
     
-              <!-- Сумма -->
               <div class="col-amount">
                 <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" />
               </div>
     
-              <!-- Счет Куда -->
               <div class="col-acc">
                 <select v-model="item.toAccountId" @change="onAccountChange(item, 'to')" class="edit-input select-input">
                    <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
                 </select>
               </div>
     
-              <!-- Владелец Куда -->
               <div class="col-owner">
                  <select v-model="item.toOwnerId" class="edit-input select-input">
                     <option :value="null">-</option>
@@ -513,34 +497,29 @@ const handleTransferComplete = async (eventData) => {
           </template>
           
           <template v-else>
-              <!-- Контрагент -->
               <div class="col-contr">
                  <select v-model="item.contractorId" @change="onContractorChange(item)" class="edit-input select-input">
                     <option :value="null">-</option>
                     <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
                  </select>
               </div>
-              <!-- Категория -->
               <div class="col-cat">
                  <select v-model="item.categoryId" class="edit-input select-input">
                     <option :value="null">-</option>
                     <option v-for="c in availableCategories" :key="c._id" :value="c._id">{{ c.name }}</option>
                  </select>
               </div>
-              <!-- Проект -->
               <div class="col-proj">
                  <select v-model="item.projectId" class="edit-input select-input">
                     <option :value="null">-</option>
                     <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
                  </select>
               </div>
-              <!-- Сумма -->
               <div class="col-amount">
                 <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" />
               </div>
           </template>
 
-          <!-- Удалить -->
           <div class="col-trash">
             <button class="delete-btn" @click="askDelete(item)" title="Удалить">
                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -574,9 +553,7 @@ const handleTransferComplete = async (eventData) => {
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         <div v-if="isDeleting" class="deleting-state">
-          <h4>Удаление...</h4>
-          <p class="sub-note">Пожалуйста, подождите.</p>
-          <div class="progress-container"><div class="progress-bar"></div></div>
+          <h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите.</p><div class="progress-container"><div class="progress-bar"></div></div>
         </div>
         <div v-else>
           <h4>Подтвердите удаление</h4>
@@ -599,76 +576,135 @@ const handleTransferComplete = async (eventData) => {
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
 .popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; }
 
-.popup-header { padding: 1.5rem 1.5rem 0.5rem; }
-h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
-.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
+.popup-header { padding: 1.2rem 1.5rem 0.5rem; }
+h3 { margin: 0; font-size: 20px; color: #1a1a1a; font-weight: 600; }
+.editor-hint { padding: 0 1.5rem; font-size: 0.85em; color: #666; margin-bottom: 1rem; margin-top: 0; }
 
-.create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
+.create-section { margin: 0 1.5rem 1rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+.btn-add-new { width: 100%; padding: 10px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 14px; cursor: pointer; transition: all 0.2s; }
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
 
-/* ИТОГИ */
-.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.total-item { font-size: 16px; color: #333; }
+.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 0.5rem; border-bottom: 1px solid #e0e0e0; }
+.total-item { font-size: 15px; color: #333; }
 .total-label { margin-right: 8px; color: #666; }
 .total-value { font-weight: 700; }
+.total-income { color: var(--color-primary); }
+.total-expense { color: var(--color-danger); }
+.total-neutral { color: var(--color-text); }
 
-/* СЕТКА */
-.filters-row, .grid-header, .grid-row {
+/* --- 🟢 COMPACT GRID & ZEBRA STRIPING --- */
+/* Общий класс сетки для TransferListEditor */
+.table-grid {
     display: grid;
-    gap: 10px;
+    /* Default (Transfer): Date(120) Owner(1fr) Acc(1fr) Amount(100) Acc(1fr) Owner(1fr) Trash(40) */
+    grid-template-columns: 120px 1fr 1fr 100px 1fr 1fr 40px;
+    gap: 6px;
     align-items: center;
-    padding: 0 1.5rem;
+    padding: 4px 1.5rem;
 }
-/* Transfer Columns: Date(130) + FromOwner(1fr) + FromAcc(1fr) + Amount(120) + ToAcc(1fr) + ToOwner(1fr) + Trash(50) */
-.filters-row:not(.act-grid), .grid-header:not(.act-grid), .grid-row:not(.act-grid) {
-    grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 50px;
-}
-
-/* Act Columns: Date(130) + Contr(1fr) + Cat(1fr) + Proj(1fr) + Amount(120) + Trash(50) */
-.filters-row.act-grid, .grid-header.act-grid, .grid-row.act-grid {
-    grid-template-columns: 130px 1fr 1fr 1fr 120px 50px;
+/* Переопределение для Act */
+.table-grid.act-grid {
+    /* Date(120) Contr(1fr) Cat(1fr) Proj(1fr) Amount(100) Trash(40) */
+    grid-template-columns: 120px 1fr 1fr 1fr 100px 40px;
 }
 
-.filters-row { margin-bottom: 10px; }
-.filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; }
-.filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; padding-right: 20px; }
+.filters-row { 
+    margin-bottom: 4px; 
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e0e0e0;
+    background-color: #f0f0f0;
+    padding-top: 8px;
+}
 
-.grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
-.grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
+.grid-header { 
+    font-size: 0.75em; 
+    color: #888; 
+    font-weight: 600; 
+    text-transform: uppercase; 
+    padding-bottom: 4px;
+}
 
-.list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
-.list-scroll::-webkit-scrollbar { display: none; }
+/* Стили строк */
+.grid-row { 
+    background-color: #fff;
+    border: none;
+    border-radius: 0;
+}
 
-.edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 10px; font-size: 0.9em; color: #333; box-sizing: border-box; margin: 0; display: block; }
-.edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
-.select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.amount-input { text-align: right; font-weight: 600; color: #333; }
-.date-input { color: #555; }
+/* Чередование (Зебра) - четные строки серые */
+.grid-row:nth-child(even) {
+    background-color: #f7f7f7;
+}
 
-.delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
-.delete-btn svg { width: 18px; height: 18px; stroke: #999; }
-.delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
-.delete-btn:hover svg { stroke: #FF3B30; }
+/* Скролл контейнер */
+.list-scroll { 
+    flex-grow: 1; 
+    overflow-y: auto; 
+    padding-bottom: 0; 
+    border-top: 1px solid #e0e0e0; 
+    background-color: #fff; 
+}
 
-.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; gap: 10px; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
-.btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; font-weight: 500; color: #555; }
+.filter-input, .edit-input { 
+    width: 100%; 
+    height: 32px; /* Компактная высота */
+    border: 1px solid transparent; 
+    border-radius: 4px; 
+    padding: 0 6px; 
+    font-size: 0.85em; 
+    color: #333; 
+    box-sizing: border-box; 
+    background-color: transparent; 
+    margin: 0; 
+}
+
+.filter-input {
+    background-color: #fff;
+    border-color: #ccc;
+}
+
+.edit-input:hover { border-color: #ddd; background-color: #fff; }
+.edit-input:focus { outline: none; border-color: #222; background-color: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.1); }
+
+.filter-select, .select-input { 
+    -webkit-appearance: none; appearance: none; 
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); 
+    background-repeat: no-repeat; 
+    background-position: right 6px center; 
+    padding-right: 18px; 
+}
+
+.amount-input { text-align: right; font-weight: 600; }
+.is-income { color: var(--color-primary); }
+.is-expense { color: var(--color-danger); }
+
+.delete-btn { width: 32px; height: 32px; border: none; background: transparent; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; }
+.delete-btn svg { width: 16px; height: 16px; stroke: #bbb; }
+.delete-btn:hover { background: #fee; }
+.delete-btn:hover svg { stroke: #ff3b30; }
+
+.popup-footer { padding: 1rem 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; gap: 10px; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
+.btn-close { padding: 10px 20px; border: 1px solid #ccc; background: transparent; border-radius: 6px; cursor: pointer; font-weight: 500; color: #555; font-size: 14px; }
 .btn-close:hover { background: #eee; }
-.btn-save { padding: 12px 24px; border: none; background: #222; border-radius: 8px; cursor: pointer; font-weight: 600; color: #fff; }
+.btn-save { padding: 10px 20px; border: none; background: #222; border-radius: 6px; cursor: pointer; font-weight: 600; color: #fff; font-size: 14px; }
 .btn-save:hover:not(:disabled) { background: #444; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .empty-state { text-align: center; padding: 2rem; color: #888; }
 
-@media (max-width: 1200px) {
-  .popup-content { max-width: 95vw; margin: 1rem; }
-  .grid-header, .filters-row { display: none; }
-  .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; }
+@media (max-width: 1400px) {
+  .table-grid { grid-template-columns: 110px 1fr 1fr 90px 1fr 1fr 36px; }
+  .table-grid.act-grid { grid-template-columns: 110px 1fr 1fr 1fr 90px 36px; }
+}
+@media (max-width: 1100px) {
+  .popup-content { max-width: 98vw; margin: 0.5rem; }
+  .grid-header, .filters-row { display: none; } 
+  .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 8px; border-bottom: 1px solid #eee; }
+  .grid-row:nth-child(even) { background-color: #fff; }
   .grid-row > div { width: 100%; }
-  .col-date, .col-amount, .col-trash { width: 100%; }
-  .delete-btn { width: 100%; margin-top: 5px; background-color: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
-  .delete-btn svg { stroke: #FF3B30; }
+  .edit-input { height: 40px; border: 1px solid #e0e0e0; background-color: #fff; }
 }
 
+/* Модалки */
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
 .delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
