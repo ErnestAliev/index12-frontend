@@ -1,6 +1,16 @@
 <script setup>
 import { ref } from 'vue';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v2.0 - HINT SUPPORT ---
+ * * ВЕРСИЯ: 2.0 - Добавлен текст-подсказка
+ * * ДАТА: 2025-11-19
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FEAT) Добавлен prop `hintText`.
+ * 2. (UI) Отображение `hintText` перед списком счетов.
+ */
+
 const props = defineProps({
   initialSelectedIds: {
     type: Array,
@@ -9,15 +19,18 @@ const props = defineProps({
   allAccounts: {
     type: Array,
     default: () => []
+  },
+  // 🟢 Новое свойство для подсказки
+  hintText: {
+    type: String,
+    default: ''
   }
 });
 
 const emit = defineEmits(['close', 'save']);
 
-// Используем Set для быстрого поиска и уникальности
 const localSelectedIds = ref(new Set(props.initialSelectedIds));
 
-// Функция для переключения чекбокса
 const toggleAccount = (accountId) => {
   if (localSelectedIds.value.has(accountId)) {
     localSelectedIds.value.delete(accountId);
@@ -27,7 +40,6 @@ const toggleAccount = (accountId) => {
 };
 
 const handleSave = () => {
-  // Преобразуем Set обратно в массив перед отправкой
   emit('save', Array.from(localSelectedIds.value));
   emit('close');
 };
@@ -42,6 +54,11 @@ const handleCancel = () => {
     <div class="picker-content">
       
       <h4>Выберите счета</h4>
+      
+      <!-- 🟢 Подсказка внутри модала -->
+      <div v-if="hintText" class="picker-hint">
+        {{ hintText }}
+      </div>
       
       <div class="account-list-scroll">
         <label v-for="acc in allAccounts" :key="acc._id" class="account-item">
@@ -77,11 +94,11 @@ const handleCancel = () => {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.7); /* Темнее, т.к. это 3-й уровень вложенности */
+  background-color: rgba(0, 0, 0, 0.7); 
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1002; /* Выше, чем EntityListEditor (1000) */
+  z-index: 1002; 
   overflow-y: auto;
 }
 
@@ -95,7 +112,7 @@ const handleCancel = () => {
   margin: 1rem;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* Для скругления углов */
+  overflow: hidden; 
 }
 
 h4 {
@@ -108,9 +125,18 @@ h4 {
   border-bottom: 1px solid #E0E0E0;
 }
 
+/* 🟢 Стиль для подсказки */
+.picker-hint {
+  padding: 0.8rem 1.5rem 0;
+  font-size: 0.9em;
+  color: #666;
+  text-align: center;
+  line-height: 1.4;
+}
+
 .account-list-scroll {
   padding: 1rem 1.5rem;
-  max-height: 40vh; /* Ограничиваем высоту */
+  max-height: 40vh; 
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -132,7 +158,7 @@ h4 {
   width: 18px;
   height: 18px;
   margin-right: 12px;
-  accent-color: #222222; /* Делаем чекбокс темным */
+  accent-color: #222222; 
 }
 .account-name {
   font-size: 16px;
@@ -154,7 +180,7 @@ h4 {
 }
 
 .btn {
-  flex: 1; /* Кнопки занимают всю ширину */
+  flex: 1; 
   height: 48px;
   padding: 0 1rem;
   border: none;
