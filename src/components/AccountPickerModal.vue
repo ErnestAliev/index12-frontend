@@ -1,13 +1,16 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, nextTick } from 'vue';
+import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.1 - HTML HINT ---
- * * ВЕРСИЯ: 2.1 - Поддержка HTML в подсказке
+ * * --- МЕТКА ВЕРСИИ: v3.0 - INLINE CREATE ---
+ * * ВЕРСИЯ: 3.0 - Добавлено создание счета внутри пикера
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) `hintText` теперь рендерится через `v-html`, чтобы поддерживать цвета.
+ * 1. (FEAT) Добавлена кнопка "+ Создать новый счет".
+ * 2. (LOGIC) Реализовано inline-создание через mainStore.addAccount.
+ * 3. (UX) Новый счет сразу выбирается (чекится).
  */
 
 const props = defineProps({
@@ -26,6 +29,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'save']);
+const mainStore = useMainStore();
 
 const localSelectedIds = ref(new Set(props.initialSelectedIds));
 
@@ -45,6 +49,47 @@ const handleSave = () => {
 const handleCancel = () => {
   emit('close');
 };
+
+// --- ЛОГИКА СОЗДАНИЯ НОВОГО СЧЕТА ---
+const isCreating = ref(false);
+const newAccountName = ref('');
+const newAccountInputRef = ref(null);
+const isSavingNew = ref(false);
+
+const startCreation = () => {
+  isCreating.value = true;
+  newAccountName.value = '';
+  nextTick(() => {
+    if (newAccountInputRef.value) newAccountInputRef.value.focus();
+  });
+};
+
+const cancelCreation = () => {
+  isCreating.value = false;
+  newAccountName.value = '';
+};
+
+const createAccount = async () => {
+  const name = newAccountName.value.trim();
+  if (!name) return;
+  
+  isSavingNew.value = true;
+  try {
+    // Создаем счет через стор
+    const newAccount = await mainStore.addAccount(name);
+    
+    if (newAccount && newAccount._id) {
+      // Сразу выбираем созданный счет
+      localSelectedIds.value.add(newAccount._id);
+      cancelCreation();
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Ошибка при создании счета: ' + e.message);
+  } finally {
+    isSavingNew.value = false;
+  }
+};
 </script>
 
 <template>
@@ -53,8 +98,28 @@ const handleCancel = () => {
       
       <h4>Выберите счета</h4>
       
-      <!-- 🟢 v2.1: Используем v-html для цветного текста -->
       <div v-if="hintText" class="picker-hint" v-html="hintText"></div>
+      
+      <!-- 🟢 Секция создания -->
+      <div class="create-section">
+        <button v-if="!isCreating" class="btn-add-new" @click="startCreation">
+          + Создать новый счет
+        </button>
+        
+        <div v-else class="inline-create-row">
+           <input 
+             type="text" 
+             v-model="newAccountName" 
+             placeholder="Название счета" 
+             ref="newAccountInputRef" 
+             class="create-input" 
+             @keyup.enter="createAccount" 
+             @keyup.esc="cancelCreation" 
+           />
+           <button class="btn-icon-save" @click="createAccount" :disabled="isSavingNew">✓</button>
+           <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
+        </div>
+      </div>
       
       <div class="account-list-scroll">
         <label v-for="acc in allAccounts" :key="acc._id" class="account-item">
@@ -66,7 +131,7 @@ const handleCancel = () => {
           <span class="account-name">{{ acc.name }}</span>
         </label>
         <div v-if="!allAccounts.length" class="account-item-empty">
-          Сначала создайте счета.
+          Счетов пока нет.
         </div>
       </div>
       
@@ -114,20 +179,82 @@ const handleCancel = () => {
 h4 {
   color: #1a1a1a;
   margin: 0;
-  padding: 1.5rem 1.5rem 1rem 1.5rem;
+  padding: 1.5rem 1.5rem 0.5rem 1.5rem; /* Уменьшен отступ снизу */
   font-size: 20px;
   font-weight: 600;
   text-align: center;
-  border-bottom: 1px solid #E0E0E0;
 }
 
 .picker-hint {
-  padding: 0.8rem 1.5rem 0;
+  padding: 0 1.5rem 1rem;
   font-size: 0.9em;
   color: #666;
   text-align: center;
   line-height: 1.4;
+  border-bottom: 1px solid #E0E0E0;
 }
+
+/* --- СТИЛИ ДЛЯ СОЗДАНИЯ (как в EntityListEditor) --- */
+.create-section {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #E0E0E0;
+  background-color: #fafafa;
+}
+.btn-add-new {
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed #aaa;
+  background-color: transparent;
+  border-radius: 8px;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-add-new:hover {
+  border-color: #222;
+  color: #222;
+  background-color: #e9e9e9;
+}
+
+.inline-create-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.create-input {
+  flex-grow: 1;
+  height: 40px;
+  padding: 0 10px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #1a1a1a;
+  margin: 0; /* Сброс margin из base.css */
+}
+.create-input:focus {
+  outline: none;
+  border-color: #222;
+}
+.btn-icon-save, .btn-icon-cancel {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.btn-icon-save { background-color: #34C759; }
+.btn-icon-save:hover { background-color: #2da84e; }
+.btn-icon-cancel { background-color: #FF3B30; }
+.btn-icon-cancel:hover { background-color: #d63025; }
+
 
 .account-list-scroll {
   padding: 1rem 1.5rem;
@@ -135,7 +262,7 @@ h4 {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .account-item {
