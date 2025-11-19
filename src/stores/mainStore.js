@@ -1,13 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v13.0 - ACT SUPPORT ---
- * * ВЕРСИЯ: 13.0 - Добавлена поддержка создания Актов
+ * * --- МЕТКА ВЕРСИИ: v12.0 - STRICT 6 WIDGETS ---
+ * * ВЕРСИЯ: 12.0 - Исправлен состав виджетов по умолчанию
  * * ДАТА: 2025-11-19
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлен action `createAct`.
- * - Отправляет POST на /events с type: 'act'.
- * - Вычисляет dateKey и cellIndex.
- * - Обновляет данные дня и проекции после создания.
+ * 1. (FIX) `dashboardLayout` теперь строго содержит 6 элементов по умолчанию:
+ * CurrentTotal, Accounts, Companies, Contractors, Projects, FutureTotal.
+ * 2. (CONFIG) В `staticWidgets` зарегистрированы ВСЕ возможные типы виджетов,
+ * чтобы их можно было выбрать из меню (включая скрытые Income/Expense/Individuals).
  */
 
 import { defineStore } from 'pinia';
@@ -33,7 +33,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v13.0 (Act Support) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v12.0 (Strict 6 Widgets) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -755,11 +755,6 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       const firstOp = transferOps[0];
-      // Пропускаем акты, у них своя логика
-      if (firstOp.type === 'act') {
-          normalOps.push(firstOp);
-          continue;
-      }
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
@@ -868,29 +863,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
-
-  // 🟢 NEW: Создание Акта (аналог createTransfer, но для типа act)
-  async function createAct(actData) {
-    try {
-      const finalDate = new Date(actData.date);
-      const dateKey = _getDateKey(finalDate);
-      const cellIndex = await getFirstFreeCellIndex(dateKey);
-      
-      // Для акта категория приходит из actData, системную не ставим
-      const response = await axios.post(`${API_BASE_URL}/events`, {
-        ...actData,
-        dateKey: dateKey, 
-        cellIndex: cellIndex,
-        type: 'act' // Явно указываем тип
-      });
-      
-      await refreshDay(dateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  }
 
   async function createTransfer(transferData) {
     try {
@@ -1208,8 +1180,7 @@ export const useMainStore = defineStore('mainStore', () => {
     fetchCalculationRange, 
     updateProjectionFromCalculationData,
 
-    // 🟢 Добавлен createAct
-    createTransfer, createAct, updateTransfer, updateOperation,
+    createTransfer, updateTransfer, updateOperation,
 
     fetchOperationsRange, 
     updateFutureProjectionWithData,
