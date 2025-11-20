@@ -1,11 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v13.2 - SYSTEM CATEGORIES ---
- * * ВЕРСИЯ: 13.2 - Авто-создание категории "Предоплата"
+ * * --- МЕТКА ВЕРСИИ: v13.3 - CLEANUP ---
+ * * ВЕРСИЯ: 13.3 - Удаление проверок системных категорий (перенесено на бэкенд)
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Добавлен метод `ensureSystemCategories`.
- * 2. (LOGIC) При `fetchAllEntities` система проверяет и создает "Предоплату", если её нет.
+ * 1. (DEL) Удален метод `ensureSystemCategories`.
+ * 2. (DEL) Удален вызов этого метода из `fetchAllEntities`.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v13.2 (System Categories) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v13.3 (Cleanup) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -69,7 +69,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer';
   };
 
-  // 🟢 Поиск системных категорий для расчетов
+  // Поиск системных категорий для расчетов
   const getPrepaymentCategoryIds = computed(() => {
     return categories.value
       .filter(c => {
@@ -769,22 +769,6 @@ export const useMainStore = defineStore('mainStore', () => {
     };
   }
 
-  // 🟢 НОВЫЙ МЕТОД: Гарантирует создание системных категорий
-  async function ensureSystemCategories() {
-    const required = ['Предоплата'];
-    for (const name of required) {
-      const exists = categories.value.some(c => c.name.toLowerCase() === name.toLowerCase());
-      if (!exists) {
-        try {
-          await addCategory(name);
-          console.log(`[SYSTEM] Категория "${name}" успешно создана.`);
-        } catch (e) {
-          console.error(`[SYSTEM] Ошибка создания категории "${name}":`, e);
-        }
-      }
-    }
-  }
-
   async function fetchAllEntities(){
     try{
       const [accRes, compRes, contrRes, projRes, indRes, catRes] = await Promise.all([
@@ -797,15 +781,10 @@ export const useMainStore = defineStore('mainStore', () => {
       contractors.value = contrRes.data; projects.value    = projRes.data;
       individuals.value = indRes.data; 
       categories.value  = catRes.data;
-      
-      // 🟢 ВЫЗОВ ПРОВЕРКИ
-      await ensureSystemCategories();
-      
     }catch(e){ 
         if (e.response && e.response.status === 401) user.value = null;
     }
   }
-  
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
@@ -1231,7 +1210,6 @@ export const useMainStore = defineStore('mainStore', () => {
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     futureIndividualBalances, 
     
-    // 🟢 Новые обязательства
     liabilitiesWeOwe,
     liabilitiesTheyOwe,
     liabilitiesWeOweFuture,
@@ -1278,7 +1256,6 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureProjectionWithData,
 
     startAutoRefresh, stopAutoRefresh, forceRefreshAll,
-    ensureSystemCategories, // 🟢 Экспортируем для теста, если нужно
 
     getFirstFreeCellIndex, 
     _parseDateKey, 
