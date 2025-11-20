@@ -4,9 +4,13 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.0 - INITIAL ---
- * * ВЕРСИЯ: 1.0 - Виджет "Мои Обязательства"
+ * * --- МЕТКА ВЕРСИИ: v1.1 - FIX LAYOUT (ROWS) ---
+ * * ВЕРСИЯ: 1.1 - Исправление макета по ТЗ (Строки вместо Колонок)
  * * ДАТА: 2025-11-20
+ * * ЧТО ИСПРАВЛЕНО:
+ * 1. (UI) Виджет переведен на вертикальный список (как HeaderBalanceCard).
+ * 2. (UI) Убраны колонки и разделитель.
+ * 3. (UI) Добавлены подписи мелким шрифтом под заголовками.
  */
 
 const props = defineProps({
@@ -76,29 +80,30 @@ const oweUsFormatted = computed(() => formatNumber(obligations.value.oweUsMoney)
       </div>
     </div>
 
-    <!-- КОНТЕНТ: ДВЕ КОЛОНКИ -->
-    <div class="obligations-content">
+    <!-- КОНТЕНТ: СПИСОК (ROWS) -->
+    <div class="card-items-list">
         
-        <!-- Блок: МЫ ДОЛЖНЫ (Работы) -->
-        <div class="obligation-block">
-            <span class="obl-label">Мы должны</span>
-            <span class="obl-value we-owe">
+        <!-- Строка 1: МЫ ДОЛЖНЫ -->
+        <div class="card-item">
+            <div class="item-info">
+                <span class="item-label">Мы должны</span>
+                <span class="item-sub">Оплачено, не сдано</span>
+            </div>
+            <span class="item-value we-owe">
                 <template v-if="obligations.weOweWork > 0">- </template>
                 {{ weOweFormatted }} ₸
             </span>
-            <span class="obl-sub">Оплачено, не сдано</span>
         </div>
 
-        <!-- Разделитель -->
-        <div class="obl-divider"></div>
-
-        <!-- Блок: НАМ ДОЛЖНЫ (Деньги) -->
-        <div class="obligation-block">
-            <span class="obl-label">Нам должны</span>
-            <span class="obl-value owe-us">
+        <!-- Строка 2: НАМ ДОЛЖНЫ -->
+        <div class="card-item">
+            <div class="item-info">
+                <span class="item-label">Нам должны</span>
+                <span class="item-sub">Сделка есть, нет оплаты</span>
+            </div>
+            <span class="item-value owe-us">
                 {{ oweUsFormatted }} ₸
             </span>
-            <span class="obl-sub">Сделка есть, нет оплаты</span>
         </div>
 
     </div>
@@ -133,59 +138,51 @@ const oweUsFormatted = computed(() => formatNumber(obligations.value.oweUsMoney)
 .widget-dropdown li.active { color: #333; background-color: #e0e0e0; }
 .widget-dropdown li.disabled { color: #aaa; background-color: transparent; cursor: not-allowed; }
 
-/* --- Стили контента --- */
-.obligations-content {
+/* --- Стили списка (по аналогии с HeaderBalanceCard) --- */
+.card-items-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 5px;
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 10px;
-    height: 100%;
+    flex-direction: column;
+    gap: 12px; /* Отступ между строками чуть больше для читаемости */
     padding-top: 4px;
 }
 
-.obligation-block {
-    flex: 1;
+.card-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.item-info {
     display: flex;
     flex-direction: column;
-    gap: 2px;
 }
 
-.obl-divider {
-    width: 1px;
-    height: 80%;
-    background-color: var(--color-border);
-    align-self: center;
-    opacity: 0.5;
+.item-label {
+    font-size: 0.9em;
+    color: #ccc; /* Светло-серый как в других карточках */
 }
 
-.obl-label {
-    font-size: 0.8em;
-    color: #888;
-    white-space: nowrap;
-}
-
-.obl-value {
-    font-size: 1.1em;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.obl-sub {
+.item-sub {
     font-size: 0.7em;
     color: #666;
     margin-top: 2px;
 }
 
-.we-owe { color: var(--color-text); } /* Нейтральный белый/серый по ТЗ или легкий warning? ТЗ: "нейтральный или предупреждающий" */
-.owe-us { color: var(--color-primary); } /* Зеленый по ТЗ */
+.item-value {
+    font-size: 0.95em;
+    font-weight: 600;
+    white-space: nowrap;
+}
 
-/* Если "Мы должны" больше 0, можно подкрасить чуть теплее, но не красным (т.к. это обязательство работой, а не долг деньгами) */
-/* .we-owe { color: #ffcc00; } Пример желтого */
+.we-owe { color: var(--color-text); } /* Нейтральный (Белый/Светлый) */
+.owe-us { color: var(--color-primary); } /* Зеленый */
 
 @media (max-height: 900px) {
   .dashboard-card { min-width: 100px; padding-right: 1rem; }
   .card-title { font-size: 0.8em; }
-  .obl-value { font-size: 0.95em; }
-  .obl-sub { font-size: 0.65em; }
+  .card-items-list { gap: 8px; }
 }
 </style>
