@@ -1,5 +1,3 @@
-[file name]: CellContextMenu.vue
-[file content begin]
 <script setup>
 const emit = defineEmits(['select']);
 </script>
@@ -52,11 +50,12 @@ const emit = defineEmits(['select']);
 .btn-expense:hover {
   background-color: #d63027;
 }
+
+/* 🟢 ОБНОВЛЕННЫЙ ЦВЕТ ДЛЯ КНОПКИ ПЕРЕВОДА */
 .btn-transfer {
-  background-color: #8e8e93;
+  background-color: #2F3340; 
 }
 .btn-transfer:hover {
-  background-color: #7a7a80;
+  background-color: #3a3f50;
 }
 </style>
-[file content end]
