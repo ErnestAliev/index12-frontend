@@ -3,23 +3,17 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.1-YEAR-AWARE-FIX ---
- * * ВЕРСИЯ: 1.1 - Исправление "слепоты к году" (dayOfYear -> dateKey)
- * * ДАТА: 2025-11-10
+ * * --- МЕТКА ВЕРСИИ: v1.3-LABEL-FIX ---
+ * * ВЕРСИЯ: 1.3 - Подписи для предоплат
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (ARCH) Компонент теперь принимает `dateKey` ("YYYY-DOY") вместо `dayOfYear`.
- * 2. (API) `onDrop` больше не отправляет `toDayOfYear`. Он отправляет
- * только `operation` и `toCellIndex`. DayColumn (v1.2+) перехватит это
- * и добавит `toDateKey`.
- * 3. (API) `onDragStart` корректен, так как `props.operation`
- * (из mainStore v4.2) уже содержит `dateKey`.
+ * 1. (FIX) Чип теперь показывает operation.prepaymentId.name, если он есть.
  */
 
 const props = defineProps({
   operation: { type: Object, default: null },
-  // dayOfYear: { type: Number, required: true }, // 🔴 УДАЛЕНО
-  dateKey: { type: String, required: true }, // 🟢 ДОБАВЛЕНО
+  dateKey: { type: String, required: true },
   cellIndex: { type: Number, required: true }
 });
 
@@ -51,13 +45,8 @@ const onEditClick = () => {
   emit('edit-operation', props.operation);
 };
 
-/* * DnD (DragStart / DragEnd / DragOver / DragLeave - без изменений)
- * onDragStart корректен, т.к. operation уже содержит dateKey
- * благодаря исправлениям в mainStore.js (v4.2).
- */
 const onDragStart = (event) => {
   if (!props.operation) return;
-  // `props.operation` УЖЕ содержит `dateKey`
   event.dataTransfer.setData('application/json', JSON.stringify(props.operation));
   event.dataTransfer.effectAllowed = 'move';
   event.currentTarget.style.opacity = '0.5';
@@ -66,9 +55,6 @@ const onDragEnd = (event) => { event.currentTarget.style.opacity = '1'; };
 const onDragOver = (event) => { event.preventDefault(); isDragOver.value = true; event.dataTransfer.dropEffect = 'move'; };
 const onDragLeave = () => { isDragOver.value = false; };
 
-// =================================================================
-// --- 🔴 ИСПРАВЛЕНИЕ: onDrop ---
-// =================================================================
 const onDrop = (event) => {
   event.preventDefault(); isDragOver.value = false;
   const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
@@ -77,9 +63,6 @@ const onDrop = (event) => {
 
   console.log(`[HourCell] 💧 onDrop в ячейку ${props.cellIndex}.`);
 
-  // 🔴 ИЗМЕНЕНО:
-  // Мы больше не отправляем `toDayOfYear`.
-  // DayColumn (v1.2+) перехватит это и добавит `toDateKey`.
   emit('drop-operation', {
     operation: operationData,
     toCellIndex: props.cellIndex 
@@ -113,7 +96,11 @@ const onDrop = (event) => {
         <span class="op-amount">
           {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
-        <span class="op-meta">{{ operation.categoryId?.name }}</span>
+        
+        <!-- 🟢 FIX: Показываем имя категории ИЛИ имя предоплаты -->
+        <span class="op-meta">
+          {{ operation.categoryId?.name || operation.prepaymentId?.name || 'Без категории' }}
+        </span>
       </template>
     </div>
 
