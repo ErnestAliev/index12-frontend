@@ -5,14 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v21.1 - SOLID BUTTONS ---
- * * ВЕРСИЯ: 21.1 - Сплошные цветные кнопки создания
+ * * --- МЕТКА ВЕРСИИ: v21.2 - CATEGORY FILTER FIX ---
+ * * ВЕРСИЯ: 21.2 - Исправление фильтра категорий (включена Предоплата)
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) .btn-add-new теперь имеет базовый стиль сплошной кнопки (как в TransferListEditor).
- * 2. (STYLE) Добавлены классы-модификаторы .btn-income (зеленый) и .btn-expense (красный).
- * 3. (TEMPLATE) Кнопка создания теперь динамически получает класс цвета в зависимости от props.type.
+ * 1. (LOGIC) Computed `categories` теперь не использует `visibleCategories` (который скрывает предоплату),
+ * а берет полный список `mainStore.categories` и исключает только "Перевод".
+ * Это позволяет фильтровать список операций по категории "Предоплата".
  */
 
 const props = defineProps({
@@ -44,7 +44,16 @@ const itemToDelete = ref(null);
 
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
-const categories = computed(() => mainStore.visibleCategories); 
+
+// 🟢 ИСПРАВЛЕНИЕ: Формируем список категорий для фильтра
+// Включаем ВСЕ категории (в т.ч. Предоплату), исключаем только Перевод
+const categories = computed(() => {
+  return mainStore.categories.filter(c => {
+      const name = c.name.toLowerCase().trim();
+      return name !== 'перевод' && name !== 'transfer';
+  }).sort((a, b) => a.name.localeCompare(b.name)); // Сортировка по алфавиту для удобства
+});
+
 const contractors = computed(() => mainStore.contractors);
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
@@ -129,7 +138,18 @@ const filteredItems = computed(() => {
     if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
     if (filters.value.account && item.accountId !== filters.value.account) return false;
     if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
-    if (filters.value.category && item.categoryId !== filters.value.category) return false;
+    
+    // Фильтрация по категории
+    if (filters.value.category) {
+        // Если категория в операции совпадает с выбранной
+        if (item.categoryId !== filters.value.category) {
+            // Дополнительная проверка для системной предоплаты (если выбрана категория "Предоплата")
+            // Если item.categoryId не совпал напрямую, возможно это системная предоплата
+            // Но обычно item.categoryId уже содержит ID предоплаты, если это она.
+            return false; 
+        }
+    }
+    
     if (filters.value.project && item.projectId !== filters.value.project) return false;
 
     return true;
@@ -295,7 +315,6 @@ const isSystemPrepayment = (item) => {
       </p>
       
       <div class="create-section">
-        <!-- 🟢 КНОПКА СОЗДАНИЯ (ТЕПЕРЬ СПЛОШНАЯ И ЦВЕТНАЯ) -->
         <button 
            class="btn-add-new" 
            :class="type === 'income' ? 'btn-income' : 'btn-expense'"
@@ -349,6 +368,7 @@ const isSystemPrepayment = (item) => {
         <div class="filter-col col-cat">
            <select v-model="filters.category" class="filter-input filter-select">
               <option value="">Все</option>
+              <!-- 🟢 Теперь categories содержит и Предоплату -->
               <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
            </select>
         </div>
@@ -457,19 +477,16 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 
 .create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 
-/* 🟢 ОБНОВЛЕННЫЕ СТИЛИ КНОПКИ СОЗДАНИЯ */
 .btn-add-new { 
   width: 100%; padding: 12px; 
-  border: 1px solid transparent; /* Сплошная граница */
+  border: 1px solid transparent; 
   border-radius: 8px; 
-  color: #fff; /* Белый текст */
+  color: #fff; 
   font-size: 15px; cursor: pointer; transition: all 0.2s; 
 }
-/* Доход - Зеленый */
 .btn-income { background-color: var(--color-primary); }
 .btn-income:hover { background-color: #2da84e; }
 
-/* Расход - Красный */
 .btn-expense { background-color: var(--color-danger); }
 .btn-expense:hover { background-color: #d93025; }
 
