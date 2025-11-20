@@ -1,11 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v21.0 - CHART SPLIT PREPAYMENT ---
- * * ВЕРСИЯ: 21.0 - Разделение доходов и предоплат в dailyChartData
+ * * --- МЕТКА ВЕРСИИ: v21.1 - GRAPH LOAD FIX ---
+ * * ВЕРСИЯ: 21.1 - Исправление загрузки графиков при старте
  * * ДАТА: 2025-11-20
  *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В dailyChartData добавлена проверка на предоплату.
- * 2. (LOGIC) Данные теперь агрегируются в три поля: income, prepayment, expense.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (BUG) В fetchOperationsRange добавлено обновление calculationCache.
+ * Ранее графики были пустыми до первого действия пользователя.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v21.0 (Chart Split Prepayment) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.1 (Graph Load Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -198,7 +198,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // --- 🟢 ОБНОВЛЕННЫЙ DAILY CHART DATA (Разделение Income / Prepayment) ---
+  // --- DAILY CHART DATA (SPLIT INCOME / PREPAYMENT) ---
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIds = getPrepaymentCategoryIds.value;
@@ -212,10 +212,6 @@ export const useMainStore = defineStore('mainStore', () => {
             // Проверяем, является ли доходом предоплаты
             const catId = op.categoryId?._id || op.categoryId;
             const prepId = op.prepaymentId?._id || op.prepaymentId;
-            // Это предоплата, если: 
-            // 1. ID категории в списке "предоплатных"
-            // 2. ИЛИ есть prepaymentId
-            // 3. ИЛИ сама категория помечена как isPrepayment
             const isPrepay = (catId && prepayIds.includes(catId)) || 
                              (prepId && prepayIds.includes(prepId)) ||
                              (op.categoryId && op.categoryId.isPrepayment);
@@ -244,7 +240,7 @@ export const useMainStore = defineStore('mainStore', () => {
       running += rec.dayTotal;
       chart.set(dateKey, { 
         income: rec.income,
-        prepayment: rec.prepayment, // 🟢 Отдельное поле
+        prepayment: rec.prepayment, 
         expense: rec.expense, 
         closingBalance: running,
         date: _parseDateKey(dateKey)
@@ -658,13 +654,18 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateKeysToFetch = [];
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
+        // Если нет данных ни в кэше отображения, ни в кэше расчетов - грузим
         if (!displayCache.value[dateKey]) {
           dateKeysToFetch.push(dateKey);
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
       if (promises.length === 0) {
+        // Данные уже есть, но нужно убедиться, что они в обоих кэшах актуальны?
+        // Нет, если они есть в displayCache, считаем что они есть.
+        // Просто обновим реактивность.
         displayCache.value = { ...displayCache.value };
+        calculationCache.value = { ...calculationCache.value }; // <--- Убеждаемся
         return;
       }
       const responses = await Promise.all(promises);
@@ -679,7 +680,11 @@ export const useMainStore = defineStore('mainStore', () => {
         }));
         tempCache[dateKey] = processedOps;
       }
+      
+      // 🟢 ВАЖНОЕ ИСПРАВЛЕНИЕ: Обновляем ОБА кэша
       displayCache.value = { ...displayCache.value, ...tempCache };
+      calculationCache.value = { ...calculationCache.value, ...tempCache }; 
+
     } catch (error) {
       if (error.response && error.response.status === 401) user.value = null;
     }
@@ -1161,10 +1166,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   
   // --- Функции для расчета Projection ---
-  // В коде из "source" не было определений loadCalculationData и computeTotalDaysForMode,
-  // но они экспортируются. Добавляю их заглушки/реализацию, чтобы не сломать Store,
-  // так как они используются внутри (в updateProjectionFromCalculationData).
-  
   function computeTotalDaysForMode(mode, baseDate) {
       return getViewModeInfo(mode).total;
   }
@@ -1200,9 +1201,6 @@ export const useMainStore = defineStore('mainStore', () => {
     getPrepaymentCategoryIds,
     getActCategoryIds,
     
-    // currentCategoryBalances, // <-- В оригинале не вычислялись, убираем из экспорта если нет реализации
-    // futureCategoryBalances,  // <-- В оригинале не вычислялись
-    
     currentOps, 
     
     currentTransfers, futureTransfers,
@@ -1229,7 +1227,6 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
     
     loadCalculationData,
-    // fetchCalculationRange, // <-- Не было реализации
     updateProjectionFromCalculationData,
 
     createTransfer, updateTransfer, updateOperation,
