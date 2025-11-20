@@ -5,17 +5,17 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.0 - REMOVE CATEGORY UI ---
- * * ВЕРСИЯ: 16.0 - Удаление выбора категории из попапа перевода
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v16.1 - INSTANT TRANSFER CLOSE ---
+ * * ВЕРСИЯ: 16.1 - Мгновенное закрытие окна перевода и фоновый расчет
+ * * ДАТА: 2025-11-21
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (UI) Из шаблона полностью удален блок выбора/создания категории.
- * 2. (LOGIC) Категория "Перевод" теперь устанавливается только автоматически
- * в onMounted и не может быть изменена пользователем.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (UX) handleSave: Окно закрывается сразу (emit 'close').
+ * 2. (LOGIC) Вся работа с API и обновлением стора вынесена в background try/catch.
+ * 3. (FIX) Добавлен вызов fetchAllEntities() в фоне для обновления балансов счетов в шапке.
  */
 
-console.log('--- TransferPopup.vue v16.0 (Remove Category UI) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v16.1 (Instant Close) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -38,7 +38,6 @@ const selectedFromOwner = ref(null);
 const selectedToOwner = ref(null); 
 
 const isInlineSaving = ref(false);
-
 
 const toInputDate = (date) => {
   const d = new Date(date);
@@ -166,7 +165,7 @@ onMounted(async () => {
       selectedToOwner.value = `individual-${iId}`;
     }
     
-    // Всегда используем ID категории "Перевод", даже если в операции было что-то другое (коррекция старых данных)
+    // Всегда используем ID категории "Перевод"
     categoryId.value = defaultCategoryId;
 
     if (transfer.date) {
@@ -193,13 +192,20 @@ const buttonText = computed(() => {
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 
 const onDeleteConfirmed = async () => {
+  // Для удаления тоже делаем мгновенное закрытие
+  const opToDelete = props.transferToEdit;
+  emit('close'); 
+  // emit('transfer-complete', { dateKey: opToDelete.dateKey }); // Можно не эмитить, если стор сам обновляет
+  
   try {
-    if (!props.transferToEdit?._id) return;
-    await mainStore.deleteOperation(props.transferToEdit);
-    emit('transfer-complete', { dateKey: props.transferToEdit.dateKey });
-    emit('close');
-  } catch (e) { console.error(e); } 
-  finally { isDeleteConfirmVisible.value = false; }
+    if (!opToDelete?._id) return;
+    await mainStore.deleteOperation(opToDelete);
+    // Балансы счетов тоже нужно обновить после удаления перевода
+    await mainStore.fetchAllEntities();
+  } catch (e) { 
+    console.error(e);
+    alert('Ошибка при удалении перевода.');
+  } 
 };
 
 const handleCopyClick = () => {
@@ -322,19 +328,9 @@ const _getDateKey = (date) => {
   return `${year}-${doy}`;
 };
 
-const syncState = async (dateKey, oldDateKey = null) => {
-  try {
-    await mainStore.refreshDay(dateKey);
-    if (oldDateKey && oldDateKey !== dateKey) await mainStore.refreshDay(oldDateKey);
-    await mainStore.fetchAllEntities();
-    mainStore.displayCache = { ...mainStore.displayCache };
-    mainStore.calculationCache = { ...mainStore.calculationCache };
-  } catch (e) { console.error(e); }
-};
-
+// 🟢 ОСНОВНАЯ ФУНКЦИЯ СОХРАНЕНИЯ
 const handleSave = async () => {
-  if (isInlineSaving.value) return;
-
+  // 1. ВАЛИДАЦИЯ
   errorMessage.value = '';
   
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
@@ -353,63 +349,60 @@ const handleSave = async () => {
     return;
   }
 
-  isInlineSaving.value = true; 
+  // 2. ПОДГОТОВКА ДАННЫХ (Сохраняем локально, т.к. пропсы могут пропасть при закрытии)
+  const isEdit = !!props.transferToEdit;
+  const transferId = props.transferToEdit?._id;
+  const isClone = isCloneMode.value;
 
+  const [year, month, day] = editableDate.value.split('-').map(Number);
+  const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
+  const dateKey = _getDateKey(finalDate);
+
+  let fromCompanyId = null, fromIndividualId = null;
+  if (selectedFromOwner.value) {
+    const [type, id] = selectedFromOwner.value.split('-');
+    if (type === 'company') fromCompanyId = id; else fromIndividualId = id;
+  }
+  
+  let toCompanyId = null, toIndividualId = null;
+  if (selectedToOwner.value) {
+    const [type, id] = selectedToOwner.value.split('-');
+    if (type === 'company') toCompanyId = id; else toIndividualId = id;
+  }
+
+  const transferPayload = {
+      date: finalDate,
+      amount: amountParsed,
+      fromAccountId: fromAccountId.value,
+      toAccountId: toAccountId.value, 
+      fromCompanyId: fromCompanyId,
+      toCompanyId: toCompanyId, 
+      fromIndividualId: fromIndividualId, 
+      toIndividualId: toIndividualId, 
+      categoryId: categoryId.value 
+  };
+
+  // 3. МГНОВЕННОЕ ЗАКРЫТИЕ (Optimistic UI)
+  emit('close');
+
+  // 4. ФОНОВАЯ РАБОТА
   try {
-    const [year, month, day] = editableDate.value.split('-').map(Number);
-    const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
-    const dateKey = _getDateKey(finalDate);
-
-    let fromCompanyId = null, fromIndividualId = null;
-    if (selectedFromOwner.value) {
-      const [type, id] = selectedFromOwner.value.split('-');
-      if (type === 'company') fromCompanyId = id; else fromIndividualId = id;
-    }
-    
-    let toCompanyId = null, toIndividualId = null;
-    if (selectedToOwner.value) {
-      const [type, id] = selectedToOwner.value.split('-');
-      if (type === 'company') toCompanyId = id; else toIndividualId = id;
-    }
-
-    const transferPayload = {
-        date: finalDate,
-        amount: amountParsed,
-        fromAccountId: fromAccountId.value,
-        toAccountId: toAccountId.value, 
-        fromCompanyId: fromCompanyId,
-        toCompanyId: toCompanyId, 
-        fromIndividualId: fromIndividualId, 
-        toIndividualId: toIndividualId, 
-        categoryId: categoryId.value // Используем системную категорию
-    };
-
-    let savedOperation;
-    const oldDateKey = props.transferToEdit ? props.transferToEdit.dateKey : null;
-
-    if (!props.transferToEdit || isCloneMode.value) {
-      savedOperation = await mainStore.createTransfer(transferPayload);
+    if (!isEdit || isClone) {
+      await mainStore.createTransfer(transferPayload);
     } else {
-      savedOperation = await mainStore.updateTransfer(props.transferToEdit._id, transferPayload);
+      await mainStore.updateTransfer(transferId, transferPayload);
     }
     
-    emit('transfer-complete', { 
-      dateKey: savedOperation?.dateKey || dateKey,
-      operation: savedOperation 
-    });
-    emit('close');
-
-    syncState(dateKey, oldDateKey); 
+    // Обновляем балансы счетов, чтобы виджеты "Мои счета" пересчитались
+    await mainStore.fetchAllEntities();
 
   } catch (error) { 
-    errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
-  } finally {
-    isInlineSaving.value = false; 
+    console.error("Transfer save error:", error);
+    alert('Ошибка при сохранении перевода. Данные не были сохранены.');
   }
 };
 
 const closePopup = () => { 
-  if (isInlineSaving.value) return; 
   emit('close'); 
 };
 </script>
@@ -472,14 +465,13 @@ const closePopup = () => {
           <option value="--CREATE_NEW--">[ + Создать... ]</option>
         </select>
         
-        <!-- 🟢 v16.0: UI ВЫБОРА КАТЕГОРИИ УДАЛЕН. Она задается системно. -->
-
         <label>Дата поступления денег</label>
         <input type="date" v-model="editableDate" class="form-input" :min="minDateString" :max="maxDateString" />
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
+          <!-- Кнопка Сохранить/Добавить -->
           <button @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving">
             {{ buttonText }}
           </button>
