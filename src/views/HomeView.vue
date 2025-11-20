@@ -1,3 +1,15 @@
+<!--
+ * * --- МЕТКА ВЕРСИИ: v14.0 - About Modal Integration ---
+ * * ВЕРСИЯ: 14.0 - Добавлена кнопка "О сервисе"
+ * ДАТА: 2025-11-18
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) Импорт `AboutModal.vue`.
+ * 2. (NEW) Ref `showAboutModal`.
+ * 3. (NEW) Кнопка ".about-btn" в правой панели (над профилем).
+ * 4. (NEW) Компонент <AboutModal> в шаблоне.
+ * 5. (CSS) Стили для позиционирования кнопки (bottom: 64px).
+ -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import OperationPopup from '@/components/OperationPopup.vue';
@@ -11,25 +23,15 @@ import YAxisPanel from '@/components/YAxisPanel.vue';
 import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
+// 🟢 v14.0: Импорт компонента "О сервисе"
 import AboutModal from '@/components/AboutModal.vue';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v15.0 - ACT FIXES & FULL RESTORE ---
- * * ВЕРСИЯ: 15.0 - Исправление открытия Актов и полный код
- * * ДАТА: 2025-11-20
- *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) handleEditOperation: Добавлена проверка `operation.type === 'act'`.
- * Теперь клик по Акту открывает TransferPopup (режим Исполнение).
- * 2. (FIX) handleOperationDrop: Добавлен await nextTick() перед пересчетом,
- * чтобы гарантировать обновление UI после перемещения.
- */
-
-console.log('--- HomeView.vue v15.0 (Full & Fixed) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v14.0 (About Modal Integration) ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
+// 🟢 v14.0: Управление видимостью модального окна "О сервисе"
 const showAboutModal = ref(false);
 
 // --- Меню пользователя ---
@@ -226,22 +228,17 @@ const openPopup = (type) => {
   operationType.value = type;
   isPopupVisible.value = true;
 };
-
-// 🟢 FIX: Обновленная логика открытия попапа
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
-  
-  // Если это Перевод, Трансфер или АКТ (Исполнение) -> открываем TransferPopup
-  if (operation.type === 'transfer' || operation.isTransfer || operation.type === 'act') {
+  if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
   } else {
     openPopup(operation.type);
   }
 };
-
 const handleClosePopup = () => {
   isPopupVisible.value = false;
   operationToEdit.value = null;
@@ -284,8 +281,6 @@ const handleOperationDelete = async (operation) => {
   visibleDays.value = [...visibleDays.value];
   handleClosePopup();
 };
-
-// 🟢 FIX: Обновленная логика дропа
 const handleOperationDrop = async (dropData) => {
   const operation = dropData.operation;
   const oldDateKey = operation.dateKey; 
@@ -293,15 +288,9 @@ const handleOperationDrop = async (dropData) => {
   const newCellIndex = dropData.toCellIndex;
   if (!oldDateKey || !newDateKey) return;
   if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
-  
-  // Ждем завершения перемещения на сервере и в сторе
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
-  
-  // Принудительно обновляем проекцию после тика Vue
-  await nextTick();
   await recalcProjectionForCurrentView();
 };
-
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
   const baseDate = _parseDateKey(oldDateKey); 
@@ -812,7 +801,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         
-        <!-- Кнопка "О сервисе" -->
+        <!-- 🟢 v14.0: Кнопка "О сервисе" -->
         <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
@@ -880,11 +869,13 @@ onBeforeUnmount(() => {
       @import-complete="handleImportComplete"
     />
     
+    <!-- 🟢 v13.0: Модальное окно графиков -->
     <GraphModal
       v-if="showGraphModal"
       @close="showGraphModal = false"
     />
     
+    <!-- 🟢 v14.0: Модальное окно "О сервисе" -->
     <AboutModal
       v-if="showAboutModal"
       @close="showAboutModal = false"
@@ -1176,18 +1167,18 @@ onBeforeUnmount(() => {
 }
 .graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-/* Кнопка "О сервисе" */
+/* 🟢 v14.0: Кнопка "О сервисе" */
 .about-btn {
   position: absolute;
   bottom: 64px; /* Приподнята над профилем пользователя */
   
-  /* Центрирование (в панели 60px) */
+  /* 🟢 FIX: Центрирование (в панели 60px) */
   left: 50%;
   transform: translateX(-50%);
   
   z-index: 20; 
   
-  /* Зеленый цвет для внимания */
+  /* 🟢 FIX: Зеленый цвет для внимания */
   background: var(--color-primary);
   border: 1px solid var(--color-primary);
   color: #ffffff; /* Белая иконка */
