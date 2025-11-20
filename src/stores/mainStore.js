@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v22.1 - TRANSFER CALC FIX ---
- * * ВЕРСИЯ: 22.1 - Исправление расчета и видимости "Переводов"
+ * * --- МЕТКА ВЕРСИИ: v22.2 - TRANSFER ID SYNC ---
+ * * ВЕРСИЯ: 22.2 - Исправление ID категории перевода
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) allWidgets: Категория "Перевод" возвращена в список выбора.
- * 2. (FIX) currentCategoryBreakdowns: Добавлен расчет для операций типа 'transfer'.
- * 3. (FIX) currentCategoryBalances: Добавлен расчет баланса для 'transfer'.
+ * 1. (FIX) _mergeTransfers: Теперь функция находит реальный ID категории "Перевод" 
+ * в списке categories.value и использует его вместо хардкода 'transfer'.
+ * Это чинит отображение сумм в виджетах "Категории" и "Перевод".
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v22.1 (Transfer Calc Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v22.2 (Transfer ID Sync) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -100,11 +100,9 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 ALL WIDGETS (Исправлено: Перевод теперь доступен)
+  // ALL WIDGETS
   const allWidgets = computed(() => {
     const availableCats = categories.value.filter(c => {
-        // Исключаем только предоплату, так как для неё есть спец. виджет.
-        // Перевод оставляем, чтобы его можно было добавить как виджет.
         return !_isPrepaymentCategory(c); 
     });
     const catWidgets = availableCats.map(c => ({ key: `cat_${c._id}`, name: c.name }));
@@ -336,15 +334,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const getCategoryById = (id) => categories.value.find(c => c._id === id);
 
-  // 🟢 CATEGORY BREAKDOWNS (Исправлено: Включаем переводы)
+  // 🟢 CATEGORY BREAKDOWNS
   const currentCategoryBreakdowns = computed(() => {
     const map = {};
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
     
     for (const op of currentOps.value) {
-      // Убрали: if (isTransfer(op)) continue;
-      // Теперь обрабатываем всё, но нужно правильно определить ID категории.
-      
       let catId = op.categoryId?._id || op.categoryId;
       if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
           catId = op.prepaymentId?._id || op.prepaymentId;
@@ -361,8 +356,6 @@ export const useMainStore = defineStore('mainStore', () => {
           map[key].expense += Math.abs(op.amount || 0);
           map[key].total -= Math.abs(op.amount || 0);
       } else if (op.type === 'transfer' || op.isTransfer) {
-          // Для переводов считаем оборот как расход (или просто сумму)
-          // Чтобы цифры не были нулевыми.
           map[key].expense += Math.abs(op.amount || 0); 
           map[key].total += Math.abs(op.amount || 0);
       }
@@ -395,7 +388,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return map;
   });
 
-  // 🟢 CATEGORY BALANCES (Исправлено: Включаем переводы)
+  // 🟢 CATEGORY BALANCES
   const currentCategoryBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -700,6 +693,10 @@ export const useMainStore = defineStore('mainStore', () => {
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
+  
+  /**
+   * 🟢 ИСПРАВЛЕНИЕ (v22.2): Динамический поиск реальной категории Перевода
+   */
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
     const transferGroups = new Map();
@@ -710,6 +707,17 @@ export const useMainStore = defineStore('mainStore', () => {
         transferGroups.get(groupId).push(o);
       }
     });
+
+    // 🟢 Поиск реальной категории в списке
+    const realTransferCat = categories.value.find(c => {
+       const n = c.name.toLowerCase().trim();
+       return n === 'перевод' || n === 'transfer';
+    });
+    // Если нашли, используем ее _id, иначе фоллбэк
+    const tCatObj = realTransferCat 
+        ? { _id: realTransferCat._id, name: realTransferCat.name }
+        : { _id: 'transfer', name: 'Перевод' };
+
     const mergedTransfers = [];
     for (const [groupId, transferOps] of transferGroups) {
       if (transferOps.length === 2) {
@@ -724,7 +732,7 @@ export const useMainStore = defineStore('mainStore', () => {
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            categoryId: { _id: 'transfer', name: 'Перевод' },
+            categoryId: tCatObj, // 🟢 Используем правильный объект категории
             date: incomeOp.date || expenseOp.date
           });
           continue;
@@ -734,11 +742,12 @@ export const useMainStore = defineStore('mainStore', () => {
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        categoryId: { _id: 'transfer', name: 'Перевод' }
+        categoryId: tCatObj // 🟢 Используем правильный объект категории
       });
     }
     return [...normalOps, ...mergedTransfers];
   }
+  
   async function _getOrCreateTransferCategory() {
     let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
     if (!transferCategory) { transferCategory = await addCategory('Перевод'); }
