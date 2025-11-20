@@ -5,20 +5,19 @@ import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v14.1 - FILTER PREPAYMENT ---
- * * ВЕРСИЯ: 14.1 - Фильтрация только предоплат и отображение лейбла
+ * * --- МЕТКА ВЕРСИИ: v21.0 - PREPAYMENT ORANGE UI ---
+ * * ВЕРСИЯ: 21.0 - Оранжевый UI для режима предоплаты
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлен prop `filterMode` ('default' | 'prepayment_only').
- * 2. (LOGIC) Фильтрация списка по filterMode.
- * 3. (UI) В колонке категории отображается тег "Предоплата", если это она.
+ * 1. (STYLE) Добавлены классы для оранжевого цвета (#FF9D00).
+ * 2. (LOGIC) В режиме 'prepayment_only' суммы и теги красятся в оранжевый.
  */
 
 const props = defineProps({
   title: { type: String, default: 'Редактировать операции' },
   type: { type: String, required: true }, // 'income' | 'expense'
-  filterMode: { type: String, default: 'default' } // 🟢 НОВЫЙ ПРОП
+  filterMode: { type: String, default: 'default' } // 'default' | 'prepayment_only'
 });
 
 const emit = defineEmits(['close']);
@@ -44,7 +43,7 @@ const itemToDelete = ref(null);
 
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
-const categories = computed(() => mainStore.visibleCategories); // Используем видимые (без системных)
+const categories = computed(() => mainStore.visibleCategories); 
 const contractors = computed(() => mainStore.contractors);
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
@@ -73,21 +72,20 @@ const getOwnerId = (compId, indId) => {
 const loadOperations = () => {
   const allOps = mainStore.allOperationsFlat;
   
-  // 🟢 1. Предварительная фильтрация по типу и filterMode
   const targetOps = allOps.filter(op => {
-    // Базовая проверка типа
     if (op.type !== props.type) return false;
     if (op.isTransfer) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     
-    // Проверка режима "Только предоплаты"
+    // 🟢 Проверка режима "Только предоплаты"
     if (props.filterMode === 'prepayment_only') {
-        const isPrepay = op.prepaymentId || (op.categoryId && op.categoryId.isPrepayment);
-        return !!isPrepay; // Оставляем только предоплаты
+        const prepayIds = mainStore.getPrepaymentCategoryIds;
+        const catId = op.categoryId?._id || op.categoryId;
+        const prepId = op.prepaymentId?._id || op.prepaymentId;
+        const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+        return !!isPrepay; 
     }
 
-    // Обычный режим: можно исключить предоплаты, если нужно, но по задаче
-    // просили только почистить "Мои обязательства" от мусора.
     return true;
   });
 
@@ -157,10 +155,18 @@ const formatTotal = (val) => {
     if (val < 0) return `- ${formatted} ₸`;
     return `${formatted} ₸`;
 };
+
+// 🟢 КЛАССЫ ДЛЯ СУММ (С учетом режима)
 const getTotalClass = (val) => {
+    if (props.filterMode === 'prepayment_only') return 'total-prepayment'; // Оранжевый
     if (val > 0) return 'total-income';
     if (val < 0) return 'total-expense';
     return '';
+};
+
+const getInputClass = () => {
+    if (props.filterMode === 'prepayment_only') return 'is-prepayment';
+    return props.type === 'income' ? 'is-income' : 'is-expense';
 };
 
 const openCreatePopup = () => { isCreatePopupVisible.value = true; };
@@ -267,6 +273,14 @@ const confirmDelete = async () => {
   } catch (e) { alert('Ошибка при удалении: ' + e.message); } finally { isDeleting.value = false; }
 };
 const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.value = false; itemToDelete.value = null; };
+
+const isSystemPrepayment = (item) => {
+    const op = item.originalOp;
+    const prepayIds = mainStore.getPrepaymentCategoryIds;
+    const catId = op.categoryId?._id || op.categoryId;
+    const prepId = op.prepaymentId?._id || op.prepaymentId;
+    return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+};
 </script>
 
 <template>
@@ -373,9 +387,12 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
                <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
             </select>
           </div>
+          
+          <!-- 🟢 СУММА (С КЛАССОМ) -->
           <div class="col-amount">
-            <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="{ 'is-expense': type === 'expense', 'is-income': type === 'income' }" />
+            <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="getInputClass()" />
           </div>
+          
           <div class="col-contr">
              <select v-model="item.contractorId" @change="onContractorChange(item)" class="edit-input select-input">
                 <option :value="null">-</option>
@@ -383,11 +400,12 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
              </select>
           </div>
           
-          <!-- 🟢 2. КАТЕГОРИЯ (ИСПРАВЛЕНО ОТОБРАЖЕНИЕ) -->
+          <!-- 🟢 КАТЕГОРИЯ (С ОРАНЖЕВЫМ ТЕГОМ В РЕЖИМЕ ПРЕДОПЛАТЫ) -->
           <div class="col-cat">
-             <!-- Если это системная предоплата - показываем тег, иначе селект -->
-             <div v-if="item.originalOp.prepaymentId || (item.originalOp.categoryId && item.originalOp.categoryId.isPrepayment)" class="system-tag-wrapper">
-                <span class="system-tag">Предоплата</span>
+             <div v-if="isSystemPrepayment(item) || props.filterMode === 'prepayment_only'" class="system-tag-wrapper">
+                <span class="system-tag" :class="{ 'tag-orange': props.filterMode === 'prepayment_only' }">
+                    Предоплата
+                </span>
              </div>
              <select v-else v-model="item.categoryId" class="edit-input select-input">
                 <option :value="null">-</option>
@@ -442,8 +460,12 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .total-item { font-size: 16px; color: #333; }
 .total-label { margin-right: 8px; color: #666; }
 .total-value { font-weight: 700; }
+
+/* Цвета итогов */
 .total-income { color: var(--color-primary); }
 .total-expense { color: var(--color-danger); }
+.total-prepayment { color: #FF9D00; } /* 🟢 Оранжевый итог */
+
 .filters-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; margin-bottom: 8px; }
 .filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
 .filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; padding-right: 20px; }
@@ -457,8 +479,12 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
 .select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .amount-input { text-align: right; font-weight: 600; }
+
+/* Цвета инпутов */
 .is-income { color: var(--color-primary); }
 .is-expense { color: var(--color-danger); }
+.is-prepayment { color: #FF9D00 !important; } /* 🟢 Оранжевый текст в инпуте */
+
 .delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 18px; height: 18px; stroke: #999; }
 .delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
@@ -471,7 +497,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .empty-state { text-align: center; padding: 2rem; color: #888; }
 
-/* 🟢 СТИЛИ ДЛЯ ТЕГА ПРЕДОПЛАТЫ */
+/* ТЕГ ПРЕДОПЛАТЫ */
 .system-tag-wrapper {
   display: flex; align-items: center; height: 40px;
 }
@@ -484,6 +510,12 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
   font-size: 0.85em;
   font-weight: 600;
   border: 1px solid #b2dfdb;
+}
+/* 🟢 Оранжевый стиль тега */
+.system-tag.tag-orange {
+  background-color: #FFF3E0;
+  color: #FF9D00;
+  border-color: #FFE0B2;
 }
 
 @media (max-width: 1400px) { .grid-header, .grid-row, .filters-row { grid-template-columns: 110px 1fr 1fr 100px 1fr 1fr 1fr 40px; } }
