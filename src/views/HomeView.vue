@@ -1,10 +1,19 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v15.0 - FULL RESTORE ---
- * * ВЕРСИЯ: 15.0 - Полный код + Логика перекрытия
- * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v15.1 - PREPAYMENT INTEGRATION ---
+ * * ВЕРСИЯ: 15.1 - Интеграция функционала предоплаты
+ * * ДАТА: 2025-11-20
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. Добавлен импорт и регистрация `PrepaymentModal`.
+ * 2. Добавлен обработчик `@trigger-prepayment` для `OperationPopup`.
+ * 3. Реализован метод `handlePrepaymentSave` для отправки данных на сервер.
  -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
+import axios from 'axios';
+import { useMainStore } from '@/stores/mainStore';
+
+// Компоненты
 import OperationPopup from '@/components/OperationPopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 import TheHeader from '@/components/TheHeader.vue';
@@ -13,25 +22,25 @@ import DayColumn from '@/components/DayColumn.vue';
 import NavigationPanel from '@/components/NavigationPanel.vue';
 import GraphRenderer from '@/components/GraphRenderer.vue';
 import YAxisPanel from '@/components/YAxisPanel.vue';
-import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
-import PrepaymentModal from '@/components/PrepaymentModal.vue'; // 🟢
-import axios from 'axios';
+import PrepaymentModal from '@/components/PrepaymentModal.vue'; // 🟢 Импорт модалки предоплаты
 
-console.log('--- HomeView.vue v15.0 (Full Restore) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v15.1 (Prepayment Integrated) ЗАГРУЖЕН ---'); 
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
+
+// Состояния модальных окон
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
 
-// 🟢 Состояние Prepayment Modal
+// 🟢 Состояние для Prepayment Modal
 const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
 const prepaymentDateKey = ref('');
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -79,34 +88,57 @@ const debounce = (func, delay) => {
   };
 };
 
-// --- 🟢 ПЕРЕХОД К ПРЕДОПЛАТЕ ---
+// 🟢 ОБРАБОТЧИК: Переключение на окно предоплаты
 const handleSwitchToPrepayment = (data) => {
-    // МЫ НЕ ЗАКРЫВАЕМ isPopupVisible = false, ТАК КАК В ТЗ ЭТОГО НЕТ.
-    // OperationPopup останется на фоне, PrepaymentModal откроется поверх (z-index 2000).
-    
+    // Получаем данные из OperationPopup (сумма, контрагент, дата и т.д.)
     const d = new Date(data.date || new Date());
     prepaymentDateKey.value = mainStore._getDateKey(d);
     prepaymentData.value = { ...data };
+    
+    // Открываем модалку предоплаты ПОВЕРХ OperationPopup
     isPrepaymentModalVisible.value = true;
 };
 
+// 🟢 ОБРАБОТЧИК: Сохранение предоплаты
 const handlePrepaymentSave = async (finalData) => {
     try {
-        // Сохраняем
-        await axios.post(`${API_BASE_URL}/events`, finalData);
-        await mainStore.addOperation(finalData);
+        // 1. Определяем cellIndex (если новая операция)
+        if (!finalData.cellIndex && finalData.cellIndex !== 0) {
+            finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
+        }
+
+        // 2. Отправляем на сервер
+        // Если это редактирование (есть _id), то PUT, иначе POST
+        let response;
+        if (finalData.operationToEdit && finalData.operationToEdit._id) {
+             response = await axios.put(`${API_BASE_URL}/events/${finalData.operationToEdit._id}`, finalData);
+        } else {
+             response = await axios.post(`${API_BASE_URL}/events`, finalData);
+        }
+
+        // 3. Обновляем Store
+        if (finalData.operationToEdit) {
+             // При редактировании обновляем конкретную запись
+             await mainStore.refreshDay(finalData.dateKey);
+        } else {
+             // При добавлении добавляем в стор
+             await mainStore.addOperation(response.data);
+        }
+
+        // 4. Обновляем проекции и виды
+        await mainStore.loadCalculationData(viewMode.value, today.value);
         
-        // Закрываем ОБА окна после успеха
+        // 5. Закрываем ВСЕ окна
         isPrepaymentModalVisible.value = false;
         isPopupVisible.value = false; 
-        
-        // Обновляем вид
-        await mainStore.loadCalculationData(viewMode.value, today.value);
+        operationToEdit.value = null;
+
     } catch (e) {
-        console.error(e);
-        alert('Ошибка сохранения предоплаты');
+        console.error('Ошибка сохранения предоплаты:', e);
+        alert('Не удалось сохранить предоплату. Проверьте консоль.');
     }
 };
+
 
 /* ===================== ДАТЫ / ВИРТУАЛКА ===================== */
 const initializeToday = () => {
@@ -876,7 +908,7 @@ onBeforeUnmount(() => {
       @operation-deleted="handleOperationDelete(operationToEdit)"
       @operation-moved="handleOperationMoved"
       @operation-updated="handleOperationUpdated"
-      @switch-to-prepayment="handleSwitchToPrepayment"
+      @trigger-prepayment="handleSwitchToPrepayment" 
     />
 
     <TransferPopup
