@@ -1,13 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v12.0 - STRICT 6 WIDGETS ---
- * * ВЕРСИЯ: 12.0 - Исправлен состав виджетов по умолчанию
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v13.0-LIABILITIES-LOGIC ---
+ * * ВЕРСИЯ: 13.0 - Логика виджета "Мои обязательства"
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) `dashboardLayout` теперь строго содержит 6 элементов по умолчанию:
- * CurrentTotal, Accounts, Companies, Contractors, Projects, FutureTotal.
- * 2. (CONFIG) В `staticWidgets` зарегистрированы ВСЕ возможные типы виджетов,
- * чтобы их можно было выбрать из меню (включая скрытые Income/Expense/Individuals).
+ * 1. Добавлен виджет `liabilities` ("Мои обязательства") в `staticWidgets`.
+ * 2. Добавлены computed свойства `liabilitiesWeOwe` и `liabilitiesTheyOwe`.
+ * 3. Реализован поиск категорий по ключевым словам для расчетов.
  */
 
 import { defineStore } from 'pinia';
@@ -33,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v12.0 (Strict 6 Widgets) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v13.0 (Liabilities Logic) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -58,6 +57,9 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
     
+    // 🟢 NEW: Виджет обязательств
+    { key: 'liabilities',  name: 'Мои обязательства' },
+
     // Скрытые по умолчанию:
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
@@ -65,19 +67,38 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'categories',   name: 'Категории' }, 
   ]);
 
-  // --- ХЕЛПЕР: Это категория "Перевод"? ---
+  // --- ХЕЛПЕРЫ КАТЕГОРИЙ ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer';
   };
 
+  // 🟢 Поиск системных категорий для расчетов
+  const getPrepaymentCategoryIds = computed(() => {
+    return categories.value
+      .filter(c => {
+        const n = c.name.toLowerCase().trim();
+        return n.includes('предоплата') || n.includes('prepayment') || n.includes('аванс');
+      })
+      .map(c => c._id);
+  });
+
+  const getActCategoryIds = computed(() => {
+    return categories.value
+      .filter(c => {
+        const n = c.name.toLowerCase().trim();
+        return n.includes('акт') || n.includes('act') || n.includes('выполненных работ');
+      })
+      .map(c => c._id);
+  });
+
   // Список категорий для UI (без "Перевода")
   const visibleCategories = computed(() => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
-  // Динамический список всех виджетов (статика + категория "Перевод" если есть)
+  // Динамический список всех виджетов
   const allWidgets = computed(() => {
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
@@ -118,7 +139,7 @@ export const useMainStore = defineStore('mainStore', () => {
     localStorage.setItem('projection', JSON.stringify(newProjection));
   }, { deep: true });
   
-  // Логика замены виджета (сохраняет общее количество)
+  // Логика замены виджета
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
@@ -166,9 +187,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return { startDate, endDate };
   };
-  const _addDays = (base, n) => { 
-    const d = new Date(base); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; 
-  };
 
   const allOperationsFlat = computed(() => {
     const allOps = [];
@@ -203,6 +221,71 @@ export const useMainStore = defineStore('mainStore', () => {
       return opYear < currentYearVal || (opYear === currentYearVal && opDoy <= currentDoy);
     })
   );
+
+  // --- 🟢 РАСЧЕТ ОБЯЗАТЕЛЬСТВ ---
+  
+  // 1. Мы должны (Работами) = Сумма всех полученных денег по сделкам (Предоплат) - Сумма всех Актов.
+  const liabilitiesWeOwe = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    const actIds = getActCategoryIds.value;
+    
+    if (prepayIds.length === 0 && actIds.length === 0) return 0;
+
+    let totalPrepaymentReceived = 0;
+    let totalActsSum = 0;
+
+    // Считаем по всем операциям (включая будущие? По задаче "Мы должны" - это текущий статус, 
+    // обычно считаем по совершенным операциям, т.е. currentOps)
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      
+      if (prepayIds.includes(catId) && op.type === 'income') {
+          totalPrepaymentReceived += (op.amount || 0);
+      }
+      
+      // Акт может быть записан как расход (списание обязательств) или доход (если логика другая).
+      // Обычно Акт - это не движение денег, но в системе это операция.
+      // Предположим, пользователь вносит Акт как "Расход" или "Доход" с категорией "Акт".
+      // Берем абсолютное значение, так как это объем работ.
+      if (actIds.includes(catId)) {
+          totalActsSum += Math.abs(op.amount || 0);
+      }
+    }
+    
+    return totalPrepaymentReceived - totalActsSum;
+  });
+
+  // 2. Нам должны (Деньгами) = (Общая сумма всех активных сделок) - (Уже полученные деньги).
+  const liabilitiesTheyOwe = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    if (prepayIds.length === 0) return 0;
+
+    let totalDealSum = 0;
+    let receivedSum = 0;
+
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+
+      // Смотрим только предоплаты (доходы)
+      if (prepayIds.includes(catId) && op.type === 'income') {
+          // Если у операции указана полная сумма сделки, учитываем её
+          const dealTotal = op.totalDealAmount || 0;
+          
+          // Если totalDealAmount не задан (старая запись), считаем что сделка закрыта этим платежом (или игнорируем долг)
+          // По логике "частичной оплаты", если totalDealAmount > amount, значит есть долг.
+          // Если totalDealAmount 0 или undefined, долга нет.
+          if (dealTotal > 0) {
+              totalDealSum += dealTotal;
+              receivedSum += (op.amount || 0);
+          }
+      }
+    }
+    
+    // Долг клиента = Общая стоимость - То что уже заплатили
+    return totalDealSum - receivedSum;
+  });
 
   // --- СПИСКИ ОПЕРАЦИЙ ---
 
@@ -470,31 +553,23 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
-  // 🟢 Балансы для виджета "Категории" теперь БЕЗ перевода
   const currentCategoryBalances = computed(() => {
     const bal = {};
-    // Инициализируем только видимые категории
     for (const c of visibleCategories.value) bal[c._id] = 0;
-    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
-      // Если категории нет в балансе (т.е. это "Перевод"), пропускаем
       if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
-    
     return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
   const futureCategoryBalances = computed(() => {
     const bal = {};
     const currentBalances = currentCategoryBalances.value;
-    for (const cat of currentBalances) { 
-      bal[cat._id] = cat.balance || 0; 
-    }
-    
+    for (const cat of currentBalances) { bal[cat._id] = cat.balance || 0; }
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
@@ -502,11 +577,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
-    
-    return visibleCategories.value.map(c => ({ 
-        ...c, 
-        balance: bal[c._id] || 0 
-      }));
+    return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
 
@@ -1147,6 +1218,12 @@ export const useMainStore = defineStore('mainStore', () => {
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     futureIndividualBalances, 
     
+    // 🟢 Новые обязательства
+    liabilitiesWeOwe,
+    liabilitiesTheyOwe,
+    getPrepaymentCategoryIds,
+    getActCategoryIds,
+    
     currentCategoryBalances,
     futureCategoryBalances,
     
@@ -1154,7 +1231,6 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentTransfers, futureTransfers,
     
-    // 🟢 Экспорт списков доходов и расходов
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
 
