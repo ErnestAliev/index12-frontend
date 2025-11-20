@@ -2,18 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
-import TransferPopup from './TransferPopup.vue'; // 🟢 Импорт
-
-/**
- * * --- МЕТКА ВЕРСИИ: v20.0 - ADD-BTN ---
- * * ВЕРСИЯ: 20.0 - Добавлена кнопка "Создать перевод"
- * * ДАТА: 2025-11-19
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлена кнопка "+ Создать перевод".
- * 2. (LOGIC) Интегрирован TransferPopup для создания.
- * 3. (STYLE) Унификация стилей с другими редакторами.
- */
+import TransferPopup from './TransferPopup.vue'; 
 
 const props = defineProps({
   title: { type: String, default: 'Редактировать переводы' }
@@ -24,16 +13,10 @@ const mainStore = useMainStore();
 
 const localItems = ref([]);
 const isSaving = ref(false);
-
-// --- Попап создания ---
 const isCreatePopupVisible = ref(false);
-
-// --- Удаление ---
 const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
 const itemToDelete = ref(null);
-
-// --- Данные для селектов ---
 const accounts = computed(() => mainStore.accounts);
 
 const toInputDate = (dateVal) => {
@@ -77,13 +60,10 @@ const loadTransfers = () => {
         date: toInputDate(t.date),
         amount: Math.abs(t.amount),
         amountFormatted: formatNumber(Math.abs(t.amount)),
-        
         fromAccountId: t.fromAccountId?._id || t.fromAccountId,
         fromOwnerId: fromOwnerId,
-        
         toAccountId: t.toAccountId?._id || t.toAccountId,
         toOwnerId: toOwnerId,
-        
         isDeleted: false
       };
     });
@@ -93,21 +73,17 @@ onMounted(() => {
   loadTransfers();
 });
 
-// --- Создание ---
 const openCreatePopup = () => {
   isCreatePopupVisible.value = true;
 };
 
 const handleTransferComplete = async (eventData) => {
   isCreatePopupVisible.value = false;
-  
   await mainStore.fetchAllEntities();
   if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
-  
   loadTransfers();
 };
 
-// --- Редактирование ---
 const onAmountInput = (item) => {
   const raw = item.amountFormatted.replace(/[^0-9]/g, '');
   item.amountFormatted = formatNumber(raw);
@@ -127,7 +103,6 @@ const onAccountChange = (item, direction) => {
       const iId = typeof account.individualId === 'object' ? account.individualId._id : account.individualId;
       newOwnerId = `individual-${iId}`;
     }
-    
     if (newOwnerId) {
       if (direction === 'from') item.fromOwnerId = newOwnerId;
       else item.toOwnerId = newOwnerId;
@@ -139,24 +114,20 @@ const handleSave = async () => {
   isSaving.value = true;
   try {
     const updates = [];
-    
     for (const item of localItems.value) {
       if (item.isDeleted) continue;
 
       const original = item.originalOp;
-      
       let fromComp = null, fromInd = null;
       if (item.fromOwnerId) {
         const [type, id] = item.fromOwnerId.split('-');
         if (type === 'company') fromComp = id; else fromInd = id;
       }
-      
       let toComp = null, toInd = null;
       if (item.toOwnerId) {
         const [type, id] = item.toOwnerId.split('-');
         if (type === 'company') toComp = id; else toInd = id;
       }
-      
       const [year, month, day] = item.date.split('-').map(Number);
       const newDateObj = new Date(year, month - 1, day, 12, 0, 0);
 
@@ -181,10 +152,7 @@ const handleSave = async () => {
         }));
       }
     }
-
-    if (updates.length > 0) {
-      await Promise.all(updates);
-    }
+    if (updates.length > 0) await Promise.all(updates);
     emit('close');
   } catch (e) {
     console.error("Ошибка сохранения:", e);
@@ -194,23 +162,15 @@ const handleSave = async () => {
   }
 };
 
-// --- Логика удаления ---
-
-const askDelete = (item) => {
-  itemToDelete.value = item;
-  showDeleteConfirm.value = true;
-};
-
+const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => {
   if (!itemToDelete.value) return;
   isDeleting.value = true;
-
   try {
     await new Promise(resolve => setTimeout(resolve, 600));
     await mainStore.deleteOperation(itemToDelete.value.originalOp);
     localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
-    showDeleteConfirm.value = false;
-    itemToDelete.value = null;
+    showDeleteConfirm.value = false; itemToDelete.value = null;
   } catch (e) {
     console.error(e);
     alert('Ошибка при удалении: ' + e.message);
@@ -218,29 +178,20 @@ const confirmDelete = async () => {
     isDeleting.value = false;
   }
 };
-
-const cancelDelete = () => {
-  if (isDeleting.value) return;
-  showDeleteConfirm.value = false;
-  itemToDelete.value = null;
-};
+const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.value = false; itemToDelete.value = null; };
 </script>
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     <div class="popup-content wide-editor">
-      
       <div class="popup-header">
         <h3>{{ title }}</h3>
       </div>
+      <p class="editor-hint">Редактируйте параметры переводов. Нажмите на корзину для удаления.</p>
       
-      <p class="editor-hint">
-        Редактируйте параметры переводов. Нажмите на корзину для удаления.
-      </p>
-      
-      <!-- 🟢 КНОПКА СОЗДАНИЯ -->
       <div class="create-section">
-        <button class="btn-add-new" @click="openCreatePopup">
+        <!-- 🟢 ОБНОВЛЕННАЯ КНОПКА СОЗДАНИЯ -->
+        <button class="btn-add-new-transfer" @click="openCreatePopup">
           + Создать перевод
         </button>
       </div>
@@ -256,152 +207,99 @@ const cancelDelete = () => {
       </div>
       
       <div class="list-scroll">
-        <div v-if="localItems.length === 0" class="empty-state">
-          Нет переводов.
-        </div>
+        <div v-if="localItems.length === 0" class="empty-state">Нет переводов.</div>
 
         <div v-for="item in localItems" :key="item._id" class="grid-row">
-          
-          <!-- Дата -->
-          <div class="col-date">
-            <input type="date" v-model="item.date" class="edit-input date-input" />
-          </div>
-
-          <!-- Владелец От -->
+          <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" /></div>
           <div class="col-owner">
              <select v-model="item.fromOwnerId" class="edit-input select-input">
                 <option :value="null">-</option>
-                <optgroup label="Компании">
-                   <option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
-                </optgroup>
-                <optgroup label="Физлица">
-                   <option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
-                </optgroup>
+                <optgroup label="Компании"><option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
+                <optgroup label="Физлица"><option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
              </select>
           </div>
-
-          <!-- Счет От -->
           <div class="col-acc">
             <select v-model="item.fromAccountId" @change="onAccountChange(item, 'from')" class="edit-input select-input">
                <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
             </select>
           </div>
-
-          <!-- Сумма -->
-          <div class="col-amount">
-            <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" />
-          </div>
-
-          <!-- Счет Куда -->
+          <div class="col-amount"><input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" /></div>
           <div class="col-acc">
             <select v-model="item.toAccountId" @change="onAccountChange(item, 'to')" class="edit-input select-input">
                <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
             </select>
           </div>
-
-          <!-- Владелец Куда -->
           <div class="col-owner">
              <select v-model="item.toOwnerId" class="edit-input select-input">
                 <option :value="null">-</option>
-                <optgroup label="Компании">
-                   <option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
-                </optgroup>
-                <optgroup label="Физлица">
-                   <option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
-                </optgroup>
+                <optgroup label="Компании"><option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
+                <optgroup label="Физлица"><option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
              </select>
           </div>
-
-          <!-- Удалить -->
           <div class="col-trash">
             <button class="delete-btn" @click="askDelete(item)" title="Удалить">
-               <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-               </svg>
+               <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
           </div>
-
         </div>
       </div>
 
       <div class="popup-footer">
         <button class="btn-close" @click="$emit('close')">Отмена</button>
-        <button class="btn-save" @click="handleSave" :disabled="isSaving">
-          {{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}
-        </button>
+        <button class="btn-save" @click="handleSave" :disabled="isSaving">{{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}</button>
       </div>
-
     </div>
 
-    <!-- Попап создания -->
-    <TransferPopup
-      v-if="isCreatePopupVisible"
-      :date="new Date()"
-      :cellIndex="0"
-      @close="isCreatePopupVisible = false"
-      @transfer-complete="handleTransferComplete"
-    />
-
-    <!-- Окно подтверждения -->
+    <TransferPopup v-if="isCreatePopupVisible" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @transfer-complete="handleTransferComplete" />
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
-        <div v-if="isDeleting" class="deleting-state">
-          <h4>Удаление...</h4>
-          <p class="sub-note">Пожалуйста, подождите, обновляем данные.</p>
-          <div class="progress-container">
-            <div class="progress-bar"></div>
-          </div>
-        </div>
+        <div v-if="isDeleting" class="deleting-state"><h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите, обновляем данные.</p><div class="progress-container"><div class="progress-bar"></div></div></div>
         <div v-else>
           <h4>Подтвердите удаление</h4>
-          <p class="confirm-text" v-if="itemToDelete">
-            Вы действительно хотите удалить перевод от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>
-            на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?
-          </p>
-          <div class="delete-actions">
-            <button class="btn-cancel" @click="cancelDelete">Отмена</button>
-            <button class="btn-delete-confirm" @click="confirmDelete">Удалить</button>
-          </div>
+          <p class="confirm-text" v-if="itemToDelete">Вы действительно хотите удалить перевод от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?</p>
+          <div class="delete-actions"><button class="btn-cancel" @click="cancelDelete">Отмена</button><button class="btn-delete-confirm" @click="confirmDelete">Удалить</button></div>
         </div>
       </div>
     </div>
-
   </div>
 </template>
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
 .popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 95%; max-width: 1100px; }
-
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
 
-/* --- 🟢 СТИЛИ КНОПКИ СОЗДАНИЯ --- */
 .create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
-.btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
 
-/* Сетка */
+/* 🟢 НОВЫЙ СТИЛЬ ДЛЯ КНОПКИ СОЗДАНИЯ ПЕРЕВОДА */
+.btn-add-new-transfer { 
+  width: 100%; padding: 12px; 
+  border: 1px solid transparent; 
+  background-color: #2F3340; /* Темный цвет */
+  border-radius: 8px; 
+  color: #fff; 
+  font-size: 15px; cursor: pointer; transition: all 0.2s; 
+}
+.btn-add-new-transfer:hover { 
+  background-color: #3a3f50; 
+}
+
 .grid-header, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 50px; gap: 10px; align-items: center; padding: 0 1.5rem; }
 .grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
 .grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
-
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
-
 .edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 10px; font-size: 0.9em; color: #333; box-sizing: border-box; margin: 0; display: block; }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
 .select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .amount-input { text-align: right; font-weight: 600; color: #333; }
 .date-input { color: #555; }
-
 .delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 18px; height: 18px; stroke: #999; }
 .delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
 .delete-btn:hover svg { stroke: #FF3B30; }
-
 .popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; gap: 10px; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
 .btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; font-weight: 500; color: #555; }
 .btn-close:hover { background: #eee; }
@@ -409,17 +307,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .btn-save:hover:not(:disabled) { background: #444; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .empty-state { text-align: center; padding: 2rem; color: #888; }
-
-@media (max-width: 1200px) {
-  .popup-content { max-width: 95vw; margin: 1rem; }
-  .grid-header { display: none; }
-  .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; }
-  .grid-row > div { width: 100%; }
-  .col-date, .col-amount, .col-trash { width: 100%; }
-  .delete-btn { width: 100%; margin-top: 5px; background-color: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
-  .delete-btn svg { stroke: #FF3B30; }
-}
-
+@media (max-width: 1200px) { .popup-content { max-width: 95vw; margin: 1rem; } .grid-header { display: none; } .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; } .grid-row > div { width: 100%; } .col-date, .col-amount, .col-trash { width: 100%; } .delete-btn { width: 100%; margin-top: 5px; background-color: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; } .delete-btn svg { stroke: #FF3B30; } }
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
 .delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
