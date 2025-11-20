@@ -3,20 +3,21 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
+import PrepaymentModal from './PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v14.0 - DEAL SCENARIOS ---
- * * ВЕРСИЯ: 14.0 - Реализация логики Предоплаты и Доплаты
+ * * --- МЕТКА ВЕРСИИ: v22.0 - PREPAYMENT FLOW ---
+ * * ВЕРСИЯ: 22.0 - Интеграция PrepaymentModal и очистка от "Доплат"
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлены computed `isPrepayment` и `isPostPayment`.
- * 2. (UI) Поля `dealTotal` и `parentDealId` появляются динамически.
- * 3. (LOGIC) Автозаполнение контрагента/проекта при выборе Сделки.
- * 4. (SAVE) Отправка `isDeal`, `dealTotal`, `parentDealId` на сервер.
+ * 1. (CLEANUP) Полностью удалена логика `isPostPayment` (Доплата/Постоплата).
+ * 2. (FEATURE) Добавлен `PrepaymentModal`.
+ * 3. (LOGIC) При выборе категории "Предоплата" открывается `PrepaymentModal`.
+ * 4. (LOGIC) Данные из модалки (dealTotal, parentDealId, isDeal) сохраняются в операцию.
  */
 
-console.log('--- OperationPopup.vue v14.0 (Deal Scenarios) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v22.0 (Prepayment Flow) ЗАГРУЖЕН ---');
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -41,14 +42,17 @@ const emit = defineEmits([
 // --- ДАННЫЕ ---
 const amount = ref('');
 const selectedAccountId = ref(null);
-const selectedOwner = ref(null); // 'company-ID' или 'individual-ID'
+const selectedOwner = ref(null); 
 const selectedContractorId = ref(null);
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
 
-// 🟢 NEW: Поля для Сделок
-const dealTotal = ref(''); // Общая сумма сделки (для Предоплаты)
-const selectedParentDealId = ref(null); // ID сделки (для Доплаты)
+// Данные Сделки (получаем из PrepaymentModal)
+const isDeal = ref(false);
+const dealTotal = ref(0);
+const parentDealId = ref(null);
+// Для авто-акта
+const autoActData = ref(null); 
 
 const errorMessage = ref('');
 const amountInput = ref(null);
@@ -68,7 +72,6 @@ const isCreatingCategory = ref(false);
 const newCategoryName = ref('');
 const newCategoryInput = ref(null);
 
-// "Smart Create" Owner
 const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); 
 const newOwnerName = ref('');
@@ -76,37 +79,23 @@ const newOwnerInputRef = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
+const showPrepaymentModal = ref(false);
 
 // ФИЛЬТРАЦИЯ КАТЕГОРИЙ
 const availableCategories = computed(() => {
   return mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
-    return name !== 'перевод' && name !== 'transfer';
+    return name !== 'перевод' && name !== 'transfer' && name !== 'доплата' && name !== 'постоплата';
   });
 });
 
-// 🟢 NEW: Определяем тип выбранной категории
 const selectedCategoryName = computed(() => {
     const cat = mainStore.categories.find(c => c._id === selectedCategoryId.value);
     return cat ? cat.name.toLowerCase().trim() : '';
 });
 
-const isPrepayment = computed(() => selectedCategoryName.value === 'предоплата');
-const isPostPayment = computed(() => {
-    const name = selectedCategoryName.value;
-    return name === 'доплата' || name === 'постоплата';
-});
-
-// 🟢 NEW: Расчет остатка для Предоплаты
-const dealRemaining = computed(() => {
-    if (!isPrepayment.value) return 0;
-    const total = parseFloat((dealTotal.value || '').replace(/ /g, '')) || 0;
-    const current = parseFloat((amount.value || '').replace(/ /g, '')) || 0;
-    return Math.max(0, total - current);
-});
-
-// 🟢 NEW: Активные сделки для селекта (Доплата)
-const activeDealsList = computed(() => mainStore.activeDeals);
+// Детектор предоплаты (для открытия модалки)
+const isPrepaymentCategory = computed(() => selectedCategoryName.value === 'предоплата');
 
 // --- ДАТА ---
 const toInputDateString = (date) => {
@@ -149,14 +138,6 @@ const onAmountInput = (event) => {
   });
 };
 
-const onDealTotalInput = (event) => {
-  const input = event.target;
-  const value = input.value;
-  const rawValue = value.replace(/[^0-9]/g, '');
-  dealTotal.value = formatNumber(rawValue);
-  input.value = dealTotal.value;
-};
-
 // --- AUTO-SELECT LOGIC ---
 const onAccountSelected = (accountId) => {
   const account = mainStore.accounts.find(a => a._id === accountId);
@@ -185,7 +166,6 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
     if (setCategory && contractor.defaultCategoryId) {
       const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId;
       const catObj = mainStore.categories.find(c => c._id === cId);
-      // Не переключаем на "системные" автоматом, если это не явное действие
       if (catObj) {
          const name = catObj.name.toLowerCase().trim();
          if (name !== 'перевод' && name !== 'transfer') selectedCategoryId.value = cId;
@@ -196,23 +176,47 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
   }
 };
 
-// 🟢 NEW: Обработка выбора Сделки (для Доплаты)
-const onParentDealSelected = (dealId) => {
-    const deal = mainStore.activeDeals.find(d => d._id === dealId);
-    if (deal) {
-        // Автозаполнение
-        const cId = (deal.contractorId && typeof deal.contractorId === 'object') ? deal.contractorId._id : deal.contractorId;
-        const pId = (deal.projectId && typeof deal.projectId === 'object') ? deal.projectId._id : deal.projectId;
-        
-        if (cId) selectedContractorId.value = cId;
-        if (pId) selectedProjectId.value = pId;
-        
-        // Подстановка остатка суммы
-        if (deal.remainingToPay > 0) {
-            amount.value = formatNumber(deal.remainingToPay);
-        }
+const onCategoryChange = () => {
+    if (isPrepaymentCategory.value) {
+        // Перед открытием модалки проверим, заполнены ли сумма и контрагент
+        // Но мы разрешаем открыть модалку и там заполнить недостающее (если логика позволит)
+        // Лучше открывать модалку, но если нет контрагента - предупредить внутри модалки (или задизейблить там выбор сделок)
+        // Пока просто открываем
+        showPrepaymentModal.value = true;
+    } else {
+        // Сброс данных сделки, если сменили категорию на обычную
+        isDeal.value = false;
+        dealTotal.value = 0;
+        parentDealId.value = null;
+        autoActData.value = null;
     }
 };
+
+// --- PREPAYMENT MODAL HANDLER ---
+const handlePrepaymentConfirm = (data) => {
+    // data = { amount, mode, dealTotal, isDeal, parentDealId, createAutoAct }
+    amount.value = formatNumber(data.amount);
+    dealTotal.value = data.dealTotal;
+    isDeal.value = data.isDeal;
+    parentDealId.value = data.parentDealId;
+    
+    if (data.createAutoAct) {
+        autoActData.value = {
+            shouldCreate: true,
+            amount: data.amount, // Сумма акта равна сумме, закрывающей сделку? Или общей сумме? 
+            // ТЗ: "создается операция 'Исполнение' (Акт) на ВСЮ сумму сделки"
+            // ВАЖНО: Если это финальный платеж, то акт на ОБЩУЮ сумму.
+            totalAmount: data.mode === 'new' ? data.dealTotal : 0 // Для 'existing' надо брать из стора, но мы можем передать
+            // Упростим: Если createAutoAct=true, мы создаем акт на сумму dealTotal (если новая) или остаток+оплаченное (если старая).
+            // Логику создания акта вынесем в handleSave
+        };
+    } else {
+        autoActData.value = null;
+    }
+
+    showPrepaymentModal.value = false;
+};
+
 
 // --- MOUNTED ---
 onMounted(() => {
@@ -233,9 +237,10 @@ onMounted(() => {
     selectedCategoryId.value = op.categoryId?._id || op.categoryId;
     selectedProjectId.value = op.projectId?._id || op.projectId;
     
-    // 🟢 NEW: Заполнение полей сделки
-    if (op.dealTotal) dealTotal.value = formatNumber(op.dealTotal);
-    if (op.parentDealId) selectedParentDealId.value = op.parentDealId._id || op.parentDealId;
+    // Восстановление данных сделки
+    if (op.isDeal) isDeal.value = true;
+    if (op.dealTotal) dealTotal.value = op.dealTotal;
+    if (op.parentDealId) parentDealId.value = op.parentDealId._id || op.parentDealId;
 
     if (op.date) editableDate.value = toInputDate(new Date(op.date));
   } else {
@@ -243,7 +248,6 @@ onMounted(() => {
   }
 });
 
-// --- HELPERS ---
 const _getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
   const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 60 * 1000);
@@ -260,40 +264,19 @@ const _getDateKey = (date) => {
 // =================================================================
 const handleSave = async () => {
   if (isInlineSaving.value) return;
-
-  console.log('[OperationPopup] handleSave: НАЧАТО сохранение...');
   errorMessage.value = '';
 
-  const amountFromState = (amount.value || '').replace(/ /g, '');
-  const amountParsed = parseFloat(amountFromState);
-  const dealTotalParsed = parseFloat((dealTotal.value || '').replace(/ /g, '')) || 0;
+  const amountParsed = parseFloat((amount.value || '').replace(/ /g, ''));
 
-  // ВАЛИДАЦИЯ
   if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value) {
     errorMessage.value = 'Заполните обязательные поля: Сумма, Счет, Компания/Физлицо.';
     return;
   }
+  if (!selectedContractorId.value) {
+    errorMessage.value = 'Выберите Контрагента.';
+    return;
+  }
 
-  // Валидация для Доплаты: нужен Контрагент (он авто-заполняется, но проверим)
-  if (isPostPayment.value) {
-      if (!selectedParentDealId.value) {
-          errorMessage.value = 'Для Доплаты необходимо выбрать Сделку.';
-          return;
-      }
-  } else {
-      // Для обычных операций и Предоплаты нужен контрагент
-      if (!selectedContractorId.value) {
-          errorMessage.value = 'Выберите Контрагента.';
-          return;
-      }
-  }
-  
-  // Валидация Предоплаты
-  if (isPrepayment.value && dealTotalParsed < amountParsed) {
-      errorMessage.value = 'Общая сумма сделки не может быть меньше полученной предоплаты.';
-      return;
-  }
-  
   isInlineSaving.value = true;
 
   try {
@@ -319,26 +302,66 @@ const handleSave = async () => {
       contractorId: selectedContractorId.value,
       projectId: selectedProjectId.value || null,
       
-      // 🟢 NEW: Поля сделки
-      isDeal: isPrepayment.value, // Если Предоплата - это начало сделки
-      dealTotal: isPrepayment.value ? dealTotalParsed : 0,
-      parentDealId: isPostPayment.value ? selectedParentDealId.value : null
+      // Поля сделки (из PrepaymentModal)
+      isDeal: isDeal.value,
+      dealTotal: dealTotal.value,
+      parentDealId: parentDealId.value
     };
 
+    // 1. Сохраняем операцию (Доход/Расход)
+    let savedOp;
     if (!props.operationToEdit || isCloneMode.value) {
-      await saveCreateOrClone(base, dateKey);
-      emit('close');
+      savedOp = await saveCreateOrClone(base, dateKey);
       isCloneMode.value = false;
-      return;
+    } else {
+      const prev = props.operationToEdit;
+      const oldDateKey = prev.dateKey; 
+      const oldCellIndex = Number.isInteger(prev.cellIndex) ? prev.cellIndex : 0;
+      savedOp = await saveEdit(prev._id, base, oldDateKey, oldCellIndex, dateKey, oldCellIndex);
+      isCloneMode.value = false;
     }
 
-    const prev = props.operationToEdit;
-    const oldDateKey = prev.dateKey; 
-    const oldCellIndex = Number.isInteger(prev.cellIndex) ? prev.cellIndex : 0;
-    
-    await saveEdit(prev._id, base, oldDateKey, oldCellIndex, dateKey, oldCellIndex);
+    // 2. ЛОГИКА АВТО-АКТА (ЕСЛИ ВКЛЮЧЕНО)
+    // Если пользователь выбрал чекбокс в модалке
+    if (autoActData.value?.shouldCreate) {
+        // Нам нужно найти полную сумму сделки.
+        // Если это New Deal, она в dealTotal.
+        // Если Existing, нам нужно найти сделку в сторе, чтобы узнать total.
+        let totalForAct = 0;
+        if (isDeal.value) {
+            totalForAct = dealTotal.value;
+        } else if (parentDealId.value) {
+            const parentDeal = mainStore.allOperationsFlat.find(o => o._id === parentDealId.value);
+            if (parentDeal) totalForAct = parentDeal.dealTotal;
+        }
+        
+        // Если нашли сумму, создаем акт
+        if (totalForAct > 0) {
+            console.log('[OperationPopup] Авто-создание Акта на сумму:', totalForAct);
+            await mainStore.createAct({
+                date: finalDate,
+                amount: -totalForAct, // Акт - это "расход" обязательств, но в системе это отрицательное число? В TransferPopup amount парсится как abs, а в payload идет -abs.
+                contractorId: selectedContractorId.value,
+                projectId: selectedProjectId.value,
+                categoryId: selectedCategoryId.value, // Какую категорию ставить? Ту же "Предоплата"? Нет, Акт обычно "Выполненные работы".
+                // Но у нас нет такой категории по дефолту. 
+                // Вариант: найти категорию "Реализация" или создать?
+                // ТЗ: "создается операция 'Исполнение' (Акт)". 
+                // В TransferPopup для акта берется categoryId из селекта.
+                // Давайте используем ту же категорию, что и у сделки, или найдем дефолтную.
+                // Лучше всего использовать ID категории текущей операции, так как это связка.
+                // Но логически это странно (Акт с категорией Предоплата).
+                // Пусть пока будет текущая категория, пользователь потом может поменять.
+                // Или лучше "Оказание услуг"?
+                // Используем текущую selectedCategoryId, чтобы не усложнять.
+                
+                // Важно: parentDealId для Акта - это ID самой сделки (или Предоплаты, которая создала сделку).
+                parentDealId: isDeal.value ? savedOp._id : parentDealId.value 
+            });
+        }
+    }
+
     emit('close');
-    isCloneMode.value = false;
 
   } catch (error) {
     console.error('OperationPopup: Error', error);
@@ -360,21 +383,24 @@ async function saveCreateOrClone(base, dateKey) {
   const payload = { ...base, dateKey, cellIndex: cellIndexToUse };
   const response = await axios.post(`${API_BASE_URL}/events`, payload);
   emit('operation-added', response.data);
+  return response.data; // Возвращаем для ID
 }
 
 async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desiredCellIndex) {
   const positionChanged = (newDateKey !== oldDateKey); 
+  let res;
   if (positionChanged) {
     await mainStore.moveOperation(
       { _id: opId, ...base, dateKey: oldDateKey, cellIndex: oldCellIndex },
       oldDateKey, newDateKey, Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0
     );
-    await axios.put(`${API_BASE_URL}/events/${opId}`, { ...base, dateKey: newDateKey, cellIndex: desiredCellIndex });
+    res = await axios.put(`${API_BASE_URL}/events/${opId}`, { ...base, dateKey: newDateKey, cellIndex: desiredCellIndex });
     emit('operation-updated', { dateKey: newDateKey, oldDateKey: oldDateKey });
   } else {
-    await axios.put(`${API_BASE_URL}/events/${opId}`, { ...base, dateKey: oldDateKey, cellIndex: oldCellIndex });
+    res = await axios.put(`${API_BASE_URL}/events/${opId}`, { ...base, dateKey: oldDateKey, cellIndex: oldCellIndex });
     emit('operation-updated', { dateKey: oldDateKey, oldDateKey: null });
   }
+  return res.data;
 }
 
 // --- OWNER CREATE ---
@@ -418,7 +444,7 @@ const saveNewOwner = async () => {
   finally { isInlineSaving.value = false; }
 };
 
-// --- INLINE CREATE (Simplified for brevity) ---
+// --- INLINE CREATE ---
 const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
 const saveNewAccount = async () => {
@@ -485,6 +511,9 @@ const handleCopyClick = () => {
   isCloneMode.value = true; editableDate.value = toInputDate(props.date);
   nextTick(() => { amountInput.value?.focus(); });
 };
+
+// Конвертируем строку суммы в число для пропса модалки
+const rawAmountNum = computed(() => parseFloat((amount.value || '').replace(/ /g, '')) || 0);
 </script>
 
 <template>
@@ -492,19 +521,12 @@ const handleCopyClick = () => {
     <div class="popup-content" :class="popupTheme">
       <h3>{{ title }}</h3>
 
-      <!-- 🟢 NEW: Сумма меняет название для Предоплаты -->
-      <label>{{ isPrepayment ? 'Получено (Предоплата)' : 'Сумма' }}</label>
+      <!-- 🟢 NEW: Текст меняется, если это Предоплата (но форма та же, открываем модалку по категории) -->
+      <label>{{ isPrepaymentCategory ? 'Сумма предоплаты' : 'Сумма' }}</label>
       <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
 
       <template v-if="props.type !== 'transfer' && !showCreateOwnerModal">
         
-        <!-- 🟢 NEW: Сценарий "Предоплата" - Дополнительное поле -->
-        <template v-if="isPrepayment">
-            <label class="deal-label">Общая сумма сделки</label>
-            <input type="text" inputmode="decimal" v-model="dealTotal" placeholder="0" class="form-input deal-input" @input="onDealTotalInput" />
-            <p class="deal-hint" v-if="dealRemaining > 0">Остаток к получению: <b>{{ formatNumber(dealRemaining) }} ₸</b></p>
-        </template>
-
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
         <select v-if="!isCreatingAccount" v-model="selectedAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showAccountInput() : onAccountSelected(e.target.value)" class="form-select">
           <option :value="null" disabled>Выберите счет</option>
@@ -529,46 +551,33 @@ const handleCopyClick = () => {
           <option value="--CREATE_NEW--">[ + Создать... ]</option>
         </select>
         
-        <!-- 🟢 NEW: Выбор Сделки (если Доплата) ИЛИ Контрагента (если обычное/Предоплата) -->
-        <template v-if="isPostPayment">
-            <label class="deal-label">Выберите сделку *</label>
-            <select v-model="selectedParentDealId" @change="onParentDealSelected($event.target.value)" class="form-select deal-select">
-                <option :value="null" disabled>-- Выберите активную сделку --</option>
-                <option v-for="deal in activeDealsList" :key="deal._id" :value="deal._id">
-                    {{ deal.label }}
-                </option>
-            </select>
-            <p class="deal-hint">Контрагент и Проект будут выбраны автоматически.</p>
-        </template>
+        <label>{{ props.type === 'income' ? 'От контрагента' : 'Контрагенту' }} *</label>
+        <select v-if="!isCreatingContractor" v-model="selectedContractorId" @change="e => e.target.value === '--CREATE_NEW--' ? showContractorInput() : onContractorSelected(e.target.value, true, true)" class="form-select">
+          <option :value="null" disabled>Выберите контрагента</option>
+          <option v-for="c in mainStore.contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+          <option value="--CREATE_NEW--">[ + Создать нового контрагента ]</option>
+        </select>
+        <div v-else class="inline-create-form">
+          <input type="text" v-model="newContractorName" placeholder="Название контрагента" ref="newContractorInput" @keyup.enter="saveNewContractor" @keyup.esc="cancelCreateContractor" />
+          <button @click="saveNewContractor" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateContractor" class="btn-inline-cancel">X</button>
+        </div>
 
-        <template v-else>
-            <label>{{ props.type === 'income' ? 'От контрагента' : 'Контрагенту' }} *</label>
-            <select v-if="!isCreatingContractor" v-model="selectedContractorId" @change="e => e.target.value === '--CREATE_NEW--' ? showContractorInput() : onContractorSelected(e.target.value, true, true)" class="form-select">
-              <option :value="null" disabled>Выберите контрагента</option>
-              <option v-for="c in mainStore.contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
-              <option value="--CREATE_NEW--">[ + Создать нового контрагента ]</option>
-            </select>
-            <div v-else class="inline-create-form">
-              <input type="text" v-model="newContractorName" placeholder="Название контрагента" ref="newContractorInput" @keyup.enter="saveNewContractor" @keyup.esc="cancelCreateContractor" />
-              <button @click="saveNewContractor" class="btn-inline-save">✓</button>
-              <button @click="cancelCreateContractor" class="btn-inline-cancel">X</button>
-            </div>
-
-            <label>{{ props.type === 'income' ? 'Из проекта' : 'В проект' }}</label>
-            <select v-if="!isCreatingProject" v-model="selectedProjectId" @change="e => e.target.value === '--CREATE_NEW--' && showProjectInput()" class="form-select">
-              <option :value="null">Без проекта</option>
-              <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
-              <option value="--CREATE_NEW--">[ + Создать новый проект ]</option>
-            </select>
-            <div v-else class="inline-create-form">
-              <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
-              <button @click="saveNewProject" class="btn-inline-save">✓</button>
-              <button @click="cancelCreateProject" class="btn-inline-cancel">X</button>
-            </div>
-        </template>
+        <label>{{ props.type === 'income' ? 'Из проекта' : 'В проект' }}</label>
+        <select v-if="!isCreatingProject" v-model="selectedProjectId" @change="e => e.target.value === '--CREATE_NEW--' && showProjectInput()" class="form-select">
+          <option :value="null">Без проекта</option>
+          <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
+          <option value="--CREATE_NEW--">[ + Создать новый проект ]</option>
+        </select>
+        <div v-else class="inline-create-form">
+          <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
+          <button @click="saveNewProject" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateProject" class="btn-inline-cancel">X</button>
+        </div>
 
         <label>По категории</label>
-        <select v-if="!isCreatingCategory" v-model="selectedCategoryId" @change="e => e.target.value === '--CREATE_NEW--' && showCategoryInput()" class="form-select">
+        <!-- 🟢 При изменении проверяем, не Предоплата ли это -->
+        <select v-if="!isCreatingCategory" v-model="selectedCategoryId" @change="e => e.target.value === '--CREATE_NEW--' ? showCategoryInput() : onCategoryChange()" class="form-select">
           <option :value="null">Без категории</option>
           <option v-for="cat in availableCategories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
           <option value="--CREATE_NEW--">[ + Создать новую категорию ]</option>
@@ -578,9 +587,18 @@ const handleCopyClick = () => {
           <button @click="saveNewCategory" class="btn-inline-save">✓</button>
           <button @click="cancelCreateCategory" class="btn-inline-cancel">X</button>
         </div>
+        
+        <!-- 🟢 Доп. информация о сделке, если выбрана Предоплата -->
+        <div v-if="isPrepaymentCategory && (dealTotal > 0 || parentDealId)" class="deal-info-preview">
+           <small v-if="isDeal">Новая сделка на {{ formatNumber(dealTotal) }} ₸</small>
+           <small v-if="parentDealId">Привязано к существующей сделке</small>
+           <button class="btn-link" @click="showPrepaymentModal = true">Настроить</button>
+        </div>
+
       </template>
 
       <template v-if="showCreateOwnerModal">
+        <!-- ... Код создания владельца (без изменений) ... -->
         <div class="smart-create-owner">
           <h4 class="smart-create-title">Что вы хотите создать?</h4>
           <div class="smart-create-tabs">
@@ -616,6 +634,16 @@ const handleCopyClick = () => {
   </div>
 
   <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены, что хотите удалить эту операцию?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
+  
+  <!-- 🟢 NEW: Модалка Предоплаты -->
+  <PrepaymentModal
+    v-if="showPrepaymentModal"
+    :initialAmount="rawAmountNum"
+    :contractorId="selectedContractorId"
+    :projectId="selectedProjectId"
+    @close="showPrepaymentModal = false"
+    @confirm="handlePrepaymentConfirm"
+  />
 </template>
 
 <style scoped>
@@ -628,12 +656,6 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .form-input:focus, .form-select:focus { outline: none; border-color: #F36F3F; box-shadow: 0 0 0 2px rgba(243, 111, 63, 0.2); }
 .theme-income .form-input:focus, .theme-income .form-select:focus { border-color: #28B8A0; box-shadow: 0 0 0 2px rgba(40, 184, 160, 0.2); }
 .theme-edit .form-input:focus, .theme-edit .form-select:focus { border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
-
-/* 🟢 Стили для полей сделки */
-.deal-label { color: var(--color-primary); font-weight: 600; }
-.deal-input { border-color: var(--color-primary) !important; background-color: #f0fff4 !important; font-weight: bold; }
-.deal-select { border-color: #5856D6 !important; background-color: #f5f5ff !important; }
-.deal-hint { font-size: 13px; color: #666; margin-top: 4px; margin-bottom: 0; background: #eee; padding: 6px; border-radius: 4px; }
 
 .inline-create-form { display: flex; align-items: center; gap: 8px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; }
@@ -667,4 +689,11 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .smart-create-tabs button.active { background: #222222; color: #FFFFFF; border-color: #222222; }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
+
+/* Deal Info */
+.deal-info-preview {
+  background: #f9fff9; border: 1px solid #28B8A0; padding: 8px 12px; border-radius: 8px; margin-top: 5px;
+  display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #333;
+}
+.btn-link { background: none; border: none; color: var(--color-primary); text-decoration: underline; cursor: pointer; font-size: 13px; padding: 0; }
 </style>
