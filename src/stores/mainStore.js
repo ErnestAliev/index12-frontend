@@ -1,11 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v13.3 - CLEANUP ---
- * * ВЕРСИЯ: 13.3 - Удаление проверок системных категорий (перенесено на бэкенд)
+ * * --- МЕТКА ВЕРСИИ: v15.2 - PREPAYMENT FETCH FIX ---
+ * * ВЕРСИЯ: 15.2 - Исправление загрузки системной категории Предоплата
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (DEL) Удален метод `ensureSystemCategories`.
- * 2. (DEL) Удален вызов этого метода из `fetchAllEntities`.
+ * 1. (FIX) В fetchAllEntities добавлен запрос к /prepayments.
+ * 2. (FIX) Данные предоплат теперь подмешиваются в массив categories.value.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v13.3 (Cleanup) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v15.2 (Prepayment Fetch Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -771,16 +771,27 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function fetchAllEntities(){
     try{
-      const [accRes, compRes, contrRes, projRes, indRes, catRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
-        axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
+      // 🟢 FIX: Загружаем также и 'prepayments' с бэка
+      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/accounts`),
+        axios.get(`${API_BASE_URL}/companies`),
+        axios.get(`${API_BASE_URL}/contractors`),
+        axios.get(`${API_BASE_URL}/projects`),
         axios.get(`${API_BASE_URL}/individuals`), 
         axios.get(`${API_BASE_URL}/categories`),
+        axios.get(`${API_BASE_URL}/prepayments`), // <-- 1. Загрузка системных предоплат
       ]);
-      accounts.value    = accRes.data; companies.value   = compRes.data;
-      contractors.value = contrRes.data; projects.value    = projRes.data;
+      
+      accounts.value    = accRes.data; 
+      companies.value   = compRes.data;
+      contractors.value = contrRes.data; 
+      projects.value    = projRes.data;
       individuals.value = indRes.data; 
-      categories.value  = catRes.data;
+      
+      // 🟢 FIX: Объединяем категории с предоплатами
+      // Теперь 'Предоплата' будет видна в списке категорий в OperationPopup
+      categories.value  = [...catRes.data, ...prepRes.data];
+
     }catch(e){ 
         if (e.response && e.response.status === 401) user.value = null;
     }
