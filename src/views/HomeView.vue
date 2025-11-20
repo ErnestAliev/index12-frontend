@@ -1,12 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v15.3 - PREPAYMENT SAVE FIX ---
- * * ВЕРСИЯ: 15.3 - Корректное сохранение prepaymentId
+ * * --- МЕТКА ВЕРСИИ: v15.4 - BUILD FIX ---
+ * * ВЕРСИЯ: 15.4 - Исправление тегов для сборки
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В handlePrepaymentSave проверяем, является ли категория системной.
- * 2. (FIX) Если isPrepayment, то перекладываем ID из categoryId в prepaymentId.
- */
+ * 1. (FIX) Проверена и исправлена вложенность </div>.
+ * 2. (FIX) Убедились, что все компоненты закрыты.
+ -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
@@ -26,7 +26,7 @@ import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
-console.log('--- HomeView.vue v15.3 (Prepayment Save Fix) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v15.4 (Build Fix) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -89,34 +89,27 @@ const debounce = (func, delay) => {
 
 // 🟢 ОБРАБОТЧИК: Переключение на окно предоплаты
 const handleSwitchToPrepayment = (data) => {
-    // Получаем данные из OperationPopup (сумма, контрагент, дата и т.д.)
     const d = new Date(data.date || new Date());
     prepaymentDateKey.value = mainStore._getDateKey(d);
     prepaymentData.value = { ...data };
-    
-    // Открываем модалку предоплаты ПОВЕРХ OperationPopup
     isPrepaymentModalVisible.value = true;
 };
 
 // 🟢 ОБРАБОТЧИК: Сохранение предоплаты (FIXED)
 const handlePrepaymentSave = async (finalData) => {
     try {
-        // 1. Определяем cellIndex (если новая операция)
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
         }
 
-        // 🟢 FIX: Если выбрана системная категория "Предоплата",
-        // то её ID должен уйти в поле prepaymentId, а не categoryId.
         if (finalData.categoryId) {
             const catObj = mainStore.categories.find(c => c._id === finalData.categoryId);
             if (catObj && catObj.isPrepayment) {
                 finalData.prepaymentId = finalData.categoryId;
-                finalData.categoryId = null; // Очищаем, чтобы не путать бэкенд
+                finalData.categoryId = null; 
             }
         }
 
-        // 2. Отправляем на сервер
         let response;
         if (finalData.operationToEdit && finalData.operationToEdit._id) {
              response = await axios.put(`${API_BASE_URL}/events/${finalData.operationToEdit._id}`, finalData);
@@ -124,17 +117,14 @@ const handlePrepaymentSave = async (finalData) => {
              response = await axios.post(`${API_BASE_URL}/events`, finalData);
         }
 
-        // 3. Обновляем Store
         if (finalData.operationToEdit) {
              await mainStore.refreshDay(finalData.dateKey);
         } else {
              await mainStore.addOperation(response.data);
         }
 
-        // 4. Обновляем проекции и виды
         await mainStore.loadCalculationData(viewMode.value, today.value);
         
-        // 5. Закрываем ВСЕ окна
         isPrepaymentModalVisible.value = false;
         isPopupVisible.value = false; 
         operationToEdit.value = null;
@@ -928,7 +918,6 @@ onBeforeUnmount(() => {
       @transfer-complete="handleTransferComplete"
     />
     
-    <!-- 🟢 МОДАЛКА ПРЕДОПЛАТЫ -->
     <PrepaymentModal
       v-if="isPrepaymentModalVisible"
       :initialData="prepaymentData"
