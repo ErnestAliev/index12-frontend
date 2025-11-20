@@ -3,8 +3,17 @@ import { ref, watch, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v4.0 - RENAME WIDGET ---
+ * * ВЕРСИЯ: 4.0 - Переименование виджета
+ * * ДАТА: 2025-11-20
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (UI) Заголовок по умолчанию изменен на "Мои предоплаты".
+ */
+
 const props = defineProps({
-  title: { type: String, default: 'Мои обязательства' },
+  title: { type: String, default: 'Мои предоплаты' }, // 🟢 ОБНОВЛЕНО
   weOweAmount: { type: Number, default: 0 },        
   theyOweAmount: { type: Number, default: 0 },       
   weOweAmountFuture: { type: Number, default: 0 },   
