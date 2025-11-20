@@ -1,14 +1,17 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
+import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.3-LABEL-FIX ---
- * * ВЕРСИЯ: 1.3 - Подписи для предоплат
+ * * --- МЕТКА ВЕРСИИ: v2.0 - ORANGE PREPAYMENT ---
+ * * ВЕРСИЯ: 2.0 - Цвета для предоплаты и перевода
  * * ДАТА: 2025-11-20
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Чип теперь показывает operation.prepaymentId.name, если он есть.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (STYLE) Добавлен класс .prepayment (оранжевый #FF9D00).
+ * 2. (STYLE) Обновлен цвет .transfer на #2F3340.
+ * 3. (LOGIC) isPrepaymentOp вычисляет, является ли операция предоплатой.
  */
 
 const props = defineProps({
@@ -19,8 +22,9 @@ const props = defineProps({
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 const isDragOver = ref(false);
+const mainStore = useMainStore();
 
-/* UI-детектор перевода (без изменений) */
+/* UI-детектор перевода */
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
@@ -31,6 +35,19 @@ const isTransferOp = computed(() => {
   return cat === 'перевод' || cat === 'transfer';
 });
 
+// 🟢 UI-детектор предоплаты
+const isPrepaymentOp = computed(() => {
+    const op = props.operation;
+    if (!op || isTransferOp.value) return false;
+    if (op.type !== 'income') return false;
+    
+    const prepayIds = mainStore.getPrepaymentCategoryIds;
+    const catId = op.categoryId?._id || op.categoryId;
+    const prepId = op.prepaymentId?._id || op.prepaymentId;
+    
+    return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+});
+
 const fromAccountName = computed(() =>
   props.operation?.fromAccountId?.name || props.operation?.fromAccountId || ''
 );
@@ -38,7 +55,7 @@ const toAccountName = computed(() =>
   props.operation?.toAccountId?.name || props.operation?.toAccountId || ''
 );
 
-/* Клики (без изменений) */
+/* Клики */
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
 const onEditClick = () => {
   if (!props.operation) return;
@@ -60,9 +77,6 @@ const onDrop = (event) => {
   const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
   let operationData = null; try { operationData = JSON.parse(raw); } catch { return; }
   if (!operationData || !operationData._id) return;
-
-  console.log(`[HourCell] 💧 onDrop в ячейку ${props.cellIndex}.`);
-
   emit('drop-operation', {
     operation: operationData,
     toCellIndex: props.cellIndex 
@@ -79,7 +93,12 @@ const onDrop = (event) => {
     <div
       v-if="operation"
       class="operation-chip"
-      :class="{ transfer: isTransferOp, income: operation.type==='income', expense: operation.type==='expense' }"
+      :class="{ 
+         transfer: isTransferOp, 
+         income: operation.type==='income' && !isPrepaymentOp, 
+         expense: operation.type==='expense',
+         prepayment: isPrepaymentOp  /* 🟢 КЛАСС ДЛЯ ПРЕДОПЛАТЫ */
+      }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
@@ -97,9 +116,8 @@ const onDrop = (event) => {
           {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
         
-        <!-- 🟢 FIX: Показываем имя категории ИЛИ имя предоплаты -->
         <span class="op-meta">
-          {{ operation.categoryId?.name || operation.prepaymentId?.name || 'Без категории' }}
+          {{ isPrepaymentOp ? 'Предоплата' : (operation.categoryId?.name || 'Без категории') }}
         </span>
       </template>
     </div>
@@ -109,7 +127,6 @@ const onDrop = (event) => {
 </template>
 
 <style scoped>
-/* (Стили я не менял, они идентичны твоим) */
 .hour-cell {
   width: 100%; height: 36px; border-bottom: 1px solid var(--color-border);
   display:flex; align-items:center; padding:4px 8px; box-sizing:border-box; flex-shrink:0;
@@ -136,20 +153,22 @@ const onDrop = (event) => {
 .income .op-amount { color: var(--color-primary); }
 .expense .op-amount { color: var(--color-danger); }
 
-/* Нейтральный перевод */
-.transfer { background:#2f3340; }
+/* 🟢 ПРЕДОПЛАТА (Оранжевый текст суммы) */
+.prepayment .op-amount { color: #FF9D00 !important; }
+
+/* 🟢 Нейтральный перевод (ТЕМНЫЙ ЦВЕТ) */
+.transfer { background:#2F3340; }
 .transfer:hover { background:#3a3f50; }
 .transfer .op-title { font-weight:600; margin-right:6px; color:#d4d8e3; }
 .transfer .op-meta { color:#98a2b3; }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v1.4) === */
 @media (max-height: 900px) {
   .hour-cell {
-    padding: 2px 4px; /* Агрессивное уменьшение */
-    height: 28px; /* Делаем ячейку еще ниже */
+    padding: 2px 4px; 
+    height: 28px; 
   }
   .operation-chip {
-    font-size: 0.7em; /* Агрессивное уменьшение шрифта */
+    font-size: 0.7em; 
     padding: 3px 6px; 
   }
   .op-amount, .op-title {
@@ -157,15 +176,13 @@ const onDrop = (event) => {
   }
 }
 
-/* 🔴 ИЗМЕНЕНИЕ (v1.4): Адаптация под ширину (960px - 1200px) */
 @media (max-width: 1200px) {
   .hour-cell {
     padding: 4px 6px;
   }
   .operation-chip {
-    font-size: 0.7em; /* 🔴 Уменьшаем шрифт чипа */
+    font-size: 0.7em; 
     padding: 3px 6px;
   }
 }
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>
