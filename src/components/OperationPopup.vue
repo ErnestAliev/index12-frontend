@@ -5,14 +5,13 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v17.1 - PREPAYMENT TRIGGER ---
- * * ВЕРСИЯ: 17.1 - Триггер запуска предоплаты
+ * * --- МЕТКА ВЕРСИИ: v17.2 - PREPAYMENT INPUT FIX ---
+ * * ВЕРСИЯ: 17.2 - Исправление отображения категории предоплаты при редактировании
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен watch(selectedCategoryId).
- * 2. Реализован сбор данных (currentData) при выборе "Предоплаты".
- * 3. Добавлен emit('trigger-prepayment').
+ * 1. (FIX) В onMounted теперь проверяем и prepaymentId.
+ * 2. (FIX) Добавлен флаг isInitialLoad, чтобы watch не открывал модалку предоплаты сразу при открытии окна редактирования.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -33,7 +32,7 @@ const emit = defineEmits([
   'operation-deleted',
   'operation-moved',
   'operation-updated',
-  'trigger-prepayment' // 🟢 Сигнал для запуска модалки предоплаты
+  'trigger-prepayment' 
 ]);
 
 // --- ДАННЫЕ ---
@@ -47,6 +46,8 @@ const selectedProjectId = ref(null);
 const errorMessage = ref('');
 const amountInput = ref(null);
 const isInlineSaving = ref(false);
+// 🟢 Флаг для предотвращения авто-триггера при загрузке
+const isInitialLoad = ref(true); 
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false);
@@ -95,7 +96,6 @@ const minDateString = computed(() => toInputDateString(props.minAllowedDate));
 const maxDateString = computed(() => toInputDateString(props.maxAllowedDate));
 
 
-// 🟢 Фильтр категорий (Перевод скрыт, Предоплата доступна)
 const availableCategories = computed(() => {
   return mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
@@ -105,13 +105,13 @@ const availableCategories = computed(() => {
 
 // 🟢 ЛОГИКА ТРИГГЕРА ПРЕДОПЛАТЫ
 watch(selectedCategoryId, (newVal) => {
+    // Если это начальная загрузка данных в форму - не триггерим модалку
+    if (isInitialLoad.value) return;
     if (!newVal) return;
     
-    // Получаем ID системных категорий предоплаты из стора
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     
     if (prepayIds.includes(newVal)) {
-        // Собираем данные, которые пользователь уже успел ввести
         const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
         
         const currentData = {
@@ -120,16 +120,13 @@ watch(selectedCategoryId, (newVal) => {
             contractorId: selectedContractorId.value,
             projectId: selectedProjectId.value,
             categoryId: newVal,
-            // Разбираем владельца (company-ID или individual-ID)
             companyId: selectedOwner.value?.startsWith('company') ? selectedOwner.value.split('-')[1] : null,
             individualId: selectedOwner.value?.startsWith('individual') ? selectedOwner.value.split('-')[1] : null,
-            date: editableDate.value, // YYYY-MM-DD
-            // Передаем текущие props для контекста
+            date: editableDate.value,
             cellIndex: props.cellIndex,
             operationToEdit: props.operationToEdit
         };
         
-        // Эмитим событие родителю. НЕ ЗАКРЫВАЕМ ОКНО САМИ.
         emit('trigger-prepayment', currentData);
     }
 });
@@ -187,7 +184,6 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
       const catObj = mainStore.categories.find(c => c._id === cId);
       if (catObj) {
          const name = catObj.name.toLowerCase().trim();
-         // Не ставим автоматически "Перевод", но "Предоплату" можно
          if (name !== 'перевод' && name !== 'transfer') {
              selectedCategoryId.value = cId;
          }
@@ -200,6 +196,8 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
 
 // --- MOUNTED ---
 onMounted(async () => {
+  isInitialLoad.value = true; // Блокируем вотчер
+
   if (props.operationToEdit) {
     const op = props.operationToEdit;
     amount.value = formatNumber(Math.abs(op.amount || 0));
@@ -214,13 +212,23 @@ onMounted(async () => {
     }
     
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
-    selectedCategoryId.value = op.categoryId?._id || op.categoryId;
+    
+    // 🟢 FIX: Проверяем categoryId И prepaymentId
+    const catId = op.categoryId?._id || op.categoryId;
+    const prepId = op.prepaymentId?._id || op.prepaymentId;
+    // Если есть prepaymentId, используем его, иначе categoryId
+    selectedCategoryId.value = catId || prepId || null;
+
     selectedProjectId.value = op.projectId?._id || op.projectId;
     
     if (op.date) editableDate.value = toInputDate(new Date(op.date));
   } else {
     setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100);
   }
+
+  // Разблокируем вотчер после инициализации
+  await nextTick();
+  isInitialLoad.value = false;
 });
 
 // --- HELPERS ---
