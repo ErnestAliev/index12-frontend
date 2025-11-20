@@ -1,22 +1,21 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v13.0 - SMART PREPAYMENT ---
- * * ВЕРСИЯ: 13.0 - Умное окно "Предоплата"
+ * * --- МЕТКА ВЕРСИИ: v14.0 - FORCE SYSTEM CATEGORY ---
+ * * ВЕРСИЯ: 14.0 - Принудительное создание категории "Предоплата"
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлено свойство `totalDealAmount` и логика его отображения.
- * 2. (LOGIC) Авто-детект категории "Предоплата" через `mainStore.getPrepaymentCategoryIds`.
- * 3. (UI) Добавлен блок с полем "Общая сумма сделки" и умной подсказкой.
- * 4. (API) Отправка `totalDealAmount` на сервер.
+ * 1. (FIX) В `onMounted` добавлена жесткая проверка наличия категории "Предоплата".
+ * 2. (FIX) Если её нет — вызывается `addCategory`, чтобы она появилась в списке НЕМЕДЛЕННО.
+ * 3. (UI) Список категорий теперь гарантированно содержит системную категорию.
  */
 
-console.log('--- OperationPopup.vue v13.0 (Smart Prepayment) ЗАГРУЖЕН ---');
+console.log('--- OperationPopup.vue v14.0 (Force System Category) ЗАГРУЖЕН ---');
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -41,18 +40,18 @@ const emit = defineEmits([
 // --- ДАННЫЕ ---
 const amount = ref('');
 const selectedAccountId = ref(null);
-const selectedOwner = ref(null); // 'company-ID' или 'individual-ID'
+const selectedOwner = ref(null);
 const selectedContractorId = ref(null);
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
 
-// 🟢 NEW: Поле общей суммы сделки (для предоплаты)
+// Поле общей суммы сделки (для предоплаты)
 const totalDealAmountStr = ref('');
 const totalDealAmount = ref(0);
 
 const errorMessage = ref('');
 const amountInput = ref(null);
-const isInlineSaving = ref(false); // Флаг блокировки от дублей
+const isInlineSaving = ref(false);
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false);
@@ -68,7 +67,6 @@ const isCreatingCategory = ref(false);
 const newCategoryName = ref('');
 const newCategoryInput = ref(null);
 
-// "Smart Create" Owner
 const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); 
 const newOwnerName = ref('');
@@ -77,8 +75,9 @@ const newOwnerInputRef = ref(null);
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-// 🟢 ФИЛЬТРАЦИЯ КАТЕГОРИЙ (Исключаем Перевод)
+// 🟢 ФИЛЬТРАЦИЯ КАТЕГОРИЙ
 const availableCategories = computed(() => {
+  // Фильтруем только "перевод", "Предоплата" должна остаться
   return mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
     return name !== 'перевод' && name !== 'transfer';
@@ -106,12 +105,6 @@ const onAmountInput = (event) => {
   const formattedValue = formatNumber(rawValue);
   const cursorOffset = formattedValue.length - value.length;
   amount.value = formattedValue;
-  
-  // 🟢 Если это предоплата и общая сумма пустая, можно авто-заполнить?
-  // По заданию: "Значение автоматически переносится". 
-  // Но пользователь вводит сначала сумму. Оставим totalDealAmountStr пустым,
-  // пусть пользователь сам вводит, или можно сделать placeholder.
-  
   if (input.value !== formattedValue) {
     input.value = formattedValue; 
   }
@@ -122,7 +115,6 @@ const onAmountInput = (event) => {
   });
 };
 
-// 🟢 Ввод общей суммы сделки
 const onTotalDealInput = (event) => {
   const rawValue = event.target.value.replace(/[^0-9]/g, '');
   totalDealAmountStr.value = formatNumber(rawValue);
@@ -132,7 +124,6 @@ const onTotalDealInput = (event) => {
 // --- УМНЫЕ ПОДСКАЗКИ ---
 const smartHint = computed(() => {
   if (!isPrepaymentCategory.value) return null;
-  
   const currentVal = parseFloat(amount.value.replace(/\s/g, '')) || 0;
   const totalVal = totalDealAmount.value;
 
@@ -179,7 +170,7 @@ const toInputDate = (date) => {
 };
 const editableDate = ref(toInputDate(props.date));
 
-// --- AUTO-SELECT LOGIC ---
+// --- AUTO-SELECT ---
 const onAccountSelected = (accountId) => {
   const account = mainStore.accounts.find(a => a._id === accountId);
   if (account) {
@@ -225,7 +216,23 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
 };
 
 // --- MOUNTED ---
-onMounted(() => {
+onMounted(async () => {
+  // 🟢 ЭКСТРЕННАЯ ПРОВЕРКА И СОЗДАНИЕ "ПРЕДОПЛАТЫ"
+  // Если сервер не создал её (не перезагрузили), создаем принудительно с фронта.
+  // Это гарантирует, что она появится в селекте.
+  const systemName = 'Предоплата';
+  const exists = mainStore.categories.some(c => c.name.toLowerCase() === systemName.toLowerCase());
+  
+  if (!exists) {
+    try {
+      console.log('[OperationPopup] 🚨 Системная категория "Предоплата" не найдена. Создаю принудительно...');
+      await mainStore.addCategory(systemName);
+      // Обновляем список локально, если реактивность запаздывает (хотя стор реактивен)
+    } catch (e) {
+      console.error('[OperationPopup] Ошибка создания системной категории:', e);
+    }
+  }
+
   if (props.operationToEdit) {
     const op = props.operationToEdit;
     amount.value = formatNumber(Math.abs(op.amount || 0));
@@ -243,7 +250,6 @@ onMounted(() => {
     selectedCategoryId.value = op.categoryId?._id || op.categoryId;
     selectedProjectId.value = op.projectId?._id || op.projectId;
     
-    // 🟢 Загружаем totalDealAmount
     if (op.totalDealAmount) {
         totalDealAmount.value = op.totalDealAmount;
         totalDealAmountStr.value = formatNumber(op.totalDealAmount);
@@ -268,9 +274,7 @@ const _getDateKey = (date) => {
   return `${year}-${doy}`;
 };
 
-// =================================================================
-// --- HANDLE SAVE ---
-// =================================================================
+// --- SAVE ---
 const handleSave = async () => {
   if (isInlineSaving.value) return;
 
@@ -309,7 +313,6 @@ const handleSave = async () => {
       individualId: individualId,
       contractorId: selectedContractorId.value,
       projectId: selectedProjectId.value || null,
-      // 🟢 Отправляем полную сумму сделки, если это предоплата
       totalDealAmount: isPrepaymentCategory.value ? totalDealAmount.value : 0
     };
 
@@ -369,7 +372,7 @@ async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desire
   }
 }
 
-// --- SMART CREATE OWNER ---
+// --- CREATION LOGIC (Owner, Account, etc.) ---
 const openCreateOwnerModal = () => {
   ownerTypeToCreate.value = 'company';
   newOwnerName.value = '';
@@ -407,7 +410,6 @@ const saveNewOwner = async () => {
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
-// --- INLINE CREATE (Остальные) ---
 const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
 const saveNewAccount = async () => {
@@ -484,7 +486,7 @@ const saveNewCategory = async () => {
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
-// --- UI ---
+// --- UI HELPERS ---
 const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
 const title = computed(() => {
   if (isCloneMode.value) return `Копия: ${props.type === 'income' ? 'Доход' : 'Расход'}`;
@@ -504,10 +506,7 @@ const buttonClass = computed(() => {
   return props.type === 'income' ? 'btn-submit-income' : 'btn-submit-expense';
 });
 
-const closePopup = () => {
-  if (isInlineSaving.value) return;
-  emit('close');
-};
+const closePopup = () => { if (isInlineSaving.value) return; emit('close'); };
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 const onDeleteConfirmed = async () => {
   try {
@@ -596,6 +595,7 @@ const handleCopyClick = () => {
         <label>По категории</label>
         <select v-if="!isCreatingCategory" v-model="selectedCategoryId" @change="e => e.target.value === '--CREATE_NEW--' && showCategoryInput()" class="form-select">
           <option :value="null">Без категории</option>
+          <!-- 🟢 Отображение доступных категорий (включая Предоплату) -->
           <option v-for="cat in availableCategories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
           <option value="--CREATE_NEW--">[ + Создать новую категорию ]</option>
         </select>
@@ -694,9 +694,9 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
 
-/* 🟢 Стили для Умного блока */
+/* Стили для Умного блока */
 .smart-prepayment-block {
-  background-color: #fffbea; /* Светло-желтый фон */
+  background-color: #fffbea; 
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 12px;
@@ -704,7 +704,7 @@ select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; back
   margin-bottom: 12px;
 }
 .smart-label {
-  margin-top: 0 !important; /* Сброс отступа */
+  margin-top: 0 !important;
   color: #333;
   font-weight: 600;
 }
