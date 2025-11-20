@@ -16,19 +16,17 @@ import {
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.6-CRASH-FIX ---
- * * ВЕРСИЯ: 4.6 - Защита от TypeError: not iterable
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v20.1 - GRAPH FIX ---
+ * * ВЕРСИЯ: 20.1 - Исправление синтаксиса и тултипов
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Добавлена проверка `Array.isArray(props.visibleDays)`
- * во все `computed` свойства, чтобы избежать ошибки итерации.
- * 2. (FIX) `summaries` теперь возвращает `[]`, если входные данные невалидны.
+ * 1. (FIX) Исправлена опечатка в defineProps.
+ * 2. (FIX) Исправлено отображение категории "Предоплата" в тултипе.
  */
 
-/* ── Пропсы ─────────────────────────────────────────────────────────────── */
 const props = defineProps({
-  visibleDays: { type: Array, required: true, default: () => [] }, // 🟢 Указан default
+  visibleDays: { type: Array, required: true, default: () => [] }, 
   animate: { type: Boolean, default: false },
   showSummaries: { type: Boolean, default: true }
 });
@@ -36,38 +34,32 @@ const emit = defineEmits(['update:yLabels']);
 
 const mainStore = useMainStore();
 
-// =================================================================
-// --- Хелперы для dateKey (v3.7+) ---
-// =================================================================
 const _getDayOfYear = (date) => {
-  if (!date) return 0; // Защита
+  if (!date) return 0; 
   const start = new Date(date.getFullYear(), 0, 0);
   const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
   return Math.floor(diff / 86400000);
 };
 const _getDateKey = (date) => {
-  if (!date) return ''; // Защита
+  if (!date) return ''; 
   const year = date.getFullYear();
   const doy = _getDayOfYear(date);
   return `${year}-${doy}`;
 };
-// --- КОНЕЦ ХЕЛПЕРОВ ---
 
-
-/* ── Максимум по данным ─────────────────────────────────────────────────── */
 const rawMaxY = computed(() => {
   let max = 0;
-  // Защита: проверяем, что dailyChartData существует
   if (mainStore.dailyChartData) {
       for (const [, data] of mainStore.dailyChartData) {
-        if (data.income > max) max = data.income;
+        // Max is sum of income + prepayment
+        const totalIncome = (data.income || 0) + (data.prepayment || 0);
+        if (totalIncome > max) max = totalIncome;
         if (Math.abs(data.expense) > max) max = Math.abs(data.expense);
       }
   }
   return max || 1;
 });
 
-/* ── «Красивые» шаг/максимум по ряду 1/2/5×10^n на 8 интервалов ─────────── */
 function niceStep(rawStep) {
   if (rawStep <= 0) return 1;
   const exp = Math.floor(Math.log10(rawStep));
@@ -99,7 +91,6 @@ const axisMax = computed(() => {
   return kAligned8 * step;
 });
 
-/* ── Тики для Y-оси (ЧИСЛА, сверху вниз) ────────────────────────────────── */
 const yAxisTicks = computed(() => {
   const ticks = [];
   const step = axisStep.value;
@@ -118,77 +109,117 @@ watch(yAxisTicks, (ticks) => {
   emit('update:yLabels', ticks);
 }, { immediate: true });
 
-/* ── Сводки по дням ─────────────────────────────────────────────────────── */
 const summaries = computed(() => {
   if (!props.showSummaries) return [];
-  // 🟢 FIX: Защита от не-массива
   if (!Array.isArray(props.visibleDays)) return [];
 
   return props.visibleDays.map(day => {
-    if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; // Защита от битых объектов
+    if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; 
 
     const dateKey = _getDateKey(day.date);
-    // Защита на случай, если dailyChartData еще нет
-    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, expense: 0, closingBalance: 0 };
+    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, closingBalance: 0 };
     
+    // В итогах объединяем обычный доход и предоплату
     return {
       date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
-      income: data.income,
+      income: (data.income || 0) + (data.prepayment || 0),
       expense: data.expense,
       balance: data.closingBalance
     };
   });
 });
 
-// --- Логика для группировки в подсказке ---
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
   const sortedOps = [...ops].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   return sortedOps.map(op => {
     if (op.isTransfer) return null;
+    
+    // Проверка на предоплату для подписи
+    const prepayIds = mainStore.getPrepaymentCategoryIds;
+    const catId = op.categoryId?._id || op.categoryId;
+    const prepId = op.prepaymentId?._id || op.prepaymentId;
+    
+    // Проверяем ID категории или ID предоплаты
+    const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+    
+    // Определяем имя категории
+    let catName = op.categoryId?.name || 'Без категории';
+    if (isPrepay) {
+        catName = 'Предоплата'; // Принудительно ставим имя для предоплат
+    }
+
     return {
       isIncome: op.type === 'income',
       accName: op.accountId?.name || '???',
       contName: op.contractorId?.name || '---',
       projName: op.projectId?.name || '---',
-      catName: op.categoryId?.name || 'Без категории',
+      catName: catName, // Используем вычисленное имя
       amount: op.amount
     };
   }).filter(Boolean);
 };
 
-/* ── Данные графика ─────────────────────────────────────────────────────── */
 const chartData = computed(() => {
   const labels = [];
   const incomeData = [];
+  const prepaymentData = []; 
   const expenseData = [];
   const incomeDetails = []; 
+  const prepaymentDetails = []; 
   const expenseDetails = [];
 
-  // 🟢 FIX: Защита от не-массива
   const safeDays = Array.isArray(props.visibleDays) ? props.visibleDays : [];
+  const prepayIds = mainStore.getPrepaymentCategoryIds;
 
   for (const day of safeDays) {
-    if (!day || !day.date) continue; // Пропускаем битые дни
+    if (!day || !day.date) continue; 
 
     const dateKey = _getDateKey(day.date);
-    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, expense: 0 };
+    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0 };
     
     const allOps = (mainStore.allOperationsFlat || []);
-    const incomeOps = allOps.filter(op => op.dateKey === dateKey && op.type === 'income');
-    const expenseOps = allOps.filter(op => op.dateKey === dateKey && op.type === 'expense');
     
+    // Фильтруем операции
+    const dayOps = allOps.filter(op => op.dateKey === dateKey);
+    
+    const incomeOps = [];
+    const prepayOps = [];
+    const expenseOps = [];
+
+    dayOps.forEach(op => {
+        if (op.type === 'expense') {
+            expenseOps.push(op);
+        } else if (op.type === 'income') {
+            const catId = op.categoryId?._id || op.categoryId;
+            const prepId = op.prepaymentId?._id || op.prepaymentId;
+            const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+            
+            if (isPrepay) prepayOps.push(op);
+            else incomeOps.push(op);
+        }
+    });
+
     incomeDetails.push(getTooltipOperationList(incomeOps));
+    prepaymentDetails.push(getTooltipOperationList(prepayOps)); 
     expenseDetails.push(getTooltipOperationList(expenseOps));
 
     labels.push(day.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
     incomeData.push(data.income);
+    prepaymentData.push(data.prepayment || 0); 
     expenseData.push(Math.abs(data.expense));
   }
 
   return {
     labels,
     datasets: [
+      { 
+        label: 'Предоплата', 
+        backgroundColor: '#FF9D00', 
+        data: prepaymentData,  
+        stack: 'stack1',
+        details: prepaymentDetails 
+      },
       { 
         label: 'Доход',
         backgroundColor: '#34c759', 
@@ -207,7 +238,6 @@ const chartData = computed(() => {
   };
 });
 
-/* ── Опции графика ──────────────────────────────────────────────────────── */
 const chartOptions = computed(() => {
   const yMax = axisMax.value;
 
@@ -225,6 +255,10 @@ const chartOptions = computed(() => {
             const index = context.dataIndex;
             const totalLabel = dataset.label || '';
             const totalValue = context.raw;
+            
+            // Пропускаем пустые значения в тултипе
+            if (!totalValue) return null;
+
             const formattedTotal = totalLabel === 'Расход' 
               ? formatNumber(-Math.abs(totalValue)) 
               : formatNumber(totalValue);
@@ -295,7 +329,6 @@ watch([chartData, chartOptions], async () => {
       <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
     </div>
 
-    <!-- 🟢 v4.5: Условный рендеринг итогов -->
     <div v-if="showSummaries" class="summaries-wrapper">
       <div
         v-for="(day, index) in summaries"
