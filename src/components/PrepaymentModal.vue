@@ -4,13 +4,13 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.1 - SMART LOGIC ---
- * * ВЕРСИЯ: 1.1 - Умные подсказки и валидация
- * * ДАТА: 2025-11-20
- * * ЧТО РЕАЛИЗОВАНО:
- * 1. Ввод общей суммы сделки.
- * 2. Авто-расчет долга клиента.
- * 3. Блокировка сохранения при некорректных данных.
+ * * --- МЕТКА ВЕРСИИ: v1.2 - DOUBLE CLICK PROTECTION ---
+ * * ВЕРСИЯ: 1.2 - Защита от двойного нажатия
+ * * ДАТА: 2025-11-21
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. Добавлен ref `isSaving` для блокировки кнопки.
+ * 2. handleSave теперь блокирует повторные нажатия.
+ * 3. Добавлен тайм-аут сброса блокировки (safety fallback).
  */
 
 const props = defineProps({
@@ -26,6 +26,9 @@ const amount = ref(props.initialData.amount || 0);
 const formattedAmount = ref('');
 const totalDealAmount = ref(0);
 const formattedTotalDeal = ref('');
+
+// 🟢 Состояние сохранения для защиты от дабл-клика
+const isSaving = ref(false);
 
 // Ввод суммы (Аванс)
 const onAmountInput = (e) => {
@@ -95,7 +98,11 @@ const isSaveDisabled = computed(() => {
 });
 
 const handleSave = () => {
-  if (isSaveDisabled.value) return;
+  // 🟢 Защита: Если валидация не прошла или уже идет сохранение - выходим
+  if (isSaveDisabled.value || isSaving.value) return;
+
+  // Блокируем кнопку
+  isSaving.value = true;
 
   // Формируем финальный объект для сохранения
   const finalOperation = {
@@ -108,6 +115,12 @@ const handleSave = () => {
   };
 
   emit('save', finalOperation);
+  
+  // 🟢 Safety Fallback: Сбрасываем блокировку через 3 сек, 
+  // на случай если родительский компонент не закроет окно (например, ошибка сети)
+  setTimeout(() => {
+    if (isSaving.value) isSaving.value = false;
+  }, 3000);
 };
 
 onMounted(() => {
@@ -159,9 +172,23 @@ onMounted(() => {
       </transition>
 
       <div class="actions">
-        <button class="btn-cancel" @click="$emit('close')">Отмена</button>
-        <button class="btn-save" @click="handleSave" :disabled="isSaveDisabled">
-          Подтвердить
+        <!-- Кнопка Отмена -->
+        <button 
+          class="btn-cancel" 
+          @click="$emit('close')" 
+          :disabled="isSaving"
+        >
+          Отмена
+        </button>
+        
+        <!-- 🟢 Кнопка Подтвердить с состоянием загрузки -->
+        <button 
+          class="btn-save" 
+          @click="handleSave" 
+          :disabled="isSaveDisabled || isSaving"
+          :class="{ 'btn-loading': isSaving }"
+        >
+          {{ isSaving ? 'Сохранение...' : 'Подтвердить' }}
         </button>
       </div>
     </div>
@@ -217,17 +244,19 @@ label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9r
 .btn-save {
   flex: 1; height: 50px; background: #34c759; color: #fff;
   border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
-  cursor: pointer; transition: background 0.2s;
+  cursor: pointer; transition: background 0.2s, opacity 0.2s;
 }
 .btn-save:hover:not(:disabled) { background: #2da84e; }
-.btn-save:disabled { opacity: 0.5; cursor: not-allowed; background: #ccc; }
+.btn-save:disabled { opacity: 0.6; cursor: not-allowed; background: #ccc; }
+.btn-loading { cursor: wait; opacity: 0.8; }
 
 .btn-cancel {
   padding: 0 20px; height: 50px; background: #e0e0e0; color: #333;
   border: none; border-radius: 8px; font-size: 1rem; font-weight: 500;
   cursor: pointer; transition: background 0.2s;
 }
-.btn-cancel:hover { background: #d1d1d1; }
+.btn-cancel:hover:not(:disabled) { background: #d1d1d1; }
+.btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
 
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(10px); }
