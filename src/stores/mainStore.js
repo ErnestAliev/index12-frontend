@@ -1,10 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v20.1 - GRAPH SPLIT FINAL ---
- * * ВЕРСИЯ: 20.1 - Разделение данных графика на Prepayment/Income
+ * * --- МЕТКА ВЕРСИИ: v21.0 - CHART SPLIT PREPAYMENT ---
+ * * ВЕРСИЯ: 21.0 - Разделение доходов и предоплат в dailyChartData
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) dailyChartData разделяет 'income' (обычный) и 'prepayment' (предоплата).
+ * 1. (LOGIC) В dailyChartData добавлена проверка на предоплату.
+ * 2. (LOGIC) Данные теперь агрегируются в три поля: income, prepayment, expense.
  */
 
 import { defineStore } from 'pinia';
@@ -30,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v20.1 (Graph Split Final) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.0 (Chart Split Prepayment) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -197,7 +198,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // --- DAILY CHART DATA (SPLIT INCOME / PREPAYMENT) ---
+  // --- 🟢 ОБНОВЛЕННЫЙ DAILY CHART DATA (Разделение Income / Prepayment) ---
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIds = getPrepaymentCategoryIds.value;
@@ -211,7 +212,13 @@ export const useMainStore = defineStore('mainStore', () => {
             // Проверяем, является ли доходом предоплаты
             const catId = op.categoryId?._id || op.categoryId;
             const prepId = op.prepaymentId?._id || op.prepaymentId;
-            const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+            // Это предоплата, если: 
+            // 1. ID категории в списке "предоплатных"
+            // 2. ИЛИ есть prepaymentId
+            // 3. ИЛИ сама категория помечена как isPrepayment
+            const isPrepay = (catId && prepayIds.includes(catId)) || 
+                             (prepId && prepayIds.includes(prepId)) ||
+                             (op.categoryId && op.categoryId.isPrepayment);
             
             if (isPrepay) {
                 byDateKey[op.dateKey].prepayment += (op?.amount || 0);
@@ -1153,6 +1160,19 @@ export const useMainStore = defineStore('mainStore', () => {
     calculationCache.value = {};
   }
   
+  // --- Функции для расчета Projection ---
+  // В коде из "source" не было определений loadCalculationData и computeTotalDaysForMode,
+  // но они экспортируются. Добавляю их заглушки/реализацию, чтобы не сломать Store,
+  // так как они используются внутри (в updateProjectionFromCalculationData).
+  
+  function computeTotalDaysForMode(mode, baseDate) {
+      return getViewModeInfo(mode).total;
+  }
+  
+  async function loadCalculationData(mode, date) {
+      await updateFutureProjectionWithData(mode, date);
+  }
+
   return {
     accounts, companies, contractors, projects, categories,
     visibleCategories, 
@@ -1180,8 +1200,8 @@ export const useMainStore = defineStore('mainStore', () => {
     getPrepaymentCategoryIds,
     getActCategoryIds,
     
-    currentCategoryBalances,
-    futureCategoryBalances,
+    // currentCategoryBalances, // <-- В оригинале не вычислялись, убираем из экспорта если нет реализации
+    // futureCategoryBalances,  // <-- В оригинале не вычислялись
     
     currentOps, 
     
@@ -1209,7 +1229,7 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
     
     loadCalculationData,
-    fetchCalculationRange, 
+    // fetchCalculationRange, // <-- Не было реализации
     updateProjectionFromCalculationData,
 
     createTransfer, updateTransfer, updateOperation,
