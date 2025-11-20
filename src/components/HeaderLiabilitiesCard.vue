@@ -3,24 +3,12 @@ import { ref, watch, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v3.0 - FULL UI COMPLIANCE ---
- * * ВЕРСИЯ: 3.0 - Полное соответствие UI стандартам
- * * ДАТА: 2025-11-20
- *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (UI) Добавлена кнопка выбора виджета (▽) с выпадающим списком.
- * 2. (UI) Добавлены кнопки действий: "Прогноз" и "Редактировать".
- * 3. (LOGIC) Реализована логика переключения `showFutureBalance`.
- * 4. (LOGIC) Данные переключаются между Current и Future в зависимости от состояния кнопки.
- */
-
 const props = defineProps({
   title: { type: String, default: 'Мои обязательства' },
-  weOweAmount: { type: Number, default: 0 },         // Текущее
-  theyOweAmount: { type: Number, default: 0 },       // Текущее
-  weOweAmountFuture: { type: Number, default: 0 },   // Прогноз
-  theyOweAmountFuture: { type: Number, default: 0 }, // Прогноз
+  weOweAmount: { type: Number, default: 0 },        
+  theyOweAmount: { type: Number, default: 0 },       
+  weOweAmountFuture: { type: Number, default: 0 },   
+  theyOweAmountFuture: { type: Number, default: 0 }, 
   widgetKey: { type: String, required: true },
   widgetIndex: { type: Number, required: true }
 });
@@ -28,13 +16,11 @@ const props = defineProps({
 const emit = defineEmits(['edit']);
 const mainStore = useMainStore();
 
-// --- Состояние прогноза ---
 const showFutureBalance = computed({
   get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
   set: (val) => mainStore.setForecastState(props.widgetKey, val)
 });
 
-// --- Логика переключения виджета (Dropdown) ---
 const isDropdownOpen = ref(false);
 const menuRef = ref(null);
 const searchQuery = ref('');
@@ -68,15 +54,11 @@ watch(isDropdownOpen, (isOpen) => {
 
 const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 
-// --- Форматирование ---
 const formatCurrency = (val) => {
   const absVal = Math.abs(val);
   return `${formatNumber(absVal)} ₸`;
 };
 
-// --- Отображаемые данные ---
-// Если включен прогноз, показываем "Текущее > Будущее" или просто Будущее (как в других карточках).
-// В других карточках логика: Текущее [> Прогноз]
 const displayWeOwe = computed(() => {
     if (!showFutureBalance.value) return formatCurrency(props.weOweAmount);
     return `${formatCurrency(props.weOweAmount)} > ${formatCurrency(props.weOweAmountFuture)}`;
@@ -91,7 +73,6 @@ const displayTheyOwe = computed(() => {
 <template>
   <div class="dashboard-card">
     
-    <!-- ЗАГОЛОВОК С ВЫБОРОМ ВИДЖЕТА -->
     <div class="card-title-container">
       <div class="card-title" ref="menuRef" @click.stop="toggleDropdown">
         {{ title }} <span>▽</span>
@@ -108,9 +89,7 @@ const displayTheyOwe = computed(() => {
         </div>
       </div>
 
-      <!-- КНОПКИ ДЕЙСТВИЙ -->
       <div class="card-actions">
-        <!-- Прогноз -->
         <button 
           class="action-square-btn"
           :class="{ 'active': showFutureBalance }"
@@ -123,7 +102,6 @@ const displayTheyOwe = computed(() => {
           </svg>
         </button>
         
-        <!-- Редактировать -->
         <button 
           @click.stop="$emit('edit')" 
           class="action-square-btn"
@@ -137,7 +115,6 @@ const displayTheyOwe = computed(() => {
       </div>
     </div>
 
-    <!-- СПИСОК -->
     <div class="card-items-list">
       
       <div class="card-item">
@@ -149,7 +126,8 @@ const displayTheyOwe = computed(() => {
 
       <div class="card-item">
         <span title="Остатки по сделкам, где внесена только часть суммы">Нам должны</span>
-        <span class="value-income">
+        <!-- 🟢 ИЗМЕНЕН КЛАСС ДЛЯ ОРАНЖЕВОГО ЦВЕТА -->
+        <span class="value-orange">
           {{ displayTheyOwe }}
         </span>
       </div>
@@ -183,7 +161,6 @@ const displayTheyOwe = computed(() => {
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
-/* Выпадающий список виджетов */
 .widget-dropdown { position: absolute; top: 35px; left: 0; width: 220px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; }
 .widget-search-input { flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.9em; box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333; }
 .widget-search-input:focus { outline: none; border-color: #007AFF; }
@@ -199,7 +176,8 @@ const displayTheyOwe = computed(() => {
 .card-item span:last-child { font-weight: 500; white-space: nowrap; }
 
 .value-expense { color: var(--color-danger); }
-.value-income { color: var(--color-primary); }
+/* 🟢 НОВЫЙ ЦВЕТ ДЛЯ "НАМ ДОЛЖНЫ" */
+.value-orange { color: #FF9D00; }
 
 @media (max-height: 900px) {
   .dashboard-card { min-width: 100px; padding-right: 1rem; }
