@@ -3,23 +3,22 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.0 - LIABILITIES WIDGET ---
- * * ВЕРСИЯ: 19.0 - Добавлен виджет "Мои обязательства"
+ * * --- МЕТКА ВЕРСИИ: v19.1 - LIABILITIES PROPS ---
+ * * ВЕРСИЯ: 19.1 - Проброс будущих значений в виджет
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Импортирован HeaderLiabilitiesCard.vue.
- * 2. (UI) Добавлен блок `v-else-if="widgetKey === 'liabilities'"` в шаблон.
- * 3. (LOGIC) Прокинуты пропсы `weOweAmount` и `theyOweAmount` из стора.
+ * 1. (LOGIC) В виджет `HeaderLiabilitiesCard` передаются `weOweAmountFuture` и `theyOweAmountFuture`.
+ * 2. (LOGIC) Добавлен обработчик `@edit="onLiabilitiesEdit"` для нового виджета.
  */
 
-console.log('--- TheHeader.vue v19.0 (Liabilities Widget) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v19.1 (Liabilities Props) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
-import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; // 🟢 NEW
+import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
 import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
@@ -86,7 +85,6 @@ const saveHandler = ref(null);
 const deleteHandler = ref(null); 
 const showDeleteInPopup = ref(false); 
 
-// Обычное добавление
 const openAddPopup = (title, storeAction) => {
   popupTitle.value = title;
   popupInitialValue.value = '';
@@ -96,7 +94,6 @@ const openAddPopup = (title, storeAction) => {
   isEntityPopupVisible.value = true;
 };
 
-// Переименование + Удаление
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title;
   popupInitialValue.value = entity.name;
@@ -162,7 +159,6 @@ const onEntityListSave = async (updatedItems) => {
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 const onCategoryAdd = (widgetKey, index) => {
-    // 1. Мои Доходы / Расходы
     if (widgetKey === 'incomeList') {
         operationPopupType.value = 'income';
         isOperationPopupVisible.value = true;
@@ -173,8 +169,6 @@ const onCategoryAdd = (widgetKey, index) => {
         isOperationPopupVisible.value = true;
         return;
     }
-
-    // 2. Системный Перевод
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
         isTransferPopupVisible.value = true;
@@ -182,22 +176,18 @@ const onCategoryAdd = (widgetKey, index) => {
 };
 
 const onCategoryEdit = (widgetKey) => {
-    // 1. Мои Доходы
     if (widgetKey === 'incomeList') {
         operationListEditorTitle.value = 'Редактировать доходы';
         operationListEditorType.value = 'income';
         isOperationListEditorVisible.value = true;
         return;
     }
-    // 2. Мои Расходы
     if (widgetKey === 'expenseList') {
         operationListEditorTitle.value = 'Редактировать расходы';
         operationListEditorType.value = 'expense';
         isOperationListEditorVisible.value = true;
         return;
     }
-
-    // 3. Категории (вкл. Перевод)
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
@@ -210,6 +200,14 @@ const onCategoryEdit = (widgetKey) => {
             openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
         }
     }
+};
+
+// 🟢 Обработчик для виджета обязательств
+const onLiabilitiesEdit = () => {
+    // Открываем список доходов (там видны предоплаты)
+    operationListEditorTitle.value = 'Редактировать операции (Предоплаты)';
+    operationListEditorType.value = 'income';
+    isOperationListEditorVisible.value = true;
 };
 
 const handleTransferComplete = async (eventData) => {
@@ -237,14 +235,17 @@ const handleOperationAdded = async (newOp) => {
         :widgetIndex="index"
       />
       
-      <!-- 🟢 NEW: Виджет "Мои обязательства" -->
+      <!-- 🟢 ОБНОВЛЕНО: Виджет "Мои обязательства" с новыми пропсами -->
       <HeaderLiabilitiesCard
         v-else-if="widgetKey === 'liabilities'"
         title="Мои обязательства"
         :weOweAmount="mainStore.liabilitiesWeOwe"
         :theyOweAmount="mainStore.liabilitiesTheyOwe"
+        :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
+        :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
         :widgetKey="widgetKey"
         :widgetIndex="index"
+        @edit="onLiabilitiesEdit"
       />
 
       <HeaderBalanceCard
