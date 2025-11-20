@@ -22,16 +22,16 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   /**
-   * * --- МЕТКА ВЕРСИИ: v21.0 - OBLIGATIONS LOGIC ---
-   * * ВЕРСИЯ: 21.0 - Логика обязательств и активных сделок
+   * * --- МЕТКА ВЕРСИИ: v22.0 - CLEANUP & LEGACY HIDE ---
+   * * ВЕРСИЯ: 22.0 - Очистка от устаревших категорий
    * * ДАТА: 2025-11-20
    *
    * ЧТО ИЗМЕНЕНО:
-   * 1. (WIDGETS) Добавлен 'obligations' в staticWidgets и dashboardLayout.
-   * 2. (GETTER) activeDeals: Список незакрытых сделок для селекта в попапе.
-   * 3. (GETTER) obligationsWidgetData: Расчет "Мы должны" / "Нам должны".
+   * 1. (LOGIC) visibleCategories: Теперь скрывает "Доплата" и "Постоплата",
+   * чтобы они не появлялись в селектах.
+   * 2. (CONFIRM) Логика activeDeals и obligationsWidgetData проверена на соответствие ТЗ v3.3.
    */
-  console.log('--- mainStore.js v21.0 (Obligations Logic) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v22.0 (Cleanup) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -55,7 +55,6 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
     
-    // 🟢 NEW: Виджет обязательств
     { key: 'obligations',  name: 'Мои обязательства' },
 
     { key: 'incomeList',   name: 'Мои доходы' },
@@ -73,8 +72,14 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer' || name === 'проводки';
   };
 
+  // 🟢 UPDATED: Скрываем Legacy категории
   const visibleCategories = computed(() => {
-    return categories.value.filter(c => !_isTransferCategory(c));
+    return categories.value.filter(c => {
+        const name = c.name.toLowerCase().trim();
+        // Жесткая фильтрация устаревших сущностей
+        if (name === 'доплата' || name === 'постоплата') return false;
+        return !_isTransferCategory(c);
+    });
   });
 
   const allWidgets = computed(() => {
@@ -90,7 +95,7 @@ export const useMainStore = defineStore('mainStore', () => {
     'contractors',  
     'projects',     
     'futureTotal',
-    'obligations' // 🟢 Добавлено по умолчанию
+    'obligations'
   ]);
   
   watch(dashboardLayout, (newLayout) => {
@@ -169,20 +174,15 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // 🟢 LOGIC: Активные сделки (для селекта)
+  // 🟢 Активные сделки (очищено от имен категорий, работаем по isDeal / parentDealId)
   const activeDeals = computed(() => {
-      // 1. Находим все "Сделки" (Предоплаты с флагом isDeal)
       const deals = allOperationsFlat.value.filter(op => op.isDeal === true);
       
-      // 2. Для каждой сделки считаем баланс
       return deals.map(deal => {
           const dealId = deal._id;
           const dealTotal = deal.dealTotal || 0;
           
-          // Связанные операции (где parentDealId === deal._id)
-          // + сама операция создания сделки (Предоплата) уже имеет сумму
-          
-          // Сумма поступлений (Предоплата + Доплаты)
+          // Сумма поступлений (Предоплата + последующие платежи по parentDealId)
           const paid = allOperationsFlat.value.reduce((acc, op) => {
               if (op._id === dealId) return acc + (op.amount || 0); // Сама предоплата
               if (op.parentDealId?._id === dealId || op.parentDealId === dealId) {
@@ -202,10 +202,9 @@ export const useMainStore = defineStore('mainStore', () => {
           const isFullyPaid = paid >= dealTotal;
           const isFullyExecuted = executed >= dealTotal;
           
-          // Если сделка полностью оплачена И полностью исполнена - она закрыта
+          // Если сделка закрыта (все оплачено и исполнено), скрываем из списка
           if (isFullyPaid && isFullyExecuted) return null;
           
-          // Формируем объект для UI
           const clientName = deal.contractorId?.name || 'Без клиента';
           const dateStr = new Date(deal.date).toLocaleDateString('ru-RU');
           const label = `${clientName} (${dateStr}) - ${formatNumber(dealTotal)} ₸`;
@@ -218,20 +217,17 @@ export const useMainStore = defineStore('mainStore', () => {
               executed,
               remainingToPay: Math.max(0, dealTotal - paid),
               remainingToExecute: Math.max(0, dealTotal - executed),
-              contractorId: deal.contractorId, // Для автозаполнения
-              projectId: deal.projectId         // Для автозаполнения
+              contractorId: deal.contractorId,
+              projectId: deal.projectId
           };
-      }).filter(Boolean); // Убираем null (закрытые сделки)
+      }).filter(Boolean);
   });
 
-  // 🟢 LOGIC: Данные для виджета Обязательств
+  // 🟢 Расчет обязательств (ТЗ v3.3)
   const obligationsWidgetData = computed(() => {
-      let weOweWork = 0;   // Мы должны (Кредиторка по работам): Взяли деньги, не сдали акт
-      let oweUsMoney = 0;  // Нам должны (Дебиторка по деньгам): Сделка есть, деньги не пришли
+      let weOweWork = 0;   
+      let oweUsMoney = 0;
 
-      // Проходим по всем сделкам (даже закрытым, чтобы видеть историю, но в контексте "Всего")
-      // Или лучше считать глобально? ТЗ говорит "Сумма всех..."
-      
       const deals = allOperationsFlat.value.filter(op => op.isDeal === true);
       
       let totalDealSum = 0;
@@ -240,12 +236,10 @@ export const useMainStore = defineStore('mainStore', () => {
 
       deals.forEach(deal => {
           totalDealSum += (deal.dealTotal || 0);
-          
-          // Деньги по этой сделке (Предоплата)
-          totalReceived += (deal.amount || 0);
+          totalReceived += (deal.amount || 0); // Начальная предоплата
       });
       
-      // Добираем Доплаты и Акты
+      // Добираем связанные операции
       allOperationsFlat.value.forEach(op => {
           if (op.parentDealId) {
               if (op.type === 'income') totalReceived += (op.amount || 0);
@@ -253,17 +247,12 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       });
 
-      // Расчет по формуле из ТЗ
-      // Мы должны: (Полученные деньги) - (Сумма Актов)
       weOweWork = Math.max(0, totalReceived - totalExecuted);
-      
-      // Нам должны: (Сумма Сделок) - (Полученные деньги)
       oweUsMoney = Math.max(0, totalDealSum - totalReceived);
       
       return { weOweWork, oweUsMoney };
   });
 
-  // --- Форматтер внутри стора для удобства
   const formatNumber = (num) => {
       return String(Math.floor(num)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   };
@@ -389,11 +378,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.projectId?._id) continue;
       const id = op.projectId._id;
       if (!bal[id]) bal[id] = 0;
-      // 🟢 LOGIC: Акты не влияют на баланс Денег, но влияют на "Оборот" проекта?
-      // ТЗ говорит: "Для Проектов используется Накопительный итог (сколько денег пришло всего)"
-      // "Операции типа act (Исполнение) ИГНОРИРУЮТСЯ в этих виджетах."
       if (isAct(op)) continue; 
-      if (op.amount > 0) bal[id] += op.amount; // Только приход денег
+      if (op.amount > 0) bal[id] += op.amount; 
     }
     return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
   });
@@ -420,8 +406,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.contractorId?._id) continue;
       const id = op.contractorId._id;
       if (!bal[id]) bal[id] = 0;
-      // ТЗ: "Накопительный итог (сколько денег пришло всего), а не баланс."
-      // ТЗ: "Операции типа act (Исполнение) ИГНОРИРУЮТСЯ"
       if (isAct(op)) continue;
       if (op.amount > 0) bal[id] += op.amount;
     }
@@ -1195,7 +1179,6 @@ export const useMainStore = defineStore('mainStore', () => {
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
 
-    // 🟢 EXPORT НОВЫХ GETTERS
     activeDeals,
     obligationsWidgetData,
 
