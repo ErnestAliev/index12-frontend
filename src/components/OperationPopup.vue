@@ -1,20 +1,19 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v17.2 - PREPAYMENT INPUT FIX ---
- * * ВЕРСИЯ: 17.2 - Исправление отображения категории предоплаты при редактировании
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v18.0 - INSTANT SAVE EMIT ---
+ * * ВЕРСИЯ: 18.0 - Отправка события save вместо API вызова
+ * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В onMounted теперь проверяем и prepaymentId.
- * 2. (FIX) Добавлен флаг isInitialLoad, чтобы watch не открывал модалку предоплаты сразу при открытии окна редактирования.
+ * 1. Убраны вызовы axios и mainStore.addOperation внутри компонента.
+ * 2. handleSave теперь просто формирует payload и отправляет emit('save', ...).
+ * 3. Это позволяет родительскому компоненту мгновенно закрыть окно.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
 
 const props = defineProps({
@@ -28,11 +27,10 @@ const props = defineProps({
 
 const emit = defineEmits([
   'close',
-  'operation-added',
   'operation-deleted',
   'operation-moved',
-  'operation-updated',
-  'trigger-prepayment' 
+  'trigger-prepayment',
+  'save' // 🟢 НОВОЕ СОБЫТИЕ
 ]);
 
 // --- ДАННЫЕ ---
@@ -46,7 +44,6 @@ const selectedProjectId = ref(null);
 const errorMessage = ref('');
 const amountInput = ref(null);
 const isInlineSaving = ref(false);
-// 🟢 Флаг для предотвращения авто-триггера при загрузке
 const isInitialLoad = ref(true); 
 
 // --- INLINE CREATE STATES ---
@@ -105,7 +102,6 @@ const availableCategories = computed(() => {
 
 // 🟢 ЛОГИКА ТРИГГЕРА ПРЕДОПЛАТЫ
 watch(selectedCategoryId, (newVal) => {
-    // Если это начальная загрузка данных в форму - не триггерим модалку
     if (isInitialLoad.value) return;
     if (!newVal) return;
     
@@ -196,7 +192,7 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
 
 // --- MOUNTED ---
 onMounted(async () => {
-  isInitialLoad.value = true; // Блокируем вотчер
+  isInitialLoad.value = true; 
 
   if (props.operationToEdit) {
     const op = props.operationToEdit;
@@ -213,10 +209,8 @@ onMounted(async () => {
     
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
     
-    // 🟢 FIX: Проверяем categoryId И prepaymentId
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
-    // Если есть prepaymentId, используем его, иначе categoryId
     selectedCategoryId.value = catId || prepId || null;
 
     selectedProjectId.value = op.projectId?._id || op.projectId;
@@ -226,7 +220,6 @@ onMounted(async () => {
     setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100);
   }
 
-  // Разблокируем вотчер после инициализации
   await nextTick();
   isInitialLoad.value = false;
 });
@@ -245,7 +238,7 @@ const _getDateKey = (date) => {
 };
 
 // --- SAVE ---
-const handleSave = async () => {
+const handleSave = () => {
   if (isInlineSaving.value) return;
 
   errorMessage.value = '';
@@ -257,87 +250,40 @@ const handleSave = async () => {
     return;
   }
   
-  isInlineSaving.value = true;
-
-  try {
-    const [year, month, day] = editableDate.value.split('-').map(Number);
-    const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
-    const dateKey = _getDateKey(finalDate); 
-    
-    let companyId = null;
-    let individualId = null;
-    if (selectedOwner.value) {
-      const [type, id] = selectedOwner.value.split('-');
-      if (type === 'company') companyId = id;
-      else if (type === 'individual') individualId = id;
-    }
-    
-    const base = {
-      type: props.type,
-      amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed),
-      categoryId: selectedCategoryId.value || null,
-      accountId: selectedAccountId.value,
-      companyId: companyId,
-      individualId: individualId,
-      contractorId: selectedContractorId.value,
-      projectId: selectedProjectId.value || null
-    };
-
-    if (!props.operationToEdit || isCloneMode.value) {
-      await saveCreateOrClone(base, dateKey);
-      emit('close');
-      isCloneMode.value = false;
-      return;
-    }
-
-    const prev = props.operationToEdit;
-    const oldDateKey = prev.dateKey; 
-    if (!oldDateKey) {
-        errorMessage.value = "Ошибка: Нет ключа даты.";
-        return;
-    }
-    const oldCellIndex = Number.isInteger(prev.cellIndex) ? prev.cellIndex : 0;
-    
-    await saveEdit(prev._id, base, oldDateKey, oldCellIndex, dateKey, oldCellIndex);
-    emit('close');
-    isCloneMode.value = false;
-
-  } catch (error) {
-    console.error('OperationPopup: Error', error);
-    errorMessage.value = 'Ошибка при сохранении. Попробуйте снова.';
-  } finally {
-    isInlineSaving.value = false;
+  const [year, month, day] = editableDate.value.split('-').map(Number);
+  const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
+  
+  let companyId = null;
+  let individualId = null;
+  if (selectedOwner.value) {
+    const [type, id] = selectedOwner.value.split('-');
+    if (type === 'company') companyId = id;
+    else if (type === 'individual') individualId = id;
   }
+  
+  const payload = {
+    type: props.type,
+    amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed),
+    categoryId: selectedCategoryId.value || null,
+    accountId: selectedAccountId.value,
+    companyId: companyId,
+    individualId: individualId,
+    contractorId: selectedContractorId.value,
+    projectId: selectedProjectId.value || null,
+    date: finalDate 
+  };
+
+  const isEdit = !!props.operationToEdit && !isCloneMode.value;
+  
+  // 🟢 Эмитим событие сохранения
+  emit('save', {
+      mode: isEdit ? 'edit' : 'create',
+      id: isEdit ? props.operationToEdit._id : null,
+      data: payload,
+      originalOperation: isEdit ? props.operationToEdit : null
+  });
 };
 
-async function saveCreateOrClone(base, dateKey) {
-  let cellIndexToUse = 0;
-  try {
-    if (typeof mainStore.getFirstFreeCellIndex === 'function') {
-      const freeIndex = await mainStore.getFirstFreeCellIndex(dateKey, 0);
-      cellIndexToUse = Number.isInteger(freeIndex) ? freeIndex : 0;
-    }
-  } catch(e) { console.error(e); cellIndexToUse = 0; }
-
-  const payload = { ...base, dateKey, cellIndex: cellIndexToUse };
-  const response = await axios.post(`${API_BASE_URL}/events`, payload);
-  emit('operation-added', response.data);
-}
-
-async function saveEdit(opId, base, oldDateKey, oldCellIndex, newDateKey, desiredCellIndex) {
-  const positionChanged = (newDateKey !== oldDateKey); 
-  if (positionChanged) {
-    await mainStore.moveOperation(
-      { _id: opId, ...base, dateKey: oldDateKey, cellIndex: oldCellIndex },
-      oldDateKey, newDateKey, Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0
-    );
-    await axios.put(`${API_BASE_URL}/events/${opId}`, { ...base, dateKey: newDateKey, cellIndex: desiredCellIndex });
-    emit('operation-updated', { dateKey: newDateKey, oldDateKey: oldDateKey });
-  } else {
-    await axios.put(`${API_BASE_URL}/events/${opId}`, { ...base, dateKey: oldDateKey, cellIndex: oldCellIndex });
-    emit('operation-updated', { dateKey: oldDateKey, oldDateKey: null });
-  }
-}
 
 // --- INLINE CREATE HANDLERS ---
 const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
