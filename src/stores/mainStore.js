@@ -1,11 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v15.2 - PREPAYMENT FETCH FIX ---
- * * ВЕРСИЯ: 15.2 - Исправление загрузки системной категории Предоплата
+ * * --- МЕТКА ВЕРСИИ: v19.2 - LIABILITIES FIX ---
+ * * ВЕРСИЯ: 19.2 - Учет prepaymentId в расчетах обязательств
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В fetchAllEntities добавлен запрос к /prepayments.
- * 2. (FIX) Данные предоплат теперь подмешиваются в массив categories.value.
+ * 1. (FIX) fetchAllEntities помечает данные из /prepayments флагом isPrepayment: true.
+ * 2. (FIX) Расчеты liabilitiesWeOwe/TheyOwe теперь проверяют и op.prepaymentId.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v15.2 (Prepayment Fetch Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v19.2 (Liabilities Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -223,18 +223,28 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ ---
+  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ (ИСПРАВЛЕНО) ---
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
     if (prepayIds.length === 0 && actIds.length === 0) return 0;
+    
     let totalPrepaymentReceived = 0;
     let totalActsSum = 0;
+    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
+      
+      // Проверяем и categoryId, и prepaymentId
       const catId = op.categoryId?._id || op.categoryId;
-      if (prepayIds.includes(catId) && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
-      if (actIds.includes(catId)) totalActsSum += Math.abs(op.amount || 0);
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      
+      // Если хотя бы один из ID входит в список предоплат
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      const isAct = (catId && actIds.includes(catId)); // Акты пока только в категориях
+
+      if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
+      if (isAct) totalActsSum += Math.abs(op.amount || 0);
     }
     return totalPrepaymentReceived - totalActsSum;
   });
@@ -242,12 +252,18 @@ export const useMainStore = defineStore('mainStore', () => {
   const liabilitiesTheyOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     if (prepayIds.length === 0) return 0;
+    
     let totalDealSum = 0;
     let receivedSum = 0;
+    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
+      
       const catId = op.categoryId?._id || op.categoryId;
-      if (prepayIds.includes(catId) && op.type === 'income') {
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      
+      if (isPrepay && op.type === 'income') {
           const dealTotal = op.totalDealAmount || 0;
           if (dealTotal > 0) {
               totalDealSum += dealTotal;
@@ -266,9 +282,14 @@ export const useMainStore = defineStore('mainStore', () => {
     let totalActsSum = 0;
     for (const op of opsUpToForecast.value) {
       if (isTransfer(op)) continue;
+      
       const catId = op.categoryId?._id || op.categoryId;
-      if (prepayIds.includes(catId) && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
-      if (actIds.includes(catId)) totalActsSum += Math.abs(op.amount || 0);
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      const isAct = (catId && actIds.includes(catId));
+
+      if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
+      if (isAct) totalActsSum += Math.abs(op.amount || 0);
     }
     return totalPrepaymentReceived - totalActsSum;
   });
@@ -280,8 +301,12 @@ export const useMainStore = defineStore('mainStore', () => {
     let receivedSum = 0;
     for (const op of opsUpToForecast.value) {
       if (isTransfer(op)) continue;
+      
       const catId = op.categoryId?._id || op.categoryId;
-      if (prepayIds.includes(catId) && op.type === 'income') {
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      
+      if (isPrepay && op.type === 'income') {
           const dealTotal = op.totalDealAmount || 0;
           if (dealTotal > 0) {
               totalDealSum += dealTotal;
@@ -771,7 +796,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function fetchAllEntities(){
     try{
-      // 🟢 FIX: Загружаем также и 'prepayments' с бэка
+      // Загружаем и обычные категории, и предоплаты
       const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`),
         axios.get(`${API_BASE_URL}/companies`),
@@ -779,7 +804,7 @@ export const useMainStore = defineStore('mainStore', () => {
         axios.get(`${API_BASE_URL}/projects`),
         axios.get(`${API_BASE_URL}/individuals`), 
         axios.get(`${API_BASE_URL}/categories`),
-        axios.get(`${API_BASE_URL}/prepayments`), // <-- 1. Загрузка системных предоплат
+        axios.get(`${API_BASE_URL}/prepayments`),
       ]);
       
       accounts.value    = accRes.data; 
@@ -788,9 +813,11 @@ export const useMainStore = defineStore('mainStore', () => {
       projects.value    = projRes.data;
       individuals.value = indRes.data; 
       
-      // 🟢 FIX: Объединяем категории с предоплатами
-      // Теперь 'Предоплата' будет видна в списке категорий в OperationPopup
-      categories.value  = [...catRes.data, ...prepRes.data];
+      // Объединяем, помечая предоплаты
+      const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
+      const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
+      
+      categories.value  = [...normalCategories, ...prepaymentCategories];
 
     }catch(e){ 
         if (e.response && e.response.status === 401) user.value = null;
