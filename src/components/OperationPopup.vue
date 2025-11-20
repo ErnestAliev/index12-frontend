@@ -5,14 +5,14 @@ import { useMainStore } from '@/stores/mainStore';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v17.0 - RESTORED FULL ---
- * * ВЕРСИЯ: 17.0 - Полный откат стилей + Триггер
+ * * --- МЕТКА ВЕРСИИ: v17.1 - PREPAYMENT TRIGGER ---
+ * * ВЕРСИЯ: 17.1 - Триггер запуска предоплаты
  * * ДАТА: 2025-11-20
  *
- * ЧТО СДЕЛАНО:
- * 1. Вернуты ВСЕ стили и разметка (темы, кнопки, инпуты).
- * 2. watch(selectedCategoryId) теперь просто эмитит событие 'trigger-prepayment'.
- * 3. НИКАКОГО закрытия внутри компонента при выборе категории.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. Добавлен watch(selectedCategoryId).
+ * 2. Реализован сбор данных (currentData) при выборе "Предоплаты".
+ * 3. Добавлен emit('trigger-prepayment').
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -33,7 +33,7 @@ const emit = defineEmits([
   'operation-deleted',
   'operation-moved',
   'operation-updated',
-  'trigger-prepayment' // 🟢 Сигнал родителю
+  'trigger-prepayment' // 🟢 Сигнал для запуска модалки предоплаты
 ]);
 
 // --- ДАННЫЕ ---
@@ -70,6 +70,31 @@ const newOwnerInputRef = ref(null);
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
+// --- FORMATTERS ---
+const formatNumber = (numStr) => {
+  const clean = `${numStr}`.replace(/[^0-9]/g, '');
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+// --- ДАТА ---
+const toInputDate = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toInputDateString = (date) => {
+  if (!date) return null;
+  return toInputDate(date);
+};
+
+const editableDate = ref(toInputDate(props.date));
+const minDateString = computed(() => toInputDateString(props.minAllowedDate));
+const maxDateString = computed(() => toInputDateString(props.maxAllowedDate));
+
+
 // 🟢 Фильтр категорий (Перевод скрыт, Предоплата доступна)
 const availableCategories = computed(() => {
   return mainStore.categories.filter(c => {
@@ -78,35 +103,36 @@ const availableCategories = computed(() => {
   });
 });
 
-// 🟢 Следим за выбором категории
+// 🟢 ЛОГИКА ТРИГГЕРА ПРЕДОПЛАТЫ
 watch(selectedCategoryId, (newVal) => {
     if (!newVal) return;
+    
+    // Получаем ID системных категорий предоплаты из стора
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     
     if (prepayIds.includes(newVal)) {
-        // Собираем текущие введенные данные, чтобы передать их в следующее окно
+        // Собираем данные, которые пользователь уже успел ввести
+        const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
+        
         const currentData = {
-            amount: parseFloat(amount.value.replace(/\s/g, '')) || 0,
+            amount: rawAmount,
             accountId: selectedAccountId.value,
             contractorId: selectedContractorId.value,
             projectId: selectedProjectId.value,
             categoryId: newVal,
-            // Извлекаем ID владельца
+            // Разбираем владельца (company-ID или individual-ID)
             companyId: selectedOwner.value?.startsWith('company') ? selectedOwner.value.split('-')[1] : null,
             individualId: selectedOwner.value?.startsWith('individual') ? selectedOwner.value.split('-')[1] : null,
-            date: editableDate.value // Строка YYYY-MM-DD
+            date: editableDate.value, // YYYY-MM-DD
+            // Передаем текущие props для контекста
+            cellIndex: props.cellIndex,
+            operationToEdit: props.operationToEdit
         };
         
-        // Просто сообщаем родителю. НЕ ЗАКРЫВАЕМСЯ САМИ.
+        // Эмитим событие родителю. НЕ ЗАКРЫВАЕМ ОКНО САМИ.
         emit('trigger-prepayment', currentData);
     }
 });
-
-// --- FORMATTERS ---
-const formatNumber = (numStr) => {
-  const clean = `${numStr}`.replace(/[^0-9]/g, '');
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-};
 
 const onAmountInput = (event) => {
   const input = event.target;
@@ -125,27 +151,6 @@ const onAmountInput = (event) => {
     }
   });
 };
-
-// --- ДАТА ---
-const toInputDateString = (date) => {
-  if (!date) return null;
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const day = d.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const minDateString = computed(() => toInputDateString(props.minAllowedDate));
-const maxDateString = computed(() => toInputDateString(props.maxAllowedDate));
-
-const toInputDate = (date) => {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const day = d.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const editableDate = ref(toInputDate(props.date));
 
 // --- AUTO-SELECT ---
 const onAccountSelected = (accountId) => {
@@ -182,6 +187,7 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
       const catObj = mainStore.categories.find(c => c._id === cId);
       if (catObj) {
          const name = catObj.name.toLowerCase().trim();
+         // Не ставим автоматически "Перевод", но "Предоплату" можно
          if (name !== 'перевод' && name !== 'transfer') {
              selectedCategoryId.value = cId;
          }
@@ -194,9 +200,6 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
 
 // --- MOUNTED ---
 onMounted(async () => {
-  // Гарантия категории
-  await mainStore.ensureSystemCategory('Предоплата');
-
   if (props.operationToEdit) {
     const op = props.operationToEdit;
     amount.value = formatNumber(Math.abs(op.amount || 0));
