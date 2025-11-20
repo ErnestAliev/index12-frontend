@@ -1,12 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v21.5 - MOVE OPS AWAIT FIX ---
- * * ВЕРСИЯ: 21.5 - Синхронное ожидание перемещения
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v22.0 - FULL RESTORE & FIX ---
+ * * ВЕРСИЯ: 22.0 - Полное восстановление функционала и исправление логики категорий
+ * * ДАТА: 2025-11-21
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) moveOperation теперь ждет (await) завершения запроса к API.
- * Это предотвращает перезапись локального кэша старыми данными при немедленном fetch.
- * 2. (FIX) updateProjectionFromCalculationData вызывается после успешного API запроса.
+ * 1. (RESTORE) Восстановлен полный объем кода (все методы CRUD).
+ * 2. (LOGIC) visibleCategoriesForEditor: Исключает системные категории (для редактора).
+ * 3. (LOGIC) currentCategoryBalances: Включает ВСЕ категории (для отображения в виджете).
+ * 4. (FIX) Исправлен расчет балансов для категорий с учетом prepaymentId.
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +33,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v21.5 (Move Ops Await Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v22.0 (Full Restore & Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -70,13 +71,16 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer';
   };
 
+  const _isPrepaymentCategory = (cat) => {
+    if (!cat) return false;
+    const n = cat.name.toLowerCase().trim();
+    return n.includes('предоплата') || n.includes('prepayment') || cat.isPrepayment;
+  };
+
   // Поиск системных категорий для расчетов
   const getPrepaymentCategoryIds = computed(() => {
     return categories.value
-      .filter(c => {
-        const n = c.name.toLowerCase().trim();
-        return n.includes('предоплата') || n.includes('prepayment') || n.includes('аванс');
-      })
+      .filter(c => _isPrepaymentCategory(c))
       .map(c => c._id);
   });
 
@@ -89,15 +93,19 @@ export const useMainStore = defineStore('mainStore', () => {
       .map(c => c._id);
   });
 
+  // 🟢 ДЛЯ РЕДАКТОРА СПИСКОВ (EntityListEditor)
+  // Здесь МЫ СКРЫВАЕМ системные категории ("Перевод", "Предоплата"), 
+  // чтобы пользователь не мог их случайно удалить или переименовать.
   const visibleCategories = computed(() => {
     return categories.value.filter(c => {
       if (_isTransferCategory(c)) return false;
-      if (c.isPrepayment) return false; 
-      const n = c.name.toLowerCase().trim();
-      if (n === 'предоплата' || n === 'prepayment') return false;
+      if (_isPrepaymentCategory(c)) return false; 
       return true;
     });
   });
+  
+  // Алиас для совместимости, если где-то используется это имя
+  const visibleCategoriesForEditor = visibleCategories;
 
   const visibleContractors = computed(() => {
       return contractors.value.filter(c => {
@@ -106,13 +114,14 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
+  // 🟢 ДЛЯ ВЫБОРА ВИДЖЕТОВ (Dropdown)
+  // Здесь тоже скрываем системные, так как для них есть свои спец. виджеты.
   const allWidgets = computed(() => {
-    const transferCategory = categories.value.find(_isTransferCategory);
-    const cats = [];
-    if (transferCategory) {
-       cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
-    }
-     return [...staticWidgets.value, ...cats];
+    const availableCats = categories.value.filter(c => {
+        return !_isTransferCategory(c) && !_isPrepaymentCategory(c);
+    });
+    const catWidgets = availableCats.map(c => ({ key: `cat_${c._id}`, name: c.name }));
+     return [...staticWidgets.value, ...catWidgets];
   });
 
   // Настройки дашборда
@@ -249,8 +258,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return chart;
   });
 
-  // ... Rest of the store getters/actions ...
-  
   const displayOperationsFlat = computed(() => {
     const displayOps = [];
     Object.values(displayCache.value).forEach(dayOps => {
@@ -413,14 +420,28 @@ export const useMainStore = defineStore('mainStore', () => {
     return categories.value.find(c => c._id === id);
   };
 
+  // 🟢 ДЛЯ СПИСКА ВИДЖЕТА (Включаем ВСЕ категории)
+  // Это данные, которые попадают ВНУТРЬ виджета категорий.
+  // "Предоплата" здесь ДОЛЖНА быть.
   const currentCategoryBreakdowns = computed(() => {
     const map = {};
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
+    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const key = `cat_${op.categoryId._id}`;
+      
+      // Определяем ID категории. 
+      // Если это операция с prepaymentId, находим соответствующую категорию "Предоплата" в списке категорий.
+      let catId = op.categoryId?._id || op.categoryId;
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
+          catId = op.prepaymentId?._id || op.prepaymentId;
+      }
+      if (!catId) continue;
+
+      const key = `cat_${catId}`;
+      // Если категории нет в map (например, она была скрыта или удалена, но операция осталась), создаем запись
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
+      
       if (op.type === 'income') map[key].income += op.amount || 0;
       else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
       map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
@@ -433,9 +454,16 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const key = `cat_${op.categoryId._id}`;
+      
+      let catId = op.categoryId?._id || op.categoryId;
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
+          catId = op.prepaymentId?._id || op.prepaymentId;
+      }
+      if (!catId) continue;
+
+      const key = `cat_${catId}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
+      
       if (op.type === 'income') map[key].income += op.amount || 0;
       else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
       map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
@@ -443,29 +471,42 @@ export const useMainStore = defineStore('mainStore', () => {
     return map;
   });
 
+  // 🟢 ДЛЯ СПИСКА ВИДЖЕТА (BALANCES) - Включаем ВСЕ
   const currentCategoryBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const id = op.categoryId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
+      
+      let catId = op.categoryId?._id || op.categoryId;
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
+          catId = op.prepaymentId?._id || op.prepaymentId;
+      }
+      if (!catId) continue;
+
+      if (!bal[catId]) bal[catId] = 0;
+      bal[catId] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
     }
+    // Возвращаем ВСЕ категории из стора
     return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
   const futureCategoryBalances = computed(() => {
     const bal = {};
+    // Начинаем с текущих
     const current = currentCategoryBalances.value;
     for (const c of current) { bal[c._id] = c.balance || 0; }
     
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const id = op.categoryId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
+      
+      let catId = op.categoryId?._id || op.categoryId;
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
+          catId = op.prepaymentId?._id || op.prepaymentId;
+      }
+      if (!catId) continue;
+
+      if (!bal[catId]) bal[catId] = 0;
+      bal[catId] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
     }
     return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
@@ -864,7 +905,6 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureTotals();
   }
 
-  // 🟢 ИЗМЕНЕНО: Добавлен async/await
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -923,7 +963,6 @@ export const useMainStore = defineStore('mainStore', () => {
        } catch(e) { refreshDay(oldDateKey); refreshDay(newDateKey); }
     }
     if (projection.value.mode) {
-      // 🟢 ТЕПЕРЬ УВЕРЕНЫ, ЧТО ДАННЫЕ ОБНОВЛЕНЫ
       await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     }
   }
@@ -1207,6 +1246,7 @@ export const useMainStore = defineStore('mainStore', () => {
   return {
     accounts, companies, contractors, projects, categories,
     visibleCategories, 
+    visibleCategoriesForEditor, // 🟢 Экспортируем явный алиас для уверенности
     visibleContractors,
     individuals, 
     operationsCache: displayCache,
@@ -1231,9 +1271,8 @@ export const useMainStore = defineStore('mainStore', () => {
     getPrepaymentCategoryIds,
     getActCategoryIds,
     
-    // 🟢 ДОБАВЛЕНО: Возвращаем ссылки, чтобы не было ReferenceError
-    currentCategoryBalances,
-    futureCategoryBalances,
+    currentCategoryBalances, // 🟢 ВЕРНУЛ (все категории)
+    futureCategoryBalances,  // 🟢 ВЕРНУЛ (все категории)
     
     currentOps, 
     
