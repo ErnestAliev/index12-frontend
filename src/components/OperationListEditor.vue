@@ -5,13 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v21.0 - PREPAYMENT ORANGE UI ---
- * * ВЕРСИЯ: 21.0 - Оранжевый UI для режима предоплаты
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v21.1 - SOLID BUTTONS ---
+ * * ВЕРСИЯ: 21.1 - Сплошные цветные кнопки создания
+ * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Добавлены классы для оранжевого цвета (#FF9D00).
- * 2. (LOGIC) В режиме 'prepayment_only' суммы и теги красятся в оранжевый.
+ * 1. (STYLE) .btn-add-new теперь имеет базовый стиль сплошной кнопки (как в TransferListEditor).
+ * 2. (STYLE) Добавлены классы-модификаторы .btn-income (зеленый) и .btn-expense (красный).
+ * 3. (TEMPLATE) Кнопка создания теперь динамически получает класс цвета в зависимости от props.type.
  */
 
 const props = defineProps({
@@ -77,7 +78,6 @@ const loadOperations = () => {
     if (op.isTransfer) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     
-    // 🟢 Проверка режима "Только предоплаты"
     if (props.filterMode === 'prepayment_only') {
         const prepayIds = mainStore.getPrepaymentCategoryIds;
         const catId = op.categoryId?._id || op.categoryId;
@@ -156,9 +156,8 @@ const formatTotal = (val) => {
     return `${formatted} ₸`;
 };
 
-// 🟢 КЛАССЫ ДЛЯ СУММ (С учетом режима)
 const getTotalClass = (val) => {
-    if (props.filterMode === 'prepayment_only') return 'total-prepayment'; // Оранжевый
+    if (props.filterMode === 'prepayment_only') return 'total-prepayment';
     if (val > 0) return 'total-income';
     if (val < 0) return 'total-expense';
     return '';
@@ -296,7 +295,12 @@ const isSystemPrepayment = (item) => {
       </p>
       
       <div class="create-section">
-        <button class="btn-add-new" @click="openCreatePopup">
+        <!-- 🟢 КНОПКА СОЗДАНИЯ (ТЕПЕРЬ СПЛОШНАЯ И ЦВЕТНАЯ) -->
+        <button 
+           class="btn-add-new" 
+           :class="type === 'income' ? 'btn-income' : 'btn-expense'"
+           @click="openCreatePopup"
+        >
           + Создать {{ type === 'income' ? 'Доход' : 'Расход' }}
         </button>
       </div>
@@ -312,7 +316,6 @@ const isSystemPrepayment = (item) => {
           </div>
       </div>
       
-      <!-- ФИЛЬТРЫ -->
       <div class="filters-row">
         <div class="filter-col col-date">
            <input type="date" v-model="filters.date" class="filter-input" placeholder="Фильтр..." />
@@ -388,7 +391,6 @@ const isSystemPrepayment = (item) => {
             </select>
           </div>
           
-          <!-- 🟢 СУММА (С КЛАССОМ) -->
           <div class="col-amount">
             <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="getInputClass()" />
           </div>
@@ -400,7 +402,6 @@ const isSystemPrepayment = (item) => {
              </select>
           </div>
           
-          <!-- 🟢 КАТЕГОРИЯ (С ОРАНЖЕВЫМ ТЕГОМ В РЕЖИМЕ ПРЕДОПЛАТЫ) -->
           <div class="col-cat">
              <div v-if="isSystemPrepayment(item) || props.filterMode === 'prepayment_only'" class="system-tag-wrapper">
                 <span class="system-tag" :class="{ 'tag-orange': props.filterMode === 'prepayment_only' }">
@@ -453,18 +454,33 @@ const isSystemPrepayment = (item) => {
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
+
 .create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
-.btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
+
+/* 🟢 ОБНОВЛЕННЫЕ СТИЛИ КНОПКИ СОЗДАНИЯ */
+.btn-add-new { 
+  width: 100%; padding: 12px; 
+  border: 1px solid transparent; /* Сплошная граница */
+  border-radius: 8px; 
+  color: #fff; /* Белый текст */
+  font-size: 15px; cursor: pointer; transition: all 0.2s; 
+}
+/* Доход - Зеленый */
+.btn-income { background-color: var(--color-primary); }
+.btn-income:hover { background-color: #2da84e; }
+
+/* Расход - Красный */
+.btn-expense { background-color: var(--color-danger); }
+.btn-expense:hover { background-color: #d93025; }
+
+
 .totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 .total-item { font-size: 16px; color: #333; }
 .total-label { margin-right: 8px; color: #666; }
 .total-value { font-weight: 700; }
-
-/* Цвета итогов */
 .total-income { color: var(--color-primary); }
 .total-expense { color: var(--color-danger); }
-.total-prepayment { color: #FF9D00; } /* 🟢 Оранжевый итог */
+.total-prepayment { color: #FF9D00; }
 
 .filters-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; margin-bottom: 8px; }
 .filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
@@ -480,10 +496,9 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .amount-input { text-align: right; font-weight: 600; }
 
-/* Цвета инпутов */
 .is-income { color: var(--color-primary); }
 .is-expense { color: var(--color-danger); }
-.is-prepayment { color: #FF9D00 !important; } /* 🟢 Оранжевый текст в инпуте */
+.is-prepayment { color: #FF9D00 !important; }
 
 .delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 18px; height: 18px; stroke: #999; }
@@ -497,7 +512,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .empty-state { text-align: center; padding: 2rem; color: #888; }
 
-/* ТЕГ ПРЕДОПЛАТЫ */
 .system-tag-wrapper {
   display: flex; align-items: center; height: 40px;
 }
@@ -511,7 +525,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
   font-weight: 600;
   border: 1px solid #b2dfdb;
 }
-/* 🟢 Оранжевый стиль тега */
 .system-tag.tag-orange {
   background-color: #FFF3E0;
   color: #FF9D00;
