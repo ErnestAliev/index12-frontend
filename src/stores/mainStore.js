@@ -1,12 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v22.2 - TRANSFER ID SYNC ---
- * * ВЕРСИЯ: 22.2 - Исправление ID категории перевода
+ * * --- МЕТКА ВЕРСИИ: v23.0 - CREATE EVENT ACTION ---
+ * * ВЕРСИЯ: 23.0 - Добавлено действие createEvent
  * * ДАТА: 2025-11-21
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) _mergeTransfers: Теперь функция находит реальный ID категории "Перевод" 
- * в списке categories.value и использует его вместо хардкода 'transfer'.
- * Это чинит отображение сумм в виджетах "Категории" и "Перевод".
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (NEW) createEvent: Централизованный метод для создания обычных операций (Доход/Расход).
+ * Это позволяет убрать логику axios из компонентов и делать вызовы в фоне.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +28,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v22.2 (Transfer ID Sync) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v23.0 (Create Event Action) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -694,9 +693,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
   
-  /**
-   * 🟢 ИСПРАВЛЕНИЕ (v22.2): Динамический поиск реальной категории Перевода
-   */
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
     const transferGroups = new Map();
@@ -708,12 +704,10 @@ export const useMainStore = defineStore('mainStore', () => {
       }
     });
 
-    // 🟢 Поиск реальной категории в списке
     const realTransferCat = categories.value.find(c => {
        const n = c.name.toLowerCase().trim();
        return n === 'перевод' || n === 'transfer';
     });
-    // Если нашли, используем ее _id, иначе фоллбэк
     const tCatObj = realTransferCat 
         ? { _id: realTransferCat._id, name: realTransferCat.name }
         : { _id: 'transfer', name: 'Перевод' };
@@ -732,7 +726,7 @@ export const useMainStore = defineStore('mainStore', () => {
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            categoryId: tCatObj, // 🟢 Используем правильный объект категории
+            categoryId: tCatObj, 
             date: incomeOp.date || expenseOp.date
           });
           continue;
@@ -742,7 +736,7 @@ export const useMainStore = defineStore('mainStore', () => {
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        categoryId: tCatObj // 🟢 Используем правильный объект категории
+        categoryId: tCatObj 
       });
     }
     return [...normalOps, ...mergedTransfers];
@@ -823,6 +817,33 @@ export const useMainStore = defineStore('mainStore', () => {
       return response.data;
     } catch (error) { throw error; }
   }
+  
+  // 🟢 НОВОЕ ДЕЙСТВИЕ ДЛЯ СОЗДАНИЯ ОБЫЧНОЙ ОПЕРАЦИИ (БЕЗ ПЕРЕГРУЗКИ UI)
+  async function createEvent(opData) {
+    try {
+        let { date, dateKey, cellIndex } = opData;
+        
+        if (!dateKey && date) {
+            dateKey = _getDateKey(new Date(date));
+        }
+        
+        if (cellIndex === undefined) {
+             cellIndex = await getFirstFreeCellIndex(dateKey);
+        }
+        
+        const payload = { ...opData, dateKey, cellIndex };
+        
+        const response = await axios.post(`${API_BASE_URL}/events`, payload);
+        
+        // Обновляем кеш и отображение
+        await addOperation(response.data); 
+        
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+  }
+  
   async function updateTransfer(transferId, transferData) {
     try {
       const finalDate = new Date(transferData.date); const newDateKey = _getDateKey(finalDate);
@@ -966,6 +987,7 @@ export const useMainStore = defineStore('mainStore', () => {
     addOperation, deleteOperation, moveOperation, addAccount, addCompany, addContractor, addProject, addCategory, addIndividual, deleteEntity, batchUpdateEntities,
     computeTotalDaysForMode, updateFutureProjection, updateFutureProjectionByMode, setProjectionRange, loadCalculationData, updateProjectionFromCalculationData,
     createTransfer, updateTransfer, updateOperation, fetchOperationsRange, updateFutureProjectionWithData,
+    createEvent, // 🟢 Экспортируем новое действие
     startAutoRefresh, stopAutoRefresh, forceRefreshAll, getFirstFreeCellIndex, _parseDateKey, _getDateKey, 
     allOperationsFlat, displayOperationsFlat, importOperations, exportAllOperations, checkAuth, logout,
   };
