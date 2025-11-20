@@ -1,5 +1,17 @@
+/**
+ * * --- МЕТКА ВЕРСИИ: v12.0 - STRICT 6 WIDGETS ---
+ * * ВЕРСИЯ: 12.0 - Исправлен состав виджетов по умолчанию
+ * * ДАТА: 2025-11-19
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FIX) `dashboardLayout` теперь строго содержит 6 элементов по умолчанию:
+ * CurrentTotal, Accounts, Companies, Contractors, Projects, FutureTotal.
+ * 2. (CONFIG) В `staticWidgets` зарегистрированы ВСЕ возможные типы виджетов,
+ * чтобы их можно было выбрать из меню (включая скрытые Income/Expense/Individuals).
+ */
+
 import { defineStore } from 'pinia';
-import { ref, computed, watch, triggerRef } from 'vue';
+import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 
 // Глобальная настройка Axios
@@ -21,17 +33,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  /**
-   * * --- МЕТКА ВЕРСИИ: v22.0 - CLEANUP & LEGACY HIDE ---
-   * * ВЕРСИЯ: 22.0 - Очистка от устаревших категорий
-   * * ДАТА: 2025-11-20
-   *
-   * ЧТО ИЗМЕНЕНО:
-   * 1. (LOGIC) visibleCategories: Теперь скрывает "Доплата" и "Постоплата",
-   * чтобы они не появлялись в селектах.
-   * 2. (CONFIRM) Логика activeDeals и obligationsWidgetData проверена на соответствие ТЗ v3.3.
-   */
-  console.log('--- mainStore.js v22.0 (Cleanup) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v12.0 (Strict 6 Widgets) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -47,6 +49,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
+  // Полный список доступных виджетов (для меню выбора)
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего (на тек. момент)' },
     { key: 'accounts',     name: 'Мои счета' },
@@ -55,47 +58,44 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
     
-    { key: 'obligations',  name: 'Мои обязательства' },
-
+    // Скрытые по умолчанию:
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
-    { key: 'transferList', name: 'Мои переводы' },
-    { key: 'postingList',  name: 'Мои проводки' },
-    
     { key: 'individuals',  name: 'Мои Физлица' },
     { key: 'categories',   name: 'Категории' }, 
   ]);
 
+  // --- ХЕЛПЕР: Это категория "Перевод"? ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
-    return name === 'перевод' || name === 'transfer' || name === 'проводки';
+    return name === 'перевод' || name === 'transfer';
   };
 
-  // 🟢 UPDATED: Скрываем Legacy категории
+  // Список категорий для UI (без "Перевода")
   const visibleCategories = computed(() => {
-    return categories.value.filter(c => {
-        const name = c.name.toLowerCase().trim();
-        // Жесткая фильтрация устаревших сущностей
-        if (name === 'доплата' || name === 'постоплата') return false;
-        return !_isTransferCategory(c);
-    });
+    return categories.value.filter(c => !_isTransferCategory(c));
   });
 
+  // Динамический список всех виджетов (статика + категория "Перевод" если есть)
   const allWidgets = computed(() => {
+    const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
-    return [...staticWidgets.value, ...cats];
+    if (transferCategory) {
+       cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
+    }
+     return [...staticWidgets.value, ...cats];
   });
 
+  // 🟢 FIX: Железное правило - 6 виджетов по умолчанию
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 
-    'accounts',     
-    'companies',    
-    'contractors',  
-    'projects',     
-    'futureTotal',
-    'obligations'
+    'currentTotal', // 1
+    'accounts',     // 2
+    'companies',    // 3
+    'contractors',  // 4
+    'projects',     // 5
+    'futureTotal'   // 6
   ]);
   
   watch(dashboardLayout, (newLayout) => {
@@ -118,6 +118,7 @@ export const useMainStore = defineStore('mainStore', () => {
     localStorage.setItem('projection', JSON.stringify(newProjection));
   }, { deep: true });
   
+  // Логика замены виджета (сохраняет общее количество)
   function replaceWidget(i, key){ 
     if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
   }
@@ -144,7 +145,9 @@ export const useMainStore = defineStore('mainStore', () => {
     return `${year}-${doy}`;
   };
   const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); 
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
+        return new Date(); 
+    }
     const [year, doy] = dateKey.split('-').map(Number);
     const date = new Date(year, 0, 1);
     date.setDate(doy);
@@ -163,6 +166,9 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return { startDate, endDate };
   };
+  const _addDays = (base, n) => { 
+    const d = new Date(base); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; 
+  };
 
   const allOperationsFlat = computed(() => {
     const allOps = [];
@@ -174,91 +180,17 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // 🟢 Активные сделки (очищено от имен категорий, работаем по isDeal / parentDealId)
-  const activeDeals = computed(() => {
-      const deals = allOperationsFlat.value.filter(op => op.isDeal === true);
-      
-      return deals.map(deal => {
-          const dealId = deal._id;
-          const dealTotal = deal.dealTotal || 0;
-          
-          // Сумма поступлений (Предоплата + последующие платежи по parentDealId)
-          const paid = allOperationsFlat.value.reduce((acc, op) => {
-              if (op._id === dealId) return acc + (op.amount || 0); // Сама предоплата
-              if (op.parentDealId?._id === dealId || op.parentDealId === dealId) {
-                  if (op.type === 'income') return acc + (op.amount || 0);
-              }
-              return acc;
-          }, 0);
-
-          // Сумма актов (Исполнение)
-          const executed = allOperationsFlat.value.reduce((acc, op) => {
-              if (op.parentDealId?._id === dealId || op.parentDealId === dealId) {
-                  if (op.type === 'act') return acc + Math.abs(op.amount || 0);
-              }
-              return acc;
-          }, 0);
-
-          const isFullyPaid = paid >= dealTotal;
-          const isFullyExecuted = executed >= dealTotal;
-          
-          // Если сделка закрыта (все оплачено и исполнено), скрываем из списка
-          if (isFullyPaid && isFullyExecuted) return null;
-          
-          const clientName = deal.contractorId?.name || 'Без клиента';
-          const dateStr = new Date(deal.date).toLocaleDateString('ru-RU');
-          const label = `${clientName} (${dateStr}) - ${formatNumber(dealTotal)} ₸`;
-
-          return {
-              _id: dealId,
-              label,
-              dealTotal,
-              paid,
-              executed,
-              remainingToPay: Math.max(0, dealTotal - paid),
-              remainingToExecute: Math.max(0, dealTotal - executed),
-              contractorId: deal.contractorId,
-              projectId: deal.projectId
-          };
-      }).filter(Boolean);
+  const displayOperationsFlat = computed(() => {
+    const displayOps = [];
+    Object.values(displayCache.value).forEach(dayOps => {
+      if (Array.isArray(dayOps)) {
+        displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
+      }
+    });
+    return displayOps;
   });
-
-  // 🟢 Расчет обязательств (ТЗ v3.3)
-  const obligationsWidgetData = computed(() => {
-      let weOweWork = 0;   
-      let oweUsMoney = 0;
-
-      const deals = allOperationsFlat.value.filter(op => op.isDeal === true);
-      
-      let totalDealSum = 0;
-      let totalReceived = 0;
-      let totalExecuted = 0;
-
-      deals.forEach(deal => {
-          totalDealSum += (deal.dealTotal || 0);
-          totalReceived += (deal.amount || 0); // Начальная предоплата
-      });
-      
-      // Добираем связанные операции
-      allOperationsFlat.value.forEach(op => {
-          if (op.parentDealId) {
-              if (op.type === 'income') totalReceived += (op.amount || 0);
-              if (op.type === 'act') totalExecuted += Math.abs(op.amount || 0);
-          }
-      });
-
-      weOweWork = Math.max(0, totalReceived - totalExecuted);
-      oweUsMoney = Math.max(0, totalDealSum - totalReceived);
-      
-      return { weOweWork, oweUsMoney };
-  });
-
-  const formatNumber = (num) => {
-      return String(Math.floor(num)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  };
-
+  
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
-  const isAct = (op) => !!op && op.type === 'act';
   
   const currentOps = computed(() =>
     allOperationsFlat.value.filter(op => {
@@ -272,11 +204,34 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
-  const currentActs = computed(() => currentOps.value.filter(op => isAct(op)).sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
-  
-  const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
-  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense').sort((a, b) => _parseDateKey(b.dateKey) - _parseDateKey(a.dateKey)));
+  // --- СПИСКИ ОПЕРАЦИЙ ---
+
+  const currentTransfers = computed(() => {
+    const transfers = currentOps.value.filter(op => isTransfer(op));
+    return transfers.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
+
+  const currentIncomes = computed(() => {
+    const incomes = currentOps.value.filter(op => !isTransfer(op) && op.type === 'income');
+    return incomes.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
+
+  const currentExpenses = computed(() => {
+    const expenses = currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
+    return expenses.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
 
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
@@ -292,13 +247,36 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
-  const futureActs = computed(() => futureOps.value.filter(op => isAct(op)).sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
-  
-  const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'income').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
-  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && !isAct(op) && op.type === 'expense').sort((a, b) => _parseDateKey(a.dateKey) - _parseDateKey(b.dateKey)));
+  const futureTransfers = computed(() => {
+    const transfers = futureOps.value.filter(op => isTransfer(op));
+    return transfers.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateA.getTime() - dateB.getTime();
+    });
+  });
 
-  const getCategoryById = (id) => { return categories.value.find(c => c._id === id); };
+  const futureIncomes = computed(() => {
+    const incomes = futureOps.value.filter(op => !isTransfer(op) && op.type === 'income');
+    return incomes.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateA.getTime() - dateB.getTime();
+    });
+  });
+
+  const futureExpenses = computed(() => {
+    const expenses = futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
+    return expenses.sort((a, b) => {
+      const dateA = _parseDateKey(a.dateKey); 
+      const dateB = _parseDateKey(b.dateKey);
+      return dateA.getTime() - dateB.getTime();
+    });
+  });
+
+  const getCategoryById = (id) => {
+    return categories.value.find(c => c._id === id);
+  };
 
   const currentCategoryBreakdowns = computed(() => {
     const map = {};
@@ -308,10 +286,9 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.categoryId?._id) continue;
       const key = `cat_${op.categoryId._id}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      
-      if (op.type === 'income') { map[key].income += op.amount || 0; map[key].total += op.amount || 0; }
-      else if (op.type === 'expense') { map[key].expense += Math.abs(op.amount || 0); map[key].total -= Math.abs(op.amount || 0); }
-      else if (op.type === 'act') { map[key].expense += Math.abs(op.amount || 0); map[key].total += (op.amount || 0); }
+      if (op.type === 'income') map[key].income += op.amount || 0;
+      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
+      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
     }
     return map;
   });
@@ -324,15 +301,16 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.categoryId?._id) continue;
       const key = `cat_${op.categoryId._id}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      
-      if (op.type === 'income') { map[key].income += op.amount || 0; map[key].total += op.amount || 0; }
-      else if (op.type === 'expense') { map[key].expense += Math.abs(op.amount || 0); map[key].total -= Math.abs(op.amount || 0); }
-      else if (op.type === 'act') { map[key].expense += Math.abs(op.amount || 0); map[key].total += (op.amount || 0); }
+      if (op.type === 'income') map[key].income += op.amount || 0;
+      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
+      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
     }
     return map;
   });
 
-  const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0));
+  const totalInitialBalance = computed(() =>
+    (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
+  );
   
   const _applyTransferToBalances = (bal, op) => {
     const amt = Math.abs(Number(op?.amount) || 0);
@@ -347,7 +325,6 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const a of accounts.value) bal[a._id] = a.initialBalance || 0;
     for (const op of currentOps.value) {
       if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (isAct(op)) continue; 
       if (!op?.accountId?._id) continue;
       const id = op.accountId._id;
       if (bal[id] === undefined) bal[id] = 0;
@@ -360,9 +337,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const bal = {};
     const currentBalances = currentAccountBalances.value;
     for (const account of currentBalances) { bal[account._id] = account.balance || 0; }
+    
     for (const op of futureOps.value) {
       if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (isAct(op)) continue;
       if (!op?.accountId?._id) continue;
       const id = op.accountId._id;
       if (bal[id] === undefined) bal[id] = 0;
@@ -371,72 +348,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
   });
   
-  const currentProjectBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.projectId?._id) continue;
-      const id = op.projectId._id;
-      if (!bal[id]) bal[id] = 0;
-      if (isAct(op)) continue; 
-      if (op.amount > 0) bal[id] += op.amount; 
-    }
-    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
-  });
-
-  const futureProjectBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentProjectBalances.value;
-    for (const project of currentBalances) { bal[project._id] = project.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.projectId?._id) continue;
-      const id = op.projectId._id;
-      if (!bal[id]) bal[id] = 0;
-      if (isAct(op)) continue;
-      if (op.amount > 0) bal[id] += op.amount;
-    }
-    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
-  });
-
-  const currentContractorBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue; 
-      if (!op?.contractorId?._id) continue;
-      const id = op.contractorId._id;
-      if (!bal[id]) bal[id] = 0;
-      if (isAct(op)) continue;
-      if (op.amount > 0) bal[id] += op.amount;
-    }
-    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-  const futureContractorBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentContractorBalances.value;
-    for (const contractor of currentBalances) { bal[contractor._id] = contractor.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.contractorId?._id) continue;
-      const id = op.contractorId._id;
-      if (!bal[id]) bal[id] = 0;
-      if (isAct(op)) continue;
-      if (op.amount > 0) bal[id] += op.amount;
-    }
-    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-
   const _applyTransferToCompanyBalances = (bal, op) => {
     const amt = Math.abs(Number(op?.amount) || 0);
     const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
     const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
-  };
-  const _applyTransferToIndividualBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
-    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
     if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
     if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
   };
@@ -445,7 +360,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const bal = {};
     for (const op of currentOps.value) {
       if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
-      if (isAct(op)) continue; 
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
@@ -453,26 +367,86 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
+  
   const futureCompanyBalances = computed(() => {
     const bal = {};
     const currentBalances = currentCompanyBalances.value;
     for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
+    
     for (const op of futureOps.value) {
       if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
-      if (isAct(op)) continue;
       if (!op?.companyId?._id) continue;
       const id = op.companyId._id;
       if (!bal[id]) bal[id] = 0;
       bal[id] += (op?.amount || 0);
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+  });
+
+  const _applyTransferToIndividualBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
+    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
+  };
+
+  const currentContractorBalances = computed(() => {
+    const bal = {};
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue; 
+      if (!op?.contractorId?._id) continue;
+      const id = op.contractorId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+  });
+  const futureContractorBalances = computed(() => {
+    const bal = {};
+    const currentBalances = currentContractorBalances.value;
+    for (const contractor of currentBalances) { bal[contractor._id] = contractor.balance || 0; }
+    
+    for (const op of futureOps.value) {
+      if (isTransfer(op)) continue;
+      if (!op?.contractorId?._id) continue;
+      const id = op.contractorId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+  });
+
+  const currentProjectBalances = computed(() => {
+    const bal = {};
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      if (!op?.projectId?._id) continue;
+      const id = op.projectId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
+  });
+  const futureProjectBalances = computed(() => {
+    const bal = {};
+    const currentBalances = currentProjectBalances.value;
+    for (const project of currentBalances) { bal[project._id] = project.balance || 0; }
+    
+    for (const op of futureOps.value) {
+      if (isTransfer(op)) continue;
+      if (!op?.projectId?._id) continue;
+      const id = op.projectId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op?.amount || 0);
+    }
+    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
   });
 
   const currentIndividualBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
       if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
-      if (isAct(op)) continue;
       if (!op?.individualId?._id) continue;
       const id = op.individualId._id;
       if (!bal[id]) bal[id] = 0;
@@ -480,13 +454,14 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
+  
   const futureIndividualBalances = computed(() => {
     const bal = {};
     const currentBalances = currentIndividualBalances.value;
     for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
+    
     for (const op of futureOps.value) {
       if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
-      if (isAct(op)) continue;
       if (!op?.individualId?._id) continue;
       const id = op.individualId._id;
       if (!bal[id]) bal[id] = 0;
@@ -495,23 +470,31 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
+  // 🟢 Балансы для виджета "Категории" теперь БЕЗ перевода
   const currentCategoryBalances = computed(() => {
     const bal = {};
+    // Инициализируем только видимые категории
     for (const c of visibleCategories.value) bal[c._id] = 0;
+    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
       const id = op.categoryId._id;
+      // Если категории нет в балансе (т.е. это "Перевод"), пропускаем
       if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
+    
     return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
   
   const futureCategoryBalances = computed(() => {
     const bal = {};
     const currentBalances = currentCategoryBalances.value;
-    for (const cat of currentBalances) { bal[cat._id] = cat.balance || 0; }
+    for (const cat of currentBalances) { 
+      bal[cat._id] = cat.balance || 0; 
+    }
+    
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId?._id) continue;
@@ -519,12 +502,17 @@ export const useMainStore = defineStore('mainStore', () => {
       if (bal[id] === undefined) continue; 
       bal[id] += (op?.amount || 0);
     }
-    return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    
+    return visibleCategories.value.map(c => ({ 
+        ...c, 
+        balance: bal[c._id] || 0 
+      }));
   });
+
 
   const currentTotalBalance = computed(() => {
     const opsTotal = currentOps.value.reduce((s,op)=> {
-      if (isTransfer(op) || isAct(op)) return s;
+      if (isTransfer(op)) return s;
       return s + (op?.amount || 0);
     }, 0);
     return (totalInitialBalance.value || 0) + opsTotal;
@@ -540,7 +528,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (endDate <= todayDate) { return currentTotalBalance.value || 0; }
     let total = currentTotalBalance.value || 0;
     for (const op of futureOps.value) { 
-       if (!isTransfer(op) && !isAct(op)) total += (op?.amount || 0); 
+       if (!isTransfer(op)) total += (op?.amount || 0); 
     }
     return total;
   });
@@ -549,8 +537,8 @@ export const useMainStore = defineStore('mainStore', () => {
     const byDateKey = {};
     for (const op of allOperationsFlat.value) {
       if (!op?.dateKey) continue;
-      if (!isTransfer(op) && !isAct(op)) {
-        if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, expense:0, dayTotal:0 };
+      if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, expense:0, dayTotal:0 };
+      if (!isTransfer(op)) {
         if (op.type === 'income') byDateKey[op.dateKey].income += (op?.amount || 0);
         else if (op.type === 'expense') byDateKey[op.dateKey].expense += Math.abs(op.amount || 0);
         byDateKey[op.dateKey].dayTotal += (op?.amount || 0);
@@ -631,7 +619,7 @@ export const useMainStore = defineStore('mainStore', () => {
         return opDate > base && opDate <= endDate;
     });
     for (const op of opsInRange) { 
-        if (!isTransfer(op) && !isAct(op)) {
+        if (!isTransfer(op)) {
             if (op.type === 'income') futureIncomeSum += op.amount || 0;
             else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
         }
@@ -642,6 +630,39 @@ export const useMainStore = defineStore('mainStore', () => {
       futureIncomeSum, futureExpenseSum 
     };
     updateFutureTotals();
+  }
+
+  async function fetchOperationsRange(startDate, endDate) {
+    try {
+      const promises = [];
+      const dateKeysToFetch = [];
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateKey = _getDateKey(d);
+        if (!displayCache.value[dateKey]) {
+          dateKeysToFetch.push(dateKey);
+          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
+        }
+      }
+      if (promises.length === 0) {
+        displayCache.value = { ...displayCache.value };
+        return;
+      }
+      const responses = await Promise.all(promises);
+      const tempCache = {};
+      for (let i = 0; i < responses.length; i++) {
+        const dateKey = dateKeysToFetch[i];
+        const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
+        const processedOps = _mergeTransfers(raw).map(op => ({
+          ...op,
+          dateKey: dateKey,
+          date: op.date || _parseDateKey(dateKey) 
+        }));
+        tempCache[dateKey] = processedOps;
+      }
+      displayCache.value = { ...displayCache.value, ...tempCache };
+    } catch (error) {
+      if (error.response && error.response.status === 401) user.value = null;
+    }
   }
 
   const _syncCaches = (key, ops) => {
@@ -660,6 +681,12 @@ export const useMainStore = defineStore('mainStore', () => {
   function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
   function updateFutureTotals() {
     const _ = futureTotalBalance.value;
+    const __ = futureAccountBalances.value;
+    const ___ = futureCompanyBalances.value;
+    const ____ = futureContractorBalances.value;
+    const _____ = futureProjectBalances.value;
+    const ______ = futureIndividualBalances.value;
+    const _______ = futureCategoryBalances.value;
   }
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
@@ -698,29 +725,15 @@ export const useMainStore = defineStore('mainStore', () => {
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
-    const normalOps = list.filter(o => {
-        if (o.categoryId) {
-            const name = o.categoryId.name.toLowerCase().trim();
-            if (name === 'проводки' || name === 'перевод' || name === 'transfer') return false;
-        }
-        return !o?.isTransfer && !o?.transferGroupId;
-    });
-
+    const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
     const transferGroups = new Map();
     list.forEach(o => {
-        let isTr = o?.isTransfer || o?.transferGroupId;
-        if (!isTr && o.categoryId) {
-             const name = o.categoryId.name.toLowerCase().trim();
-             if (name === 'проводки' || name === 'перевод' || name === 'transfer') isTr = true;
-        }
-
-        if (isTr) {
-            const groupId = o.transferGroupId || `transfer_${o._id}`; 
-            if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
-            transferGroups.get(groupId).push(o);
-        }
+      if (o?.isTransfer || o?.transferGroupId) {
+        const groupId = o.transferGroupId || `transfer_${o._id}`;
+        if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
+        transferGroups.get(groupId).push(o);
+      }
     });
-
     const mergedTransfers = [];
     for (const [groupId, transferOps] of transferGroups) {
       if (transferOps.length === 2) {
@@ -728,38 +741,32 @@ export const useMainStore = defineStore('mainStore', () => {
         const incomeOp = transferOps.find(o => o.amount > 0);
         if (expenseOp && incomeOp) {
           mergedTransfers.push({
-            _id: incomeOp._id, _id2: expenseOp._id, 
-            type: 'transfer', isTransfer: true,
-            transferGroupId: groupId, 
-            amount: Math.abs(incomeOp.amount),
+            _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true,
+            transferGroupId: groupId, amount: Math.abs(incomeOp.amount),
             fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
             fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
             dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
             cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-            categoryId: { _id: 'transfer', name: 'Проводки' },
+            categoryId: { _id: 'transfer', name: 'Перевод' },
             date: incomeOp.date || expenseOp.date
           });
           continue;
         }
       }
-      
       const firstOp = transferOps[0];
       mergedTransfers.push({
-        ...firstOp, 
-        type: 'transfer', isTransfer: true,
-        transferGroupId: groupId, 
-        amount: Math.abs(firstOp.amount),
-        categoryId: { _id: 'transfer', name: 'Проводки' }
+        ...firstOp, type: 'transfer', isTransfer: true,
+        transferGroupId: groupId, amount: Math.abs(firstOp.amount),
+        categoryId: { _id: 'transfer', name: 'Перевод' }
       });
     }
     return [...normalOps, ...mergedTransfers];
   }
-
   async function _getOrCreateTransferCategory() {
-    let transferCategory = categories.value.find(_isTransferCategory);
+    let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
     if (!transferCategory) {
-      transferCategory = await addCategory('Проводки');
+      transferCategory = await addCategory('Перевод');
     }
     return transferCategory._id;
   }
@@ -829,7 +836,6 @@ export const useMainStore = defineStore('mainStore', () => {
        const sourceOpData = oldOps.find(o => o._id === operation._id);
        oldOps = oldOps.filter(o => o._id !== operation._id);
        _syncCaches(oldDateKey, oldOps);
-       
        let newOps = [...(displayCache.value[newDateKey] || [])];
        const occupant = newOps.find(o => o.cellIndex === targetIndex);
        let finalIndex = targetIndex;
@@ -840,13 +846,11 @@ export const useMainStore = defineStore('mainStore', () => {
        const moved = { 
           ...sourceOpData, 
           dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey), 
+          date: _parseDateKey(newDateKey),
           cellIndex: finalIndex 
        };
        newOps.push(moved);
-       
        _syncCaches(newDateKey, newOps);
-       
        axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
           dateKey: newDateKey, 
           cellIndex: finalIndex,
@@ -860,38 +864,17 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
-  async function createAct(actData) {
-      try {
-          const finalDate = new Date(actData.date);
-          const dateKey = _getDateKey(finalDate);
-          const cellIndex = await getFirstFreeCellIndex(dateKey);
-          const response = await axios.post(`${API_BASE_URL}/events`, {
-              ...actData,
-              dateKey: dateKey,
-              cellIndex: cellIndex,
-              type: 'act'
-          });
-          await refreshDay(dateKey);
-          updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-          return response.data;
-      } catch (error) {
-          throw error;
-      }
-  }
-
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
       const cellIndex = await getFirstFreeCellIndex(dateKey);
-      
-      const transferCategoryId = await _getOrCreateTransferCategory();
-
+      const transferCategory = await _getOrCreateTransferCategory();
       const response = await axios.post(`${API_BASE_URL}/transfers`, {
         ...transferData,
         dateKey: dateKey, 
         cellIndex: cellIndex,
-        categoryId: transferData.categoryId || transferCategoryId
+        categoryId: transferData.categoryId || transferCategory
       });
       await refreshDay(dateKey);
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -1146,10 +1129,6 @@ export const useMainStore = defineStore('mainStore', () => {
     calculationCache.value = {};
   }
   
-  async function fetchOperationsRange(startDate, endDate) {
-      await fetchCalculationRange(startDate, endDate);
-  }
-  
   return {
     accounts, companies, contractors, projects, categories,
     visibleCategories,
@@ -1174,13 +1153,10 @@ export const useMainStore = defineStore('mainStore', () => {
     currentOps, 
     
     currentTransfers, futureTransfers,
-    currentActs, futureActs, 
     
+    // 🟢 Экспорт списков доходов и расходов
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
-
-    activeDeals,
-    obligationsWidgetData,
 
     getCategoryById,
     futureCategoryBreakdowns,
@@ -1204,7 +1180,7 @@ export const useMainStore = defineStore('mainStore', () => {
     fetchCalculationRange, 
     updateProjectionFromCalculationData,
 
-    createTransfer, updateTransfer, updateOperation, createAct,
+    createTransfer, updateTransfer, updateOperation,
 
     fetchOperationsRange, 
     updateFutureProjectionWithData,
@@ -1216,6 +1192,7 @@ export const useMainStore = defineStore('mainStore', () => {
     _getDateKey, 
 
     allOperationsFlat,
+    displayOperationsFlat,
     
     importOperations,
     exportAllOperations, 
