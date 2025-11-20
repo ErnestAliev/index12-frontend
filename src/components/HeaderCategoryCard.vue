@@ -5,13 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.3 - REMOVE ADD BTN ---
- * * ВЕРСИЯ: 8.3 - Удалена кнопка "Добавить" из заголовка
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v8.4 - TRANSFER WIDGET FIX ---
+ * * ВЕРСИЯ: 8.4 - Исправление источника данных для виджета "Перевод"
+ * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Удалена кнопка action-square-btn с иконкой плюса.
- * Функционал добавления теперь находится внутри окна редактирования.
+ * 1. (FIX) currentSum для isTransferWidget теперь берет данные из
+ * categoryBreakdown.total (абсолютное значение), а не из mainStore.currentTransfers.
+ * Это гарантирует, что мы покажем те же цифры, что насчитал стор в breakdowns.
  */
 
 const props = defineProps({
@@ -85,39 +86,56 @@ const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
 const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
 const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value || isTransferWidget.value);
 
-// --- Расчет сумм для Сводных виджетов ---
-
-// 1. Текущая сумма
-const currentSum = computed(() => {
-  let list = [];
-  if (isIncomeListWidget.value) list = mainStore.currentIncomes;
-  else if (isExpenseListWidget.value) list = mainStore.currentExpenses;
-  else if (isTransferWidget.value) list = mainStore.currentTransfers;
-  
-  return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-});
-
-// 2. Сумма будущих операций
-const futureOnlySum = computed(() => {
-  let list = [];
-  if (isIncomeListWidget.value) list = mainStore.futureIncomes;
-  else if (isExpenseListWidget.value) list = mainStore.futureExpenses;
-  else if (isTransferWidget.value) list = mainStore.futureTransfers;
-  
-  return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-});
-
-// 3. Прогнозная сумма = Текущие + Будущие
-const projectedSum = computed(() => currentSum.value + futureOnlySum.value);
-
-
 // --- Данные для обычных категорий (не списочных) ---
+// Берем данные из стора. Если это Перевод, стор уже всё посчитал.
 const categoryBreakdown = computed(() => {
-  if (isSummaryWidget.value) return { income: 0, expense: 0, total: 0 };
+  // Убираем проверку isSummaryWidget, чтобы всегда получать данные для Перевода
   const source = showFutureBalance.value ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
   const data = source[props.widgetKey] || { income: 0, expense: 0, total: 0 };
   return data;
 });
+
+// --- Расчет сумм для Сводных виджетов ---
+// 1. Текущая сумма
+const currentSum = computed(() => {
+  if (isTransferWidget.value) {
+      // 🟢 FIX: Берем из breakdown
+      // Стор пишет переводы в 'expense' и 'total'. Берем абсолютное значение total.
+      return Math.abs(categoryBreakdown.value.total); 
+  }
+  
+  let list = [];
+  if (isIncomeListWidget.value) list = mainStore.currentIncomes;
+  else if (isExpenseListWidget.value) list = mainStore.currentExpenses;
+  
+  return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
+});
+
+// 2. Сумма будущих операций (только дельта)
+const futureOnlySum = computed(() => {
+  if (isTransferWidget.value) {
+      // Для перевода нам нужно вычислить разницу между futureTotal и currentTotal из breakdowns
+      const current = mainStore.currentCategoryBreakdowns[props.widgetKey]?.total || 0;
+      const future = mainStore.futureCategoryBreakdowns[props.widgetKey]?.total || 0;
+      return Math.abs(future) - Math.abs(current);
+  }
+
+  let list = [];
+  if (isIncomeListWidget.value) list = mainStore.futureIncomes;
+  else if (isExpenseListWidget.value) list = mainStore.futureExpenses;
+  
+  return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
+});
+
+// 3. Прогнозная сумма = Текущие + Будущие (или просто Future Total из breakdown)
+const projectedSum = computed(() => {
+    if (isTransferWidget.value) {
+        const future = mainStore.futureCategoryBreakdowns[props.widgetKey]?.total || 0;
+        return Math.abs(future);
+    }
+    return currentSum.value + futureOnlySum.value;
+});
+
 
 const setSortMode = (mode) => { sortMode.value = mode; };
 const setFilterMode = (mode) => { filterMode.value = mode; };
@@ -155,8 +173,6 @@ const handleEdit = () => { emit('edit'); };
         <button class="action-square-btn" :class="{ 'active': showFutureBalance }" @click.stop="showFutureBalance = !showFutureBalance" title="Прогноз">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
-        
-        <!-- 🟢 v8.3: Кнопка "Добавить" (+) УДАЛЕНА отсюда -->
         
         <!-- Редактировать -->
         <button @click.stop="handleEdit" class="action-square-btn" title="Редактировать">
