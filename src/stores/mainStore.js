@@ -1,10 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v21.2 - RENAME WIDGET ---
- * * ВЕРСИЯ: 21.2 - Переименование "Мои обязательства" -> "Мои предоплаты"
+ * * --- МЕТКА ВЕРСИИ: v21.4 - FIX MISSING REFS ---
+ * * ВЕРСИЯ: 21.4 - Восстановление currentCategoryBalances / futureCategoryBalances
  * * ДАТА: 2025-11-20
  *
- * ЧТО ИЗМЕНЕНО:
- * 1. (UI) В staticWidgets переименован виджет 'liabilities'.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX) Добавлены computed currentCategoryBalances и futureCategoryBalances.
+ * 2. (FIX) Они добавлены в return стора.
+ * Это исправило ошибку ReferenceError при сохранении.
  */
 
 import { defineStore } from 'pinia';
@@ -30,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v21.2 (Rename Widget) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.4 (Fix Missing Refs) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -54,7 +56,6 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
-    // 🟢 ПЕРЕИМЕНОВАНО
     { key: 'liabilities',  name: 'Мои предоплаты' },
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
@@ -198,7 +199,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // --- DAILY CHART DATA (SPLIT INCOME / PREPAYMENT) ---
+  // --- DAILY CHART DATA ---
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIds = getPrepaymentCategoryIds.value;
@@ -209,7 +210,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       if (!isTransfer(op)) {
         if (op.type === 'income') {
-            // Проверяем, является ли доходом предоплаты
             const catId = op.categoryId?._id || op.categoryId;
             const prepId = op.prepaymentId?._id || op.prepaymentId;
             const isPrepay = (catId && prepayIds.includes(catId)) || 
@@ -441,6 +441,35 @@ export const useMainStore = defineStore('mainStore', () => {
       map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
     }
     return map;
+  });
+
+  // --- 🟢 НОВЫЕ ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ДЛЯ КАТЕГОРИЙ (BALANCE) ---
+  const currentCategoryBalances = computed(() => {
+    const bal = {};
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      if (!op?.categoryId?._id) continue;
+      const id = op.categoryId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
+    }
+    return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
+  });
+
+  const futureCategoryBalances = computed(() => {
+    const bal = {};
+    // Начинаем с текущих
+    const current = currentCategoryBalances.value;
+    for (const c of current) { bal[c._id] = c.balance || 0; }
+    
+    for (const op of futureOps.value) {
+      if (isTransfer(op)) continue;
+      if (!op?.categoryId?._id) continue;
+      const id = op.categoryId._id;
+      if (!bal[id]) bal[id] = 0;
+      bal[id] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
+    }
+    return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
   const totalInitialBalance = computed(() =>
@@ -698,6 +727,7 @@ export const useMainStore = defineStore('mainStore', () => {
     await updateProjectionFromCalculationData(mode, today); 
   }
   function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
+  
   function updateFutureTotals() {
     const _ = futureTotalBalance.value;
     const __ = futureAccountBalances.value;
@@ -705,8 +735,10 @@ export const useMainStore = defineStore('mainStore', () => {
     const ____ = futureContractorBalances.value;
     const _____ = futureProjectBalances.value;
     const ______ = futureIndividualBalances.value;
-    const _______ = futureCategoryBalances.value;
+    // 🟢 ТЕПЕРЬ ЭТО БУДЕТ РАБОТАТЬ
+    const _______ = futureCategoryBalances.value; 
   }
+  
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
     const info = getViewModeInfo(mode);
@@ -1194,6 +1226,10 @@ export const useMainStore = defineStore('mainStore', () => {
     
     getPrepaymentCategoryIds,
     getActCategoryIds,
+    
+    // 🟢 ДОБАВЛЕНО: Возвращаем ссылки, чтобы не было ReferenceError
+    currentCategoryBalances,
+    futureCategoryBalances,
     
     currentOps, 
     
