@@ -4,13 +4,12 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.1 - FIX LAYOUT (ROWS) ---
- * * ВЕРСИЯ: 1.1 - Исправление макета по ТЗ (Строки вместо Колонок)
+ * * --- МЕТКА ВЕРСИИ: v1.2 - STYLE FIX (NO SCROLL) ---
+ * * ВЕРСИЯ: 1.2 - Скрытие скроллбара и унификация стилей
  * * ДАТА: 2025-11-20
  * * ЧТО ИСПРАВЛЕНО:
- * 1. (UI) Виджет переведен на вертикальный список (как HeaderBalanceCard).
- * 2. (UI) Убраны колонки и разделитель.
- * 3. (UI) Добавлены подписи мелким шрифтом под заголовками.
+ * 1. (CSS) Добавлены стили скрытия скроллбара (scrollbar-width: none).
+ * 2. (CSS) Унифицированы отступы с HeaderBalanceCard.
  */
 
 const props = defineProps({
@@ -138,15 +137,23 @@ const oweUsFormatted = computed(() => formatNumber(obligations.value.oweUsMoney)
 .widget-dropdown li.active { color: #333; background-color: #e0e0e0; }
 .widget-dropdown li.disabled { color: #aaa; background-color: transparent; cursor: not-allowed; }
 
-/* --- Стили списка (по аналогии с HeaderBalanceCard) --- */
+/* --- Стили списка (Унифицировано с HeaderBalanceCard) --- */
 .card-items-list {
     flex-grow: 1;
     overflow-y: auto;
     padding-right: 5px;
     display: flex;
     flex-direction: column;
-    gap: 12px; /* Отступ между строками чуть больше для читаемости */
+    gap: 12px;
     padding-top: 4px;
+    
+    /* 🔴 Скрытие скроллбара (было пропущено) */
+    scrollbar-width: none; 
+    -ms-overflow-style: none; 
+    min-height: 0;
+}
+.card-items-list::-webkit-scrollbar { 
+    display: none; 
 }
 
 .card-item {
@@ -162,7 +169,7 @@ const oweUsFormatted = computed(() => formatNumber(obligations.value.oweUsMoney)
 
 .item-label {
     font-size: 0.9em;
-    color: #ccc; /* Светло-серый как в других карточках */
+    color: #ccc; 
 }
 
 .item-sub {
@@ -177,8 +184,8 @@ const oweUsFormatted = computed(() => formatNumber(obligations.value.oweUsMoney)
     white-space: nowrap;
 }
 
-.we-owe { color: var(--color-text); } /* Нейтральный (Белый/Светлый) */
-.owe-us { color: var(--color-primary); } /* Зеленый */
+.we-owe { color: var(--color-text); } 
+.owe-us { color: var(--color-primary); } 
 
 @media (max-height: 900px) {
   .dashboard-card { min-width: 100px; padding-right: 1rem; }
