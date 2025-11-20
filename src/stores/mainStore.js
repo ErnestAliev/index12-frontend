@@ -1,11 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v19.2 - LIABILITIES FIX ---
- * * ВЕРСИЯ: 19.2 - Учет prepaymentId в расчетах обязательств
+ * * --- МЕТКА ВЕРСИИ: v15.5 - VISIBILITY FILTERS ---
+ * * ВЕРСИЯ: 15.5 - Фильтрация системных категорий и контрагентов
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) fetchAllEntities помечает данные из /prepayments флагом isPrepayment: true.
- * 2. (FIX) Расчеты liabilitiesWeOwe/TheyOwe теперь проверяют и op.prepaymentId.
+ * 1. (FIX) visibleCategories теперь исключает 'Предоплата' (isPrepayment).
+ * 2. (NEW) visibleContractors исключает 'Физлица'.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v19.2 (Liabilities Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v15.5 (Visibility Filters) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -88,8 +88,25 @@ export const useMainStore = defineStore('mainStore', () => {
       .map(c => c._id);
   });
 
+  // 🟢 ИСПРАВЛЕНО: Скрываем системные категории из редактора
   const visibleCategories = computed(() => {
-    return categories.value.filter(c => !_isTransferCategory(c));
+    return categories.value.filter(c => {
+      if (_isTransferCategory(c)) return false;
+      if (c.isPrepayment) return false; // Скрываем Предоплату
+      // Доп. проверка по имени на всякий случай
+      const n = c.name.toLowerCase().trim();
+      if (n === 'предоплата' || n === 'prepayment') return false;
+      return true;
+    });
+  });
+
+  // 🟢 НОВОЕ: Скрываем системных контрагентов (Физлица) из редактора
+  const visibleContractors = computed(() => {
+      return contractors.value.filter(c => {
+          const n = c.name.toLowerCase().trim();
+          // Скрываем системную группу "Физлица", если она попала в контрагенты
+          return n !== 'физлица' && n !== 'individuals';
+      });
   });
 
   const allWidgets = computed(() => {
@@ -223,26 +240,19 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ (ИСПРАВЛЕНО) ---
+  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ ---
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
     if (prepayIds.length === 0 && actIds.length === 0) return 0;
-    
     let totalPrepaymentReceived = 0;
     let totalActsSum = 0;
-    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
-      
-      // Проверяем и categoryId, и prepaymentId
       const catId = op.categoryId?._id || op.categoryId;
       const prepId = op.prepaymentId?._id || op.prepaymentId;
-      
-      // Если хотя бы один из ID входит в список предоплат
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      const isAct = (catId && actIds.includes(catId)); // Акты пока только в категориях
-
+      const isAct = (catId && actIds.includes(catId));
       if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
       if (isAct) totalActsSum += Math.abs(op.amount || 0);
     }
@@ -252,17 +262,13 @@ export const useMainStore = defineStore('mainStore', () => {
   const liabilitiesTheyOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     if (prepayIds.length === 0) return 0;
-    
     let totalDealSum = 0;
     let receivedSum = 0;
-    
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
-      
       const catId = op.categoryId?._id || op.categoryId;
       const prepId = op.prepaymentId?._id || op.prepaymentId;
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      
       if (isPrepay && op.type === 'income') {
           const dealTotal = op.totalDealAmount || 0;
           if (dealTotal > 0) {
@@ -282,12 +288,10 @@ export const useMainStore = defineStore('mainStore', () => {
     let totalActsSum = 0;
     for (const op of opsUpToForecast.value) {
       if (isTransfer(op)) continue;
-      
       const catId = op.categoryId?._id || op.categoryId;
       const prepId = op.prepaymentId?._id || op.prepaymentId;
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
       const isAct = (catId && actIds.includes(catId));
-
       if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
       if (isAct) totalActsSum += Math.abs(op.amount || 0);
     }
@@ -301,11 +305,9 @@ export const useMainStore = defineStore('mainStore', () => {
     let receivedSum = 0;
     for (const op of opsUpToForecast.value) {
       if (isTransfer(op)) continue;
-      
       const catId = op.categoryId?._id || op.categoryId;
       const prepId = op.prepaymentId?._id || op.prepaymentId;
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      
       if (isPrepay && op.type === 'income') {
           const dealTotal = op.totalDealAmount || 0;
           if (dealTotal > 0) {
@@ -317,30 +319,18 @@ export const useMainStore = defineStore('mainStore', () => {
     return totalDealSum - receivedSum;
   });
 
-  // --- СПИСКИ ОПЕРАЦИЙ (Current/Future) ---
+  // --- СПИСКИ ОПЕРАЦИЙ ---
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateB.getTime() - dateA.getTime();
-    });
+    return transfers.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
   });
   const currentIncomes = computed(() => {
     const incomes = currentOps.value.filter(op => !isTransfer(op) && op.type === 'income');
-    return incomes.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateB.getTime() - dateA.getTime();
-    });
+    return incomes.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
   });
   const currentExpenses = computed(() => {
     const expenses = currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
-    return expenses.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateB.getTime() - dateA.getTime();
-    });
+    return expenses.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
   });
 
   const futureOps = computed(() => {
@@ -359,27 +349,15 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => {
     const transfers = futureOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateA.getTime() - dateB.getTime();
-    });
+    return transfers.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
   });
   const futureIncomes = computed(() => {
     const incomes = futureOps.value.filter(op => !isTransfer(op) && op.type === 'income');
-    return incomes.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateA.getTime() - dateB.getTime();
-    });
+    return incomes.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
   });
   const futureExpenses = computed(() => {
     const expenses = futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
-    return expenses.sort((a, b) => {
-      const dateA = _parseDateKey(a.dateKey); 
-      const dateB = _parseDateKey(b.dateKey);
-      return dateA.getTime() - dateB.getTime();
-    });
+    return expenses.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
   });
 
   const getCategoryById = (id) => {
@@ -1232,7 +1210,8 @@ export const useMainStore = defineStore('mainStore', () => {
   
   return {
     accounts, companies, contractors, projects, categories,
-    visibleCategories,
+    visibleCategories, // 🟢 ИСПОЛЬЗУЕМ ЭТО ДЛЯ РЕДАКТОРА
+    visibleContractors, // 🟢 НОВОЕ ДЛЯ РЕДАКТОРА КОНТРАГЕНТОВ
     individuals, 
     operationsCache: displayCache,
     displayCache, calculationCache,
