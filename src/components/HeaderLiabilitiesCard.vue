@@ -1,74 +1,60 @@
 <script setup>
-import { computed } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.0 - NEW WIDGET ---
- * * ВЕРСИЯ: 1.0 - Виджет "Мои обязательства"
+ * * --- МЕТКА ВЕРСИИ: v2.0 - VISUAL FIX ---
+ * * ВЕРСИЯ: 2.0 - Приведение к стандарту dashboard-card
  * * ДАТА: 2025-11-20
  *
- * ОПИСАНИЕ:
- * Карточка отображает два показателя:
- * 1. Мы должны (Работами) - полученные авансы минус закрытые акты.
- * 2. Нам должны (Деньгами) - недоплаченные остатки по сделкам.
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (UI) Удалена кастомная верстка. Теперь используется стандартный список `.card-items-list`.
+ * 2. (UI) Убраны иконки и лишние отступы.
+ * 3. (STYLE) Цвета соответствуют логике:
+ * - "Мы должны" -> Красный (это наш долг/обязательство).
+ * - "Нам должны" -> Зеленый (это наши будущие деньги).
  */
 
 const props = defineProps({
   title: { type: String, default: 'Мои обязательства' },
-  weOweAmount: { type: Number, default: 0 },   // Мы должны (работами)
-  theyOweAmount: { type: Number, default: 0 }, // Нам должны (деньгами)
+  weOweAmount: { type: Number, default: 0 },   // Мы должны
+  theyOweAmount: { type: Number, default: 0 }, // Нам должны
   widgetKey: { type: String, required: true },
   widgetIndex: { type: Number, required: true }
 });
 
-// Форматирование с валютой
 const formatCurrency = (val) => {
   const absVal = Math.abs(val);
-  const str = formatNumber(absVal);
-  return `${str} ₸`;
+  return `${formatNumber(absVal)} ₸`;
 };
 </script>
 
 <template>
-  <div class="dashboard-card liabilities-card">
+  <div class="dashboard-card">
     
-    <!-- Заголовок (статичный, так как это спец. виджет) -->
+    <!-- Стандартный заголовок -->
     <div class="card-title-container">
       <div class="card-title">
         {{ title }}
       </div>
-      <!-- Иконка для красоты (можно добавить действия позже) -->
-      <div class="card-actions">
-        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-        </svg>
-      </div>
     </div>
 
-    <div class="liabilities-content">
+    <!-- Стандартный список элементов -->
+    <div class="card-items-list">
       
       <!-- Строка 1: Мы должны -->
-      <div class="liability-row">
-        <div class="row-label">
-          <span class="label-main">Мы должны</span>
-          <span class="label-sub">(Работами)</span>
-        </div>
-        <div class="row-value we-owe">
+      <div class="card-item">
+        <span title="Полученные авансы, по которым работа не сдана">Мы должны</span>
+        <span class="value-expense">
           {{ formatCurrency(weOweAmount) }}
-        </div>
+        </span>
       </div>
-      
-      <div class="divider"></div>
 
       <!-- Строка 2: Нам должны -->
-      <div class="liability-row">
-        <div class="row-label">
-          <span class="label-main">Нам должны</span>
-          <span class="label-sub">(Деньгами)</span>
-        </div>
-        <div class="row-value they-owe">
+      <div class="card-item">
+        <span title="Остатки по сделкам, где внесена только часть суммы">Нам должны</span>
+        <span class="value-income">
           {{ formatCurrency(theyOweAmount) }}
-        </div>
+        </span>
       </div>
 
     </div>
@@ -76,6 +62,8 @@ const formatCurrency = (val) => {
 </template>
 
 <style scoped>
+/* Используем те же классы, что и в HeaderBalanceCard/HeaderCategoryCard */
+
 .dashboard-card {
   flex: 1;
   display: flex;
@@ -90,7 +78,6 @@ const formatCurrency = (val) => {
   padding-right: 0;
 }
 
-/* Заголовок */
 .card-title-container {
   display: flex;
   justify-content: space-between;
@@ -99,73 +86,57 @@ const formatCurrency = (val) => {
   margin-bottom: 0.5rem;
   flex-shrink: 0;
 }
+
 .card-title {
   font-size: 0.85em;
   color: #aaa;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.icon-svg {
-  width: 14px;
-  height: 14px;
-  color: #555;
+  cursor: default;
+  white-space: nowrap;
 }
 
-/* Контент */
-.liabilities-content {
+/* Список элементов */
+.card-items-list {
   flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 5px;
+  scrollbar-width: none;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 8px;
+  gap: 4px; /* Небольшой отступ между строками */
 }
 
-.liability-row {
+.card-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.row-label {
-  display: flex;
-  flex-direction: column;
-}
-.label-main {
   font-size: 0.9em;
-  color: var(--color-text);
-  font-weight: 500;
-}
-.label-sub {
-  font-size: 0.7em;
-  color: #666;
+  margin-bottom: 0.25rem;
 }
 
-.row-value {
-  font-size: 1.1em;
-  font-weight: 700;
+.card-item span:first-child {
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 10px;
+}
+
+.card-item span:last-child {
+  font-weight: 500;
   white-space: nowrap;
 }
 
 /* Цвета значений */
-.we-owe {
-  color: #ff9f0a; /* Оранжевый (предупреждение) */
+.value-expense {
+  color: var(--color-danger); /* Красный для наших обязательств */
 }
-.they-owe {
-  color: var(--color-primary); /* Зеленый (потенциальный доход) */
-}
-
-.divider {
-  height: 1px;
-  background-color: var(--color-border);
-  opacity: 0.5;
-  width: 100%;
+.value-income {
+  color: var(--color-primary); /* Зеленый для долгов нам */
 }
 
 @media (max-height: 900px) {
-  .dashboard-card { padding-right: 1rem; min-width: 140px; }
-  .card-title { font-size: 0.75em; }
-  .row-value { font-size: 1em; }
-  .label-main { font-size: 0.85em; }
+  .dashboard-card { min-width: 100px; padding-right: 1rem; }
+  .card-title { font-size: 0.8em; }
+  .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
 }
 </style>
