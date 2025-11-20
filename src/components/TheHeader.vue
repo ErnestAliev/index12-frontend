@@ -3,20 +3,22 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.0 - HEADER WIDGETS BINDING ---
- * * ВЕРСИЯ: 19.0 - Привязка новых виджетов "Мои переводы" и "Мои проводки"
+ * * --- МЕТКА ВЕРСИИ: v21.0 - OBLIGATIONS WIDGET ---
+ * * ВЕРСИЯ: 21.0 - Добавлен виджет "Мои Обязательства"
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) onCategoryAdd: раздельная логика для transferList и postingList.
- * 2. (LOGIC) onCategoryEdit: раздельная логика для transferList и postingList.
+ * 1. (IMPORT) Добавлен HeaderObligationsCard.vue.
+ * 2. (TEMPLATE) Добавлен рендеринг виджета при widgetKey === 'obligations'.
  */
 
-console.log('--- TheHeader.vue v19.0 (Widget Bindings) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v21.0 (Obligations Widget) ЗАГРУЖЕН ---');
 
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
+import HeaderObligationsCard from './HeaderObligationsCard.vue'; // 🟢 NEW
+
 import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
@@ -28,11 +30,9 @@ const mainStore = useMainStore();
 
 // Состояния попапов
 const isTransferPopupVisible = ref(false);
-// 🟢 NEW: Начальный режим для TransferPopup
 const transferPopupInitialMode = ref('transfer'); 
 
 const isTransferEditorVisible = ref(false);
-// 🟢 NEW: Режим редактора (transfer/act)
 const transferEditorMode = ref('transfer');
 
 const isOperationListEditorVisible = ref(false);
@@ -162,7 +162,6 @@ const onEntityListSave = async (updatedItems) => {
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 const onCategoryAdd = (widgetKey, index) => {
-    // 1. Мои Доходы / Расходы
     if (widgetKey === 'incomeList') {
         operationPopupType.value = 'income';
         isOperationPopupVisible.value = true;
@@ -173,8 +172,6 @@ const onCategoryAdd = (widgetKey, index) => {
         isOperationPopupVisible.value = true;
         return;
     }
-
-    // 🟢 2. Переводы и Проводки
     if (widgetKey === 'transferList') {
         transferPopupInitialMode.value = 'transfer';
         isTransferPopupVisible.value = true;
@@ -186,7 +183,6 @@ const onCategoryAdd = (widgetKey, index) => {
         return;
     }
 
-    // 3. Системный Перевод (Legacy/Fallback)
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
         transferPopupInitialMode.value = 'transfer';
@@ -195,22 +191,18 @@ const onCategoryAdd = (widgetKey, index) => {
 };
 
 const onCategoryEdit = (widgetKey) => {
-    // 1. Мои Доходы
     if (widgetKey === 'incomeList') {
         operationListEditorTitle.value = 'Редактировать доходы';
         operationListEditorType.value = 'income';
         isOperationListEditorVisible.value = true;
         return;
     }
-    // 2. Мои Расходы
     if (widgetKey === 'expenseList') {
         operationListEditorTitle.value = 'Редактировать расходы';
         operationListEditorType.value = 'expense';
         isOperationListEditorVisible.value = true;
         return;
     }
-
-    // 🟢 3. Переводы и Проводки
     if (widgetKey === 'transferList') {
         transferEditorMode.value = 'transfer';
         isTransferEditorVisible.value = true;
@@ -222,7 +214,6 @@ const onCategoryEdit = (widgetKey) => {
         return;
     }
 
-    // 4. Категории (Legacy Перевод)
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
@@ -253,6 +244,7 @@ const handleOperationAdded = async (newOp) => {
   <div class="header-dashboard">
     <template v-for="(widgetKey, index) in mainStore.dashboardLayout" :key="index">
       
+      <!-- 1. ВСЕГО ТЕКУЩЕЕ -->
       <HeaderTotalCard
         v-if="widgetKey === 'currentTotal'"
         title="Всего (на тек. момент)"
@@ -262,7 +254,8 @@ const handleOperationAdded = async (newOp) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
       />
-
+      
+      <!-- 2. ОБЫЧНЫЕ СПИСКИ -->
       <HeaderBalanceCard
         v-else-if="widgetKey === 'accounts'"
         title="Мои счета"
@@ -326,6 +319,7 @@ const handleOperationAdded = async (newOp) => {
         @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
       />
 
+      <!-- 3. ВСЕГО БУДУЩЕЕ -->
       <HeaderTotalCard
         v-else-if="widgetKey === 'futureTotal'"
         title="Всего (с уч. будущих)"
@@ -335,8 +329,16 @@ const handleOperationAdded = async (newOp) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
       />
+      
+      <!-- 4. 🟢 НОВЫЙ ВИДЖЕТ: ОБЯЗАТЕЛЬСТВА -->
+      <HeaderObligationsCard
+        v-else-if="widgetKey === 'obligations'"
+        title="Мои обязательства"
+        :widgetKey="widgetKey"
+        :widgetIndex="index"
+      />
 
-      <!-- 🟢 FIX: Теперь здесь обрабатываются и cat_..., и новые виджеты -->
+      <!-- 5. СПИСКИ ОПЕРАЦИЙ / КАТЕГОРИИ -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'transferList' || widgetKey === 'postingList'"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
