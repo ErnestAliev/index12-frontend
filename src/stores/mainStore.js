@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v21.4 - FIX MISSING REFS ---
- * * ВЕРСИЯ: 21.4 - Восстановление currentCategoryBalances / futureCategoryBalances
+ * * --- МЕТКА ВЕРСИИ: v21.5 - MOVE OPS AWAIT FIX ---
+ * * ВЕРСИЯ: 21.5 - Синхронное ожидание перемещения
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) Добавлены computed currentCategoryBalances и futureCategoryBalances.
- * 2. (FIX) Они добавлены в return стора.
- * Это исправило ошибку ReferenceError при сохранении.
+ * 1. (FIX) moveOperation теперь ждет (await) завершения запроса к API.
+ * Это предотвращает перезапись локального кэша старыми данными при немедленном fetch.
+ * 2. (FIX) updateProjectionFromCalculationData вызывается после успешного API запроса.
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +32,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v21.4 (Fix Missing Refs) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.5 (Move Ops Await Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -443,7 +443,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return map;
   });
 
-  // --- 🟢 НОВЫЕ ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ДЛЯ КАТЕГОРИЙ (BALANCE) ---
   const currentCategoryBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -458,7 +457,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureCategoryBalances = computed(() => {
     const bal = {};
-    // Начинаем с текущих
     const current = currentCategoryBalances.value;
     for (const c of current) { bal[c._id] = c.balance || 0; }
     
@@ -735,7 +733,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const ____ = futureContractorBalances.value;
     const _____ = futureProjectBalances.value;
     const ______ = futureIndividualBalances.value;
-    // 🟢 ТЕПЕРЬ ЭТО БУДЕТ РАБОТАТЬ
     const _______ = futureCategoryBalances.value; 
   }
   
@@ -867,6 +864,7 @@ export const useMainStore = defineStore('mainStore', () => {
     updateFutureTotals();
   }
 
+  // 🟢 ИЗМЕНЕНО: Добавлен async/await
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -882,15 +880,18 @@ export const useMainStore = defineStore('mainStore', () => {
                sourceOp.cellIndex = targetIndex;
                targetOp.cellIndex = originalSourceIndex;
                _syncCaches(oldDateKey, ops);
-               Promise.all([
-                  axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
-                  axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
-               ]).catch(e => refreshDay(oldDateKey));
+               try {
+                 await Promise.all([
+                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
+                    axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
+                 ]);
+               } catch(e) { refreshDay(oldDateKey); }
            } else {
                sourceOp.cellIndex = targetIndex;
                _syncCaches(oldDateKey, ops);
-               axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
-                 .catch(e => refreshDay(oldDateKey));
+               try {
+                  await axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex });
+               } catch(e) { refreshDay(oldDateKey); }
            }
        }
     } else {
@@ -913,14 +914,17 @@ export const useMainStore = defineStore('mainStore', () => {
        };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
-       axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
-          dateKey: newDateKey, 
-          cellIndex: finalIndex,
-          date: moved.date 
-       }).catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
+       try {
+           await axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
+              dateKey: newDateKey, 
+              cellIndex: finalIndex,
+              date: moved.date 
+           });
+       } catch(e) { refreshDay(oldDateKey); refreshDay(newDateKey); }
     }
     if (projection.value.mode) {
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      // 🟢 ТЕПЕРЬ УВЕРЕНЫ, ЧТО ДАННЫЕ ОБНОВЛЕНЫ
+      await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     }
   }
 
