@@ -1,11 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v15.5 - VISIBILITY FILTERS ---
- * * ВЕРСИЯ: 15.5 - Фильтрация системных категорий и контрагентов
+ * * --- МЕТКА ВЕРСИИ: v20.1 - GRAPH SPLIT FINAL ---
+ * * ВЕРСИЯ: 20.1 - Разделение данных графика на Prepayment/Income
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) visibleCategories теперь исключает 'Предоплата' (isPrepayment).
- * 2. (NEW) visibleContractors исключает 'Физлица'.
+ * 1. (FIX) dailyChartData разделяет 'income' (обычный) и 'prepayment' (предоплата).
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +30,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v15.5 (Visibility Filters) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v20.1 (Graph Split Final) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -88,23 +87,19 @@ export const useMainStore = defineStore('mainStore', () => {
       .map(c => c._id);
   });
 
-  // 🟢 ИСПРАВЛЕНО: Скрываем системные категории из редактора
   const visibleCategories = computed(() => {
     return categories.value.filter(c => {
       if (_isTransferCategory(c)) return false;
-      if (c.isPrepayment) return false; // Скрываем Предоплату
-      // Доп. проверка по имени на всякий случай
+      if (c.isPrepayment) return false; 
       const n = c.name.toLowerCase().trim();
       if (n === 'предоплата' || n === 'prepayment') return false;
       return true;
     });
   });
 
-  // 🟢 НОВОЕ: Скрываем системных контрагентов (Физлица) из редактора
   const visibleContractors = computed(() => {
       return contractors.value.filter(c => {
           const n = c.name.toLowerCase().trim();
-          // Скрываем системную группу "Физлица", если она попала в контрагенты
           return n !== 'физлица' && n !== 'individuals';
       });
   });
@@ -202,6 +197,57 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
+  // --- DAILY CHART DATA (SPLIT INCOME / PREPAYMENT) ---
+  const dailyChartData = computed(() => {
+    const byDateKey = {};
+    const prepayIds = getPrepaymentCategoryIds.value;
+    
+    for (const op of allOperationsFlat.value) {
+      if (!op?.dateKey) continue;
+      if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, prepayment:0, expense:0, dayTotal:0 };
+      
+      if (!isTransfer(op)) {
+        if (op.type === 'income') {
+            // Проверяем, является ли доходом предоплаты
+            const catId = op.categoryId?._id || op.categoryId;
+            const prepId = op.prepaymentId?._id || op.prepaymentId;
+            const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+            
+            if (isPrepay) {
+                byDateKey[op.dateKey].prepayment += (op?.amount || 0);
+            } else {
+                byDateKey[op.dateKey].income += (op?.amount || 0);
+            }
+            byDateKey[op.dateKey].dayTotal += (op?.amount || 0);
+        }
+        else if (op.type === 'expense') {
+            byDateKey[op.dateKey].expense += Math.abs(op.amount || 0);
+            byDateKey[op.dateKey].dayTotal -= Math.abs(op.amount || 0);
+        }
+      }
+    }
+    const chart = new Map();
+    const sortedDateKeys = Object.keys(byDateKey).sort((a, b) => {
+      const dateA = _parseDateKey(a); const dateB = _parseDateKey(b);
+      return dateA.getTime() - dateB.getTime();
+    });
+    let running = totalInitialBalance.value || 0;
+    for (const dateKey of sortedDateKeys) {
+      const rec = byDateKey[dateKey];
+      running += rec.dayTotal;
+      chart.set(dateKey, { 
+        income: rec.income,
+        prepayment: rec.prepayment, // 🟢 Отдельное поле
+        expense: rec.expense, 
+        closingBalance: running,
+        date: _parseDateKey(dateKey)
+      });
+    }
+    return chart;
+  });
+
+  // ... Rest of the store getters/actions ...
+  
   const displayOperationsFlat = computed(() => {
     const displayOps = [];
     Object.values(displayCache.value).forEach(dayOps => {
@@ -550,32 +596,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
   });
 
-  const currentCategoryBalances = computed(() => {
-    const bal = {};
-    for (const c of visibleCategories.value) bal[c._id] = 0;
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const id = op.categoryId._id;
-      if (bal[id] === undefined) continue; 
-      bal[id] += (op?.amount || 0);
-    }
-    return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-  const futureCategoryBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentCategoryBalances.value;
-    for (const cat of currentBalances) { bal[cat._id] = cat.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const id = op.categoryId._id;
-      if (bal[id] === undefined) continue; 
-      bal[id] += (op?.amount || 0);
-    }
-    return visibleCategories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
-  });
-
   const currentTotalBalance = computed(() => {
     const opsTotal = currentOps.value.reduce((s,op)=> {
       if (isTransfer(op)) return s;
@@ -599,79 +619,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
-  const dailyChartData = computed(() => {
-    const byDateKey = {};
-    for (const op of allOperationsFlat.value) {
-      if (!op?.dateKey) continue;
-      if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, expense:0, dayTotal:0 };
-      if (!isTransfer(op)) {
-        if (op.type === 'income') byDateKey[op.dateKey].income += (op?.amount || 0);
-        else if (op.type === 'expense') byDateKey[op.dateKey].expense += Math.abs(op.amount || 0);
-        byDateKey[op.dateKey].dayTotal += (op?.amount || 0);
-      }
-    }
-    const chart = new Map();
-    const sortedDateKeys = Object.keys(byDateKey).sort((a, b) => {
-      const dateA = _parseDateKey(a); const dateB = _parseDateKey(b);
-      return dateA.getTime() - dateB.getTime();
-    });
-    let running = totalInitialBalance.value || 0;
-    for (const dateKey of sortedDateKeys) {
-      const rec = byDateKey[dateKey];
-      running += rec.dayTotal;
-      chart.set(dateKey, { 
-        income: rec.income, expense: rec.expense, closingBalance: running,
-        date: _parseDateKey(dateKey)
-      });
-    }
-    return chart;
-  });
-
-  function computeTotalDaysForMode(mode, todayDate = new Date()) {
-    const info = getViewModeInfo(mode);
-    return info.total;
-  }
-
-  async function loadCalculationData(mode, baseDate = new Date()) {
-    const { startDate: viewStartDate, endDate: viewEndDate } = _calculateDateRangeWithYear(mode, baseDate);
-    const todayDate = new Date(currentYear.value, 0, todayDayOfYear.value || _getDayOfYear(new Date()));
-    const yearStartDate = new Date(currentYear.value, 0, 1);
-    await fetchCalculationRange(yearStartDate, todayDate);
-    await fetchCalculationRange(viewStartDate, viewEndDate);
-    await updateProjectionFromCalculationData(mode, baseDate);
-  }
-
-  async function fetchCalculationRange(startDate, endDate) {
-    try {
-      const promises = [];
-      const dateKeysToFetch = [];
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dateKey = _getDateKey(d);
-        if (!calculationCache.value[dateKey]) {
-          dateKeysToFetch.push(dateKey);
-          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
-        }
-      }
-      if (promises.length > 0) {
-        const responses = await Promise.all(promises);
-        const tempCache = {};
-        for (let i = 0; i < responses.length; i++) {
-          const dateKey = dateKeysToFetch[i];
-          const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
-          const processedOps = _mergeTransfers(raw).map(op => ({
-            ...op,
-            dateKey: dateKey,
-            date: op.date || _parseDateKey(dateKey) 
-          }));
-          tempCache[dateKey] = processedOps;
-        }
-        calculationCache.value = { ...calculationCache.value, ...tempCache };
-        displayCache.value = { ...displayCache.value, ...tempCache }; 
-      }
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-    }
-  }
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
     const base = new Date(today);
@@ -774,7 +721,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function fetchAllEntities(){
     try{
-      // Загружаем и обычные категории, и предоплаты
       const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`),
         axios.get(`${API_BASE_URL}/companies`),
@@ -791,7 +737,6 @@ export const useMainStore = defineStore('mainStore', () => {
       projects.value    = projRes.data;
       individuals.value = indRes.data; 
       
-      // Объединяем, помечая предоплаты
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
       
@@ -1210,8 +1155,8 @@ export const useMainStore = defineStore('mainStore', () => {
   
   return {
     accounts, companies, contractors, projects, categories,
-    visibleCategories, // 🟢 ИСПОЛЬЗУЕМ ЭТО ДЛЯ РЕДАКТОРА
-    visibleContractors, // 🟢 НОВОЕ ДЛЯ РЕДАКТОРА КОНТРАГЕНТОВ
+    visibleCategories, 
+    visibleContractors,
     individuals, 
     operationsCache: displayCache,
     displayCache, calculationCache,
