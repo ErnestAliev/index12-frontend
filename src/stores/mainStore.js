@@ -1,11 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v21.1 - GRAPH LOAD FIX ---
- * * ВЕРСИЯ: 21.1 - Исправление загрузки графиков при старте
+ * * --- МЕТКА ВЕРСИИ: v21.2 - RENAME WIDGET ---
+ * * ВЕРСИЯ: 21.2 - Переименование "Мои обязательства" -> "Мои предоплаты"
  * * ДАТА: 2025-11-20
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (BUG) В fetchOperationsRange добавлено обновление calculationCache.
- * Ранее графики были пустыми до первого действия пользователя.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (UI) В staticWidgets переименован виджет 'liabilities'.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +30,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v21.1 (Graph Load Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.2 (Rename Widget) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -55,7 +54,8 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
-    { key: 'liabilities',  name: 'Мои обязательства' },
+    // 🟢 ПЕРЕИМЕНОВАНО
+    { key: 'liabilities',  name: 'Мои предоплаты' },
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
     { key: 'individuals',  name: 'Мои Физлица' },
@@ -654,18 +654,14 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateKeysToFetch = [];
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
-        // Если нет данных ни в кэше отображения, ни в кэше расчетов - грузим
         if (!displayCache.value[dateKey]) {
           dateKeysToFetch.push(dateKey);
           promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
       if (promises.length === 0) {
-        // Данные уже есть, но нужно убедиться, что они в обоих кэшах актуальны?
-        // Нет, если они есть в displayCache, считаем что они есть.
-        // Просто обновим реактивность.
         displayCache.value = { ...displayCache.value };
-        calculationCache.value = { ...calculationCache.value }; // <--- Убеждаемся
+        calculationCache.value = { ...calculationCache.value }; 
         return;
       }
       const responses = await Promise.all(promises);
@@ -680,8 +676,6 @@ export const useMainStore = defineStore('mainStore', () => {
         }));
         tempCache[dateKey] = processedOps;
       }
-      
-      // 🟢 ВАЖНОЕ ИСПРАВЛЕНИЕ: Обновляем ОБА кэша
       displayCache.value = { ...displayCache.value, ...tempCache };
       calculationCache.value = { ...calculationCache.value, ...tempCache }; 
 
