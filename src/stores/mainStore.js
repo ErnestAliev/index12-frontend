@@ -1,12 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v13.0-LIABILITIES-LOGIC ---
- * * ВЕРСИЯ: 13.0 - Логика виджета "Мои обязательства"
+ * * --- МЕТКА ВЕРСИИ: v13.1-LIABILITIES-FUTURE ---
+ * * ВЕРСИЯ: 13.1 - Логика будущих обязательств
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен виджет `liabilities` ("Мои обязательства") в `staticWidgets`.
- * 2. Добавлены computed свойства `liabilitiesWeOwe` и `liabilitiesTheyOwe`.
- * 3. Реализован поиск категорий по ключевым словам для расчетов.
+ * 1. Добавлены computed `liabilitiesWeOweFuture` и `liabilitiesTheyOweFuture`.
+ * Они учитывают операции до конца периода прогноза (`projection.rangeEndDate`).
  */
 
 import { defineStore } from 'pinia';
@@ -32,7 +31,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v13.0 (Liabilities Logic) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v13.1 (Liabilities Future) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -210,6 +209,7 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
+  // ТЕКУЩИЕ операции (до сегодня включительно)
   const currentOps = computed(() =>
     allOperationsFlat.value.filter(op => {
       if (!op?.dateKey) return false;
@@ -222,41 +222,40 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  // --- 🟢 РАСЧЕТ ОБЯЗАТЕЛЬСТВ ---
-  
-  // 1. Мы должны (Работами) = Сумма всех полученных денег по сделкам (Предоплат) - Сумма всех Актов.
+  // ОПЕРАЦИИ ДО КОНЦА ПРОГНОЗА (Текущие + Будущие в рамках viewMode)
+  const opsUpToForecast = computed(() => {
+    const baseToday = todayDayOfYear.value || 0;
+    const currentYearVal = currentYear.value;
+    let endDate;
+    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
+    else { endDate = new Date(currentYearVal, 0, baseToday); }
+    
+    // Включаем всё до endDate
+    return allOperationsFlat.value.filter(op => {
+       if (!op?.dateKey) return false;
+       const opDate = _parseDateKey(op.dateKey);
+       return opDate <= endDate;
+    });
+  });
+
+  // --- 🟢 РАСЧЕТ ОБЯЗАТЕЛЬСТВ (ТЕКУЩИЕ) ---
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
-    
     if (prepayIds.length === 0 && actIds.length === 0) return 0;
 
     let totalPrepaymentReceived = 0;
     let totalActsSum = 0;
 
-    // Считаем по всем операциям (включая будущие? По задаче "Мы должны" - это текущий статус, 
-    // обычно считаем по совершенным операциям, т.е. currentOps)
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
       const catId = op.categoryId?._id || op.categoryId;
-      
-      if (prepayIds.includes(catId) && op.type === 'income') {
-          totalPrepaymentReceived += (op.amount || 0);
-      }
-      
-      // Акт может быть записан как расход (списание обязательств) или доход (если логика другая).
-      // Обычно Акт - это не движение денег, но в системе это операция.
-      // Предположим, пользователь вносит Акт как "Расход" или "Доход" с категорией "Акт".
-      // Берем абсолютное значение, так как это объем работ.
-      if (actIds.includes(catId)) {
-          totalActsSum += Math.abs(op.amount || 0);
-      }
+      if (prepayIds.includes(catId) && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
+      if (actIds.includes(catId)) totalActsSum += Math.abs(op.amount || 0);
     }
-    
     return totalPrepaymentReceived - totalActsSum;
   });
 
-  // 2. Нам должны (Деньгами) = (Общая сумма всех активных сделок) - (Уже полученные деньги).
   const liabilitiesTheyOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     if (prepayIds.length === 0) return 0;
@@ -267,23 +266,55 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
       const catId = op.categoryId?._id || op.categoryId;
-
-      // Смотрим только предоплаты (доходы)
       if (prepayIds.includes(catId) && op.type === 'income') {
-          // Если у операции указана полная сумма сделки, учитываем её
           const dealTotal = op.totalDealAmount || 0;
-          
-          // Если totalDealAmount не задан (старая запись), считаем что сделка закрыта этим платежом (или игнорируем долг)
-          // По логике "частичной оплаты", если totalDealAmount > amount, значит есть долг.
-          // Если totalDealAmount 0 или undefined, долга нет.
           if (dealTotal > 0) {
               totalDealSum += dealTotal;
               receivedSum += (op.amount || 0);
           }
       }
     }
-    
-    // Долг клиента = Общая стоимость - То что уже заплатили
+    return totalDealSum - receivedSum;
+  });
+
+  // --- 🟢 РАСЧЕТ ОБЯЗАТЕЛЬСТВ (БУДУЩИЕ / ПРОГНОЗ) ---
+  const liabilitiesWeOweFuture = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    const actIds = getActCategoryIds.value;
+    if (prepayIds.length === 0 && actIds.length === 0) return 0;
+
+    let totalPrepaymentReceived = 0;
+    let totalActsSum = 0;
+
+    // Используем opsUpToForecast вместо currentOps
+    for (const op of opsUpToForecast.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      if (prepayIds.includes(catId) && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
+      if (actIds.includes(catId)) totalActsSum += Math.abs(op.amount || 0);
+    }
+    return totalPrepaymentReceived - totalActsSum;
+  });
+
+  const liabilitiesTheyOweFuture = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    if (prepayIds.length === 0) return 0;
+
+    let totalDealSum = 0;
+    let receivedSum = 0;
+
+    // Используем opsUpToForecast вместо currentOps
+    for (const op of opsUpToForecast.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      if (prepayIds.includes(catId) && op.type === 'income') {
+          const dealTotal = op.totalDealAmount || 0;
+          if (dealTotal > 0) {
+              totalDealSum += dealTotal;
+              receivedSum += (op.amount || 0);
+          }
+      }
+    }
     return totalDealSum - receivedSum;
   });
 
@@ -1218,9 +1249,12 @@ export const useMainStore = defineStore('mainStore', () => {
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     futureIndividualBalances, 
     
-    // 🟢 Новые обязательства
+    // 🟢 Новые обязательства (Current + Future)
     liabilitiesWeOwe,
     liabilitiesTheyOwe,
+    liabilitiesWeOweFuture,
+    liabilitiesTheyOweFuture,
+    
     getPrepaymentCategoryIds,
     getActCategoryIds,
     
