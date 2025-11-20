@@ -3,16 +3,17 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.1 - LIABILITIES PROPS ---
- * * ВЕРСИЯ: 19.1 - Проброс будущих значений в виджет
+ * * --- МЕТКА ВЕРСИИ: v19.3 - VISIBILITY & FILTER FIX ---
+ * * ВЕРСИЯ: 19.3 - Фильтрация списков и режим редактора
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В виджет `HeaderLiabilitiesCard` передаются `weOweAmountFuture` и `theyOweAmountFuture`.
- * 2. (LOGIC) Добавлен обработчик `@edit="onLiabilitiesEdit"` для нового виджета.
+ * 1. (LOGIC) В openEditPopup('contractors') передаем visibleContractors вместо всех.
+ * 2. (LOGIC) onLiabilitiesEdit теперь включает режим 'prepayment_only'.
+ * 3. (LOGIC) onCategoryEdit сбрасывает режим фильтра в 'default'.
  */
 
-console.log('--- TheHeader.vue v19.1 (Liabilities Props) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v19.3 (Visibility & Filter Fix) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -35,6 +36,8 @@ const isTransferEditorVisible = ref(false);
 const isOperationListEditorVisible = ref(false);
 const operationListEditorType = ref('income'); // 'income' | 'expense'
 const operationListEditorTitle = ref('');
+// 🟢 НОВЫЙ STATE ДЛЯ ФИЛЬТРАЦИИ
+const operationListEditorFilterMode = ref('default');
 
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
@@ -176,6 +179,9 @@ const onCategoryAdd = (widgetKey, index) => {
 };
 
 const onCategoryEdit = (widgetKey) => {
+    // Сброс фильтра для обычных списков
+    operationListEditorFilterMode.value = 'default';
+
     if (widgetKey === 'incomeList') {
         operationListEditorTitle.value = 'Редактировать доходы';
         operationListEditorType.value = 'income';
@@ -204,9 +210,10 @@ const onCategoryEdit = (widgetKey) => {
 
 // 🟢 Обработчик для виджета обязательств
 const onLiabilitiesEdit = () => {
-    // Открываем список доходов (там видны предоплаты)
+    // Открываем список доходов в режиме "prepayment_only"
     operationListEditorTitle.value = 'Редактировать операции (Предоплаты)';
     operationListEditorType.value = 'income';
+    operationListEditorFilterMode.value = 'prepayment_only'; // 🟢 ВКЛЮЧАЕМ ФИЛЬТР
     isOperationListEditorVisible.value = true;
 };
 
@@ -235,7 +242,6 @@ const handleOperationAdded = async (newOp) => {
         :widgetIndex="index"
       />
       
-      <!-- 🟢 ОБНОВЛЕНО: Виджет "Мои обязательства" с новыми пропсами -->
       <HeaderLiabilitiesCard
         v-else-if="widgetKey === 'liabilities'"
         title="Мои обязательства"
@@ -276,7 +282,7 @@ const handleOperationAdded = async (newOp) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
         @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
-        @edit="openEditPopup('Редактировать контрагентов', mainStore.contractors, 'contractors')"
+        @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
       />
 
       <HeaderBalanceCard
@@ -361,10 +367,12 @@ const handleOperationAdded = async (newOp) => {
     @close="isTransferEditorVisible = false"
   />
 
+  <!-- 🟢 ПЕРЕДАЕМ filterMode -->
   <OperationListEditor
     v-if="isOperationListEditorVisible"
     :title="operationListEditorTitle"
     :type="operationListEditorType"
+    :filter-mode="operationListEditorFilterMode"
     @close="isOperationListEditorVisible = false"
   />
 
