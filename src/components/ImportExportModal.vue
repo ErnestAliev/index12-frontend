@@ -1,16 +1,18 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.15-BUTTON-STYLE-FIX ---
- * * ВЕРСИЯ: 10.15 - Исправление текста и стиля кнопки экспорта
+ * * --- МЕТКА ВЕРСИИ: v10.16-BTN-AND-CLOSE-FIX ---
+ * * ВЕРСИЯ: 10.16 - Исправление кнопки закрытия и стиля кнопки подготовки
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Убрана цифра "1." из текста кнопки "Подготовить данные для экспорта".
- * 2. (STYLE) Усилены стили при наведении для кнопки .export-btn.
+ * 1. (FIX) .close-btn: Добавлен z-index и увеличен размер для гарантированного клика.
+ * 2. (STYLE) .prepare-btn: Добавлен стиль "контурной кнопки" (border: 1px solid #444)
+ * с явным hover-эффектом (белая рамка + чуть светлее фон), чтобы это выглядело как кнопка.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
-      <button class="close-btn" @click="closeModal">&times;</button>
+      <!-- 🟢 Исправленная кнопка закрытия -->
+      <button class="close-btn" @click="closeModal" title="Закрыть">&times;</button>
       
       <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Отчетов' }}</h2>
       
@@ -174,7 +176,6 @@
           class="btn-primary export-btn prepare-btn" 
           :disabled="isExporting"
         >
-          <!-- 🟢 ИЗМЕНЕНО: Убрана цифра "1." -->
           Подготовить данные для экспорта
         </button>
 
@@ -1038,8 +1039,6 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
 </script>
 
 <style scoped>
-/* 🔴 v10.8: СТИЛИ ВОЗВРАЩЕНЫ К ОРИГИНАЛУ v10.0 */
-
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1067,17 +1066,20 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
   position: relative;
 }
 
+/* 🟢 ИСПРАВЛЕНО: Кнопка закрытия (увеличен хитбокс, добавлен z-index, pointer) */
 .close-btn {
   position: absolute;
   top: 10px;
   right: 15px;
   background: none;
   border: none;
-  font-size: 24px;
+  font-size: 32px; /* Чуть крупнее символ */
   color: var(--color-text-soft);
   cursor: pointer;
-  padding: 5px;
-  line-height: 1;
+  padding: 10px; /* Увеличенный паддинг для клика */
+  line-height: 0.8;
+  z-index: 1001; /* Чтобы точно была поверх всего */
+  transition: color 0.2s;
 }
 .close-btn:hover {
   color: var(--color-text);
@@ -1251,20 +1253,33 @@ h2 {
   margin-top: 4px;
 }
 
-/* 🟢 Стили специально для кнопки подготовки */
+/* 🟢 ОБНОВЛЕННЫЙ СТИЛЬ для кнопки "Подготовить данные" */
 .prepare-btn {
-  padding: 14px 28px; /* Немного больше padding */
-  font-size: 1.1em;   /* Немного больше шрифт */
+  /* Стиль контурной кнопки как "Скачать шаблон" */
+  background-color: transparent !important; /* Прозрачный фон */
+  border: 1px solid var(--color-border) !important; /* Рамка цвета бордера */
+  color: var(--color-text) !important; /* Цвет текста обычный */
+  
+  padding: 14px 28px;
+  font-size: 1.1em;
   cursor: pointer;
-  /* Убедимся, что она выглядит кликабельной */
-}
-.prepare-btn:hover {
-  /* Эффект наведения, аналогичный другим кнопкам, но можно усилить */
-  transform: translateY(-2px); 
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-  filter: brightness(1.1);
+  border-radius: 8px; /* Скругление */
+  transition: all 0.2s ease;
 }
 
+/* Hover для .prepare-btn */
+.prepare-btn:hover {
+  background-color: var(--color-background-soft) !important; /* Светлее фон */
+  border-color: var(--color-text) !important; /* Рамка ярче (белее) */
+  transform: translateY(-1px); /* Легкий подъем */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3); /* Тень */
+}
+
+/* Active (нажатие) */
+.prepare-btn:active {
+  transform: translateY(0);
+  background-color: var(--color-background-mute) !important;
+}
 
 .mapping-table-container {
   overflow-x: auto;
