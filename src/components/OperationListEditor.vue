@@ -5,14 +5,15 @@ import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v21.2 - CATEGORY FILTER FIX ---
- * * ВЕРСИЯ: 21.2 - Исправление фильтра категорий (включена Предоплата)
+ * * --- МЕТКА ВЕРСИИ: v21.3 - FILTER LOGIC FIX ---
+ * * ВЕРСИЯ: 21.3 - Исправление логики фильтрации категорий (Предоплата)
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Computed `categories` теперь не использует `visibleCategories` (который скрывает предоплату),
- * а берет полный список `mainStore.categories` и исключает только "Перевод".
- * Это позволяет фильтровать список операций по категории "Предоплата".
+ * 1. (LOGIC) В `filteredItems` обновлена проверка категории.
+ * Если выбрана категория, являющаяся "Предоплатой" (по ID), фильтр теперь
+ * проверяет `isSystemPrepayment(item)` или совпадение `prepaymentId`.
+ * 2. (LOGIC) Функция `isSystemPrepayment` теперь используется и внутри фильтра.
  */
 
 const props = defineProps({
@@ -45,13 +46,13 @@ const itemToDelete = ref(null);
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
 
-// 🟢 ИСПРАВЛЕНИЕ: Формируем список категорий для фильтра
+// Формируем список категорий для фильтра
 // Включаем ВСЕ категории (в т.ч. Предоплату), исключаем только Перевод
 const categories = computed(() => {
   return mainStore.categories.filter(c => {
       const name = c.name.toLowerCase().trim();
       return name !== 'перевод' && name !== 'transfer';
-  }).sort((a, b) => a.name.localeCompare(b.name)); // Сортировка по алфавиту для удобства
+  }).sort((a, b) => a.name.localeCompare(b.name)); 
 });
 
 const contractors = computed(() => mainStore.contractors);
@@ -79,6 +80,18 @@ const getOwnerId = (compId, indId) => {
   return null;
 };
 
+const isSystemPrepayment = (item) => {
+    const op = item.originalOp || item; // Поддержка и обертки, и сырого объекта
+    const prepayIds = mainStore.getPrepaymentCategoryIds;
+    const catId = op.categoryId?._id || op.categoryId;
+    const prepId = op.prepaymentId?._id || op.prepaymentId;
+    
+    // Проверка по ID категории или ID предоплаты или флагу в объекте категории
+    return (catId && prepayIds.includes(catId)) || 
+           (prepId && prepayIds.includes(prepId)) || 
+           (op.categoryId && op.categoryId.isPrepayment);
+};
+
 const loadOperations = () => {
   const allOps = mainStore.allOperationsFlat;
   
@@ -88,11 +101,7 @@ const loadOperations = () => {
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     
     if (props.filterMode === 'prepayment_only') {
-        const prepayIds = mainStore.getPrepaymentCategoryIds;
-        const catId = op.categoryId?._id || op.categoryId;
-        const prepId = op.prepaymentId?._id || op.prepaymentId;
-        const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
-        return !!isPrepay; 
+        return isSystemPrepayment(op);
     }
 
     return true;
@@ -139,14 +148,20 @@ const filteredItems = computed(() => {
     if (filters.value.account && item.accountId !== filters.value.account) return false;
     if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
     
-    // Фильтрация по категории
+    // 🟢 ИСПРАВЛЕННАЯ ЛОГИКА ФИЛЬТРАЦИИ ПО КАТЕГОРИИ
     if (filters.value.category) {
-        // Если категория в операции совпадает с выбранной
-        if (item.categoryId !== filters.value.category) {
-            // Дополнительная проверка для системной предоплаты (если выбрана категория "Предоплата")
-            // Если item.categoryId не совпал напрямую, возможно это системная предоплата
-            // Но обычно item.categoryId уже содержит ID предоплаты, если это она.
-            return false; 
+        const selectedCatId = filters.value.category;
+        const prepayIds = mainStore.getPrepaymentCategoryIds;
+        
+        // Если выбранная в фильтре категория — это "Предоплата" (любая из системных)
+        const isSelectedCategoryPrepayment = prepayIds.includes(selectedCatId);
+
+        if (isSelectedCategoryPrepayment) {
+            // Проверяем, является ли текущая операция предоплатой (любым способом)
+            if (!isSystemPrepayment(item)) return false;
+        } else {
+            // Обычная проверка на совпадение ID категории
+            if (item.categoryId !== selectedCatId) return false;
         }
     }
     
@@ -292,14 +307,6 @@ const confirmDelete = async () => {
   } catch (e) { alert('Ошибка при удалении: ' + e.message); } finally { isDeleting.value = false; }
 };
 const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.value = false; itemToDelete.value = null; };
-
-const isSystemPrepayment = (item) => {
-    const op = item.originalOp;
-    const prepayIds = mainStore.getPrepaymentCategoryIds;
-    const catId = op.categoryId?._id || op.categoryId;
-    const prepId = op.prepaymentId?._id || op.prepaymentId;
-    return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
-};
 </script>
 
 <template>
@@ -368,7 +375,6 @@ const isSystemPrepayment = (item) => {
         <div class="filter-col col-cat">
            <select v-model="filters.category" class="filter-input filter-select">
               <option value="">Все</option>
-              <!-- 🟢 Теперь categories содержит и Предоплату -->
               <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
            </select>
         </div>
