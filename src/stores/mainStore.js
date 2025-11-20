@@ -22,15 +22,16 @@ function getViewModeInfo(mode) {
 
 export const useMainStore = defineStore('mainStore', () => {
   /**
-   * * --- МЕТКА ВЕРСИИ: v20.0 - FIX DUPLICATES & MERGE ---
-   * * ВЕРСИЯ: 20.0 - Исправление дублирования виджетов и двойных чипов
+   * * --- МЕТКА ВЕРСИИ: v21.0 - OBLIGATIONS LOGIC ---
+   * * ВЕРСИЯ: 21.0 - Логика обязательств и активных сделок
    * * ДАТА: 2025-11-20
    *
    * ЧТО ИЗМЕНЕНО:
-   * 1. (FIX) _mergeTransfers: Теперь принудительно объединяет операции с категорией "Проводки".
-   * 2. (FIX) allWidgets: Исключает категорию "Проводки" из списка (чтобы не было дубля виджета).
+   * 1. (WIDGETS) Добавлен 'obligations' в staticWidgets и dashboardLayout.
+   * 2. (GETTER) activeDeals: Список незакрытых сделок для селекта в попапе.
+   * 3. (GETTER) obligationsWidgetData: Расчет "Мы должны" / "Нам должны".
    */
-  console.log('--- mainStore.js v20.0 (Fix Duplicates & Merge) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.0 (Obligations Logic) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -54,6 +55,9 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
     
+    // 🟢 NEW: Виджет обязательств
+    { key: 'obligations',  name: 'Мои обязательства' },
+
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
     { key: 'transferList', name: 'Мои переводы' },
@@ -73,10 +77,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return categories.value.filter(c => !_isTransferCategory(c));
   });
 
-  // 🟢 FIX: Убираем дублирование виджетов
   const allWidgets = computed(() => {
-    // Мы не добавляем виджеты для категорий "Перевод" / "Проводки", 
-    // так как они уже есть в staticWidgets (transferList, postingList).
     const cats = [];
     return [...staticWidgets.value, ...cats];
   });
@@ -88,7 +89,8 @@ export const useMainStore = defineStore('mainStore', () => {
     'companies',    
     'contractors',  
     'projects',     
-    'futureTotal'   
+    'futureTotal',
+    'obligations' // 🟢 Добавлено по умолчанию
   ]);
   
   watch(dashboardLayout, (newLayout) => {
@@ -166,6 +168,105 @@ export const useMainStore = defineStore('mainStore', () => {
     });
     return allOps;
   });
+
+  // 🟢 LOGIC: Активные сделки (для селекта)
+  const activeDeals = computed(() => {
+      // 1. Находим все "Сделки" (Предоплаты с флагом isDeal)
+      const deals = allOperationsFlat.value.filter(op => op.isDeal === true);
+      
+      // 2. Для каждой сделки считаем баланс
+      return deals.map(deal => {
+          const dealId = deal._id;
+          const dealTotal = deal.dealTotal || 0;
+          
+          // Связанные операции (где parentDealId === deal._id)
+          // + сама операция создания сделки (Предоплата) уже имеет сумму
+          
+          // Сумма поступлений (Предоплата + Доплаты)
+          const paid = allOperationsFlat.value.reduce((acc, op) => {
+              if (op._id === dealId) return acc + (op.amount || 0); // Сама предоплата
+              if (op.parentDealId?._id === dealId || op.parentDealId === dealId) {
+                  if (op.type === 'income') return acc + (op.amount || 0);
+              }
+              return acc;
+          }, 0);
+
+          // Сумма актов (Исполнение)
+          const executed = allOperationsFlat.value.reduce((acc, op) => {
+              if (op.parentDealId?._id === dealId || op.parentDealId === dealId) {
+                  if (op.type === 'act') return acc + Math.abs(op.amount || 0);
+              }
+              return acc;
+          }, 0);
+
+          const isFullyPaid = paid >= dealTotal;
+          const isFullyExecuted = executed >= dealTotal;
+          
+          // Если сделка полностью оплачена И полностью исполнена - она закрыта
+          if (isFullyPaid && isFullyExecuted) return null;
+          
+          // Формируем объект для UI
+          const clientName = deal.contractorId?.name || 'Без клиента';
+          const dateStr = new Date(deal.date).toLocaleDateString('ru-RU');
+          const label = `${clientName} (${dateStr}) - ${formatNumber(dealTotal)} ₸`;
+
+          return {
+              _id: dealId,
+              label,
+              dealTotal,
+              paid,
+              executed,
+              remainingToPay: Math.max(0, dealTotal - paid),
+              remainingToExecute: Math.max(0, dealTotal - executed),
+              contractorId: deal.contractorId, // Для автозаполнения
+              projectId: deal.projectId         // Для автозаполнения
+          };
+      }).filter(Boolean); // Убираем null (закрытые сделки)
+  });
+
+  // 🟢 LOGIC: Данные для виджета Обязательств
+  const obligationsWidgetData = computed(() => {
+      let weOweWork = 0;   // Мы должны (Кредиторка по работам): Взяли деньги, не сдали акт
+      let oweUsMoney = 0;  // Нам должны (Дебиторка по деньгам): Сделка есть, деньги не пришли
+
+      // Проходим по всем сделкам (даже закрытым, чтобы видеть историю, но в контексте "Всего")
+      // Или лучше считать глобально? ТЗ говорит "Сумма всех..."
+      
+      const deals = allOperationsFlat.value.filter(op => op.isDeal === true);
+      
+      let totalDealSum = 0;
+      let totalReceived = 0;
+      let totalExecuted = 0;
+
+      deals.forEach(deal => {
+          totalDealSum += (deal.dealTotal || 0);
+          
+          // Деньги по этой сделке (Предоплата)
+          totalReceived += (deal.amount || 0);
+      });
+      
+      // Добираем Доплаты и Акты
+      allOperationsFlat.value.forEach(op => {
+          if (op.parentDealId) {
+              if (op.type === 'income') totalReceived += (op.amount || 0);
+              if (op.type === 'act') totalExecuted += Math.abs(op.amount || 0);
+          }
+      });
+
+      // Расчет по формуле из ТЗ
+      // Мы должны: (Полученные деньги) - (Сумма Актов)
+      weOweWork = Math.max(0, totalReceived - totalExecuted);
+      
+      // Нам должны: (Сумма Сделок) - (Полученные деньги)
+      oweUsMoney = Math.max(0, totalDealSum - totalReceived);
+      
+      return { weOweWork, oweUsMoney };
+  });
+
+  // --- Форматтер внутри стора для удобства
+  const formatNumber = (num) => {
+      return String(Math.floor(num)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  };
 
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   const isAct = (op) => !!op && op.type === 'act';
@@ -288,7 +389,11 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.projectId?._id) continue;
       const id = op.projectId._id;
       if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0); 
+      // 🟢 LOGIC: Акты не влияют на баланс Денег, но влияют на "Оборот" проекта?
+      // ТЗ говорит: "Для Проектов используется Накопительный итог (сколько денег пришло всего)"
+      // "Операции типа act (Исполнение) ИГНОРИРУЮТСЯ в этих виджетах."
+      if (isAct(op)) continue; 
+      if (op.amount > 0) bal[id] += op.amount; // Только приход денег
     }
     return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
   });
@@ -302,7 +407,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.projectId?._id) continue;
       const id = op.projectId._id;
       if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
+      if (isAct(op)) continue;
+      if (op.amount > 0) bal[id] += op.amount;
     }
     return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
   });
@@ -314,7 +420,10 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.contractorId?._id) continue;
       const id = op.contractorId._id;
       if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
+      // ТЗ: "Накопительный итог (сколько денег пришло всего), а не баланс."
+      // ТЗ: "Операции типа act (Исполнение) ИГНОРИРУЮТСЯ"
+      if (isAct(op)) continue;
+      if (op.amount > 0) bal[id] += op.amount;
     }
     return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
@@ -327,7 +436,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.contractorId?._id) continue;
       const id = op.contractorId._id;
       if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
+      if (isAct(op)) continue;
+      if (op.amount > 0) bal[id] += op.amount;
     }
     return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
@@ -604,9 +714,7 @@ export const useMainStore = defineStore('mainStore', () => {
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
-    // 1. Определяем обычные операции (не трансферы и не часть группы)
     const normalOps = list.filter(o => {
-        // 🟢 FIX: Если категория "Проводки" или "Перевод" - считаем это частью трансфера
         if (o.categoryId) {
             const name = o.categoryId.name.toLowerCase().trim();
             if (name === 'проводки' || name === 'перевод' || name === 'transfer') return false;
@@ -614,22 +722,16 @@ export const useMainStore = defineStore('mainStore', () => {
         return !o?.isTransfer && !o?.transferGroupId;
     });
 
-    // 2. Группируем трансферы
     const transferGroups = new Map();
     list.forEach(o => {
         let isTr = o?.isTransfer || o?.transferGroupId;
-        // 🟢 FIX: Принудительно группируем по категории
         if (!isTr && o.categoryId) {
              const name = o.categoryId.name.toLowerCase().trim();
              if (name === 'проводки' || name === 'перевод' || name === 'transfer') isTr = true;
         }
 
         if (isTr) {
-            // Если нет groupID, создаем временный на основе времени (грубо, но для "двух чипов" сойдет, если они рядом)
-            // Идеально, если бэкенд шлет transferGroupId.
-            // Если нет - группируем по тому, что есть (одиночные).
-            // Но проблема "двух чипов" обычно в том, что они не сгруппированы.
-            const groupId = o.transferGroupId || `transfer_${o._id}`; // Пока так, если бэкенд не шлет группу, они останутся раздельными, но тип сменится
+            const groupId = o.transferGroupId || `transfer_${o._id}`; 
             if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
             transferGroups.get(groupId).push(o);
         }
@@ -637,13 +739,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const mergedTransfers = [];
     for (const [groupId, transferOps] of transferGroups) {
-      // Пытаемся найти пару Income + Expense
-      // Если трансфер создается нормально, там будет 2 операции с одним transferGroupId (от бэкенда).
-      // Если "два чипа" - значит transferGroupId разный или отсутствует.
-      // В таком случае, мы просто конвертируем их в тип 'transfer', чтобы они выглядели как переводы,
-      // но они могут остаться визуально двумя (один приход, один уход), если не связаны ID.
-      // Чтобы они "склеились" визуально в один, они должны быть в ОДНОМ объекте.
-      
       if (transferOps.length === 2) {
         const expenseOp = transferOps.find(o => o.amount < 0);
         const incomeOp = transferOps.find(o => o.amount > 0);
@@ -665,7 +760,6 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       
-      // Если пара не нашлась или операция одна (orphan transfer part)
       const firstOp = transferOps[0];
       mergedTransfers.push({
         ...firstOp, 
@@ -1100,6 +1194,10 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
+
+    // 🟢 EXPORT НОВЫХ GETTERS
+    activeDeals,
+    obligationsWidgetData,
 
     getCategoryById,
     futureCategoryBreakdowns,
