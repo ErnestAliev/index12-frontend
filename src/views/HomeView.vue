@@ -1,14 +1,7 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v14.0 - About Modal Integration ---
- * * ВЕРСИЯ: 14.0 - Добавлена кнопка "О сервисе"
- * ДАТА: 2025-11-18
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) Импорт `AboutModal.vue`.
- * 2. (NEW) Ref `showAboutModal`.
- * 3. (NEW) Кнопка ".about-btn" в правой панели (над профилем).
- * 4. (NEW) Компонент <AboutModal> в шаблоне.
- * 5. (CSS) Стили для позиционирования кнопки (bottom: 64px).
+ * * --- МЕТКА ВЕРСИИ: v15.0 - FULL RESTORE ---
+ * * ВЕРСИЯ: 15.0 - Полный код + Логика перекрытия
+ * ДАТА: 2025-11-20
  -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
@@ -23,16 +16,22 @@ import YAxisPanel from '@/components/YAxisPanel.vue';
 import { useMainStore } from '@/stores/mainStore';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
-// 🟢 v14.0: Импорт компонента "О сервисе"
 import AboutModal from '@/components/AboutModal.vue';
+import PrepaymentModal from '@/components/PrepaymentModal.vue'; // 🟢
+import axios from 'axios';
 
-console.log('--- HomeView.vue v14.0 (About Modal Integration) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v15.0 (Full Restore) ЗАГРУЖЕН ---'); 
 
 const mainStore = useMainStore();
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
-// 🟢 v14.0: Управление видимостью модального окна "О сервисе"
 const showAboutModal = ref(false);
+
+// 🟢 Состояние Prepayment Modal
+const isPrepaymentModalVisible = ref(false);
+const prepaymentData = ref({});
+const prepaymentDateKey = ref('');
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -78,6 +77,35 @@ const debounce = (func, delay) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => func.apply(this, args), delay);
   };
+};
+
+// --- 🟢 ПЕРЕХОД К ПРЕДОПЛАТЕ ---
+const handleSwitchToPrepayment = (data) => {
+    // МЫ НЕ ЗАКРЫВАЕМ isPopupVisible = false, ТАК КАК В ТЗ ЭТОГО НЕТ.
+    // OperationPopup останется на фоне, PrepaymentModal откроется поверх (z-index 2000).
+    
+    const d = new Date(data.date || new Date());
+    prepaymentDateKey.value = mainStore._getDateKey(d);
+    prepaymentData.value = { ...data };
+    isPrepaymentModalVisible.value = true;
+};
+
+const handlePrepaymentSave = async (finalData) => {
+    try {
+        // Сохраняем
+        await axios.post(`${API_BASE_URL}/events`, finalData);
+        await mainStore.addOperation(finalData);
+        
+        // Закрываем ОБА окна после успеха
+        isPrepaymentModalVisible.value = false;
+        isPopupVisible.value = false; 
+        
+        // Обновляем вид
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка сохранения предоплаты');
+    }
 };
 
 /* ===================== ДАТЫ / ВИРТУАЛКА ===================== */
@@ -792,7 +820,6 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         
-        <!-- Кнопка "Графики" -->
         <button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -801,7 +828,6 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         
-        <!-- 🟢 v14.0: Кнопка "О сервисе" -->
         <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
@@ -850,6 +876,7 @@ onBeforeUnmount(() => {
       @operation-deleted="handleOperationDelete(operationToEdit)"
       @operation-moved="handleOperationMoved"
       @operation-updated="handleOperationUpdated"
+      @switch-to-prepayment="handleSwitchToPrepayment"
     />
 
     <TransferPopup
@@ -863,19 +890,26 @@ onBeforeUnmount(() => {
       @transfer-complete="handleTransferComplete"
     />
     
+    <!-- 🟢 МОДАЛКА ПРЕДОПЛАТЫ -->
+    <PrepaymentModal
+      v-if="isPrepaymentModalVisible"
+      :initialData="prepaymentData"
+      :dateKey="prepaymentDateKey"
+      @close="isPrepaymentModalVisible = false"
+      @save="handlePrepaymentSave"
+    />
+    
     <ImportExportModal 
       v-if="showImportModal"
       @close="showImportModal = false"
       @import-complete="handleImportComplete"
     />
     
-    <!-- 🟢 v13.0: Модальное окно графиков -->
     <GraphModal
       v-if="showGraphModal"
       @close="showGraphModal = false"
     />
     
-    <!-- 🟢 v14.0: Модальное окно "О сервисе" -->
     <AboutModal
       v-if="showAboutModal"
       @close="showAboutModal = false"
