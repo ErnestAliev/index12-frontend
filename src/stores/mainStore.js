@@ -1,23 +1,19 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v22.0 - FULL RESTORE & FIX ---
- * * ВЕРСИЯ: 22.0 - Полное восстановление функционала и исправление логики категорий
+ * * --- МЕТКА ВЕРСИИ: v22.1 - TRANSFER CALC FIX ---
+ * * ВЕРСИЯ: 22.1 - Исправление расчета и видимости "Переводов"
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (RESTORE) Восстановлен полный объем кода (все методы CRUD).
- * 2. (LOGIC) visibleCategoriesForEditor: Исключает системные категории (для редактора).
- * 3. (LOGIC) currentCategoryBalances: Включает ВСЕ категории (для отображения в виджете).
- * 4. (FIX) Исправлен расчет балансов для категорий с учетом prepaymentId.
+ * 1. (FIX) allWidgets: Категория "Перевод" возвращена в список выбора.
+ * 2. (FIX) currentCategoryBreakdowns: Добавлен расчет для операций типа 'transfer'.
+ * 3. (FIX) currentCategoryBalances: Добавлен расчет баланса для 'transfer'.
  */
 
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 
-// Глобальная настройка Axios
 axios.defaults.withCredentials = true; 
-
-// Адрес "Кухни"
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 const VIEW_MODE_DAYS = {
@@ -33,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v22.0 (Full Restore & Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v22.1 (Transfer Calc Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -45,11 +41,10 @@ export const useMainStore = defineStore('mainStore', () => {
   const contractors = ref([]);
   const projects    = ref([]);
   const individuals = ref([]); 
-  const categories  = ref([]);
+  const categories  = ref([]); 
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
-  // Полный список доступных виджетов
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего (на тек. момент)' },
     { key: 'accounts',     name: 'Мои счета' },
@@ -64,38 +59,30 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'categories',   name: 'Категории' }, 
   ]);
 
-  // --- ХЕЛПЕРЫ КАТЕГОРИЙ ---
+  // --- ХЕЛПЕРЫ ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer';
   };
-
+  
   const _isPrepaymentCategory = (cat) => {
     if (!cat) return false;
     const n = cat.name.toLowerCase().trim();
     return n.includes('предоплата') || n.includes('prepayment') || cat.isPrepayment;
   };
 
-  // Поиск системных категорий для расчетов
   const getPrepaymentCategoryIds = computed(() => {
-    return categories.value
-      .filter(c => _isPrepaymentCategory(c))
-      .map(c => c._id);
+    return categories.value.filter(c => _isPrepaymentCategory(c)).map(c => c._id);
   });
 
   const getActCategoryIds = computed(() => {
-    return categories.value
-      .filter(c => {
+    return categories.value.filter(c => {
         const n = c.name.toLowerCase().trim();
         return n.includes('акт') || n.includes('act') || n.includes('выполненных работ');
-      })
-      .map(c => c._id);
+      }).map(c => c._id);
   });
 
-  // 🟢 ДЛЯ РЕДАКТОРА СПИСКОВ (EntityListEditor)
-  // Здесь МЫ СКРЫВАЕМ системные категории ("Перевод", "Предоплата"), 
-  // чтобы пользователь не мог их случайно удалить или переименовать.
   const visibleCategories = computed(() => {
     return categories.value.filter(c => {
       if (_isTransferCategory(c)) return false;
@@ -104,7 +91,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
   
-  // Алиас для совместимости, если где-то используется это имя
   const visibleCategoriesForEditor = visibleCategories;
 
   const visibleContractors = computed(() => {
@@ -114,31 +100,27 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 ДЛЯ ВЫБОРА ВИДЖЕТОВ (Dropdown)
-  // Здесь тоже скрываем системные, так как для них есть свои спец. виджеты.
+  // 🟢 ALL WIDGETS (Исправлено: Перевод теперь доступен)
   const allWidgets = computed(() => {
     const availableCats = categories.value.filter(c => {
-        return !_isTransferCategory(c) && !_isPrepaymentCategory(c);
+        // Исключаем только предоплату, так как для неё есть спец. виджет.
+        // Перевод оставляем, чтобы его можно было добавить как виджет.
+        return !_isPrepaymentCategory(c); 
     });
     const catWidgets = availableCats.map(c => ({ key: `cat_${c._id}`, name: c.name }));
      return [...staticWidgets.value, ...catWidgets];
   });
 
-  // Настройки дашборда
+  // ... (Layout, Forecast, Projection watchers - без изменений) ...
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
     'currentTotal', 'accounts', 'companies', 'contractors', 'projects', 'futureTotal'
   ]);
-  
-  watch(dashboardLayout, (newLayout) => {
-    localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
-  }, { deep: true });
+  watch(dashboardLayout, (newLayout) => { localStorage.setItem('dashboardLayout', JSON.stringify(newLayout)); }, { deep: true });
 
   const savedForecastState = localStorage.getItem('dashboardForecastState');
   const dashboardForecastState = ref(savedForecastState ? JSON.parse(savedForecastState) : {});
-  watch(dashboardForecastState, (newState) => {
-    localStorage.setItem('dashboardForecastState', JSON.stringify(newState));
-  }, { deep: true });
+  watch(dashboardForecastState, (newState) => { localStorage.setItem('dashboardForecastState', JSON.stringify(newState)); }, { deep: true });
 
   const savedProjection = localStorage.getItem('projection');
   const initialProjection = savedProjection ? JSON.parse(savedProjection) : {
@@ -146,24 +128,13 @@ export const useMainStore = defineStore('mainStore', () => {
     futureIncomeSum: 0, futureExpenseSum: 0
   };
   const projection = ref(initialProjection);
-  watch(projection, (newProjection) => {
-    localStorage.setItem('projection', JSON.stringify(newProjection));
-  }, { deep: true });
+  watch(projection, (newProjection) => { localStorage.setItem('projection', JSON.stringify(newProjection)); }, { deep: true });
   
-  function replaceWidget(i, key){ 
-    if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
-  }
-  function setForecastState(widgetKey, value) {
-    dashboardForecastState.value[widgetKey] = !!value;
-  }
-  function setToday(d){ 
-    todayDayOfYear.value = d; 
-    localStorage.setItem('todayDayOfYear', d.toString());
-  }
+  function replaceWidget(i, key){ if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; }
+  function setForecastState(widgetKey, value) { dashboardForecastState.value[widgetKey] = !!value; }
+  function setToday(d){ todayDayOfYear.value = d; localStorage.setItem('todayDayOfYear', d.toString()); }
   const savedToday = localStorage.getItem('todayDayOfYear');
-  if (savedToday) {
-    todayDayOfYear.value = parseInt(savedToday);
-  }
+  if (savedToday) { todayDayOfYear.value = parseInt(savedToday); }
   
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
@@ -176,13 +147,9 @@ export const useMainStore = defineStore('mainStore', () => {
     return `${year}-${doy}`;
   };
   const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        return new Date(); 
-    }
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) { return new Date(); }
     const [year, doy] = dateKey.split('-').map(Number);
-    const date = new Date(year, 0, 1);
-    date.setDate(doy);
-    return date;
+    const date = new Date(year, 0, 1); date.setDate(doy); return date;
   };
   const _calculateDateRangeWithYear = (view, baseDate) => {
     const startDate = new Date(baseDate);
@@ -208,28 +175,19 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // --- DAILY CHART DATA ---
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIds = getPrepaymentCategoryIds.value;
-    
     for (const op of allOperationsFlat.value) {
       if (!op?.dateKey) continue;
       if (!byDateKey[op.dateKey]) byDateKey[op.dateKey] = { income:0, prepayment:0, expense:0, dayTotal:0 };
-      
       if (!isTransfer(op)) {
         if (op.type === 'income') {
             const catId = op.categoryId?._id || op.categoryId;
             const prepId = op.prepaymentId?._id || op.prepaymentId;
-            const isPrepay = (catId && prepayIds.includes(catId)) || 
-                             (prepId && prepayIds.includes(prepId)) ||
-                             (op.categoryId && op.categoryId.isPrepayment);
-            
-            if (isPrepay) {
-                byDateKey[op.dateKey].prepayment += (op?.amount || 0);
-            } else {
-                byDateKey[op.dateKey].income += (op?.amount || 0);
-            }
+            const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+            if (isPrepay) { byDateKey[op.dateKey].prepayment += (op?.amount || 0); } 
+            else { byDateKey[op.dateKey].income += (op?.amount || 0); }
             byDateKey[op.dateKey].dayTotal += (op?.amount || 0);
         }
         else if (op.type === 'expense') {
@@ -248,11 +206,8 @@ export const useMainStore = defineStore('mainStore', () => {
       const rec = byDateKey[dateKey];
       running += rec.dayTotal;
       chart.set(dateKey, { 
-        income: rec.income,
-        prepayment: rec.prepayment, 
-        expense: rec.expense, 
-        closingBalance: running,
-        date: _parseDateKey(dateKey)
+        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, 
+        closingBalance: running, date: _parseDateKey(dateKey)
       });
     }
     return chart;
@@ -282,113 +237,6 @@ export const useMainStore = defineStore('mainStore', () => {
     })
   );
 
-  const opsUpToForecast = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); }
-    
-    return allOperationsFlat.value.filter(op => {
-       if (!op?.dateKey) return false;
-       const opDate = _parseDateKey(op.dateKey);
-       return opDate <= endDate;
-    });
-  });
-
-  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ ---
-  const liabilitiesWeOwe = computed(() => {
-    const prepayIds = getPrepaymentCategoryIds.value;
-    const actIds = getActCategoryIds.value;
-    if (prepayIds.length === 0 && actIds.length === 0) return 0;
-    let totalPrepaymentReceived = 0;
-    let totalActsSum = 0;
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      const catId = op.categoryId?._id || op.categoryId;
-      const prepId = op.prepaymentId?._id || op.prepaymentId;
-      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      const isAct = (catId && actIds.includes(catId));
-      if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
-      if (isAct) totalActsSum += Math.abs(op.amount || 0);
-    }
-    return totalPrepaymentReceived - totalActsSum;
-  });
-
-  const liabilitiesTheyOwe = computed(() => {
-    const prepayIds = getPrepaymentCategoryIds.value;
-    if (prepayIds.length === 0) return 0;
-    let totalDealSum = 0;
-    let receivedSum = 0;
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      const catId = op.categoryId?._id || op.categoryId;
-      const prepId = op.prepaymentId?._id || op.prepaymentId;
-      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      if (isPrepay && op.type === 'income') {
-          const dealTotal = op.totalDealAmount || 0;
-          if (dealTotal > 0) {
-              totalDealSum += dealTotal;
-              receivedSum += (op.amount || 0);
-          }
-      }
-    }
-    return totalDealSum - receivedSum;
-  });
-
-  const liabilitiesWeOweFuture = computed(() => {
-    const prepayIds = getPrepaymentCategoryIds.value;
-    const actIds = getActCategoryIds.value;
-    if (prepayIds.length === 0 && actIds.length === 0) return 0;
-    let totalPrepaymentReceived = 0;
-    let totalActsSum = 0;
-    for (const op of opsUpToForecast.value) {
-      if (isTransfer(op)) continue;
-      const catId = op.categoryId?._id || op.categoryId;
-      const prepId = op.prepaymentId?._id || op.prepaymentId;
-      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      const isAct = (catId && actIds.includes(catId));
-      if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
-      if (isAct) totalActsSum += Math.abs(op.amount || 0);
-    }
-    return totalPrepaymentReceived - totalActsSum;
-  });
-
-  const liabilitiesTheyOweFuture = computed(() => {
-    const prepayIds = getPrepaymentCategoryIds.value;
-    if (prepayIds.length === 0) return 0;
-    let totalDealSum = 0;
-    let receivedSum = 0;
-    for (const op of opsUpToForecast.value) {
-      if (isTransfer(op)) continue;
-      const catId = op.categoryId?._id || op.categoryId;
-      const prepId = op.prepaymentId?._id || op.prepaymentId;
-      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      if (isPrepay && op.type === 'income') {
-          const dealTotal = op.totalDealAmount || 0;
-          if (dealTotal > 0) {
-              totalDealSum += dealTotal;
-              receivedSum += (op.amount || 0);
-          }
-      }
-    }
-    return totalDealSum - receivedSum;
-  });
-
-  // --- СПИСКИ ОПЕРАЦИЙ ---
-  const currentTransfers = computed(() => {
-    const transfers = currentOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
-  });
-  const currentIncomes = computed(() => {
-    const incomes = currentOps.value.filter(op => !isTransfer(op) && op.type === 'income');
-    return incomes.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
-  });
-  const currentExpenses = computed(() => {
-    const expenses = currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
-    return expenses.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
-  });
-
   const futureOps = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
     const currentYearVal = currentYear.value;
@@ -402,36 +250,101 @@ export const useMainStore = defineStore('mainStore', () => {
       return opDate > todayDate && opDate <= endDate;
     });
   });
-
-  const futureTransfers = computed(() => {
-    const transfers = futureOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
+  
+  const opsUpToForecast = computed(() => {
+      const baseToday = todayDayOfYear.value || 0;
+      const currentYearVal = currentYear.value;
+      let endDate;
+      if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
+      else { endDate = new Date(currentYearVal, 0, baseToday); }
+      return allOperationsFlat.value.filter(op => {
+         if (!op?.dateKey) return false;
+         const opDate = _parseDateKey(op.dateKey);
+         return opDate <= endDate;
+      });
   });
-  const futureIncomes = computed(() => {
-    const incomes = futureOps.value.filter(op => !isTransfer(op) && op.type === 'income');
-    return incomes.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
+
+  // --- ЛОГИКА ОБЯЗАТЕЛЬСТВ ---
+  const liabilitiesWeOwe = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    const actIds = getActCategoryIds.value;
+    let total = 0;
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      const isAct = (catId && actIds.includes(catId));
+      if (isPrepay && op.type === 'income') total += (op.amount || 0);
+      if (isAct) total -= Math.abs(op.amount || 0);
+    }
+    return total;
   });
-  const futureExpenses = computed(() => {
-    const expenses = futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
-    return expenses.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
+  const liabilitiesTheyOwe = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    let total = 0;
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      if (isPrepay && op.type === 'income') {
+          const deal = op.totalDealAmount || 0;
+          if (deal > 0) total += (deal - (op.amount || 0));
+      }
+    }
+    return total;
+  });
+  const liabilitiesWeOweFuture = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    const actIds = getActCategoryIds.value;
+    let total = 0;
+    for (const op of opsUpToForecast.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      const isAct = (catId && actIds.includes(catId));
+      if (isPrepay && op.type === 'income') total += (op.amount || 0);
+      if (isAct) total -= Math.abs(op.amount || 0);
+    }
+    return total;
+  });
+  const liabilitiesTheyOweFuture = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    let total = 0;
+    for (const op of opsUpToForecast.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      if (isPrepay && op.type === 'income') {
+          const deal = op.totalDealAmount || 0;
+          if (deal > 0) total += (deal - (op.amount || 0));
+      }
+    }
+    return total;
   });
 
-  const getCategoryById = (id) => {
-    return categories.value.find(c => c._id === id);
-  };
+  // --- GETTERS & LISTS ---
+  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a,b)=>_parseDateKey(b.dateKey)-_parseDateKey(a.dateKey)));
+  const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a,b)=>_parseDateKey(b.dateKey)-_parseDateKey(a.dateKey)));
+  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a,b)=>_parseDateKey(b.dateKey)-_parseDateKey(a.dateKey)));
+  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a,b)=>_parseDateKey(a.dateKey)-_parseDateKey(b.dateKey)));
+  const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a,b)=>_parseDateKey(a.dateKey)-_parseDateKey(b.dateKey)));
+  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a,b)=>_parseDateKey(a.dateKey)-_parseDateKey(b.dateKey)));
 
-  // 🟢 ДЛЯ СПИСКА ВИДЖЕТА (Включаем ВСЕ категории)
-  // Это данные, которые попадают ВНУТРЬ виджета категорий.
-  // "Предоплата" здесь ДОЛЖНА быть.
+  const getCategoryById = (id) => categories.value.find(c => c._id === id);
+
+  // 🟢 CATEGORY BREAKDOWNS (Исправлено: Включаем переводы)
   const currentCategoryBreakdowns = computed(() => {
     const map = {};
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
     
     for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
+      // Убрали: if (isTransfer(op)) continue;
+      // Теперь обрабатываем всё, но нужно правильно определить ID категории.
       
-      // Определяем ID категории. 
-      // Если это операция с prepaymentId, находим соответствующую категорию "Предоплата" в списке категорий.
       let catId = op.categoryId?._id || op.categoryId;
       if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
           catId = op.prepaymentId?._id || op.prepaymentId;
@@ -439,12 +352,20 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!catId) continue;
 
       const key = `cat_${catId}`;
-      // Если категории нет в map (например, она была скрыта или удалена, но операция осталась), создаем запись
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
       
-      if (op.type === 'income') map[key].income += op.amount || 0;
-      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
-      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
+      if (op.type === 'income') {
+          map[key].income += op.amount || 0;
+          map[key].total += op.amount || 0;
+      } else if (op.type === 'expense') {
+          map[key].expense += Math.abs(op.amount || 0);
+          map[key].total -= Math.abs(op.amount || 0);
+      } else if (op.type === 'transfer' || op.isTransfer) {
+          // Для переводов считаем оборот как расход (или просто сумму)
+          // Чтобы цифры не были нулевыми.
+          map[key].expense += Math.abs(op.amount || 0); 
+          map[key].total += Math.abs(op.amount || 0);
+      }
     }
     return map;
   });
@@ -453,68 +374,64 @@ export const useMainStore = defineStore('mainStore', () => {
     const map = {};
     for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
     for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      
       let catId = op.categoryId?._id || op.categoryId;
-      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
-          catId = op.prepaymentId?._id || op.prepaymentId;
-      }
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) catId = op.prepaymentId?._id || op.prepaymentId;
       if (!catId) continue;
 
       const key = `cat_${catId}`;
       if (!map[key]) map[key] = { income:0, expense:0, total:0 };
       
-      if (op.type === 'income') map[key].income += op.amount || 0;
-      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
-      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
+      if (op.type === 'income') {
+          map[key].income += op.amount || 0;
+          map[key].total += op.amount || 0;
+      } else if (op.type === 'expense') {
+          map[key].expense += Math.abs(op.amount || 0);
+          map[key].total -= Math.abs(op.amount || 0);
+      } else if (op.type === 'transfer' || op.isTransfer) {
+          map[key].expense += Math.abs(op.amount || 0);
+          map[key].total += Math.abs(op.amount || 0);
+      }
     }
     return map;
   });
 
-  // 🟢 ДЛЯ СПИСКА ВИДЖЕТА (BALANCES) - Включаем ВСЕ
+  // 🟢 CATEGORY BALANCES (Исправлено: Включаем переводы)
   const currentCategoryBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      
       let catId = op.categoryId?._id || op.categoryId;
-      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
-          catId = op.prepaymentId?._id || op.prepaymentId;
-      }
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) catId = op.prepaymentId?._id || op.prepaymentId;
       if (!catId) continue;
-
+      
       if (!bal[catId]) bal[catId] = 0;
-      bal[catId] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
+      
+      if (op.type === 'income') bal[catId] += (op.amount||0);
+      else if (op.type === 'expense') bal[catId] -= Math.abs(op.amount||0);
+      else if (op.type === 'transfer' || op.isTransfer) bal[catId] += Math.abs(op.amount||0);
     }
-    // Возвращаем ВСЕ категории из стора
     return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
   const futureCategoryBalances = computed(() => {
     const bal = {};
-    // Начинаем с текущих
     const current = currentCategoryBalances.value;
     for (const c of current) { bal[c._id] = c.balance || 0; }
     
     for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      
       let catId = op.categoryId?._id || op.categoryId;
-      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) {
-          catId = op.prepaymentId?._id || op.prepaymentId;
-      }
+      if (!catId && (op.prepaymentId?._id || op.prepaymentId)) catId = op.prepaymentId?._id || op.prepaymentId;
       if (!catId) continue;
 
       if (!bal[catId]) bal[catId] = 0;
-      bal[catId] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
+      
+      if (op.type === 'income') bal[catId] += (op.amount||0);
+      else if (op.type === 'expense') bal[catId] -= Math.abs(op.amount||0);
+      else if (op.type === 'transfer' || op.isTransfer) bal[catId] += Math.abs(op.amount||0);
     }
     return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
 
-  const totalInitialBalance = computed(() =>
-    (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
-  );
-  
+  const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0));
   const _applyTransferToBalances = (bal, op) => {
     const amt = Math.abs(Number(op?.amount) || 0);
     const fromId = op?.fromAccountId?._id || op?.fromAccountId || null;
@@ -522,7 +439,6 @@ export const useMainStore = defineStore('mainStore', () => {
     if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
     if (toId)   { if (bal[toId]   === undefined) bal[toId]   = 0; bal[toId]   += amt; }
   };
-
   const currentAccountBalances = computed(() => {
     const bal = {};
     for (const a of accounts.value) bal[a._id] = a.initialBalance || 0;
@@ -535,7 +451,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
   });
-  
   const futureAccountBalances = computed(() => {
     const bal = {};
     const currentBalances = currentAccountBalances.value;
@@ -557,7 +472,6 @@ export const useMainStore = defineStore('mainStore', () => {
     if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
     if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
   };
-
   const currentCompanyBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -569,11 +483,10 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
-  
   const futureCompanyBalances = computed(() => {
     const bal = {};
-    const currentBalances = currentCompanyBalances.value;
-    for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
+    const current = currentCompanyBalances.value;
+    for (const item of current) { bal[item._id] = item.balance || 0; }
     for (const op of futureOps.value) {
       if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
       if (!op?.companyId?._id) continue;
@@ -583,15 +496,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
   });
-
-  const _applyTransferToIndividualBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
-    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
-  };
-
+  
   const currentContractorBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -605,8 +510,8 @@ export const useMainStore = defineStore('mainStore', () => {
   });
   const futureContractorBalances = computed(() => {
     const bal = {};
-    const currentBalances = currentContractorBalances.value;
-    for (const contractor of currentBalances) { bal[contractor._id] = contractor.balance || 0; }
+    const current = currentContractorBalances.value;
+    for (const item of current) { bal[item._id] = item.balance || 0; }
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.contractorId?._id) continue;
@@ -630,8 +535,8 @@ export const useMainStore = defineStore('mainStore', () => {
   });
   const futureProjectBalances = computed(() => {
     const bal = {};
-    const currentBalances = currentProjectBalances.value;
-    for (const project of currentBalances) { bal[project._id] = project.balance || 0; }
+    const current = currentProjectBalances.value;
+    for (const item of current) { bal[item._id] = item.balance || 0; }
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.projectId?._id) continue;
@@ -641,7 +546,14 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
   });
-
+  
+  const _applyTransferToIndividualBalances = (bal, op) => {
+    const amt = Math.abs(Number(op?.amount) || 0);
+    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
+    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
+    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
+    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
+  };
   const currentIndividualBalances = computed(() => {
     const bal = {};
     for (const op of currentOps.value) {
@@ -655,8 +567,8 @@ export const useMainStore = defineStore('mainStore', () => {
   });
   const futureIndividualBalances = computed(() => {
     const bal = {};
-    const currentBalances = currentIndividualBalances.value;
-    for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
+    const current = currentIndividualBalances.value;
+    for (const item of current) { bal[item._id] = item.balance || 0; }
     for (const op of futureOps.value) {
       if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
       if (!op?.individualId?._id) continue;
@@ -674,7 +586,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }, 0);
     return (totalInitialBalance.value || 0) + opsTotal;
   });
-
   const futureTotalBalance = computed(() => {
     const baseToday = todayDayOfYear.value || 0;
     const currentYearVal = currentYear.value;
@@ -690,13 +601,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
-
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
-    const base = new Date(today);
-    base.setHours(0, 0, 0, 0);
+    const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    let futureIncomeSum = 0;
-    let futureExpenseSum = 0;
+    let futureIncomeSum = 0; let futureExpenseSum = 0;
     const opsInRange = allOperationsFlat.value.filter(op => {
         if (!op?.dateKey) return false;
         const opDate = _parseDateKey(op.dateKey);
@@ -728,8 +636,7 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       if (promises.length === 0) {
-        displayCache.value = { ...displayCache.value };
-        calculationCache.value = { ...calculationCache.value }; 
+        displayCache.value = { ...displayCache.value }; calculationCache.value = { ...calculationCache.value }; 
         return;
       }
       const responses = await Promise.all(promises);
@@ -737,26 +644,17 @@ export const useMainStore = defineStore('mainStore', () => {
       for (let i = 0; i < responses.length; i++) {
         const dateKey = dateKeysToFetch[i];
         const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
-        const processedOps = _mergeTransfers(raw).map(op => ({
-          ...op,
-          dateKey: dateKey,
-          date: op.date || _parseDateKey(dateKey) 
-        }));
+        const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
         tempCache[dateKey] = processedOps;
       }
       displayCache.value = { ...displayCache.value, ...tempCache };
       calculationCache.value = { ...calculationCache.value, ...tempCache }; 
-
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-    }
+    } catch (error) { if (error.response && error.response.status === 401) user.value = null; }
   }
 
   const _syncCaches = (key, ops) => {
-      displayCache.value[key] = [...ops];
-      calculationCache.value[key] = [...ops];
-      displayCache.value = { ...displayCache.value };
-      calculationCache.value = { ...calculationCache.value };
+      displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops];
+      displayCache.value = { ...displayCache.value }; calculationCache.value = { ...calculationCache.value };
   };
 
   async function updateFutureProjectionWithData(mode, today = new Date()) {
@@ -766,17 +664,11 @@ export const useMainStore = defineStore('mainStore', () => {
     await updateProjectionFromCalculationData(mode, today); 
   }
   function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
-  
   function updateFutureTotals() {
-    const _ = futureTotalBalance.value;
-    const __ = futureAccountBalances.value;
-    const ___ = futureCompanyBalances.value;
-    const ____ = futureContractorBalances.value;
-    const _____ = futureProjectBalances.value;
-    const ______ = futureIndividualBalances.value;
+    const _ = futureTotalBalance.value; const __ = futureAccountBalances.value; const ___ = futureCompanyBalances.value;
+    const ____ = futureContractorBalances.value; const _____ = futureProjectBalances.value; const ______ = futureIndividualBalances.value;
     const _______ = futureCategoryBalances.value; 
   }
-  
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
     const info = getViewModeInfo(mode);
@@ -786,13 +678,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const t0 = new Date(); t0.setHours(0,0,0,0);
     const start = new Date(startDate); start.setHours(0,0,0,0);
     const end   = new Date(endDate); end.setHours(0,0,0,0);
-    projection.value = {
-      mode:'custom', 
-      totalDays: Math.max(1, Math.floor((end-start)/86400000)+1),
-      rangeStartDate:start, 
-      rangeEndDate:end, 
-      futureIncomeSum: 0 
-    };
+    projection.value = { mode:'custom', totalDays: Math.max(1, Math.floor((end-start)/86400000)+1), rangeStartDate:start, rangeEndDate:end, futureIncomeSum: 0 };
   }
 
   async function fetchAllEntities(){
@@ -806,24 +692,14 @@ export const useMainStore = defineStore('mainStore', () => {
         axios.get(`${API_BASE_URL}/categories`),
         axios.get(`${API_BASE_URL}/prepayments`),
       ]);
-      
-      accounts.value    = accRes.data; 
-      companies.value   = compRes.data;
-      contractors.value = contrRes.data; 
-      projects.value    = projRes.data;
-      individuals.value = indRes.data; 
-      
+      accounts.value    = accRes.data; companies.value   = compRes.data; contractors.value = contrRes.data; 
+      projects.value    = projRes.data; individuals.value = indRes.data; 
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
-      
       categories.value  = [...normalCategories, ...prepaymentCategories];
-
-    }catch(e){ 
-        if (e.response && e.response.status === 401) user.value = null;
-    }
+    }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
-
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
     const transferGroups = new Map();
@@ -865,43 +741,27 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   async function _getOrCreateTransferCategory() {
     let transferCategory = categories.value.find(c => c.name.toLowerCase() === 'перевод');
-    if (!transferCategory) {
-      transferCategory = await addCategory('Перевод');
-    }
+    if (!transferCategory) { transferCategory = await addCategory('Перевод'); }
     return transferCategory._id;
   }
-
   async function fetchOperations(dateKey, force = false) {
     if (!dateKey) return;
     if (displayCache.value[dateKey] && !force) return;
     try {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
-      }));
+      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
       displayCache.value[dateKey] = processedOps;
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-    }
+    } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
-
   async function refreshDay(dateKey) {
     if (!dateKey) return;
     try {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({
-        ...op,
-        dateKey: dateKey,
-        date: op.date || _parseDateKey(dateKey) 
-      }));
+      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
       _syncCaches(dateKey, processedOps);
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-    }
+    } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     updateFutureTotals();
   }
 
@@ -916,22 +776,12 @@ export const useMainStore = defineStore('mainStore', () => {
        const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
        if (sourceOp) {
            if (targetOp) {
-               const originalSourceIndex = sourceOp.cellIndex;
-               sourceOp.cellIndex = targetIndex;
-               targetOp.cellIndex = originalSourceIndex;
+               const originalSourceIndex = sourceOp.cellIndex; sourceOp.cellIndex = targetIndex; targetOp.cellIndex = originalSourceIndex;
                _syncCaches(oldDateKey, ops);
-               try {
-                 await Promise.all([
-                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
-                    axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
-                 ]);
-               } catch(e) { refreshDay(oldDateKey); }
+               try { await Promise.all([ axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }), axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex }) ]); } catch(e) { refreshDay(oldDateKey); }
            } else {
-               sourceOp.cellIndex = targetIndex;
-               _syncCaches(oldDateKey, ops);
-               try {
-                  await axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex });
-               } catch(e) { refreshDay(oldDateKey); }
+               sourceOp.cellIndex = targetIndex; _syncCaches(oldDateKey, ops);
+               try { await axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }); } catch(e) { refreshDay(oldDateKey); }
            }
        }
     } else {
@@ -946,133 +796,64 @@ export const useMainStore = defineStore('mainStore', () => {
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
-       const moved = { 
-          ...sourceOpData, 
-          dateKey: newDateKey, 
-          date: _parseDateKey(newDateKey),
-          cellIndex: finalIndex 
-       };
+       const moved = { ...sourceOpData, dateKey: newDateKey, date: _parseDateKey(newDateKey), cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
-       try {
-           await axios.put(`${API_BASE_URL}/events/${moved._id}`, { 
-              dateKey: newDateKey, 
-              cellIndex: finalIndex,
-              date: moved.date 
-           });
-       } catch(e) { refreshDay(oldDateKey); refreshDay(newDateKey); }
+       try { await axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date }); } catch(e) { refreshDay(oldDateKey); refreshDay(newDateKey); }
     }
-    if (projection.value.mode) {
-      await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-    }
+    if (projection.value.mode) { await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value)); }
   }
-
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
-
+  
   async function createTransfer(transferData) {
     try {
-      const finalDate = new Date(transferData.date);
-      const dateKey = _getDateKey(finalDate);
-      const cellIndex = await getFirstFreeCellIndex(dateKey);
-      const transferCategory = await _getOrCreateTransferCategory();
-      const response = await axios.post(`${API_BASE_URL}/transfers`, {
-        ...transferData,
-        dateKey: dateKey, 
-        cellIndex: cellIndex,
-        categoryId: transferData.categoryId || transferCategory
-      });
-      await refreshDay(dateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      const finalDate = new Date(transferData.date); const dateKey = _getDateKey(finalDate);
+      const cellIndex = await getFirstFreeCellIndex(dateKey); const transferCategory = await _getOrCreateTransferCategory();
+      const response = await axios.post(`${API_BASE_URL}/transfers`, { ...transferData, dateKey: dateKey, cellIndex: cellIndex, categoryId: transferData.categoryId || transferCategory });
+      await refreshDay(dateKey); updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   }
-
   async function updateTransfer(transferId, transferData) {
     try {
-      const finalDate = new Date(transferData.date);
-      const newDateKey = _getDateKey(finalDate);
+      const finalDate = new Date(transferData.date); const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
       let newCellIndex;
-      if (oldOp && oldOp.dateKey === newDateKey) {
-        newCellIndex = oldOp.cellIndex || 0;
-      } else {
-        newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      }
-      const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, {
-        ...transferData,
-        dateKey: newDateKey, 
-        cellIndex: newCellIndex,
-        type: 'transfer',
-        isTransfer: true
-      });
+      if (oldOp && oldOp.dateKey === newDateKey) { newCellIndex = oldOp.cellIndex || 0; } else { newCellIndex = await getFirstFreeCellIndex(newDateKey); }
+      const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-      await refreshDay(newDateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      await refreshDay(newDateKey); updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   }
-
   async function updateOperation(opId, opData) {
     try {
-      const finalDate = new Date(opData.date);
-      const newDateKey = _getDateKey(finalDate);
+      const finalDate = new Date(opData.date); const newDateKey = _getDateKey(finalDate);
       const oldOp = allOperationsFlat.value.find(o => o._id === opId);
       let newCellIndex;
-      if (oldOp && oldOp.dateKey === newDateKey) {
-        newCellIndex = oldOp.cellIndex || 0;
-      } else {
-        newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      }
-      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, {
-        ...opData,
-        dateKey: newDateKey,
-        cellIndex: newCellIndex
-      });
+      if (oldOp && oldOp.dateKey === newDateKey) { newCellIndex = oldOp.cellIndex || 0; } else { newCellIndex = await getFirstFreeCellIndex(newDateKey); }
+      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, { ...opData, dateKey: newDateKey, cellIndex: newCellIndex });
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-      await refreshDay(newDateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      await refreshDay(newDateKey); updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   }
-
   async function deleteOperation(operation){
-    const dateKey = operation.dateKey;
-    if (!dateKey) return;
+    const dateKey = operation.dateKey; if (!dateKey) return;
     const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
-    _syncCaches(dateKey, ops);
-    updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+    _syncCaches(dateKey, ops); updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     try {
-      if (isTransfer(operation) && operation._id2) {
-          await Promise.all([
-             axios.delete(`${API_BASE_URL}/events/${operation._id}`),
-             axios.delete(`${API_BASE_URL}/events/${operation._id2}`)
-          ]);
-      } else {
-          await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
-      }
-    } catch(e) {
-        refreshDay(dateKey);
-    }
+      if (isTransfer(operation) && operation._id2) { await Promise.all([ axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`) ]); } else { await axios.delete(`${API_BASE_URL}/events/${operation._id}`); }
+    } catch(e) { refreshDay(dateKey); }
   }
-
   async function addOperation(op){
     if (!op.dateKey) return;
-    await refreshDay(op.dateKey); 
-    await fetchAllEntities();
+    await refreshDay(op.dateKey); await fetchAllEntities();
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
-
   async function deleteEntity(path, id, deleteOperations = false) {
       try {
-          await axios.delete(`${API_BASE_URL}/${path}/${id}`, {
-              params: { deleteOperations }
-          });
+          await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
           if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
           if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
@@ -1080,48 +861,23 @@ export const useMainStore = defineStore('mainStore', () => {
           if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
           if (deleteOperations) { await forceRefreshAll(); } else { await forceRefreshAll(); }
-      } catch (error) {
-          console.error('Ошибка удаления сущности:', error);
-          throw error; 
-      }
+      } catch (error) { console.error('Ошибка удаления сущности:', error); throw error; }
   }
-
   async function addCategory(name){
     const res = await axios.post(`${API_BASE_URL}/categories`, { name });
-    categories.value.push(res.data); 
-    return res.data;
+    categories.value.push(res.data); return res.data;
   }
   async function addAccount(data) {
     let payload;
     if (typeof data === 'string') { payload = { name: data, initialBalance: 0 }; } 
-    else { 
-      payload = { 
-        name: data.name, 
-        initialBalance: data.initialBalance || 0, 
-        companyId: data.companyId || null,
-        individualId: data.individualId || null 
-      }; 
-    }
+    else { payload = { name: data.name, initialBalance: data.initialBalance || 0, companyId: data.companyId || null, individualId: data.individualId || null }; }
     const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
     accounts.value.push(res.data); return res.data;
   }
-  async function addCompany(name){
-    const res = await axios.post(`${API_BASE_URL}/companies`, { name });
-    companies.value.push(res.data); return res.data;
-  }
-  async function addContractor(name){
-    const res = await axios.post(`${API_BASE_URL}/contractors`, { name });
-    contractors.value.push(res.data); return res.data;
-  }
-  async function addProject(name){
-    const res = await axios.post(`${API_BASE_URL}/projects`, { name });
-    projects.value.push(res.data); return res.data;
-  }
-  async function addIndividual(name){
-    const res = await axios.post(`${API_BASE_URL}/individuals`, { name });
-    individuals.value.push(res.data); return res.data;
-  }
-
+  async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); companies.value.push(res.data); return res.data; }
+  async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); contractors.value.push(res.data); return res.data; }
+  async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); projects.value.push(res.data); return res.data; }
+  async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); individuals.value.push(res.data); return res.data; }
   async function batchUpdateEntities(path, items){
     try{
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
@@ -1131,195 +887,77 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='projects')    projects.value = res.data;
       else if (path==='individuals') individuals.value = res.data; 
       else if (path==='categories')  categories.value = res.data; 
-    }catch(e){
-      await fetchAllEntities();
-    }
+    }catch(e){ await fetchAllEntities(); }
   }
-
   async function getFirstFreeCellIndex(dateKey, startIndex=0){
     if (!displayCache.value[dateKey]) await fetchOperations(dateKey); 
     const arr = displayCache.value[dateKey] || [];
     const used = new Set(arr.map(o => Number.isInteger(o?.cellIndex)? o.cellIndex : -1));
-    let idx = Math.max(0, startIndex|0);
-    while (used.has(idx)) idx++;
+    let idx = Math.max(0, startIndex|0); while (used.has(idx)) idx++;
     return idx;
   }
-  
   function _compactIndices(arr, excludeId=null){
     const others = excludeId ? arr.filter(o => o._id !== excludeId) : arr.slice();
     others.sort((a,b)=>a.cellIndex - b.cellIndex).forEach((o,i)=>{ o.cellIndex = i; });
     return others;
   }
-
   let autoRefreshInterval = null;
   function startAutoRefresh(intervalMs = 30000) {
     stopAutoRefresh();
     autoRefreshInterval = setInterval(async () => {
       try {
         await fetchAllEntities();
-        if (projection.value.mode) {
-          await loadCalculationData( 
-            projection.value.mode,
-            new Date(currentYear.value, 0, todayDayOfYear.value)
-          );
-        }
+        if (projection.value.mode) { await loadCalculationData( projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value) ); }
       } catch (error) {}
     }, intervalMs);
   }
   function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-      clearInterval(autoRefreshInterval);
-      autoRefreshInterval = null;
-    }
+    if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
   }
   async function forceRefreshAll() {
     try {
-      displayCache.value = {};
-      calculationCache.value = {};
+      displayCache.value = {}; calculationCache.value = {};
       await fetchAllEntities();
-      if (projection.value.mode) {
-        await loadCalculationData( 
-          projection.value.mode,
-          new Date(currentYear.value, 0, todayDayOfYear.value)
-        );
-      }
+      if (projection.value.mode) { await loadCalculationData( projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value) ); }
     } catch (error) {}
   }
-
   async function importOperations(operations, selectedIndices, progressCallback = () => {}) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/import/operations`, { 
-        operations, 
-        selectedRows: selectedIndices 
-      });
-      const createdOps = response.data;
-      progressCallback(createdOps.length);
-      await forceRefreshAll();
-      return createdOps;
-    } catch (error) {
-      if (error.response && error.response.status === 401) user.value = null;
-      throw error; 
-    }
+      const response = await axios.post(`${API_BASE_URL}/import/operations`, { operations, selectedRows: selectedIndices });
+      const createdOps = response.data; progressCallback(createdOps.length); await forceRefreshAll(); return createdOps;
+    } catch (error) { if (error.response && error.response.status === 401) user.value = null; throw error; }
   }
-
   async function exportAllOperations() {
     try {
       const res = await axios.get(`${API_BASE_URL}/events/all-for-export`);
-      return {
-        operations: res.data, 
-        initialBalance: totalInitialBalance.value || 0
-      };
-    } catch (e) {
-      if (e.response && e.response.status === 401) user.value = null;
-      throw e; 
-    }
+      return { operations: res.data, initialBalance: totalInitialBalance.value || 0 };
+    } catch (e) { if (e.response && e.response.status === 401) user.value = null; throw e; }
   }
-
   async function checkAuth() {
-  try {
-    isAuthLoading.value = true;
-    const res = await axios.get(`${API_BASE_URL}/auth/me`);
-      user.value = res.data; 
-    } catch (error) {
-      user.value = null;
-    } finally {
-      isAuthLoading.value = false;
-    }
+    try { isAuthLoading.value = true; const res = await axios.get(`${API_BASE_URL}/auth/me`); user.value = res.data; } catch (error) { user.value = null; } finally { isAuthLoading.value = false; }
   }
-
   async function logout() {
-    axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {});
-    user.value = null; 
-    displayCache.value = {};
-    calculationCache.value = {};
+    axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {}); user.value = null; displayCache.value = {}; calculationCache.value = {};
   }
-  
-  // --- Функции для расчета Projection ---
-  function computeTotalDaysForMode(mode, baseDate) {
-      return getViewModeInfo(mode).total;
-  }
-  
-  async function loadCalculationData(mode, date) {
-      await updateFutureProjectionWithData(mode, date);
-  }
+  function computeTotalDaysForMode(mode, baseDate) { return getViewModeInfo(mode).total; }
+  async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
 
   return {
     accounts, companies, contractors, projects, categories,
-    visibleCategories, 
-    visibleCategoriesForEditor, // 🟢 Экспортируем явный алиас для уверенности
-    visibleContractors,
-    individuals, 
-    operationsCache: displayCache,
-    displayCache, calculationCache,
-    allWidgets, dashboardLayout,
-    projection,
-    dashboardForecastState,
-    user,
-    isAuthLoading,
-
-    currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
-    currentIndividualBalances, 
+    visibleCategories, visibleCategoriesForEditor, visibleContractors, individuals, 
+    operationsCache: displayCache, displayCache, calculationCache, allWidgets, dashboardLayout, projection, dashboardForecastState, user, isAuthLoading,
+    currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances, currentIndividualBalances, 
     currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
-    futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
-    futureIndividualBalances, 
-    
-    liabilitiesWeOwe,
-    liabilitiesTheyOwe,
-    liabilitiesWeOweFuture,
-    liabilitiesTheyOweFuture,
-    
-    getPrepaymentCategoryIds,
-    getActCategoryIds,
-    
-    currentCategoryBalances, // 🟢 ВЕРНУЛ (все категории)
-    futureCategoryBalances,  // 🟢 ВЕРНУЛ (все категории)
-    
-    currentOps, 
-    
-    currentTransfers, futureTransfers,
-    
-    currentIncomes, futureIncomes,
-    currentExpenses, futureExpenses,
-
-    getCategoryById,
-    futureCategoryBreakdowns,
-
-    getOperationsForDay, 
-
-    setToday, replaceWidget,
-    setForecastState,
-    fetchAllEntities, fetchOperations, refreshDay, 
-    
-    addOperation, deleteOperation, moveOperation,
-    addAccount, addCompany, addContractor, addProject, addCategory,
-    addIndividual, 
-    deleteEntity,
-    batchUpdateEntities,
-
-    computeTotalDaysForMode,
-    updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
-    
-    loadCalculationData,
-    updateProjectionFromCalculationData,
-
-    createTransfer, updateTransfer, updateOperation,
-
-    fetchOperationsRange, 
-    updateFutureProjectionWithData,
-
-    startAutoRefresh, stopAutoRefresh, forceRefreshAll,
-
-    getFirstFreeCellIndex, 
-    _parseDateKey, 
-    _getDateKey, 
-
-    allOperationsFlat,
-    displayOperationsFlat,
-    
-    importOperations,
-    exportAllOperations, 
-    
-    checkAuth,
-    logout,
+    futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances, futureIndividualBalances, 
+    liabilitiesWeOwe, liabilitiesTheyOwe, liabilitiesWeOweFuture, liabilitiesTheyOweFuture,
+    getPrepaymentCategoryIds, getActCategoryIds, currentCategoryBalances, futureCategoryBalances,
+    currentOps, currentTransfers, futureTransfers, currentIncomes, futureIncomes, currentExpenses, futureExpenses,
+    getCategoryById, futureCategoryBreakdowns, getOperationsForDay, 
+    setToday, replaceWidget, setForecastState, fetchAllEntities, fetchOperations, refreshDay, 
+    addOperation, deleteOperation, moveOperation, addAccount, addCompany, addContractor, addProject, addCategory, addIndividual, deleteEntity, batchUpdateEntities,
+    computeTotalDaysForMode, updateFutureProjection, updateFutureProjectionByMode, setProjectionRange, loadCalculationData, updateProjectionFromCalculationData,
+    createTransfer, updateTransfer, updateOperation, fetchOperationsRange, updateFutureProjectionWithData,
+    startAutoRefresh, stopAutoRefresh, forceRefreshAll, getFirstFreeCellIndex, _parseDateKey, _getDateKey, 
+    allOperationsFlat, displayOperationsFlat, importOperations, exportAllOperations, checkAuth, logout,
   };
 });
