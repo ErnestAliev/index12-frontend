@@ -18,16 +18,16 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v15.6 - INSTANT PREPAYMENT CLOSE ---
- * * ВЕРСИЯ: 15.6 - Мгновенное закрытие окна предоплаты
+ * * --- МЕТКА ВЕРСИИ: v15.7 - INSTANT OPERATION/TRANSFER CLOSE ---
+ * * ВЕРСИЯ: 15.7 - Мгновенное закрытие окон операции и перевода
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) handlePrepaymentSave: Перенесено закрытие модальных окон в начало функции.
- * 2. (LOGIC) API-запросы и обновление стора теперь выполняются в фоне (после закрытия).
+ * 1. (UX) Добавлены обработчики handleOperationSave и handleTransferSave.
+ * 2. (LOGIC) API вызовы для создания/редактирования перенесены в HomeView (фоновая обработка).
  */
 
-console.log('--- HomeView.vue v15.6 (Instant Prepayment Close) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v15.7 (Instant Ops Close) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -98,13 +98,10 @@ const handleSwitchToPrepayment = (data) => {
 
 // 🟢 ОБРАБОТЧИК: Сохранение предоплаты (FIXED: INSTANT CLOSE)
 const handlePrepaymentSave = async (finalData) => {
-    // 1. МГНОВЕННОЕ ЗАКРЫТИЕ (Optimistic UI)
-    // Закрываем окна сразу, чтобы интерфейс не зависал
     isPrepaymentModalVisible.value = false;
     isPopupVisible.value = false; 
     operationToEdit.value = null;
 
-    // 2. ФОНОВАЯ ОБРАБОТКА ДАННЫХ
     try {
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
@@ -131,13 +128,80 @@ const handlePrepaymentSave = async (finalData) => {
              await mainStore.addOperation(response.data);
         }
 
-        // Пересчет проекции тоже в фоне
         await mainStore.loadCalculationData(viewMode.value, today.value);
 
     } catch (e) {
         console.error('Background Save Error (Prepayment):', e);
-        // Так как окно уже закрыто, используем alert для уведомления об ошибке
         alert('Не удалось сохранить предоплату. Проверьте соединение или данные.');
+    }
+};
+
+// 🟢 НОВЫЙ ОБРАБОТЧИК: Мгновенное сохранение Операции
+const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
+    // 1. Закрываем мгновенно
+    handleClosePopup();
+
+    // 2. Фоновая обработка
+    try {
+        if (mode === 'create') {
+            // Если создаем - нужен новый cellIndex, если не передан
+             if (data.cellIndex === undefined) {
+                 // Note: getFirstFreeCellIndex is async. 
+                 // If data.dateKey exists we use it, otherwise calculate from date.
+                 const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+             }
+             await mainStore.createEvent(data);
+        } else if (mode === 'edit') {
+            // Если редактируем - проверяем, сменилась ли дата
+            const oldDateKey = originalOperation?.dateKey;
+            await mainStore.updateOperation(id, data);
+            
+            // Если дата сменилась - обновляем старый день тоже
+            if (oldDateKey && oldDateKey !== data.dateKey) {
+                await mainStore.refreshDay(oldDateKey);
+            }
+        }
+        
+        // Обновляем проекцию в фоне
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+        
+    } catch (error) {
+        console.error('Background Save Error (Operation):', error);
+        alert('Ошибка сохранения операции. Проверьте данные.');
+    }
+};
+
+// 🟢 НОВЫЙ ОБРАБОТЧИК: Мгновенное сохранение Перевода
+const handleTransferSave = async ({ mode, id, data, originalTransfer }) => {
+    // 1. Закрываем мгновенно
+    handleCloseTransferPopup();
+
+    // 2. Фоновая обработка
+    try {
+        if (mode === 'create') {
+             if (data.cellIndex === undefined) {
+                 const dateKey = mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+             }
+             await mainStore.createTransfer(data);
+        } else if (mode === 'edit') {
+            const oldDateKey = originalTransfer?.dateKey;
+            await mainStore.updateTransfer(id, data);
+            
+            if (oldDateKey) { // Для переводов дата тоже может меняться
+                 const newDateKey = mainStore._getDateKey(new Date(data.date));
+                 if (oldDateKey !== newDateKey) {
+                     await mainStore.refreshDay(oldDateKey);
+                 }
+            }
+        }
+        
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+        
+    } catch (error) {
+        console.error('Background Save Error (Transfer):', error);
+        alert('Ошибка сохранения перевода. Проверьте данные.');
     }
 };
 
@@ -320,6 +384,7 @@ const recalcProjectionForCurrentView = async () => {
 };
 
 const handleTransferComplete = async (eventData) => {
+  // OLD HANDLER (Kept for compatibility, but new flow uses handleTransferSave)
   const dateKey = eventData?.dateKey;
   if (!dateKey) {
     await recalcProjectionForCurrentView(); 
@@ -331,6 +396,7 @@ const handleTransferComplete = async (eventData) => {
 };
 
 const handleOperationAdded = async (newEvent) => {
+  // OLD HANDLER
   await mainStore.addOperation(newEvent); 
   await recalcProjectionForCurrentView();
   visibleDays.value = [...visibleDays.value];
@@ -908,11 +974,10 @@ onBeforeUnmount(() => {
       :min-allowed-date="minDateFromProjection"
       :max-allowed-date="maxDateFromProjection"
       @close="handleClosePopup"
-      @operation-added="handleOperationAdded"
       @operation-deleted="handleOperationDelete(operationToEdit)"
       @operation-moved="handleOperationMoved"
-      @operation-updated="handleOperationUpdated"
       @trigger-prepayment="handleSwitchToPrepayment" 
+      @save="handleOperationSave"
     />
 
     <TransferPopup
@@ -923,7 +988,7 @@ onBeforeUnmount(() => {
       :min-allowed-date="minDateFromProjection"
       :max-allowed-date="maxDateFromProjection"
       @close="handleCloseTransferPopup"
-      @transfer-complete="handleTransferComplete"
+      @save="handleTransferSave"
     />
     
     <PrepaymentModal
