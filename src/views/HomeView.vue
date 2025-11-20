@@ -1,11 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v15.4 - BUILD FIX ---
- * * ВЕРСИЯ: 15.4 - Исправление тегов для сборки
+ * * --- МЕТКА ВЕРСИИ: v15.5 - REMOVE EXTRA RECALC ---
+ * * ВЕРСИЯ: 15.5 - Удаление лишних пересчетов после Drag&Drop
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Проверена и исправлена вложенность </div>.
- * 2. (FIX) Убедились, что все компоненты закрыты.
+ * 1. (FIX) В handleOperationDrop и handleOperationMoved убран вызов recalcProjectionForCurrentView().
+ * Теперь обновление проекции (Future Total) делает сам Store после await moveOperation.
+ * Это предотвращает race condition (перезапись свежих данных старыми с сервера).
  -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
@@ -26,7 +27,7 @@ import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
-console.log('--- HomeView.vue v15.4 (Build Fix) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v15.5 (Remove Extra Recalc) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -337,6 +338,8 @@ const handleOperationDelete = async (operation) => {
   visibleDays.value = [...visibleDays.value];
   handleClosePopup();
 };
+
+// 🟢 ИСПРАВЛЕНИЕ: Убран лишний recalcProjectionForCurrentView
 const handleOperationDrop = async (dropData) => {
   const operation = dropData.operation;
   const oldDateKey = operation.dateKey; 
@@ -344,9 +347,14 @@ const handleOperationDrop = async (dropData) => {
   const newCellIndex = dropData.toCellIndex;
   if (!oldDateKey || !newDateKey) return;
   if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
+  
+  // mainStore.moveOperation теперь делает await и обновляет проекцию сам
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
-  await recalcProjectionForCurrentView();
+  
+  // await recalcProjectionForCurrentView(); // <--- УБРАНО (Race Condition Fix)
 };
+
+// 🟢 ИСПРАВЛЕНИЕ: Убран лишний recalcProjectionForCurrentView
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
   const baseDate = _parseDateKey(oldDateKey); 
@@ -354,8 +362,12 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
   newDate.setDate(toDayOfYear);
   const newDateKey = _getDateKey(newDate);
   if (!oldDateKey || !newDateKey) return;
+  
+  // mainStore.moveOperation теперь делает await и обновляет проекцию сам
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, toCellIndex ?? (operation.cellIndex ?? 0));
-  await recalcProjectionForCurrentView();
+  
+  // await recalcProjectionForCurrentView(); // <--- УБРАНО (Race Condition Fix)
+  
   handleClosePopup();
 };
 
