@@ -3,26 +3,27 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.2 - FIX BUILD IMPORTS ---
- * * ВЕРСИЯ: 18.2 - Исправлены импорты на относительные для гарантии сборки
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v19.0 - LIABILITIES WIDGET ---
+ * * ВЕРСИЯ: 19.0 - Добавлен виджет "Мои обязательства"
+ * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Все импорты теперь используют './' (текущая папка),
- * чтобы исключить проблемы с алиасами и регистром при сборке на Linux/Vercel.
+ * 1. (NEW) Импортирован HeaderLiabilitiesCard.vue.
+ * 2. (UI) Добавлен блок `v-else-if="widgetKey === 'liabilities'"` в шаблон.
+ * 3. (LOGIC) Прокинуты пропсы `weOweAmount` и `theyOweAmount` из стора.
  */
 
-console.log('--- TheHeader.vue v18.2 (Build Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v19.0 (Liabilities Widget) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
+import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; // 🟢 NEW
 import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
-// 🟢 ВАЖНО: Убедитесь, что файл называется OperationListEditor.vue (с большой буквы)
 import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue'; 
 
@@ -235,6 +236,16 @@ const handleOperationAdded = async (newOp) => {
         :widgetKey="widgetKey"
         :widgetIndex="index"
       />
+      
+      <!-- 🟢 NEW: Виджет "Мои обязательства" -->
+      <HeaderLiabilitiesCard
+        v-else-if="widgetKey === 'liabilities'"
+        title="Мои обязательства"
+        :weOweAmount="mainStore.liabilitiesWeOwe"
+        :theyOweAmount="mainStore.liabilitiesTheyOwe"
+        :widgetKey="widgetKey"
+        :widgetIndex="index"
+      />
 
       <HeaderBalanceCard
         v-else-if="widgetKey === 'accounts'"
@@ -309,7 +320,6 @@ const handleOperationAdded = async (newOp) => {
         :widgetIndex="index"
       />
 
-      <!-- 🟢 FIX: Теперь здесь обрабатываются и cat_..., и incomeList/expenseList -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
@@ -350,7 +360,6 @@ const handleOperationAdded = async (newOp) => {
     @close="isTransferEditorVisible = false"
   />
 
-  <!-- 🟢 NEW: Попап списка операций -->
   <OperationListEditor
     v-if="isOperationListEditorVisible"
     :title="operationListEditorTitle"
@@ -358,7 +367,6 @@ const handleOperationAdded = async (newOp) => {
     @close="isOperationListEditorVisible = false"
   />
 
-  <!-- 🟢 NEW: Попап добавления операции (для кнопок + в виджетах) -->
   <OperationPopup
     v-if="isOperationPopupVisible"
     :type="operationPopupType"
