@@ -1,13 +1,12 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v15.1 - PREPAYMENT INTEGRATION ---
- * * ВЕРСИЯ: 15.1 - Интеграция функционала предоплаты
+ * * --- МЕТКА ВЕРСИИ: v15.3 - PREPAYMENT SAVE FIX ---
+ * * ВЕРСИЯ: 15.3 - Корректное сохранение prepaymentId
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен импорт и регистрация `PrepaymentModal`.
- * 2. Добавлен обработчик `@trigger-prepayment` для `OperationPopup`.
- * 3. Реализован метод `handlePrepaymentSave` для отправки данных на сервер.
- -->
+ * 1. (FIX) В handlePrepaymentSave проверяем, является ли категория системной.
+ * 2. (FIX) Если isPrepayment, то перекладываем ID из categoryId в prepaymentId.
+ */
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
@@ -25,9 +24,9 @@ import YAxisPanel from '@/components/YAxisPanel.vue';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
-import PrepaymentModal from '@/components/PrepaymentModal.vue'; // 🟢 Импорт модалки предоплаты
+import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
-console.log('--- HomeView.vue v15.1 (Prepayment Integrated) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v15.3 (Prepayment Save Fix) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -99,7 +98,7 @@ const handleSwitchToPrepayment = (data) => {
     isPrepaymentModalVisible.value = true;
 };
 
-// 🟢 ОБРАБОТЧИК: Сохранение предоплаты
+// 🟢 ОБРАБОТЧИК: Сохранение предоплаты (FIXED)
 const handlePrepaymentSave = async (finalData) => {
     try {
         // 1. Определяем cellIndex (если новая операция)
@@ -107,8 +106,17 @@ const handlePrepaymentSave = async (finalData) => {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
         }
 
+        // 🟢 FIX: Если выбрана системная категория "Предоплата",
+        // то её ID должен уйти в поле prepaymentId, а не categoryId.
+        if (finalData.categoryId) {
+            const catObj = mainStore.categories.find(c => c._id === finalData.categoryId);
+            if (catObj && catObj.isPrepayment) {
+                finalData.prepaymentId = finalData.categoryId;
+                finalData.categoryId = null; // Очищаем, чтобы не путать бэкенд
+            }
+        }
+
         // 2. Отправляем на сервер
-        // Если это редактирование (есть _id), то PUT, иначе POST
         let response;
         if (finalData.operationToEdit && finalData.operationToEdit._id) {
              response = await axios.put(`${API_BASE_URL}/events/${finalData.operationToEdit._id}`, finalData);
@@ -118,10 +126,8 @@ const handlePrepaymentSave = async (finalData) => {
 
         // 3. Обновляем Store
         if (finalData.operationToEdit) {
-             // При редактировании обновляем конкретную запись
              await mainStore.refreshDay(finalData.dateKey);
         } else {
-             // При добавлении добавляем в стор
              await mainStore.addOperation(response.data);
         }
 
