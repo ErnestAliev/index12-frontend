@@ -16,13 +16,13 @@ import {
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v20.1 - GRAPH FIX ---
- * * ВЕРСИЯ: 20.1 - Исправление синтаксиса и тултипов
+ * * --- МЕТКА ВЕРСИИ: v21.0 - PREPAYMENT DATASET ---
+ * * ВЕРСИЯ: 21.0 - Добавлен dataset для предоплаты
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Исправлена опечатка в defineProps.
- * 2. (FIX) Исправлено отображение категории "Предоплата" в тултипе.
+ * 1. (GRAPH) Добавлен dataset 'Предоплата' (#FF9D00).
+ * 2. (TOOLTIP) Обновлена логика отображения деталей для нового dataset.
  */
 
 const props = defineProps({
@@ -51,7 +51,7 @@ const rawMaxY = computed(() => {
   let max = 0;
   if (mainStore.dailyChartData) {
       for (const [, data] of mainStore.dailyChartData) {
-        // Max is sum of income + prepayment
+        // Max is sum of income + prepayment (так как они в одном стеке положительных значений)
         const totalIncome = (data.income || 0) + (data.prepayment || 0);
         if (totalIncome > max) max = totalIncome;
         if (Math.abs(data.expense) > max) max = Math.abs(data.expense);
@@ -119,7 +119,7 @@ const summaries = computed(() => {
     const dateKey = _getDateKey(day.date);
     const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, closingBalance: 0 };
     
-    // В итогах объединяем обычный доход и предоплату
+    // В итогах суммируем обычный доход и предоплату для отображения "общих денег"
     return {
       date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: (data.income || 0) + (data.prepayment || 0),
@@ -140,13 +140,11 @@ const getTooltipOperationList = (ops) => {
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
     
-    // Проверяем ID категории или ID предоплаты
     const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
     
-    // Определяем имя категории
     let catName = op.categoryId?.name || 'Без категории';
     if (isPrepay) {
-        catName = 'Предоплата'; // Принудительно ставим имя для предоплат
+        catName = 'Предоплата'; 
     }
 
     return {
@@ -154,7 +152,7 @@ const getTooltipOperationList = (ops) => {
       accName: op.accountId?.name || '???',
       contName: op.contractorId?.name || '---',
       projName: op.projectId?.name || '---',
-      catName: catName, // Используем вычисленное имя
+      catName: catName, 
       amount: op.amount
     };
   }).filter(Boolean);
@@ -163,10 +161,10 @@ const getTooltipOperationList = (ops) => {
 const chartData = computed(() => {
   const labels = [];
   const incomeData = [];
-  const prepaymentData = []; 
+  const prepaymentData = []; // 🟢 Данные для предоплат
   const expenseData = [];
   const incomeDetails = []; 
-  const prepaymentDetails = []; 
+  const prepaymentDetails = []; // 🟢 Детали для тултипов предоплат
   const expenseDetails = [];
 
   const safeDays = Array.isArray(props.visibleDays) ? props.visibleDays : [];
@@ -176,11 +174,10 @@ const chartData = computed(() => {
     if (!day || !day.date) continue; 
 
     const dateKey = _getDateKey(day.date);
+    // Получаем данные, разделенные в сторе
     const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0 };
     
     const allOps = (mainStore.allOperationsFlat || []);
-    
-    // Фильтруем операции
     const dayOps = allOps.filter(op => op.dateKey === dateKey);
     
     const incomeOps = [];
@@ -205,6 +202,7 @@ const chartData = computed(() => {
     expenseDetails.push(getTooltipOperationList(expenseOps));
 
     labels.push(day.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
+    
     incomeData.push(data.income);
     prepaymentData.push(data.prepayment || 0); 
     expenseData.push(Math.abs(data.expense));
@@ -213,26 +211,32 @@ const chartData = computed(() => {
   return {
     labels,
     datasets: [
+      // 🟢 1. ПРЕДОПЛАТА (Оранжевый)
       { 
         label: 'Предоплата', 
         backgroundColor: '#FF9D00', 
         data: prepaymentData,  
         stack: 'stack1',
-        details: prepaymentDetails 
+        details: prepaymentDetails,
+        order: 1 // Порядок отрисовки
       },
+      // 2. ОБЫЧНЫЙ ДОХОД (Зеленый)
       { 
         label: 'Доход',
         backgroundColor: '#34c759', 
         data: incomeData,  
         stack: 'stack1',
-        details: incomeDetails 
+        details: incomeDetails,
+        order: 2
       },
+      // 3. РАСХОД (Красный)
       { 
         label: 'Расход', 
         backgroundColor: '#ff3b30', 
         data: expenseData, 
         stack: 'stack1',
-        details: expenseDetails 
+        details: expenseDetails,
+        order: 3
       }
     ]
   };
