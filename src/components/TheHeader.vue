@@ -3,17 +3,15 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.3 - VISIBILITY & FILTER FIX ---
- * * ВЕРСИЯ: 19.3 - Фильтрация списков и режим редактора
+ * * --- МЕТКА ВЕРСИИ: v19.4 - TITLE FIX ---
+ * * ВЕРСИЯ: 19.4 - Исправление заголовка карточки обязательств
  * * ДАТА: 2025-11-20
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В openEditPopup('contractors') передаем visibleContractors вместо всех.
- * 2. (LOGIC) onLiabilitiesEdit теперь включает режим 'prepayment_only'.
- * 3. (LOGIC) onCategoryEdit сбрасывает режим фильтра в 'default'.
+ * 1. (UI) HeaderLiabilitiesCard: title="Мои обязательства" -> "Мои предоплаты".
  */
 
-console.log('--- TheHeader.vue v19.3 (Visibility & Filter Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v19.4 (Title Fix) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -36,7 +34,6 @@ const isTransferEditorVisible = ref(false);
 const isOperationListEditorVisible = ref(false);
 const operationListEditorType = ref('income'); // 'income' | 'expense'
 const operationListEditorTitle = ref('');
-// 🟢 НОВЫЙ STATE ДЛЯ ФИЛЬТРАЦИИ
 const operationListEditorFilterMode = ref('default');
 
 const isOperationPopupVisible = ref(false);
@@ -179,7 +176,6 @@ const onCategoryAdd = (widgetKey, index) => {
 };
 
 const onCategoryEdit = (widgetKey) => {
-    // Сброс фильтра для обычных списков
     operationListEditorFilterMode.value = 'default';
 
     if (widgetKey === 'incomeList') {
@@ -208,12 +204,10 @@ const onCategoryEdit = (widgetKey) => {
     }
 };
 
-// 🟢 Обработчик для виджета обязательств
 const onLiabilitiesEdit = () => {
-    // Открываем список доходов в режиме "prepayment_only"
     operationListEditorTitle.value = 'Редактировать операции (Предоплаты)';
     operationListEditorType.value = 'income';
-    operationListEditorFilterMode.value = 'prepayment_only'; // 🟢 ВКЛЮЧАЕМ ФИЛЬТР
+    operationListEditorFilterMode.value = 'prepayment_only'; 
     isOperationListEditorVisible.value = true;
 };
 
@@ -244,7 +238,7 @@ const handleOperationAdded = async (newOp) => {
       
       <HeaderLiabilitiesCard
         v-else-if="widgetKey === 'liabilities'"
-        title="Мои обязательства"
+        title="Мои предоплаты" 
         :weOweAmount="mainStore.liabilitiesWeOwe"
         :theyOweAmount="mainStore.liabilitiesTheyOwe"
         :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
@@ -367,7 +361,6 @@ const handleOperationAdded = async (newOp) => {
     @close="isTransferEditorVisible = false"
   />
 
-  <!-- 🟢 ПЕРЕДАЕМ filterMode -->
   <OperationListEditor
     v-if="isOperationListEditorVisible"
     :title="operationListEditorTitle"
