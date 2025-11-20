@@ -1,13 +1,3 @@
-<!--
- * * --- МЕТКА ВЕРСИИ: v15.5 - REMOVE EXTRA RECALC ---
- * * ВЕРСИЯ: 15.5 - Удаление лишних пересчетов после Drag&Drop
- * * ДАТА: 2025-11-20
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В handleOperationDrop и handleOperationMoved убран вызов recalcProjectionForCurrentView().
- * Теперь обновление проекции (Future Total) делает сам Store после await moveOperation.
- * Это предотвращает race condition (перезапись свежих данных старыми с сервера).
- -->
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
@@ -27,7 +17,17 @@ import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
-console.log('--- HomeView.vue v15.5 (Remove Extra Recalc) ЗАГРУЖЕН ---'); 
+/**
+ * * --- МЕТКА ВЕРСИИ: v15.6 - INSTANT PREPAYMENT CLOSE ---
+ * * ВЕРСИЯ: 15.6 - Мгновенное закрытие окна предоплаты
+ * * ДАТА: 2025-11-21
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (UX) handlePrepaymentSave: Перенесено закрытие модальных окон в начало функции.
+ * 2. (LOGIC) API-запросы и обновление стора теперь выполняются в фоне (после закрытия).
+ */
+
+console.log('--- HomeView.vue v15.6 (Instant Prepayment Close) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -96,8 +96,15 @@ const handleSwitchToPrepayment = (data) => {
     isPrepaymentModalVisible.value = true;
 };
 
-// 🟢 ОБРАБОТЧИК: Сохранение предоплаты (FIXED)
+// 🟢 ОБРАБОТЧИК: Сохранение предоплаты (FIXED: INSTANT CLOSE)
 const handlePrepaymentSave = async (finalData) => {
+    // 1. МГНОВЕННОЕ ЗАКРЫТИЕ (Optimistic UI)
+    // Закрываем окна сразу, чтобы интерфейс не зависал
+    isPrepaymentModalVisible.value = false;
+    isPopupVisible.value = false; 
+    operationToEdit.value = null;
+
+    // 2. ФОНОВАЯ ОБРАБОТКА ДАННЫХ
     try {
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
@@ -124,15 +131,13 @@ const handlePrepaymentSave = async (finalData) => {
              await mainStore.addOperation(response.data);
         }
 
+        // Пересчет проекции тоже в фоне
         await mainStore.loadCalculationData(viewMode.value, today.value);
-        
-        isPrepaymentModalVisible.value = false;
-        isPopupVisible.value = false; 
-        operationToEdit.value = null;
 
     } catch (e) {
-        console.error('Ошибка сохранения предоплаты:', e);
-        alert('Не удалось сохранить предоплату. Проверьте консоль.');
+        console.error('Background Save Error (Prepayment):', e);
+        // Так как окно уже закрыто, используем alert для уведомления об ошибке
+        alert('Не удалось сохранить предоплату. Проверьте соединение или данные.');
     }
 };
 
@@ -339,7 +344,6 @@ const handleOperationDelete = async (operation) => {
   handleClosePopup();
 };
 
-// 🟢 ИСПРАВЛЕНИЕ: Убран лишний recalcProjectionForCurrentView
 const handleOperationDrop = async (dropData) => {
   const operation = dropData.operation;
   const oldDateKey = operation.dateKey; 
@@ -348,13 +352,9 @@ const handleOperationDrop = async (dropData) => {
   if (!oldDateKey || !newDateKey) return;
   if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
   
-  // mainStore.moveOperation теперь делает await и обновляет проекцию сам
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex);
-  
-  // await recalcProjectionForCurrentView(); // <--- УБРАНО (Race Condition Fix)
 };
 
-// 🟢 ИСПРАВЛЕНИЕ: Убран лишний recalcProjectionForCurrentView
 const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => {
   const oldDateKey = operation.dateKey;
   const baseDate = _parseDateKey(oldDateKey); 
@@ -363,11 +363,7 @@ const handleOperationMoved = async ({ operation, toDayOfYear, toCellIndex }) => 
   const newDateKey = _getDateKey(newDate);
   if (!oldDateKey || !newDateKey) return;
   
-  // mainStore.moveOperation теперь делает await и обновляет проекцию сам
   await mainStore.moveOperation(operation, oldDateKey, newDateKey, toCellIndex ?? (operation.cellIndex ?? 0));
-  
-  // await recalcProjectionForCurrentView(); // <--- УБРАНО (Race Condition Fix)
-  
   handleClosePopup();
 };
 
