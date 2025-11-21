@@ -2,20 +2,20 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
+import { formatNumber as formatBalance } from '@/utils/formatters.js'; // 🟢 Импорт форматтера для баланса
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.1 - INSTANT TRANSFER CLOSE ---
- * * ВЕРСИЯ: 16.1 - Мгновенное закрытие окна перевода и фоновый расчет
+ * * --- МЕТКА ВЕРСИИ: v16.2 - ACCOUNT BALANCE IN SELECT ---
+ * * ВЕРСИЯ: 16.2 - Отображение баланса счета в выпадающих списках перевода
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) handleSave: Окно закрывается сразу (emit 'close').
- * 2. (LOGIC) Вся работа с API и обновлением стора вынесена в background try/catch.
- * 3. (FIX) Добавлен вызов fetchAllEntities() в фоне для обновления балансов счетов в шапке.
+ * 1. (UI) В select счетов (Откуда/Куда) добавлен вывод текущего баланса.
+ * 2. (LOGIC) Источник данных для select изменен на mainStore.currentAccountBalances.
  */
 
-console.log('--- TransferPopup.vue v16.1 (Instant Close) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v16.2 (Balance in Select) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -78,6 +78,7 @@ const newOwnerName = ref('');
 const newOwnerInputRef = ref(null);
 const creatingOwnerFor = ref('from'); 
 
+// Локальный форматтер для инпута суммы
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -383,23 +384,15 @@ const handleSave = async () => {
   };
 
   // 3. МГНОВЕННОЕ ЗАКРЫТИЕ (Optimistic UI)
-  emit('close');
-
-  // 4. ФОНОВАЯ РАБОТА
-  try {
-    if (!isEdit || isClone) {
-      await mainStore.createTransfer(transferPayload);
-    } else {
-      await mainStore.updateTransfer(transferId, transferPayload);
-    }
-    
-    // Обновляем балансы счетов, чтобы виджеты "Мои счета" пересчитались
-    await mainStore.fetchAllEntities();
-
-  } catch (error) { 
-    console.error("Transfer save error:", error);
-    alert('Ошибка при сохранении перевода. Данные не были сохранены.');
-  }
+  // (Эмитим просто событие сохранения в родитель, 
+  //  но в этом компоненте мы уже эмитим 'save' с payload 
+  //  в HomeView, который обрабатывает логику)
+  emit('save', {
+      mode: (!isEdit || isClone) ? 'create' : 'edit',
+      id: (!isEdit || isClone) ? null : transferId,
+      data: transferPayload,
+      originalTransfer: isEdit ? props.transferToEdit : null
+  });
 };
 
 const closePopup = () => { 
@@ -420,7 +413,10 @@ const closePopup = () => {
         <label>Со счета *</label>
         <select v-if="!isCreatingFromAccount" v-model="fromAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showFromAccountInput() : onFromAccountSelected(e.target.value)" class="form-select">
           <option :value="null" disabled>Выберите счет</option>
-          <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">{{ acc.name }}</option>
+          <!-- 🟢 БАЛАНС СЧЕТА ОТПРАВИТЕЛЯ -->
+          <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
+            {{ acc.name }} &mdash; {{ formatBalance(acc.balance) }} ₸
+          </option>
           <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
         </select>
         <div v-else class="inline-create-form">
@@ -444,7 +440,10 @@ const closePopup = () => {
         <label>На счет *</label>
         <select v-if="!isCreatingToAccount" v-model="toAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showToAccountInput() : onToAccountSelected(e.target.value)" class="form-select">
           <option :value="null" disabled>Выберите счет</option>
-          <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">{{ acc.name }}</option>
+          <!-- 🟢 БАЛАНС СЧЕТА ПОЛУЧАТЕЛЯ -->
+          <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
+            {{ acc.name }} &mdash; {{ formatBalance(acc.balance) }} ₸
+          </option>
           <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
         </select>
         <div v-else class="inline-create-form">
