@@ -5,13 +5,15 @@ import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.4 - COLORED HINT ---
- * * ВЕРСИЯ: 10.4 - Выделение имени цветом в подсказке
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v10.5 - BALANCE INPUT UX FIX ---
+ * * ВЕРСИЯ: 10.5 - Улучшение UX ввода баланса и ширины поля
+ * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) `pickerHintText` теперь возвращает HTML-строку.
- * 2. (STYLE) Имя сущности обернуто в <span> с цветом var(--color-primary).
+ * 1. (STYLE) Увеличена ширина .edit-balance с 100px до 130px (+30%).
+ * 2. (UX) Добавлен обработчик @focus="$event.target.select()" для инпута баланса.
+ * Теперь при клике на "0" он выделяется, и ввод цифры заменяет его,
+ * предотвращая ошибку "дописывания нуля" (когда 100 превращалось в 1000).
  */
 
 const props = defineProps({
@@ -66,11 +68,9 @@ else if (isProjectEditor) entityNameSingular = 'проект';
 else if (isCategoryEditor) entityNameSingular = 'категорию';
 else if (isIndividualEditor) entityNameSingular = 'физлицо';
 
-// 🟢 Динамический текст подсказки с HTML для цвета
+// Динамический текст подсказки с HTML для цвета
 const pickerHintText = computed(() => {
     const name = currentItemForPicker.value?.name || '...';
-    // Используем встроенный стиль для надежности или класс, если он доступен глобально.
-    // var(--color-primary) - это зеленый цвет из base.css (#34c759)
     const coloredName = `<span style="color: var(--color-primary); font-weight: 600;">${name}</span>`;
     
     if (isCompanyEditor) return `Привяжите ${coloredName} к вашим счетам.`;
@@ -283,7 +283,16 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
-                <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" class="edit-input edit-balance" placeholder="0" />
+                <!-- 🟢 UX FIX: Добавлен @focus="$event.target.select()" -->
+                <input 
+                  type="text" 
+                  inputmode="decimal" 
+                  v-model="item.initialBalanceFormatted" 
+                  @input="onAmountInput(item)" 
+                  @focus="$event.target.select()"
+                  class="edit-input edit-balance" 
+                  placeholder="0" 
+                />
               </template>
               
               <template v-if="isContractorEditor">
@@ -379,7 +388,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 .account-header-simple .header-name { width: 100%; }
-.account-header-simple .header-balance { flex-shrink: 0; width: 100px; text-align: right; padding-right: 14px; }
+/* 🟢 STYLE FIX: Увеличена ширина баланса в заголовке и инпуте (+30%) */
+.account-header-simple .header-balance { flex-shrink: 0; width: 130px; text-align: right; padding-right: 14px; }
 .owner-header .header-accounts { flex-shrink: 0; width: 310px; }
 .contractor-header .header-project { flex-shrink: 0; width: 150px; }
 .contractor-header .header-category { flex-shrink: 0; width: 150px; }
@@ -394,7 +404,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 .edit-project, .edit-category { flex-shrink: 0; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; width: 150px; }
-.edit-balance { flex-shrink: 0; width: 100px; text-align: right; }
+/* 🟢 STYLE FIX: Увеличена ширина инпута баланса */
+.edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
 .edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; font-size: 15px; display: flex; align-items: center; margin: 0; padding: 0 14px; height: 48px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; font-family: inherit; }
 .edit-account-picker:hover { border-color: #222222; }
 .delete-btn { width: 48px; height: 48px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 10px; box-sizing: border-box; margin: 0; }
