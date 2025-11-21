@@ -7,17 +7,12 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.4 - FULL BASE SELECT ---
- * * ВЕРСИЯ: 16.4 - Полный переход на BaseSelect в переводе
+ * * --- МЕТКА ВЕРСИИ: v16.5 - PRO UI UPDATE ---
+ * * ВЕРСИЯ: 16.5 - Обновленный дизайн и цвета (перевод)
  * * ДАТА: 2025-11-21
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. Все селекты (счета, владельцы) заменены на BaseSelect.
- * 2. Цвет суммы в счетах темный (через BaseSelect).
- * 3. Единый стиль инпутов и анимации.
  */
 
-console.log('--- TransferPopup.vue v16.4 (Full BaseSelect) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v16.5 (Pro UI) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -30,15 +25,12 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'transfer-complete']);
 
-// --- Данные для полей ---
 const amount = ref('');
 const fromAccountId = ref(null);
 const toAccountId = ref(null);
 const categoryId = ref(null);
-
 const selectedFromOwner = ref(null); 
 const selectedToOwner = ref(null); 
-
 const isInlineSaving = ref(false);
 
 const toInputDate = (date) => {
@@ -46,37 +38,26 @@ const toInputDate = (date) => {
   const year = d.getFullYear();
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
   const day = d.getDate().toString().padStart(2, '0');
-  const result = `${year}-${month}-${day}`;
-  return result;
+  return `${year}-${month}-${day}`;
 };
 const editableDate = ref(toInputDate(props.date));
-
-const minDateString = computed(() => {
-  return props.minAllowedDate ? toInputDate(props.minAllowedDate) : null;
-});
-const maxDateString = computed(() => {
-  return props.maxAllowedDate ? toInputDate(props.maxAllowedDate) : null;
-});
+const minDateString = computed(() => props.minAllowedDate ? toInputDate(props.minAllowedDate) : null);
+const maxDateString = computed(() => props.maxAllowedDate ? toInputDate(props.maxAllowedDate) : null);
 
 const errorMessage = ref('');
 const amountInput = ref(null);
-
-// --- Состояние для кнопок ---
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-// --- INLINE CREATE STATES ---
 const isCreatingFromAccount = ref(false); const newFromAccountName = ref(''); const newFromAccountInput = ref(null);
 const isCreatingToAccount = ref(false); const newToAccountName = ref(''); const newToAccountInput = ref(null);
 
-// "Smart Create" Owner
 const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); 
 const newOwnerName = ref('');
 const newOwnerInputRef = ref(null);
 const creatingOwnerFor = ref('from'); 
 
-// Локальный форматтер для инпута суммы
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -96,10 +77,6 @@ const onAmountInput = (event) => {
   });
 };
 
-// =========================================================
-// 🟢 COMPUTED OPTIONS
-// =========================================================
-
 const accountOptions = computed(() => {
   const options = mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
@@ -113,39 +90,17 @@ const accountOptions = computed(() => {
 
 const ownerOptions = computed(() => {
   const opts = [];
-  mainStore.companies.forEach(c => {
-    opts.push({ value: `company-${c._id}`, label: c.name, isSpecial: false });
-  });
-  mainStore.individuals.forEach(i => {
-    opts.push({ value: `individual-${i._id}`, label: i.name, isSpecial: false });
-  });
+  mainStore.companies.forEach(c => { opts.push({ value: `company-${c._id}`, label: c.name, isSpecial: false }); });
+  mainStore.individuals.forEach(i => { opts.push({ value: `individual-${i._id}`, label: i.name, isSpecial: false }); });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию/Физлицо', isSpecial: true });
   return opts;
 });
 
-// =========================================================
-// 🟢 HANDLERS
-// =========================================================
+const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
+const handleToAccountChange = (val) => { if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } else { onToAccountSelected(val); } };
+const handleFromOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedFromOwner.value = null; openCreateOwnerModal('from'); } };
+const handleToOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedToOwner.value = null; openCreateOwnerModal('to'); } };
 
-const handleFromAccountChange = (val) => {
-  if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } 
-  else { onFromAccountSelected(val); }
-};
-
-const handleToAccountChange = (val) => {
-  if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } 
-  else { onToAccountSelected(val); }
-};
-
-const handleFromOwnerChange = (val) => {
-  if (val === '--CREATE_NEW--') { selectedFromOwner.value = null; openCreateOwnerModal('from'); }
-};
-
-const handleToOwnerChange = (val) => {
-  if (val === '--CREATE_NEW--') { selectedToOwner.value = null; openCreateOwnerModal('to'); }
-};
-
-// --- AUTO-SELECT LOGIC ---
 const onFromAccountSelected = (accountId) => {
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount) {
@@ -164,7 +119,6 @@ const onToAccountSelected = (accountId) => {
   } else { selectedToOwner.value = null; }
 };
 
-// --- MOUNTED ---
 onMounted(async () => {
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
   if (!transferCategory) { try { transferCategory = await mainStore.addCategory('Перевод'); } catch (e) {} }
@@ -178,7 +132,6 @@ onMounted(async () => {
     
     if (transfer.fromCompanyId) { const cId = transfer.fromCompanyId?._id || transfer.fromCompanyId; selectedFromOwner.value = `company-${cId}`; } 
     else if (transfer.fromIndividualId) { const iId = transfer.fromIndividualId?._id || transfer.fromIndividualId; selectedFromOwner.value = `individual-${iId}`; }
-    
     if (transfer.toCompanyId) { const cId = transfer.toCompanyId?._id || transfer.toCompanyId; selectedToOwner.value = `company-${cId}`; } 
     else if (transfer.toIndividualId) { const iId = transfer.toIndividualId?._id || transfer.toIndividualId; selectedToOwner.value = `individual-${iId}`; }
     
@@ -200,13 +153,11 @@ const onDeleteConfirmed = async () => {
 };
 const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(props.date); nextTick(() => { amountInput.value?.focus(); }); };
 
-// --- SMART CREATE OWNER ---
 const openCreateOwnerModal = (target) => { creatingOwnerFor.value = target; ownerTypeToCreate.value = 'company'; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null; if (creatingOwnerFor.value === 'to' && selectedToOwner.value === '--CREATE_NEW--') selectedToOwner.value = null; };
 const setOwnerTypeToCreate = (type) => { ownerTypeToCreate.value = type; newOwnerInputRef.value?.focus(); };
 const saveNewOwner = async () => {
-  if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); const type = ownerTypeToCreate.value; const target = creatingOwnerFor.value; if (!name) return;
-  isInlineSaving.value = true; 
+  if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); const type = ownerTypeToCreate.value; const target = creatingOwnerFor.value; if (!name) return; isInlineSaving.value = true; 
   try {
     let newItem;
     if (type === 'company') { const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addCompany(name); } 
@@ -217,7 +168,6 @@ const saveNewOwner = async () => {
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
-// --- INLINE CREATE (Счета) ---
 const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
 const cancelCreateFromAccount = () => { isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
 const saveNewFromAccount = async () => {
@@ -243,15 +193,10 @@ const saveNewToAccount = async () => {
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
-const _getDayOfYear = (date) => { const start = new Date(date.getFullYear(), 0, 0); const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000); const oneDay = 1000 * 60 * 60 * 24; return Math.floor(diff / oneDay); };
-const _getDateKey = (date) => { const year = date.getFullYear(); const doy = _getDayOfYear(date); return `${year}-${doy}`; };
-
-// 🟢 SAVE
 const handleSave = async () => {
   errorMessage.value = '';
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
   const amountParsed = parseFloat(cleanedAmount);
-
   if (isNaN(amountParsed) || amountParsed <= 0) { errorMessage.value = 'Введите корректную сумму'; return; }
   if (!fromAccountId.value || !toAccountId.value) { errorMessage.value = 'Выберите счета отправителя и получателя'; return; }
   if (fromAccountId.value === toAccountId.value) { errorMessage.value = 'Счета не должны совпадать'; return; }
@@ -259,29 +204,11 @@ const handleSave = async () => {
   const isEdit = !!props.transferToEdit;
   const transferId = props.transferToEdit?._id;
   const isClone = isCloneMode.value;
-
-  const [year, month, day] = editableDate.value.split('-').map(Number);
-  const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
-  
-  let fromCompanyId = null, fromIndividualId = null;
-  if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
-  let toCompanyId = null, toIndividualId = null;
-  if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
-
-  const transferPayload = {
-      date: finalDate, amount: amountParsed,
-      fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
-      fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
-      fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
-      categoryId: categoryId.value 
-  };
-
-  emit('save', {
-      mode: (!isEdit || isClone) ? 'create' : 'edit',
-      id: (!isEdit || isClone) ? null : transferId,
-      data: transferPayload,
-      originalTransfer: isEdit ? props.transferToEdit : null
-  });
+  const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
+  let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
+  let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
+  const transferPayload = { date: finalDate, amount: amountParsed, fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, categoryId: categoryId.value };
+  emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
 };
 
 const closePopup = () => { emit('close'); };
@@ -289,6 +216,7 @@ const closePopup = () => { emit('close'); };
 
 <template>
   <div class="popup-overlay" @click.self="closePopup">
+    <!-- 🟢 ТЕМА ДЛЯ ПЕРЕВОДА -->
     <div class="popup-content theme-edit">
       
       <h3>{{ title }}</h3>
@@ -308,7 +236,7 @@ const closePopup = () => { emit('close'); };
         <div v-else class="inline-create-form">
           <input type="text" v-model="newFromAccountName" placeholder="Название счета (От)" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
           <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
+          <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
         
         <label>Компании/Физлица (Отправитель)</label>
@@ -330,7 +258,7 @@ const closePopup = () => { emit('close'); };
         <div v-else class="inline-create-form">
           <input type="text" v-model="newToAccountName" placeholder="Название счета (Куда)" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
           <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">X</button>
+          <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
         
         <label>Компании/Физлица (Получатель)</label>
@@ -385,23 +313,27 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
+/* ТЕМА ПЕРЕВОДА */
+.theme-edit { --focus-color: #222222; --focus-shadow: rgba(34, 34, 34, 0.2); }
+
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 600; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
+
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.form-select { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; -webkit-appearance: none; -moz-appearance: none; appearance: none; transition: border-color 0.2s ease, box-shadow 0.2s ease; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
-.form-input:focus, .form-select:focus { outline: none; border-color: #F36F3F; box-shadow: 0 0 0 2px rgba(243, 111, 63, 0.2); }
-.theme-edit .form-input:focus, .theme-edit .form-select:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
-.error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
+.form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
+
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; }
-.inline-create-form input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
-.inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; }
+.inline-create-form input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
+.inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .inline-create-form button.btn-inline-save { background-color: #34C759; }
 .inline-create-form button.btn-inline-save:disabled { background-color: #9bd6a8; cursor: not-allowed; }
 .inline-create-form button.btn-inline-cancel { background-color: #FF3B30; }
 .inline-create-form button.btn-inline-cancel:disabled { background-color: #f0a19c; cursor: not-allowed; }
+
+.error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
 .icon-actions { display: flex; gap: 10px; }
@@ -416,6 +348,8 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .btn-submit-transfer:hover:not(:disabled) { background-color: #2f3d6bff; }
 .btn-submit-edit { background-color: #222222; }
 .btn-submit-edit:hover:not(:disabled) { background-color: #444444; }
+.btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
+.btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 .smart-create-owner { border-top: 1px solid #E0E0E0; margin-top: 1.5rem; padding-top: 1.5rem; }
 .smart-create-title { font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center; margin-top: 0; margin-bottom: 1.5rem; }
 .smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem; }
@@ -423,6 +357,4 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .smart-create-tabs button.active { background: #222222; color: #FFFFFF; border-color: #222222; }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
-.btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
-.btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 </style>
