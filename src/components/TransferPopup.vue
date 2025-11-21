@@ -4,20 +4,20 @@ import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
-import BaseSelect from './BaseSelect.vue'; // 🟢 Импорт кастомного селекта
+import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.3 - BASE SELECT INTEGRATION ---
- * * ВЕРСИЯ: 16.3 - Внедрение кастомного BaseSelect в перевод
+ * * --- МЕТКА ВЕРСИИ: v16.4 - FULL BASE SELECT ---
+ * * ВЕРСИЯ: 16.4 - Полный переход на BaseSelect в переводе
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Select'ы счетов (Откуда/Куда) заменены на <BaseSelect>.
- * 2. (LOGIC) Добавлен computed accountOptions.
- * 3. (STYLE) Визуальное выравнивание названия (слева) и суммы (справа).
+ * 1. Все селекты (счета, владельцы) заменены на BaseSelect.
+ * 2. Цвет суммы в счетах темный (через BaseSelect).
+ * 3. Единый стиль инпутов и анимации.
  */
 
-console.log('--- TransferPopup.vue v16.3 (BaseSelect Integration) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v16.4 (Full BaseSelect) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -66,12 +66,8 @@ const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
 // --- INLINE CREATE STATES ---
-const isCreatingFromAccount = ref(false);
-const newFromAccountName = ref('');
-const newFromAccountInput = ref(null);
-const isCreatingToAccount = ref(false);
-const newToAccountName = ref('');
-const newToAccountInput = ref(null);
+const isCreatingFromAccount = ref(false); const newFromAccountName = ref(''); const newFromAccountInput = ref(null);
+const isCreatingToAccount = ref(false); const newToAccountName = ref(''); const newToAccountInput = ref(null);
 
 // "Smart Create" Owner
 const showCreateOwnerModal = ref(false);
@@ -100,7 +96,10 @@ const onAmountInput = (event) => {
   });
 };
 
-// 🟢 Computed для опций счетов (BaseSelect)
+// =========================================================
+// 🟢 COMPUTED OPTIONS
+// =========================================================
+
 const accountOptions = computed(() => {
   const options = mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
@@ -108,79 +107,67 @@ const accountOptions = computed(() => {
     rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
     isSpecial: false
   }));
-  
-  options.push({
-    value: '--CREATE_NEW--',
-    label: '[ + Создать новый счет ]',
-    rightText: '',
-    isSpecial: true
-  });
-  
+  options.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', rightText: '', isSpecial: true });
   return options;
 });
 
-// 🟢 Обработчики BaseSelect
+const ownerOptions = computed(() => {
+  const opts = [];
+  mainStore.companies.forEach(c => {
+    opts.push({ value: `company-${c._id}`, label: c.name, isSpecial: false });
+  });
+  mainStore.individuals.forEach(i => {
+    opts.push({ value: `individual-${i._id}`, label: i.name, isSpecial: false });
+  });
+  opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию/Физлицо', isSpecial: true });
+  return opts;
+});
+
+// =========================================================
+// 🟢 HANDLERS
+// =========================================================
+
 const handleFromAccountChange = (val) => {
-  if (val === '--CREATE_NEW--') {
-    fromAccountId.value = null;
-    showFromAccountInput();
-  } else {
-    onFromAccountSelected(val);
-  }
+  if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } 
+  else { onFromAccountSelected(val); }
 };
 
 const handleToAccountChange = (val) => {
-  if (val === '--CREATE_NEW--') {
-    toAccountId.value = null;
-    showToAccountInput();
-  } else {
-    onToAccountSelected(val);
-  }
+  if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } 
+  else { onToAccountSelected(val); }
+};
+
+const handleFromOwnerChange = (val) => {
+  if (val === '--CREATE_NEW--') { selectedFromOwner.value = null; openCreateOwnerModal('from'); }
+};
+
+const handleToOwnerChange = (val) => {
+  if (val === '--CREATE_NEW--') { selectedToOwner.value = null; openCreateOwnerModal('to'); }
 };
 
 // --- AUTO-SELECT LOGIC ---
 const onFromAccountSelected = (accountId) => {
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount) {
-    if (selectedAccount.companyId) {
-      const cId = typeof selectedAccount.companyId === 'object' ? selectedAccount.companyId._id : selectedAccount.companyId;
-      selectedFromOwner.value = `company-${cId}`;
-    } else if (selectedAccount.individualId) {
-      const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId;
-      selectedFromOwner.value = `individual-${iId}`;
-    } else {
-      selectedFromOwner.value = null;
-    }
-  } else {
-    selectedFromOwner.value = null;
-  }
+    if (selectedAccount.companyId) { const cId = typeof selectedAccount.companyId === 'object' ? selectedAccount.companyId._id : selectedAccount.companyId; selectedFromOwner.value = `company-${cId}`; } 
+    else if (selectedAccount.individualId) { const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId; selectedFromOwner.value = `individual-${iId}`; } 
+    else { selectedFromOwner.value = null; }
+  } else { selectedFromOwner.value = null; }
 };
 
 const onToAccountSelected = (accountId) => {
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
   if (selectedAccount) {
-    if (selectedAccount.companyId) {
-      const cId = typeof selectedAccount.companyId === 'object' ? selectedAccount.companyId._id : selectedAccount.companyId;
-      selectedToOwner.value = `company-${cId}`;
-    } else if (selectedAccount.individualId) {
-      const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId;
-      selectedToOwner.value = `individual-${iId}`;
-    } else {
-      selectedToOwner.value = null;
-    }
-  } else {
-    selectedToOwner.value = null;
-  }
+    if (selectedAccount.companyId) { const cId = typeof selectedAccount.companyId === 'object' ? selectedAccount.companyId._id : selectedAccount.companyId; selectedToOwner.value = `company-${cId}`; } 
+    else if (selectedAccount.individualId) { const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId; selectedToOwner.value = `individual-${iId}`; } 
+    else { selectedToOwner.value = null; }
+  } else { selectedToOwner.value = null; }
 };
 
 // --- MOUNTED ---
 onMounted(async () => {
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
-  if (!transferCategory) {
-    try {
-        transferCategory = await mainStore.addCategory('Перевод');
-    } catch (e) { console.error("Error", e)}
-  }
+  if (!transferCategory) { try { transferCategory = await mainStore.addCategory('Перевод'); } catch (e) {} }
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
 
   if (props.transferToEdit) {
@@ -189,232 +176,103 @@ onMounted(async () => {
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId;
     toAccountId.value = transfer.toAccountId?._id || transfer.toAccountId;
     
-    if (transfer.fromCompanyId) {
-      const cId = transfer.fromCompanyId?._id || transfer.fromCompanyId;
-      selectedFromOwner.value = `company-${cId}`;
-    } else if (transfer.fromIndividualId) {
-      const iId = transfer.fromIndividualId?._id || transfer.fromIndividualId;
-      selectedFromOwner.value = `individual-${iId}`;
-    }
+    if (transfer.fromCompanyId) { const cId = transfer.fromCompanyId?._id || transfer.fromCompanyId; selectedFromOwner.value = `company-${cId}`; } 
+    else if (transfer.fromIndividualId) { const iId = transfer.fromIndividualId?._id || transfer.fromIndividualId; selectedFromOwner.value = `individual-${iId}`; }
     
-    if (transfer.toCompanyId) {
-      const cId = transfer.toCompanyId?._id || transfer.toCompanyId;
-      selectedToOwner.value = `company-${cId}`;
-    } else if (transfer.toIndividualId) {
-      const iId = transfer.toIndividualId?._id || transfer.toIndividualId;
-      selectedToOwner.value = `individual-${iId}`;
-    }
+    if (transfer.toCompanyId) { const cId = transfer.toCompanyId?._id || transfer.toCompanyId; selectedToOwner.value = `company-${cId}`; } 
+    else if (transfer.toIndividualId) { const iId = transfer.toIndividualId?._id || transfer.toIndividualId; selectedToOwner.value = `individual-${iId}`; }
     
     categoryId.value = defaultCategoryId;
-
-    if (transfer.date) {
-      editableDate.value = toInputDate(new Date(transfer.date));
-    }
+    if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
   } else {
     categoryId.value = defaultCategoryId;
-    setTimeout(() => {
-      if (amountInput.value) amountInput.value.focus();
-    }, 100);
+    setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100);
   }
 });
 
-const title = computed(() => {
-  if (props.transferToEdit && !isCloneMode.value) return 'Перевод';
-  return 'Новый перевод';
-});
-
-const buttonText = computed(() => {
-  if (props.transferToEdit && !isCloneMode.value) return 'Сохранить';
-  return 'Добавить перевод';
-});
+const title = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Перевод'; return 'Новый перевод'; });
+const buttonText = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Сохранить'; return 'Добавить перевод'; });
 
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
-
 const onDeleteConfirmed = async () => {
-  const opToDelete = props.transferToEdit;
-  emit('close'); 
-  
-  try {
-    if (!opToDelete?._id) return;
-    await mainStore.deleteOperation(opToDelete);
-    await mainStore.fetchAllEntities();
-  } catch (e) { 
-    console.error(e);
-    alert('Ошибка при удалении перевода.');
-  } 
+  const opToDelete = props.transferToEdit; emit('close'); 
+  try { if (!opToDelete?._id) return; await mainStore.deleteOperation(opToDelete); await mainStore.fetchAllEntities(); } catch (e) { console.error(e); } 
 };
-
-const handleCopyClick = () => {
-  isCloneMode.value = true;
-  editableDate.value = toInputDate(props.date); 
-  nextTick(() => { amountInput.value?.focus(); });
-};
+const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(props.date); nextTick(() => { amountInput.value?.focus(); }); };
 
 // --- SMART CREATE OWNER ---
-const openCreateOwnerModal = (target) => {
-  creatingOwnerFor.value = target; 
-  ownerTypeToCreate.value = 'company'; 
-  newOwnerName.value = '';
-  showCreateOwnerModal.value = true;
-  nextTick(() => newOwnerInputRef.value?.focus());
-};
-
-const cancelCreateOwner = () => {
-  if (isInlineSaving.value) return;
-  showCreateOwnerModal.value = false;
-  newOwnerName.value = '';
-  if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null;
-  if (creatingOwnerFor.value === 'to' && selectedToOwner.value === '--CREATE_NEW--') selectedToOwner.value = null;
-};
-
-const setOwnerTypeToCreate = (type) => {
-  ownerTypeToCreate.value = type;
-  newOwnerInputRef.value?.focus();
-};
-
+const openCreateOwnerModal = (target) => { creatingOwnerFor.value = target; ownerTypeToCreate.value = 'company'; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
+const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null; if (creatingOwnerFor.value === 'to' && selectedToOwner.value === '--CREATE_NEW--') selectedToOwner.value = null; };
+const setOwnerTypeToCreate = (type) => { ownerTypeToCreate.value = type; newOwnerInputRef.value?.focus(); };
 const saveNewOwner = async () => {
-  if (isInlineSaving.value) return;
-  const name = newOwnerName.value.trim();
-  const type = ownerTypeToCreate.value; 
-  const target = creatingOwnerFor.value; 
-  if (!name) return;
-  
+  if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); const type = ownerTypeToCreate.value; const target = creatingOwnerFor.value; if (!name) return;
   isInlineSaving.value = true; 
-
   try {
     let newItem;
-    if (type === 'company') {
-      const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase());
-      newItem = existing ? existing : await mainStore.addCompany(name);
-    } else { 
-      const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase());
-      newItem = existing ? existing : await mainStore.addIndividual(name);
-    }
-    
+    if (type === 'company') { const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addCompany(name); } 
+    else { const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addIndividual(name); }
     const newOwnerKey = `${type}-${newItem._id}`;
-    if (target === 'from') selectedFromOwner.value = newOwnerKey;
-    else selectedToOwner.value = newOwnerKey;
-
-    showCreateOwnerModal.value = false;
-    newOwnerName.value = '';
-
-  } catch (e) { console.error(e); } 
-  finally { isInlineSaving.value = false; }
+    if (target === 'from') selectedFromOwner.value = newOwnerKey; else selectedToOwner.value = newOwnerKey;
+    showCreateOwnerModal.value = false; newOwnerName.value = '';
+  } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
 // --- INLINE CREATE (Счета) ---
 const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
 const cancelCreateFromAccount = () => { isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
 const saveNewFromAccount = async () => {
-  if (isInlineSaving.value) return;
-  const name = newFromAccountName.value.trim();
-  if (!name) return;
-  isInlineSaving.value = true;
+  if (isInlineSaving.value) return; const name = newFromAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
-    let cId = null, iId = null;
-    if (selectedFromOwner.value) {
-        const [type, id] = selectedFromOwner.value.split('-');
-        if (type === 'company') cId = id; else iId = id;
-    }
+    let cId = null, iId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
     const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
     if (existing) { fromAccountId.value = existing._id; onFromAccountSelected(existing._id); } 
-    else {
-      const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId });
-      fromAccountId.value = newItem._id;
-      onFromAccountSelected(newItem._id);
-    }
+    else { const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); fromAccountId.value = newItem._id; onFromAccountSelected(newItem._id); }
     cancelCreateFromAccount(); 
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
-
 const showToAccountInput = () => { isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
 const cancelCreateToAccount = () => { isCreatingToAccount.value = false; newToAccountName.value = ''; };
 const saveNewToAccount = async () => {
-  if (isInlineSaving.value) return;
-  const name = newToAccountName.value.trim();
-  if (!name) return;
-  isInlineSaving.value = true;
+  if (isInlineSaving.value) return; const name = newToAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
-    let cId = null, iId = null;
-    if (selectedToOwner.value) {
-        const [type, id] = selectedToOwner.value.split('-');
-        if (type === 'company') cId = id; else iId = id;
-    }
+    let cId = null, iId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
     const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
     if (existing) { toAccountId.value = existing._id; onToAccountSelected(existing._id); } 
-    else {
-      const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId });
-      toAccountId.value = newItem._id;
-      onToAccountSelected(newItem._id);
-    }
+    else { const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); toAccountId.value = newItem._id; onToAccountSelected(newItem._id); }
     cancelCreateToAccount(); 
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
-const _getDayOfYear = (date) => {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000); 
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.floor(diff / oneDay);
-};
+const _getDayOfYear = (date) => { const start = new Date(date.getFullYear(), 0, 0); const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000); const oneDay = 1000 * 60 * 60 * 24; return Math.floor(diff / oneDay); };
+const _getDateKey = (date) => { const year = date.getFullYear(); const doy = _getDayOfYear(date); return `${year}-${doy}`; };
 
-const _getDateKey = (date) => {
-  const year = date.getFullYear();
-  const doy = _getDayOfYear(date);
-  return `${year}-${doy}`;
-};
-
-// 🟢 ОСНОВНАЯ ФУНКЦИЯ СОХРАНЕНИЯ
+// 🟢 SAVE
 const handleSave = async () => {
-  // 1. ВАЛИДАЦИЯ
   errorMessage.value = '';
-  
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
   const amountParsed = parseFloat(cleanedAmount);
 
-  if (isNaN(amountParsed) || amountParsed <= 0) {
-    errorMessage.value = 'Введите корректную сумму';
-    return;
-  }
-  if (!fromAccountId.value || !toAccountId.value) {
-    errorMessage.value = 'Выберите счета отправителя и получателя';
-    return;
-  }
-  if (fromAccountId.value === toAccountId.value) {
-    errorMessage.value = 'Счета не должны совпадать';
-    return;
-  }
+  if (isNaN(amountParsed) || amountParsed <= 0) { errorMessage.value = 'Введите корректную сумму'; return; }
+  if (!fromAccountId.value || !toAccountId.value) { errorMessage.value = 'Выберите счета отправителя и получателя'; return; }
+  if (fromAccountId.value === toAccountId.value) { errorMessage.value = 'Счета не должны совпадать'; return; }
 
-  // 2. ПОДГОТОВКА ДАННЫХ
   const isEdit = !!props.transferToEdit;
   const transferId = props.transferToEdit?._id;
   const isClone = isCloneMode.value;
 
   const [year, month, day] = editableDate.value.split('-').map(Number);
   const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
-  const dateKey = _getDateKey(finalDate);
-
-  let fromCompanyId = null, fromIndividualId = null;
-  if (selectedFromOwner.value) {
-    const [type, id] = selectedFromOwner.value.split('-');
-    if (type === 'company') fromCompanyId = id; else fromIndividualId = id;
-  }
   
+  let fromCompanyId = null, fromIndividualId = null;
+  if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
   let toCompanyId = null, toIndividualId = null;
-  if (selectedToOwner.value) {
-    const [type, id] = selectedToOwner.value.split('-');
-    if (type === 'company') toCompanyId = id; else toIndividualId = id;
-  }
+  if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
 
   const transferPayload = {
-      date: finalDate,
-      amount: amountParsed,
-      fromAccountId: fromAccountId.value,
-      toAccountId: toAccountId.value, 
-      fromCompanyId: fromCompanyId,
-      toCompanyId: toCompanyId, 
-      fromIndividualId: fromIndividualId, 
-      toIndividualId: toIndividualId, 
+      date: finalDate, amount: amountParsed,
+      fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
+      fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
+      fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
       categoryId: categoryId.value 
   };
 
@@ -426,9 +284,7 @@ const handleSave = async () => {
   });
 };
 
-const closePopup = () => { 
-  emit('close'); 
-};
+const closePopup = () => { emit('close'); };
 </script>
 
 <template>
@@ -442,7 +298,6 @@ const closePopup = () => {
         <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
         
         <label>Со счета *</label>
-        <!-- 🟢 Внедрение BaseSelect для отправителя -->
         <BaseSelect
           v-if="!isCreatingFromAccount"
           v-model="fromAccountId"
@@ -450,7 +305,6 @@ const closePopup = () => {
           placeholder="Выберите счет"
           @change="handleFromAccountChange"
         />
-        
         <div v-else class="inline-create-form">
           <input type="text" v-model="newFromAccountName" placeholder="Название счета (От)" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
           <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
@@ -458,19 +312,14 @@ const closePopup = () => {
         </div>
         
         <label>Компании/Физлица (Отправитель)</label>
-        <select v-model="selectedFromOwner" @change="e => e.target.value === '--CREATE_NEW--' && openCreateOwnerModal('from')" class="form-select">
-          <option :value="null">Автоматически</option>
-          <optgroup label="Компании">
-            <option v-for="comp in mainStore.companies" :key="comp._id" :value="`company-${comp._id}`">{{ comp.name }}</option>
-          </optgroup>
-          <optgroup label="Физлица">
-            <option v-for="ind in mainStore.individuals" :key="ind._id" :value="`individual-${ind._id}`">{{ ind.name }}</option>
-          </optgroup>
-          <option value="--CREATE_NEW--">[ + Создать... ]</option>
-        </select>
+        <BaseSelect
+          v-model="selectedFromOwner"
+          :options="ownerOptions"
+          placeholder="Автоматически"
+          @change="handleFromOwnerChange"
+        />
 
         <label>На счет *</label>
-        <!-- 🟢 Внедрение BaseSelect для получателя -->
         <BaseSelect
           v-if="!isCreatingToAccount"
           v-model="toAccountId"
@@ -478,7 +327,6 @@ const closePopup = () => {
           placeholder="Выберите счет"
           @change="handleToAccountChange"
         />
-        
         <div v-else class="inline-create-form">
           <input type="text" v-model="newToAccountName" placeholder="Название счета (Куда)" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
           <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
@@ -486,16 +334,12 @@ const closePopup = () => {
         </div>
         
         <label>Компании/Физлица (Получатель)</label>
-        <select v-model="selectedToOwner" @change="e => e.target.value === '--CREATE_NEW--' && openCreateOwnerModal('to')" class="form-select">
-          <option :value="null">Автоматически</option>
-          <optgroup label="Компании">
-            <option v-for="comp in mainStore.companies" :key="comp._id" :value="`company-${comp._id}`">{{ comp.name }}</option>
-          </optgroup>
-          <optgroup label="Физлица">
-            <option v-for="ind in mainStore.individuals" :key="ind._id" :value="`individual-${ind._id}`">{{ ind.name }}</option>
-          </optgroup>
-          <option value="--CREATE_NEW--">[ + Создать... ]</option>
-        </select>
+        <BaseSelect
+          v-model="selectedToOwner"
+          :options="ownerOptions"
+          placeholder="Автоматически"
+          @change="handleToOwnerChange"
+        />
         
         <label>Дата поступления денег</label>
         <input type="date" v-model="editableDate" class="form-input" :min="minDateString" :max="maxDateString" />
@@ -503,7 +347,6 @@ const closePopup = () => {
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
-          <!-- Кнопка Сохранить/Добавить -->
           <button @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving">
             {{ buttonText }}
           </button>
@@ -546,12 +389,12 @@ const closePopup = () => {
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 600; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
-.form-input, .form-select { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; -webkit-appearance: none; -moz-appearance: none; appearance: none; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.form-select { background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
-select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; background-color: #f4f4f4; }
+.form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.form-select { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; -webkit-appearance: none; -moz-appearance: none; appearance: none; transition: border-color 0.2s ease, box-shadow 0.2s ease; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
+.form-input:focus, .form-select:focus { outline: none; border-color: #F36F3F; box-shadow: 0 0 0 2px rgba(243, 111, 63, 0.2); }
 .theme-edit .form-input:focus, .theme-edit .form-select:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
-.inline-create-form { display: flex; align-items: center; gap: 8px; }
+.inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; }
