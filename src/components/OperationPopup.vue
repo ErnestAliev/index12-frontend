@@ -3,16 +3,17 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
+import BaseSelect from './BaseSelect.vue'; // 🟢 Импорт кастомного селекта
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.4 - REVERT TO CLEAN ---
- * * ВЕРСИЯ: 18.4 - Откат к стандартному шрифту, чистое отображение
+ * * --- МЕТКА ВЕРСИИ: v18.5 - BASE SELECT INTEGRATION ---
+ * * ВЕРСИЯ: 18.5 - Внедрение кастомного BaseSelect
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Убран моноширинный шрифт (выглядел плохо).
- * 2. (LOGIC) Формат отображения упрощен до "Название — Сумма".
- * 3. (LOGIC) Знак минус убирается через Math.abs().
+ * 1. (UI) Стандартный select счета заменен на <BaseSelect>.
+ * 2. (LOGIC) Добавлен computed accountOptions для формирования списка опций с балансами.
+ * 3. (STYLE) Визуальное выравнивание названия (слева) и суммы (справа).
  */
 
 const mainStore = useMainStore();
@@ -100,6 +101,40 @@ const availableCategories = computed(() => {
     return name !== 'перевод' && name !== 'transfer';
   });
 });
+
+// 🟢 Computed для опций счетов (BaseSelect)
+const accountOptions = computed(() => {
+  // 1. Преобразуем счета
+  const options = mainStore.currentAccountBalances.map(acc => ({
+    value: acc._id,
+    label: acc.name,
+    // Формируем красивую строку баланса для правого края
+    rightText: `${formatBalance(Math.abs(acc.balance))} ₸`, 
+    isSpecial: false
+  }));
+  
+  // 2. Добавляем опцию создания
+  options.push({
+    value: '--CREATE_NEW--',
+    label: '[ + Создать новый счет ]',
+    rightText: '',
+    isSpecial: true
+  });
+  
+  return options;
+});
+
+// 🟢 Обработчик выбора в BaseSelect
+const handleAccountChange = (val) => {
+  if (val === '--CREATE_NEW--') {
+    // Сбрасываем значение (чтобы в селекте не висело "создать")
+    selectedAccountId.value = null; 
+    showAccountInput();
+  } else {
+    onAccountSelected(val);
+  }
+};
+
 
 // 🟢 ЛОГИКА ТРИГГЕРА ПРЕДОПЛАТЫ
 watch(selectedCategoryId, (newVal) => {
@@ -447,20 +482,16 @@ const buttonClass = computed(() => {
 
       <template v-if="props.type !== 'transfer' && !showCreateOwnerModal">
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
-        <select 
-          v-if="!isCreatingAccount" 
-          v-model="selectedAccountId" 
-          @change="e => e.target.value === '--CREATE_NEW--' ? showAccountInput() : onAccountSelected(e.target.value)" 
-          class="form-select" 
-        >
-          <option :value="null" disabled>Выберите счет</option>
-          <!-- 🟢 ВЕРНУЛИ СТАНДАРТНОЕ ОТОБРАЖЕНИЕ БЕЗ HACK'ОВ -->
-          <!-- Используем Math.abs(), чтобы убрать знак минус -->
-          <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
-            {{ acc.name }} &mdash; {{ formatBalance(Math.abs(acc.balance)) }} ₸
-          </option>
-          <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
-        </select>
+        
+        <!-- 🟢 ЗАМЕНА: Внедрение <BaseSelect> -->
+        <BaseSelect
+          v-if="!isCreatingAccount"
+          v-model="selectedAccountId"
+          :options="accountOptions"
+          placeholder="Выберите счет"
+          @change="handleAccountChange"
+        />
+        
         <div v-else class="inline-create-form">
           <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" />
           <button @click="saveNewAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
@@ -569,7 +600,6 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .theme-income .form-input:focus, .theme-income .form-select:focus { border-color: #28B8A0; box-shadow: 0 0 0 2px rgba(40, 184, 160, 0.2); }
 .theme-edit .form-input:focus, .theme-edit .form-select:focus { border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; background-color: #f4f4f4; }
-
 .inline-create-form { display: flex; align-items: center; gap: 8px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: #F36F3F; }
