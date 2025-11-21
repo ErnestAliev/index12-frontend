@@ -18,16 +18,16 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v15.7 - INSTANT OPERATION/TRANSFER CLOSE ---
- * * ВЕРСИЯ: 15.7 - Мгновенное закрытие окон операции и перевода
+ * * --- МЕТКА ВЕРСИИ: v16.0 - DRAG AUTO SCROLL ---
+ * * ВЕРСИЯ: 16.0 - Авто-скролл при перетаскивании
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Добавлены обработчики handleOperationSave и handleTransferSave.
- * 2. (LOGIC) API вызовы для создания/редактирования перенесены в HomeView (фоновая обработка).
+ * 1. (FEAT) Добавлена логика onContainerDragOver для авто-скролла.
+ * 2. (LOGIC) Скролл работает только если viewMode !== '12d'.
  */
 
-console.log('--- HomeView.vue v15.7 (Instant Ops Close) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v16.0 (Drag Auto Scroll) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -410,7 +410,75 @@ const handleOperationDelete = async (operation) => {
   handleClosePopup();
 };
 
+/* =================================================================
+   🟢 AUTO SCROLL LOGIC (v16.0)
+   Логика автоскролла при перетаскивании (Drag & Drop)
+   ================================================================= */
+const scrollInterval = ref(null);
+const isAutoScrolling = ref(false);
+
+const stopAutoScroll = () => {
+  if (scrollInterval.value) {
+    clearInterval(scrollInterval.value);
+    scrollInterval.value = null;
+  }
+  isAutoScrolling.value = false;
+};
+
+const onContainerDragOver = (e) => {
+  // Пропускаем, если 12 дней (нет скролла) или если уже идет анимация
+  if (viewMode.value === '12d') return;
+  if (!timelineGridRef.value) return;
+
+  // Получаем координаты контейнера
+  const rect = timelineGridRef.value.getBoundingClientRect();
+  const mouseX = e.clientX;
+  
+  // Зона чувствительности (например, 80px от края)
+  const threshold = 80;
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+
+  let direction = 0; // 0 = стоп, -1 = влево, 1 = вправо
+
+  if (mouseX < rect.left + threshold) {
+    direction = -1;
+  } else if (mouseX > rect.right - threshold) {
+    direction = 1;
+  }
+
+  if (direction !== 0) {
+    if (!isAutoScrolling.value) {
+      isAutoScrolling.value = true;
+      
+      // Запускаем интервал для плавного скролла
+      scrollInterval.value = setInterval(() => {
+        const nextVal = virtualStartIndex.value + direction;
+        // Проверка границ
+        if (nextVal >= 0 && nextVal <= maxVirtual) {
+          virtualStartIndex.value = nextVal;
+          rebuildVisibleDays();
+          updateScrollbarMetrics();
+        } else {
+          // Уперлись в край - стоп
+          stopAutoScroll();
+        }
+      }, 100); // Скорость скролла (мс)
+    }
+  } else {
+    // Курсор в центре - стоп скролл
+    stopAutoScroll();
+  }
+};
+
+const onContainerDragLeave = (e) => {
+  // Если ушли с контейнера (и это не дочерний элемент) - стоп
+  // Простая проверка: можно просто останавливать
+  stopAutoScroll();
+};
+
 const handleOperationDrop = async (dropData) => {
+  stopAutoScroll(); // 🟢 Остановка автоскролла при дропе
+
   const operation = dropData.operation;
   const oldDateKey = operation.dateKey; 
   const newDateKey = dropData.toDateKey;
@@ -869,7 +937,13 @@ onBeforeUnmount(() => {
       </aside>
 
       <main class="home-main-content" ref="mainContentRef">
-        <div class="timeline-grid-wrapper" ref="timelineGridRef">
+        <!-- 🟢 ДОБАВЛЕНО: @dragover для авто-скролла и @dragleave для отмены -->
+        <div 
+          class="timeline-grid-wrapper" 
+          ref="timelineGridRef"
+          @dragover="onContainerDragOver"
+          @dragleave="onContainerDragLeave"
+        >
           <div class="timeline-grid-content" ref="timelineGridContentRef">
             <DayColumn
               v-for="day in visibleDays"
