@@ -1,17 +1,18 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import { formatNumber as formatBalance } from '@/utils/formatters.js'; // 🟢 Импорт форматтера для баланса
+import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.1 - ACCOUNT BALANCE IN SELECT ---
- * * ВЕРСИЯ: 18.1 - Отображение баланса счета в выпадающем списке
+ * * --- МЕТКА ВЕРСИИ: v18.3 - MONOSPACE ALIGN ---
+ * * ВЕРСИЯ: 18.3 - Выравнивание баланса в селекте через моноширинный шрифт
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) В select счета добавлен вывод текущего баланса (Счет — 100 000 ₸).
- * 2. (LOGIC) Источник данных для select изменен на mainStore.currentAccountBalances.
+ * 1. (UI) Добавлен класс .select-monospace для инпутов выбора счета.
+ * 2. (LOGIC) Добавлена функция formatAccountOption для паддинга пробелами.
+ * 3. (FIX) Удален знак (-) если сумма отрицательная (по задаче), но formatBalance возвращает строку. Обработаем это.
  */
 
 const mainStore = useMainStore();
@@ -69,10 +70,36 @@ const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
 // --- FORMATTERS ---
-// Локальный форматтер для инпута суммы (маска ввода)
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+// 🟢 Функция для формирования строки опции (Название ..... Сумма)
+// TOTAL_CHARS подбирается под ширину инпута (примерно 45-50 символов для десктопа)
+const formatAccountOption = (acc) => {
+  // 1. Форматируем баланс без знака минус (как просили в задаче 3)
+  const absBalance = Math.abs(acc.balance);
+  const balanceStr = formatBalance(absBalance) + ' ₸';
+  
+  // 2. Название счета
+  let nameStr = acc.name;
+  
+  // 3. Целевая длина строки (в символах моноширинного шрифта)
+  // Учитывая паддинги инпута, пробуем 45 символов.
+  const TOTAL_LENGTH = 45; 
+  
+  // Если название слишком длинное, обрезаем
+  const maxNameLen = TOTAL_LENGTH - balanceStr.length - 2; // -2 на миниум пробелов
+  if (nameStr.length > maxNameLen) {
+    nameStr = nameStr.substring(0, maxNameLen - 1) + '…';
+  }
+  
+  // Вычисляем сколько пробелов нужно
+  const spacesCount = Math.max(1, TOTAL_LENGTH - nameStr.length - balanceStr.length);
+  const spaces = '\u00A0'.repeat(spacesCount); // Используем неразрывные пробелы
+  
+  return nameStr + spaces + balanceStr;
 };
 
 // --- ДАТА ---
@@ -276,7 +303,6 @@ const handleSave = () => {
 
   const isEdit = !!props.operationToEdit && !isCloneMode.value;
   
-  // 🟢 Эмитим событие сохранения
   emit('save', {
       mode: isEdit ? 'edit' : 'create',
       id: isEdit ? props.operationToEdit._id : null,
@@ -448,11 +474,16 @@ const buttonClass = computed(() => {
 
       <template v-if="props.type !== 'transfer' && !showCreateOwnerModal">
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
-        <select v-if="!isCreatingAccount" v-model="selectedAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showAccountInput() : onAccountSelected(e.target.value)" class="form-select">
+        <select 
+          if="!isCreatingAccount" 
+          v-model="selectedAccountId" 
+          @change="e => e.target.value === '--CREATE_NEW--' ? showAccountInput() : onAccountSelected(e.target.value)" 
+          class="form-select select-monospace" 
+        >
           <option :value="null" disabled>Выберите счет</option>
-          <!-- 🟢 ИСПОЛЬЗУЕМ currentAccountBalances ДЛЯ ОТОБРАЖЕНИЯ БАЛАНСА -->
+          <!-- 🟢 ИСПОЛЬЗУЕМ ФУНКЦИЮ ФОРМАТИРОВАНИЯ С ПАДДИНГОМ -->
           <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
-            {{ acc.name }} &mdash; {{ formatBalance(acc.balance) }} ₸
+            {{ formatAccountOption(acc) }}
           </option>
           <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
         </select>
@@ -564,6 +595,14 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .theme-income .form-input:focus, .theme-income .form-select:focus { border-color: #28B8A0; box-shadow: 0 0 0 2px rgba(40, 184, 160, 0.2); }
 .theme-edit .form-input:focus, .theme-edit .form-select:focus { border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 select option[value="--CREATE_NEW--"] { font-style: italic; color: #007AFF; background-color: #f4f4f4; }
+
+/* 🟢 МОНОШИРИННЫЙ ШРИФТ ДЛЯ SELECT СЧЕТОВ */
+.select-monospace {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px; /* Чуть меньше, чтобы влезло */
+  letter-spacing: -0.5px; /* Чуть плотнее */
+}
+
 .inline-create-form { display: flex; align-items: center; gap: 8px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: #F36F3F; }
