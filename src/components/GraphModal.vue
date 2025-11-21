@@ -1,11 +1,11 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.9 - Header Text Fix ---
- * * ВЕРСИЯ: 13.9 - Убрано слово "Графики" из заголовка
- * ДАТА: 2025-11-18
+ * * --- МЕТКА ВЕРСИИ: v13.10 - RANGE TOTAL FIX ---
+ * * ВЕРСИЯ: 13.10 - Учет начального баланса в Range Total
+ * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) В `.modal-header h2` убрано старое название "Графики".
- * 2. (UI) Теперь заголовок состоит только из информации о счетах и сумме.
+ * 1. (LOGIC) В rangeTotal добавлен расчет начального баланса счетов (mainStore.accounts).
+ * 2. (LOGIC) В сумму добавлено поле prepayment (предоплаты), чтобы цифра сходилась с графиком.
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
@@ -33,15 +33,23 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// Расчет общей суммы за период
+// Расчет общей суммы за период (включая начальные остатки)
 const rangeTotal = computed(() => {
-  if (!visibleDays.value || visibleDays.value.length === 0) return 0;
-  let total = 0;
+  // 1. Считаем сумму начальных балансов всех счетов
+  const initialBalanceSum = (mainStore.accounts || []).reduce((acc, item) => acc + (item.initialBalance || 0), 0);
+
+  if (!visibleDays.value || visibleDays.value.length === 0) return initialBalanceSum;
+  
+  let total = initialBalanceSum;
+  
   for (const day of visibleDays.value) {
     const dateKey = _getDateKey(day.date);
     const data = mainStore.dailyChartData?.get(dateKey);
     if (data) {
-      total += (data.income || 0) - (data.expense || 0);
+      // Суммируем Доход + Предоплату и вычитаем Расход
+      const income = (data.income || 0) + (data.prepayment || 0);
+      const expense = (data.expense || 0);
+      total += income - expense;
     }
   }
   return total;
@@ -139,7 +147,6 @@ onMounted(() => {
       
       <div class="modal-header">
         <h2>
-          <!-- 🟢 v13.9: Убрано слово "Графики", оставлен только subtitle -->
           <span class="header-subtitle">
             <span class="text-grey">{{ accountsInfoPart }}</span>
             <span class="text-grey separator"> : </span>
@@ -208,7 +215,6 @@ onMounted(() => {
   align-items: baseline; 
 }
 
-/* 🟢 v13.9: Обновлен margin-left, так как это теперь первый элемент */
 .header-subtitle {
   font-size: 0.85em;
   margin-left: 0; 
