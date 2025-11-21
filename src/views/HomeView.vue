@@ -18,16 +18,16 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.0 - DRAG AUTO SCROLL ---
- * * ВЕРСИЯ: 16.0 - Авто-скролл при перетаскивании
+ * * --- МЕТКА ВЕРСИИ: v16.1 - SMART VIEW SWITCH ---
+ * * ВЕРСИЯ: 16.1 - Умное переключение режимов (без сброса к центру)
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлена логика onContainerDragOver для авто-скролла.
- * 2. (LOGIC) Скролл работает только если viewMode !== '12d'.
+ * 1. (LOGIC) onChangeView теперь сохраняет позицию скролла (дату левого края).
+ * 2. (LOGIC) Исправлен расчет virtualStartIndex при смене viewMode.
  */
 
-console.log('--- HomeView.vue v16.0 (Drag Auto Scroll) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v16.1 (Smart View Switch) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -779,11 +779,42 @@ const centerToday = () => {
   updateScrollbarMetrics();
 };
 
+/* ===================== 🟢 MODIFIED: onChangeView ===================== */
+// v16.1 - Умное переключение без сброса к центру
 const onChangeView = async (newView) => {
   console.log(`[HomeView] onChangeView: ${newView}`);
+
+  // 1. Запоминаем дату начала текущего вида (левый край)
+  const currentStartDate = visibleDays.value[0]?.date || new Date(today.value);
+
+  // 2. Меняем режим
   viewMode.value = newView;
-  await nextTick();
-  centerToday();
+  await nextTick(); // Ждем пересчета computed свойств (totalDays и т.д.)
+
+  // 3. Вычисляем смещение в днях от "сегодня" до "сохраненного левого края"
+  // (Если мы были в прошлом, diff < 0. В будущем diff > 0)
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay);
+
+  // 4. Определяем индекс "сегодня" в НОВОЙ сетке
+  // Для '12d' это фиксированный центр, для остальных - середина диапазона
+  const newGlobalTodayIndex = (viewMode.value === '12d')
+      ? CENTER_INDEX
+      : Math.floor(totalDays.value / 2);
+
+  // 5. Вычисляем целевой virtualStartIndex
+  let targetIndex = newGlobalTodayIndex + diffDays;
+
+  // 6. Ограничиваем границами новой области (clamp)
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual));
+
+  // 7. Применяем
+  virtualStartIndex.value = targetIndex;
+
+  // 8. Перестраиваем дни и обновляем UI
+  rebuildVisibleDays();
+
   await nextTick();
   setTimeout(() => {
     updateScrollbarMetrics();
