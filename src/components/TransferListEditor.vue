@@ -190,7 +190,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       <p class="editor-hint">Редактируйте параметры переводов. Нажмите на корзину для удаления.</p>
       
       <div class="create-section">
-        <!-- 🟢 ОБНОВЛЕННАЯ КНОПКА СОЗДАНИЯ -->
         <button class="btn-add-new-transfer" @click="openCreatePopup">
           + Создать перевод
         </button>
@@ -273,11 +272,10 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 
 .create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 
-/* 🟢 НОВЫЙ СТИЛЬ ДЛЯ КНОПКИ СОЗДАНИЯ ПЕРЕВОДА */
 .btn-add-new-transfer { 
   width: 100%; padding: 12px; 
   border: 1px solid transparent; 
-  background-color: #2F3340; /* Темный цвет */
+  background-color: #2F3340; 
   border-radius: 8px; 
   color: #fff; 
   font-size: 15px; cursor: pointer; transition: all 0.2s; 
@@ -322,4 +320,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
 .progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
+
+/* 🟢 ИЗМЕНЕНИЕ: Добавлен класс .total-income на всякий случай */
+.total-income { color: #1a1a1a; font-size: 1.3em; }
 </style>
