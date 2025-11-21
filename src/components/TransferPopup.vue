@@ -2,20 +2,22 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
-import { formatNumber as formatBalance } from '@/utils/formatters.js'; // 🟢 Импорт форматтера для баланса
+import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
+import BaseSelect from './BaseSelect.vue'; // 🟢 Импорт кастомного селекта
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.2 - ACCOUNT BALANCE IN SELECT ---
- * * ВЕРСИЯ: 16.2 - Отображение баланса счета в выпадающих списках перевода
+ * * --- МЕТКА ВЕРСИИ: v16.3 - BASE SELECT INTEGRATION ---
+ * * ВЕРСИЯ: 16.3 - Внедрение кастомного BaseSelect в перевод
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) В select счетов (Откуда/Куда) добавлен вывод текущего баланса.
- * 2. (LOGIC) Источник данных для select изменен на mainStore.currentAccountBalances.
+ * 1. (UI) Select'ы счетов (Откуда/Куда) заменены на <BaseSelect>.
+ * 2. (LOGIC) Добавлен computed accountOptions.
+ * 3. (STYLE) Визуальное выравнивание названия (слева) и суммы (справа).
  */
 
-console.log('--- TransferPopup.vue v16.2 (Balance in Select) ЗАГРУЖЕН ---');
+console.log('--- TransferPopup.vue v16.3 (BaseSelect Integration) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -98,6 +100,44 @@ const onAmountInput = (event) => {
   });
 };
 
+// 🟢 Computed для опций счетов (BaseSelect)
+const accountOptions = computed(() => {
+  const options = mainStore.currentAccountBalances.map(acc => ({
+    value: acc._id,
+    label: acc.name,
+    rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
+    isSpecial: false
+  }));
+  
+  options.push({
+    value: '--CREATE_NEW--',
+    label: '[ + Создать новый счет ]',
+    rightText: '',
+    isSpecial: true
+  });
+  
+  return options;
+});
+
+// 🟢 Обработчики BaseSelect
+const handleFromAccountChange = (val) => {
+  if (val === '--CREATE_NEW--') {
+    fromAccountId.value = null;
+    showFromAccountInput();
+  } else {
+    onFromAccountSelected(val);
+  }
+};
+
+const handleToAccountChange = (val) => {
+  if (val === '--CREATE_NEW--') {
+    toAccountId.value = null;
+    showToAccountInput();
+  } else {
+    onToAccountSelected(val);
+  }
+};
+
 // --- AUTO-SELECT LOGIC ---
 const onFromAccountSelected = (accountId) => {
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
@@ -135,7 +175,6 @@ const onToAccountSelected = (accountId) => {
 
 // --- MOUNTED ---
 onMounted(async () => {
-  // 🟢 Автоматическая установка категории "Перевод"
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
   if (!transferCategory) {
     try {
@@ -166,7 +205,6 @@ onMounted(async () => {
       selectedToOwner.value = `individual-${iId}`;
     }
     
-    // Всегда используем ID категории "Перевод"
     categoryId.value = defaultCategoryId;
 
     if (transfer.date) {
@@ -193,15 +231,12 @@ const buttonText = computed(() => {
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 
 const onDeleteConfirmed = async () => {
-  // Для удаления тоже делаем мгновенное закрытие
   const opToDelete = props.transferToEdit;
   emit('close'); 
-  // emit('transfer-complete', { dateKey: opToDelete.dateKey }); // Можно не эмитить, если стор сам обновляет
   
   try {
     if (!opToDelete?._id) return;
     await mainStore.deleteOperation(opToDelete);
-    // Балансы счетов тоже нужно обновить после удаления перевода
     await mainStore.fetchAllEntities();
   } catch (e) { 
     console.error(e);
@@ -350,7 +385,7 @@ const handleSave = async () => {
     return;
   }
 
-  // 2. ПОДГОТОВКА ДАННЫХ (Сохраняем локально, т.к. пропсы могут пропасть при закрытии)
+  // 2. ПОДГОТОВКА ДАННЫХ
   const isEdit = !!props.transferToEdit;
   const transferId = props.transferToEdit?._id;
   const isClone = isCloneMode.value;
@@ -383,10 +418,6 @@ const handleSave = async () => {
       categoryId: categoryId.value 
   };
 
-  // 3. МГНОВЕННОЕ ЗАКРЫТИЕ (Optimistic UI)
-  // (Эмитим просто событие сохранения в родитель, 
-  //  но в этом компоненте мы уже эмитим 'save' с payload 
-  //  в HomeView, который обрабатывает логику)
   emit('save', {
       mode: (!isEdit || isClone) ? 'create' : 'edit',
       id: (!isEdit || isClone) ? null : transferId,
@@ -411,14 +442,15 @@ const closePopup = () => {
         <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
         
         <label>Со счета *</label>
-        <select v-if="!isCreatingFromAccount" v-model="fromAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showFromAccountInput() : onFromAccountSelected(e.target.value)" class="form-select">
-          <option :value="null" disabled>Выберите счет</option>
-          <!-- 🟢 БАЛАНС СЧЕТА ОТПРАВИТЕЛЯ -->
-          <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
-            {{ acc.name }} &mdash; {{ formatBalance(acc.balance) }} ₸
-          </option>
-          <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
-        </select>
+        <!-- 🟢 Внедрение BaseSelect для отправителя -->
+        <BaseSelect
+          v-if="!isCreatingFromAccount"
+          v-model="fromAccountId"
+          :options="accountOptions"
+          placeholder="Выберите счет"
+          @change="handleFromAccountChange"
+        />
+        
         <div v-else class="inline-create-form">
           <input type="text" v-model="newFromAccountName" placeholder="Название счета (От)" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
           <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
@@ -438,14 +470,15 @@ const closePopup = () => {
         </select>
 
         <label>На счет *</label>
-        <select v-if="!isCreatingToAccount" v-model="toAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showToAccountInput() : onToAccountSelected(e.target.value)" class="form-select">
-          <option :value="null" disabled>Выберите счет</option>
-          <!-- 🟢 БАЛАНС СЧЕТА ПОЛУЧАТЕЛЯ -->
-          <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
-            {{ acc.name }} &mdash; {{ formatBalance(acc.balance) }} ₸
-          </option>
-          <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
-        </select>
+        <!-- 🟢 Внедрение BaseSelect для получателя -->
+        <BaseSelect
+          v-if="!isCreatingToAccount"
+          v-model="toAccountId"
+          :options="accountOptions"
+          placeholder="Выберите счет"
+          @change="handleToAccountChange"
+        />
+        
         <div v-else class="inline-create-form">
           <input type="text" v-model="newToAccountName" placeholder="Название счета (Куда)" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
           <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
