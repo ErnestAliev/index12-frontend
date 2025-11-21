@@ -4,18 +4,6 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v21.3 - FILTER LOGIC FIX ---
- * * ВЕРСИЯ: 21.3 - Исправление логики фильтрации категорий (Предоплата)
- * * ДАТА: 2025-11-21
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В `filteredItems` обновлена проверка категории.
- * Если выбрана категория, являющаяся "Предоплатой" (по ID), фильтр теперь
- * проверяет `isSystemPrepayment(item)` или совпадение `prepaymentId`.
- * 2. (LOGIC) Функция `isSystemPrepayment` теперь используется и внутри фильтра.
- */
-
 const props = defineProps({
   title: { type: String, default: 'Редактировать операции' },
   type: { type: String, required: true }, // 'income' | 'expense'
@@ -46,8 +34,6 @@ const itemToDelete = ref(null);
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
 
-// Формируем список категорий для фильтра
-// Включаем ВСЕ категории (в т.ч. Предоплату), исключаем только Перевод
 const categories = computed(() => {
   return mainStore.categories.filter(c => {
       const name = c.name.toLowerCase().trim();
@@ -81,12 +67,10 @@ const getOwnerId = (compId, indId) => {
 };
 
 const isSystemPrepayment = (item) => {
-    const op = item.originalOp || item; // Поддержка и обертки, и сырого объекта
+    const op = item.originalOp || item;
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
-    
-    // Проверка по ID категории или ID предоплаты или флагу в объекте категории
     return (catId && prepayIds.includes(catId)) || 
            (prepId && prepayIds.includes(prepId)) || 
            (op.categoryId && op.categoryId.isPrepayment);
@@ -99,11 +83,9 @@ const loadOperations = () => {
     if (op.type !== props.type) return false;
     if (op.isTransfer) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
-    
     if (props.filterMode === 'prepayment_only') {
         return isSystemPrepayment(op);
     }
-
     return true;
   });
 
@@ -111,21 +93,17 @@ const loadOperations = () => {
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .map(op => {
       const ownerId = getOwnerId(op.companyId, op.individualId);
-      
       return {
         _id: op._id,
         originalOp: op,
         date: toInputDate(op.date),
         amount: Math.abs(op.amount),
         amountFormatted: formatNumber(Math.abs(op.amount)),
-        
         accountId: op.accountId?._id || op.accountId,
         ownerId: ownerId,
-        
         contractorId: op.contractorId?._id || op.contractorId,
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
-        
         isDeleted: false
       };
     });
@@ -147,26 +125,17 @@ const filteredItems = computed(() => {
     if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
     if (filters.value.account && item.accountId !== filters.value.account) return false;
     if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
-    
-    // 🟢 ИСПРАВЛЕННАЯ ЛОГИКА ФИЛЬТРАЦИИ ПО КАТЕГОРИИ
     if (filters.value.category) {
         const selectedCatId = filters.value.category;
         const prepayIds = mainStore.getPrepaymentCategoryIds;
-        
-        // Если выбранная в фильтре категория — это "Предоплата" (любая из системных)
         const isSelectedCategoryPrepayment = prepayIds.includes(selectedCatId);
-
         if (isSelectedCategoryPrepayment) {
-            // Проверяем, является ли текущая операция предоплатой (любым способом)
             if (!isSystemPrepayment(item)) return false;
         } else {
-            // Обычная проверка на совпадение ID категории
             if (item.categoryId !== selectedCatId) return false;
         }
     }
-    
     if (filters.value.project && item.projectId !== filters.value.project) return false;
-
     return true;
   });
 });
@@ -501,7 +470,10 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .total-item { font-size: 16px; color: #333; }
 .total-label { margin-right: 8px; color: #666; }
 .total-value { font-weight: 700; }
-.total-income { color: var(--color-primary); }
+
+/* 🟢 ИЗМЕНЕНИЕ: Черный цвет и увеличенный шрифт */
+.total-income { color: #1a1a1a; font-size: 1.3em; }
+
 .total-expense { color: var(--color-danger); }
 .total-prepayment { color: #FF9D00; }
 
