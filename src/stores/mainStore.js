@@ -1,14 +1,3 @@
-/**
- * * --- МЕТКА ВЕРСИИ: v21.5 - MOVE OPS AWAIT FIX ---
- * * ВЕРСИЯ: 21.5 - Синхронное ожидание перемещения
- * * ДАТА: 2025-11-20
- *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) moveOperation теперь ждет (await) завершения запроса к API.
- * Это предотвращает перезапись локального кэша старыми данными при немедленном fetch.
- * 2. (FIX) updateProjectionFromCalculationData вызывается после успешного API запроса.
- */
-
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
@@ -32,11 +21,24 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v21.5 (Move Ops Await Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v22.0 (Snapshot Integration) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
   
+  // 🟢 НОВОЕ СОСТОЯНИЕ: СНАПШОТ
+  // Хранит готовые цифры "из прошлого" (от сервера)
+  const snapshot = ref({
+    totalBalance: 0,
+    accountBalances: {},
+    companyBalances: {},
+    individualBalances: {},
+    contractorBalances: {},
+    projectBalances: {},
+    categoryTotals: {},
+    timestamp: null
+  });
+
   const displayCache = ref({});
   const calculationCache = ref({});
   const accounts    = ref([]);
@@ -70,7 +72,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer';
   };
 
-  // Поиск системных категорий для расчетов
   const getPrepaymentCategoryIds = computed(() => {
     return categories.value
       .filter(c => {
@@ -199,7 +200,26 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // --- DAILY CHART DATA ---
+  // 🟢 НОВАЯ ЛОГИКА: БУДУЩИЕ ОПЕРАЦИИ
+  // Это операции, которые произошли ПОСЛЕ момента снапшота.
+  // Серверный снапшот включает всё до "сейчас". Значит, FutureOps - это всё, что > snapshot.timestamp.
+  const futureOps = computed(() => {
+    if (!snapshot.value.timestamp) return [];
+    const snapshotTime = new Date(snapshot.value.timestamp).getTime();
+    
+    // Берем конечную дату прогноза
+    let endDate;
+    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate).getTime(); } 
+    else { endDate = Date.now() + 365*24*60*60*1000; } // Fallback на год вперед
+
+    return allOperationsFlat.value.filter(op => {
+      if (!op?.date) return false;
+      const opTime = new Date(op.date).getTime();
+      return opTime > snapshotTime && opTime <= endDate;
+    });
+  });
+
+  // --- DAILY CHART DATA (ОСТАВЛЯЕМ КАК ЕСТЬ ДЛЯ ВИЗУАЛИЗАЦИИ ГРАФИКА) ---
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIds = getPrepaymentCategoryIds.value;
@@ -234,6 +254,8 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateA = _parseDateKey(a); const dateB = _parseDateKey(b);
       return dateA.getTime() - dateB.getTime();
     });
+    // Баланс для графика берем приблизительный (Running), но для карточек используем Snapshot.
+    // Можно было бы начать с snapshot.totalBalance и отнимать назад, но для графика оставим как есть.
     let running = totalInitialBalance.value || 0;
     for (const dateKey of sortedDateKeys) {
       const rec = byDateKey[dateKey];
@@ -249,8 +271,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return chart;
   });
 
-  // ... Rest of the store getters/actions ...
-  
   const displayOperationsFlat = computed(() => {
     const displayOps = [];
     Object.values(displayCache.value).forEach(dayOps => {
@@ -263,33 +283,32 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
-  const currentOps = computed(() =>
-    allOperationsFlat.value.filter(op => {
-      if (!op?.dateKey) return false;
-      const opDate = _parseDateKey(op.dateKey);
-      const opYear = opDate.getFullYear();
-      const opDoy = _getDayOfYear(opDate);
-      const currentDoy = todayDayOfYear.value || 0;
-      const currentYearVal = currentYear.value;
-      return opYear < currentYearVal || (opYear === currentYearVal && opDoy <= currentDoy);
-    })
-  );
-
-  const opsUpToForecast = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); }
-    
+  // Текущие операции для списков (все, что до снапшота или включено в него)
+  const currentOps = computed(() => {
+    const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
     return allOperationsFlat.value.filter(op => {
-       if (!op?.dateKey) return false;
-       const opDate = _parseDateKey(op.dateKey);
-       return opDate <= endDate;
+        if (!op?.date) return false;
+        return new Date(op.date) <= now;
     });
   });
 
-  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ ---
+  const opsUpToForecast = computed(() => {
+    // Все операции до конца прогноза
+    return [...currentOps.value, ...futureOps.value];
+  });
+
+  // --- 🟢 ACTION: ЗАГРУЗКА СНАПШОТА ---
+  async function fetchSnapshot() {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/snapshot`);
+      snapshot.value = res.data;
+      // console.log('[MainStore] Snapshot loaded:', snapshot.value);
+    } catch (e) {
+      console.error('Failed to fetch snapshot', e);
+    }
+  }
+
+  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ (БЕЗ ИЗМЕНЕНИЙ ЛОГИКИ, НО НА НОВЫХ СПИСКАХ) ---
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
@@ -371,280 +390,199 @@ export const useMainStore = defineStore('mainStore', () => {
   // --- СПИСКИ ОПЕРАЦИЙ ---
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
+    return transfers.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   });
   const currentIncomes = computed(() => {
     const incomes = currentOps.value.filter(op => !isTransfer(op) && op.type === 'income');
-    return incomes.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
+    return incomes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   });
   const currentExpenses = computed(() => {
     const expenses = currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
-    return expenses.sort((a, b) => _parseDateKey(b.dateKey).getTime() - _parseDateKey(a.dateKey).getTime());
-  });
-
-  const futureOps = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); }
-    const todayDate = new Date(currentYearVal, 0, baseToday);
-    return allOperationsFlat.value.filter(op => {
-      if (!op?.dateKey) return false;
-      const opDate = _parseDateKey(op.dateKey);
-      return opDate > todayDate && opDate <= endDate;
-    });
+    return expenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   });
 
   const futureTransfers = computed(() => {
     const transfers = futureOps.value.filter(op => isTransfer(op));
-    return transfers.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
+    return transfers.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   });
   const futureIncomes = computed(() => {
     const incomes = futureOps.value.filter(op => !isTransfer(op) && op.type === 'income');
-    return incomes.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
+    return incomes.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   });
   const futureExpenses = computed(() => {
     const expenses = futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense');
-    return expenses.sort((a, b) => _parseDateKey(a.dateKey).getTime() - _parseDateKey(b.dateKey).getTime());
+    return expenses.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   });
 
   const getCategoryById = (id) => {
     return categories.value.find(c => c._id === id);
   };
 
-  const currentCategoryBreakdowns = computed(() => {
-    const map = {};
-    for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const key = `cat_${op.categoryId._id}`;
-      if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      if (op.type === 'income') map[key].income += op.amount || 0;
-      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
-      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
-    }
-    return map;
-  });
+  // 🟢 НОВАЯ ЛОГИКА: КАТЕГОРИИ (СНАПШОТ)
+  const currentCategoryBreakdowns = computed(() => snapshot.value.categoryTotals || {});
 
   const futureCategoryBreakdowns = computed(() => {
-    const map = {};
-    for (const c of categories.value) map[`cat_${c._id}`] = { income:0, expense:0, total:0 };
+    const map = JSON.parse(JSON.stringify(snapshot.value.categoryTotals || {}));
+    // Проходим по будущим операциям и добавляем к карте
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const key = `cat_${op.categoryId._id}`;
-      if (!map[key]) map[key] = { income:0, expense:0, total:0 };
-      if (op.type === 'income') map[key].income += op.amount || 0;
-      else if (op.type === 'expense') map[key].expense += Math.abs(op.amount || 0);
-      map[key].total += (op.type === 'income' ? op.amount : -Math.abs(op.amount)) || 0;
+      if (!op?.categoryId) continue;
+      const cId = op.categoryId._id || op.categoryId;
+      
+      if (!map[cId]) map[cId] = { income: 0, expense: 0, total: 0 };
+      const amt = Math.abs(op.amount || 0);
+      
+      if (op.type === 'income') {
+          map[cId].income += (op.amount || 0);
+          map[cId].total += (op.amount || 0);
+      } else if (op.type === 'expense') {
+          map[cId].expense += amt;
+          map[cId].total -= amt;
+      }
     }
-    return map;
+    // Переформатируем ключи для виджетов (cat_ID)
+    const widgetMap = {};
+    Object.keys(map).forEach(id => { widgetMap[`cat_${id}`] = map[id]; });
+    return widgetMap;
   });
 
   const currentCategoryBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const id = op.categoryId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
-    }
-    return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    // Баланс категории = Total из снепшота
+    return categories.value.map(c => ({
+        ...c,
+        balance: (snapshot.value.categoryTotals[c._id]?.total || 0)
+    }));
   });
 
   const futureCategoryBalances = computed(() => {
-    const bal = {};
-    const current = currentCategoryBalances.value;
-    for (const c of current) { bal[c._id] = c.balance || 0; }
-    
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.categoryId?._id) continue;
-      const id = op.categoryId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op.type === 'income' ? (op.amount||0) : -(Math.abs(op.amount||0)));
-    }
-    return categories.value.map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    const breakdown = futureCategoryBreakdowns.value;
+    return categories.value.map(c => ({
+        ...c,
+        balance: (breakdown[`cat_${c._id}`]?.total || 0)
+    }));
   });
 
   const totalInitialBalance = computed(() =>
     (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
   );
   
-  const _applyTransferToBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromAccountId?._id || op?.fromAccountId || null;
-    const toId   = op?.toAccountId?._id   || op?.toAccountId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId)   { if (bal[toId]   === undefined) bal[toId]   = 0; bal[toId]   += amt; }
+  // Helper для расчета будущих балансов сущностей
+  const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
+      const futureMap = { ...snapshotMap };
+      
+      for (const op of futureOps.value) {
+          const amt = Math.abs(op.amount || 0);
+          
+          if (isTransfer(op)) {
+              // Логика перевода
+              let fromId, toId;
+              if (entityIdField === 'accountId') { fromId = op.fromAccountId; toId = op.toAccountId; }
+              else if (entityIdField === 'companyId') { fromId = op.fromCompanyId; toId = op.toCompanyId; }
+              else if (entityIdField === 'individualId') { fromId = op.fromIndividualId; toId = op.toIndividualId; }
+              else continue; // Контрагенты и проекты не участвуют в переводах
+
+              // Извлекаем ID если это объект
+              fromId = fromId?._id || fromId;
+              toId = toId?._id || toId;
+
+              if (fromId) {
+                  if (futureMap[fromId] === undefined) futureMap[fromId] = 0;
+                  futureMap[fromId] -= amt;
+              }
+              if (toId) {
+                  if (futureMap[toId] === undefined) futureMap[toId] = 0;
+                  futureMap[toId] += amt;
+              }
+          } else {
+              // Логика доход/расход
+              let id = op[entityIdField];
+              id = id?._id || id;
+              if (!id) continue;
+
+              if (futureMap[id] === undefined) futureMap[id] = 0;
+              
+              if (op.type === 'income') futureMap[id] += (op.amount || 0);
+              else futureMap[id] -= amt;
+          }
+      }
+      return futureMap;
   };
 
+  // 🟢 НОВАЯ ЛОГИКА: СЧЕТА
   const currentAccountBalances = computed(() => {
-    const bal = {};
-    for (const a of accounts.value) bal[a._id] = a.initialBalance || 0;
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (!op?.accountId?._id) continue;
-      const id = op.accountId._id;
-      if (bal[id] === undefined) bal[id] = 0;
-      bal[id] += (op.amount || 0);
-    }
-    return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
+    return accounts.value.map(a => ({
+        ...a,
+        balance: snapshot.value.accountBalances[a._id] || 0
+    }));
   });
   
   const futureAccountBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentAccountBalances.value;
-    for (const account of currentBalances) { bal[account._id] = account.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) { _applyTransferToBalances(bal, op); continue; }
-      if (!op?.accountId?._id) continue;
-      const id = op.accountId._id;
-      if (bal[id] === undefined) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return accounts.value.map(a => ({ ...a, balance: bal[a._id] || 0 }));
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
+    return accounts.value.map(a => ({ ...a, balance: futureMap[a._id] || 0 }));
   });
   
-  const _applyTransferToCompanyBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromCompanyId?._id || op?.fromCompanyId || null;
-    const toId   = op?.toCompanyId?._id   || op?.toCompanyId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
-  };
-
+  // 🟢 НОВАЯ ЛОГИКА: КОМПАНИИ
   const currentCompanyBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
-      if (!op?.companyId?._id) continue;
-      const id = op.companyId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    return companies.value.map(c => ({
+        ...c,
+        balance: snapshot.value.companyBalances[c._id] || 0
+    }));
   });
   
   const futureCompanyBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentCompanyBalances.value;
-    for (const company of currentBalances) { bal[company._id] = company.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) { _applyTransferToCompanyBalances(bal, op); continue; }
-      if (!op?.companyId?._id) continue;
-      const id = op.companyId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (companies.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.companyBalances, 'companyId');
+    return companies.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
   });
 
-  const _applyTransferToIndividualBalances = (bal, op) => {
-    const amt = Math.abs(Number(op?.amount) || 0);
-    const fromId = op?.fromIndividualId?._id || op?.fromIndividualId || null;
-    const toId   = op?.toIndividualId?._id   || op?.toIndividualId   || null;
-    if (fromId) { if (bal[fromId] === undefined) bal[fromId] = 0; bal[fromId] -= amt; }
-    if (toId) { if (bal[toId] === undefined) bal[toId] = 0; bal[toId] += amt; }
-  };
-
+  // 🟢 НОВАЯ ЛОГИКА: КОНТРАГЕНТЫ
   const currentContractorBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue; 
-      if (!op?.contractorId?._id) continue;
-      const id = op.contractorId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    return contractors.value.map(c => ({
+        ...c,
+        balance: snapshot.value.contractorBalances[c._id] || 0
+    }));
   });
+  
   const futureContractorBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentContractorBalances.value;
-    for (const contractor of currentBalances) { bal[contractor._id] = contractor.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.contractorId?._id) continue;
-      const id = op.contractorId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (contractors.value||[]).map(c => ({ ...c, balance: bal[c._id] || 0 }));
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.contractorBalances, 'contractorId');
+    return contractors.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
   });
 
+  // 🟢 НОВАЯ ЛОГИКА: ПРОЕКТЫ
   const currentProjectBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.projectId?._id) continue;
-      const id = op.projectId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
+    return projects.value.map(p => ({
+        ...p,
+        balance: snapshot.value.projectBalances[p._id] || 0
+    }));
   });
+  
   const futureProjectBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentProjectBalances.value;
-    for (const project of currentBalances) { bal[project._id] = project.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) continue;
-      if (!op?.projectId?._id) continue;
-      const id = op.projectId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (projects.value||[]).map(p => ({ ...p, balance: bal[p._id] || 0 }));
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.projectBalances, 'projectId');
+    return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
   });
 
+  // 🟢 НОВАЯ ЛОГИКА: ФИЗЛИЦА
   const currentIndividualBalances = computed(() => {
-    const bal = {};
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
-      if (!op?.individualId?._id) continue;
-      const id = op.individualId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
+    return individuals.value.map(i => ({
+        ...i,
+        balance: snapshot.value.individualBalances[i._id] || 0
+    }));
   });
+  
   const futureIndividualBalances = computed(() => {
-    const bal = {};
-    const currentBalances = currentIndividualBalances.value;
-    for (const individual of currentBalances) { bal[individual._id] = individual.balance || 0; }
-    for (const op of futureOps.value) {
-      if (isTransfer(op)) { _applyTransferToIndividualBalances(bal, op); continue; }
-      if (!op?.individualId?._id) continue;
-      const id = op.individualId._id;
-      if (!bal[id]) bal[id] = 0;
-      bal[id] += (op?.amount || 0);
-    }
-    return (individuals.value||[]).map(i => ({ ...i, balance: bal[i._id] || 0 }));
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.individualBalances, 'individualId');
+    return individuals.value.map(i => ({ ...i, balance: futureMap[i._id] || 0 }));
   });
 
-  const currentTotalBalance = computed(() => {
-    const opsTotal = currentOps.value.reduce((s,op)=> {
-      if (isTransfer(op)) return s;
-      return s + (op?.amount || 0);
-    }, 0);
-    return (totalInitialBalance.value || 0) + opsTotal;
-  });
+  // 🟢 НОВАЯ ЛОГИКА: ОБЩИЙ ИТОГ
+  const currentTotalBalance = computed(() => snapshot.value.totalBalance || 0);
 
   const futureTotalBalance = computed(() => {
-    const baseToday = todayDayOfYear.value || 0;
-    const currentYearVal = currentYear.value;
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate); } 
-    else { endDate = new Date(currentYearVal, 0, baseToday); }
-    const todayDate = new Date(currentYearVal, 0, baseToday);
-    if (endDate <= todayDate) { return currentTotalBalance.value || 0; }
-    let total = currentTotalBalance.value || 0;
-    for (const op of futureOps.value) { 
-       if (!isTransfer(op)) total += (op?.amount || 0); 
+    let total = currentTotalBalance.value;
+    for (const op of futureOps.value) {
+        if (isTransfer(op)) continue; // Переводы внутри системы не меняют Total
+        const amt = Math.abs(op.amount || 0);
+        if (op.type === 'income') total += (op.amount || 0);
+        else total -= amt;
     }
     return total;
   });
@@ -654,8 +592,13 @@ export const useMainStore = defineStore('mainStore', () => {
     const base = new Date(today);
     base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
+    
+    // Future Income/Expense Sums for visualization (optional, but good to have)
+    // We calculate strictly within the projection window
     let futureIncomeSum = 0;
     let futureExpenseSum = 0;
+    
+    // We use allOperationsFlat here just for the sum calculation within range
     const opsInRange = allOperationsFlat.value.filter(op => {
         if (!op?.dateKey) return false;
         const opDate = _parseDateKey(op.dateKey);
@@ -667,12 +610,16 @@ export const useMainStore = defineStore('mainStore', () => {
             else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
         }
     }
+    
     projection.value = { 
       mode, totalDays: computeTotalDaysForMode(mode, base),
       rangeStartDate: startDate, rangeEndDate: endDate,
       futureIncomeSum, futureExpenseSum 
     };
-    updateFutureTotals();
+    
+    // 🟢 ВАЖНО: Обновляем снапшот каждый раз при пересчете проекции, 
+    // чтобы иметь свежие данные "на сейчас"
+    await fetchSnapshot();
   }
 
   async function fetchOperationsRange(startDate, endDate) {
@@ -687,8 +634,6 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       if (promises.length === 0) {
-        displayCache.value = { ...displayCache.value };
-        calculationCache.value = { ...calculationCache.value }; 
         return;
       }
       const responses = await Promise.all(promises);
@@ -724,16 +669,9 @@ export const useMainStore = defineStore('mainStore', () => {
     await fetchOperationsRange(startDate, endDate); 
     await updateProjectionFromCalculationData(mode, today); 
   }
-  function updateFutureProjection({ mode, totalDays, today = new Date() }) { updateFutureTotals(); }
   
-  function updateFutureTotals() {
-    const _ = futureTotalBalance.value;
-    const __ = futureAccountBalances.value;
-    const ___ = futureCompanyBalances.value;
-    const ____ = futureContractorBalances.value;
-    const _____ = futureProjectBalances.value;
-    const ______ = futureIndividualBalances.value;
-    const _______ = futureCategoryBalances.value; 
+  function updateFutureProjection({ mode, totalDays, today = new Date() }) { 
+      // Legacy stub
   }
   
   function updateFutureProjectionByMode(mode, today = new Date()){
@@ -776,6 +714,9 @@ export const useMainStore = defineStore('mainStore', () => {
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
       
       categories.value  = [...normalCategories, ...prepaymentCategories];
+      
+      // 🟢 ПОСЛЕ ЗАГРУЗКИ СУЩНОСТЕЙ ГРУЗИМ СНАПШОТ БАЛАНСОВ
+      await fetchSnapshot();
 
     }catch(e){ 
         if (e.response && e.response.status === 401) user.value = null;
@@ -861,10 +802,10 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) {
       if (e.response && e.response.status === 401) user.value = null;
     }
-    updateFutureTotals();
+    // 🟢 Обновляем снапшот при любых изменениях операций
+    fetchSnapshot();
   }
 
-  // 🟢 ИЗМЕНЕНО: Добавлен async/await
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -922,8 +863,8 @@ export const useMainStore = defineStore('mainStore', () => {
            });
        } catch(e) { refreshDay(oldDateKey); refreshDay(newDateKey); }
     }
+    // Обновляем проекцию и снапшот
     if (projection.value.mode) {
-      // 🟢 ТЕПЕРЬ УВЕРЕНЫ, ЧТО ДАННЫЕ ОБНОВЛЕНЫ
       await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     }
   }
@@ -1231,7 +1172,6 @@ export const useMainStore = defineStore('mainStore', () => {
     getPrepaymentCategoryIds,
     getActCategoryIds,
     
-    // 🟢 ДОБАВЛЕНО: Возвращаем ссылки, чтобы не было ReferenceError
     currentCategoryBalances,
     futureCategoryBalances,
     
@@ -1279,6 +1219,8 @@ export const useMainStore = defineStore('mainStore', () => {
     
     importOperations,
     exportAllOperations, 
+    
+    fetchSnapshot, // Экспортируем для вызова извне
     
     checkAuth,
     logout,
