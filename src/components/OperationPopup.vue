@@ -12,7 +12,7 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
  * ЧТО ИЗМЕНЕНО:
  * 1. (UI) Добавлен класс .select-monospace для инпутов выбора счета.
  * 2. (LOGIC) Добавлена функция formatAccountOption для паддинга пробелами.
- * 3. (FIX) Удален знак (-) если сумма отрицательная (по задаче), но formatBalance возвращает строку. Обработаем это.
+ * 3. (FIX) Удален знак (-) для отрицательных балансов (берется Math.abs).
  */
 
 const mainStore = useMainStore();
@@ -78,7 +78,7 @@ const formatNumber = (numStr) => {
 // 🟢 Функция для формирования строки опции (Название ..... Сумма)
 // TOTAL_CHARS подбирается под ширину инпута (примерно 45-50 символов для десктопа)
 const formatAccountOption = (acc) => {
-  // 1. Форматируем баланс без знака минус (как просили в задаче 3)
+  // 1. Форматируем баланс без знака минус (Math.abs)
   const absBalance = Math.abs(acc.balance);
   const balanceStr = formatBalance(absBalance) + ' ₸';
   
@@ -86,18 +86,22 @@ const formatAccountOption = (acc) => {
   let nameStr = acc.name;
   
   // 3. Целевая длина строки (в символах моноширинного шрифта)
-  // Учитывая паддинги инпута, пробуем 45 символов.
+  // Учитывая паддинги инпута ~420px, пробуем ~45 символов.
   const TOTAL_LENGTH = 45; 
   
   // Если название слишком длинное, обрезаем
-  const maxNameLen = TOTAL_LENGTH - balanceStr.length - 2; // -2 на миниум пробелов
+  // Оставляем минимум 2 пробела
+  const maxNameLen = TOTAL_LENGTH - balanceStr.length - 2; 
   if (nameStr.length > maxNameLen) {
     nameStr = nameStr.substring(0, maxNameLen - 1) + '…';
   }
   
   // Вычисляем сколько пробелов нужно
   const spacesCount = Math.max(1, TOTAL_LENGTH - nameStr.length - balanceStr.length);
-  const spaces = '\u00A0'.repeat(spacesCount); // Используем неразрывные пробелы
+  
+  // Используем обычные пробелы (в monospace они работают как надо, если white-space: pre)
+  // Но в select option лучше работает \u00A0 (Non-breaking space)
+  const spaces = '\u00A0'.repeat(spacesCount); 
   
   return nameStr + spaces + balanceStr;
 };
@@ -475,7 +479,7 @@ const buttonClass = computed(() => {
       <template v-if="props.type !== 'transfer' && !showCreateOwnerModal">
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
         <select 
-          if="!isCreatingAccount" 
+          v-if="!isCreatingAccount" 
           v-model="selectedAccountId" 
           @change="e => e.target.value === '--CREATE_NEW--' ? showAccountInput() : onAccountSelected(e.target.value)" 
           class="form-select select-monospace" 
