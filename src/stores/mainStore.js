@@ -1,14 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v24.0 - FIRE-AND-FORGET & OPTIMIZATION ---
- * * ВЕРСИЯ: 24.0 - Убраны await при перемещении, оптимизированы вычисления
+ * * --- МЕТКА ВЕРСИИ: v25.0 - FINAL OPTIMIZATION ---
+ * * ВЕРСИЯ: 25.0 - Восстановление всех функций + Оптимизация скорости
  * * ДАТА: 2025-11-21
  *
- * ЧТО СДЕЛАНО ДЛЯ СКОРОСТИ (3 сек -> 0.1 сек):
- * 1. (CRITICAL) moveOperation больше НЕ ЖДЕТ ответа сервера (убран await перед axios.put).
- * UI обновляется мгновенно, запрос летит в фоне.
- * 2. (PERF) dailyChartData и futureTotalBalance теперь считают данные напрямую из calculationCache,
- * минуя создание тяжелого массива allOperationsFlat (O(N) вместо O(2N)).
- * 3. (PERF) getPrepaymentCategoryIds кэшируется в Set для мгновенного lookup (O(1)).
+ * ОПТИМИЗАЦИЯ СКОРОСТИ (0.1 сек отклик):
+ * 1. moveOperation: Убраны await перед запросами к API (Fire-and-forget).
+ * 2. Optimistic Update: Интерфейс обновляется мгновенно, снапшот корректируется на клиенте.
+ * 3. Кэширование: Идентификаторы категорий (prepayment) теперь в Set для O(1) доступа.
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v24.0 (Fire-and-Forget) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v25.0 (Final Optimization) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -49,12 +47,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const displayCache = ref({});
   const calculationCache = ref({});
+  
   const accounts    = ref([]);
   const companies   = ref([]);
   const contractors = ref([]);
   const projects    = ref([]);
   const individuals = ref([]); 
   const categories  = ref([]);
+  
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
@@ -72,20 +72,21 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'categories',   name: 'Категории' }, 
   ]);
 
+  // --- ХЕЛПЕРЫ ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer';
   };
 
-  // 🟢 OPTIMIZATION: Используем Set для мгновенного поиска
+  // Оптимизация: Кэшируем ID предоплат в Set для быстрого поиска
   const prepaymentCategoryIdsSet = computed(() => {
     const ids = new Set();
     categories.value.forEach(c => {
-      const n = c.name.toLowerCase().trim();
-      if (n.includes('предоплата') || n.includes('prepayment') || n.includes('аванс')) {
-        ids.add(c._id);
-      }
+        const n = c.name.toLowerCase().trim();
+        if (n.includes('предоплата') || n.includes('prepayment') || n.includes('аванс')) {
+            ids.add(c._id);
+        }
     });
     return ids;
   });
@@ -121,8 +122,10 @@ export const useMainStore = defineStore('mainStore', () => {
   const allWidgets = computed(() => {
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
-    if (transferCategory) cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
-    return [...staticWidgets.value, ...cats];
+    if (transferCategory) {
+       cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
+    }
+     return [...staticWidgets.value, ...cats];
   });
 
   const savedLayout = localStorage.getItem('dashboardLayout');
@@ -143,11 +146,20 @@ export const useMainStore = defineStore('mainStore', () => {
   const projection = ref(initialProjection);
   watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
   
-  function replaceWidget(i, key){ if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; }
-  function setForecastState(widgetKey, value) { dashboardForecastState.value[widgetKey] = !!value; }
-  function setToday(d){ todayDayOfYear.value = d; localStorage.setItem('todayDayOfYear', d.toString()); }
+  function replaceWidget(i, key){ 
+    if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
+  }
+  function setForecastState(widgetKey, value) {
+    dashboardForecastState.value[widgetKey] = !!value;
+  }
+  function setToday(d){ 
+    todayDayOfYear.value = d; 
+    localStorage.setItem('todayDayOfYear', d.toString());
+  }
   const savedToday = localStorage.getItem('todayDayOfYear');
-  if (savedToday) todayDayOfYear.value = parseInt(savedToday);
+  if (savedToday) {
+    todayDayOfYear.value = parseInt(savedToday);
+  }
   
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
@@ -160,12 +172,17 @@ export const useMainStore = defineStore('mainStore', () => {
     return `${year}-${doy}`;
   };
   const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); 
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
+        return new Date(); 
+    }
     const [year, doy] = dateKey.split('-').map(Number);
-    const date = new Date(year, 0, 1); date.setDate(doy); return date;
+    const date = new Date(year, 0, 1);
+    date.setDate(doy);
+    return date;
   };
   const _calculateDateRangeWithYear = (view, baseDate) => {
-    const startDate = new Date(baseDate); const endDate = new Date(baseDate);
+    const startDate = new Date(baseDate);
+    const endDate = new Date(baseDate);
     switch (view) {
       case '12d': startDate.setDate(startDate.getDate() - 5); endDate.setDate(endDate.getDate() + 6); break;
       case '1m':  startDate.setDate(startDate.getDate() - 15); endDate.setDate(endDate.getDate() + 14); break;
@@ -177,36 +194,33 @@ export const useMainStore = defineStore('mainStore', () => {
     return { startDate, endDate };
   };
 
-  // 🟢 OPTIMIZATION: allOperationsFlat оставлен для совместимости, но 
-  // критические вычисления теперь его избегают.
+  // Оставляем для совместимости, но стараемся использовать calculationCache напрямую где можно
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
-      if (Array.isArray(dayOps)) dayOps.forEach(op => { if (op && typeof op === 'object') allOps.push(op); });
+      if (Array.isArray(dayOps)) {
+        dayOps.forEach(op => { if (op && typeof op === 'object') { allOps.push(op); } });
+      }
     });
     return allOps;
   });
 
-  const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
-
-  // 🟢 OPTIMIZATION: futureOps теперь вычисляется ЭФФЕКТИВНО (без allOperationsFlat)
+  // 🟢 OPTIMIZATION: FutureOps через итерацию по ключам кэша (быстрее, чем flat map)
   const futureOps = computed(() => {
-    const snapshotTime = snapshot.value.timestamp ? new Date(snapshot.value.timestamp).getTime() : Date.now();
+    if (!snapshot.value.timestamp) return [];
+    const snapshotTime = new Date(snapshot.value.timestamp).getTime();
     
     let endDate;
     if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate).getTime(); } 
     else { endDate = Date.now() + 365*24*60*60*1000; }
 
     const result = [];
-    // Итерируемся по дням (ключам), а не по 10000 операциям
+    // Итерируемся по дням
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
-        // Простая проверка: дата распарсена - это 00:00.
-        // Если 00:00 дня операции > snapshotTime (грубо), то берем.
-        // Для точности парсим каждый ключ. (365 раз - это быстро).
         const date = _parseDateKey(dateKey);
         const time = date.getTime();
         
-        // Берем только те дни, которые потенциально в будущем (с запасом на сегодня)
+        // Оптимизация: проверяем диапазон даты целиком
         if (time >= snapshotTime - 86400000 && time <= endDate) {
             if (Array.isArray(ops)) {
                 for (const op of ops) {
@@ -222,12 +236,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return result;
   });
 
-  // 🟢 OPTIMIZATION: dailyChartData переписан на прямой проход по кэшу
+  // 🟢 OPTIMIZATION: График строится напрямую из кэша
   const dailyChartData = computed(() => {
     const byDateKey = {};
-    const prepayIdsSet = prepaymentCategoryIdsSet.value; // Используем Set для скорости
+    const prepayIdsSet = prepaymentCategoryIdsSet.value; // Set O(1)
     
-    // Проходим по КЭШУ, а не по плоскому массиву
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
        if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, dayTotal:0 };
        const dayRec = byDateKey[dateKey];
@@ -243,14 +256,12 @@ export const useMainStore = defineStore('mainStore', () => {
                    const catId = op.categoryId?._id || op.categoryId;
                    const prepId = op.prepaymentId?._id || op.prepaymentId;
                    
-                   // Быстрая проверка через Set
                    const isPrepay = (catId && prepayIdsSet.has(catId)) || 
                                     (prepId && prepayIdsSet.has(prepId)) ||
                                     (op.categoryId && op.categoryId.isPrepayment);
                    
                    if (isPrepay) dayRec.prepayment += amt;
                    else dayRec.income += amt;
-                   
                    dayRec.dayTotal += amt;
                } else if (op.type === 'expense') {
                    dayRec.expense += absAmt;
@@ -262,8 +273,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const chart = new Map();
     const sortedDateKeys = Object.keys(byDateKey).sort((a, b) => {
-      // Лексикографическая сортировка работает для YYYY-DDD, но у нас YYYY-DOY (где DOY может быть 1..366)
-      // Приводим к числам для надежности
       const [y1, d1] = a.split('-').map(Number);
       const [y2, d2] = b.split('-').map(Number);
       return (y1 - y2) || (d1 - d2);
@@ -284,33 +293,117 @@ export const useMainStore = defineStore('mainStore', () => {
   const displayOperationsFlat = computed(() => {
     const displayOps = [];
     Object.values(displayCache.value).forEach(dayOps => {
-      if (Array.isArray(dayOps)) displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
+      if (Array.isArray(dayOps)) {
+        displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
+      }
     });
     return displayOps;
   });
   
+  const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
+  
+  // Для текущих операций оставляем плоский список (обычно их не так много для отображения)
   const currentOps = computed(() => {
     const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
-    // Оптимизация: используем allOperationsFlat (тут сложно уйти без дублирования логики, оставим пока, так как это для списков)
-    return allOperationsFlat.value.filter(op => { if (!op?.date) return false; return new Date(op.date) <= now; });
+    return allOperationsFlat.value.filter(op => {
+        if (!op?.date) return false;
+        return new Date(op.date) <= now;
+    });
   });
 
-  const opsUpToForecast = computed(() => [...currentOps.value, ...futureOps.value]);
+  const opsUpToForecast = computed(() => {
+    return [...currentOps.value, ...futureOps.value];
+  });
 
   async function fetchSnapshot() {
     try {
       const res = await axios.get(`${API_BASE_URL}/snapshot`);
       snapshot.value = res.data;
-    } catch (e) { console.error('Failed to fetch snapshot', e); }
+    } catch (e) {
+      console.error('Failed to fetch snapshot', e);
+    }
   }
 
+  // --- ГЕТТЕРЫ ОБЯЗАТЕЛЬСТВ (ВОССТАНОВЛЕНЫ ПОЛНОСТЬЮ) ---
   const liabilitiesWeOwe = computed(() => {
-    // ... (логика без изменений)
-    return 0; // Placeholder для экономии места, логика была сложной, оставим 0 если не критично или вернем старую
+    const prepayIds = getPrepaymentCategoryIds.value;
+    const actIds = getActCategoryIds.value;
+    if (prepayIds.length === 0 && actIds.length === 0) return 0;
+    let totalPrepaymentReceived = 0;
+    let totalActsSum = 0;
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      const isAct = (catId && actIds.includes(catId));
+      if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
+      if (isAct) totalActsSum += Math.abs(op.amount || 0);
+    }
+    return totalPrepaymentReceived - totalActsSum;
   });
-  // (Возвращаем старую логику обязательств, чтобы не сломать)
-  // ... (Код геттеров liabilitiesWeOwe, liabilitiesTheyOwe и т.д. идентичен v23.0)
 
+  const liabilitiesTheyOwe = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    if (prepayIds.length === 0) return 0;
+    let totalDealSum = 0;
+    let receivedSum = 0;
+    for (const op of currentOps.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      if (isPrepay && op.type === 'income') {
+          const dealTotal = op.totalDealAmount || 0;
+          if (dealTotal > 0) {
+              totalDealSum += dealTotal;
+              receivedSum += (op.amount || 0);
+          }
+      }
+    }
+    return totalDealSum - receivedSum;
+  });
+
+  const liabilitiesWeOweFuture = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    const actIds = getActCategoryIds.value;
+    if (prepayIds.length === 0 && actIds.length === 0) return 0;
+    let totalPrepaymentReceived = 0;
+    let totalActsSum = 0;
+    for (const op of opsUpToForecast.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      const isAct = (catId && actIds.includes(catId));
+      if (isPrepay && op.type === 'income') totalPrepaymentReceived += (op.amount || 0);
+      if (isAct) totalActsSum += Math.abs(op.amount || 0);
+    }
+    return totalPrepaymentReceived - totalActsSum;
+  });
+
+  const liabilitiesTheyOweFuture = computed(() => {
+    const prepayIds = getPrepaymentCategoryIds.value;
+    if (prepayIds.length === 0) return 0;
+    let totalDealSum = 0;
+    let receivedSum = 0;
+    for (const op of opsUpToForecast.value) {
+      if (isTransfer(op)) continue;
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
+      if (isPrepay && op.type === 'income') {
+          const dealTotal = op.totalDealAmount || 0;
+          if (dealTotal > 0) {
+              totalDealSum += dealTotal;
+              receivedSum += (op.amount || 0);
+          }
+      }
+    }
+    return totalDealSum - receivedSum;
+  });
+
+  // --- СПИСКИ (СОРТИРОВКА) ---
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -329,10 +422,17 @@ export const useMainStore = defineStore('mainStore', () => {
       if (isTransfer(op)) continue;
       if (!op?.categoryId) continue;
       const cId = op.categoryId._id || op.categoryId;
+      
       if (!map[cId]) map[cId] = { income: 0, expense: 0, total: 0 };
       const amt = Math.abs(op.amount || 0);
-      if (op.type === 'income') { map[cId].income += (op.amount || 0); map[cId].total += (op.amount || 0); } 
-      else if (op.type === 'expense') { map[cId].expense += amt; map[cId].total -= amt; }
+      
+      if (op.type === 'income') {
+          map[cId].income += (op.amount || 0);
+          map[cId].total += (op.amount || 0);
+      } else if (op.type === 'expense') {
+          map[cId].expense += amt;
+          map[cId].total -= amt;
+      }
     }
     const widgetMap = {};
     Object.keys(map).forEach(id => { widgetMap[`cat_${id}`] = map[id]; });
@@ -411,10 +511,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
+  // 🟢 МГНОВЕННОЕ ОБНОВЛЕНИЕ СНАПШОТА (БЕЗ ОЖИДАНИЯ СЕРВЕРА)
   function _optimisticUpdateSnapshot(op, action) {
       const amount = op.amount || 0;
       const absAmount = Math.abs(amount);
-      const sign = action === 'add' ? 1 : -1; 
+      const sign = action === 'add' ? 1 : -1; // Add = перенос из будущего в прошлое (добавляем в историю)
 
       const _addToMap = (map, id, val) => {
           if (!id) return;
@@ -434,12 +535,15 @@ export const useMainStore = defineStore('mainStore', () => {
       } else {
           const signedAmount = (op.type === 'income') ? absAmount : -absAmount;
           const delta = signedAmount * sign;
+          
           snapshot.value.totalBalance += delta;
+          
           _addToMap(snapshot.value.accountBalances, op.accountId, delta);
           _addToMap(snapshot.value.companyBalances, op.companyId, delta);
           _addToMap(snapshot.value.individualBalances, op.individualId, delta);
           _addToMap(snapshot.value.contractorBalances, op.contractorId, delta);
           _addToMap(snapshot.value.projectBalances, op.projectId, delta);
+          
           const catId = op.categoryId?._id || op.categoryId;
           if (catId) {
               const cKey = catId.toString();
@@ -455,23 +559,55 @@ export const useMainStore = defineStore('mainStore', () => {
   async function updateProjectionFromCalculationData(mode, today = new Date(), fetchSnap = true) {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
+    let futureIncomeSum = 0; let futureExpenseSum = 0;
     
-    // Используем локальный расчет без полного перебора 10к элементов если это не нужно для отображения списка
-    // ... (логика расчета сумм) ...
+    // Используем allOperationsFlat только для суммы за период (это быстро на маленьком отрезке)
+    const opsInRange = allOperationsFlat.value.filter(op => {
+        if (!op?.dateKey) return false;
+        const opDate = _parseDateKey(op.dateKey);
+        return opDate > base && opDate <= endDate;
+    });
+    for (const op of opsInRange) { 
+        if (!isTransfer(op)) {
+            if (op.type === 'income') futureIncomeSum += op.amount || 0;
+            else if (op.type === 'expense') futureExpenseSum += Math.abs(op.amount || 0);
+        }
+    }
     
     projection.value = { 
       mode, totalDays: computeTotalDaysForMode(mode, base),
       rangeStartDate: startDate, rangeEndDate: endDate,
-      futureIncomeSum: 0, futureExpenseSum: 0 // Можно дооптимизировать, пока 0
+      futureIncomeSum, futureExpenseSum 
     };
     
+    // 🟢 ФОНОВОЕ ОБНОВЛЕНИЕ
     if (fetchSnap) {
-       fetchSnapshot(); // В фоне!
+       fetchSnapshot(); // Promise не возвращается, идет в фоне
     }
   }
 
   async function fetchOperationsRange(startDate, endDate) {
-    // ... (без изменений) ...
+    try {
+      const promises = []; const dateKeysToFetch = [];
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateKey = _getDateKey(d);
+        if (!displayCache.value[dateKey]) {
+          dateKeysToFetch.push(dateKey);
+          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
+        }
+      }
+      if (promises.length === 0) return;
+      const responses = await Promise.all(promises);
+      const tempCache = {};
+      for (let i = 0; i < responses.length; i++) {
+        const dateKey = dateKeysToFetch[i];
+        const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
+        const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
+        tempCache[dateKey] = processedOps;
+      }
+      displayCache.value = { ...displayCache.value, ...tempCache };
+      calculationCache.value = { ...calculationCache.value, ...tempCache }; 
+    } catch (error) { if (error.response && error.response.status === 401) user.value = null; }
   }
 
   const _syncCaches = (key, ops) => {
@@ -502,7 +638,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function fetchAllEntities(){
-    // ... (без изменений)
     try{
       const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
@@ -516,13 +651,13 @@ export const useMainStore = defineStore('mainStore', () => {
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
       categories.value  = [...normalCategories, ...prepaymentCategories];
-      fetchSnapshot();
+      
+      fetchSnapshot(); // Фон
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
-    // ... (без изменений)
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
     const transferGroups = new Map();
     list.forEach(o => {
@@ -568,7 +703,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function fetchOperations(dateKey, force = false) {
-    // ... (без изменений)
     if (!dateKey) return;
     if (displayCache.value[dateKey] && !force) return;
     try {
@@ -590,7 +724,7 @@ export const useMainStore = defineStore('mainStore', () => {
     fetchSnapshot(); // Фон
   }
 
-  // 🟢 CRITICAL FIX: Убраны await перед axios.put
+  // 🟢 МГНОВЕННЫЙ MOVE (Fire and Forget)
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -607,7 +741,7 @@ export const useMainStore = defineStore('mainStore', () => {
                sourceOp.cellIndex = targetIndex; targetOp.cellIndex = originalSourceIndex;
                _syncCaches(oldDateKey, ops);
                
-               // 🟢 FIRE AND FORGET (без await)
+               // Фон (без await)
                Promise.all([
                   axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
                   axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
@@ -615,8 +749,7 @@ export const useMainStore = defineStore('mainStore', () => {
            } else {
                sourceOp.cellIndex = targetIndex;
                _syncCaches(oldDateKey, ops);
-               
-               // 🟢 FIRE AND FORGET
+               // Фон
                axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
                     .catch(e => refreshDay(oldDateKey));
            }
@@ -638,11 +771,11 @@ export const useMainStore = defineStore('mainStore', () => {
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       // 🟢 FIRE AND FORGET
+       // Фон
        axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date })
             .catch(e => { refreshDay(oldDateKey); refreshDay(newDateKey); });
        
-       // OPTIMISTIC SNAPSHOT UPDATE
+       // 🟢 Optimistic Snapshot Update
        const now = new Date();
        const oldDate = _parseDateKey(oldDateKey);
        const newDate = _parseDateKey(newDateKey);
@@ -653,9 +786,9 @@ export const useMainStore = defineStore('mainStore', () => {
            if (wasInSnapshot && !isInSnapshot) _optimisticUpdateSnapshot(sourceOpData, 'remove');
            else _optimisticUpdateSnapshot(sourceOpData, 'add');
            
-           // Обновляем проекцию БЕЗ фетча снапшота
+           // UI обновляется мгновенно, сервер догонит в фоне
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value), false);
-           fetchSnapshot(); // Фоновый фетч
+           fetchSnapshot(); // Фон
        } else {
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value), false);
        }
@@ -664,8 +797,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
+  // ВОССТАНОВЛЕННЫЙ createEvent
   async function createEvent(eventData) {
-    // ... (без изменений)
     try {
       if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
@@ -676,8 +809,6 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (error) { throw error; }
   }
 
-  // Остальные CRUD методы без изменений, так как они редкие и можно подождать
-  // ... (createTransfer, updateTransfer, updateOperation и т.д. остаются как в v23.0)
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
@@ -755,7 +886,6 @@ export const useMainStore = defineStore('mainStore', () => {
       } catch (error) { throw error; }
   }
 
-  // (Остальные методы добавления entities без изменений)
   async function addCategory(name){ const res = await axios.post(`${API_BASE_URL}/categories`, { name }); categories.value.push(res.data); return res.data; }
   async function addAccount(data) { let payload = (typeof data === 'string') ? { name: data, initialBalance: 0 } : { name: data.name, initialBalance: data.initialBalance || 0, companyId: data.companyId || null, individualId: data.individualId || null }; const res = await axios.post(`${API_BASE_URL}/accounts`, payload); accounts.value.push(res.data); return res.data; }
   async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); companies.value.push(res.data); return res.data; }
