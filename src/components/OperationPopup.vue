@@ -1,17 +1,17 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { formatNumber as formatBalance } from '@/utils/formatters.js'; // 🟢 Импорт форматтера для баланса
 import ConfirmationPopup from './ConfirmationPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.0 - INSTANT SAVE EMIT ---
- * * ВЕРСИЯ: 18.0 - Отправка события save вместо API вызова
+ * * --- МЕТКА ВЕРСИИ: v18.1 - ACCOUNT BALANCE IN SELECT ---
+ * * ВЕРСИЯ: 18.1 - Отображение баланса счета в выпадающем списке
  * * ДАТА: 2025-11-21
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Убраны вызовы axios и mainStore.addOperation внутри компонента.
- * 2. handleSave теперь просто формирует payload и отправляет emit('save', ...).
- * 3. Это позволяет родительскому компоненту мгновенно закрыть окно.
+ * 1. (UI) В select счета добавлен вывод текущего баланса (Счет — 100 000 ₸).
+ * 2. (LOGIC) Источник данных для select изменен на mainStore.currentAccountBalances.
  */
 
 const mainStore = useMainStore();
@@ -30,7 +30,7 @@ const emit = defineEmits([
   'operation-deleted',
   'operation-moved',
   'trigger-prepayment',
-  'save' // 🟢 НОВОЕ СОБЫТИЕ
+  'save' 
 ]);
 
 // --- ДАННЫЕ ---
@@ -69,6 +69,7 @@ const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
 // --- FORMATTERS ---
+// Локальный форматтер для инпута суммы (маска ввода)
 const formatNumber = (numStr) => {
   const clean = `${numStr}`.replace(/[^0-9]/g, '');
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -449,7 +450,10 @@ const buttonClass = computed(() => {
         <label>{{ props.type === 'income' ? 'На мой счет' : 'Со счета' }} *</label>
         <select v-if="!isCreatingAccount" v-model="selectedAccountId" @change="e => e.target.value === '--CREATE_NEW--' ? showAccountInput() : onAccountSelected(e.target.value)" class="form-select">
           <option :value="null" disabled>Выберите счет</option>
-          <option v-for="acc in mainStore.accounts" :key="acc._id" :value="acc._id">{{ acc.name }}</option>
+          <!-- 🟢 ИСПОЛЬЗУЕМ currentAccountBalances ДЛЯ ОТОБРАЖЕНИЯ БАЛАНСА -->
+          <option v-for="acc in mainStore.currentAccountBalances" :key="acc._id" :value="acc._id">
+            {{ acc.name }} &mdash; {{ formatBalance(acc.balance) }} ₸
+          </option>
           <option value="--CREATE_NEW--">[ + Создать новый счет ]</option>
         </select>
         <div v-else class="inline-create-form">
