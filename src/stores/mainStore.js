@@ -1,3 +1,12 @@
+/**
+ * * --- МЕТКА ВЕРСИИ: v21.6 - CREATE EVENT FIX ---
+ * * ВЕРСИЯ: 21.6 - Добавлен метод createEvent
+ * * ДАТА: 2025-11-21
+ *
+ * ЧТО ИСПРАВЛЕНО:
+ * 1. (FIX) Добавлен action createEvent, который отсутствовал, но вызывался в HomeView.
+ */
+
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
@@ -21,13 +30,12 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v22.0 (Snapshot Integration) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v21.6 (Create Event Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
   
-  // 🟢 НОВОЕ СОСТОЯНИЕ: СНАПШОТ
-  // Хранит готовые цифры "из прошлого" (от сервера)
+  // 🟢 СНАПШОТ
   const snapshot = ref({
     totalBalance: 0,
     accountBalances: {},
@@ -200,17 +208,13 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // 🟢 НОВАЯ ЛОГИКА: БУДУЩИЕ ОПЕРАЦИИ
-  // Это операции, которые произошли ПОСЛЕ момента снапшота.
-  // Серверный снапшот включает всё до "сейчас". Значит, FutureOps - это всё, что > snapshot.timestamp.
   const futureOps = computed(() => {
     if (!snapshot.value.timestamp) return [];
     const snapshotTime = new Date(snapshot.value.timestamp).getTime();
     
-    // Берем конечную дату прогноза
     let endDate;
     if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate).getTime(); } 
-    else { endDate = Date.now() + 365*24*60*60*1000; } // Fallback на год вперед
+    else { endDate = Date.now() + 365*24*60*60*1000; }
 
     return allOperationsFlat.value.filter(op => {
       if (!op?.date) return false;
@@ -219,7 +223,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  // --- DAILY CHART DATA (ОСТАВЛЯЕМ КАК ЕСТЬ ДЛЯ ВИЗУАЛИЗАЦИИ ГРАФИКА) ---
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIds = getPrepaymentCategoryIds.value;
@@ -254,8 +257,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateA = _parseDateKey(a); const dateB = _parseDateKey(b);
       return dateA.getTime() - dateB.getTime();
     });
-    // Баланс для графика берем приблизительный (Running), но для карточек используем Snapshot.
-    // Можно было бы начать с snapshot.totalBalance и отнимать назад, но для графика оставим как есть.
     let running = totalInitialBalance.value || 0;
     for (const dateKey of sortedDateKeys) {
       const rec = byDateKey[dateKey];
@@ -283,7 +284,6 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
-  // Текущие операции для списков (все, что до снапшота или включено в него)
   const currentOps = computed(() => {
     const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
     return allOperationsFlat.value.filter(op => {
@@ -293,22 +293,18 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const opsUpToForecast = computed(() => {
-    // Все операции до конца прогноза
     return [...currentOps.value, ...futureOps.value];
   });
 
-  // --- 🟢 ACTION: ЗАГРУЗКА СНАПШОТА ---
   async function fetchSnapshot() {
     try {
       const res = await axios.get(`${API_BASE_URL}/snapshot`);
       snapshot.value = res.data;
-      // console.log('[MainStore] Snapshot loaded:', snapshot.value);
     } catch (e) {
       console.error('Failed to fetch snapshot', e);
     }
   }
 
-  // --- РАСЧЕТ ОБЯЗАТЕЛЬСТВ (БЕЗ ИЗМЕНЕНИЙ ЛОГИКИ, НО НА НОВЫХ СПИСКАХ) ---
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
@@ -387,7 +383,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return totalDealSum - receivedSum;
   });
 
-  // --- СПИСКИ ОПЕРАЦИЙ ---
   const currentTransfers = computed(() => {
     const transfers = currentOps.value.filter(op => isTransfer(op));
     return transfers.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -418,12 +413,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return categories.value.find(c => c._id === id);
   };
 
-  // 🟢 НОВАЯ ЛОГИКА: КАТЕГОРИИ (СНАПШОТ)
   const currentCategoryBreakdowns = computed(() => snapshot.value.categoryTotals || {});
 
   const futureCategoryBreakdowns = computed(() => {
     const map = JSON.parse(JSON.stringify(snapshot.value.categoryTotals || {}));
-    // Проходим по будущим операциям и добавляем к карте
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId) continue;
@@ -440,14 +433,12 @@ export const useMainStore = defineStore('mainStore', () => {
           map[cId].total -= amt;
       }
     }
-    // Переформатируем ключи для виджетов (cat_ID)
     const widgetMap = {};
     Object.keys(map).forEach(id => { widgetMap[`cat_${id}`] = map[id]; });
     return widgetMap;
   });
 
   const currentCategoryBalances = computed(() => {
-    // Баланс категории = Total из снепшота
     return categories.value.map(c => ({
         ...c,
         balance: (snapshot.value.categoryTotals[c._id]?.total || 0)
@@ -466,7 +457,6 @@ export const useMainStore = defineStore('mainStore', () => {
     (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0)
   );
   
-  // Helper для расчета будущих балансов сущностей
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
       const futureMap = { ...snapshotMap };
       
@@ -474,14 +464,12 @@ export const useMainStore = defineStore('mainStore', () => {
           const amt = Math.abs(op.amount || 0);
           
           if (isTransfer(op)) {
-              // Логика перевода
               let fromId, toId;
               if (entityIdField === 'accountId') { fromId = op.fromAccountId; toId = op.toAccountId; }
               else if (entityIdField === 'companyId') { fromId = op.fromCompanyId; toId = op.toCompanyId; }
               else if (entityIdField === 'individualId') { fromId = op.fromIndividualId; toId = op.toIndividualId; }
-              else continue; // Контрагенты и проекты не участвуют в переводах
+              else continue; 
 
-              // Извлекаем ID если это объект
               fromId = fromId?._id || fromId;
               toId = toId?._id || toId;
 
@@ -494,7 +482,6 @@ export const useMainStore = defineStore('mainStore', () => {
                   futureMap[toId] += amt;
               }
           } else {
-              // Логика доход/расход
               let id = op[entityIdField];
               id = id?._id || id;
               if (!id) continue;
@@ -508,7 +495,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
-  // 🟢 НОВАЯ ЛОГИКА: СЧЕТА
   const currentAccountBalances = computed(() => {
     return accounts.value.map(a => ({
         ...a,
@@ -521,7 +507,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return accounts.value.map(a => ({ ...a, balance: futureMap[a._id] || 0 }));
   });
   
-  // 🟢 НОВАЯ ЛОГИКА: КОМПАНИИ
   const currentCompanyBalances = computed(() => {
     return companies.value.map(c => ({
         ...c,
@@ -534,7 +519,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return companies.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
   });
 
-  // 🟢 НОВАЯ ЛОГИКА: КОНТРАГЕНТЫ
   const currentContractorBalances = computed(() => {
     return contractors.value.map(c => ({
         ...c,
@@ -547,7 +531,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return contractors.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
   });
 
-  // 🟢 НОВАЯ ЛОГИКА: ПРОЕКТЫ
   const currentProjectBalances = computed(() => {
     return projects.value.map(p => ({
         ...p,
@@ -560,7 +543,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
   });
 
-  // 🟢 НОВАЯ ЛОГИКА: ФИЗЛИЦА
   const currentIndividualBalances = computed(() => {
     return individuals.value.map(i => ({
         ...i,
@@ -573,13 +555,12 @@ export const useMainStore = defineStore('mainStore', () => {
     return individuals.value.map(i => ({ ...i, balance: futureMap[i._id] || 0 }));
   });
 
-  // 🟢 НОВАЯ ЛОГИКА: ОБЩИЙ ИТОГ
   const currentTotalBalance = computed(() => snapshot.value.totalBalance || 0);
 
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
     for (const op of futureOps.value) {
-        if (isTransfer(op)) continue; // Переводы внутри системы не меняют Total
+        if (isTransfer(op)) continue; 
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0);
         else total -= amt;
@@ -593,12 +574,9 @@ export const useMainStore = defineStore('mainStore', () => {
     base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     
-    // Future Income/Expense Sums for visualization (optional, but good to have)
-    // We calculate strictly within the projection window
     let futureIncomeSum = 0;
     let futureExpenseSum = 0;
     
-    // We use allOperationsFlat here just for the sum calculation within range
     const opsInRange = allOperationsFlat.value.filter(op => {
         if (!op?.dateKey) return false;
         const opDate = _parseDateKey(op.dateKey);
@@ -617,8 +595,6 @@ export const useMainStore = defineStore('mainStore', () => {
       futureIncomeSum, futureExpenseSum 
     };
     
-    // 🟢 ВАЖНО: Обновляем снапшот каждый раз при пересчете проекции, 
-    // чтобы иметь свежие данные "на сейчас"
     await fetchSnapshot();
   }
 
@@ -715,7 +691,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       categories.value  = [...normalCategories, ...prepaymentCategories];
       
-      // 🟢 ПОСЛЕ ЗАГРУЗКИ СУЩНОСТЕЙ ГРУЗИМ СНАПШОТ БАЛАНСОВ
       await fetchSnapshot();
 
     }catch(e){ 
@@ -802,7 +777,6 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) {
       if (e.response && e.response.status === 401) user.value = null;
     }
-    // 🟢 Обновляем снапшот при любых изменениях операций
     fetchSnapshot();
   }
 
@@ -863,13 +837,40 @@ export const useMainStore = defineStore('mainStore', () => {
            });
        } catch(e) { refreshDay(oldDateKey); refreshDay(newDateKey); }
     }
-    // Обновляем проекцию и снапшот
     if (projection.value.mode) {
       await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     }
   }
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
+
+  // 🟢 НОВАЯ ФУНКЦИЯ: Создание операции (POST /events)
+  async function createEvent(eventData) {
+    try {
+      // Убедимся, что dateKey существует, если его нет
+      if (!eventData.dateKey && eventData.date) {
+          eventData.dateKey = _getDateKey(new Date(eventData.date));
+      }
+      
+      const response = await axios.post(`${API_BASE_URL}/events`, eventData);
+      
+      // Обновляем день, куда добавилась операция
+      const newOp = response.data;
+      if (newOp.dateKey) {
+          await refreshDay(newOp.dateKey);
+      }
+      
+      // Пересчитываем проекцию
+      if (projection.value.mode) {
+        await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      }
+      
+      return newOp;
+    } catch (error) {
+      console.error('Error creating event:', error);
+      throw error;
+    }
+  }
 
   async function createTransfer(transferData) {
     try {
@@ -1136,7 +1137,6 @@ export const useMainStore = defineStore('mainStore', () => {
     calculationCache.value = {};
   }
   
-  // --- Функции для расчета Projection ---
   function computeTotalDaysForMode(mode, baseDate) {
       return getViewModeInfo(mode).total;
   }
@@ -1203,7 +1203,7 @@ export const useMainStore = defineStore('mainStore', () => {
     loadCalculationData,
     updateProjectionFromCalculationData,
 
-    createTransfer, updateTransfer, updateOperation,
+    createTransfer, updateTransfer, updateOperation, createEvent, // 🟢 ЭКСПОРТИРУЕМ createEvent
 
     fetchOperationsRange, 
     updateFutureProjectionWithData,
@@ -1220,7 +1220,7 @@ export const useMainStore = defineStore('mainStore', () => {
     importOperations,
     exportAllOperations, 
     
-    fetchSnapshot, // Экспортируем для вызова извне
+    fetchSnapshot,
     
     checkAuth,
     logout,
