@@ -3,15 +3,17 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.4 - TITLE FIX ---
- * * ВЕРСИЯ: 19.4 - Исправление заголовка карточки обязательств
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v19.6 - CATEGORY WIDGET FILTER ---
+ * * ВЕРСИЯ: 19.6 - Фильтрация виджета "Категории"
+ * * ДАТА: 2025-11-22
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) HeaderLiabilitiesCard: title="Мои обязательства" -> "Мои предоплаты".
+ * 1. (FIX) mergedCategoryBalances теперь фильтрует список, оставляя только visibleCategories.
+ * Это исключает "Перевод" и "Предоплату" из виджета, синхронизируя его с редактором.
+ * Теперь сортировка (order) применяется корректно к видимому набору данных.
  */
 
-console.log('--- TheHeader.vue v19.4 (Title Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v19.6 (Category Widget Filter) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -62,20 +64,38 @@ const futureUntilStr = computed(() => {
 /* ======================= Данные ======================= */
 const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
 const loggedFutureTotal = computed(() => mainStore.futureTotalBalance);
+
 const mergeBalances = (currentBalances, futureBalances) => {
-  if (!currentBalances || !futureBalances) return currentBalances || []; 
-  const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
-  return currentBalances.map(item => ({
-    ...item,
-    futureBalance: futureMap.get(item._id) ?? item.balance
-  }));
+  let result = currentBalances || [];
+  if (futureBalances) {
+      const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
+      result = currentBalances.map(item => ({
+        ...item,
+        futureBalance: futureMap.get(item._id) ?? item.balance
+      }));
+  }
+  // Сортировка по order
+  return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
+
 const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances));
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
 const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
 const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
-const mergedCategoryBalances = computed(() => mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances));
+
+// 🟢 FIX v19.6: Фильтрация mergedCategoryBalances
+// Виджет "Категории" должен показывать ТОЛЬКО visibleCategories (без Переводов и Предоплат),
+// чтобы совпадать с редактором и корректно отображать сортировку.
+const mergedCategoryBalances = computed(() => {
+    const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances);
+    
+    // Получаем ID видимых категорий для быстрой фильтрации
+    // (можно фильтровать и по именам, но через ID надежнее, так как visibleCategories уже содержит эту логику)
+    const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
+    
+    return allMerged.filter(c => visibleIds.has(c._id));
+});
 
 /* ======================= Попапы (Entity / List) ======================= */
 const isEntityPopupVisible = ref(false);

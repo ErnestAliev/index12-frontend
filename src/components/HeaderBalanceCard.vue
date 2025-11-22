@@ -5,16 +5,16 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.7 - REMOVE ADD BTN ---
- * * ВЕРСИЯ: 3.7 - Удалена кнопка "Добавить" из заголовка
- * * ДАТА: 2025-11-19
+ * * --- МЕТКА ВЕРСИИ: v3.8 - FORCE DEFAULT SORT ---
+ * * ВЕРСИЯ: 3.8 - Принудительная сортировка по order в режиме default
+ * * ДАТА: 2025-11-22
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Удалена кнопка action-square-btn с иконкой плюса.
- * Функционал добавления теперь находится внутри окна редактирования.
+ * 1. (LOGIC) В processedItems добавлена явная сортировка по order, если режим сортировки 'default'.
+ * Это финальная защита от "скачущего" порядка категорий, даже если данные пришли неотсортированными.
  */
 
-console.log('--- HeaderBalanceCard.vue v3.7 (Remove Add Btn) ЗАГРУЖЕН ---');
+console.log('--- HeaderBalanceCard.vue v3.8 (Force Default Sort) ЗАГРУЖЕН ---');
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -43,13 +43,23 @@ const sortMode = ref('default');
 const filterMode = ref('all');
 
 const processedItems = computed(() => {
+  // Создаем копию массива, чтобы сортировка не мутировала пропс
   let items = [...props.items];
+
+  // Фильтрация
   if (filterMode.value === 'positive') items = items.filter(item => (item.balance || 0) > 0);
   else if (filterMode.value === 'negative') items = items.filter(item => (item.balance || 0) < 0);
   else if (filterMode.value === 'nonZero') items = items.filter(item => (item.balance || 0) !== 0);
 
-  if (sortMode.value === 'desc') items.sort((a, b) => (b.balance || 0) - (a.balance || 0));
-  else if (sortMode.value === 'asc') items.sort((a, b) => (a.balance || 0) - (b.balance || 0));
+  // Сортировка
+  if (sortMode.value === 'desc') {
+    items.sort((a, b) => (b.balance || 0) - (a.balance || 0));
+  } else if (sortMode.value === 'asc') {
+    items.sort((a, b) => (a.balance || 0) - (b.balance || 0));
+  } else {
+    // 🟢 FIX v3.8: Явная сортировка по order в режиме по умолчанию
+    items.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
 
   return items;
 });
@@ -150,8 +160,6 @@ const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
             <polyline points="7 7 17 7 17 17"></polyline>
           </svg>
         </button>
-        
-        <!-- 🟢 v3.7: Кнопка "Добавить" (+) УДАЛЕНА отсюда -->
         
         <!-- 3. РЕДАКТИРОВАТЬ -->
         <button 
