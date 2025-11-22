@@ -1,13 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.1 - COMPANY BALANCE AGGREGATION ---
- * * ВЕРСИЯ: 26.1 - Расчет баланса компании как суммы счетов
- * * ДАТА: 2025-11-22
+ * * --- МЕТКА ВЕРСИИ: v27.0 - FINAL SORT & TRANSFER LOGIC ---
+ * * ВЕРСИЯ: 27.0 - Фикс сортировки категорий и логики виджета переводов
+ * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) currentCompanyBalances теперь считается как сумма балансов
- * привязанных к компании счетов (currentAccountBalances), а не берется из снапшота транзакций.
- * 2. (LOGIC) futureCompanyBalances аналогично агрегирует futureAccountBalances.
- * Это обеспечивает учет начальных балансов счетов в виджете "Мои компании".
+ * 1. (LOGIC) moveOperation: Улучшена реактивность. При переносе через границу "сегодня"
+ * моментально обновляется snapshot (Past Total), что заставляет виджеты пересчитаться.
+ * 2. (LOGIC) fetchAllEntities: Улучшена сортировка смешанных категорий.
  */
 
 import { defineStore } from 'pinia';
@@ -30,12 +29,12 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.1 (Company Balance Aggregation) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v27.0 (Final Sort & Transfer) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
   
-  // Данные снапшота теперь изменяемы на клиенте
+  // Данные снапшота (Текущие остатки)
   const snapshot = ref({
     totalBalance: 0,
     accountBalances: {},
@@ -44,7 +43,7 @@ export const useMainStore = defineStore('mainStore', () => {
     contractorBalances: {},
     projectBalances: {},
     categoryTotals: {},
-    timestamp: null // Точка отсчета (обычно "сейчас" на момент загрузки страницы)
+    timestamp: null 
   });
 
   const displayCache = ref({});
@@ -81,7 +80,16 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer';
   };
 
-  // Set для скорости O(1)
+  // Стабильная сортировка
+  const _sortByOrder = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.sort((a, b) => {
+        const orderDiff = (a.order || 0) - (b.order || 0);
+        if (orderDiff !== 0) return orderDiff;
+        return (a._id || '').toString().localeCompare((b._id || '').toString());
+    });
+  };
+
   const prepaymentCategoryIdsSet = computed(() => {
     const ids = new Set();
     categories.value.forEach(c => {
@@ -125,7 +133,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const transferCategory = categories.value.find(_isTransferCategory);
     const cats = [];
     if (transferCategory) {
-       cats.push({ key: `cat_${transferCategory._id}`, name: transferCategory.name });
+       cats.push({ key: `cat_${transferCategory._id}`, name: 'Мои переводы' });
     }
      return [...staticWidgets.value, ...cats];
   });
@@ -196,7 +204,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return { startDate, endDate };
   };
 
-  // Оставлен для совместимости с компонентами, но тяжелые расчеты его не используют
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
@@ -207,7 +214,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return allOps;
   });
 
-  // 🟢 Future Ops: Берем данные напрямую из кэша, минуя flat array
   const futureOps = computed(() => {
     const snapshotTime = snapshot.value.timestamp ? new Date(snapshot.value.timestamp).getTime() : Date.now();
     let endDate;
@@ -218,7 +224,6 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
         const date = _parseDateKey(dateKey);
         const time = date.getTime();
-        // Грубый фильтр по дню, потом точный по времени
         if (time >= snapshotTime - 86400000 && time <= endDate) {
             if (Array.isArray(ops)) {
                 for (const op of ops) {
@@ -234,7 +239,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return result;
   });
 
-  // 🟢 Daily Chart: Напрямую из кэша
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIdsSet = prepaymentCategoryIdsSet.value;
@@ -301,10 +305,8 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
-  // Операции, включенные в снапшот (прошлое)
   const currentOps = computed(() => {
     const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
-    // Используем плоский массив, так как это нужно для списков истории
     return allOperationsFlat.value.filter(op => {
         if (!op?.date) return false;
         return new Date(op.date) <= now;
@@ -315,12 +317,10 @@ export const useMainStore = defineStore('mainStore', () => {
     return [...currentOps.value, ...futureOps.value];
   });
 
-  // Загрузка снапшота (только при инициализации!)
   async function fetchSnapshot() {
     try {
       const res = await axios.get(`${API_BASE_URL}/snapshot`);
       snapshot.value = res.data;
-      // console.log('Snapshot loaded from server');
     } catch (e) {
       console.error('Failed to fetch snapshot', e);
     }
@@ -415,7 +415,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const getCategoryById = (id) => categories.value.find(c => c._id === id);
 
-  const currentCategoryBreakdowns = computed(() => snapshot.value.categoryTotals || {});
+  const currentCategoryBreakdowns = computed(() => {
+    const raw = snapshot.value.categoryTotals || {};
+    const mapped = {};
+    Object.keys(raw).forEach(id => {
+        mapped[`cat_${id}`] = raw[id];
+    });
+    return mapped;
+  });
 
   const futureCategoryBreakdowns = computed(() => {
     const map = JSON.parse(JSON.stringify(snapshot.value.categoryTotals || {}));
@@ -477,8 +484,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return accounts.value.map(a => ({ ...a, balance: futureMap[a._id] || 0 }));
   });
   
-  // 🟢 2. КОМПАНИИ (НОВАЯ ЛОГИКА v26.1)
-  // Баланс компании = Сумма балансов привязанных счетов
+  // 2. КОМПАНИИ
   const currentCompanyBalances = computed(() => {
       return companies.value.map(comp => {
           const linked = currentAccountBalances.value.filter(a => {
@@ -531,9 +537,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
-  // 🟢 ФУНКЦИЯ ИЗМЕНЕНИЯ СНАПШОТА НА КЛИЕНТЕ
-  // Мы сами прибавляем/убавляем цифры, не спрашивая сервер.
-  // Server is only for saving data, not for reading calculations on move.
   function applySnapshotDelta(op, action) {
       const amount = op.amount || 0;
       const absAmount = Math.abs(amount);
@@ -565,15 +568,25 @@ export const useMainStore = defineStore('mainStore', () => {
           _addToMap(snapshot.value.individualBalances, op.individualId, delta);
           _addToMap(snapshot.value.contractorBalances, op.contractorId, delta);
           _addToMap(snapshot.value.projectBalances, op.projectId, delta);
+      }
+
+      const catId = op.categoryId?._id || op.categoryId;
+      if (catId) {
+          const cKey = catId.toString();
+          if (!snapshot.value.categoryTotals[cKey]) snapshot.value.categoryTotals[cKey] = { income: 0, expense: 0, total: 0 };
+          const rec = snapshot.value.categoryTotals[cKey];
           
-          const catId = op.categoryId?._id || op.categoryId;
-          if (catId) {
-              const cKey = catId.toString();
-              if (!snapshot.value.categoryTotals[cKey]) snapshot.value.categoryTotals[cKey] = { income: 0, expense: 0, total: 0 };
-              const rec = snapshot.value.categoryTotals[cKey];
-              if (op.type === 'income') rec.income += (absAmount * sign);
-              else rec.expense += (absAmount * sign);
-              rec.total += delta;
+          if (isTransfer(op)) {
+              rec.expense += (absAmount * sign);
+              rec.total -= (absAmount * sign);
+          } else {
+              if (op.type === 'income') {
+                  rec.income += (absAmount * sign);
+                  rec.total += (absAmount * sign);
+              } else {
+                  rec.expense += (absAmount * sign);
+                  rec.total -= (absAmount * sign);
+              }
           }
       }
   }
@@ -583,17 +596,11 @@ export const useMainStore = defineStore('mainStore', () => {
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     let futureIncomeSum = 0; let futureExpenseSum = 0;
     
-    // Оптимизация: не пересчитываем futureIncomeSum, если виджеты не требуют
-    // (Оставлен пересчет для полноты данных, на 10к операций это быстро, т.к. берет только видимый диапазон)
-    
     projection.value = { 
       mode, totalDays: computeTotalDaysForMode(mode, base),
       rangeStartDate: startDate, rangeEndDate: endDate,
       futureIncomeSum, futureExpenseSum 
     };
-    
-    // 🔴 ВАЖНО: Мы БОЛЬШЕ НЕ ВЫЗЫВАЕМ fetchSnapshot() здесь.
-    // Мы доверяем нашим локальным изменениям (applySnapshotDelta).
   }
 
   async function fetchOperationsRange(startDate, endDate) {
@@ -655,14 +662,18 @@ export const useMainStore = defineStore('mainStore', () => {
         axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
         axios.get(`${API_BASE_URL}/prepayments`),
       ]);
-      accounts.value    = accRes.data; companies.value   = compRes.data;
-      contractors.value = contrRes.data; projects.value    = projRes.data;
-      individuals.value = indRes.data; 
+      
+      accounts.value    = _sortByOrder(accRes.data); 
+      companies.value   = _sortByOrder(compRes.data);
+      contractors.value = _sortByOrder(contrRes.data); 
+      projects.value    = _sortByOrder(projRes.data);
+      individuals.value = _sortByOrder(indRes.data); 
+      
+      // 🟢 FIX: При загрузке смешиваем категории и предоплаты и сортируем их ВМЕСТЕ
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
-      categories.value  = [...normalCategories, ...prepaymentCategories];
+      categories.value  = _sortByOrder([...normalCategories, ...prepaymentCategories]);
       
-      // Загружаем снапшот ТОЛЬКО ПРИ СТАРТЕ или явном обновлении страницы
       await fetchSnapshot();
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
@@ -732,10 +743,8 @@ export const useMainStore = defineStore('mainStore', () => {
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
       _syncCaches(dateKey, processedOps);
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
-    // 🔴 УБРАН fetchSnapshot()
   }
 
-  // 🟢 МГНОВЕННЫЙ MOVE (Pure Client)
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -751,7 +760,6 @@ export const useMainStore = defineStore('mainStore', () => {
                const originalSourceIndex = sourceOp.cellIndex;
                sourceOp.cellIndex = targetIndex; targetOp.cellIndex = originalSourceIndex;
                _syncCaches(oldDateKey, ops);
-               // Fire & Forget (No await, no refresh of snapshot)
                Promise.all([
                   axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
                   axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
@@ -780,29 +788,24 @@ export const useMainStore = defineStore('mainStore', () => {
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       // Fire & Forget
        axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date })
             .catch(() => { refreshDay(oldDateKey); refreshDay(newDateKey); });
        
-       // 🟢 Pure Client Update (БЕЗ fetchSnapshot)
        const now = new Date();
        const oldDate = _parseDateKey(oldDateKey);
        const newDate = _parseDateKey(newDateKey);
        
-       // Снапшот (на сервере) включает все ДО now.
-       // Если мы двигаем из Прошлого (снапшот) в Будущее (прогноз) -> баланс снапшота УМЕНЬШАЕТСЯ
-       // Если из Будущего в Прошлое -> баланс снапшота УВЕЛИЧИВАЕТСЯ
-       
        const wasInSnapshot = oldDate <= now;
        const isInSnapshot = newDate <= now;
        
+       // 🟢 FIX: Моментально обновляем снапшот при переходе через границу "сегодня"
        if (wasInSnapshot !== isInSnapshot) {
-           if (wasInSnapshot && !isInSnapshot) applySnapshotDelta(sourceOpData, 'remove'); // Ушла из истории
-           else applySnapshotDelta(sourceOpData, 'add'); // Пришла в историю
+           if (wasInSnapshot && !isInSnapshot) applySnapshotDelta(sourceOpData, 'remove'); // Ушла в будущее
+           else applySnapshotDelta(sourceOpData, 'add'); // Пришла из будущего
            
-           // Просто пересчитываем проекцию (это мгновенно на клиенте)
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        } else {
+           // Если внутри одного периода - просто обновляем проекцию (для виджетов будущего)
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        }
     }
@@ -810,19 +813,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
-  // Для создания и обновления мы тоже применяем клиентскую логику,
-  // но тут refreshDay нужен, чтобы получить ID и правильную структуру с сервера.
-  // Однако fetchSnapshot убираем, заменяя на applySnapshotDelta если дата в прошлом.
   async function createEvent(eventData) {
     try {
       if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
       const newOp = response.data;
       
-      // Локально добавляем в кэш
       await refreshDay(newOp.dateKey);
       
-      // Если операция добавлена в прошлое, обновляем снапшот локально
       const now = new Date();
       if (new Date(newOp.date) <= now) {
           applySnapshotDelta(newOp, 'add');
@@ -841,14 +839,12 @@ export const useMainStore = defineStore('mainStore', () => {
       const transferCategory = await _getOrCreateTransferCategory();
       const response = await axios.post(`${API_BASE_URL}/transfers`, { ...transferData, dateKey, cellIndex, categoryId: transferData.categoryId || transferCategory });
       
-      const newOp = response.data; // Это одна из операций трансфера
+      const newOp = response.data; 
       await refreshDay(dateKey);
       
       const now = new Date();
-      // Трансфер сложнее (он состоит из двух операций), но для баланса счетов
-      // applySnapshotDelta умеет обрабатывать isTransfer=true
       if (finalDate <= now) {
-          applySnapshotDelta(newOp, 'add'); // Обновит балансы from/to счетов
+          applySnapshotDelta(newOp, 'add'); 
       }
 
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -857,7 +853,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
   
   async function updateTransfer(transferId, transferData) {
-    // Полное обновление проще через запрос, но чтобы не дергалось, не фечим снапшот
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
@@ -868,7 +863,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
       
       if (oldOp) {
-          // Откатываем старое влияние на снапшот (если было в прошлом)
           const now = new Date();
           if (new Date(oldOp.date) <= now) applySnapshotDelta(oldOp, 'remove');
           if (oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
@@ -876,10 +870,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       await refreshDay(newDateKey);
       
-      // Накатываем новое (если в прошлом)
-      const newOp = response.data; // Внимание: API возвращает обновленный объект, но для трансфера он не полон без populate второй части
-      // Для простоты в Update мы всё же дернем снапшот, так как это редкое действие (не drag and drop)
-      // Но чтобы не ждать, запустим в фоне
       fetchSnapshot();
       
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -897,14 +887,13 @@ export const useMainStore = defineStore('mainStore', () => {
       else newCellIndex = await getFirstFreeCellIndex(newDateKey);
       const response = await axios.put(`${API_BASE_URL}/events/${opId}`, { ...opData, dateKey: newDateKey, cellIndex: newCellIndex });
       
-      // Локальный пересчет снапшота для мгновенности
       const now = new Date();
       if (oldOp && new Date(oldOp.date) <= now) applySnapshotDelta(oldOp, 'remove');
       
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       
-      const newOp = response.data; // С сервера уже populated
+      const newOp = response.data; 
       if (new Date(newOp.date) <= now) applySnapshotDelta(newOp, 'add');
 
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -918,7 +907,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
     _syncCaches(dateKey, ops);
     
-    // Локально убираем из снапшота
     const now = new Date();
     if (new Date(operation.date) <= now) applySnapshotDelta(operation, 'remove');
     
@@ -930,10 +918,8 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function addOperation(op){
-    // Вызывается из сокетов или других мест
     if (!op.dateKey) return;
     await refreshDay(op.dateKey); 
-    // Здесь безопасно обновить снапшот целиком, т.к. это не частое действие юзера
     fetchSnapshot();
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
@@ -947,7 +933,6 @@ export const useMainStore = defineStore('mainStore', () => {
           if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
           if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
-          // Тут снапшот нужен, т.к. удаление сущности меняет структуру балансов глобально
           if (deleteOperations) await forceRefreshAll(); else await forceRefreshAll();
       } catch (error) { throw error; }
   }
@@ -959,7 +944,32 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); projects.value.push(res.data); return res.data; }
   async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); individuals.value.push(res.data); return res.data; }
 
-  async function batchUpdateEntities(path, items){ try{ const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items); if (path==='accounts') accounts.value = res.data; else if (path==='companies') companies.value = res.data; else if (path==='contractors') contractors.value = res.data; else if (path==='projects') projects.value = res.data; else if (path==='individuals') individuals.value = res.data; else if (path==='categories') categories.value = res.data; }catch(e){ await fetchAllEntities(); } }
+  async function batchUpdateEntities(path, items){ 
+    try { 
+      // 🟢 FIX: Сортировка категорий (Разделение + Объединение)
+      if (path === 'categories') {
+          const normalCategories = items.filter(i => !i.isPrepayment);
+          const prepaymentCategories = items.filter(i => i.isPrepayment);
+          
+          await Promise.all([
+              axios.put(`${API_BASE_URL}/categories/batch-update`, normalCategories),
+              axios.put(`${API_BASE_URL}/prepayments/batch-update`, prepaymentCategories)
+          ]);
+          
+          await fetchAllEntities(); // Перезагрузка для гарантии порядка
+          return;
+      }
+
+      const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items); 
+      const sortedData = _sortByOrder(res.data);
+      
+      if (path==='accounts') accounts.value = sortedData; 
+      else if (path==='companies') companies.value = sortedData; 
+      else if (path==='contractors') contractors.value = sortedData; 
+      else if (path==='projects') projects.value = sortedData; 
+      else if (path==='individuals') individuals.value = sortedData; 
+    } catch(e) { await fetchAllEntities(); } 
+  }
 
   async function getFirstFreeCellIndex(dateKey, startIndex=0){
     if (!displayCache.value[dateKey]) await fetchOperations(dateKey); 
@@ -981,7 +991,6 @@ export const useMainStore = defineStore('mainStore', () => {
     stopAutoRefresh();
     autoRefreshInterval = setInterval(async () => {
       try {
-        // Фоновая синхронизация для "лечения" возможных расхождений
         await fetchAllEntities();
         if (projection.value.mode) await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       } catch (error) {}
@@ -1054,5 +1063,6 @@ export const useMainStore = defineStore('mainStore', () => {
     importOperations, exportAllOperations, 
     fetchSnapshot,
     checkAuth, logout,
+    _sortByOrder, 
   };
 });

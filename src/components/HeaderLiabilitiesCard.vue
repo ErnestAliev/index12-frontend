@@ -1,204 +1,197 @@
-<!-- 
-  Version: 1.1
-  Fix description: 
-  1. Переименован заголовок виджета в "Мои переводы".
-  2. Исправлена логика подсчета итоговой суммы (добавлена проверка на валидность чисел).
--->
 <script setup>
-import { computed, ref } from 'vue'
-import { useMainStore } from '../stores/mainStore'
-import { storeToRefs } from 'pinia'
-import iconViewBig from '@/assets/icon_view_big.png'
-import iconViewSmal from '@/assets/icon_view_smal.png'
-import EntityListEditor from './EntityListEditor.vue'
-import { formatMoney } from '../utils/formatters'
+import { ref, watch, computed, nextTick } from 'vue';
+import { useMainStore } from '@/stores/mainStore';
+import { formatNumber } from '@/utils/formatters.js'; // 🟢 Используем formatNumber
+
+/**
+ * * --- МЕТКА ВЕРСИИ: v4.1 - FIX IMPORT ERROR ---
+ * * ВЕРСИЯ: 4.1 - Исправление ошибки импорта formatMoney
+ * * ДАТА: 2025-11-22
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FIX) Убедились, что импортируется и используется formatNumber.
+ */
 
 const props = defineProps({
-  title: {
-    type: String,
-    default: 'Мои переводы' // Changed default title
+  title: { type: String, default: 'Мои предоплаты' },
+  weOweAmount: { type: Number, default: 0 },        
+  theyOweAmount: { type: Number, default: 0 },       
+  weOweAmountFuture: { type: Number, default: 0 },   
+  theyOweAmountFuture: { type: Number, default: 0 }, 
+  widgetKey: { type: String, required: true },
+  widgetIndex: { type: Number, required: true }
+});
+
+const emit = defineEmits(['edit']);
+const mainStore = useMainStore();
+
+const showFutureBalance = computed({
+  get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
+  set: (val) => mainStore.setForecastState(props.widgetKey, val)
+});
+
+const isDropdownOpen = ref(false);
+const menuRef = ref(null);
+const searchQuery = ref('');
+
+const filteredWidgets = computed(() => {
+  if (!searchQuery.value) return mainStore.allWidgets;
+  const query = searchQuery.value.toLowerCase();
+  return mainStore.allWidgets.filter(widget => widget.name.toLowerCase().includes(query));
+});
+
+const handleSelect = (newWidgetKey) => {
+  if (mainStore.dashboardLayout.includes(newWidgetKey) && newWidgetKey !== props.widgetKey) return;
+  mainStore.replaceWidget(props.widgetIndex, newWidgetKey);
+  nextTick(() => { isDropdownOpen.value = false; });
+};
+
+const handleClickOutside = (event) => {
+  if (menuRef.value && !menuRef.value.contains(event.target)) {
+    isDropdownOpen.value = false;
   }
-})
+};
 
-const mainStore = useMainStore()
-const { liabilities } = storeToRefs(mainStore)
-const { updateLiability, createLiability, deleteLiability } = mainStore
+watch(isDropdownOpen, (isOpen) => {
+  if (isOpen) {
+    searchQuery.value = '';
+    document.addEventListener('mousedown', handleClickOutside);
+  } else {
+    document.removeEventListener('mousedown', handleClickOutside);
+  }
+});
 
-const isEditorOpen = ref(false)
+const toggleDropdown = () => { isDropdownOpen.value = !isDropdownOpen.value; };
 
-// Исправлена логика подсчета: добавлена конвертация в число и проверка на NaN
-const totalLiabilities = computed(() => {
-  if (!liabilities.value || !Array.isArray(liabilities.value)) return 0
-  return liabilities.value.reduce((acc, item) => {
-    const amount = parseFloat(item.amount)
-    return acc + (isNaN(amount) ? 0 : amount)
-  }, 0)
-})
+// Локальный форматтер валюты
+const formatCurrency = (val) => {
+  const absVal = Math.abs(val || 0);
+  return `${formatNumber(absVal)} ₸`;
+};
 
-const formattedTotal = computed(() => formatMoney(totalLiabilities.value))
+const displayWeOwe = computed(() => {
+    if (!showFutureBalance.value) return formatCurrency(props.weOweAmount);
+    return `${formatCurrency(props.weOweAmount)} > ${formatCurrency(props.weOweAmountFuture)}`;
+});
 
-const handleSave = async (items) => {
-  // Логика сохранения списка (включая порядок, если будет реализовано)
-  // Здесь мы просто обновляем данные через store
-  // Для каждого элемента проверяем, новый он или измененный
-  
-  // В данном простом примере редактора, возможно, нужно более сложное взаимодействие,
-  // но пока оставим базовое обновление списка через API стора
-}
-
+const displayTheyOwe = computed(() => {
+    if (!showFutureBalance.value) return formatCurrency(props.theyOweAmount);
+    return `${formatCurrency(props.theyOweAmount)} > ${formatCurrency(props.theyOweAmountFuture)}`;
+});
 </script>
 
 <template>
-  <div class="card-container">
-    <div class="card-header">
-      <div class="title-group">
-        <!-- Используем проп title, но по умолчанию он теперь "Мои переводы" -->
-        <h2 class="card-title">{{ title }}</h2>
-        <button class="edit-btn" @click="isEditorOpen = true">
-          <img src="@/assets/filter-edit.svg" alt="Edit" />
+  <div class="dashboard-card">
+    
+    <div class="card-title-container">
+      <div class="card-title" ref="menuRef" @click.stop="toggleDropdown">
+        {{ title }} <span>▽</span>
+        
+        <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
+          <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." @click.stop />
+          <ul>
+            <li v-for="widget in filteredWidgets" :key="widget.key"
+              :class="{ 'active': widget.key === props.widgetKey, 'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== props.widgetKey }"
+              @click.stop="handleSelect(widget.key)">
+              {{ widget.name }}
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <button 
+          class="action-square-btn"
+          :class="{ 'active': showFutureBalance }"
+          @click.stop="showFutureBalance = !showFutureBalance"
+          title="Показать прогноз"
+        >
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7"></line>
+            <polyline points="7 7 17 7 17 17"></polyline>
+          </svg>
+        </button>
+        
+        <button 
+          @click.stop="$emit('edit')" 
+          class="action-square-btn"
+          title="Редактировать"
+        >
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
         </button>
       </div>
-      <div class="card-total">{{ formattedTotal }}</div>
     </div>
 
-    <div class="card-content">
-      <div v-for="item in liabilities" :key="item.id" class="list-item">
-        <span class="item-name">{{ item.name }}</span>
-        <span class="item-amount">{{ formatMoney(item.amount) }}</span>
+    <div class="card-items-list">
+      
+      <div class="card-item">
+        <span title="Полученные авансы, по которым работа не сдана">Мы должны</span>
+        <span class="value-expense">
+          {{ displayWeOwe }}
+        </span>
       </div>
-    </div>
 
-    <div class="card-footer">
-      <img :src="iconViewBig" class="icon-big" />
-      <img :src="iconViewSmal" class="icon-small" />
-    </div>
+      <div class="card-item">
+        <span title="Остатки по сделкам, где внесена только часть суммы">Нам должны</span>
+        <span class="value-orange">
+          {{ displayTheyOwe }}
+        </span>
+      </div>
 
-    <EntityListEditor
-      v-if="isEditorOpen"
-      title="Редактирование переводов"
-      :entities="liabilities"
-      @close="isEditorOpen = false"
-      @save="handleSave"
-      @update="updateLiability"
-      @create="createLiability"
-      @delete="deleteLiability"
-    />
+    </div>
   </div>
 </template>
 
 <style scoped>
-.card-container {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  position: relative;
-  box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.05);
+.dashboard-card {
+  flex: 1; display: flex; flex-direction: column;
+  padding-right: 1.5rem; border-right: 1px solid var(--color-border);
+  position: relative; min-height: 0;
 }
+.dashboard-card:last-child { border-right: none; padding-right: 0; }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
+.card-title-container {
+  display: flex; justify-content: space-between; align-items: center;
+  height: 32px; margin-bottom: 0.5rem; flex-shrink: 0;
 }
-
-.title-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .card-title {
-  font-family: 'Inter', sans-serif;
-  font-style: normal;
-  font-weight: 600;
-  font-size: 16px;
-  line-height: 19px;
-  color: #1a1a1a;
-  margin: 0;
+  font-size: 0.85em; color: #aaa; cursor: pointer; transition: color 0.2s;
+  position: relative; z-index: 101;
 }
+.card-title:hover { color: #ddd; }
+.card-title span { font-size: 0.8em; margin-left: 4px; }
 
-.edit-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
+.card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
+.action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
+.action-square-btn:hover { background-color: #555; color: #ccc; }
+.action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
+.icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
-.edit-btn:hover {
-  opacity: 1;
-}
+.widget-dropdown { position: absolute; top: 35px; left: 0; width: 220px; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; }
+.widget-search-input { flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.9em; box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333; }
+.widget-search-input:focus { outline: none; border-color: #007AFF; }
+.widget-dropdown ul { list-style: none; margin: 0; padding: 0; flex-grow: 1; overflow-y: auto; }
+.widget-dropdown li { padding: 10px 12px; border-radius: 6px; font-size: 0.9em; color: #333; cursor: pointer; font-weight: 500 !important; }
+.widget-dropdown li:hover { background-color: #e9e9e9; }
+.widget-dropdown li.active { color: #333; background-color: #e0e0e0; }
+.widget-dropdown li.disabled { color: #aaa; background-color: transparent; cursor: not-allowed; }
 
-.card-total {
-  font-family: 'Inter', sans-serif;
-  font-style: normal;
-  font-weight: 700;
-  font-size: 20px;
-  line-height: 24px;
-  color: #1a1a1a;
-}
+.card-items-list { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; display: flex; flex-direction: column; gap: 4px; }
+.card-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; margin-bottom: 0.25rem; }
+.card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
+.card-item span:last-child { font-weight: 500; white-space: nowrap; }
 
-.card-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  margin-bottom: 40px; /* место под иконки */
-}
+.value-expense { color: var(--color-danger); }
+.value-orange { color: #FF9D00; }
 
-.list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-  border-bottom: 1px solid #f0f0f0;
-  padding-bottom: 8px;
-}
-
-.list-item:last-child {
-  border-bottom: none;
-}
-
-.item-name {
-  color: #666666;
-  font-weight: 400;
-}
-
-.item-amount {
-  color: #1a1a1a;
-  font-weight: 600;
-}
-
-.card-footer {
-  position: absolute;
-  bottom: 16px;
-  left: 20px;
-  right: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  pointer-events: none;
-}
-
-.icon-big {
-  width: 32px;
-  height: 32px;
-  opacity: 0.1;
-}
-
-.icon-small {
-  width: 24px;
-  height: 24px;
-  opacity: 0.1;
+@media (max-height: 900px) {
+  .dashboard-card { min-width: 100px; padding-right: 1rem; }
+  .card-title { font-size: 0.8em; }
+  .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
+  .action-square-btn { width: 16px; height: 16px; }
+  .icon-svg { width: 10px; height: 10px; }
 }
 </style>

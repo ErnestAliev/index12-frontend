@@ -5,14 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.4 - TRANSFER WIDGET FIX ---
- * * ВЕРСИЯ: 8.4 - Исправление источника данных для виджета "Перевод"
- * * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v8.5 - TRANSFER CALC FIX & RENAME ---
+ * * ВЕРСИЯ: 8.5 - Исправление расчета переводов и переименование
+ * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) currentSum для isTransferWidget теперь берет данные из
- * categoryBreakdown.total (абсолютное значение), а не из mainStore.currentTransfers.
- * Это гарантирует, что мы покажем те же цифры, что насчитал стор в breakdowns.
+ * 1. (LOGIC) Для виджета перевода суммы считаются "на лету" по спискам currentTransfers/futureTransfers,
+ * так как в снапшоте (breakdowns) переводы игнорируются.
+ * 2. (UI) Виджет перевода теперь отображается как "Мои переводы" вместо "Перевод".
  */
 
 const props = defineProps({
@@ -82,26 +82,34 @@ const isTransferWidget = computed(() => {
   return false;
 });
 
+// 🟢 ЗАДАЧА-3: Переименовать виджет "Перевод" в "Мои переводы"
+const displayTitle = computed(() => {
+    if (isTransferWidget.value) {
+        return 'Мои переводы';
+    }
+    return props.title;
+});
+
 const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
 const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
 const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value || isTransferWidget.value);
 
 // --- Данные для обычных категорий (не списочных) ---
-// Берем данные из стора. Если это Перевод, стор уже всё посчитал.
 const categoryBreakdown = computed(() => {
-  // Убираем проверку isSummaryWidget, чтобы всегда получать данные для Перевода
   const source = showFutureBalance.value ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
   const data = source[props.widgetKey] || { income: 0, expense: 0, total: 0 };
   return data;
 });
 
 // --- Расчет сумм для Сводных виджетов ---
+// 🟢 ЗАДАЧА-2: Исправляем подсчет для переводов
+// Снапшот не считает суммы по категории "Перевод", поэтому считаем вручную по спискам.
+
 // 1. Текущая сумма
 const currentSum = computed(() => {
   if (isTransferWidget.value) {
-      // 🟢 FIX: Берем из breakdown
-      // Стор пишет переводы в 'expense' и 'total'. Берем абсолютное значение total.
-      return Math.abs(categoryBreakdown.value.total); 
+      // Считаем сумму всех текущих переводов (абсолютные значения)
+      return (mainStore.currentTransfers || []).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
   }
   
   let list = [];
@@ -114,10 +122,8 @@ const currentSum = computed(() => {
 // 2. Сумма будущих операций (только дельта)
 const futureOnlySum = computed(() => {
   if (isTransferWidget.value) {
-      // Для перевода нам нужно вычислить разницу между futureTotal и currentTotal из breakdowns
-      const current = mainStore.currentCategoryBreakdowns[props.widgetKey]?.total || 0;
-      const future = mainStore.futureCategoryBreakdowns[props.widgetKey]?.total || 0;
-      return Math.abs(future) - Math.abs(current);
+      // Считаем сумму всех будущих переводов
+      return (mainStore.futureTransfers || []).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
   }
 
   let list = [];
@@ -127,12 +133,9 @@ const futureOnlySum = computed(() => {
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// 3. Прогнозная сумма = Текущие + Будущие (или просто Future Total из breakdown)
+// 3. Прогнозная сумма = Текущие + Будущие
 const projectedSum = computed(() => {
-    if (isTransferWidget.value) {
-        const future = mainStore.futureCategoryBreakdowns[props.widgetKey]?.total || 0;
-        return Math.abs(future);
-    }
+    // Простая сумма, так как мы посчитали current и future отдельно
     return currentSum.value + futureOnlySum.value;
 });
 
@@ -150,7 +153,7 @@ const handleEdit = () => { emit('edit'); };
     <!-- ЗАГОЛОВОК КАРТОЧКИ -->
     <div class="card-title-container">
       <div class="card-title" ref="menuRef" @click.stop="toggleDropdown">
-        {{ title }} <span>▽</span>
+        {{ displayTitle }} <span>▽</span>
         <div v-if="isDropdownOpen" class="widget-dropdown" @click.stop>
           <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." @click.stop />
           <ul>
