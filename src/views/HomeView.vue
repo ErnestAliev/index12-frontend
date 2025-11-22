@@ -18,19 +18,38 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.1 - SMART VIEW SWITCH ---
- * * ВЕРСИЯ: 16.1 - Умное переключение режимов (без сброса к центру)
- * * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v16.4 - FINAL AUTH FIX ---
+ * * ВЕРСИЯ: 16.4 - Исправление редиректа и добавление DEV-входа
+ * * ДАТА: 2025-11-22
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) onChangeView теперь сохраняет позицию скролла (дату левого края).
- * 2. (LOGIC) Исправлен расчет virtualStartIndex при смене viewMode.
+ * 1. (FIX) Кнопка Google Auth теперь использует динамическую ссылку (:href).
+ * 2. (FEAT) Добавлена кнопка "Тестовый вход" (только для localhost).
  */
 
-console.log('--- HomeView.vue v16.1 (Smart View Switch) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v16.4 (Final Auth Fix) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
+
+// Проверка на localhost (для отображения кнопки разработчика)
+const isLocalhost = computed(() => {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+});
+
+// 🟢 ДИНАМИЧЕСКАЯ ССЫЛКА ДЛЯ ВХОДА ЧЕРЕЗ GOOGLE
+// Берет API_BASE_URL, убирает '/api' и добавляет '/auth/google'
+// Пример: http://localhost:3000/api -> http://localhost:3000/auth/google
+const googleAuthUrl = computed(() => {
+  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
+  return `${baseUrl}/auth/google`;
+});
+
+// 🟢 ССЫЛКА ДЛЯ DEV ВХОДА (БЕЗ ПАРОЛЯ)
+const devAuthUrl = computed(() => {
+  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
+  return `${baseUrl}/auth/dev-login`;
+});
 
 // Состояния модальных окон
 const showImportModal = ref(false); 
@@ -944,8 +963,14 @@ onBeforeUnmount(() => {
     <div class="login-box">
       <h1>Добро пожаловать в систему управления финансами и активами index12</h1>
      
-      <a href="https://api.index12.com/auth/google" class="google-login-button">
+      <!-- 🟢 ДИНАМИЧЕСКАЯ ССЫЛКА НА GOOGLE (FIX) -->
+      <a :href="googleAuthUrl" class="google-login-button">
         Войти через Google
+      </a>
+
+      <!-- 🟢 ВХОД ДЛЯ РАЗРАБОТЧИКА (ТОЛЬКО LOCALHOST) -->
+      <a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">
+        Тестовый вход (Localhost)
       </a>
     </div>
   </div>
@@ -968,7 +993,6 @@ onBeforeUnmount(() => {
       </aside>
 
       <main class="home-main-content" ref="mainContentRef">
-        <!-- 🟢 ДОБАВЛЕНО: @dragover для авто-скролла и @dragleave для отмены -->
         <div 
           class="timeline-grid-wrapper" 
           ref="timelineGridRef"
@@ -1201,10 +1225,35 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: background-color 0.2s, box-shadow 0.2s;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  width: 100%;
+  box-sizing: border-box;
 }
 .google-login-button:hover {
   background-color: #f9f9f9;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* 🟢 СТИЛИ ДЛЯ КНОПКИ DEV LOGIN */
+.dev-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  background-color: #333;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.dev-login-button:hover {
+  background-color: #444;
 }
 
 /* --- Стили остального приложения --- */
