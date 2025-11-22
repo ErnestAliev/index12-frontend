@@ -5,15 +5,14 @@ import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.5 - BALANCE INPUT UX FIX ---
- * * ВЕРСИЯ: 10.5 - Улучшение UX ввода баланса и ширины поля
- * * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v10.6 - FORCE SORT ON MOUNT ---
+ * * ВЕРСИЯ: 10.6 - Принудительная сортировка списка при открытии
+ * * ДАТА: 2025-11-22
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Увеличена ширина .edit-balance с 100px до 130px (+30%).
- * 2. (UX) Добавлен обработчик @focus="$event.target.select()" для инпута баланса.
- * Теперь при клике на "0" он выделяется, и ввод цифры заменяет его,
- * предотвращая ошибку "дописывания нуля" (когда 100 превращалось в 1000).
+ * 1. (LOGIC) В onMounted добавлена сортировка items по полю order.
+ * Это устраняет проблему, когда при открытии редактора список мог быть хаотичным,
+ * и перетаскивание работало некорректно относительно реального порядка.
  */
 
 const props = defineProps({
@@ -137,7 +136,15 @@ const onAmountInput = (item) => {
 
 onMounted(() => {
   const allAccounts = mainStore.accounts;
-  localItems.value = JSON.parse(JSON.stringify(props.items)).map(item => {
+  
+  // Клонируем пропсы, чтобы не мутировать их напрямую
+  let rawItems = JSON.parse(JSON.stringify(props.items));
+
+  // 🟢 FIX v10.6: Сортируем список по order перед отрисовкой
+  // Это гарантирует, что визуальный порядок соответствует сохраненному индексу
+  rawItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  localItems.value = rawItems.map(item => {
     if (isAccountEditor) {
       const balance = item.initialBalance || 0;
       return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance) }
@@ -169,6 +176,7 @@ onMounted(() => {
 
 const handleSave = async () => {
   const itemsToSave = localItems.value.map((item, index) => {
+    // Сохраняем текущий визуальный индекс как order
     const data = { _id: item._id, name: item.name, order: index }; 
     if (isAccountEditor) data.initialBalance = item.initialBalance || 0;
     if (isContractorEditor) { data.defaultProjectId = item.defaultProjectId || null; data.defaultCategoryId = item.defaultCategoryId || null; }
@@ -283,7 +291,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
-                <!-- 🟢 UX FIX: Добавлен @focus="$event.target.select()" -->
                 <input 
                   type="text" 
                   inputmode="decimal" 
