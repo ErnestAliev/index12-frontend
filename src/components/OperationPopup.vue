@@ -6,12 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.1 - PRO UI UPDATE ---
- * * ВЕРСИЯ: 19.1 - Обновленный дизайн и цвета
- * * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v20.0 - PREPAYMENT BUTTON REFACTOR ---
+ * * ВЕРСИЯ: 20.0 - Вынос "Предоплаты" в отдельную кнопку
+ * * ДАТА: 2025-11-23
  * *
- * * 1. Добавлены CSS переменные для тем (--focus-color) в контейнер попапа.
- * * 2. BaseSelect теперь наследует цвет темы (Зеленый/Оранжевый/Черный).
+ * * 1. (LOGIC) Категории "Предоплата" убраны из выпадающего списка `categoryOptions`.
+ * * 2. (UI) Добавлена кнопка "Создать предоплату" (оранжевая) рядом с "Создать доход".
+ * * 3. (LOGIC) Новая кнопка запускает `handlePrepaymentClick`, валидирует поля и вызывает модалку предоплаты.
  */
 
 const mainStore = useMainStore();
@@ -108,10 +109,17 @@ const projectOptions = computed(() => {
   return opts;
 });
 
+// 🟢 ИЗМЕНЕНО: Фильтрация категорий
+// Теперь исключаем не только "Перевод", но и "Предоплату" из списка
 const categoryOptions = computed(() => {
+  const prepayIds = mainStore.getPrepaymentCategoryIds;
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
-    return name !== 'перевод' && name !== 'transfer';
+    const isTransfer = name === 'перевод' || name === 'transfer';
+    const isPrepay = prepayIds.includes(c._id) || c.isPrepayment;
+    
+    // Исключаем переводы и предоплаты из выпадающего списка
+    return !isTransfer && !isPrepay;
   });
   const opts = validCats.map(c => ({ value: c._id, label: c.name, isSpecial: false }));
   opts.unshift({ value: null, label: 'Без категории', isSpecial: false });
@@ -126,22 +134,50 @@ const handleContractorChange = (val) => { if (val === '--CREATE_NEW--') { select
 const handleProjectChange = (val) => { if (val === '--CREATE_NEW--') { selectedProjectId.value = null; showProjectInput(); } };
 const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; showCategoryInput(); } };
 
+// (Оставляем watch для обратной совместимости, но пользователь теперь не сможет выбрать предоплату через селект)
 watch(selectedCategoryId, (newVal) => {
     if (isInitialLoad.value) return;
     if (!newVal || newVal === '--CREATE_NEW--') return;
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     if (prepayIds.includes(newVal)) {
-        const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
-        const currentData = {
-            amount: rawAmount, accountId: selectedAccountId.value, contractorId: selectedContractorId.value,
-            projectId: selectedProjectId.value, categoryId: newVal,
-            companyId: selectedOwner.value?.startsWith('company') ? selectedOwner.value.split('-')[1] : null,
-            individualId: selectedOwner.value?.startsWith('individual') ? selectedOwner.value.split('-')[1] : null,
-            date: editableDate.value, cellIndex: props.cellIndex, operationToEdit: props.operationToEdit
-        };
-        emit('trigger-prepayment', currentData);
+       // Логика переноса в модалку (теперь вызывается кнопкой)
+       triggerPrepaymentFlow(newVal);
     }
 });
+
+const triggerPrepaymentFlow = (catId) => {
+    const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
+    const currentData = {
+        amount: rawAmount, accountId: selectedAccountId.value, contractorId: selectedContractorId.value,
+        projectId: selectedProjectId.value, categoryId: catId,
+        companyId: selectedOwner.value?.startsWith('company') ? selectedOwner.value.split('-')[1] : null,
+        individualId: selectedOwner.value?.startsWith('individual') ? selectedOwner.value.split('-')[1] : null,
+        date: editableDate.value, cellIndex: props.cellIndex, operationToEdit: props.operationToEdit
+    };
+    emit('trigger-prepayment', currentData);
+};
+
+// 🟢 НОВЫЙ МЕТОД: Обработчик нажатия кнопки "Создать предоплату"
+const handlePrepaymentClick = () => {
+    errorMessage.value = '';
+    
+    // 1. Валидация основных полей (как при сохранении)
+    const amountFromState = (amount.value || '').replace(/ /g, '');
+    const amountParsed = parseFloat(amountFromState);
+    
+    if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorId.value) {
+        errorMessage.value = 'Для создания предоплаты заполните: Сумма, Счет, Компания/Физлицо, Контрагент.';
+        return;
+    }
+
+    // 2. Находим ID категории "Предоплата" (системная логика)
+    // Если не найдем - отправим null, бэкенд/модалка разберутся или создадут новую
+    const prepayIds = mainStore.getPrepaymentCategoryIds;
+    const targetCatId = prepayIds.length > 0 ? prepayIds[0] : null;
+
+    // 3. Запускаем поток предоплаты
+    triggerPrepaymentFlow(targetCatId);
+};
 
 const onAmountInput = (event) => {
   const input = event.target; const value = input.value; const cursorPosition = input.selectionStart;
@@ -164,7 +200,15 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
   const contractor = mainStore.contractors.find(c => c._id === contractorId);
   if (contractor) {
     if (setProject && contractor.defaultProjectId) { const pId = (contractor.defaultProjectId && typeof contractor.defaultProjectId === 'object') ? contractor.defaultProjectId._id : contractor.defaultProjectId; selectedProjectId.value = pId; }
-    if (setCategory && contractor.defaultCategoryId) { const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId; selectedCategoryId.value = cId; }
+    // При выборе контрагента, если его дефолтная категория - предоплата, мы пока это игнорируем в селекте, так как убрали опцию.
+    if (setCategory && contractor.defaultCategoryId) { 
+        const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId;
+        const prepayIds = mainStore.getPrepaymentCategoryIds;
+        // Если дефолтная категория - НЕ предоплата, ставим её. Если предоплата - оставляем пустой или старую.
+        if (!prepayIds.includes(cId)) {
+            selectedCategoryId.value = cId; 
+        }
+    }
   }
 };
 
@@ -175,7 +219,13 @@ onMounted(async () => {
     if (op.companyId) { const cId = op.companyId?._id || op.companyId; selectedOwner.value = `company-${cId}`; } 
     else if (op.individualId) { const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; }
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
-    const catId = op.categoryId?._id || op.categoryId; const prepId = op.prepaymentId?._id || op.prepaymentId; selectedCategoryId.value = catId || prepId || null;
+    
+    const catId = op.categoryId?._id || op.categoryId; const prepId = op.prepaymentId?._id || op.prepaymentId; 
+    
+    // Если редактируем существующую предоплату - категория в селекте может не отобразиться (т.к. отфильтрована)
+    // Это нормально, так как для редактирования предоплат лучше использовать PrepaymentModal
+    selectedCategoryId.value = catId || prepId || null;
+    
     selectedProjectId.value = op.projectId?._id || op.projectId;
     if (op.date) editableDate.value = toInputDate(new Date(op.date));
   } else { setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100); }
@@ -328,9 +378,23 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
-          <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">
-            {{ buttonText }}
-          </button>
+          
+          <!-- 🟢 КНОПКИ (РЕФАКТОРИНГ) -->
+          <template v-if="props.type === 'income' && !isEditMode">
+             <button @click="handleSave" class="btn-submit btn-submit-income" :disabled="isInlineSaving">
+               Оплата
+             </button>
+             <button @click="handlePrepaymentClick" class="btn-submit btn-submit-prepayment" :disabled="isInlineSaving">
+               Предоплата
+             </button>
+          </template>
+          
+          <template v-else>
+             <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">
+               {{ buttonText }}
+             </button>
+          </template>
+
           <div v-if="props.operationToEdit && !isCloneMode.value" class="icon-actions">
             <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
@@ -379,16 +443,27 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .icon-btn.danger { background: #FF3B30; color: #fff; }
 .icon-btn.danger:hover { background: #d93025; }
 .icon { width: 28px; height: 28px; min-width: 28px; min-height: 28px; fill: currentColor; display: block; pointer-events: none; }
+
+/* КНОПКИ SUBMIT */
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .btn-submit-income { background-color: #28B8A0; }
 .btn-submit-income:hover:not(:disabled) { background-color: #1f9c88; }
+
+/* 🟢 СТИЛЬ КНОПКИ ПРЕДОПЛАТЫ */
+.btn-submit-prepayment { background-color: #FF9D00; }
+.btn-submit-prepayment:hover:not(:disabled) { background-color: #e68a00; }
+
 .btn-submit-expense { background-color: #F36F3F; }
 .btn-submit-expense:hover:not(:disabled) { background-color: #d95a30; }
+
 .btn-submit-edit { background-color: #222222; }
 .btn-submit-edit:hover:not(:disabled) { background-color: #333333; }
+
 .btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
 .btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
+
 .smart-create-owner { border-top: 1px solid #E0E0E0; margin-top: 1.5rem; padding-top: 1.5rem; }
 .smart-create-title { font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center; margin-top: 0; margin-bottom: 1.5rem; }
 .smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem; }
