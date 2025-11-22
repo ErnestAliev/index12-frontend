@@ -1,14 +1,13 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.0 - PURE CLIENT MATH ---
- * * ВЕРСИЯ: 26.0 - Полный отказ от пересчета на сервере при действиях
- * * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v26.1 - COMPANY BALANCE AGGREGATION ---
+ * * ВЕРСИЯ: 26.1 - Расчет баланса компании как суммы счетов
+ * * ДАТА: 2025-11-22
  *
- * ИСПРАВЛЕНИЕ ОШИБОК:
- * 1. УБРАН fetchSnapshot() из moveOperation, update, delete, create.
- * Теперь сервер используется только как хранилище.
- * 2. ДОБАВЛЕНА логика applySnapshotDelta: мы сами правим баланс снапшота (+/-),
- * когда операция пересекает границу "Прошлое/Будущее".
- * 3. НЕТ ДЕРГАНИЙ: Интерфейс обновляется 1 раз.
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) currentCompanyBalances теперь считается как сумма балансов
+ * привязанных к компании счетов (currentAccountBalances), а не берется из снапшота транзакций.
+ * 2. (LOGIC) futureCompanyBalances аналогично агрегирует futureAccountBalances.
+ * Это обеспечивает учет начальных балансов счетов в виджете "Мои компании".
  */
 
 import { defineStore } from 'pinia';
@@ -31,7 +30,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.0 (Pure Client Math) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.1 (Company Balance Aggregation) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -471,16 +470,35 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
+  // 1. СЧЕТА
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ ...a, balance: snapshot.value.accountBalances[a._id] || 0 })));
   const futureAccountBalances = computed(() => {
     const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
     return accounts.value.map(a => ({ ...a, balance: futureMap[a._id] || 0 }));
   });
   
-  const currentCompanyBalances = computed(() => companies.value.map(c => ({ ...c, balance: snapshot.value.companyBalances[c._id] || 0 })));
+  // 🟢 2. КОМПАНИИ (НОВАЯ ЛОГИКА v26.1)
+  // Баланс компании = Сумма балансов привязанных счетов
+  const currentCompanyBalances = computed(() => {
+      return companies.value.map(comp => {
+          const linked = currentAccountBalances.value.filter(a => {
+              const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
+              return cId === comp._id;
+          });
+          const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
+          return { ...comp, balance: total };
+      });
+  });
+
   const futureCompanyBalances = computed(() => {
-    const futureMap = _calculateFutureEntityBalance(snapshot.value.companyBalances, 'companyId');
-    return companies.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
+      return companies.value.map(comp => {
+          const linked = futureAccountBalances.value.filter(a => {
+              const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
+              return cId === comp._id;
+          });
+          const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
+          return { ...comp, balance: total };
+      });
   });
 
   const currentContractorBalances = computed(() => contractors.value.map(c => ({ ...c, balance: snapshot.value.contractorBalances[c._id] || 0 })));
