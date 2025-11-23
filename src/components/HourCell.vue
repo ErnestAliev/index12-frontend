@@ -118,11 +118,14 @@ const onDrop = (event) => {
         </span>
       </template>
 
+      <!-- 🟢 ВЫВОД -->
       <template v-else-if="isWithdrawalOp">
         <span class="op-amount">
           - {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
-        <span class="op-meta">Вывод</span>
+        <span class="op-meta">
+           {{ operation.destination || 'Вывод' }}
+        </span>
       </template>
 
       <template v-else>
@@ -206,13 +209,3 @@ const onDrop = (event) => {
   }
 }
 </style>
-```All files have been updated to fix the issues you raised:
-
-1.  **Server**: Updated `server.js` to include the `isWithdrawal` field in the `Event` schema, allowing withdrawal operations to be saved and recognized correctly.
-2.  **Store**: Updated `mainStore.js` to export the `_getOrCreateTransferCategory` function (fixing the "not a function" error) and updated the graph data logic to accumulate `withdrawal` amounts separately for visualization.
-3.  **Withdrawal Popup**: Updated `WithdrawalPopup.vue` to remove the separate comment input field, use the `destination` as the comment/destination, and integrate the `BaseSelect` component for the "Reason" field.
-4.  **Transfer Logic**: Updated `TransferListEditor.vue` to correctly import and use the store function, ensuring "Create new transfer" works by resetting state, and fixing the "Continue > Transfer" logic by properly passing `initialData`. Also updated `TransferPopup.vue` to correctly initialize form fields from `initialData`.
-5.  **Graph**: Updated `GraphRenderer.vue` to include a new dataset for "Withdrawal" with the agreed-upon violet color scheme.
-6.  **Timeline**: Updated `HourCell.vue` to display withdrawal operations with distinct styling (violet background/text) so they are easily identifiable on the timeline.
-
-The entire logic flow for creating transfers, continuing chains, and withdrawing funds should now be fully functional and visually consistent.

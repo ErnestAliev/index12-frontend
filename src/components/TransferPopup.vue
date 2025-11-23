@@ -7,12 +7,11 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.0 - CHAIN CONTINUATION ---
- * * ВЕРСИЯ: 18.0 - Поддержка продолжения цепочек
+ * * --- МЕТКА ВЕРСИИ: v18.1 - Z-INDEX FIX ---
+ * * ВЕРСИЯ: 18.1 - Исправление перекрытия слоев
  * * ДАТА: 2025-11-23
  * *
- * * 1. (FEAT) Добавлен prop `initialData` для предзаполнения полей (при продолжении цепочки).
- * * 2. (LOGIC) При сохранении передается `transferGroupId`, если он был в `initialData`.
+ * * 1. (CSS) z-index повышен до 2500, чтобы быть выше TransferListEditor (1100).
  */
 
 const mainStore = useMainStore();
@@ -22,10 +21,10 @@ const props = defineProps({
   transferToEdit: { type: Object, default: null },
   minAllowedDate: { type: Date, default: null },
   maxAllowedDate: { type: Date, default: null },
-  initialData: { type: Object, default: null } // 🟢 Новое свойство
+  initialData: { type: Object, default: null }
 });
 
-const emit = defineEmits(['close', 'save']); // save теперь используется для унификации
+const emit = defineEmits(['close', 'save']);
 
 const amount = ref('');
 const fromAccountId = ref(null);
@@ -146,7 +145,6 @@ onMounted(async () => {
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
   categoryId.value = defaultCategoryId;
 
-  // 1. РЕДАКТИРОВАНИЕ
   if (props.transferToEdit) {
     const transfer = props.transferToEdit;
     amount.value = formatNumber(Math.abs(transfer.amount));
@@ -160,27 +158,21 @@ onMounted(async () => {
     
     if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
   } 
-  // 2. ПРОДОЛЖЕНИЕ ЦЕПОЧКИ (Новый перевод с предзаполнением)
   else if (props.initialData) {
       const init = props.initialData;
       if (init.amount) amount.value = formatNumber(init.amount);
       
-      // Предзаполняем источник
       if (init.fromAccountId) {
           fromAccountId.value = init.fromAccountId;
-          // Владелец подтянется автоматически, если он есть в базе, но можно и явно задать
           if (init.fromCompanyId) selectedFromOwner.value = `company-${init.fromCompanyId}`;
           else if (init.fromIndividualId) selectedFromOwner.value = `individual-${init.fromIndividualId}`;
-          else onFromAccountSelected(init.fromAccountId); // Попытка автоопределения
+          else onFromAccountSelected(init.fromAccountId);
       }
       
-      // Фокус на поле "Куда" (так как "Откуда" и "Сумма" уже есть)
       setTimeout(() => { 
-          // Пока нет рефа на селект "Куда", фокус на сумму по дефолту, пользователь сам перейдет
           if (amountInput.value) amountInput.value.focus(); 
       }, 100);
   }
-  // 3. НОВЫЙ ЧИСТЫЙ ПЕРЕВОД
   else {
     setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100);
   }
@@ -261,7 +253,6 @@ const handleSave = async () => {
       fromIndividualId: fromIndividualId, 
       toIndividualId: toIndividualId, 
       categoryId: categoryId.value,
-      // 🟢 FIX: Передаем transferGroupId, если это продолжение цепочки
       transferGroupId: props.initialData?.transferGroupId || props.transferToEdit?.transferGroupId 
   };
   
@@ -409,7 +400,7 @@ const closePopup = () => { emit('close'); };
 <style scoped>
 .theme-edit { --focus-color: #222222; --focus-shadow: rgba(34, 34, 34, 0.2); }
 
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 2500; /* 🟢 FIX: Выше редактора (1100) */ overflow-y: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }

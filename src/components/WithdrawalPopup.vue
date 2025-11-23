@@ -1,17 +1,29 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, computed } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
-import BaseSelect from './BaseSelect.vue'; // 🟢 Импортируем BaseSelect
+import BaseSelect from './BaseSelect.vue';
+
+/**
+ * * --- МЕТКА ВЕРСИИ: v4.0 - EDIT MODE & Z-INDEX ---
+ * * ВЕРСИЯ: 4.0 - Поддержка редактирования и исправление слоев
+ * * ДАТА: 2025-11-23
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (FIX) z-index увеличен до 3000, чтобы окно было выше TransferListEditor.
+ * 2. (FEAT) Добавлен prop `operationToEdit` для режима редактирования.
+ * 3. (LOGIC) Если сумма вывода (15 000) меньше суммы перевода (20 000), система просто списывает 15 000.
+ * Остаток (5 000) остается на балансе счета-источника. Цепочка визуально "завершается" выводом.
+ */
 
 const props = defineProps({
-  initialData: { type: Object, required: true }, // { amount, fromAccountName, ... }
+  initialData: { type: Object, default: () => ({}) }, // { amount, fromAccountName, fromAccountId... }
+  operationToEdit: { type: Object, default: null } // Если редактируем существующий
 });
 
 const emit = defineEmits(['close', 'save']);
 
-const amount = ref(props.initialData.amount || 0);
+const amount = ref(0);
 const formattedAmount = ref('');
-// 🟢 destination теперь используется как комментарий и "Куда"
 const destination = ref('');
 const reason = ref('Личные нужды');
 const isSaving = ref(false);
@@ -22,6 +34,10 @@ const reasonOptions = [
   { value: 'Развитие бизнеса (Наличные)', label: 'Развитие бизнеса (Наличные)' },
   { value: 'Другое', label: 'Другое' }
 ];
+
+const isEditMode = computed(() => !!props.operationToEdit);
+const title = computed(() => isEditMode.value ? 'Редактирование вывода' : 'Оформление вывода');
+const btnText = computed(() => isSaving.value ? 'Сохранение...' : (isEditMode.value ? 'Сохранить' : 'Подтвердить'));
 
 const onAmountInput = (e) => {
   const raw = e.target.value.replace(/[^0-9]/g, '');
@@ -34,20 +50,40 @@ const handleSave = () => {
   
   isSaving.value = true;
   
-  emit('save', {
+  const payload = {
     amount: amount.value,
-    // 🟢 Передаем destination как destination (он же комментарий)
     destination: destination.value,
     reason: reason.value,
     type: 'expense', 
-    isWithdrawal: true 
+    isWithdrawal: true,
+    // Если создаем новый - берем ID счета из initialData
+    // Если редактируем - ID счета обычно не меняется в упрощенном попапе, но можно добавить логику
+    accountId: props.operationToEdit?.accountId || props.initialData?.fromAccountId
+  };
+
+  emit('save', {
+    mode: isEditMode.value ? 'edit' : 'create',
+    id: props.operationToEdit?._id,
+    data: payload,
+    originalOperation: props.operationToEdit
   });
 
+  // Сброс через таймаут на случай ошибки сети
   setTimeout(() => { isSaving.value = false; }, 3000);
 };
 
 onMounted(() => {
+  if (isEditMode.value) {
+      const op = props.operationToEdit;
+      amount.value = Math.abs(op.amount || 0);
+      destination.value = op.destination || '';
+      reason.value = op.reason || 'Личные нужды'; // Если поле reason добавлено в бэк
+  } else {
+      amount.value = props.initialData.amount || 0;
+  }
+  
   formattedAmount.value = formatNumber(amount.value);
+  
   nextTick(() => document.querySelector('.wd-focus')?.focus());
 });
 </script>
@@ -56,13 +92,16 @@ onMounted(() => {
   <div class="withdrawal-overlay" @mousedown.self="$emit('close')">
     <div class="withdrawal-content">
       <div class="wd-header">
-        <h4>Оформление вывода</h4>
+        <h4>{{ title }}</h4>
         <button class="close-btn" @click="$emit('close')">×</button>
       </div>
       
-      <div class="wd-info-box">
+      <div class="wd-info-box" v-if="!isEditMode && initialData.fromAccountName">
         Вы оформляете вывод средств со счета <b>{{ initialData.fromAccountName }}</b>. <br>
-        Деньги будут списаны с баланса бизнеса.
+        Деньги будут списаны с баланса.
+      </div>
+      <div class="wd-info-box" v-else-if="isEditMode">
+        Редактирование суммы или назначения вывода.
       </div>
       
       <div class="wd-field">
@@ -75,7 +114,6 @@ onMounted(() => {
         >
       </div>
       
-      <!-- 🟢 Инпут "Куда" удален, используем destination как комментарий -->
       <div class="wd-field">
         <span class="wd-label">Комментарий / Куда</span>
         <input 
@@ -87,7 +125,6 @@ onMounted(() => {
       </div>
 
       <div class="wd-field">
-        <!-- 🟢 Используем BaseSelect для Причины -->
         <BaseSelect
           v-model="reason"
           :options="reasonOptions"
@@ -103,7 +140,7 @@ onMounted(() => {
           @click="handleSave" 
           :disabled="amount <= 0 || isSaving"
         >
-          {{ isSaving ? 'Сохранение...' : 'Подтвердить' }}
+          {{ btnText }}
         </button>
       </div>
     </div>
@@ -115,7 +152,7 @@ onMounted(() => {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.6);
   display: flex; justify-content: center; align-items: center;
-  z-index: 2000;
+  z-index: 3000; /* 🟢 FIX: Выше чем TransferListEditor (1100) */
   backdrop-filter: blur(2px);
 }
 .withdrawal-content {

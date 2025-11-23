@@ -1,9 +1,9 @@
 <script setup>
-// Этот компонент очень простой: он просто принимает 
-// сообщение и "спрашивает" Да (confirm) или Нет (close)
 defineProps({
   title: { type: String, default: 'Подтвердите действие' },
-  message: { type: String, required: true }
+  message: { type: String, required: true },
+  confirmText: { type: String, default: 'Да, удалить' }, // 🟢 Настраиваемый текст
+  cancelText: { type: String, default: 'Отмена' }
 });
 const emit = defineEmits(['close', 'confirm']);
 </script>
@@ -17,10 +17,10 @@ const emit = defineEmits(['close', 'confirm']);
           
       <div class="popup-actions">
         <button @click="$emit('close')" class="btn-submit btn-submit-secondary">
-          Отмена
+          {{ cancelText }}
         </button>
         <button @click="$emit('confirm')" class="btn-submit btn-submit-delete">
-          Да, удалить
+          {{ confirmText }}
         </button>
       </div>
     </div>
@@ -28,34 +28,40 @@ const emit = defineEmits(['close', 'confirm']);
 </template>
 
 <style scoped>
-/* Стили похожи на EntityPopup, 
-  но с другим набором кнопок 
-*/
 .popup-overlay {
   position: fixed; top: 0; left: 0;
   width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, 0.7); /* Чуть темнее фон */
+  background-color: rgba(0, 0, 0, 0.7);
   display: flex; 
   justify-content: center; 
   align-items: center;
-  z-index: 1001; /* На один слой ВЫШЕ, чем OperationPopup */
+  /* 🟢 FIX: Максимальный слой, чтобы перекрывать TransferListEditor (1100) и другие (3000) */
+  z-index: 4000; 
   overflow-y: auto;
 }
+
 .popup-content {
   background: #F4F4F4;
   padding: 2rem;
   border-radius: 12px;
   color: #1a1a1a;
   width: 100%;
-  max-width: 400px; /* Немного уже */
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  max-width: 400px;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.4);
   margin: 1rem;
+  animation: fadeIn 0.2s ease-out;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 h3 {
   color: #1a1a1a;
   margin-top: 0;
   margin-bottom: 1.5rem;
-  text-align: center; /* Центрируем заголовок */
+  text-align: center;
   font-size: 20px;
   font-weight: 600;
 }
@@ -86,7 +92,6 @@ h3 {
   flex: 1 1 0; 
 }
 
-/* Новая кнопка "Отмена" (светло-серая) */
 .btn-submit-secondary {
   background-color: #e0e0e0;
   color: #333;
@@ -96,7 +101,6 @@ h3 {
   background-color: #d1d1d1;
 }
 
-/* Кнопка "Удалить" (красная) */
 .btn-submit-delete {
   background-color: #FF3B30;
 }

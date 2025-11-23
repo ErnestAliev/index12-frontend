@@ -4,6 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import TransferPopup from './TransferPopup.vue'; 
 import WithdrawalPopup from './WithdrawalPopup.vue';
+import ConfirmationPopup from './ConfirmationPopup.vue'; // 🟢 Импорт нашего попапа подтверждения
 
 const props = defineProps({
   title: { type: String, default: 'Редактор переводов' }
@@ -18,6 +19,10 @@ const isLoading = ref(false);
 
 const isTransferPopupVisible = ref(false);
 const isWithdrawalPopupVisible = ref(false);
+// 🟢 Состояния для кастомного подтверждения отмены
+const isCancelConfirmVisible = ref(false);
+const chainToCancel = ref(null);
+
 const operationToEdit = ref(null);
 const initialTransferData = ref(null); 
 const initialWithdrawalData = ref(null); 
@@ -104,13 +109,6 @@ const getFromName = (op) => {
     return 'Неизвестно';
 };
 
-const getToName = (op) => {
-    if (op.isWithdrawal) return op.destination || 'Вывод';
-    if (op.toAccountId?.name) return `${op.toAccountId.name}`;
-    if (op.toCompanyId?.name) return `${op.toCompanyId.name}`;
-    return 'Неизвестно';
-};
-
 const formatMoney = (val) => `${formatNumber(val)} ₸`;
 
 const togglePopover = (event, chainId) => {
@@ -126,19 +124,15 @@ const closePopover = () => {
     activePopoverId.value = null;
 };
 
-// 1. Создать новую (чистую) - исправлено
 const handleCreateNew = () => {
     initialTransferData.value = null;
-    operationToEdit.value = null; // Сбрасываем редактирование
+    operationToEdit.value = null;
     isTransferPopupVisible.value = true;
 };
 
-// 2. Продолжить -> Перевод
 const handleContinueTransfer = (chain) => {
     const lastOp = chain.lastOp;
-    // Сбрасываем редактирование, это создание НОВОГО
     operationToEdit.value = null;
-    
     initialTransferData.value = {
         amount: Math.abs(lastOp.amount),
         fromAccountId: lastOp.toAccountId?._id || lastOp.toAccountId,
@@ -150,10 +144,8 @@ const handleContinueTransfer = (chain) => {
     activePopoverId.value = null;
 };
 
-// 3. Продолжить -> Вывод
 const handleContinueWithdrawal = (chain) => {
     const lastOp = chain.lastOp;
-    
     let fromName = 'Счет';
     if (lastOp.toAccountId?.name) fromName = lastOp.toAccountId.name;
     else if (lastOp.toCompanyId?.name) fromName = lastOp.toCompanyId.name;
@@ -164,17 +156,45 @@ const handleContinueWithdrawal = (chain) => {
         fromAccountName: fromName,
         transferGroupId: chain.id 
     };
-    
     isWithdrawalPopupVisible.value = true;
     activePopoverId.value = null;
 };
 
+// 🟢 ИНИЦИАЛИЗАЦИЯ ОТМЕНЫ (Открытие попапа)
+const handleCancelWithdrawal = (chain) => {
+    chainToCancel.value = chain;
+    isCancelConfirmVisible.value = true;
+};
+
+// 🟢 ПОДТВЕРЖДЕНИЕ ОТМЕНЫ
+const onCancelConfirmed = async () => {
+    if (!chainToCancel.value) return;
+    const chain = chainToCancel.value;
+    
+    try {
+        const lastStep = chain.steps[chain.steps.length - 1];
+        if (lastStep && (lastStep.isWithdrawal || lastStep.type === 'expense')) {
+            await mainStore.deleteOperation(lastStep);
+            await mainStore.fetchAllEntities();
+            loadChains(); 
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка при отмене вывода');
+    } finally {
+        isCancelConfirmVisible.value = false;
+        chainToCancel.value = null;
+    }
+};
+
 const handleViewChain = (chain) => {
-    if (chain.status === 'withdrawal') {
-        console.log('Просмотр вывода пока недоступен в этом режиме');
+    const lastOp = chain.lastOp;
+    if (lastOp.isWithdrawal) {
+        operationToEdit.value = lastOp;
+        isWithdrawalPopupVisible.value = true;
     } else {
-        operationToEdit.value = chain.lastOp;
-        initialTransferData.value = null; // Сбрасываем initialData при просмотре
+        operationToEdit.value = lastOp;
+        initialTransferData.value = null;
         isTransferPopupVisible.value = true;
     }
 };
@@ -186,7 +206,6 @@ const onTransferSaved = async (eventData) => {
         } else {
              await mainStore.updateTransfer(eventData.id, eventData.data);
         }
-        
         await mainStore.fetchAllEntities();
         loadChains();
         isTransferPopupVisible.value = false;
@@ -196,18 +215,26 @@ const onTransferSaved = async (eventData) => {
     }
 };
 
-const onWithdrawalSaved = async (data) => {
+const onWithdrawalSaved = async (eventData) => {
     try {
-        const payload = {
-            ...data,
-            date: new Date(),
-            // 🟢 FIX: Теперь вызываем метод корректно
-            categoryId: await mainStore._getOrCreateTransferCategory(), 
-            transferGroupId: initialWithdrawalData.value?.transferGroupId
-        };
-        
-        await mainStore.createEvent(payload);
-        
+        const { mode, id, data } = eventData;
+        if (mode === 'create') {
+            const payload = {
+                ...data,
+                date: new Date(),
+                categoryId: await mainStore._getOrCreateTransferCategory(), 
+                transferGroupId: initialWithdrawalData.value?.transferGroupId,
+                accountId: initialWithdrawalData.value?.fromAccountId
+            };
+            await mainStore.createEvent(payload);
+        } else {
+            const updatePayload = {
+                 amount: -Math.abs(data.amount),
+                 destination: data.destination,
+                 reason: data.reason
+            };
+            await mainStore.updateOperation(id, updatePayload);
+        }
         await mainStore.fetchAllEntities();
         loadChains();
         isWithdrawalPopupVisible.value = false;
@@ -216,38 +243,23 @@ const onWithdrawalSaved = async (data) => {
         alert('Ошибка вывода: ' + e.message);
     }
 };
-
 </script>
 
 <template>
   <div class="editor-window-overlay" @click.self="$emit('close')">
     <div class="editor-window">
-      
       <div class="header">
         <h3>Редактор переводов</h3>
       </div>
 
       <div class="controls-row">
         <div class="tabs">
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'all' }" 
-            @click="activeTab = 'all'"
-          >Все</button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'active' }" 
-            @click="activeTab = 'active'"
-          >
+          <button class="tab-btn" :class="{ active: activeTab === 'all' }" @click="activeTab = 'all'">Все</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'active' }" @click="activeTab = 'active'">
             В работе <span class="badge">{{ activeCount }}</span>
           </button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'completed' }" 
-            @click="activeTab = 'completed'"
-          >Завершенные</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'completed' }" @click="activeTab = 'completed'">Завершенные</button>
         </div>
-        
         <div class="info-text">
           Показано: {{ filteredChains.length }} цепочек 
           <span v-if="activeTab === 'active'">(скрыто {{ hiddenCount }} завершенных)</span>
@@ -268,7 +280,6 @@ const onWithdrawalSaved = async (data) => {
           <div class="card-left">
             <div class="chain-header">
               <span class="chain-title">Цепочка от {{ formatDate(chain.date) }}</span>
-              
               <span v-if="chain.status === 'active'" class="status-label status-active">АКТИВНА</span>
               <span v-else-if="chain.status === 'withdrawal'" class="status-label status-withdrawal">ВЫВЕДЕНО</span>
             </div>
@@ -276,11 +287,7 @@ const onWithdrawalSaved = async (data) => {
             <div class="chain-flow">
               <template v-for="(step, idx) in chain.steps" :key="step._id">
                 <span v-if="idx > 0" class="flow-arrow">➜</span>
-                
-                <span 
-                  class="flow-step" 
-                  :class="{ 'withdrawal-chip': step.isWithdrawal }"
-                >
+                <span class="flow-step" :class="{ 'withdrawal-chip': step.isWithdrawal }">
                   <template v-if="step.isWithdrawal">
                     {{ step.destination || 'Вывод' }} ({{ formatNumber(Math.abs(step.amount)) }})
                   </template>
@@ -289,17 +296,13 @@ const onWithdrawalSaved = async (data) => {
                   </template>
                 </span>
               </template>
-              
               <span v-if="chain.status === 'active'" class="flow-waiting">...на балансе</span>
             </div>
           </div>
 
           <div class="card-right">
             <div class="balance-block">
-              <span 
-                class="balance-amount"
-                :style="chain.status === 'withdrawal' ? 'color: #7B1FA2' : ''"
-              >
+              <span class="balance-amount" :style="chain.status === 'withdrawal' ? 'color: #7B1FA2' : ''">
                 {{ chain.status === 'withdrawal' ? '0 ₸' : formatMoney(chain.totalAmount) }}
               </span>
               <span class="balance-label">
@@ -308,10 +311,7 @@ const onWithdrawalSaved = async (data) => {
             </div>
 
             <div v-if="chain.status === 'active'" class="action-wrapper">
-                <button class="btn-continue" @click="togglePopover($event, chain.id)">
-                   ➜ Продолжить
-                </button>
-                
+                <button class="btn-continue" @click="togglePopover($event, chain.id)">➜ Продолжить</button>
                 <div v-if="activePopoverId === chain.id" class="action-popover">
                     <div class="popover-item" @click="handleContinueTransfer(chain)">
                         <span class="icon-transfer">➜</span> Перевод на счет
@@ -320,6 +320,13 @@ const onWithdrawalSaved = async (data) => {
                         <span class="icon-withdraw">⤓</span> Вывод денег
                     </div>
                 </div>
+            </div>
+
+            <!-- 🟢 Кнопка отмены с вызовом нашего попапа -->
+            <div v-if="chain.status === 'withdrawal'" class="action-wrapper">
+                <button class="btn-undo" @click="handleCancelWithdrawal(chain)" title="Отменить вывод и вернуть деньги">
+                   ↺ Отменить
+                </button>
             </div>
 
             <button class="btn-view" @click="handleViewChain(chain)">👁</button>
@@ -333,7 +340,6 @@ const onWithdrawalSaved = async (data) => {
           <button class="btn-close" @click="$emit('close')">Закрыть</button>
         </div>
       </div>
-
     </div>
   </div>
 
@@ -349,9 +355,19 @@ const onWithdrawalSaved = async (data) => {
 
   <WithdrawalPopup
     v-if="isWithdrawalPopupVisible"
-    :initial-data="initialWithdrawalData"
+    :initial-data="initialWithdrawalData || {}"
+    :operation-to-edit="operationToEdit"
     @close="isWithdrawalPopupVisible = false"
     @save="onWithdrawalSaved"
+  />
+
+  <!-- 🟢 Наш красивый попап подтверждения -->
+  <ConfirmationPopup
+    v-if="isCancelConfirmVisible"
+    title="Отмена вывода"
+    message="Вы уверены, что хотите отменить вывод и вернуть деньги на баланс?"
+    @close="isCancelConfirmVisible = false"
+    @confirm="onCancelConfirmed"
   />
 
 </template>
@@ -363,30 +379,19 @@ const onWithdrawalSaved = async (data) => {
   display: flex; justify-content: center; align-items: center;
   z-index: 1100;
 }
-
 .editor-window {
-  background: #EBEBEB;
-  border-radius: 16px;
-  width: 95%;
-  max-width: 1100px;
-  height: 85vh;
-  display: flex; flex-direction: column;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-  overflow: hidden; position: relative;
+  background: #EBEBEB; border-radius: 16px; width: 95%; max-width: 1100px; height: 85vh;
+  display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.5); overflow: hidden; position: relative;
 }
-
 .header { padding: 1.5rem 2rem 1rem; }
 h3 { margin: 0; font-size: 24px; color: #1a1a1a; font-weight: 700; }
-
 .controls-row { padding: 0 2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; }
 .tabs { display: flex; background: #DCDCDC; border-radius: 8px; padding: 4px; gap: 4px; }
 .tab-btn { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; font-size: 14px; color: #666; cursor: pointer; font-weight: 600; transition: all 0.2s; }
 .tab-btn.active { background: #FFFFFF; color: #222; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .badge { background: #FF9D00; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 10px; font-weight: 700; margin-left: 6px; }
 .info-text { font-size: 13px; color: #888; }
-
 .list-scroll { flex-grow: 1; overflow-y: auto; padding: 0 2rem 2rem; display: flex; flex-direction: column; gap: 12px; }
-
 .chain-card { 
   background: #FFFFFF; border-radius: 12px; padding: 16px 20px; 
   display: flex; justify-content: space-between; align-items: center; 
@@ -395,51 +400,35 @@ h3 { margin: 0; font-size: 24px; color: #1a1a1a; font-weight: 700; }
 }
 .chain-card:hover { border-color: #ccc; }
 .chain-card.closed { border-left-color: #aaa; background: #F5F5F5; }
-
 .card-left { display: flex; flex-direction: column; gap: 10px; }
 .chain-header { display: flex; align-items: center; gap: 10px; }
 .chain-title { font-weight: 700; font-size: 16px; color: #222; }
-
 .status-label { font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 3px 6px; border-radius: 4px; }
 .status-active { color: #D97706; background: #FEF3C7; }
 .status-withdrawal { color: #7B1FA2; background: #F3E5F5; }
-
 .chain-flow { font-size: 14px; color: #555; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .flow-arrow { color: #aaa; font-size: 12px; }
 .flow-step { background: #F3F4F6; padding: 3px 8px; border-radius: 4px; font-size: 13px; color: #333; }
 .flow-step.withdrawal-chip { background: #F3E5F5; color: #7B1FA2; border: 1px solid #E1BEE7; font-weight: 600; }
 .flow-waiting { color: #999; font-style: italic; font-size: 13px; margin-left: 4px; }
-
 .card-right { display: flex; align-items: center; gap: 20px; position: relative; }
 .balance-block { text-align: right; min-width: 100px; }
 .balance-amount { display: block; font-weight: 800; font-size: 17px; color: #222; }
 .balance-label { display: block; font-size: 10px; color: #888; text-transform: uppercase; margin-top: 2px; font-weight: 600; }
-
 .action-wrapper { position: relative; }
 .btn-continue { background: #2F3340; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background 0.2s; }
 .btn-continue:hover { background: #444; }
-
+.btn-undo { background: #FFF0F0; color: #FF3B30; border: 1px solid #FFD0D0; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
+.btn-undo:hover { background: #FFE5E5; border-color: #FF3B30; }
 .btn-view { width: 40px; height: 40px; border: 1px solid #ddd; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #555; font-size: 18px; }
 .btn-view:hover { background: #f9f9f9; }
-
-.action-popover {
-  position: absolute; top: 100%; right: 0; margin-top: 5px;
-  background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 100; width: 220px;
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.popover-item {
-  padding: 12px 16px; cursor: pointer; font-size: 14px; font-weight: 500; color: #333;
-  border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 10px;
-  transition: background 0.2s;
-}
+.action-popover { position: absolute; top: 100%; right: 0; margin-top: 5px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 100; width: 220px; display: flex; flex-direction: column; overflow: hidden; }
+.popover-item { padding: 12px 16px; cursor: pointer; font-size: 14px; font-weight: 500; color: #333; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 10px; transition: background 0.2s; }
 .popover-item:hover { background: #f9f9f9; }
 .icon-transfer { color: #2F3340; font-weight: bold; }
 .icon-withdraw { color: #7B1FA2; font-weight: bold; }
-
 .footer { padding: 1.5rem 2rem; border-top: 1px solid #DEDEDE; background: #EBEBEB; display: flex; justify-content: space-between; align-items: center; }
 .btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; color: #555; font-weight: 600; }
 .btn-create { padding: 12px 24px; background-color: #2F3340; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-
 .loading-state, .empty-state { text-align: center; padding: 2rem; color: #888; }
 </style>

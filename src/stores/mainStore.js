@@ -243,12 +243,12 @@ export const useMainStore = defineStore('mainStore', () => {
     const prepayIdsSet = prepaymentCategoryIdsSet.value;
     
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
-       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, dayTotal:0 };
+       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal: 0, dayTotal:0 };
        const dayRec = byDateKey[dateKey];
 
        if (Array.isArray(ops)) {
            for (const op of ops) {
-               if (isTransfer(op)) continue;
+               if (isTransfer(op) && !op.isWithdrawal) continue;
                
                const amt = op.amount || 0;
                const absAmt = Math.abs(amt);
@@ -266,7 +266,11 @@ export const useMainStore = defineStore('mainStore', () => {
                    
                    dayRec.dayTotal += amt;
                } else if (op.type === 'expense') {
-                   dayRec.expense += absAmt;
+                   if (op.isWithdrawal) {
+                       dayRec.withdrawal += absAmt;
+                   } else {
+                       dayRec.expense += absAmt;
+                   }
                    dayRec.dayTotal -= absAmt;
                }
            }
@@ -285,7 +289,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const rec = byDateKey[dateKey];
       running += rec.dayTotal;
       chart.set(dateKey, { 
-        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, 
+        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, withdrawal: rec.withdrawal,
         closingBalance: running, date: _parseDateKey(dateKey)
       });
     }
@@ -404,11 +408,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return totalDealSum - receivedSum;
   });
 
-  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op) && !op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
-  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op) && !op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
@@ -529,7 +533,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
     for (const op of futureOps.value) {
-        if (isTransfer(op)) continue; 
+        if (isTransfer(op) && !op.isWithdrawal) continue; 
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
     }
@@ -548,7 +552,7 @@ export const useMainStore = defineStore('mainStore', () => {
           map[key] += val;
       };
 
-      if (isTransfer(op)) {
+      if (isTransfer(op) && !op.isWithdrawal) {
           const fromId = op.fromAccountId; const toId = op.toAccountId;
           _addToMap(snapshot.value.accountBalances, fromId, -absAmount * sign);
           _addToMap(snapshot.value.accountBalances, toId, absAmount * sign);
@@ -575,7 +579,7 @@ export const useMainStore = defineStore('mainStore', () => {
           if (!snapshot.value.categoryTotals[cKey]) snapshot.value.categoryTotals[cKey] = { income: 0, expense: 0, total: 0 };
           const rec = snapshot.value.categoryTotals[cKey];
           
-          if (isTransfer(op)) {
+          if (isTransfer(op) && !op.isWithdrawal) {
               rec.expense += (absAmount * sign);
               rec.total -= (absAmount * sign);
           } else {
@@ -709,10 +713,13 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       const firstOp = transferOps[0];
+      // Если это вывод, помечаем его
+      const isWithdrawal = transferOps.some(o => o.isWithdrawal);
+      
       mergedTransfers.push({
-        ...firstOp, type: 'transfer', isTransfer: true,
+        ...firstOp, type: 'transfer', isTransfer: true, isWithdrawal: isWithdrawal,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        categoryId: { _id: 'transfer', name: 'Перевод' }
+        categoryId: { _id: 'transfer', name: isWithdrawal ? 'Вывод' : 'Перевод' }
       });
     }
     return [...normalOps, ...mergedTransfers];
