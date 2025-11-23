@@ -7,9 +7,11 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v17.3 - OWNER BALANCE ---
- * * ВЕРСИЯ: 17.3 - Отображение баланса для Компаний и Физлиц (Transfer)
+ * * --- МЕТКА ВЕРСИИ: v17.4 - FIX INPUT ALIGNMENT ---
+ * * ВЕРСИЯ: 17.4 - Исправление вертикального выравнивания плейсхолдера перевода
  * * ДАТА: 2025-11-23
+ * *
+ * * 1. (CSS) Добавлено правило .custom-input-box:not(.has-value) .real-input { padding-top: ... }
  */
 
 const mainStore = useMainStore();
@@ -240,7 +242,7 @@ const closePopup = () => { emit('close'); };
       <h3>{{ title }}</h3>
 
       <template v-if="!showCreateOwnerModal">
-        <!-- СУММА -->
+        <!-- 🟢 КАСТОМНЫЙ ИНПУТ ДЛЯ СУММЫ -->
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
@@ -308,18 +310,22 @@ const closePopup = () => { emit('close'); };
           @change="handleToOwnerChange"
         />
         
-        <!-- ДАТА -->
+        <!-- 🟢 КАСТОМНЫЙ ИНПУТ ДЛЯ ДАТЫ -->
         <div class="custom-input-box input-spacing has-value date-box">
            <div class="input-inner-content">
               <span class="floating-label">Дата перевода</span>
               <div class="date-display-row">
+                 <!-- Текстовое представление даты -->
                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
+                 
+                 <!-- Невидимый инпут даты -->
                  <input 
                    type="date" 
                    v-model="editableDate" 
                    class="real-input date-overlay"
                    :min="minDateString" :max="maxDateString" 
                  />
+                 <!-- Иконка календаря -->
                  <span class="calendar-icon">📅</span> 
               </div>
            </div>
@@ -396,6 +402,11 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
   box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2));
 }
 
+/* 🟢 FIX: Добавлен паддинг для пустого состояния, чтобы опустить текст */
+.custom-input-box:not(.has-value) .real-input {
+    padding-top: 10px;
+}
+
 .input-inner-content {
   width: 100%;
   height: 100%;
@@ -419,7 +430,8 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
   font-size: 15px;
   color: #1a1a1a;
   font-weight: 500;
-  height: 24px;
+  height: auto; 
+  line-height: 1.3;
   outline: none;
 }
 .real-input::placeholder {
@@ -473,7 +485,6 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .save-wide { flex: 1 1 auto; height: 54px; }
 .icon-actions { display: flex; gap: 10px; }
 
-/* 🟢 ЕДИНЫЙ СТИЛЬ КНОПОК (КОРЗИНА / КОПИРОВАТЬ) */
 .icon-btn { 
   display: inline-flex; align-items: center; justify-content: center; 
   width: 54px; height: 54px; border-radius: 10px; cursor: pointer; 
@@ -481,25 +492,10 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
   transition: all 0.2s;
   padding: 0;
 }
+.copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
+.delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
 
-/* КОПИРОВАТЬ */
-.copy-btn:hover { 
-  background: #E8F5E9; border-color: #A5D6A7; color: #34C759; 
-}
-
-/* УДАЛИТЬ */
-.delete-btn:hover { 
-  background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; 
-}
-
-/* Иконка внутри (70% от размера кнопки) */
-.icon { 
-  width: 70%; 
-  height: 70%; 
-  fill: currentColor; 
-  display: block; 
-  pointer-events: none; 
-}
+.icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
 
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }

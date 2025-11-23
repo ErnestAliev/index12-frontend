@@ -6,13 +6,12 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v30.0 - FIX PREPAYMENT CATEGORY ---
- * * ВЕРСИЯ: 30.0 - Исправление сохранения категории предоплаты
+ * * --- МЕТКА ВЕРСИИ: v30.1 - FIX INPUT ALIGNMENT ---
+ * * ВЕРСИЯ: 30.1 - Исправление вертикального выравнивания плейсхолдера суммы
  * * ДАТА: 2025-11-23
  * *
- * * 1. (FIX) handlePrepaymentClick теперь передает выбранную категорию (selectedCategoryId),
- * * а не подменяет её на системную.
- * * 2. (UI) Заголовок меняется на "Редактировать Предоплату", если это она.
+ * * 1. (CSS) Добавлено правило .custom-input-box:not(.has-value) .real-input { padding-top: ... }
+ * * чтобы опустить текст "Вношу сумму" визуально в центр.
  */
 
 const mainStore = useMainStore();
@@ -161,8 +160,6 @@ const handleContractorChange = (val) => { if (val === '--CREATE_NEW--') { select
 const handleProjectChange = (val) => { if (val === '--CREATE_NEW--') { selectedProjectId.value = null; showProjectInput(); } };
 const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; showCategoryInput(); } };
 
-// (Watch для авто-открытия предоплаты не нужен, так как мы используем кнопку)
-
 const triggerPrepaymentFlow = (catId) => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
     const currentData = {
@@ -186,8 +183,7 @@ const handlePrepaymentClick = () => {
         return;
     }
 
-    // 🟢 FIX: Используем ВЫБРАННУЮ категорию, а не подменяем её
-    // Если категория не выбрана, отправляем null, и PrepaymentModal решит (или бэкенд)
+    // 🟢 Используем ВЫБРАННУЮ категорию, а не подменяем её
     const targetCatId = selectedCategoryId.value || null;
     
     triggerPrepaymentFlow(targetCatId);
@@ -231,7 +227,9 @@ onMounted(async () => {
     else if (op.individualId) { const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; }
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
     
-    const catId = op.categoryId?._id || op.categoryId; const prepId = op.prepaymentId?._id || op.prepaymentId; 
+    // 🟢 FIX: Подтягиваем категорию из categoryId ИЛИ prepaymentId
+    const catId = op.categoryId?._id || op.categoryId; 
+    const prepId = op.prepaymentId?._id || op.prepaymentId; 
     selectedCategoryId.value = catId || prepId || null;
     
     selectedProjectId.value = op.projectId?._id || op.projectId;
@@ -247,7 +245,23 @@ const handleSave = () => {
   const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
   let companyId = null; let individualId = null;
   if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') companyId = id; else if (type === 'individual') individualId = id; }
-  const payload = { type: props.type, amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed), categoryId: selectedCategoryId.value || null, accountId: selectedAccountId.value, companyId: companyId, individualId: individualId, contractorId: selectedContractorId.value, projectId: selectedProjectId.value || null, date: finalDate };
+  
+  // 🟢 FIX: Добавляем поля предоплаты в payload, если они есть в исходной операции, чтобы не потерять их
+  const payload = { 
+      type: props.type, 
+      amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed), 
+      categoryId: selectedCategoryId.value || null, 
+      accountId: selectedAccountId.value, 
+      companyId: companyId, 
+      individualId: individualId, 
+      contractorId: selectedContractorId.value, 
+      projectId: selectedProjectId.value || null, 
+      date: finalDate,
+      // Сохраняем скрытые поля предоплаты
+      prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
+      totalDealAmount: props.operationToEdit ? props.operationToEdit.totalDealAmount : undefined
+  };
+  
   const isEdit = !!props.operationToEdit && !isCloneMode.value;
   emit('save', { mode: isEdit ? 'edit' : 'create', id: isEdit ? props.operationToEdit._id : null, data: payload, originalOperation: isEdit ? props.operationToEdit : null });
 };
@@ -279,7 +293,6 @@ const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = t
 // 🟢 ДЕТЕКТОР ПРЕДОПЛАТЫ ДЛЯ ЗАГОЛОВКА
 const isPrepaymentOp = computed(() => {
   if (!props.operationToEdit) return false;
-  // Если есть общая сумма сделки > 0, считаем это предоплатой (даже если категория обычная)
   if (props.operationToEdit.totalDealAmount > 0) return true;
   
   const prepayIds = mainStore.getPrepaymentCategoryIds;
@@ -491,9 +504,15 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }
 .custom-input-box:focus-within { border-color: var(--focus-color); box-shadow: 0 0 0 1px var(--focus-shadow); }
+
+/* 🟢 FIX: Добавлен паддинг для пустого состояния, чтобы опустить текст */
+.custom-input-box:not(.has-value) .real-input {
+    padding-top: 10px;
+}
+
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; }
-.real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px; color: #1a1a1a; font-weight: 500; height: 24px; outline: none; }
+.real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px; color: #1a1a1a; font-weight: 500; height: auto; line-height: 1.3; outline: none; }
 .real-input::placeholder { font-weight: 400; color: #aaa; }
 .date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
