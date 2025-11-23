@@ -7,12 +7,10 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.5 - PRO UI UPDATE ---
- * * ВЕРСИЯ: 16.5 - Обновленный дизайн и цвета (перевод)
- * * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v17.3 - OWNER BALANCE ---
+ * * ВЕРСИЯ: 17.3 - Отображение баланса для Компаний и Физлиц (Transfer)
+ * * ДАТА: 2025-11-23
  */
-
-console.log('--- TransferPopup.vue v16.5 (Pro UI) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 const props = defineProps({
@@ -40,6 +38,11 @@ const toInputDate = (date) => {
   const day = d.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+const toDisplayDate = (dateStr) => {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-');
+  return `${day}.${month}.${year}`;
+}
 const editableDate = ref(toInputDate(props.date));
 const minDateString = computed(() => props.minAllowedDate ? toInputDate(props.minAllowedDate) : null);
 const maxDateString = computed(() => props.maxAllowedDate ? toInputDate(props.maxAllowedDate) : null);
@@ -88,10 +91,25 @@ const accountOptions = computed(() => {
   return options;
 });
 
+// 🟢 ДОБАВЛЕН БАЛАНС ДЛЯ ВЛАДЕЛЬЦЕВ (TRANSFER)
 const ownerOptions = computed(() => {
   const opts = [];
-  mainStore.companies.forEach(c => { opts.push({ value: `company-${c._id}`, label: c.name, isSpecial: false }); });
-  mainStore.individuals.forEach(i => { opts.push({ value: `individual-${i._id}`, label: i.name, isSpecial: false }); });
+  mainStore.currentCompanyBalances.forEach(c => { 
+    opts.push({ 
+      value: `company-${c._id}`, 
+      label: c.name, 
+      rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`,
+      isSpecial: false 
+    }); 
+  });
+  mainStore.currentIndividualBalances.forEach(i => { 
+    opts.push({ 
+      value: `individual-${i._id}`, 
+      label: i.name, 
+      rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸`,
+      isSpecial: false 
+    }); 
+  });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию/Физлицо', isSpecial: true });
   return opts;
 });
@@ -143,7 +161,7 @@ onMounted(async () => {
   }
 });
 
-const title = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Перевод'; return 'Новый перевод'; });
+const title = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Редактировать перевод'; return 'Новый перевод'; });
 const buttonText = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Сохранить'; return 'Добавить перевод'; });
 
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
@@ -222,55 +240,90 @@ const closePopup = () => { emit('close'); };
       <h3>{{ title }}</h3>
 
       <template v-if="!showCreateOwnerModal">
-        <label>Сумма, Т</label>
-        <input type="text" inputmode="decimal" v-model="amount" placeholder="0" ref="amountInput" class="form-input" @input="onAmountInput" />
+        <!-- СУММА -->
+        <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
+          <div class="input-inner-content">
+             <span v-if="amount" class="floating-label">Сумма, ₸</span>
+             <input 
+               type="text" 
+               inputmode="decimal" 
+               v-model="amount" 
+               :placeholder="amount ? '' : 'Перевожу деньги ₸'" 
+               ref="amountInput" 
+               class="real-input" 
+               @input="onAmountInput" 
+             />
+          </div>
+        </div>
         
-        <label>Со счета *</label>
+        <!-- СО СЧЕТА -->
         <BaseSelect
           v-if="!isCreatingFromAccount"
           v-model="fromAccountId"
           :options="accountOptions"
-          placeholder="Выберите счет"
+          placeholder="Со счета"
+          label="Со счета"
+          class="input-spacing"
           @change="handleFromAccountChange"
         />
-        <div v-else class="inline-create-form">
+        <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newFromAccountName" placeholder="Название счета (От)" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
           <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
           <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
         
-        <label>Компании/Физлица (Отправитель)</label>
+        <!-- ОТПРАВИТЕЛЬ -->
         <BaseSelect
           v-model="selectedFromOwner"
           :options="ownerOptions"
-          placeholder="Автоматически"
+          placeholder="Отправитель (Комп./Физлицо)"
+          label="Отправитель"
+          class="input-spacing"
           @change="handleFromOwnerChange"
         />
 
-        <label>На счет *</label>
+        <!-- НА СЧЕТ -->
         <BaseSelect
           v-if="!isCreatingToAccount"
           v-model="toAccountId"
           :options="accountOptions"
-          placeholder="Выберите счет"
+          placeholder="На счет"
+          label="На счет"
+          class="input-spacing"
           @change="handleToAccountChange"
         />
-        <div v-else class="inline-create-form">
+        <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newToAccountName" placeholder="Название счета (Куда)" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
           <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
           <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
         
-        <label>Компании/Физлица (Получатель)</label>
+        <!-- ПОЛУЧАТЕЛЬ -->
         <BaseSelect
           v-model="selectedToOwner"
           :options="ownerOptions"
-          placeholder="Автоматически"
+          placeholder="Получатель (Комп./Физлицо)"
+          label="Получатель"
+          class="input-spacing"
           @change="handleToOwnerChange"
         />
         
-        <label>Дата поступления денег</label>
-        <input type="date" v-model="editableDate" class="form-input" :min="minDateString" :max="maxDateString" />
+        <!-- ДАТА -->
+        <div class="custom-input-box input-spacing has-value date-box">
+           <div class="input-inner-content">
+              <span class="floating-label">Дата перевода</span>
+              <div class="date-display-row">
+                 <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
+                 <input 
+                   type="date" 
+                   v-model="editableDate" 
+                   class="real-input date-overlay"
+                   :min="minDateString" :max="maxDateString" 
+                 />
+                 <span class="calendar-icon">📅</span> 
+              </div>
+           </div>
+        </div>
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
@@ -280,10 +333,12 @@ const closePopup = () => { emit('close'); };
           </button>
 
           <div v-if="props.transferToEdit && !isCloneMode.value" class="icon-actions">
-            <button class="icon-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
+            <!-- КНОПКА КОПИРОВАТЬ -->
+            <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
-            <button class="icon-btn danger" title="Удалить" @click="handleDeleteClick" aria-label="Удалить" :disabled="isInlineSaving">
+            <!-- КНОПКА УДАЛИТЬ -->
+            <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" aria-label="Удалить" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/></svg>
             </button>
           </div>
@@ -298,7 +353,7 @@ const closePopup = () => { emit('close'); };
             <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="setOwnerTypeToCreate('individual')">Физлицо</button>
           </div>
           <label>Название</label>
-          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
           <div class="smart-create-actions">
             <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">Отмена</button>
             <button @click="saveNewOwner" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">Создать</button>
@@ -318,14 +373,94 @@ const closePopup = () => { emit('close'); };
 
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
-h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 600; }
+h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
 
+/* 🟢 СТИЛИ ДЛЯ КАСТОМНЫХ ИНПУТОВ (Сумма, Дата) */
+.custom-input-box {
+  width: 100%;
+  height: 54px;
+  background: #FFFFFF;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+/* Фокус */
+.custom-input-box:focus-within {
+  border-color: var(--focus-color, #222);
+  box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2));
+}
+
+.input-inner-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.floating-label {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: -2px;
+  margin-top: 4px;
+}
+
+.real-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 15px;
+  color: #1a1a1a;
+  font-weight: 500;
+  height: 24px;
+  outline: none;
+}
+.real-input::placeholder {
+  font-weight: 400;
+  color: #aaa;
+}
+
+/* Специфика для даты */
+.date-display-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+.date-value-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+.date-overlay {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.calendar-icon {
+  font-size: 16px;
+  color: #999;
+}
+
+/* Отступы */
+.input-spacing { margin-bottom: 12px; }
+
+/* Обычный инпут для inline-создания */
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
 
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
-.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; }
+.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
 .inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .inline-create-form button.btn-inline-save { background-color: #34C759; }
@@ -337,11 +472,35 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
 .icon-actions { display: flex; gap: 10px; }
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border: none; border-radius: 10px; background: #EFEFEF; color: #222; cursor: pointer; }
-.icon-btn:hover { background: #E5E5E5; }
-.icon-btn.danger { background: #FF3B30; color: #fff; }
-.icon-btn.danger:hover { background: #d93025; }
-.icon { width: 28px; height: 28px; min-width: 28px; min-height: 28px; fill: currentColor; display: block; pointer-events: none; }
+
+/* 🟢 ЕДИНЫЙ СТИЛЬ КНОПОК (КОРЗИНА / КОПИРОВАТЬ) */
+.icon-btn { 
+  display: inline-flex; align-items: center; justify-content: center; 
+  width: 54px; height: 54px; border-radius: 10px; cursor: pointer; 
+  background: #F4F4F4; border: 1px solid #E0E0E0; color: #333;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+/* КОПИРОВАТЬ */
+.copy-btn:hover { 
+  background: #E8F5E9; border-color: #A5D6A7; color: #34C759; 
+}
+
+/* УДАЛИТЬ */
+.delete-btn:hover { 
+  background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; 
+}
+
+/* Иконка внутри (70% от размера кнопки) */
+.icon { 
+  width: 70%; 
+  height: 70%; 
+  fill: currentColor; 
+  display: block; 
+  pointer-events: none; 
+}
+
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-submit-transfer { background-color: #2f3340; }

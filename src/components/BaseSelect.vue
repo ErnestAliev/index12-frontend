@@ -2,20 +2,22 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
- * * --- КОМПОНЕНТ: BaseSelect v2.1 - PRO UI ---
- * * ВЕРСИЯ: 2.1 - Темный баланс и поддержка тем фокуса
- * * ДАТА: 2025-11-21
+ * * --- КОМПОНЕНТ: BaseSelect v3.0 - FLOATING LABELS ---
+ * * ВЕРСИЯ: 3.0 - Поддержка плавающих заголовков (как на макете)
+ * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. Цвет суммы (.option-right) изменен на темный (#1a1a1a).
- * 2. Спец-опция "Создать..." теперь выглядит как кнопка действия.
- * 3. Цвет активного бордера теперь берется из переменной var(--focus-color).
+ * 1. (PROPS) Добавлен проп `label` для отображения маленького заголовка.
+ * 2. (UI) Логика отображения:
+ * - Если выбрано значение: показываем label (сверху, мелко) + value (снизу, крупно).
+ * - Если не выбрано: показываем placeholder (по центру, крупно).
  */
 
 const props = defineProps({
   modelValue: { type: [String, Number, Object], default: null },
   options: { type: Array, default: () => [] }, // { value, label, rightText, isSpecial }
   placeholder: { type: String, default: 'Выберите...' },
+  label: { type: String, default: '' }, // 🟢 Новый проп для заголовка
   disabled: { type: Boolean, default: false }
 });
 
@@ -55,12 +57,19 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
     <!-- Триггер -->
     <div class="select-trigger" @click="toggle">
       <div class="trigger-content">
-        <span v-if="selectedOption" class="selected-text">
-          {{ selectedOption.label }}
-          <!-- Баланс в выбранном состоянии (опционально, сейчас скрыт для чистоты) -->
-          <!-- <span v-if="selectedOption.rightText" class="selected-right-text"> — {{ selectedOption.rightText }}</span> -->
-        </span>
+        
+        <!-- 🟢 СОСТОЯНИЕ 1: ЗНАЧЕНИЕ ВЫБРАНО -->
+        <div v-if="selectedOption && selectedOption.value !== null" class="filled-state">
+          <span class="small-label">{{ label }}</span>
+          <div class="value-row">
+             <span class="selected-text">{{ selectedOption.label }}</span>
+             <span v-if="selectedOption.rightText" class="right-text">{{ selectedOption.rightText }}</span>
+          </div>
+        </div>
+
+        <!-- 🟢 СОСТОЯНИЕ 2: ПУСТО (Плейсхолдер) -->
         <span v-else class="placeholder">{{ placeholder }}</span>
+        
       </div>
       <span class="arrow">▼</span>
     </div>
@@ -77,7 +86,6 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
         >
           <div class="option-row">
             <span class="option-left">{{ option.label }}</span>
-            <!-- 🟢 ЦВЕТ БАЛАНСА ТЕПЕРЬ ТЕМНЫЙ (в CSS) -->
             <span v-if="option.rightText" class="option-right">{{ option.rightText }}</span>
           </div>
         </li>
@@ -90,32 +98,30 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .base-select {
   position: relative;
   width: 100%;
-  font-family: inherit;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   margin-bottom: 0; 
 }
 
 /* ТРИГГЕР */
 .select-trigger {
   width: 100%;
-  height: 48px;
+  height: 54px; /* Высота как на скриншоте */
   padding: 0 14px;
   background: #FFFFFF;
-  border: 1px solid #E0E0E0;
+  border: 1px solid #E0E0E0; /* Светлый бордер по умолчанию */
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s ease;
   user-select: none;
-  color: #1a1a1a;
-  font-size: 15px;
 }
 
-/* 🟢 АКТИВНЫЙ БОРДЕР - ИСПОЛЬЗУЕТ ПЕРЕМЕННУЮ ТЕМЫ */
+/* Активный бордер */
 .base-select.is-open .select-trigger {
-  border-color: var(--focus-color, #222);
-  box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.1));
+  border-color: var(--focus-color, #28B8A0);
+  box-shadow: 0 0 0 1px var(--focus-shadow, rgba(40, 184, 160, 0.2));
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
@@ -123,12 +129,63 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .trigger-content {
   flex-grow: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
 }
 
-.placeholder { color: #aaa; }
-.arrow { font-size: 10px; color: #666; margin-left: 10px; transition: transform 0.2s; }
+/* Стили для выбранного состояния */
+.filled-state {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  height: 100%;
+  padding-top: 4px; /* Небольшой отступ сверху */
+}
+
+.small-label {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.2;
+  margin-bottom: 0px;
+}
+
+.value-row {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.selected-text {
+  font-size: 15px;
+  color: #1a1a1a;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.right-text {
+  font-size: 13px;
+  color: #999;
+  margin-left: 8px;
+}
+
+/* Стили для плейсхолдера */
+.placeholder { 
+  font-size: 15px;
+  color: #aaa; /* Серый цвет как на скрине */
+}
+
+.arrow { 
+  font-size: 10px; 
+  color: #666; 
+  margin-left: 10px; 
+  transition: transform 0.2s; 
+}
 .base-select.is-open .arrow { transform: rotate(180deg); }
 
 /* СПИСОК */
@@ -163,7 +220,6 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .option-item:hover { background-color: #f2f2f2; }
 .option-item.is-selected { background-color: #e8e8e8; font-weight: 500; }
 
-/* LAYOUT ОПЦИИ */
 .option-row {
   display: flex;
   justify-content: space-between;
@@ -173,42 +229,26 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .option-left {
   text-align: left;
   flex-grow: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-right: 15px;
 }
-
-/* 🟢 СТИЛЬ БАЛАНСА (ТЕМНЫЙ) */
 .option-right {
   text-align: right;
-  white-space: nowrap;
-  font-weight: 600;
-  color: #1a1a1a; /* Темный цвет */
-  opacity: 0.7;   /* Легкая прозрачность для иерархии */
   font-size: 0.9em;
+  color: #aaa;
 }
 
-/* 🟢 СТИЛЬ КНОПКИ "СОЗДАТЬ" */
+/* СТИЛЬ КНОПКИ "СОЗДАТЬ" */
 .option-item.is-special {
   color: #1a1a1a;
   font-weight: 600;
   background-color: #FAFAFA;
   border-top: 1px solid #E0E0E0;
-  font-style: normal; /* Убрали курсив */
   position: sticky;
   bottom: 0;
 }
-.option-item.is-special .option-left {
-  display: flex;
-  align-items: center;
-}
 .option-item.is-special:hover {
   background-color: #eee;
-  color: #000;
 }
 
-/* Анимация */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; transform-origin: top; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: scaleY(0.95); }
 </style>
