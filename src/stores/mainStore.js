@@ -1,12 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v27.0 - FINAL SORT & TRANSFER LOGIC ---
- * * ВЕРСИЯ: 27.0 - Фикс сортировки категорий и логики виджета переводов
+ * * --- МЕТКА ВЕРСИИ: v27.1 - EXPORT HELPER ---
+ * * ВЕРСИЯ: 27.1 - Экспорт _getOrCreateTransferCategory
  * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) moveOperation: Улучшена реактивность. При переносе через границу "сегодня"
- * моментально обновляется snapshot (Past Total), что заставляет виджеты пересчитаться.
- * 2. (LOGIC) fetchAllEntities: Улучшена сортировка смешанных категорий.
+ * 1. (FIX) Добавлен экспорт функции _getOrCreateTransferCategory в return, 
+ * чтобы её можно было вызывать из компонентов (например, TransferListEditor).
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +28,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v27.0 (Final Sort & Transfer) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v27.1 (Export Helper) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -1064,5 +1063,6 @@ export const useMainStore = defineStore('mainStore', () => {
     fetchSnapshot,
     checkAuth, logout,
     _sortByOrder, 
+    _getOrCreateTransferCategory // 🟢 ADDED EXPORT
   };
 });

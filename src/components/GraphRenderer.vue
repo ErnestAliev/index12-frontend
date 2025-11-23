@@ -16,13 +16,13 @@ import {
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v21.0 - PREPAYMENT DATASET ---
- * * ВЕРСИЯ: 21.0 - Добавлен dataset для предоплаты
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v22.0 - WITHDRAWAL DATASET ---
+ * * ВЕРСИЯ: 22.0 - Добавлен dataset для вывода средств
+ * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (GRAPH) Добавлен dataset 'Предоплата' (#FF9D00).
- * 2. (TOOLTIP) Обновлена логика отображения деталей для нового dataset.
+ * 1. (GRAPH) Добавлен dataset 'Вывод' (#7B1FA2).
+ * 2. (TOOLTIP) Добавлена логика тултипа для вывода.
  */
 
 const props = defineProps({
@@ -54,7 +54,9 @@ const rawMaxY = computed(() => {
         // Max is sum of income + prepayment (так как они в одном стеке положительных значений)
         const totalIncome = (data.income || 0) + (data.prepayment || 0);
         if (totalIncome > max) max = totalIncome;
-        if (Math.abs(data.expense) > max) max = Math.abs(data.expense);
+        // Max for expense + withdrawal (negative stack)
+        const totalExpense = Math.abs(data.expense || 0) + Math.abs(data.withdrawal || 0);
+        if (totalExpense > max) max = totalExpense;
       }
   }
   return max || 1;
@@ -117,13 +119,13 @@ const summaries = computed(() => {
     if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; 
 
     const dateKey = _getDateKey(day.date);
-    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, closingBalance: 0 };
+    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0, closingBalance: 0 };
     
     // В итогах суммируем обычный доход и предоплату для отображения "общих денег"
     return {
       date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: (data.income || 0) + (data.prepayment || 0),
-      expense: data.expense,
+      expense: (data.expense || 0) + (data.withdrawal || 0),
       balance: data.closingBalance
     };
   });
@@ -133,7 +135,7 @@ const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
   const sortedOps = [...ops].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   return sortedOps.map(op => {
-    if (op.isTransfer) return null;
+    if (op.isTransfer && !op.isWithdrawal) return null;
     
     // Проверка на предоплату для подписи
     const prepayIds = mainStore.getPrepaymentCategoryIds;
@@ -143,9 +145,8 @@ const getTooltipOperationList = (ops) => {
     const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
     
     let catName = op.categoryId?.name || 'Без категории';
-    if (isPrepay) {
-        catName = 'Предоплата'; 
-    }
+    if (isPrepay) catName = 'Предоплата';
+    if (op.isWithdrawal) catName = 'Вывод средств';
 
     return {
       isIncome: op.type === 'income',
@@ -153,7 +154,8 @@ const getTooltipOperationList = (ops) => {
       contName: op.contractorId?.name || '---',
       projName: op.projectId?.name || '---',
       catName: catName, 
-      amount: op.amount
+      amount: op.amount,
+      isWithdrawal: op.isWithdrawal
     };
   }).filter(Boolean);
 };
@@ -163,9 +165,12 @@ const chartData = computed(() => {
   const incomeData = [];
   const prepaymentData = []; // 🟢 Данные для предоплат
   const expenseData = [];
+  const withdrawalData = []; // 🟢 Данные для вывода
+  
   const incomeDetails = []; 
-  const prepaymentDetails = []; // 🟢 Детали для тултипов предоплат
+  const prepaymentDetails = [];
   const expenseDetails = [];
+  const withdrawalDetails = [];
 
   const safeDays = Array.isArray(props.visibleDays) ? props.visibleDays : [];
   const prepayIds = mainStore.getPrepaymentCategoryIds;
@@ -175,7 +180,7 @@ const chartData = computed(() => {
 
     const dateKey = _getDateKey(day.date);
     // Получаем данные, разделенные в сторе
-    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0 };
+    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0 };
     
     const allOps = (mainStore.allOperationsFlat || []);
     const dayOps = allOps.filter(op => op.dateKey === dateKey);
@@ -183,9 +188,12 @@ const chartData = computed(() => {
     const incomeOps = [];
     const prepayOps = [];
     const expenseOps = [];
+    const withdrawalOps = [];
 
     dayOps.forEach(op => {
-        if (op.type === 'expense') {
+        if (op.isWithdrawal) {
+            withdrawalOps.push(op);
+        } else if (op.type === 'expense') {
             expenseOps.push(op);
         } else if (op.type === 'income') {
             const catId = op.categoryId?._id || op.categoryId;
@@ -200,12 +208,14 @@ const chartData = computed(() => {
     incomeDetails.push(getTooltipOperationList(incomeOps));
     prepaymentDetails.push(getTooltipOperationList(prepayOps)); 
     expenseDetails.push(getTooltipOperationList(expenseOps));
+    withdrawalDetails.push(getTooltipOperationList(withdrawalOps));
 
     labels.push(day.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
     
     incomeData.push(data.income);
     prepaymentData.push(data.prepayment || 0); 
     expenseData.push(Math.abs(data.expense));
+    withdrawalData.push(Math.abs(data.withdrawal || 0));
   }
 
   return {
@@ -218,7 +228,7 @@ const chartData = computed(() => {
         data: prepaymentData,  
         stack: 'stack1',
         details: prepaymentDetails,
-        order: 1 // Порядок отрисовки
+        order: 1
       },
       // 2. ОБЫЧНЫЙ ДОХОД (Зеленый)
       { 
@@ -237,6 +247,15 @@ const chartData = computed(() => {
         stack: 'stack1',
         details: expenseDetails,
         order: 3
+      },
+      // 🟢 4. ВЫВОД (Фиолетовый)
+      { 
+        label: 'Вывод', 
+        backgroundColor: '#7B1FA2', 
+        data: withdrawalData, 
+        stack: 'stack1',
+        details: withdrawalDetails,
+        order: 4
       }
     ]
   };
@@ -263,7 +282,7 @@ const chartOptions = computed(() => {
             // Пропускаем пустые значения в тултипе
             if (!totalValue) return null;
 
-            const formattedTotal = totalLabel === 'Расход' 
+            const formattedTotal = (totalLabel === 'Расход' || totalLabel === 'Вывод') 
               ? formatNumber(-Math.abs(totalValue)) 
               : formatNumber(totalValue);
             
@@ -288,7 +307,12 @@ const chartOptions = computed(() => {
               if (op.isIncome) {
                 lines.push(`${amountStr} < ${acc} < ${cont} < ${proj} < ${cat}`);
               } else {
-                lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
+                // Для вывода можно немного поменять формат
+                if (op.isWithdrawal) {
+                    lines.push(`${amountStr} > ${acc} (Вывод средств)`);
+                } else {
+                    lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
+                }
               }
             });
             return lines;

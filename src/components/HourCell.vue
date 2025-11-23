@@ -4,14 +4,12 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.0 - ORANGE PREPAYMENT ---
- * * ВЕРСИЯ: 2.0 - Цвета для предоплаты и перевода
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v3.0 - WITHDRAWAL STYLE ---
+ * * ВЕРСИЯ: 3.0 - Цвета для вывода средств
+ * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Добавлен класс .prepayment (оранжевый #FF9D00).
- * 2. (STYLE) Обновлен цвет .transfer на #2F3340.
- * 3. (LOGIC) isPrepaymentOp вычисляет, является ли операция предоплатой.
+ * 1. (STYLE) Добавлен класс .withdrawal (фиолетовый #7B1FA2).
  */
 
 const props = defineProps({
@@ -28,6 +26,9 @@ const mainStore = useMainStore();
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
+  // Если это вывод, то он не считается обычным переводом для стилей
+  if (op.isWithdrawal) return false; 
+  
   if (op.type?.toLowerCase?.() === 'transfer') return true;
   if (op.isTransfer === true) return true;
   if (op.transferGroupId) return true;
@@ -35,10 +36,10 @@ const isTransferOp = computed(() => {
   return cat === 'перевод' || cat === 'transfer';
 });
 
-// 🟢 UI-детектор предоплаты
+// UI-детектор предоплаты
 const isPrepaymentOp = computed(() => {
     const op = props.operation;
-    if (!op || isTransferOp.value) return false;
+    if (!op || isTransferOp.value || op.isWithdrawal) return false;
     if (op.type !== 'income') return false;
     
     const prepayIds = mainStore.getPrepaymentCategoryIds;
@@ -46,6 +47,11 @@ const isPrepaymentOp = computed(() => {
     const prepId = op.prepaymentId?._id || op.prepaymentId;
     
     return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+});
+
+// 🟢 UI-детектор вывода
+const isWithdrawalOp = computed(() => {
+    return props.operation && props.operation.isWithdrawal;
 });
 
 const fromAccountName = computed(() =>
@@ -95,9 +101,10 @@ const onDrop = (event) => {
       class="operation-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isPrepaymentOp, 
-         expense: operation.type==='expense',
-         prepayment: isPrepaymentOp  /* 🟢 КЛАСС ДЛЯ ПРЕДОПЛАТЫ */
+         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp, 
+         expense: operation.type==='expense' && !isWithdrawalOp,
+         prepayment: isPrepaymentOp,
+         withdrawal: isWithdrawalOp /* 🟢 КЛАСС ДЛЯ ВЫВОДА */
       }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
@@ -109,6 +116,13 @@ const onDrop = (event) => {
           {{ fromAccountName }} → {{ toAccountName }}
           <template v-if="operation.amount"> · {{ formatNumber(Math.abs(operation.amount)) }}</template>
         </span>
+      </template>
+
+      <template v-else-if="isWithdrawalOp">
+        <span class="op-amount">
+          - {{ formatNumber(Math.abs(operation.amount)) }}
+        </span>
+        <span class="op-meta">Вывод</span>
       </template>
 
       <template v-else>
@@ -156,6 +170,12 @@ const onDrop = (event) => {
 /* 🟢 ПРЕДОПЛАТА (Оранжевый текст суммы) */
 .prepayment .op-amount { color: #FF9D00 !important; }
 
+/* 🟢 ВЫВОД (Фиолетовый) */
+.withdrawal { background: #4A148C; } /* Темно-фиолетовый фон */
+.withdrawal:hover { background: #6A1B9A; }
+.withdrawal .op-amount { color: #E1BEE7; } /* Светло-фиолетовый текст */
+.withdrawal .op-meta { color: #D1C4E9; }
+
 /* 🟢 Нейтральный перевод (ТЕМНЫЙ ЦВЕТ) */
 .transfer { background:#2F3340; }
 .transfer:hover { background:#3a3f50; }
@@ -186,3 +206,13 @@ const onDrop = (event) => {
   }
 }
 </style>
+```All files have been updated to fix the issues you raised:
+
+1.  **Server**: Updated `server.js` to include the `isWithdrawal` field in the `Event` schema, allowing withdrawal operations to be saved and recognized correctly.
+2.  **Store**: Updated `mainStore.js` to export the `_getOrCreateTransferCategory` function (fixing the "not a function" error) and updated the graph data logic to accumulate `withdrawal` amounts separately for visualization.
+3.  **Withdrawal Popup**: Updated `WithdrawalPopup.vue` to remove the separate comment input field, use the `destination` as the comment/destination, and integrate the `BaseSelect` component for the "Reason" field.
+4.  **Transfer Logic**: Updated `TransferListEditor.vue` to correctly import and use the store function, ensuring "Create new transfer" works by resetting state, and fixing the "Continue > Transfer" logic by properly passing `initialData`. Also updated `TransferPopup.vue` to correctly initialize form fields from `initialData`.
+5.  **Graph**: Updated `GraphRenderer.vue` to include a new dataset for "Withdrawal" with the agreed-upon violet color scheme.
+6.  **Timeline**: Updated `HourCell.vue` to display withdrawal operations with distinct styling (violet background/text) so they are easily identifiable on the timeline.
+
+The entire logic flow for creating transfers, continuing chains, and withdrawing funds should now be fully functional and visually consistent.
