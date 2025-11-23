@@ -7,11 +7,11 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.1 - Z-INDEX FIX ---
- * * ВЕРСИЯ: 18.1 - Исправление перекрытия слоев
+ * * --- МЕТКА ВЕРСИИ: v17.4 - FIX INPUT ALIGNMENT ---
+ * * ВЕРСИЯ: 17.4 - Исправление вертикального выравнивания плейсхолдера перевода
  * * ДАТА: 2025-11-23
  * *
- * * 1. (CSS) z-index повышен до 2500, чтобы быть выше TransferListEditor (1100).
+ * * 1. (CSS) Добавлено правило .custom-input-box:not(.has-value) .real-input { padding-top: ... }
  */
 
 const mainStore = useMainStore();
@@ -20,11 +20,10 @@ const props = defineProps({
   cellIndex: { type: Number, required: true },
   transferToEdit: { type: Object, default: null },
   minAllowedDate: { type: Date, default: null },
-  maxAllowedDate: { type: Date, default: null },
-  initialData: { type: Object, default: null }
+  maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save']);
+const emit = defineEmits(['close', 'transfer-complete']);
 
 const amount = ref('');
 const fromAccountId = ref(null);
@@ -94,6 +93,7 @@ const accountOptions = computed(() => {
   return options;
 });
 
+// 🟢 ДОБАВЛЕН БАЛАНС ДЛЯ ВЛАДЕЛЬЦЕВ (TRANSFER)
 const ownerOptions = computed(() => {
   const opts = [];
   mainStore.currentCompanyBalances.forEach(c => { 
@@ -143,7 +143,6 @@ onMounted(async () => {
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
   if (!transferCategory) { try { transferCategory = await mainStore.addCategory('Перевод'); } catch (e) {} }
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
-  categoryId.value = defaultCategoryId;
 
   if (props.transferToEdit) {
     const transfer = props.transferToEdit;
@@ -156,24 +155,10 @@ onMounted(async () => {
     if (transfer.toCompanyId) { const cId = transfer.toCompanyId?._id || transfer.toCompanyId; selectedToOwner.value = `company-${cId}`; } 
     else if (transfer.toIndividualId) { const iId = transfer.toIndividualId?._id || transfer.toIndividualId; selectedToOwner.value = `individual-${iId}`; }
     
+    categoryId.value = defaultCategoryId;
     if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
-  } 
-  else if (props.initialData) {
-      const init = props.initialData;
-      if (init.amount) amount.value = formatNumber(init.amount);
-      
-      if (init.fromAccountId) {
-          fromAccountId.value = init.fromAccountId;
-          if (init.fromCompanyId) selectedFromOwner.value = `company-${init.fromCompanyId}`;
-          else if (init.fromIndividualId) selectedFromOwner.value = `individual-${init.fromIndividualId}`;
-          else onFromAccountSelected(init.fromAccountId);
-      }
-      
-      setTimeout(() => { 
-          if (amountInput.value) amountInput.value.focus(); 
-      }, 100);
-  }
-  else {
+  } else {
+    categoryId.value = defaultCategoryId;
     setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100);
   }
 });
@@ -242,26 +227,8 @@ const handleSave = async () => {
   const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
   let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
   let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
-  
-  const transferPayload = { 
-      date: finalDate, 
-      amount: amountParsed, 
-      fromAccountId: fromAccountId.value, 
-      toAccountId: toAccountId.value, 
-      fromCompanyId: fromCompanyId, 
-      toCompanyId: toCompanyId, 
-      fromIndividualId: fromIndividualId, 
-      toIndividualId: toIndividualId, 
-      categoryId: categoryId.value,
-      transferGroupId: props.initialData?.transferGroupId || props.transferToEdit?.transferGroupId 
-  };
-  
-  emit('save', { 
-      mode: (!isEdit || isClone) ? 'create' : 'edit', 
-      id: (!isEdit || isClone) ? null : transferId, 
-      data: transferPayload, 
-      originalTransfer: isEdit ? props.transferToEdit : null 
-  });
+  const transferPayload = { date: finalDate, amount: amountParsed, fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, categoryId: categoryId.value };
+  emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
 };
 
 const closePopup = () => { emit('close'); };
@@ -269,11 +236,13 @@ const closePopup = () => { emit('close'); };
 
 <template>
   <div class="popup-overlay" @click.self="closePopup">
+    <!-- 🟢 ТЕМА ДЛЯ ПЕРЕВОДА -->
     <div class="popup-content theme-edit">
       
       <h3>{{ title }}</h3>
 
       <template v-if="!showCreateOwnerModal">
+        <!-- 🟢 КАСТОМНЫЙ ИНПУТ ДЛЯ СУММЫ -->
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
@@ -341,17 +310,22 @@ const closePopup = () => { emit('close'); };
           @change="handleToOwnerChange"
         />
         
+        <!-- 🟢 КАСТОМНЫЙ ИНПУТ ДЛЯ ДАТЫ -->
         <div class="custom-input-box input-spacing has-value date-box">
            <div class="input-inner-content">
               <span class="floating-label">Дата перевода</span>
               <div class="date-display-row">
+                 <!-- Текстовое представление даты -->
                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
+                 
+                 <!-- Невидимый инпут даты -->
                  <input 
                    type="date" 
                    v-model="editableDate" 
                    class="real-input date-overlay"
                    :min="minDateString" :max="maxDateString" 
                  />
+                 <!-- Иконка календаря -->
                  <span class="calendar-icon">📅</span> 
               </div>
            </div>
@@ -365,9 +339,11 @@ const closePopup = () => { emit('close'); };
           </button>
 
           <div v-if="props.transferToEdit && !isCloneMode.value" class="icon-actions">
+            <!-- КНОПКА КОПИРОВАТЬ -->
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
+            <!-- КНОПКА УДАЛИТЬ -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" aria-label="Удалить" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/></svg>
             </button>
@@ -398,13 +374,15 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
+/* ТЕМА ПЕРЕВОДА */
 .theme-edit { --focus-color: #222222; --focus-shadow: rgba(34, 34, 34, 0.2); }
 
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 2500; /* 🟢 FIX: Выше редактора (1100) */ overflow-y: auto; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
 
+/* 🟢 СТИЛИ ДЛЯ КАСТОМНЫХ ИНПУТОВ (Сумма, Дата) */
 .custom-input-box {
   width: 100%;
   height: 54px;
@@ -417,26 +395,79 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
   position: relative;
   transition: all 0.2s ease;
 }
+
+/* Фокус */
 .custom-input-box:focus-within {
   border-color: var(--focus-color, #222);
   box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2));
 }
+
+/* 🟢 FIX: Добавлен паддинг для пустого состояния, чтобы опустить текст */
 .custom-input-box:not(.has-value) .real-input {
     padding-top: 10px;
 }
 
-.input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
-.floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; }
-.real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px; color: #1a1a1a; font-weight: 500; height: auto; line-height: 1.3; outline: none; }
-.real-input::placeholder { font-weight: 400; color: #aaa; }
+.input-inner-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 
-.date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
-.date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
-.date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
-.calendar-icon { font-size: 16px; color: #999; }
+.floating-label {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: -2px;
+  margin-top: 4px;
+}
 
+.real-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 15px;
+  color: #1a1a1a;
+  font-weight: 500;
+  height: auto; 
+  line-height: 1.3;
+  outline: none;
+}
+.real-input::placeholder {
+  font-weight: 400;
+  color: #aaa;
+}
+
+/* Специфика для даты */
+.date-display-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+.date-value-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+.date-overlay {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.calendar-icon {
+  font-size: 16px;
+  color: #999;
+}
+
+/* Отступы */
 .input-spacing { margin-bottom: 12px; }
 
+/* Обычный инпут для inline-создания */
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
 
@@ -454,9 +485,16 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .save-wide { flex: 1 1 auto; height: 54px; }
 .icon-actions { display: flex; gap: 10px; }
 
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border-radius: 10px; cursor: pointer; background: #F4F4F4; border: 1px solid #E0E0E0; color: #333; transition: all 0.2s; padding: 0; }
+.icon-btn { 
+  display: inline-flex; align-items: center; justify-content: center; 
+  width: 54px; height: 54px; border-radius: 10px; cursor: pointer; 
+  background: #F4F4F4; border: 1px solid #E0E0E0; color: #333;
+  transition: all 0.2s;
+  padding: 0;
+}
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
+
 .icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
 
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }

@@ -1,11 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v27.1 - EXPORT HELPER ---
- * * ВЕРСИЯ: 27.1 - Экспорт _getOrCreateTransferCategory
+ * * --- МЕТКА ВЕРСИИ: v27.0 - FINAL SORT & TRANSFER LOGIC ---
+ * * ВЕРСИЯ: 27.0 - Фикс сортировки категорий и логики виджета переводов
  * * ДАТА: 2025-11-23
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Добавлен экспорт функции _getOrCreateTransferCategory в return, 
- * чтобы её можно было вызывать из компонентов (например, TransferListEditor).
+ * 1. (LOGIC) moveOperation: Улучшена реактивность. При переносе через границу "сегодня"
+ * моментально обновляется snapshot (Past Total), что заставляет виджеты пересчитаться.
+ * 2. (LOGIC) fetchAllEntities: Улучшена сортировка смешанных категорий.
  */
 
 import { defineStore } from 'pinia';
@@ -28,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v27.1 (Export Helper) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v27.0 (Final Sort & Transfer) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -243,12 +244,12 @@ export const useMainStore = defineStore('mainStore', () => {
     const prepayIdsSet = prepaymentCategoryIdsSet.value;
     
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
-       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal: 0, dayTotal:0 };
+       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, dayTotal:0 };
        const dayRec = byDateKey[dateKey];
 
        if (Array.isArray(ops)) {
            for (const op of ops) {
-               if (isTransfer(op) && !op.isWithdrawal) continue;
+               if (isTransfer(op)) continue;
                
                const amt = op.amount || 0;
                const absAmt = Math.abs(amt);
@@ -266,11 +267,7 @@ export const useMainStore = defineStore('mainStore', () => {
                    
                    dayRec.dayTotal += amt;
                } else if (op.type === 'expense') {
-                   if (op.isWithdrawal) {
-                       dayRec.withdrawal += absAmt;
-                   } else {
-                       dayRec.expense += absAmt;
-                   }
+                   dayRec.expense += absAmt;
                    dayRec.dayTotal -= absAmt;
                }
            }
@@ -289,7 +286,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const rec = byDateKey[dateKey];
       running += rec.dayTotal;
       chart.set(dateKey, { 
-        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, withdrawal: rec.withdrawal,
+        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, 
         closingBalance: running, date: _parseDateKey(dateKey)
       });
     }
@@ -408,11 +405,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return totalDealSum - receivedSum;
   });
 
-  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op) && !op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
-  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op) && !op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
@@ -533,7 +530,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
     for (const op of futureOps.value) {
-        if (isTransfer(op) && !op.isWithdrawal) continue; 
+        if (isTransfer(op)) continue; 
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
     }
@@ -552,7 +549,7 @@ export const useMainStore = defineStore('mainStore', () => {
           map[key] += val;
       };
 
-      if (isTransfer(op) && !op.isWithdrawal) {
+      if (isTransfer(op)) {
           const fromId = op.fromAccountId; const toId = op.toAccountId;
           _addToMap(snapshot.value.accountBalances, fromId, -absAmount * sign);
           _addToMap(snapshot.value.accountBalances, toId, absAmount * sign);
@@ -579,7 +576,7 @@ export const useMainStore = defineStore('mainStore', () => {
           if (!snapshot.value.categoryTotals[cKey]) snapshot.value.categoryTotals[cKey] = { income: 0, expense: 0, total: 0 };
           const rec = snapshot.value.categoryTotals[cKey];
           
-          if (isTransfer(op) && !op.isWithdrawal) {
+          if (isTransfer(op)) {
               rec.expense += (absAmount * sign);
               rec.total -= (absAmount * sign);
           } else {
@@ -713,13 +710,10 @@ export const useMainStore = defineStore('mainStore', () => {
         }
       }
       const firstOp = transferOps[0];
-      // Если это вывод, помечаем его
-      const isWithdrawal = transferOps.some(o => o.isWithdrawal);
-      
       mergedTransfers.push({
-        ...firstOp, type: 'transfer', isTransfer: true, isWithdrawal: isWithdrawal,
+        ...firstOp, type: 'transfer', isTransfer: true,
         transferGroupId: groupId, amount: Math.abs(firstOp.amount),
-        categoryId: { _id: 'transfer', name: isWithdrawal ? 'Вывод' : 'Перевод' }
+        categoryId: { _id: 'transfer', name: 'Перевод' }
       });
     }
     return [...normalOps, ...mergedTransfers];
@@ -1070,6 +1064,5 @@ export const useMainStore = defineStore('mainStore', () => {
     fetchSnapshot,
     checkAuth, logout,
     _sortByOrder, 
-    _getOrCreateTransferCategory // 🟢 ADDED EXPORT
   };
 });

@@ -1,434 +1,326 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import TransferPopup from './TransferPopup.vue'; 
-import WithdrawalPopup from './WithdrawalPopup.vue';
-import ConfirmationPopup from './ConfirmationPopup.vue'; // 🟢 Импорт нашего попапа подтверждения
 
 const props = defineProps({
-  title: { type: String, default: 'Редактор переводов' }
+  title: { type: String, default: 'Редактировать переводы' }
 });
 
 const emit = defineEmits(['close']);
 const mainStore = useMainStore();
 
-const activeTab = ref('active');
-const chains = ref([]);
-const isLoading = ref(false);
+const localItems = ref([]);
+const isSaving = ref(false);
+const isCreatePopupVisible = ref(false);
+const isDeleting = ref(false);
+const showDeleteConfirm = ref(false);
+const itemToDelete = ref(null);
+const accounts = computed(() => mainStore.accounts);
 
-const isTransferPopupVisible = ref(false);
-const isWithdrawalPopupVisible = ref(false);
-// 🟢 Состояния для кастомного подтверждения отмены
-const isCancelConfirmVisible = ref(false);
-const chainToCancel = ref(null);
+const toInputDate = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-const operationToEdit = ref(null);
-const initialTransferData = ref(null); 
-const initialWithdrawalData = ref(null); 
+const formatDateReadable = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  return d.toLocaleDateString('ru-RU');
+};
 
-const activePopoverId = ref(null);
+const getOwnerId = (compId, indId) => {
+  if (compId) return typeof compId === 'object' ? `company-${compId._id}` : `company-${compId}`;
+  if (indId) return typeof indId === 'object' ? `individual-${indId._id}` : `individual-${indId}`;
+  return null;
+};
 
-const loadChains = () => {
-  isLoading.value = true;
+const loadTransfers = () => {
   const allOps = mainStore.allOperationsFlat;
-  
-  const relevantOps = allOps.filter(op => 
+  const onlyTransfers = allOps.filter(op => 
     op.type === 'transfer' || 
     op.isTransfer === true || 
-    op.isWithdrawal === true || 
-    (op.categoryId && ['перевод', 'transfer', 'вывод', 'withdrawal'].includes(op.categoryId.name?.toLowerCase()))
+    (op.categoryId && (op.categoryId.name === 'Перевод' || op.categoryId.name === 'Transfer'))
   );
 
-  const groups = {};
-  
-  relevantOps.forEach(op => {
-      const groupId = op.transferGroupId || op._id;
-      if (!groups[groupId]) {
-          groups[groupId] = {
-              id: groupId,
-              date: new Date(op.date),
-              steps: [],
-              status: 'active',
-              totalAmount: Math.abs(op.amount),
-              lastOp: null
-          };
-      }
-      groups[groupId].steps.push(op);
-      if (new Date(op.date) > groups[groupId].date) {
-          groups[groupId].date = new Date(op.date);
-          groups[groupId].lastOp = op;
-      }
-      if (!groups[groupId].lastOp) groups[groupId].lastOp = op;
-  });
+  localItems.value = onlyTransfers
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .map(t => {
+      const fromOwnerId = getOwnerId(t.fromCompanyId, t.fromIndividualId);
+      const toOwnerId = getOwnerId(t.toCompanyId, t.toIndividualId);
 
-  chains.value = Object.values(groups).map(group => {
-      group.steps.sort((a, b) => new Date(a.date) - new Date(b.date));
-      
-      const lastStep = group.steps[group.steps.length - 1];
-      const isWithdrawal = lastStep.isWithdrawal || (lastStep.categoryId?.name?.toLowerCase().includes('вывод'));
-      
-      if (isWithdrawal) {
-          group.status = 'withdrawal';
-      } else {
-          group.status = 'active'; 
-      }
-      
-      return group;
-  }).sort((a, b) => b.date - a.date);
-
-  isLoading.value = false;
+      return {
+        _id: t._id,
+        originalOp: t,
+        date: toInputDate(t.date),
+        amount: Math.abs(t.amount),
+        amountFormatted: formatNumber(Math.abs(t.amount)),
+        fromAccountId: t.fromAccountId?._id || t.fromAccountId,
+        fromOwnerId: fromOwnerId,
+        toAccountId: t.toAccountId?._id || t.toAccountId,
+        toOwnerId: toOwnerId,
+        isDeleted: false
+      };
+    });
 };
 
 onMounted(() => {
-  loadChains();
-  document.addEventListener('click', closePopover);
+  loadTransfers();
 });
 
-onUnmounted(() => {
-  document.removeEventListener('click', closePopover);
-});
-
-const filteredChains = computed(() => {
-    if (activeTab.value === 'all') return chains.value;
-    if (activeTab.value === 'active') return chains.value.filter(c => c.status === 'active');
-    if (activeTab.value === 'completed') return chains.value.filter(c => c.status === 'withdrawal' || c.status === 'completed');
-    return chains.value;
-});
-
-const activeCount = computed(() => chains.value.filter(c => c.status === 'active').length);
-const hiddenCount = computed(() => chains.value.length - activeCount.value);
-
-const formatDate = (date) => {
-    return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+const openCreatePopup = () => {
+  isCreatePopupVisible.value = true;
 };
 
-const getFromName = (op) => {
-    if (op.fromAccountId?.name) return `${op.fromAccountId.name}`;
-    if (op.fromCompanyId?.name) return `${op.fromCompanyId.name}`;
-    return 'Неизвестно';
+const handleTransferComplete = async (eventData) => {
+  isCreatePopupVisible.value = false;
+  await mainStore.fetchAllEntities();
+  if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
+  loadTransfers();
 };
 
-const formatMoney = (val) => `${formatNumber(val)} ₸`;
+const onAmountInput = (item) => {
+  const raw = item.amountFormatted.replace(/[^0-9]/g, '');
+  item.amountFormatted = formatNumber(raw);
+  item.amount = Number(raw);
+};
 
-const togglePopover = (event, chainId) => {
-    event.stopPropagation();
-    if (activePopoverId.value === chainId) {
-        activePopoverId.value = null;
-    } else {
-        activePopoverId.value = chainId;
+const onAccountChange = (item, direction) => {
+  const accId = direction === 'from' ? item.fromAccountId : item.toAccountId;
+  const account = accounts.value.find(a => a._id === accId);
+  
+  if (account) {
+    let newOwnerId = null;
+    if (account.companyId) {
+      const cId = typeof account.companyId === 'object' ? account.companyId._id : account.companyId;
+      newOwnerId = `company-${cId}`;
+    } else if (account.individualId) {
+      const iId = typeof account.individualId === 'object' ? account.individualId._id : account.individualId;
+      newOwnerId = `individual-${iId}`;
     }
-};
-
-const closePopover = () => {
-    activePopoverId.value = null;
-};
-
-const handleCreateNew = () => {
-    initialTransferData.value = null;
-    operationToEdit.value = null;
-    isTransferPopupVisible.value = true;
-};
-
-const handleContinueTransfer = (chain) => {
-    const lastOp = chain.lastOp;
-    operationToEdit.value = null;
-    initialTransferData.value = {
-        amount: Math.abs(lastOp.amount),
-        fromAccountId: lastOp.toAccountId?._id || lastOp.toAccountId,
-        fromCompanyId: lastOp.toCompanyId?._id || lastOp.toCompanyId,
-        fromIndividualId: lastOp.toIndividualId?._id || lastOp.toIndividualId,
-        transferGroupId: chain.id 
-    };
-    isTransferPopupVisible.value = true;
-    activePopoverId.value = null;
-};
-
-const handleContinueWithdrawal = (chain) => {
-    const lastOp = chain.lastOp;
-    let fromName = 'Счет';
-    if (lastOp.toAccountId?.name) fromName = lastOp.toAccountId.name;
-    else if (lastOp.toCompanyId?.name) fromName = lastOp.toCompanyId.name;
-
-    initialWithdrawalData.value = {
-        amount: Math.abs(lastOp.amount),
-        fromAccountId: lastOp.toAccountId?._id || lastOp.toAccountId,
-        fromAccountName: fromName,
-        transferGroupId: chain.id 
-    };
-    isWithdrawalPopupVisible.value = true;
-    activePopoverId.value = null;
-};
-
-// 🟢 ИНИЦИАЛИЗАЦИЯ ОТМЕНЫ (Открытие попапа)
-const handleCancelWithdrawal = (chain) => {
-    chainToCancel.value = chain;
-    isCancelConfirmVisible.value = true;
-};
-
-// 🟢 ПОДТВЕРЖДЕНИЕ ОТМЕНЫ
-const onCancelConfirmed = async () => {
-    if (!chainToCancel.value) return;
-    const chain = chainToCancel.value;
-    
-    try {
-        const lastStep = chain.steps[chain.steps.length - 1];
-        if (lastStep && (lastStep.isWithdrawal || lastStep.type === 'expense')) {
-            await mainStore.deleteOperation(lastStep);
-            await mainStore.fetchAllEntities();
-            loadChains(); 
-        }
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка при отмене вывода');
-    } finally {
-        isCancelConfirmVisible.value = false;
-        chainToCancel.value = null;
+    if (newOwnerId) {
+      if (direction === 'from') item.fromOwnerId = newOwnerId;
+      else item.toOwnerId = newOwnerId;
     }
+  }
 };
 
-const handleViewChain = (chain) => {
-    const lastOp = chain.lastOp;
-    if (lastOp.isWithdrawal) {
-        operationToEdit.value = lastOp;
-        isWithdrawalPopupVisible.value = true;
-    } else {
-        operationToEdit.value = lastOp;
-        initialTransferData.value = null;
-        isTransferPopupVisible.value = true;
+const handleSave = async () => {
+  isSaving.value = true;
+  try {
+    const updates = [];
+    for (const item of localItems.value) {
+      if (item.isDeleted) continue;
+
+      const original = item.originalOp;
+      let fromComp = null, fromInd = null;
+      if (item.fromOwnerId) {
+        const [type, id] = item.fromOwnerId.split('-');
+        if (type === 'company') fromComp = id; else fromInd = id;
+      }
+      let toComp = null, toInd = null;
+      if (item.toOwnerId) {
+        const [type, id] = item.toOwnerId.split('-');
+        if (type === 'company') toComp = id; else toInd = id;
+      }
+      const [year, month, day] = item.date.split('-').map(Number);
+      const newDateObj = new Date(year, month - 1, day, 12, 0, 0);
+
+      const isChanged = 
+        toInputDate(original.date) !== item.date ||
+        Math.abs(original.amount) !== item.amount ||
+        (original.fromAccountId?._id || original.fromAccountId) !== item.fromAccountId ||
+        (original.toAccountId?._id || original.toAccountId) !== item.toAccountId ||
+        getOwnerId(original.fromCompanyId, original.fromIndividualId) !== item.fromOwnerId ||
+        getOwnerId(original.toCompanyId, original.toIndividualId) !== item.toOwnerId;
+
+      if (isChanged) {
+        updates.push(mainStore.updateTransfer(item._id, {
+          date: newDateObj,
+          amount: item.amount,
+          fromAccountId: item.fromAccountId,
+          toAccountId: item.toAccountId,
+          fromCompanyId: fromComp,
+          fromIndividualId: fromInd,
+          toCompanyId: toComp,
+          toIndividualId: toInd
+        }));
+      }
     }
+    if (updates.length > 0) await Promise.all(updates);
+    emit('close');
+  } catch (e) {
+    console.error("Ошибка сохранения:", e);
+    alert("Ошибка при сохранении изменений");
+  } finally {
+    isSaving.value = false;
+  }
 };
 
-const onTransferSaved = async (eventData) => {
-    try {
-        if (eventData.mode === 'create') {
-             await mainStore.createTransfer(eventData.data);
-        } else {
-             await mainStore.updateTransfer(eventData.id, eventData.data);
-        }
-        await mainStore.fetchAllEntities();
-        loadChains();
-        isTransferPopupVisible.value = false;
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка сохранения');
-    }
+const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
+const confirmDelete = async () => {
+  if (!itemToDelete.value) return;
+  isDeleting.value = true;
+  try {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    await mainStore.deleteOperation(itemToDelete.value.originalOp);
+    localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
+    showDeleteConfirm.value = false; itemToDelete.value = null;
+  } catch (e) {
+    console.error(e);
+    alert('Ошибка при удалении: ' + e.message);
+  } finally {
+    isDeleting.value = false;
+  }
 };
-
-const onWithdrawalSaved = async (eventData) => {
-    try {
-        const { mode, id, data } = eventData;
-        if (mode === 'create') {
-            const payload = {
-                ...data,
-                date: new Date(),
-                categoryId: await mainStore._getOrCreateTransferCategory(), 
-                transferGroupId: initialWithdrawalData.value?.transferGroupId,
-                accountId: initialWithdrawalData.value?.fromAccountId
-            };
-            await mainStore.createEvent(payload);
-        } else {
-            const updatePayload = {
-                 amount: -Math.abs(data.amount),
-                 destination: data.destination,
-                 reason: data.reason
-            };
-            await mainStore.updateOperation(id, updatePayload);
-        }
-        await mainStore.fetchAllEntities();
-        loadChains();
-        isWithdrawalPopupVisible.value = false;
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка вывода: ' + e.message);
-    }
-};
+const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.value = false; itemToDelete.value = null; };
 </script>
 
 <template>
-  <div class="editor-window-overlay" @click.self="$emit('close')">
-    <div class="editor-window">
-      <div class="header">
-        <h3>Редактор переводов</h3>
+  <div class="popup-overlay" @click.self="$emit('close')">
+    <div class="popup-content wide-editor">
+      <div class="popup-header">
+        <h3>{{ title }}</h3>
       </div>
-
-      <div class="controls-row">
-        <div class="tabs">
-          <button class="tab-btn" :class="{ active: activeTab === 'all' }" @click="activeTab = 'all'">Все</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'active' }" @click="activeTab = 'active'">
-            В работе <span class="badge">{{ activeCount }}</span>
-          </button>
-          <button class="tab-btn" :class="{ active: activeTab === 'completed' }" @click="activeTab = 'completed'">Завершенные</button>
-        </div>
-        <div class="info-text">
-          Показано: {{ filteredChains.length }} цепочек 
-          <span v-if="activeTab === 'active'">(скрыто {{ hiddenCount }} завершенных)</span>
-        </div>
+      <p class="editor-hint">Редактируйте параметры переводов. Нажмите на корзину для удаления.</p>
+      
+      <div class="create-section">
+        <button class="btn-add-new-transfer" @click="openCreatePopup">
+          + Создать перевод
+        </button>
       </div>
-
+      
+      <div class="grid-header">
+        <span class="col-date">Дата</span>
+        <span class="col-owner">Отправитель</span>
+        <span class="col-acc">Счет (От)</span>
+        <span class="col-amount">Сумма</span>
+        <span class="col-acc">Счет (Куда)</span>
+        <span class="col-owner">Получатель</span>
+        <span class="col-trash"></span>
+      </div>
+      
       <div class="list-scroll">
-        <div v-if="isLoading" class="loading-state">Загрузка...</div>
-        <div v-else-if="filteredChains.length === 0" class="empty-state">Нет цепочек</div>
+        <div v-if="localItems.length === 0" class="empty-state">Нет переводов.</div>
 
-        <div 
-          v-for="chain in filteredChains" 
-          :key="chain.id" 
-          class="chain-card"
-          :class="{ 'closed': chain.status === 'withdrawal' || chain.status === 'completed' }"
-          :style="chain.status === 'withdrawal' ? 'border-left-color: #7B1FA2;' : ''"
-        >
-          <div class="card-left">
-            <div class="chain-header">
-              <span class="chain-title">Цепочка от {{ formatDate(chain.date) }}</span>
-              <span v-if="chain.status === 'active'" class="status-label status-active">АКТИВНА</span>
-              <span v-else-if="chain.status === 'withdrawal'" class="status-label status-withdrawal">ВЫВЕДЕНО</span>
-            </div>
-            
-            <div class="chain-flow">
-              <template v-for="(step, idx) in chain.steps" :key="step._id">
-                <span v-if="idx > 0" class="flow-arrow">➜</span>
-                <span class="flow-step" :class="{ 'withdrawal-chip': step.isWithdrawal }">
-                  <template v-if="step.isWithdrawal">
-                    {{ step.destination || 'Вывод' }} ({{ formatNumber(Math.abs(step.amount)) }})
-                  </template>
-                  <template v-else>
-                    {{ getFromName(step) }} ({{ formatNumber(Math.abs(step.amount)) }})
-                  </template>
-                </span>
-              </template>
-              <span v-if="chain.status === 'active'" class="flow-waiting">...на балансе</span>
-            </div>
+        <div v-for="item in localItems" :key="item._id" class="grid-row">
+          <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" /></div>
+          <div class="col-owner">
+             <select v-model="item.fromOwnerId" class="edit-input select-input">
+                <option :value="null">-</option>
+                <optgroup label="Компании"><option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
+                <optgroup label="Физлица"><option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
+             </select>
           </div>
-
-          <div class="card-right">
-            <div class="balance-block">
-              <span class="balance-amount" :style="chain.status === 'withdrawal' ? 'color: #7B1FA2' : ''">
-                {{ chain.status === 'withdrawal' ? '0 ₸' : formatMoney(chain.totalAmount) }}
-              </span>
-              <span class="balance-label">
-                {{ chain.status === 'withdrawal' ? 'Закрыта' : 'Доступно' }}
-              </span>
-            </div>
-
-            <div v-if="chain.status === 'active'" class="action-wrapper">
-                <button class="btn-continue" @click="togglePopover($event, chain.id)">➜ Продолжить</button>
-                <div v-if="activePopoverId === chain.id" class="action-popover">
-                    <div class="popover-item" @click="handleContinueTransfer(chain)">
-                        <span class="icon-transfer">➜</span> Перевод на счет
-                    </div>
-                    <div class="popover-item" @click="handleContinueWithdrawal(chain)">
-                        <span class="icon-withdraw">⤓</span> Вывод денег
-                    </div>
-                </div>
-            </div>
-
-            <!-- 🟢 Кнопка отмены с вызовом нашего попапа -->
-            <div v-if="chain.status === 'withdrawal'" class="action-wrapper">
-                <button class="btn-undo" @click="handleCancelWithdrawal(chain)" title="Отменить вывод и вернуть деньги">
-                   ↺ Отменить
-                </button>
-            </div>
-
-            <button class="btn-view" @click="handleViewChain(chain)">👁</button>
+          <div class="col-acc">
+            <select v-model="item.fromAccountId" @change="onAccountChange(item, 'from')" class="edit-input select-input">
+               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
+            </select>
+          </div>
+          <div class="col-amount"><input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" /></div>
+          <div class="col-acc">
+            <select v-model="item.toAccountId" @change="onAccountChange(item, 'to')" class="edit-input select-input">
+               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
+            </select>
+          </div>
+          <div class="col-owner">
+             <select v-model="item.toOwnerId" class="edit-input select-input">
+                <option :value="null">-</option>
+                <optgroup label="Компании"><option v-for="c in mainStore.companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
+                <optgroup label="Физлица"><option v-for="i in mainStore.individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
+             </select>
+          </div>
+          <div class="col-trash">
+            <button class="delete-btn" @click="askDelete(item)" title="Удалить">
+               <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
           </div>
         </div>
       </div>
 
-      <div class="footer">
-        <button class="btn-create" @click="handleCreateNew">+ Новый перевод</button>
-        <div class="footer-right">
-          <button class="btn-close" @click="$emit('close')">Закрыть</button>
+      <div class="popup-footer">
+        <button class="btn-close" @click="$emit('close')">Отмена</button>
+        <button class="btn-save" @click="handleSave" :disabled="isSaving">{{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}</button>
+      </div>
+    </div>
+
+    <TransferPopup v-if="isCreatePopupVisible" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @transfer-complete="handleTransferComplete" />
+    <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
+      <div class="delete-confirm-box">
+        <div v-if="isDeleting" class="deleting-state"><h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите, обновляем данные.</p><div class="progress-container"><div class="progress-bar"></div></div></div>
+        <div v-else>
+          <h4>Подтвердите удаление</h4>
+          <p class="confirm-text" v-if="itemToDelete">Вы действительно хотите удалить перевод от <b>{{ formatDateReadable(itemToDelete.date) }}</b><br>на сумму <b>{{ itemToDelete.amountFormatted }} ₸</b>?</p>
+          <div class="delete-actions"><button class="btn-cancel" @click="cancelDelete">Отмена</button><button class="btn-delete-confirm" @click="confirmDelete">Удалить</button></div>
         </div>
       </div>
     </div>
   </div>
-
-  <TransferPopup
-    v-if="isTransferPopupVisible"
-    :date="new Date()"
-    :cellIndex="0"
-    :transferToEdit="operationToEdit"
-    :initial-data="initialTransferData"
-    @close="isTransferPopupVisible = false"
-    @save="onTransferSaved"
-  />
-
-  <WithdrawalPopup
-    v-if="isWithdrawalPopupVisible"
-    :initial-data="initialWithdrawalData || {}"
-    :operation-to-edit="operationToEdit"
-    @close="isWithdrawalPopupVisible = false"
-    @save="onWithdrawalSaved"
-  />
-
-  <!-- 🟢 Наш красивый попап подтверждения -->
-  <ConfirmationPopup
-    v-if="isCancelConfirmVisible"
-    title="Отмена вывода"
-    message="Вы уверены, что хотите отменить вывод и вернуть деньги на баланс?"
-    @close="isCancelConfirmVisible = false"
-    @confirm="onCancelConfirmed"
-  />
-
 </template>
 
 <style scoped>
-.editor-window-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background-color: rgba(0,0,0,0.6);
-  display: flex; justify-content: center; align-items: center;
-  z-index: 1100;
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
+.popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 95%; max-width: 1100px; }
+.popup-header { padding: 1.5rem 1.5rem 0.5rem; }
+h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
+.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
+
+.create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+
+.btn-add-new-transfer { 
+  width: 100%; padding: 12px; 
+  border: 1px solid transparent; 
+  background-color: #2F3340; 
+  border-radius: 8px; 
+  color: #fff; 
+  font-size: 15px; cursor: pointer; transition: all 0.2s; 
 }
-.editor-window {
-  background: #EBEBEB; border-radius: 16px; width: 95%; max-width: 1100px; height: 85vh;
-  display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.5); overflow: hidden; position: relative;
+.btn-add-new-transfer:hover { 
+  background-color: #3a3f50; 
 }
-.header { padding: 1.5rem 2rem 1rem; }
-h3 { margin: 0; font-size: 24px; color: #1a1a1a; font-weight: 700; }
-.controls-row { padding: 0 2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; }
-.tabs { display: flex; background: #DCDCDC; border-radius: 8px; padding: 4px; gap: 4px; }
-.tab-btn { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; font-size: 14px; color: #666; cursor: pointer; font-weight: 600; transition: all 0.2s; }
-.tab-btn.active { background: #FFFFFF; color: #222; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-.badge { background: #FF9D00; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 10px; font-weight: 700; margin-left: 6px; }
-.info-text { font-size: 13px; color: #888; }
-.list-scroll { flex-grow: 1; overflow-y: auto; padding: 0 2rem 2rem; display: flex; flex-direction: column; gap: 12px; }
-.chain-card { 
-  background: #FFFFFF; border-radius: 12px; padding: 16px 20px; 
-  display: flex; justify-content: space-between; align-items: center; 
-  box-shadow: 0 2px 5px rgba(0,0,0,0.03); border: 1px solid transparent; 
-  transition: border-color 0.2s; border-left: 4px solid #FF9D00; position: relative; 
-}
-.chain-card:hover { border-color: #ccc; }
-.chain-card.closed { border-left-color: #aaa; background: #F5F5F5; }
-.card-left { display: flex; flex-direction: column; gap: 10px; }
-.chain-header { display: flex; align-items: center; gap: 10px; }
-.chain-title { font-weight: 700; font-size: 16px; color: #222; }
-.status-label { font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 3px 6px; border-radius: 4px; }
-.status-active { color: #D97706; background: #FEF3C7; }
-.status-withdrawal { color: #7B1FA2; background: #F3E5F5; }
-.chain-flow { font-size: 14px; color: #555; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.flow-arrow { color: #aaa; font-size: 12px; }
-.flow-step { background: #F3F4F6; padding: 3px 8px; border-radius: 4px; font-size: 13px; color: #333; }
-.flow-step.withdrawal-chip { background: #F3E5F5; color: #7B1FA2; border: 1px solid #E1BEE7; font-weight: 600; }
-.flow-waiting { color: #999; font-style: italic; font-size: 13px; margin-left: 4px; }
-.card-right { display: flex; align-items: center; gap: 20px; position: relative; }
-.balance-block { text-align: right; min-width: 100px; }
-.balance-amount { display: block; font-weight: 800; font-size: 17px; color: #222; }
-.balance-label { display: block; font-size: 10px; color: #888; text-transform: uppercase; margin-top: 2px; font-weight: 600; }
-.action-wrapper { position: relative; }
-.btn-continue { background: #2F3340; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background 0.2s; }
-.btn-continue:hover { background: #444; }
-.btn-undo { background: #FFF0F0; color: #FF3B30; border: 1px solid #FFD0D0; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
-.btn-undo:hover { background: #FFE5E5; border-color: #FF3B30; }
-.btn-view { width: 40px; height: 40px; border: 1px solid #ddd; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #555; font-size: 18px; }
-.btn-view:hover { background: #f9f9f9; }
-.action-popover { position: absolute; top: 100%; right: 0; margin-top: 5px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 100; width: 220px; display: flex; flex-direction: column; overflow: hidden; }
-.popover-item { padding: 12px 16px; cursor: pointer; font-size: 14px; font-weight: 500; color: #333; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 10px; transition: background 0.2s; }
-.popover-item:hover { background: #f9f9f9; }
-.icon-transfer { color: #2F3340; font-weight: bold; }
-.icon-withdraw { color: #7B1FA2; font-weight: bold; }
-.footer { padding: 1.5rem 2rem; border-top: 1px solid #DEDEDE; background: #EBEBEB; display: flex; justify-content: space-between; align-items: center; }
-.btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; color: #555; font-weight: 600; }
-.btn-create { padding: 12px 24px; background-color: #2F3340; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.loading-state, .empty-state { text-align: center; padding: 2rem; color: #888; }
+
+.grid-header, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 50px; gap: 10px; align-items: center; padding: 0 1.5rem; }
+.grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
+.grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
+.list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
+.list-scroll::-webkit-scrollbar { display: none; }
+.edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 10px; font-size: 0.9em; color: #333; box-sizing: border-box; margin: 0; display: block; }
+.edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
+.select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.amount-input { text-align: right; font-weight: 600; color: #333; }
+.date-input { color: #555; }
+.delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
+.delete-btn svg { width: 18px; height: 18px; stroke: #999; }
+.delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
+.delete-btn:hover svg { stroke: #FF3B30; }
+.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; gap: 10px; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
+.btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; font-weight: 500; color: #555; }
+.btn-close:hover { background: #eee; }
+.btn-save { padding: 12px 24px; border: none; background: #222; border-radius: 8px; cursor: pointer; font-weight: 600; color: #fff; }
+.btn-save:hover:not(:disabled) { background: #444; }
+.btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.empty-state { text-align: center; padding: 2rem; color: #888; }
+@media (max-width: 1200px) { .popup-content { max-width: 95vw; margin: 1rem; } .grid-header { display: none; } .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; } .grid-row > div { width: 100%; } .col-date, .col-amount, .col-trash { width: 100%; } .delete-btn { width: 100%; margin-top: 5px; background-color: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; } .delete-btn svg { stroke: #FF3B30; } }
+.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
+.delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
+.delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
+.confirm-text { font-size: 14px; margin-bottom: 20px; color: #555; line-height: 1.5; }
+.delete-actions { display: flex; gap: 10px; justify-content: center; }
+.btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+.btn-cancel:hover { background: #d1d1d1; }
+.btn-delete-confirm { background: #ff3b30; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.btn-delete-confirm:hover { background: #e02e24; }
+.deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
+.sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
+.progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
+.progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
+@keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
+
+/* 🟢 ИЗМЕНЕНИЕ: Добавлен класс .total-income на всякий случай */
+.total-income { color: #1a1a1a; font-size: 1.3em; }
 </style>

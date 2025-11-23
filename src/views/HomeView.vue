@@ -6,7 +6,6 @@ import { useMainStore } from '@/stores/mainStore';
 // Компоненты
 import OperationPopup from '@/components/OperationPopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
-import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; // 🟢 Добавлен импорт
 import TheHeader from '@/components/TheHeader.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import DayColumn from '@/components/DayColumn.vue';
@@ -19,17 +18,17 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v33.0 - WITHDRAWAL POPUP FIX ---
- * * ВЕРСИЯ: 33.0 - Исправление открытия попапа вывода
+ * * --- МЕТКА ВЕРСИИ: v32.0 - PREPAYMENT LOGIC REPAIR ---
+ * * ВЕРСИЯ: 32.0 - Восстановление логики предоплат
  * * ДАТА: 2025-11-23
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (FIX) handleEditOperation: Теперь проверяет `op.isWithdrawal`.
- * Если true -> открывает WithdrawalPopup.
- * 2. (LOGIC) Добавлен handleWithdrawalSave для сохранения/обновления выводов.
+ * 1. (LOGIC) handlePrepaymentSave: Теперь принудительно проставляет prepaymentId (системная категория),
+ * чтобы операция считалась предоплатой, даже если выбрана категория "Аренда".
+ * 2. (LOGIC) Это чинит цвет чипа (оранжевый) и расчеты в виджете "Мои предоплаты".
  */
 
-console.log('--- HomeView.vue v33.0 (Withdrawal Fix) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v32.0 (Prepayment Repair) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -58,9 +57,6 @@ const showAboutModal = ref(false);
 const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
 const prepaymentDateKey = ref('');
-
-// 🟢 Состояние для Withdrawal Modal
-const isWithdrawalPopupVisible = ref(false);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -123,6 +119,7 @@ const handleSwitchToPrepayment = (data) => {
     isPrepaymentModalVisible.value = true;
 };
 
+// 🟢 ОБРАБОТЧИК: Сохранение предоплаты
 const handlePrepaymentSave = async (finalData) => {
     isPrepaymentModalVisible.value = false;
     isPopupVisible.value = false; 
@@ -132,9 +129,16 @@ const handlePrepaymentSave = async (finalData) => {
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
         }
+
+        // 🟢 FIX: Принудительно ставим prepaymentId, чтобы система видела, что это предоплата.
+        // Мы ищем системную категорию "Предоплата" и записываем её ID в поле prepaymentId.
+        // Поле categoryId остается тем, что выбрал пользователь (например "Аренда").
         const prepayIds = mainStore.getPrepaymentCategoryIds;
-        if (prepayIds.length > 0 && !finalData.prepaymentId) {
-            finalData.prepaymentId = prepayIds[0];
+        if (prepayIds.length > 0) {
+            // Если prepaymentId еще не задан, задаем его
+            if (!finalData.prepaymentId) {
+                finalData.prepaymentId = prepayIds[0];
+            }
         }
 
         const response = await axios.post(`${API_BASE_URL}/events`, finalData);
@@ -144,36 +148,6 @@ const handlePrepaymentSave = async (finalData) => {
     } catch (e) {
         console.error('Background Save Error (Prepayment):', e);
         alert('Не удалось сохранить предоплату.');
-    }
-};
-
-// 🟢 ОБРАБОТЧИК: Сохранение Вывода (Создание/Редактирование)
-const handleWithdrawalSave = async (eventData) => {
-    isWithdrawalPopupVisible.value = false;
-    operationToEdit.value = null;
-    
-    try {
-        const { mode, id, data } = eventData;
-        
-        if (mode === 'create') {
-             // Создание нового вывода (обычно через TransferListEditor, но может быть и отсюда)
-             if (!data.date) data.date = new Date();
-             await mainStore.createEvent({ ...data, isWithdrawal: true });
-        } else if (mode === 'edit') {
-             // Редактирование существующего
-             const updatePayload = {
-                 amount: -Math.abs(data.amount), // Расход всегда минус
-                 destination: data.destination,
-                 reason: data.reason // Если бэк поддерживает
-             };
-             await mainStore.updateOperation(id, updatePayload);
-        }
-        
-        await mainStore.fetchAllEntities();
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (e) {
-        console.error('Withdrawal Save Error:', e);
-        alert('Ошибка сохранения вывода.');
     }
 };
 
@@ -320,23 +294,15 @@ const handleContextMenuSelect = (type) => {
 
 const openPopup = (type) => { operationType.value = type; isPopupVisible.value = true; };
 
-// 🟢 ИСПРАВЛЕНИЕ: Корректный выбор попапа по типу операции
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
 
-  // 1. Если это ВЫВОД -> WithdrawalPopup
-  if (operation.isWithdrawal) {
-      isWithdrawalPopupVisible.value = true;
-  }
-  // 2. Если это ПЕРЕВОД -> TransferPopup
-  else if (operation.type === 'transfer' || operation.isTransfer) {
+  if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
-  } 
-  // 3. Иначе -> OperationPopup (Доход/Расход)
-  else {
+  } else {
     openPopup(operation.type);
   }
 };
@@ -420,17 +386,9 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
     </div>
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
     <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
-    
-    <!-- ПОПАПЫ ОПЕРАЦИЙ -->
     <OperationPopup v-if="isPopupVisible" :type="operationType" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :operation-to-edit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleClosePopup" @operation-deleted="handleOperationDelete(operationToEdit)" @operation-moved="handleOperationMoved" @trigger-prepayment="handleSwitchToPrepayment" @save="handleOperationSave" />
-    
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
-    
-    <!-- 🟢 НОВЫЙ ПОПАП ДЛЯ ВЫВОДА (РЕДАКТИРОВАНИЕ) -->
-    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initialData="{}" :operation-to-edit="operationToEdit" @close="isWithdrawalPopupVisible = false" @save="handleWithdrawalSave" />
-
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
-    
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
