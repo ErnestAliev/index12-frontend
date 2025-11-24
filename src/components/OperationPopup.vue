@@ -6,12 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v30.1 - FIX INPUT ALIGNMENT ---
- * * ВЕРСИЯ: 30.1 - Исправление вертикального выравнивания плейсхолдера суммы
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v31.0 - HIDE INTER-COMP CATEGORY ---
+ * * ВЕРСИЯ: 31.0 - Скрытие технической категории "Меж.комп"
+ * * ДАТА: 2025-11-24
  * *
- * * 1. (CSS) Добавлено правило .custom-input-box:not(.has-value) .real-input { padding-top: ... }
- * * чтобы опустить текст "Вношу сумму" визуально в центр.
+ * * ЧТО ИЗМЕНЕНО:
+ * * 1. (LOGIC) В filteredCategories добавлена проверка на имя "Меж.комп" / "inter-comp".
+ * * Эта категория теперь не показывается в обычном списке при создании дохода/расхода.
  */
 
 const mainStore = useMainStore();
@@ -128,7 +129,7 @@ const projectOptions = computed(() => {
   return opts;
 });
 
-// 🟢 КАТЕГОРИИ
+// 🟢 КАТЕГОРИИ (С фильтрацией Меж.комп)
 const categoryOptions = computed(() => {
   const prepayIds = mainStore.getPrepaymentCategoryIds;
   
@@ -137,14 +138,22 @@ const categoryOptions = computed(() => {
 
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
+    
+    // 1. Исключаем Перевод
     const isTransfer = name === 'перевод' || name === 'transfer';
+    
+    // 2. Исключаем Предоплату (если не редактируем её)
     const isPrepay = prepayIds.includes(c._id) || c.isPrepayment;
     
-    // Если это категория редактируемой операции - показываем, даже если это предоплата
+    // 🟢 3. Исключаем Меж.комп (если не редактируем её - хотя её нельзя редактировать через этот попап по логике, но оставим лазейку для editMode)
+    const isInterComp = ['меж.комп', 'межкомпаний', 'inter-comp'].includes(name);
+
+    // Если это категория редактируемой операции - показываем, даже если она скрыта (чтобы не сбрасывалась)
     if (props.operationToEdit && c._id === currentOpCatId) {
         return true;
     }
-    return !isTransfer && !isPrepay;
+    
+    return !isTransfer && !isPrepay && !isInterComp;
   });
   
   const opts = validCats.map(c => ({ value: c._id, label: c.name, isSpecial: false }));
@@ -183,9 +192,7 @@ const handlePrepaymentClick = () => {
         return;
     }
 
-    // 🟢 Используем ВЫБРАННУЮ категорию, а не подменяем её
     const targetCatId = selectedCategoryId.value || null;
-    
     triggerPrepaymentFlow(targetCatId);
 };
 
@@ -212,8 +219,6 @@ const onContractorSelected = (contractorId, setProject, setCategory) => {
     if (setProject && contractor.defaultProjectId) { const pId = (contractor.defaultProjectId && typeof contractor.defaultProjectId === 'object') ? contractor.defaultProjectId._id : contractor.defaultProjectId; selectedProjectId.value = pId; }
     if (setCategory && contractor.defaultCategoryId) { 
         const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId;
-        const prepayIds = mainStore.getPrepaymentCategoryIds;
-        // Оставляем логику автозаполнения, но разрешаем и "предоплатные" категории, если они есть
         selectedCategoryId.value = cId; 
     }
   }
@@ -227,7 +232,6 @@ onMounted(async () => {
     else if (op.individualId) { const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; }
     selectedContractorId.value = op.contractorId?._id || op.contractorId;
     
-    // 🟢 FIX: Подтягиваем категорию из categoryId ИЛИ prepaymentId
     const catId = op.categoryId?._id || op.categoryId; 
     const prepId = op.prepaymentId?._id || op.prepaymentId; 
     selectedCategoryId.value = catId || prepId || null;
@@ -246,7 +250,6 @@ const handleSave = () => {
   let companyId = null; let individualId = null;
   if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') companyId = id; else if (type === 'individual') individualId = id; }
   
-  // 🟢 FIX: Добавляем поля предоплаты в payload, если они есть в исходной операции, чтобы не потерять их
   const payload = { 
       type: props.type, 
       amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed), 
@@ -257,7 +260,6 @@ const handleSave = () => {
       contractorId: selectedContractorId.value, 
       projectId: selectedProjectId.value || null, 
       date: finalDate,
-      // Сохраняем скрытые поля предоплаты
       prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
       totalDealAmount: props.operationToEdit ? props.operationToEdit.totalDealAmount : undefined
   };
