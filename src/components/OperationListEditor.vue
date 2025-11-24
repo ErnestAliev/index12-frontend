@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
-import WithdrawalPopup from './WithdrawalPopup.vue'; // 🟢 Подключаем попап вывода
+import WithdrawalPopup from './WithdrawalPopup.vue'; 
 
 const props = defineProps({
   title: { type: String, default: 'Редактировать операции' },
@@ -32,6 +32,9 @@ const isWithdrawalPopupVisible = ref(false); // 🟢
 const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
 const itemToDelete = ref(null);
+
+// 🟢 Для редактирования вывода
+const withdrawalToEdit = ref(null);
 
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
@@ -194,10 +197,17 @@ const getInputClass = () => {
 
 const openCreatePopup = () => { 
     if (isWithdrawalMode.value) {
+        withdrawalToEdit.value = null; // Сброс для создания
         isWithdrawalPopupVisible.value = true;
     } else {
         isCreatePopupVisible.value = true; 
     }
+};
+
+// 🟢 Обработчик клика на "Редактировать" для вывода (карандаш)
+const editWithdrawal = (item) => {
+    withdrawalToEdit.value = item.originalOp;
+    isWithdrawalPopupVisible.value = true;
 };
 
 const handleOperationAdded = async (newOp) => {
@@ -208,8 +218,8 @@ const handleOperationAdded = async (newOp) => {
 };
 
 const handleWithdrawalSaved = async ({ mode, id, data }) => {
-    // Обработка сохранения из WithdrawalPopup
     isWithdrawalPopupVisible.value = false;
+    withdrawalToEdit.value = null;
     
     if (mode === 'create') {
         if (data.cellIndex === undefined) {
@@ -217,9 +227,10 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
              data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
         }
         await mainStore.createEvent(data);
-    } else {
-        // Логика редактирования (если понадобится)
+    } else if (mode === 'edit') {
+        await mainStore.updateOperation(id, data);
     }
+    
     await mainStore.fetchAllEntities();
     loadOperations();
 };
@@ -282,7 +293,7 @@ const handleSave = async () => {
         (original.categoryId?._id || original.categoryId) !== item.categoryId ||
         (original.projectId?._id || original.projectId) !== item.projectId ||
         getOwnerId(original.companyId, original.individualId) !== item.ownerId ||
-        (item.destination !== (original.destination || '')); // 🟢 Проверка destination
+        (item.destination !== (original.destination || '')); 
 
       if (isChanged) {
         const signedAmount = (props.type === 'income' && !isWithdrawalMode.value) ? item.amount : -Math.abs(item.amount);
@@ -296,8 +307,8 @@ const handleSave = async () => {
           contractorId: item.contractorId,
           categoryId: item.categoryId,
           projectId: item.projectId,
-          destination: item.destination, // 🟢 Сохраняем destination
-          type: isWithdrawalMode.value ? 'expense' : props.type, // Для вывода тип в базе 'expense'
+          destination: item.destination, 
+          type: isWithdrawalMode.value ? 'expense' : props.type, 
           isWithdrawal: isWithdrawalMode.value ? true : undefined
         }));
       }
@@ -352,6 +363,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         </button>
       </div>
 
+      <!-- Тоталы и фильтры (без изменений) -->
       <div v-if="localItems.length > 0" class="totals-bar">
           <div class="total-item">
               <span class="total-label">Всего:</span>
@@ -388,7 +400,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
            <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
         </div>
         
-        <!-- 🟢 УСЛОВНЫЕ ФИЛЬТРЫ ДЛЯ ОБЫЧНЫХ ОПЕРАЦИЙ -->
         <template v-if="!isWithdrawalMode">
             <div class="filter-col col-contr">
                <select v-model="filters.contractor" class="filter-input filter-select">
@@ -410,7 +421,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
             </div>
         </template>
         
-        <!-- 🟢 ПУСТОЕ МЕСТО ДЛЯ ВЫРАВНИВАНИЯ ВЫВОДОВ -->
         <template v-else>
              <div class="filter-col col-destination-filter"></div>
         </template>
@@ -418,13 +428,13 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <div class="filter-col col-trash"></div>
       </div>
       
+      <!-- ЗАГОЛОВКИ ТАБЛИЦЫ -->
       <div class="grid-header">
         <span class="col-date">Дата</span>
         <span class="col-owner">Владелец</span>
         <span class="col-acc">Счет</span>
         <span class="col-amount">Сумма</span>
         
-        <!-- 🟢 ЗАГОЛОВКИ -->
         <template v-if="!isWithdrawalMode">
             <span class="col-contr">Контрагент</span>
             <span class="col-cat">Категория</span>
@@ -460,7 +470,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
             <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="getInputClass()" />
           </div>
           
-          <!-- 🟢 ОБЫЧНЫЕ ПОЛЯ -->
           <template v-if="!isWithdrawalMode">
               <div class="col-contr">
                  <select v-model="item.contractorId" @change="onContractorChange(item)" class="edit-input select-input">
@@ -489,10 +498,14 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
               </div>
           </template>
 
-          <!-- 🟢 ПОЛЕ ВЫВОДА -->
           <template v-else>
-              <div class="col-destination">
+              <div class="col-destination withdrawal-destination-cell">
+                  <!-- 🟢 ИНПУТ НАЗНАЧЕНИЯ -->
                   <input type="text" v-model="item.destination" class="edit-input" placeholder="Куда (напр. Карта)" />
+                  <!-- 🟢 КНОПКА РЕДАКТИРОВАНИЯ (КАРАНДАШ) ДЛЯ ВЫВОДА -->
+                  <button class="edit-btn-icon" @click="editWithdrawal(item)" title="Подробно">
+                      ✎
+                  </button>
               </div>
           </template>
 
@@ -512,10 +525,11 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
     <OperationPopup v-if="isCreatePopupVisible" :type="type" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @operation-added="handleOperationAdded" />
     
-    <!-- 🟢 Попап создания вывода -->
+    <!-- 🟢 Попап вывода (для создания И редактирования) -->
     <WithdrawalPopup 
        v-if="isWithdrawalPopupVisible" 
        :initial-data="{ amount: 0 }" 
+       :operation-to-edit="withdrawalToEdit"
        @close="isWithdrawalPopupVisible = false" 
        @save="handleWithdrawalSaved"
     />
@@ -582,6 +596,21 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 /* 🟢 ШИРИНА КОЛОНКИ НАЗНАЧЕНИЯ (Объединяет 3 обычные колонки) */
 .col-destination { grid-column: span 3; }
 .col-destination-filter { grid-column: span 3; }
+
+.withdrawal-destination-cell {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.edit-btn-icon {
+    width: 32px; height: 32px;
+    border-radius: 4px; border: 1px solid #ddd;
+    background: #f9f9f9; color: #666;
+    cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+}
+.edit-btn-icon:hover { background: #eee; color: #333; }
 
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }

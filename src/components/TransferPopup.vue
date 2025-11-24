@@ -7,14 +7,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.0 - SMART TRANSFER LOGIC ---
- * * ВЕРСИЯ: 18.0 - Умное определение типа перевода
+ * * --- МЕТКА ВЕРСИИ: v18.1 - VERTICAL LAYOUT ---
+ * * ВЕРСИЯ: 18.1 - Изменение верстки на одну колонку
  * * ДАТА: 2025-11-24
  * *
  * * ЧТО ИЗМЕНЕНО:
- * * 1. (LOGIC) Добавлены поля transferPurpose и transferReason.
- * * 2. (LOGIC) Реализованы Smart Watchers для авто-определения сценариев (А, Б).
- * * 3. (UI) Добавлены подсказки и новые селекты.
+ * * 1. (UI) Селекты теперь располагаются вертикально (по одному в ряд).
+ * * 2. (STYLE) Удалены классы transfer-row и half-col.
  */
 
 const mainStore = useMainStore();
@@ -335,51 +334,47 @@ const closePopup = () => { emit('close'); };
         </div>
         
         <!-- ОТПРАВИТЕЛЬ -->
-        <div class="transfer-row">
-            <div class="half-col">
-                <BaseSelect
-                  v-if="!isCreatingFromAccount"
-                  v-model="fromAccountId"
-                  :options="accountOptions"
-                  placeholder="Со счета"
-                  label="Со счета"
-                  @change="handleFromAccountChange"
-                />
-                <!-- (Инлайн создание для счета - упрощено для читаемости, логика выше) -->
-            </div>
-            <div class="half-col">
-                <BaseSelect
-                  v-model="selectedFromOwner"
-                  :options="ownerOptions"
-                  placeholder="Отправитель"
-                  label="Отправитель"
-                  @change="handleFromOwnerChange"
-                />
-            </div>
-        </div>
+        <!-- 🟢 ИЗМЕНЕНО: Убраны обертки transfer-row и half-col -->
+        <BaseSelect
+          v-if="!isCreatingFromAccount"
+          v-model="fromAccountId"
+          :options="accountOptions"
+          placeholder="Со счета"
+          label="Со счета"
+          class="input-spacing"
+          @change="handleFromAccountChange"
+        />
+        <!-- (Инлайн создание для счета - упрощено для читаемости, логика выше) -->
+        
+        <BaseSelect
+          v-model="selectedFromOwner"
+          :options="ownerOptions"
+          placeholder="Отправитель"
+          label="Отправитель"
+          class="input-spacing"
+          @change="handleFromOwnerChange"
+        />
 
         <!-- ПОЛУЧАТЕЛЬ -->
-        <div class="transfer-row input-spacing">
-            <div class="half-col">
-                <BaseSelect
-                  v-if="!isCreatingToAccount"
-                  v-model="toAccountId"
-                  :options="accountOptions"
-                  placeholder="На счет"
-                  label="На счет"
-                  @change="handleToAccountChange"
-                />
-            </div>
-            <div class="half-col">
-                <BaseSelect
-                  v-model="selectedToOwner"
-                  :options="ownerOptions"
-                  placeholder="Получатель"
-                  label="Получатель"
-                  @change="handleToOwnerChange"
-                />
-            </div>
-        </div>
+        <!-- 🟢 ИЗМЕНЕНО: Убраны обертки transfer-row и half-col -->
+        <BaseSelect
+          v-if="!isCreatingToAccount"
+          v-model="toAccountId"
+          :options="accountOptions"
+          placeholder="На счет"
+          label="На счет"
+          class="input-spacing"
+          @change="handleToAccountChange"
+        />
+        
+        <BaseSelect
+          v-model="selectedToOwner"
+          :options="ownerOptions"
+          placeholder="Получатель"
+          label="Получатель"
+          class="input-spacing"
+          @change="handleToOwnerChange"
+        />
 
         <!-- 🟢 ЦЕЛЬ ПЕРЕВОДА (УМНЫЙ СЕЛЕКТ) -->
         <div class="input-spacing">
@@ -470,10 +465,6 @@ const closePopup = () => { emit('close'); };
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
-
-/* Сетка для строк перевода */
-.transfer-row { display: flex; gap: 10px; margin-bottom: 8px; }
-.half-col { flex: 1; min-width: 0; }
 
 /* Подсказка */
 .hint-box {
