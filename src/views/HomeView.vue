@@ -6,7 +6,7 @@ import { useMainStore } from '@/stores/mainStore';
 // Компоненты
 import OperationPopup from '@/components/OperationPopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
-import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; // 🟢 IMPORT
+import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; 
 import TheHeader from '@/components/TheHeader.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import DayColumn from '@/components/DayColumn.vue';
@@ -19,18 +19,16 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v33.0 - WITHDRAWAL INTEGRATION ---
- * * ВЕРСИЯ: 33.0 - Интеграция редактирования выводов
+ * * --- МЕТКА ВЕРСИИ: v34.1 - DYNAMIC HEADER HEIGHT ---
+ * * ВЕРСИЯ: 34.1 - Динамический расчет высоты хедера для 13 виджетов
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (IMPORT) Добавлен WithdrawalPopup.
- * 2. (STATE) Добавлено isWithdrawalPopupVisible.
- * 3. (LOGIC) handleEditOperation: Если операция isWithdrawal, открываем WithdrawalPopup.
- * 4. (LOGIC) handleWithdrawalSave: Сохранение вывода (create/edit).
+ * 1. (LOGIC) Watcher для isHeaderExpanded теперь считает количество рядов (widgets / 6).
+ * 2. (LOGIC) Высота = rows * 130 + gap. Для 13 виджетов (3 ряда) это ~400px.
  */
 
-console.log('--- HomeView.vue v33.0 (Withdrawal Integration) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v34.1 (Dynamic Header Height) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -60,7 +58,7 @@ const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
 const prepaymentDateKey = ref('');
 
-// 🟢 Состояние для Withdrawal Popup
+// Состояние для Withdrawal Popup
 const isWithdrawalPopupVisible = ref(false);
 
 // --- Меню пользователя ---
@@ -185,7 +183,6 @@ const handleTransferSave = async ({ mode, id, data, originalTransfer }) => {
                  const dateKey = mainStore._getDateKey(new Date(data.date));
                  data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
              }
-             // Используем createTransfer из mainStore, который сам разберется с типом перевода
              await mainStore.createTransfer(data); 
         } else if (mode === 'edit') {
             const oldDateKey = originalTransfer?.dateKey;
@@ -204,7 +201,7 @@ const handleTransferSave = async ({ mode, id, data, originalTransfer }) => {
     }
 };
 
-// 🟢 Мгновенное сохранение Вывода
+// Мгновенное сохранение Вывода
 const handleWithdrawalSave = async ({ mode, id, data, originalOperation }) => {
     isWithdrawalPopupVisible.value = false;
     operationToEdit.value = null;
@@ -216,7 +213,6 @@ const handleWithdrawalSave = async ({ mode, id, data, originalOperation }) => {
              }
              await mainStore.createEvent(data);
         } else if (mode === 'edit') {
-            // При обновлении передаем isWithdrawal: true (data уже должно содержать это поле, но для надежности)
             const updatedData = { ...data, isWithdrawal: true };
             const oldDateKey = originalOperation?.dateKey;
             
@@ -294,14 +290,38 @@ const graphAreaRef = ref(null);
 const homeHeaderRef = ref(null);
 const headerResizerRef = ref(null);
 
-/* ===================== КОНСТАНТЫ ===================== */
+/* ===================== КОНСТАНТЫ / РАЗМЕРЫ ===================== */
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
 const HEADER_MIN_H = 130; 
-const HEADER_MAX_H_RATIO = 0.5; 
+// 🟢 Увеличиваем макс высоту (для 3 рядов это ~400px)
+const HEADER_MAX_H_RATIO = 0.8; 
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
+
+// 🟢 WATCHER: Динамический расчет высоты при расширении
+watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
+    if (isExpanded) {
+        // Считаем количество рядов (округляем вверх)
+        const totalWidgets = mainStore.allWidgets.length;
+        const rows = Math.ceil(totalWidgets / 6);
+        
+        // Высота = ряды * 130px (примерная высота карточки) + немного на отступы
+        // Если 13 виджетов -> 3 ряда -> ~390px
+        headerHeightPx.value = rows * 135; 
+    } else {
+        // Возвращаем стандарт (1 ряд)
+        headerHeightPx.value = 130;
+    }
+    
+    // Применяем изменение
+    applyHeaderHeight(headerHeightPx.value);
+    
+    nextTick(() => {
+       onWindowResize(); 
+    });
+});
 
 /* ===================== КОНТЕКСТНОЕ МЕНЮ / ПОПАПЫ ===================== */
 const openContextMenu = (day, event, cellIndex) => {
@@ -334,7 +354,6 @@ const handleEditOperation = (operation) => {
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
   } 
-  // 🟢 ПРОВЕРКА НА ВЫВОД
   else if (operation.isWithdrawal) {
     isWithdrawalPopupVisible.value = true;
   }
@@ -355,8 +374,6 @@ const handleOperationDelete = async (operation) => {
     await mainStore.deleteOperation(operation); 
     await recalcProjectionForCurrentView(); 
     visibleDays.value = [...visibleDays.value]; 
-    
-    // Закрываем все возможные попапы
     handleClosePopup(); 
     handleCloseTransferPopup();
     handleCloseWithdrawalPopup();
@@ -429,7 +446,23 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
         <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div class="vertical-resizer" ref="resizerRef"></div></div>
         <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
-      <aside class="home-right-panel"><button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button><button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></button><button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button><div class="user-profile-widget"><button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu"><img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" /><div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div><span class="user-name">{{ mainStore.user.name }}</span></button></div></aside>
+      <aside class="home-right-panel">
+        <!-- 🟢 КНОПКА РАСШИРЕНИЯ ХЕДЕРА (ПЕРВАЯ ПО ПОРЯДКУ) -->
+        <button 
+          class="icon-btn header-expand-btn" 
+          :class="{ 'active': mainStore.isHeaderExpanded }"
+          @click="mainStore.toggleHeaderExpansion" 
+          :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+        </button>
+
+        <button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button><button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></button><button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button><div class="user-profile-widget"><button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu"><img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" /><div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div><span class="user-name">{{ mainStore.user.name }}</span></button></div></aside>
     </div>
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
     <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
@@ -437,7 +470,6 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
     
-    <!-- 🟢 ПОПАП ВЫВОДА -->
     <WithdrawalPopup 
        v-if="isWithdrawalPopupVisible" 
        :initial-data="{ amount: 0 }" 
@@ -477,7 +509,7 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
 .user-menu-item:hover { background-color: var(--color-background-mute); }
 .user-menu-item:disabled { color: var(--color-text-mute); cursor: not-allowed; background: none; }
 .home-layout { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; overflow: hidden; background-color: var(--color-background); }
-.home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; }
+.home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; transition: height 0.3s ease; }
 .header-resizer { flex-shrink: 0; height: 15px; background: var(--color-background-soft); border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: row-resize; position: relative; z-index: 50; display: flex; align-items: center; justify-content: center; }
 .header-resizer:hover { border-top: 1px solid #777; }
 .header-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: #ffffff; border-radius: 50%; border: 1px solid var(--color-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
@@ -486,12 +518,22 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
 .home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; }
 .home-right-panel { width: 60px; flex-shrink: 0; overflow-y: auto; background-color: var(--color-background-soft); border-left: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; position: relative; }
 .home-right-panel::-webkit-scrollbar { display: none; }
-.import-export-btn { position: absolute; top: 8px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
+
+/* 🟢 СТИЛИ КНОПКИ РАСШИРЕНИЯ */
+.header-expand-btn { position: absolute; top: 8px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
+.header-expand-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+.header-expand-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
+.header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
+/* Остальные кнопки смещены вниз (top увеличен на 40px) */
+.import-export-btn { position: absolute; top: 48px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
 .import-export-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }
-.graph-btn { position: absolute; top: 48px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
+
+.graph-btn { position: absolute; top: 88px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
 .graph-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
 .about-btn { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--color-primary); border: 1px solid var(--color-primary); color: #ffffff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.2s; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); }
 .about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }

@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v29.5 - AUTO CONTRACTOR LOGIC ---
- * * ВЕРСИЯ: 29.5 - Автоматическое создание контрагентов при меж.комп переводе
+ * * --- МЕТКА ВЕРСИИ: v29.6 - HEADER EXPANSION STATE ---
+ * * ВЕРСИЯ: 29.6 - Добавлено состояние isHeaderExpanded
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) createTransfer: При 'inter_company' переводах автоматически определяет/создает контрагентов.
- * - Расход у отправителя -> Контрагент = Компания-получатель.
- * - Доход у получателя -> Контрагент = Компания-отправитель.
+ * 1. (STATE) Добавлено isHeaderExpanded для управления режимом хедера (6 или 12 виджетов).
+ * 2. (ACTION) Добавлена функция toggleHeaderExpansion.
+ * 3. (FIX) replaceWidget теперь проверяет границы массива dashboardLayout.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v29.5 (Auto Contractor Logic) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v29.6 (Header Expansion) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -57,6 +57,12 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
+
+  // 🟢 NEW: Состояние расширенного хедера
+  const isHeaderExpanded = ref(false);
+  function toggleHeaderExpansion() {
+    isHeaderExpanded.value = !isHeaderExpanded.value;
+  }
 
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего (на тек. момент)' },
@@ -169,7 +175,12 @@ export const useMainStore = defineStore('mainStore', () => {
   watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
   
   function replaceWidget(i, key){ 
-    if (!dashboardLayout.value.includes(key)) dashboardLayout.value[i]=key; 
+    // 🟢 FIX: Проверка границ массива, чтобы не портить лейаут в расширенном режиме
+    if (i >= 0 && i < dashboardLayout.value.length) {
+        if (!dashboardLayout.value.includes(key)) {
+            dashboardLayout.value[i] = key; 
+        }
+    }
   }
   function setForecastState(widgetKey, value) {
     dashboardForecastState.value[widgetKey] = !!value;
@@ -1158,6 +1169,9 @@ export const useMainStore = defineStore('mainStore', () => {
     operationsCache: displayCache, displayCache, calculationCache,
     allWidgets, dashboardLayout, projection, dashboardForecastState,
     user, isAuthLoading,
+
+    // 🟢 EXPORT
+    isHeaderExpanded, toggleHeaderExpansion,
 
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
     currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,

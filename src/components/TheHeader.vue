@@ -3,19 +3,18 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v20.0 - WITHDRAWAL POPUP INTEGRATION ---
- * * ВЕРСИЯ: 20.0 - Интеграция попапа вывода в хедер
+ * * --- МЕТКА ВЕРСИИ: v23.0 - PLACEHOLDER GRID ---
+ * * ВЕРСИЯ: 23.0 - Заполнение пустых ячеек заглушками
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (IMPORT) Добавлен импорт WithdrawalPopup.
- * 2. (STATE) Добавлено состояние isWithdrawalPopupVisible.
- * 3. (LOGIC) onCategoryAdd теперь открывает WithdrawalPopup для widgetKey === 'withdrawalList'.
- * 4. (LOGIC) onCategoryEdit теперь открывает OperationListEditor в режиме 'withdrawal'.
- * 5. (HANDLER) Добавлен handleWithdrawalSaved.
+ * 1. (LOGIC) displayedWidgets в расширенном режиме теперь добавляет ключи 'placeholder_X',
+ * чтобы общее количество элементов было кратно 6.
+ * 2. (UI) В шаблон добавлен блок для рендеринга этих placeholder-ов (пустые div с классом dashboard-card).
+ * Это создает визуальную сетку в неполных рядах.
  */
 
-console.log('--- TheHeader.vue v20.0 (Withdrawal Popup Integration) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v23.0 (Placeholder Grid) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -28,23 +27,46 @@ import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue';
-import WithdrawalPopup from './WithdrawalPopup.vue'; // 🟢 IMPORT
+import WithdrawalPopup from './WithdrawalPopup.vue';
 
 const mainStore = useMainStore();
+
+// 🟢 ВЫЧИСЛЯЕМЫЙ СПИСОК ВИДЖЕТОВ (С ЗАПОЛНЕНИЕМ ПУСТОТ)
+const displayedWidgets = computed(() => {
+  if (mainStore.isHeaderExpanded) {
+    const allKeys = mainStore.allWidgets.map(w => w.key);
+    
+    // Рассчитываем, сколько нужно добавить заглушек, чтобы заполнить ряд
+    const rowSize = 6;
+    const rows = Math.ceil(Math.max(allKeys.length, 1) / rowSize); 
+    const totalSlots = rows * rowSize;
+    
+    const result = [...allKeys];
+    
+    // Добавляем placeholder-ключи
+    while (result.length < totalSlots) {
+      result.push(`placeholder_${result.length}`);
+    }
+    
+    return result;
+  }
+  // В обычном режиме возвращаем как есть
+  return mainStore.dashboardLayout;
+});
 
 // Состояния попапов
 const isTransferPopupVisible = ref(false);
 const isTransferEditorVisible = ref(false);
 
 const isOperationListEditorVisible = ref(false);
-const operationListEditorType = ref('income'); // 'income' | 'expense' | 'withdrawal'
+const operationListEditorType = ref('income'); 
 const operationListEditorTitle = ref('');
 const operationListEditorFilterMode = ref('default');
 
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
 
-const isWithdrawalPopupVisible = ref(false); // 🟢 STATE
+const isWithdrawalPopupVisible = ref(false);
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
@@ -186,7 +208,6 @@ const onCategoryAdd = (widgetKey, index) => {
         isOperationPopupVisible.value = true;
         return;
     }
-    // 🟢 НОВОЕ: Обработка виджета выводов
     if (widgetKey === 'withdrawalList') {
         isWithdrawalPopupVisible.value = true;
         return;
@@ -213,7 +234,6 @@ const onCategoryEdit = (widgetKey) => {
         isOperationListEditorVisible.value = true;
         return;
     }
-    // 🟢 НОВОЕ: Редактирование списка выводов
     if (widgetKey === 'withdrawalList') {
         operationListEditorTitle.value = 'Редактировать выводы';
         operationListEditorType.value = 'withdrawal';
@@ -252,16 +272,12 @@ const handleOperationAdded = async (newOp) => {
     isOperationPopupVisible.value = false;
 };
 
-// 🟢 HANDLER: Сохранение вывода из попапа
 const handleWithdrawalSaved = async ({ mode, id, data }) => {
     isWithdrawalPopupVisible.value = false;
     try {
         if (mode === 'create') {
              await mainStore.createEvent(data);
         }
-        // Редактирование обрабатывается через OperationListEditor, 
-        // но на всякий случай, если вызовем отсюда:
-        // else if (mode === 'edit') { ... }
     } catch (e) {
         console.error(e);
         alert('Ошибка сохранения вывода');
@@ -270,11 +286,21 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
 </script>
 
 <template>
-  <div class="header-dashboard">
-    <template v-for="(widgetKey, index) in mainStore.dashboardLayout" :key="index">
+  <div 
+    class="header-dashboard" 
+    :class="{ 'expanded': mainStore.isHeaderExpanded }"
+  >
+    <template v-for="(widgetKey, index) in displayedWidgets" :key="widgetKey">
       
+      <!-- 🟢 ЗАГЛУШКА ДЛЯ ПУСТОЙ ЯЧЕЙКИ -->
+      <div 
+        v-if="widgetKey.startsWith('placeholder_')" 
+        class="dashboard-card placeholder-card"
+      >
+      </div>
+
       <HeaderTotalCard
-        v-if="widgetKey === 'currentTotal'"
+        v-else-if="widgetKey === 'currentTotal'"
         title="Всего (на тек. момент)"
         :totalBalance="loggedCurrentTotal" 
         :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
@@ -368,7 +394,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
         :widgetIndex="index"
       />
 
-      <!-- 🟢 ОБНОВЛЕНО: Поддержка widgetKey === 'withdrawalList' -->
       <HeaderCategoryCard
         v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
@@ -426,7 +451,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
     @operation-added="handleOperationAdded"
   />
 
-  <!-- 🟢 ПОПАП ВЫВОДА -->
   <WithdrawalPopup 
      v-if="isWithdrawalPopupVisible" 
      :initial-data="{ amount: 0 }" 
@@ -450,10 +474,54 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
   min-height: 0; 
   width: 100%;
 }
+
+/* 🟢 ГРИД-РЕЖИМ (РАСШИРЕННЫЙ) */
+.header-dashboard.expanded {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr); /* 6 колонок */
+  /* 🟢 gap: 1px создает линии между ячейками, так как фон контейнера = цвету границ */
+  gap: 1px; 
+  padding: 1px; /* Чтобы был внешний контур */
+  background-color: var(--color-border); /* Цвет линий (промежутков) */
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  
+  /* Автоматические ряды для любого количества виджетов (6+6+1 и т.д.) */
+  grid-auto-rows: 1fr; 
+}
+
+/* 🟢 Адаптация карточек в гриде */
+.header-dashboard.expanded :deep(.dashboard-card) {
+  /* Фон карточки перекрывает фон контейнера, оставляя только gap как линии */
+  background-color: var(--color-background-soft);
+  border: none; /* Убираем собственные границы карточек */
+  padding: 0.5rem 1rem; 
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center; 
+}
+
+/* 🟢 Скрытие стрелок дропдауна в расширенном режиме */
+.header-dashboard.expanded :deep(.card-title span),
+.header-dashboard.expanded :deep(.card-title-container .widget-dropdown) {
+  display: none !important;
+}
+.header-dashboard.expanded :deep(.card-title) {
+  cursor: default;
+  pointer-events: none;
+}
+
 @media (max-height: 900px) {
   .header-dashboard {
+    /* В обычном режиме gap остается */
     gap: 1rem;
     padding: 0.8rem 1rem;
+  }
+  /* В расширенном gap должен быть 1px */
+  .header-dashboard.expanded {
+    gap: 1px;
+    padding: 1px;
   }
 }
 </style>
