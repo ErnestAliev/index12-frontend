@@ -17,19 +17,16 @@ import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v42.0 - RESIZE & SCROLL FINAL FIX ---
- * * ВЕРСИЯ: 42.0 - Корректный скролл в свернутом режиме
- * * ДАТА: 2025-11-25
+ * * --- МЕТКА ВЕРСИИ: v43.1 - TRANSFER ADD FIX ---
+ * * ВЕРСИЯ: 43.1 - Исправлен запуск попапа для виджета "Мои переводы"
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) .dashboard-card-wrapper: min-height: 0;
- * Это КРИТИЧЕСКИ важно для Flex/Grid детей, чтобы они не распирали родителя
- * и позволяли внутреннему скроллу работать.
- * 2. (CSS) .header-dashboard: overflow: hidden (сохраняем).
- * 3. (CSS) Карточкам передается высота 100%.
+ * 1. (LOGIC) onCategoryAdd: Улучшена проверка на категорию "Перевод".
+ * Теперь проверяется реальное имя категории из стора по ID, а также вхождение подстроки в имя виджета.
  */
 
-console.log('--- TheHeader.vue v42.0 (Resize & Scroll Final Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v43.1 (Transfer Add Fix) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -158,13 +155,45 @@ const onEntityDelete = (payload) => { if (deleteHandler.value) deleteHandler.val
 const onEntityListSave = async (updatedItems) => { if (editorSavePath.value) { try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); } } isListEditorVisible.value = false; };
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
+// 🟢 ОБРАБОТЧИК: Создание операции (кнопка "+")
 const onCategoryAdd = (widgetKey, index) => {
     if (widgetKey === 'incomeList') { operationPopupType.value = 'income'; isOperationPopupVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationPopupType.value = 'expense'; isOperationPopupVisible.value = true; return; }
     if (widgetKey === 'withdrawalList') { isWithdrawalPopupVisible.value = true; return; }
+    
+    // Проверка: Является ли виджет категорией "Перевод"
+    if (widgetKey.startsWith('cat_')) {
+        const catId = widgetKey.replace('cat_', '');
+        const category = mainStore.getCategoryById(catId);
+        if (category) {
+            const catName = category.name.toLowerCase().trim();
+            if (catName === 'перевод' || catName === 'transfer') {
+                isTransferPopupVisible.value = true;
+                return;
+            }
+        }
+    }
+
     const widget = getWidgetByKey(widgetKey);
-    if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') { isTransferPopupVisible.value = true; }
+    // 🟢 FIX: Используем .includes() вместо строгого равенства, чтобы поймать "Мои переводы"
+    if (widget?.name.toLowerCase().includes('перевод') || widget?.name.toLowerCase().includes('transfer')) { 
+        isTransferPopupVisible.value = true; 
+        return;
+    }
+    
+    // Fallback для обычных категорий (обычно Доход, но можно открыть и Расход)
+    // По умолчанию открываем Расход, так как категории расходов встречаются чаще.
+    operationPopupType.value = 'expense'; 
+    isOperationPopupVisible.value = true;
 };
+
+// 🟢 ОБРАБОТЧИК: Создание предоплаты
+const onLiabilitiesAdd = () => {
+    // Предоплата технически создается как "Доход" в OperationPopup
+    operationPopupType.value = 'income';
+    isOperationPopupVisible.value = true;
+};
+
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
@@ -231,6 +260,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
           :widgetKey="widgetKey"
           :widgetIndex="index"
+          @add="onLiabilitiesAdd"
           @edit="onLiabilitiesEdit"
           @open-menu="handleOpenMenu"
         />
@@ -336,15 +366,9 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   margin-bottom: 0.4rem;
   height: 100%;
   box-sizing: border-box;
-  
-  /* 🟢 FIX: min-height: 0 и overflow: hidden были проблемой.
-     Для скролла внутри контента при фиксированном родителе нужно,
-     чтобы дети (wrapper) могли сжиматься (min-height: 0) и занимали 100%. */
   min-height: 0; 
   width: 100%;
   overflow: hidden; 
-  
-  /* В свернутом режиме: одна строка, 1fr = 100% высоты контейнера */
   grid-template-rows: 1fr; 
 }
 
@@ -354,12 +378,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   flex-direction: column;
   background-color: var(--color-background-soft);
   min-width: 0;
-  
-  /* 🟢 CRITICAL FIX: min-height: 0
-     Это позволяет flex-ребенку (который внутри grid) сжиматься, 
-     чтобы влезть в родителя, и активировать скролл внутри себя. */
   min-height: 0; 
-  
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
   cursor: grab;
@@ -370,8 +389,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   flex: 1; display: flex; flex-direction: column;
   background-color: transparent; padding: 8px 12px !important; 
   border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important;
-  
-  /* 🟢 Также важно для скролла */
   min-height: 0; 
 }
 
@@ -381,7 +398,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 .header-dashboard.expanded { 
   grid-template-rows: none; 
-  /* В развернутом режиме: фиксированная высота рядов */
   grid-auto-rows: minmax(130px, 1fr); 
   overflow: hidden; 
 }
