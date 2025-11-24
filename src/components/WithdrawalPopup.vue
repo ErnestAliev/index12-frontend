@@ -1,19 +1,20 @@
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue';
+import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v11.0 - TRANSFER-LIKE LAYOUT ---
- * * ВЕРСИЯ: 11.0 - Полное структурное соответствие TransferPopup
+ * * --- МЕТКА ВЕРСИИ: v12.0 - DESTINATION SELECT ---
+ * * ВЕРСИЯ: 12.0 - Поле "Куда" переделано в Select
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LAYOUT) Поля "Счет списания" и "Куда" теперь СЕЛЕКТЫ, как в переводе.
- * 2. (LOGIC) "Куда" теперь выбирается из списка (счетов/контрагентов) или создается новым.
- * 3. (UI) Кнопки "Сохранить", "Копировать", "Удалить" расположены идентично TransferPopup.
+ * 1. (UI) Поле "Куда" теперь BaseSelect вместо input text.
+ * 2. (LOGIC) destinationOptions собирает Счета, Физлица и Контрагентов.
+ * 3. (LOGIC) При сохранении имя выбранного объекта записывается как текст.
+ * 4. (UX) Добавлена опция "Ввести вручную" для редких случаев.
  */
 
 const mainStore = useMainStore();
@@ -33,11 +34,11 @@ const isSaving = ref(false);
 
 // Селекты
 const fromAccountId = ref(null);
-const toDestinationId = ref(null); // ID получателя (счет или контрагент, или просто строка если не найдено)
+const selectedDestinationValue = ref(null); // ID выбранного получателя (acc_ID, ind_ID и т.д.)
 
-// Для инлайн-создания (если понадобится, пока упростим до выбора)
-const isCreatingFromAccount = ref(false);
-const isCreatingDestination = ref(false); 
+// Ручной ввод (если в списке нет нужного)
+const isCustomDestination = ref(false);
+const customDestinationText = ref('');
 
 // --- Опции ---
 const reasonOptions = [
@@ -49,37 +50,61 @@ const reasonOptions = [
 
 // Опции счетов (откуда)
 const accountOptions = computed(() => {
-  const opts = mainStore.currentAccountBalances.map(acc => ({
+  return mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
     label: acc.name,
     rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
     isSpecial: false
   }));
-  // Можно добавить опцию создания, если нужно
-  return opts;
 });
 
-// Опции получателей (куда) - здесь можно смешать счета, контрагентов или просто историю
-// Для полного соответствия TransferPopup, допустим, мы показываем счета или контрагентов.
-// Поскольку это ВЫВОД, получателем может быть "Моя карта" (счет) или "Жена" (контрагент/физлицо).
-// Чтобы не усложнять, покажем список Счетов (как в переводе), но добавим опцию "Вне системы"
+// Опции получателей (куда) - Сборная солянка
 const destinationOptions = computed(() => {
-    // Собираем варианты "Куда"
     const opts = [];
     
-    // 1. Счета (например, личные карты)
+    // 1. Счета (кроме выбранного для списания, по хорошему, но пока покажем все)
     mainStore.accounts.forEach(acc => {
-        opts.push({ value: `acc-${acc._id}`, label: acc.name, rightText: 'Счет', isSpecial: false });
+        // Исключаем текущий счет списания из списка получателей, если он выбран
+        if (acc._id !== fromAccountId.value) {
+            opts.push({ value: `acc_${acc._id}`, label: acc.name, rightText: 'Счет', isSpecial: false });
+        }
     });
 
-    // 2. Физлица (как получатели)
+    // 2. Физлица
     mainStore.individuals.forEach(ind => {
-        opts.push({ value: `ind-${ind._id}`, label: ind.name, rightText: 'Физлицо', isSpecial: false });
+        opts.push({ value: `ind_${ind._id}`, label: ind.name, rightText: 'Физлицо', isSpecial: false });
     });
+
+    // 3. Контрагенты (иногда выводят налом через них)
+    mainStore.contractors.forEach(c => {
+        opts.push({ value: `contr_${c._id}`, label: c.name, rightText: 'Контрагент', isSpecial: false });
+    });
+    
+    // Опция ручного ввода
+    opts.push({ value: 'manual_input', label: '✐ Ввести вручную...', isSpecial: true });
     
     return opts;
 });
 
+// Следим за выбором "Ввести вручную"
+watch(selectedDestinationValue, (val) => {
+    if (val === 'manual_input') {
+        isCustomDestination.value = true;
+        selectedDestinationValue.value = null; // Сбрасываем селект
+        nextTick(() => {
+            // Фокус на инпут ручного ввода
+            const input = document.querySelector('.manual-dest-input');
+            if (input) input.focus();
+        });
+    }
+});
+
+// Возврат к селекту из ручного ввода
+const clearCustomDestination = () => {
+    isCustomDestination.value = false;
+    customDestinationText.value = '';
+    selectedDestinationValue.value = null;
+};
 
 // --- СОСТОЯНИЯ ---
 const isCloneMode = ref(false);
@@ -100,7 +125,7 @@ const btnText = computed(() => {
     if (isSaving.value) return 'Сохранение...';
     if (isCloneMode.value) return 'Создать копию';
     if (isEditMode.value) return 'Сохранить';
-    return 'Подтвердить'; // Или "Добавить вывод"
+    return 'Подтвердить';
 });
 
 // --- FORMATTERS ---
@@ -125,23 +150,32 @@ const onAmountInput = (e) => {
 };
 
 const handleSave = () => {
-  if (amount.value <= 0 || isSaving.value || !fromAccountId.value) return;
+  // Валидация
+  const hasDestination = isCustomDestination.value ? customDestinationText.value.trim().length > 0 : !!selectedDestinationValue.value;
+  
+  if (amount.value <= 0 || isSaving.value || !fromAccountId.value || !hasDestination) {
+      return;
+  }
   
   isSaving.value = true;
   
   const [year, month, day] = editableDate.value.split('-').map(Number);
   const finalDate = new Date(year, month - 1, day, 12, 0, 0);
 
-  // Определяем текстовое значение "Куда" из селекта
-  let destinationText = '';
-  if (toDestinationId.value) {
-      const selectedOpt = destinationOptions.value.find(o => o.value === toDestinationId.value);
-      destinationText = selectedOpt ? selectedOpt.label : toDestinationId.value; // Fallback если текст введен вручную (если BaseSelect поддерживает)
+  // Определяем текстовое имя получателя
+  let finalDestinationText = '';
+  
+  if (isCustomDestination.value) {
+      finalDestinationText = customDestinationText.value;
+  } else {
+      // Ищем label в опциях
+      const option = destinationOptions.value.find(o => o.value === selectedDestinationValue.value);
+      finalDestinationText = option ? option.label : 'Неизвестно';
   }
 
   const payload = {
     amount: amount.value,
-    destination: destinationText,
+    destination: finalDestinationText, // Сохраняем как текст
     reason: reason.value,
     type: 'expense', 
     isWithdrawal: true,
@@ -195,15 +229,22 @@ onMounted(() => {
   if (props.operationToEdit) {
       const op = props.operationToEdit;
       amount.value = Math.abs(op.amount || 0);
-      // Пытаемся найти ID получателя по тексту (обратный поиск для селекта)
-      const foundDest = destinationOptions.value.find(o => o.label === op.destination);
-      toDestinationId.value = foundDest ? foundDest.value : null; 
-      // Если не нашли в списке, можно было бы добавить как кастомное, но BaseSelect требует опций.
-      // Для упрощения пока считаем, что выбираем из списка. Если "Куда" был текст не из списка - селект будет пустым или покажет плейсхолдер.
-      
-      reason.value = op.reason || 'Личные нужды';
       fromAccountId.value = op.accountId?._id || op.accountId;
+      reason.value = op.reason || 'Личные нужды';
       editableDate.value = toInputDate(new Date(op.date));
+      
+      // Попытка восстановить выбор в селекте по тексту
+      const destText = op.destination || '';
+      const foundOption = destinationOptions.value.find(o => o.label === destText);
+      
+      if (foundOption) {
+          selectedDestinationValue.value = foundOption.value;
+          isCustomDestination.value = false;
+      } else if (destText) {
+          // Если текста нет в опциях (например, удалили физлицо или был ручной ввод)
+          isCustomDestination.value = true;
+          customDestinationText.value = destText;
+      }
   } else {
       amount.value = props.initialData.amount || 0;
       fromAccountId.value = props.initialData.fromAccountId || null;
@@ -212,7 +253,7 @@ onMounted(() => {
   
   formattedAmount.value = formatNumber(amount.value);
   
-  nextTick(() => document.querySelector('.wd-focus')?.focus());
+  nextTick(() => document.querySelector('.wd-amount')?.focus());
 });
 </script>
 
@@ -224,7 +265,7 @@ onMounted(() => {
       
       <!-- Инфо (только создание) -->
       <div class="wd-info-box" v-if="!isEditMode && !isCloneMode && initialData.fromAccountName">
-        Вы оформляете вывод средств со счета <b>{{ initialData.fromAccountName }}</b>.
+        Вывод средств со счета <b>{{ initialData.fromAccountName }}</b>.
       </div>
       
       <!-- СУММА -->
@@ -246,18 +287,36 @@ onMounted(() => {
         v-model="fromAccountId"
         :options="accountOptions"
         label="Счет списания"
-        placeholder="Выберите счет"
+        placeholder="Откуда (Счет)"
         class="input-spacing"
       />
 
-      <!-- КУДА (Селект, как просили) -->
-      <BaseSelect
-        v-model="toDestinationId"
-        :options="destinationOptions"
-        label="Куда (Получатель)"
-        placeholder="Выберите получателя"
-        class="input-spacing"
-      />
+      <!-- КУДА (Селект или Input) -->
+      <div class="input-spacing destination-wrapper">
+          <template v-if="!isCustomDestination">
+              <BaseSelect
+                v-model="selectedDestinationValue"
+                :options="destinationOptions"
+                label="Куда (Получатель)"
+                placeholder="Выберите получателя"
+              />
+          </template>
+          
+          <template v-else>
+              <div class="custom-input-box manual-dest-box">
+                  <div class="input-inner-content">
+                     <span class="floating-label" v-if="customDestinationText">Получатель (текст)</span>
+                     <input 
+                       type="text" 
+                       v-model="customDestinationText" 
+                       class="wd-input manual-dest-input" 
+                       placeholder="Введите имя получателя..."
+                     >
+                  </div>
+                  <button class="btn-reset-dest" @click="clearCustomDestination" title="Вернуться к списку">✕</button>
+              </div>
+          </template>
+      </div>
 
       <!-- ПРИЧИНА (Селект) -->
       <BaseSelect
@@ -284,13 +343,13 @@ onMounted(() => {
          </div>
       </div>
 
-      <!-- ФУТЕР (1-в-1 как TransferPopup) -->
+      <!-- ФУТЕР -->
       <div class="popup-actions-row">
         <!-- Кнопка Сохранить (СЛЕВА) -->
         <button 
           class="btn-submit save-wide wd-btn-confirm" 
           @click="handleSave" 
-          :disabled="amount <= 0 || isSaving || !fromAccountId"
+          :disabled="amount <= 0 || isSaving || !fromAccountId || (!selectedDestinationValue && !customDestinationText)"
         >
           {{ btnText }}
         </button>
@@ -329,7 +388,7 @@ onMounted(() => {
   backdrop-filter: blur(2px);
 }
 .withdrawal-content {
-  background: #F4F4F4; /* Фон как в TransferPopup */
+  background: #F4F4F4; 
   padding: 2rem; 
   border-radius: 12px; 
   width: 100%; 
@@ -370,13 +429,25 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 .input-spacing { margin-bottom: 12px; }
 
+/* Manual Destination Styles */
+.manual-dest-box {
+    padding-right: 40px; /* Место для крестика */
+}
+.btn-reset-dest {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: 40px; border: none; background: transparent;
+    color: #999; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.btn-reset-dest:hover { color: #FF3B30; }
+
 .date-box { justify-content: space-between; }
 .date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .calendar-icon { font-size: 16px; color: #999; }
 
-/* Футер (как в TransferPopup) */
+/* Футер */
 .popup-actions-row { 
   display: flex; 
   align-items: center; 

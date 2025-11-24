@@ -1,11 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v29.4 - INTER-COMPANY FIXES & WIDGETS ---
- * * ВЕРСИЯ: 29.4 - Разделение ячеек для меж.комп и фильтрация виджетов
+ * * --- МЕТКА ВЕРСИИ: v29.5 - AUTO CONTRACTOR LOGIC ---
+ * * ВЕРСИЯ: 29.5 - Автоматическое создание контрагентов при меж.комп переводе
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) createTransfer: Для 'inter_company' теперь занимаются ДВЕ разные ячейки (index, index+1).
- * 2. (FILTER) Геттеры (currentIncomes, currentExpenses и их future-версии) теперь фильтруют операции с категорией "Меж.комп".
+ * 1. (LOGIC) createTransfer: При 'inter_company' переводах автоматически определяет/создает контрагентов.
+ * - Расход у отправителя -> Контрагент = Компания-получатель.
+ * - Доход у получателя -> Контрагент = Компания-отправитель.
  */
 
 import { defineStore } from 'pinia';
@@ -28,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v29.4 (Inter-Company Fixes) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v29.5 (Auto Contractor Logic) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -79,13 +80,9 @@ export const useMainStore = defineStore('mainStore', () => {
     return name === 'перевод' || name === 'transfer';
   };
 
-  // 🟢 Хелпер: Проверка на "Меж.комп" (для исключения из виджетов)
   const _isInterCompanyOp = (op) => {
       if (!op || !op.categoryId) return false;
-      // Если categoryId это объект
       const name = (op.categoryId.name || '').toLowerCase().trim();
-      // Если categoryId это ID, мы не сможем проверить имя здесь без поиска, 
-      // но в currentOps обычно объекты уже популированы.
       if (!name && typeof op.categoryId === 'string') {
           const cat = categories.value.find(c => c._id === op.categoryId);
           if (cat) {
@@ -340,7 +337,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // --- ГЕТТЕРЫ ОБЯЗАТЕЛЬСТВ ---
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
@@ -421,7 +417,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
-  // 🟢 ОБНОВЛЕНИЕ (ФИЛЬТРАЦИЯ): Исключаем Меж.комп
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
@@ -429,7 +424,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
-  // 🟢 ОБНОВЛЕНИЕ (ФИЛЬТРАЦИЯ): Исключаем Меж.комп
   const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
@@ -499,14 +493,12 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
-  // 1. СЧЕТА
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ ...a, balance: snapshot.value.accountBalances[a._id] || 0 })));
   const futureAccountBalances = computed(() => {
     const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
     return accounts.value.map(a => ({ ...a, balance: futureMap[a._id] || 0 }));
   });
   
-  // 2. КОМПАНИИ
   const currentCompanyBalances = computed(() => {
       return companies.value.map(comp => {
           const linked = currentAccountBalances.value.filter(a => {
@@ -820,8 +812,8 @@ export const useMainStore = defineStore('mainStore', () => {
        const isInSnapshot = newDate <= now;
        
        if (wasInSnapshot !== isInSnapshot) {
-           if (wasInSnapshot && !isInSnapshot) applySnapshotDelta(sourceOpData, 'remove'); // Ушла в будущее
-           else applySnapshotDelta(sourceOpData, 'add'); // Пришла из будущего
+           if (wasInSnapshot && !isInSnapshot) applySnapshotDelta(sourceOpData, 'remove'); 
+           else applySnapshotDelta(sourceOpData, 'add'); 
            
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        } else {
@@ -838,7 +830,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const dateKey = _getDateKey(finalDate);
       const transferCategory = await _getOrCreateTransferCategory();
       
-      // ВАРИАНТ 1: Внутренний перевод (Standard)
       if (!transferData.transferPurpose || transferData.transferPurpose === 'internal') {
           const cellIndex = await getFirstFreeCellIndex(dateKey);
           const response = await axios.post(`${API_BASE_URL}/transfers`, { 
@@ -855,9 +846,7 @@ export const useMainStore = defineStore('mainStore', () => {
           return response.data;
       }
 
-      // ВАРИАНТ 2: Между компаниями (Independent Nodes)
       if (transferData.transferPurpose === 'inter_company') {
-          // 1. Находим или создаем категорию "Меж.комп"
           let interCat = categories.value.find(c => ['меж.комп', 'межкомпаний', 'inter-comp'].includes(c.name.toLowerCase()));
           let isNewCat = false;
           if (!interCat) {
@@ -865,15 +854,40 @@ export const useMainStore = defineStore('mainStore', () => {
               isNewCat = true;
           }
 
-          // 🟢 2. Бронируем ДВА индекса (ячейки)
+          // 🟢 АВТО-ОПРЕДЕЛЕНИЕ И СОЗДАНИЕ КОНТРАГЕНТОВ
+          const fromCompObj = companies.value.find(c => c._id === transferData.fromCompanyId);
+          const toCompObj = companies.value.find(c => c._id === transferData.toCompanyId);
+          
+          let expenseContractorId = null; 
+          let incomeContractorId = null;
+
+          // Для Расхода (отправитель) контрагент = Получатель
+          if (toCompObj) {
+              let c = contractors.value.find(cnt => cnt.name.toLowerCase() === toCompObj.name.toLowerCase());
+              if (!c) {
+                  console.log(`[Auto-Create] Создаю контрагента для получателя: ${toCompObj.name}`);
+                  c = await addContractor(toCompObj.name);
+              }
+              expenseContractorId = c._id;
+          }
+
+          // Для Дохода (получатель) контрагент = Отправитель
+          if (fromCompObj) {
+              let c = contractors.value.find(cnt => cnt.name.toLowerCase() === fromCompObj.name.toLowerCase());
+              if (!c) {
+                  console.log(`[Auto-Create] Создаю контрагента для отправителя: ${fromCompObj.name}`);
+                  c = await addContractor(fromCompObj.name);
+              }
+              incomeContractorId = c._id;
+          }
+
           const index1 = await getFirstFreeCellIndex(dateKey);
           const index2 = await getFirstFreeCellIndex(dateKey, index1 + 1);
 
-          // 3. Создаем Расход (у Отправителя) -> index2
           const expenseData = {
               date: finalDate,
               dateKey,
-              cellIndex: index2, // Расход идет вторым (обычно ниже)
+              cellIndex: index2, 
               type: 'expense',
               amount: -Math.abs(transferData.amount),
               accountId: transferData.fromAccountId,
@@ -881,15 +895,14 @@ export const useMainStore = defineStore('mainStore', () => {
               individualId: transferData.fromIndividualId,
               categoryId: interCat._id,
               projectId: null, 
-              contractorId: null, 
+              contractorId: expenseContractorId, // 🟢 
               description: 'Перевод между компаниями (Исходящий)'
           };
           
-          // 4. Создаем Доход (у Получателя) -> index1
           const incomeData = {
               date: finalDate,
               dateKey,
-              cellIndex: index1, // Доход первым
+              cellIndex: index1, 
               type: 'income',
               amount: Math.abs(transferData.amount),
               accountId: transferData.toAccountId,
@@ -897,11 +910,10 @@ export const useMainStore = defineStore('mainStore', () => {
               individualId: transferData.toIndividualId,
               categoryId: interCat._id,
               projectId: null, 
-              contractorId: null,
+              contractorId: incomeContractorId, // 🟢
               description: 'Перевод между компаниями (Входящий)'
           };
 
-          // Выполняем параллельно
           const [expenseRes, incomeRes] = await Promise.all([
               createEvent(expenseData),
               createEvent(incomeData)
@@ -914,7 +926,6 @@ export const useMainStore = defineStore('mainStore', () => {
           return [expenseRes, incomeRes];
       }
 
-      // ВАРИАНТ 3: Вывод / Личные
       if (transferData.transferPurpose === 'personal') {
           const isWithdrawal = (transferData.transferReason === 'personal_use');
           
@@ -939,7 +950,6 @@ export const useMainStore = defineStore('mainStore', () => {
               const res = await createEvent(withdrawalData);
               return res;
           } else {
-              // Если "На развитие бизнеса" - это просто расход
               const businessExpData = {
                   date: finalDate,
                   dateKey,
@@ -1165,7 +1175,7 @@ export const useMainStore = defineStore('mainStore', () => {
     currentTransfers, futureTransfers,
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
-    currentWithdrawals, futureWithdrawals, // 🟢 Экспортируем
+    currentWithdrawals, futureWithdrawals,
 
     getCategoryById, futureCategoryBreakdowns,
 
