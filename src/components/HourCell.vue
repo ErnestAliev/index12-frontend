@@ -4,12 +4,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.0 - WITHDRAWAL STYLE ---
- * * ВЕРСИЯ: 3.0 - Цвета для вывода средств
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v4.0 - NEW WITHDRAWAL COLORS ---
+ * * ВЕРСИЯ: 4.0 - Новые цвета для вывода (по ТЗ)
+ * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Добавлен класс .withdrawal (фиолетовый #7B1FA2).
+ * 1. (STYLE) Обновлен класс .withdrawal:
+ * - Фон: #2F3340
+ * - Текст суммы: #DE8FFF
  */
 
 const props = defineProps({
@@ -83,6 +85,8 @@ const onDrop = (event) => {
   const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
   let operationData = null; try { operationData = JSON.parse(raw); } catch { return; }
   if (!operationData || !operationData._id) return;
+  
+  // Передаем данные наверх, DayColumn добавит toDateKey
   emit('drop-operation', {
     operation: operationData,
     toCellIndex: props.cellIndex 
@@ -173,11 +177,11 @@ const onDrop = (event) => {
 /* 🟢 ПРЕДОПЛАТА (Оранжевый текст суммы) */
 .prepayment .op-amount { color: #FF9D00 !important; }
 
-/* 🟢 ВЫВОД (Фиолетовый) */
-.withdrawal { background: #4A148C; } /* Темно-фиолетовый фон */
-.withdrawal:hover { background: #6A1B9A; }
-.withdrawal .op-amount { color: #E1BEE7; } /* Светло-фиолетовый текст */
-.withdrawal .op-meta { color: #D1C4E9; }
+/* 🟢 ВЫВОД (Новые цвета по ТЗ) */
+.withdrawal { background: #2F3340; } /* Темный фон */
+.withdrawal:hover { background: #3a3f50; }
+.withdrawal .op-amount { color: #DE8FFF; } /* Светло-фиолетовый текст */
+.withdrawal .op-meta { color: #B085D0; }
 
 /* 🟢 Нейтральный перевод (ТЕМНЫЙ ЦВЕТ) */
 .transfer { background:#2F3340; }
@@ -205,7 +209,7 @@ const onDrop = (event) => {
   }
   .operation-chip {
     font-size: 0.7em; 
-    padding: 3px 6px;
+    padding: 3px 6px; 
   }
 }
 </style>

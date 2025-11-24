@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v27.0 - FINAL SORT & TRANSFER LOGIC ---
- * * ВЕРСИЯ: 27.0 - Фикс сортировки категорий и логики виджета переводов
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v29.0 - WITHDRAWAL WIDGET SUPPORT ---
+ * * ВЕРСИЯ: 29.0 - Поддержка виджета "Мои выводы"
+ * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) moveOperation: Улучшена реактивность. При переносе через границу "сегодня"
- * моментально обновляется snapshot (Past Total), что заставляет виджеты пересчитаться.
- * 2. (LOGIC) fetchAllEntities: Улучшена сортировка смешанных категорий.
+ * 1. (CONFIG) Добавлен виджет 'withdrawalList' в staticWidgets.
+ * 2. (GETTERS) Добавлены currentWithdrawals и futureWithdrawals.
+ * 3. (LOGIC) updateOperation теперь корректно обрабатывает флаг isWithdrawal.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v27.0 (Final Sort & Transfer) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v29.0 (Withdrawal Widget Support) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -69,6 +69,7 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'liabilities',  name: 'Мои предоплаты' },
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
+    { key: 'withdrawalList', name: 'Мои выводы' }, // 🟢 NEW: Виджет выводов
     { key: 'individuals',  name: 'Мои Физлица' },
     { key: 'categories',   name: 'Категории' }, 
   ]);
@@ -244,7 +245,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const prepayIdsSet = prepaymentCategoryIdsSet.value;
     
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
-       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, dayTotal:0 };
+       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal:0, dayTotal:0 };
        const dayRec = byDateKey[dateKey];
 
        if (Array.isArray(ops)) {
@@ -254,7 +255,10 @@ export const useMainStore = defineStore('mainStore', () => {
                const amt = op.amount || 0;
                const absAmt = Math.abs(amt);
 
-               if (op.type === 'income') {
+               if (op.isWithdrawal) {
+                   dayRec.withdrawal += absAmt;
+                   dayRec.dayTotal -= absAmt;
+               } else if (op.type === 'income') {
                    const catId = op.categoryId?._id || op.categoryId;
                    const prepId = op.prepaymentId?._id || op.prepaymentId;
                    
@@ -286,7 +290,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const rec = byDateKey[dateKey];
       running += rec.dayTotal;
       chart.set(dateKey, { 
-        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, 
+        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, withdrawal: rec.withdrawal,
         closingBalance: running, date: _parseDateKey(dateKey)
       });
     }
@@ -406,12 +410,18 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-  const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  
+  // 🟢 Геттер для ТЕКУЩИХ выводов
+  const currentWithdrawals = computed(() => currentOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-  const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income').sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense').sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  
+  // 🟢 Геттер для БУДУЩИХ выводов
+  const futureWithdrawals = computed(() => futureOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
   const getCategoryById = (id) => categories.value.find(c => c._id === id);
 
@@ -669,7 +679,6 @@ export const useMainStore = defineStore('mainStore', () => {
       projects.value    = _sortByOrder(projRes.data);
       individuals.value = _sortByOrder(indRes.data); 
       
-      // 🟢 FIX: При загрузке смешиваем категории и предоплаты и сортируем их ВМЕСТЕ
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
       categories.value  = _sortByOrder([...normalCategories, ...prepaymentCategories]);
@@ -798,14 +807,12 @@ export const useMainStore = defineStore('mainStore', () => {
        const wasInSnapshot = oldDate <= now;
        const isInSnapshot = newDate <= now;
        
-       // 🟢 FIX: Моментально обновляем снапшот при переходе через границу "сегодня"
        if (wasInSnapshot !== isInSnapshot) {
            if (wasInSnapshot && !isInSnapshot) applySnapshotDelta(sourceOpData, 'remove'); // Ушла в будущее
            else applySnapshotDelta(sourceOpData, 'add'); // Пришла из будущего
            
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        } else {
-           // Если внутри одного периода - просто обновляем проекцию (для виджетов будущего)
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        }
     }
@@ -813,9 +820,98 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
+  async function createTransfer(transferData) {
+    try {
+      const finalDate = new Date(transferData.date);
+      const dateKey = _getDateKey(finalDate);
+      const transferCategory = await _getOrCreateTransferCategory();
+      
+      // ВАРИАНТ 1: Внутренний перевод (Standard)
+      if (!transferData.transferPurpose || transferData.transferPurpose === 'internal') {
+          const cellIndex = await getFirstFreeCellIndex(dateKey);
+          const response = await axios.post(`${API_BASE_URL}/transfers`, { 
+              ...transferData, 
+              dateKey, 
+              cellIndex, 
+              categoryId: transferData.categoryId || transferCategory 
+          });
+          
+          await refreshDay(dateKey);
+          const now = new Date();
+          if (finalDate <= now) applySnapshotDelta(response.data, 'add');
+          updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+          return response.data;
+      }
+
+      // ВАРИАНТ 2: Между компаниями (Independent Nodes)
+      if (transferData.transferPurpose === 'inter_company') {
+          // 1. Создаем Расход у Отправителя
+          const expenseData = {
+              date: finalDate,
+              dateKey,
+              type: 'expense',
+              amount: -Math.abs(transferData.amount),
+              accountId: transferData.fromAccountId,
+              companyId: transferData.fromCompanyId,
+              individualId: transferData.fromIndividualId,
+              categoryId: transferCategory,
+              contractorId: null, // Можно проставить получателя как контрагента, но пока null
+              description: 'Перевод между компаниями (Исходящий)'
+          };
+          
+          // 2. Создаем Доход у Получателя
+          const incomeData = {
+              date: finalDate,
+              dateKey,
+              type: 'income',
+              amount: Math.abs(transferData.amount),
+              accountId: transferData.toAccountId,
+              companyId: transferData.toCompanyId,
+              individualId: transferData.toIndividualId,
+              categoryId: transferCategory,
+              description: 'Перевод между компаниями (Входящий)'
+          };
+
+          // Выполняем параллельно
+          const [expenseRes, incomeRes] = await Promise.all([
+              createEvent(expenseData),
+              createEvent(incomeData)
+          ]);
+          
+          return [expenseRes, incomeRes];
+      }
+
+      // ВАРИАНТ 3: Вывод / Личные
+      if (transferData.transferPurpose === 'personal') {
+          const isWithdrawal = transferData.transferReason === 'personal_use';
+          
+          const withdrawalData = {
+              date: finalDate,
+              dateKey,
+              type: 'expense',
+              amount: -Math.abs(transferData.amount),
+              accountId: transferData.fromAccountId,
+              companyId: transferData.fromCompanyId,
+              individualId: transferData.fromIndividualId,
+              categoryId: null, // Для вывода категория не обязательна или специальная
+              isWithdrawal: isWithdrawal, // 🟢 Флаг вывода
+              description: isWithdrawal ? 'Вывод на личные цели' : 'Расход на развитие бизнеса (Физлицо)'
+          };
+          
+          const res = await createEvent(withdrawalData);
+          return res;
+      }
+
+    } catch (error) { throw error; }
+  }
+
   async function createEvent(eventData) {
     try {
       if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
+      // Если индекс не задан - находим
+      if (eventData.cellIndex === undefined) {
+          eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
+      }
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
       const newOp = response.data;
       
@@ -828,27 +924,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       if (projection.value.mode) await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return newOp;
-    } catch (error) { throw error; }
-  }
-
-  async function createTransfer(transferData) {
-    try {
-      const finalDate = new Date(transferData.date);
-      const dateKey = _getDateKey(finalDate);
-      const cellIndex = await getFirstFreeCellIndex(dateKey);
-      const transferCategory = await _getOrCreateTransferCategory();
-      const response = await axios.post(`${API_BASE_URL}/transfers`, { ...transferData, dateKey, cellIndex, categoryId: transferData.categoryId || transferCategory });
-      
-      const newOp = response.data; 
-      await refreshDay(dateKey);
-      
-      const now = new Date();
-      if (finalDate <= now) {
-          applySnapshotDelta(newOp, 'add'); 
-      }
-
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      return response.data;
     } catch (error) { throw error; }
   }
   
@@ -885,7 +960,11 @@ export const useMainStore = defineStore('mainStore', () => {
       let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
       else newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, { ...opData, dateKey: newDateKey, cellIndex: newCellIndex });
+      
+      // 🟢 Передаем isWithdrawal, если он есть
+      const updatePayload = { ...opData, dateKey: newDateKey, cellIndex: newCellIndex };
+      
+      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, updatePayload);
       
       const now = new Date();
       if (oldOp && new Date(oldOp.date) <= now) applySnapshotDelta(oldOp, 'remove');
@@ -946,7 +1025,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function batchUpdateEntities(path, items){ 
     try { 
-      // 🟢 FIX: Сортировка категорий (Разделение + Объединение)
       if (path === 'categories') {
           const normalCategories = items.filter(i => !i.isPrepayment);
           const prepaymentCategories = items.filter(i => i.isPrepayment);
@@ -956,7 +1034,7 @@ export const useMainStore = defineStore('mainStore', () => {
               axios.put(`${API_BASE_URL}/prepayments/batch-update`, prepaymentCategories)
           ]);
           
-          await fetchAllEntities(); // Перезагрузка для гарантии порядка
+          await fetchAllEntities(); 
           return;
       }
 
@@ -1035,6 +1113,7 @@ export const useMainStore = defineStore('mainStore', () => {
     currentTransfers, futureTransfers,
     currentIncomes, futureIncomes,
     currentExpenses, futureExpenses,
+    currentWithdrawals, futureWithdrawals, // 🟢 Экспортируем
 
     getCategoryById, futureCategoryBreakdowns,
 

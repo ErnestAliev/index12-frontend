@@ -16,13 +16,12 @@ import {
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v22.0 - WITHDRAWAL DATASET ---
- * * ВЕРСИЯ: 22.0 - Добавлен dataset для вывода средств
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v23.0 - WITHDRAWAL COLOR UPDATE ---
+ * * ВЕРСИЯ: 23.0 - Обновлен цвет графика вывода
+ * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (GRAPH) Добавлен dataset 'Вывод' (#7B1FA2).
- * 2. (TOOLTIP) Добавлена логика тултипа для вывода.
+ * 1. (GRAPH) Цвет dataset 'Вывод' изменен на #DE8FFF (согласно ТЗ).
  */
 
 const props = defineProps({
@@ -248,10 +247,10 @@ const chartData = computed(() => {
         details: expenseDetails,
         order: 3
       },
-      // 🟢 4. ВЫВОД (Фиолетовый)
+      // 🟢 4. ВЫВОД (Светло-фиолетовый #DE8FFF)
       { 
         label: 'Вывод', 
-        backgroundColor: '#7B1FA2', 
+        backgroundColor: '#DE8FFF', 
         data: withdrawalData, 
         stack: 'stack1',
         details: withdrawalDetails,

@@ -5,14 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v8.5 - TRANSFER CALC FIX & RENAME ---
- * * ВЕРСИЯ: 8.5 - Исправление расчета переводов и переименование
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v9.0 - WITHDRAWAL WIDGET ---
+ * * ВЕРСИЯ: 9.0 - Поддержка виджета "Мои выводы"
+ * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Для виджета перевода суммы считаются "на лету" по спискам currentTransfers/futureTransfers,
- * так как в снапшоте (breakdowns) переводы игнорируются.
- * 2. (UI) Виджет перевода теперь отображается как "Мои переводы" вместо "Перевод".
+ * 1. (LOGIC) Добавлен флаг isWithdrawalListWidget.
+ * 2. (LOGIC) Расчет сумм (currentSum, futureOnlySum) теперь поддерживает withdrawalList.
+ * 3. (STYLE) Добавлен стиль .withdrawal (фиолетовый) для отображения сумм.
  */
 
 const props = defineProps({
@@ -82,17 +82,17 @@ const isTransferWidget = computed(() => {
   return false;
 });
 
-// 🟢 ЗАДАЧА-3: Переименовать виджет "Перевод" в "Мои переводы"
-const displayTitle = computed(() => {
-    if (isTransferWidget.value) {
-        return 'Мои переводы';
-    }
-    return props.title;
-});
-
 const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
 const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
-const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value || isTransferWidget.value);
+// 🟢 NEW: Виджет выводов
+const isWithdrawalListWidget = computed(() => props.widgetKey === 'withdrawalList');
+
+const isSummaryWidget = computed(() => isIncomeListWidget.value || isExpenseListWidget.value || isTransferWidget.value || isWithdrawalListWidget.value);
+
+const displayTitle = computed(() => {
+    if (isTransferWidget.value) return 'Мои переводы';
+    return props.title;
+});
 
 // --- Данные для обычных категорий (не списочных) ---
 const categoryBreakdown = computed(() => {
@@ -102,43 +102,34 @@ const categoryBreakdown = computed(() => {
 });
 
 // --- Расчет сумм для Сводных виджетов ---
-// 🟢 ЗАДАЧА-2: Исправляем подсчет для переводов
-// Снапшот не считает суммы по категории "Перевод", поэтому считаем вручную по спискам.
-
 // 1. Текущая сумма
 const currentSum = computed(() => {
-  if (isTransferWidget.value) {
-      // Считаем сумму всех текущих переводов (абсолютные значения)
-      return (mainStore.currentTransfers || []).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
-  }
-  
   let list = [];
-  if (isIncomeListWidget.value) list = mainStore.currentIncomes;
+  
+  if (isTransferWidget.value) list = mainStore.currentTransfers;
+  else if (isIncomeListWidget.value) list = mainStore.currentIncomes;
   else if (isExpenseListWidget.value) list = mainStore.currentExpenses;
+  else if (isWithdrawalListWidget.value) list = mainStore.currentWithdrawals; // 🟢
   
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
 // 2. Сумма будущих операций (только дельта)
 const futureOnlySum = computed(() => {
-  if (isTransferWidget.value) {
-      // Считаем сумму всех будущих переводов
-      return (mainStore.futureTransfers || []).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
-  }
-
   let list = [];
-  if (isIncomeListWidget.value) list = mainStore.futureIncomes;
+  
+  if (isTransferWidget.value) list = mainStore.futureTransfers;
+  else if (isIncomeListWidget.value) list = mainStore.futureIncomes;
   else if (isExpenseListWidget.value) list = mainStore.futureExpenses;
+  else if (isWithdrawalListWidget.value) list = mainStore.futureWithdrawals; // 🟢
   
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// 3. Прогнозная сумма = Текущие + Будущие
+// 3. Прогнозная сумма
 const projectedSum = computed(() => {
-    // Простая сумма, так как мы посчитали current и future отдельно
     return currentSum.value + futureOnlySum.value;
 });
-
 
 const setSortMode = (mode) => { sortMode.value = mode; };
 const setFilterMode = (mode) => { filterMode.value = mode; };
@@ -197,7 +188,7 @@ const handleEdit = () => { emit('edit'); };
 
     <div class="category-items-list-scroll">
       
-      <!-- 🟢 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД / ПЕРЕВОД) -->
+      <!-- 🟢 1. СВОДНЫЙ ВИД (ДОХОД / РАСХОД / ПЕРЕВОД / ВЫВОД) -->
       <div v-if="isSummaryWidget" class="summary-container">
         <div class="summary-row">
             <!-- ЛЕВАЯ ЧАСТЬ -->
@@ -210,13 +201,14 @@ const handleEdit = () => { emit('edit'); };
                 <span 
                   class="current-val"
                   :class="{ 
-                    'normal-text': isIncomeListWidget,      /* Доход: обычный светлый */
-                    'expense': isExpenseListWidget,    /* Расход: красный */
-                    'transfer-neutral': isTransferWidget /* Перевод: нейтральный */
+                    'normal-text': isIncomeListWidget,
+                    'expense': isExpenseListWidget,
+                    'transfer-neutral': isTransferWidget,
+                    'withdrawal': isWithdrawalListWidget /* 🟢 */
                   }"
                 >
                     <!-- Знак -->
-                    <template v-if="isExpenseListWidget">- </template>
+                    <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>
                     
                     <!-- Значение -->
                     {{ formatNumber(currentSum) }} ₸
@@ -231,11 +223,12 @@ const handleEdit = () => { emit('edit'); };
                       :class="{ 
                         'normal-text': isIncomeListWidget, 
                         'expense': isExpenseListWidget, 
-                        'transfer-neutral': isTransferWidget 
+                        'transfer-neutral': isTransferWidget,
+                        'withdrawal': isWithdrawalListWidget /* 🟢 */
                       }"
                     >
-                        <!-- Знак для прогноза (Расход тоже с минусом) -->
-                        <template v-if="isExpenseListWidget">- </template>
+                        <!-- Знак -->
+                        <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>
 
                         {{ formatNumber(projectedSum) }} ₸
                     </span>
@@ -311,51 +304,20 @@ const handleEdit = () => { emit('edit'); };
 .category-items-list-scroll { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; min-height: 0; display: flex; flex-direction: column; }
 .category-items-list-scroll::-webkit-scrollbar { display: none; }
 
+.summary-container { display: flex; flex-direction: column; justify-content: flex-start; height: 100%; padding-top: 4px; }
+.summary-row { display: flex; justify-content: space-between; align-items: baseline; width: 100%; }
+.summary-label { font-size: 0.9em; color: #ccc; white-space: nowrap; }
+.summary-value-block { font-size: 0.9em; font-weight: 500; text-align: right; white-space: nowrap; }
 
-/* --- 🟢 СТИЛИ ДЛЯ СВОДНОГО ВИДА (SUMMARY) --- */
-.summary-container {
-  display: flex; 
-  flex-direction: column; 
-  justify-content: flex-start; 
-  height: 100%;
-  padding-top: 4px; 
-}
+.income { color: var(--color-primary); } 
+.expense { color: var(--color-danger); } 
+/* 🟢 СТИЛЬ ДЛЯ ВЫВОДА (Фиолетовый) */
+.withdrawal { color: #7B1FA2; } 
+.transfer-neutral { color: var(--color-text); } 
+.normal-text { color: var(--color-heading); } 
 
-.summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline; 
-  width: 100%;
-}
+.summary-arrow { color: #888; margin: 0 4px; font-size: 0.9em; }
 
-/* Левая часть: "Всего" */
-.summary-label {
-  font-size: 0.9em; 
-  color: #ccc;
-  white-space: nowrap;
-}
-
-/* Правая часть: Сумма [> Прогноз] */
-.summary-value-block {
-  font-size: 0.9em; 
-  font-weight: 500;
-  text-align: right;
-  white-space: nowrap;
-}
-
-/* Цвета сумм */
-.income { color: var(--color-primary); } /* Зеленый */
-.expense { color: var(--color-danger); } /* Красный */
-.transfer-neutral { color: var(--color-text); } /* Светлый/Нейтральный */
-.normal-text { color: var(--color-heading); } /* Обычный светлый (белый/светло-серый) */
-
-.summary-arrow {
-  color: #888;
-  margin: 0 4px;
-  font-size: 0.9em;
-}
-
-/* Стили для обычных категорий */
 .category-breakdown-list { display: flex; flex-direction: column; flex-grow: 1; gap: 0.25rem; }
 .category-item { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 0.25rem; }
 .category-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
@@ -370,7 +332,7 @@ const handleEdit = () => { emit('edit'); };
   .card-title { font-size: 0.8em; }
   .category-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .category-item span:first-child { padding-right: 5px; }
-  .summary-value-block { font-size: 0.85em; } /* Адаптив размера */
+  .summary-value-block { font-size: 0.85em; } 
   .card-actions { gap: 3px; }
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }

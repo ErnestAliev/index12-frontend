@@ -6,6 +6,7 @@ import { useMainStore } from '@/stores/mainStore';
 // Компоненты
 import OperationPopup from '@/components/OperationPopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
+import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; // 🟢 IMPORT
 import TheHeader from '@/components/TheHeader.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import DayColumn from '@/components/DayColumn.vue';
@@ -18,17 +19,18 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v32.0 - PREPAYMENT LOGIC REPAIR ---
- * * ВЕРСИЯ: 32.0 - Восстановление логики предоплат
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v33.0 - WITHDRAWAL INTEGRATION ---
+ * * ВЕРСИЯ: 33.0 - Интеграция редактирования выводов
+ * * ДАТА: 2025-11-24
  *
- * ЧТО ИСПРАВЛЕНО:
- * 1. (LOGIC) handlePrepaymentSave: Теперь принудительно проставляет prepaymentId (системная категория),
- * чтобы операция считалась предоплатой, даже если выбрана категория "Аренда".
- * 2. (LOGIC) Это чинит цвет чипа (оранжевый) и расчеты в виджете "Мои предоплаты".
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (IMPORT) Добавлен WithdrawalPopup.
+ * 2. (STATE) Добавлено isWithdrawalPopupVisible.
+ * 3. (LOGIC) handleEditOperation: Если операция isWithdrawal, открываем WithdrawalPopup.
+ * 4. (LOGIC) handleWithdrawalSave: Сохранение вывода (create/edit).
  */
 
-console.log('--- HomeView.vue v32.0 (Prepayment Repair) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v33.0 (Withdrawal Integration) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -57,6 +59,9 @@ const showAboutModal = ref(false);
 const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
 const prepaymentDateKey = ref('');
+
+// 🟢 Состояние для Withdrawal Popup
+const isWithdrawalPopupVisible = ref(false);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -119,7 +124,7 @@ const handleSwitchToPrepayment = (data) => {
     isPrepaymentModalVisible.value = true;
 };
 
-// 🟢 ОБРАБОТЧИК: Сохранение предоплаты
+// ОБРАБОТЧИК: Сохранение предоплаты
 const handlePrepaymentSave = async (finalData) => {
     isPrepaymentModalVisible.value = false;
     isPopupVisible.value = false; 
@@ -130,12 +135,8 @@ const handlePrepaymentSave = async (finalData) => {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
         }
 
-        // 🟢 FIX: Принудительно ставим prepaymentId, чтобы система видела, что это предоплата.
-        // Мы ищем системную категорию "Предоплата" и записываем её ID в поле prepaymentId.
-        // Поле categoryId остается тем, что выбрал пользователь (например "Аренда").
         const prepayIds = mainStore.getPrepaymentCategoryIds;
         if (prepayIds.length > 0) {
-            // Если prepaymentId еще не задан, задаем его
             if (!finalData.prepaymentId) {
                 finalData.prepaymentId = prepayIds[0];
             }
@@ -184,7 +185,8 @@ const handleTransferSave = async ({ mode, id, data, originalTransfer }) => {
                  const dateKey = mainStore._getDateKey(new Date(data.date));
                  data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
              }
-             await mainStore.createTransfer(data);
+             // Используем createTransfer из mainStore, который сам разберется с типом перевода
+             await mainStore.createTransfer(data); 
         } else if (mode === 'edit') {
             const oldDateKey = originalTransfer?.dateKey;
             await mainStore.updateTransfer(id, data);
@@ -199,6 +201,35 @@ const handleTransferSave = async ({ mode, id, data, originalTransfer }) => {
     } catch (error) {
         console.error('Background Save Error (Transfer):', error);
         alert('Ошибка сохранения перевода.');
+    }
+};
+
+// 🟢 Мгновенное сохранение Вывода
+const handleWithdrawalSave = async ({ mode, id, data, originalOperation }) => {
+    isWithdrawalPopupVisible.value = false;
+    operationToEdit.value = null;
+    try {
+        if (mode === 'create') {
+             if (data.cellIndex === undefined) {
+                 const dateKey = mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+             }
+             await mainStore.createEvent(data);
+        } else if (mode === 'edit') {
+            // При обновлении передаем isWithdrawal: true (data уже должно содержать это поле, но для надежности)
+            const updatedData = { ...data, isWithdrawal: true };
+            const oldDateKey = originalOperation?.dateKey;
+            
+            await mainStore.updateOperation(id, updatedData);
+            
+            if (oldDateKey && oldDateKey !== updatedData.dateKey) {
+                await mainStore.refreshDay(oldDateKey);
+            }
+        }
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+    } catch (error) {
+        console.error('Background Save Error (Withdrawal):', error);
+        alert('Ошибка сохранения вывода.');
     }
 };
 
@@ -302,18 +333,34 @@ const handleEditOperation = (operation) => {
 
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
-  } else {
+  } 
+  // 🟢 ПРОВЕРКА НА ВЫВОД
+  else if (operation.isWithdrawal) {
+    isWithdrawalPopupVisible.value = true;
+  }
+  else {
     openPopup(operation.type);
   }
 };
 
 const handleClosePopup = () => { isPopupVisible.value = false; operationToEdit.value = null; };
 const handleCloseTransferPopup = () => { isTransferPopupVisible.value = false; operationToEdit.value = null; };
+const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
 
 /* ===================== ДАННЫЕ ===================== */
 const debouncedFetchVisibleDays = debounce(() => { visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey)); }, 300); 
 const recalcProjectionForCurrentView = async () => { await mainStore.loadCalculationData(viewMode.value, today.value); };
-const handleOperationDelete = async (operation) => { if (!operation) return; await mainStore.deleteOperation(operation); await recalcProjectionForCurrentView(); visibleDays.value = [...visibleDays.value]; handleClosePopup(); };
+const handleOperationDelete = async (operation) => { 
+    if (!operation) return; 
+    await mainStore.deleteOperation(operation); 
+    await recalcProjectionForCurrentView(); 
+    visibleDays.value = [...visibleDays.value]; 
+    
+    // Закрываем все возможные попапы
+    handleClosePopup(); 
+    handleCloseTransferPopup();
+    handleCloseWithdrawalPopup();
+};
 
 /* ===================== SCROLL / RESIZE ===================== */
 const scrollInterval = ref(null);
@@ -389,6 +436,16 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
     <OperationPopup v-if="isPopupVisible" :type="operationType" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :operation-to-edit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleClosePopup" @operation-deleted="handleOperationDelete(operationToEdit)" @operation-moved="handleOperationMoved" @trigger-prepayment="handleSwitchToPrepayment" @save="handleOperationSave" />
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
+    
+    <!-- 🟢 ПОПАП ВЫВОДА -->
+    <WithdrawalPopup 
+       v-if="isWithdrawalPopupVisible" 
+       :initial-data="{ amount: 0 }" 
+       :operation-to-edit="operationToEdit"
+       @close="handleCloseWithdrawalPopup" 
+       @save="handleWithdrawalSave"
+    />
+
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />

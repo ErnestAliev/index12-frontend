@@ -3,17 +3,19 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.6 - CATEGORY WIDGET FILTER ---
- * * ВЕРСИЯ: 19.6 - Фильтрация виджета "Категории"
- * * ДАТА: 2025-11-22
+ * * --- МЕТКА ВЕРСИИ: v20.0 - WITHDRAWAL POPUP INTEGRATION ---
+ * * ВЕРСИЯ: 20.0 - Интеграция попапа вывода в хедер
+ * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) mergedCategoryBalances теперь фильтрует список, оставляя только visibleCategories.
- * Это исключает "Перевод" и "Предоплату" из виджета, синхронизируя его с редактором.
- * Теперь сортировка (order) применяется корректно к видимому набору данных.
+ * 1. (IMPORT) Добавлен импорт WithdrawalPopup.
+ * 2. (STATE) Добавлено состояние isWithdrawalPopupVisible.
+ * 3. (LOGIC) onCategoryAdd теперь открывает WithdrawalPopup для widgetKey === 'withdrawalList'.
+ * 4. (LOGIC) onCategoryEdit теперь открывает OperationListEditor в режиме 'withdrawal'.
+ * 5. (HANDLER) Добавлен handleWithdrawalSaved.
  */
 
-console.log('--- TheHeader.vue v19.6 (Category Widget Filter) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v20.0 (Withdrawal Popup Integration) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -25,7 +27,8 @@ import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
-import OperationPopup from './OperationPopup.vue'; 
+import OperationPopup from './OperationPopup.vue';
+import WithdrawalPopup from './WithdrawalPopup.vue'; // 🟢 IMPORT
 
 const mainStore = useMainStore();
 
@@ -34,12 +37,14 @@ const isTransferPopupVisible = ref(false);
 const isTransferEditorVisible = ref(false);
 
 const isOperationListEditorVisible = ref(false);
-const operationListEditorType = ref('income'); // 'income' | 'expense'
+const operationListEditorType = ref('income'); // 'income' | 'expense' | 'withdrawal'
 const operationListEditorTitle = ref('');
 const operationListEditorFilterMode = ref('default');
 
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
+
+const isWithdrawalPopupVisible = ref(false); // 🟢 STATE
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
@@ -74,7 +79,6 @@ const mergeBalances = (currentBalances, futureBalances) => {
         futureBalance: futureMap.get(item._id) ?? item.balance
       }));
   }
-  // Сортировка по order
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 
@@ -84,16 +88,9 @@ const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentC
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
 const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
 
-// 🟢 FIX v19.6: Фильтрация mergedCategoryBalances
-// Виджет "Категории" должен показывать ТОЛЬКО visibleCategories (без Переводов и Предоплат),
-// чтобы совпадать с редактором и корректно отображать сортировку.
 const mergedCategoryBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances);
-    
-    // Получаем ID видимых категорий для быстрой фильтрации
-    // (можно фильтровать и по именам, но через ID надежнее, так как visibleCategories уже содержит эту логику)
     const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
-    
     return allMerged.filter(c => visibleIds.has(c._id));
 });
 
@@ -112,6 +109,13 @@ const openAddPopup = (title, storeAction) => {
   saveHandler.value = storeAction;
   deleteHandler.value = null;
   isEntityPopupVisible.value = true;
+};
+
+const openEditPopup = (title, items, path) => {
+  editorTitle.value = title;
+  editorItems.value = JSON.parse(JSON.stringify(items));
+  editorSavePath.value = path;
+  isListEditorVisible.value = true;
 };
 
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
@@ -161,13 +165,6 @@ const editorTitle = ref('');
 const editorItems = ref([]);
 const editorSavePath = ref(null);
 
-const openEditPopup = (title, items, path) => {
-  editorTitle.value = title;
-  editorItems.value = JSON.parse(JSON.stringify(items));
-  editorSavePath.value = path;
-  isListEditorVisible.value = true;
-};
-
 const onEntityListSave = async (updatedItems) => {
   if (editorSavePath.value) {
     try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); }
@@ -189,6 +186,12 @@ const onCategoryAdd = (widgetKey, index) => {
         isOperationPopupVisible.value = true;
         return;
     }
+    // 🟢 НОВОЕ: Обработка виджета выводов
+    if (widgetKey === 'withdrawalList') {
+        isWithdrawalPopupVisible.value = true;
+        return;
+    }
+
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
         isTransferPopupVisible.value = true;
@@ -210,6 +213,14 @@ const onCategoryEdit = (widgetKey) => {
         isOperationListEditorVisible.value = true;
         return;
     }
+    // 🟢 НОВОЕ: Редактирование списка выводов
+    if (widgetKey === 'withdrawalList') {
+        operationListEditorTitle.value = 'Редактировать выводы';
+        operationListEditorType.value = 'withdrawal';
+        isOperationListEditorVisible.value = true;
+        return;
+    }
+
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
@@ -239,6 +250,22 @@ const handleTransferComplete = async (eventData) => {
 const handleOperationAdded = async (newOp) => {
     if (newOp?.dateKey) await mainStore.addOperation(newOp);
     isOperationPopupVisible.value = false;
+};
+
+// 🟢 HANDLER: Сохранение вывода из попапа
+const handleWithdrawalSaved = async ({ mode, id, data }) => {
+    isWithdrawalPopupVisible.value = false;
+    try {
+        if (mode === 'create') {
+             await mainStore.createEvent(data);
+        }
+        // Редактирование обрабатывается через OperationListEditor, 
+        // но на всякий случай, если вызовем отсюда:
+        // else if (mode === 'edit') { ... }
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка сохранения вывода');
+    }
 };
 </script>
 
@@ -341,8 +368,9 @@ const handleOperationAdded = async (newOp) => {
         :widgetIndex="index"
       />
 
+      <!-- 🟢 ОБНОВЛЕНО: Поддержка widgetKey === 'withdrawalList' -->
       <HeaderCategoryCard
-        v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
+        v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
         :widgetIndex="index"
@@ -396,6 +424,14 @@ const handleOperationAdded = async (newOp) => {
     :cellIndex="0"
     @close="isOperationPopupVisible = false"
     @operation-added="handleOperationAdded"
+  />
+
+  <!-- 🟢 ПОПАП ВЫВОДА -->
+  <WithdrawalPopup 
+     v-if="isWithdrawalPopupVisible" 
+     :initial-data="{ amount: 0 }" 
+     @close="isWithdrawalPopupVisible = false" 
+     @save="handleWithdrawalSaved"
   />
 </template>
 

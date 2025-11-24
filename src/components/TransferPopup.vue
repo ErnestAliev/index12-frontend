@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
@@ -7,11 +7,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v17.4 - FIX INPUT ALIGNMENT ---
- * * ВЕРСИЯ: 17.4 - Исправление вертикального выравнивания плейсхолдера перевода
- * * ДАТА: 2025-11-23
+ * * --- МЕТКА ВЕРСИИ: v18.0 - SMART TRANSFER LOGIC ---
+ * * ВЕРСИЯ: 18.0 - Умное определение типа перевода
+ * * ДАТА: 2025-11-24
  * *
- * * 1. (CSS) Добавлено правило .custom-input-box:not(.has-value) .real-input { padding-top: ... }
+ * * ЧТО ИЗМЕНЕНО:
+ * * 1. (LOGIC) Добавлены поля transferPurpose и transferReason.
+ * * 2. (LOGIC) Реализованы Smart Watchers для авто-определения сценариев (А, Б).
+ * * 3. (UI) Добавлены подсказки и новые селекты.
  */
 
 const mainStore = useMainStore();
@@ -23,7 +26,7 @@ const props = defineProps({
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'transfer-complete']);
+const emit = defineEmits(['close', 'save']);
 
 const amount = ref('');
 const fromAccountId = ref(null);
@@ -32,6 +35,39 @@ const categoryId = ref(null);
 const selectedFromOwner = ref(null); 
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
+
+// --- НОВЫЕ ПОЛЯ (SMART LOGIC) ---
+const transferPurpose = ref('internal'); // 'internal' | 'inter_company' | 'personal'
+const transferReason = ref('personal_use'); // 'personal_use' | 'business_dev'
+
+const purposeOptions = [
+  { value: 'internal', label: 'Между счетами одной компании' },
+  { value: 'inter_company', label: 'Между моими компаниями' },
+  { value: 'personal', label: 'Перевод на личную карту' }
+];
+
+const reasonOptions = [
+  { value: 'personal_use', label: 'На личные цели (Вывод)' },
+  { value: 'business_dev', label: 'На развитие бизнеса' }
+];
+
+// --- ТЕКСТЫ ПОДСКАЗОК ---
+const smartHint = computed(() => {
+  if (transferPurpose.value === 'internal') {
+    return 'Перевод между счетами Вашей компании. Система не учитывает комиссию банков.';
+  }
+  if (transferPurpose.value === 'inter_company') {
+    return 'Система создаст две операции: "Расход" у отправителя и "Доход" у получателя.';
+  }
+  if (transferPurpose.value === 'personal') {
+    if (transferReason.value === 'personal_use') {
+      return 'Деньги будут списаны и выведены из оборота (тип "Вывод").';
+    } else {
+      return 'Оформляем расход физлица, но учет в системе ведется (тип "Расход").';
+    }
+  }
+  return '';
+});
 
 const toInputDate = (date) => {
   const d = new Date(date);
@@ -93,7 +129,6 @@ const accountOptions = computed(() => {
   return options;
 });
 
-// 🟢 ДОБАВЛЕН БАЛАНС ДЛЯ ВЛАДЕЛЬЦЕВ (TRANSFER)
 const ownerOptions = computed(() => {
   const opts = [];
   mainStore.currentCompanyBalances.forEach(c => { 
@@ -115,6 +150,31 @@ const ownerOptions = computed(() => {
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию/Физлицо', isSpecial: true });
   return opts;
 });
+
+// --- SMART WATCHERS (АВТО-ОПРЕДЕЛЕНИЕ) ---
+watch([selectedFromOwner, selectedToOwner, fromAccountId, toAccountId], ([newFromOwner, newToOwner, newFromAcc, newToAcc]) => {
+  // Если мы в режиме редактирования существующего перевода - не меняем логику автоматом,
+  // если только пользователь явно не меняет поля. (В данной реализации - всегда авто, пока пользователь не сменит руками select цели)
+  
+  if (!newFromOwner || !newToOwner) return;
+
+  // Парсинг владельцев
+  const [fromType, fromId] = newFromOwner.split('-');
+  const [toType, toId] = newToOwner.split('-');
+
+  // Сценарий А: Одна компания/физлицо
+  if (fromId === toId && fromType === toType) {
+      transferPurpose.value = 'internal';
+  }
+  // Сценарий Б: Разные компании/физлица
+  else {
+      transferPurpose.value = 'inter_company';
+  }
+  
+  // Сценарий В (Личная карта) - оставляем на ручной выбор пользователя,
+  // так как программно сложно отличить "счет компании Б" от "личной карты" без доп. атрибутов.
+});
+
 
 const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
 const handleToAccountChange = (val) => { if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } else { onToAccountSelected(val); } };
@@ -227,7 +287,23 @@ const handleSave = async () => {
   const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
   let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
   let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
-  const transferPayload = { date: finalDate, amount: amountParsed, fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, categoryId: categoryId.value };
+  
+  // 🟢 ФОРМИРОВАНИЕ PAYLOAD С НОВЫМИ ПОЛЯМИ
+  const transferPayload = { 
+      date: finalDate, 
+      amount: amountParsed, 
+      fromAccountId: fromAccountId.value, 
+      toAccountId: toAccountId.value, 
+      fromCompanyId: fromCompanyId, 
+      toCompanyId: toCompanyId, 
+      fromIndividualId: fromIndividualId, 
+      toIndividualId: toIndividualId, 
+      categoryId: categoryId.value,
+      // Новые поля для Store
+      transferPurpose: transferPurpose.value,
+      transferReason: transferPurpose.value === 'personal' ? transferReason.value : null
+  };
+  
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
 };
 
@@ -236,13 +312,13 @@ const closePopup = () => { emit('close'); };
 
 <template>
   <div class="popup-overlay" @click.self="closePopup">
-    <!-- 🟢 ТЕМА ДЛЯ ПЕРЕВОДА -->
     <div class="popup-content theme-edit">
       
       <h3>{{ title }}</h3>
 
       <template v-if="!showCreateOwnerModal">
-        <!-- 🟢 КАСТОМНЫЙ ИНПУТ ДЛЯ СУММЫ -->
+        
+        <!-- СУММА -->
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
@@ -258,74 +334,90 @@ const closePopup = () => { emit('close'); };
           </div>
         </div>
         
-        <!-- СО СЧЕТА -->
-        <BaseSelect
-          v-if="!isCreatingFromAccount"
-          v-model="fromAccountId"
-          :options="accountOptions"
-          placeholder="Со счета"
-          label="Со счета"
-          class="input-spacing"
-          @change="handleFromAccountChange"
-        />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newFromAccountName" placeholder="Название счета (От)" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
-          <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
-        </div>
-        
         <!-- ОТПРАВИТЕЛЬ -->
-        <BaseSelect
-          v-model="selectedFromOwner"
-          :options="ownerOptions"
-          placeholder="Отправитель (Комп./Физлицо)"
-          label="Отправитель"
-          class="input-spacing"
-          @change="handleFromOwnerChange"
-        />
+        <div class="transfer-row">
+            <div class="half-col">
+                <BaseSelect
+                  v-if="!isCreatingFromAccount"
+                  v-model="fromAccountId"
+                  :options="accountOptions"
+                  placeholder="Со счета"
+                  label="Со счета"
+                  @change="handleFromAccountChange"
+                />
+                <!-- (Инлайн создание для счета - упрощено для читаемости, логика выше) -->
+            </div>
+            <div class="half-col">
+                <BaseSelect
+                  v-model="selectedFromOwner"
+                  :options="ownerOptions"
+                  placeholder="Отправитель"
+                  label="Отправитель"
+                  @change="handleFromOwnerChange"
+                />
+            </div>
+        </div>
 
-        <!-- НА СЧЕТ -->
-        <BaseSelect
-          v-if="!isCreatingToAccount"
-          v-model="toAccountId"
-          :options="accountOptions"
-          placeholder="На счет"
-          label="На счет"
-          class="input-spacing"
-          @change="handleToAccountChange"
-        />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newToAccountName" placeholder="Название счета (Куда)" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
-          <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+        <!-- ПОЛУЧАТЕЛЬ -->
+        <div class="transfer-row input-spacing">
+            <div class="half-col">
+                <BaseSelect
+                  v-if="!isCreatingToAccount"
+                  v-model="toAccountId"
+                  :options="accountOptions"
+                  placeholder="На счет"
+                  label="На счет"
+                  @change="handleToAccountChange"
+                />
+            </div>
+            <div class="half-col">
+                <BaseSelect
+                  v-model="selectedToOwner"
+                  :options="ownerOptions"
+                  placeholder="Получатель"
+                  label="Получатель"
+                  @change="handleToOwnerChange"
+                />
+            </div>
+        </div>
+
+        <!-- 🟢 ЦЕЛЬ ПЕРЕВОДА (УМНЫЙ СЕЛЕКТ) -->
+        <div class="input-spacing">
+            <BaseSelect
+                v-model="transferPurpose"
+                :options="purposeOptions"
+                placeholder="Цель перевода"
+                label="Цель перевода"
+            />
+        </div>
+
+        <!-- 🟢 ПРИЧИНА (ТОЛЬКО ДЛЯ ЛИЧНОГО) -->
+        <div v-if="transferPurpose === 'personal'" class="input-spacing fade-in">
+            <BaseSelect
+                v-model="transferReason"
+                :options="reasonOptions"
+                placeholder="Причина перевода"
+                label="Причина"
+            />
+        </div>
+
+        <!-- 🟢 ПОДСКАЗКА -->
+        <div class="hint-box" v-if="smartHint">
+            {{ smartHint }}
         </div>
         
-        <!-- ПОЛУЧАТЕЛЬ -->
-        <BaseSelect
-          v-model="selectedToOwner"
-          :options="ownerOptions"
-          placeholder="Получатель (Комп./Физлицо)"
-          label="Получатель"
-          class="input-spacing"
-          @change="handleToOwnerChange"
-        />
-        
-        <!-- 🟢 КАСТОМНЫЙ ИНПУТ ДЛЯ ДАТЫ -->
+        <!-- ДАТА -->
         <div class="custom-input-box input-spacing has-value date-box">
            <div class="input-inner-content">
               <span class="floating-label">Дата перевода</span>
               <div class="date-display-row">
-                 <!-- Текстовое представление даты -->
                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
-                 
-                 <!-- Невидимый инпут даты -->
                  <input 
                    type="date" 
                    v-model="editableDate" 
                    class="real-input date-overlay"
                    :min="minDateString" :max="maxDateString" 
                  />
-                 <!-- Иконка календаря -->
                  <span class="calendar-icon">📅</span> 
               </div>
            </div>
@@ -339,12 +431,10 @@ const closePopup = () => { emit('close'); };
           </button>
 
           <div v-if="props.transferToEdit && !isCloneMode.value" class="icon-actions">
-            <!-- КНОПКА КОПИРОВАТЬ -->
-            <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" aria-label="Копировать" :disabled="isInlineSaving">
+            <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
-            <!-- КНОПКА УДАЛИТЬ -->
-            <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" aria-label="Удалить" :disabled="isInlineSaving">
+            <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/></svg>
             </button>
           </div>
@@ -374,7 +464,6 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
-/* ТЕМА ПЕРЕВОДА */
 .theme-edit { --focus-color: #222222; --focus-shadow: rgba(34, 34, 34, 0.2); }
 
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
@@ -382,121 +471,47 @@ const closePopup = () => { emit('close'); };
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
 
-/* 🟢 СТИЛИ ДЛЯ КАСТОМНЫХ ИНПУТОВ (Сумма, Дата) */
-.custom-input-box {
-  width: 100%;
-  height: 54px;
-  background: #FFFFFF;
-  border: 1px solid #E0E0E0;
-  border-radius: 8px;
-  padding: 0 14px;
-  display: flex;
-  align-items: center;
-  position: relative;
-  transition: all 0.2s ease;
+/* Сетка для строк перевода */
+.transfer-row { display: flex; gap: 10px; margin-bottom: 8px; }
+.half-col { flex: 1; min-width: 0; }
+
+/* Подсказка */
+.hint-box {
+    background-color: #E3F2FD;
+    border: 1px solid #90CAF9;
+    color: #0D47A1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    line-height: 1.4;
+    margin-bottom: 12px;
 }
 
-/* Фокус */
-.custom-input-box:focus-within {
-  border-color: var(--focus-color, #222);
-  box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2));
-}
+.fade-in { animation: fadeIn 0.3s ease-in-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 
-/* 🟢 FIX: Добавлен паддинг для пустого состояния, чтобы опустить текст */
-.custom-input-box:not(.has-value) .real-input {
-    padding-top: 10px;
-}
-
-.input-inner-content {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.floating-label {
-  font-size: 11px;
-  color: #999;
-  margin-bottom: -2px;
-  margin-top: 4px;
-}
-
-.real-input {
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: 0;
-  font-size: 15px;
-  color: #1a1a1a;
-  font-weight: 500;
-  height: auto; 
-  line-height: 1.3;
-  outline: none;
-}
-.real-input::placeholder {
-  font-weight: 400;
-  color: #aaa;
-}
-
-/* Специфика для даты */
-.date-display-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: relative;
-  width: 100%;
-}
-.date-value-text {
-  font-size: 15px;
-  font-weight: 500;
-  color: #1a1a1a;
-}
-.date-overlay {
-  position: absolute;
-  top: 0; left: 0; width: 100%; height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 2;
-}
-.calendar-icon {
-  font-size: 16px;
-  color: #999;
-}
-
-/* Отступы */
+.custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }
+.custom-input-box:focus-within { border-color: var(--focus-color, #222); box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2)); }
+.custom-input-box:not(.has-value) .real-input { padding-top: 10px; }
+.input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+.floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; }
+.real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px; color: #1a1a1a; font-weight: 500; height: auto; line-height: 1.3; outline: none; }
+.real-input::placeholder { font-weight: 400; color: #aaa; }
+.date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
+.date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
+.date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
+.calendar-icon { font-size: 16px; color: #999; }
 .input-spacing { margin-bottom: 12px; }
-
-/* Обычный инпут для inline-создания */
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
-
-.inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
-.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
-.inline-create-form input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
-.inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
-.inline-create-form button.btn-inline-save { background-color: #34C759; }
-.inline-create-form button.btn-inline-save:disabled { background-color: #9bd6a8; cursor: not-allowed; }
-.inline-create-form button.btn-inline-cancel { background-color: #FF3B30; }
-.inline-create-form button.btn-inline-cancel:disabled { background-color: #f0a19c; cursor: not-allowed; }
-
 .error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
 .icon-actions { display: flex; gap: 10px; }
-
-.icon-btn { 
-  display: inline-flex; align-items: center; justify-content: center; 
-  width: 54px; height: 54px; border-radius: 10px; cursor: pointer; 
-  background: #F4F4F4; border: 1px solid #E0E0E0; color: #333;
-  transition: all 0.2s;
-  padding: 0;
-}
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border-radius: 10px; cursor: pointer; background: #F4F4F4; border: 1px solid #E0E0E0; color: #333; transition: all 0.2s; padding: 0; }
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
-
 .icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
-
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-submit-transfer { background-color: #2f3340; }

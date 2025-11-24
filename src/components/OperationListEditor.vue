@@ -3,10 +3,11 @@ import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
+import WithdrawalPopup from './WithdrawalPopup.vue'; // 🟢 Подключаем попап вывода
 
 const props = defineProps({
   title: { type: String, default: 'Редактировать операции' },
-  type: { type: String, required: true }, // 'income' | 'expense'
+  type: { type: String, required: true }, // 'income' | 'expense' | 'withdrawal'
   filterMode: { type: String, default: 'default' } // 'default' | 'prepayment_only'
 });
 
@@ -27,6 +28,7 @@ const filters = ref({
 });
 
 const isCreatePopupVisible = ref(false);
+const isWithdrawalPopupVisible = ref(false); // 🟢
 const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
 const itemToDelete = ref(null);
@@ -76,12 +78,22 @@ const isSystemPrepayment = (item) => {
            (op.categoryId && op.categoryId.isPrepayment);
 };
 
+// 🟢 Флаг режима выводов
+const isWithdrawalMode = computed(() => props.type === 'withdrawal');
+
 const loadOperations = () => {
   const allOps = mainStore.allOperationsFlat;
   
   const targetOps = allOps.filter(op => {
+    // 🟢 Логика фильтрации для выводов
+    if (isWithdrawalMode.value) {
+        return op.isWithdrawal;
+    }
+    
+    // Старая логика для доходов/расходов
     if (op.type !== props.type) return false;
     if (op.isTransfer) return false;
+    if (op.isWithdrawal) return false; // Исключаем выводы из обычных расходов
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     if (props.filterMode === 'prepayment_only') {
         return isSystemPrepayment(op);
@@ -104,6 +116,7 @@ const loadOperations = () => {
         contractorId: op.contractorId?._id || op.contractorId,
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
+        destination: op.destination || '', // 🟢 Для выводов
         isDeleted: false
       };
     });
@@ -124,18 +137,23 @@ const filteredItems = computed(() => {
     }
     if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
     if (filters.value.account && item.accountId !== filters.value.account) return false;
-    if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
-    if (filters.value.category) {
-        const selectedCatId = filters.value.category;
-        const prepayIds = mainStore.getPrepaymentCategoryIds;
-        const isSelectedCategoryPrepayment = prepayIds.includes(selectedCatId);
-        if (isSelectedCategoryPrepayment) {
-            if (!isSystemPrepayment(item)) return false;
-        } else {
-            if (item.categoryId !== selectedCatId) return false;
+    
+    // 🟢 Фильтры, которые не нужны для выводов
+    if (!isWithdrawalMode.value) {
+        if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
+        if (filters.value.category) {
+            const selectedCatId = filters.value.category;
+            const prepayIds = mainStore.getPrepaymentCategoryIds;
+            const isSelectedCategoryPrepayment = prepayIds.includes(selectedCatId);
+            if (isSelectedCategoryPrepayment) {
+                if (!isSystemPrepayment(item)) return false;
+            } else {
+                if (item.categoryId !== selectedCatId) return false;
+            }
         }
+        if (filters.value.project && item.projectId !== filters.value.project) return false;
     }
-    if (filters.value.project && item.projectId !== filters.value.project) return false;
+    
     return true;
   });
 });
@@ -144,12 +162,12 @@ const isFilterActive = computed(() => Object.values(filters.value).some(val => v
 
 const totalSum = computed(() => {
     const rawSum = localItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
-    return props.type === 'expense' ? -rawSum : rawSum;
+    return (props.type === 'expense' || isWithdrawalMode.value) ? -rawSum : rawSum;
 });
 
 const filteredSum = computed(() => {
     const rawSum = filteredItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
-    return props.type === 'expense' ? -rawSum : rawSum;
+    return (props.type === 'expense' || isWithdrawalMode.value) ? -rawSum : rawSum;
 });
 
 const formatTotal = (val) => {
@@ -162,6 +180,7 @@ const formatTotal = (val) => {
 
 const getTotalClass = (val) => {
     if (props.filterMode === 'prepayment_only') return 'total-prepayment';
+    if (isWithdrawalMode.value) return 'total-withdrawal';
     if (val > 0) return 'total-income';
     if (val < 0) return 'total-expense';
     return '';
@@ -169,15 +188,40 @@ const getTotalClass = (val) => {
 
 const getInputClass = () => {
     if (props.filterMode === 'prepayment_only') return 'is-prepayment';
+    if (isWithdrawalMode.value) return 'is-withdrawal';
     return props.type === 'income' ? 'is-income' : 'is-expense';
 };
 
-const openCreatePopup = () => { isCreatePopupVisible.value = true; };
+const openCreatePopup = () => { 
+    if (isWithdrawalMode.value) {
+        isWithdrawalPopupVisible.value = true;
+    } else {
+        isCreatePopupVisible.value = true; 
+    }
+};
+
 const handleOperationAdded = async (newOp) => {
   isCreatePopupVisible.value = false;
   await mainStore.fetchAllEntities(); 
   if (newOp && newOp.dateKey) await mainStore.refreshDay(newOp.dateKey);
   loadOperations(); 
+};
+
+const handleWithdrawalSaved = async ({ mode, id, data }) => {
+    // Обработка сохранения из WithdrawalPopup
+    isWithdrawalPopupVisible.value = false;
+    
+    if (mode === 'create') {
+        if (data.cellIndex === undefined) {
+             const dateKey = mainStore._getDateKey(new Date(data.date));
+             data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+        }
+        await mainStore.createEvent(data);
+    } else {
+        // Логика редактирования (если понадобится)
+    }
+    await mainStore.fetchAllEntities();
+    loadOperations();
 };
 
 const onAmountInput = (item) => {
@@ -237,10 +281,12 @@ const handleSave = async () => {
         (original.contractorId?._id || original.contractorId) !== item.contractorId ||
         (original.categoryId?._id || original.categoryId) !== item.categoryId ||
         (original.projectId?._id || original.projectId) !== item.projectId ||
-        getOwnerId(original.companyId, original.individualId) !== item.ownerId;
+        getOwnerId(original.companyId, original.individualId) !== item.ownerId ||
+        (item.destination !== (original.destination || '')); // 🟢 Проверка destination
 
       if (isChanged) {
-        const signedAmount = props.type === 'income' ? item.amount : -Math.abs(item.amount);
+        const signedAmount = (props.type === 'income' && !isWithdrawalMode.value) ? item.amount : -Math.abs(item.amount);
+        
         updates.push(mainStore.updateOperation(item._id, {
           date: newDateObj,
           amount: signedAmount,
@@ -250,7 +296,9 @@ const handleSave = async () => {
           contractorId: item.contractorId,
           categoryId: item.categoryId,
           projectId: item.projectId,
-          type: props.type 
+          destination: item.destination, // 🟢 Сохраняем destination
+          type: isWithdrawalMode.value ? 'expense' : props.type, // Для вывода тип в базе 'expense'
+          isWithdrawal: isWithdrawalMode.value ? true : undefined
         }));
       }
     }
@@ -293,10 +341,14 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       <div class="create-section">
         <button 
            class="btn-add-new" 
-           :class="type === 'income' ? 'btn-income' : 'btn-expense'"
+           :class="{
+             'btn-income': type === 'income' && !isWithdrawalMode,
+             'btn-expense': type === 'expense',
+             'btn-withdrawal': isWithdrawalMode
+           }"
            @click="openCreatePopup"
         >
-          + Создать {{ type === 'income' ? 'Доход' : 'Расход' }}
+          + Создать {{ isWithdrawalMode ? 'Вывод' : (type === 'income' ? 'Доход' : 'Расход') }}
         </button>
       </div>
 
@@ -335,24 +387,34 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <div class="filter-col col-amount">
            <input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма..." />
         </div>
-        <div class="filter-col col-contr">
-           <select v-model="filters.contractor" class="filter-input filter-select">
-              <option value="">Все</option>
-              <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
-           </select>
-        </div>
-        <div class="filter-col col-cat">
-           <select v-model="filters.category" class="filter-input filter-select">
-              <option value="">Все</option>
-              <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
-           </select>
-        </div>
-        <div class="filter-col col-proj">
-           <select v-model="filters.project" class="filter-input filter-select">
-              <option value="">Все</option>
-              <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
-           </select>
-        </div>
+        
+        <!-- 🟢 УСЛОВНЫЕ ФИЛЬТРЫ ДЛЯ ОБЫЧНЫХ ОПЕРАЦИЙ -->
+        <template v-if="!isWithdrawalMode">
+            <div class="filter-col col-contr">
+               <select v-model="filters.contractor" class="filter-input filter-select">
+                  <option value="">Все</option>
+                  <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+               </select>
+            </div>
+            <div class="filter-col col-cat">
+               <select v-model="filters.category" class="filter-input filter-select">
+                  <option value="">Все</option>
+                  <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
+               </select>
+            </div>
+            <div class="filter-col col-proj">
+               <select v-model="filters.project" class="filter-input filter-select">
+                  <option value="">Все</option>
+                  <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
+               </select>
+            </div>
+        </template>
+        
+        <!-- 🟢 ПУСТОЕ МЕСТО ДЛЯ ВЫРАВНИВАНИЯ ВЫВОДОВ -->
+        <template v-else>
+             <div class="filter-col col-destination-filter"></div>
+        </template>
+
         <div class="filter-col col-trash"></div>
       </div>
       
@@ -361,9 +423,17 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <span class="col-owner">Владелец</span>
         <span class="col-acc">Счет</span>
         <span class="col-amount">Сумма</span>
-        <span class="col-contr">Контрагент</span>
-        <span class="col-cat">Категория</span>
-        <span class="col-proj">Проект</span>
+        
+        <!-- 🟢 ЗАГОЛОВКИ -->
+        <template v-if="!isWithdrawalMode">
+            <span class="col-contr">Контрагент</span>
+            <span class="col-cat">Категория</span>
+            <span class="col-proj">Проект</span>
+        </template>
+        <template v-else>
+            <span class="col-destination">Назначение / Куда</span>
+        </template>
+
         <span class="col-trash"></span>
       </div>
       
@@ -390,31 +460,42 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
             <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="getInputClass()" />
           </div>
           
-          <div class="col-contr">
-             <select v-model="item.contractorId" @change="onContractorChange(item)" class="edit-input select-input">
-                <option :value="null">-</option>
-                <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
-             </select>
-          </div>
-          
-          <div class="col-cat">
-             <div v-if="isSystemPrepayment(item) || props.filterMode === 'prepayment_only'" class="system-tag-wrapper">
-                <span class="system-tag" :class="{ 'tag-orange': props.filterMode === 'prepayment_only' }">
-                    Предоплата
-                </span>
-             </div>
-             <select v-else v-model="item.categoryId" class="edit-input select-input">
-                <option :value="null">-</option>
-                <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
-             </select>
-          </div>
+          <!-- 🟢 ОБЫЧНЫЕ ПОЛЯ -->
+          <template v-if="!isWithdrawalMode">
+              <div class="col-contr">
+                 <select v-model="item.contractorId" @change="onContractorChange(item)" class="edit-input select-input">
+                    <option :value="null">-</option>
+                    <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+                 </select>
+              </div>
+              
+              <div class="col-cat">
+                 <div v-if="isSystemPrepayment(item) || props.filterMode === 'prepayment_only'" class="system-tag-wrapper">
+                    <span class="system-tag" :class="{ 'tag-orange': props.filterMode === 'prepayment_only' }">
+                        Предоплата
+                    </span>
+                 </div>
+                 <select v-else v-model="item.categoryId" class="edit-input select-input">
+                    <option :value="null">-</option>
+                    <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
+                 </select>
+              </div>
 
-          <div class="col-proj">
-             <select v-model="item.projectId" class="edit-input select-input">
-                <option :value="null">-</option>
-                <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
-             </select>
-          </div>
+              <div class="col-proj">
+                 <select v-model="item.projectId" class="edit-input select-input">
+                    <option :value="null">-</option>
+                    <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
+                 </select>
+              </div>
+          </template>
+
+          <!-- 🟢 ПОЛЕ ВЫВОДА -->
+          <template v-else>
+              <div class="col-destination">
+                  <input type="text" v-model="item.destination" class="edit-input" placeholder="Куда (напр. Карта)" />
+              </div>
+          </template>
+
           <div class="col-trash">
             <button class="delete-btn" @click="askDelete(item)" title="Удалить">
                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -430,6 +511,15 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
     </div>
 
     <OperationPopup v-if="isCreatePopupVisible" :type="type" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @operation-added="handleOperationAdded" />
+    
+    <!-- 🟢 Попап создания вывода -->
+    <WithdrawalPopup 
+       v-if="isWithdrawalPopupVisible" 
+       :initial-data="{ amount: 0 }" 
+       @close="isWithdrawalPopupVisible = false" 
+       @save="handleWithdrawalSaved"
+    />
+
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         <div v-if="isDeleting" class="deleting-state"><h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите.</p><div class="progress-container"><div class="progress-bar"></div></div></div>
@@ -465,25 +555,34 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .btn-expense { background-color: var(--color-danger); }
 .btn-expense:hover { background-color: #d93025; }
 
+/* 🟢 СТИЛЬ КНОПКИ ВЫВОДА */
+.btn-withdrawal { background-color: #7B1FA2; }
+.btn-withdrawal:hover { background-color: #6A1B9A; }
 
 .totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 .total-item { font-size: 16px; color: #333; }
 .total-label { margin-right: 8px; color: #666; }
 .total-value { font-weight: 700; }
 
-/* 🟢 ИЗМЕНЕНИЕ: Черный цвет и увеличенный шрифт */
 .total-income { color: #1a1a1a; font-size: 1.3em; }
-
 .total-expense { color: var(--color-danger); }
 .total-prepayment { color: #FF9D00; }
+/* 🟢 СТИЛЬ СУММЫ ВЫВОДА */
+.total-withdrawal { color: #7B1FA2; }
 
 .filters-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; margin-bottom: 8px; }
 .filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
 .filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; padding-right: 20px; }
 .filter-input:focus { outline: none; border-color: var(--color-primary); }
+
 .grid-header, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; }
 .grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
 .grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
+
+/* 🟢 ШИРИНА КОЛОНКИ НАЗНАЧЕНИЯ (Объединяет 3 обычные колонки) */
+.col-destination { grid-column: span 3; }
+.col-destination-filter { grid-column: span 3; }
+
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 .edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 8px; font-size: 0.85em; color: #333; box-sizing: border-box; margin: 0; display: block; }
@@ -494,6 +593,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .is-income { color: var(--color-primary); }
 .is-expense { color: var(--color-danger); }
 .is-prepayment { color: #FF9D00 !important; }
+.is-withdrawal { color: #7B1FA2 !important; }
 
 .delete-btn { width: 40px; height: 40px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 18px; height: 18px; stroke: #999; }
