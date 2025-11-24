@@ -19,16 +19,16 @@ import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v34.2 - UNIFORM ROW HEIGHT ---
- * * ВЕРСИЯ: 34.2 - Единая высота ряда (130px)
+ * * --- МЕТКА ВЕРСИИ: v37.1 - HEIGHT FIX ---
+ * * ВЕРСИЯ: 37.1 - Добавлен запас высоты +15px для отображения границ
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Высота в expanded режиме теперь rows * 130 (вместо 135).
- * Это гарантирует, что высота карточки будет идентична single-row режиму (который тоже 130px).
+ * 1. (LOGIC) Расчет высоты: rows * 135 + 15.
+ * 2. (LOGIC) Базовая высота: 135px.
  */
 
-console.log('--- HomeView.vue v34.2 (Uniform Row Height) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v37.1 (Height Fix) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -294,24 +294,19 @@ const headerResizerRef = ref(null);
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
-const HEADER_MIN_H = 130; 
-// 🟢 Увеличиваем макс высоту (для 3 рядов это ~400px)
+const HEADER_MIN_H = 132; 
 const HEADER_MAX_H_RATIO = 0.8; 
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
 
-// 🟢 WATCHER: Динамический расчет высоты при расширении
+// 🟢 WATCHER: Увеличенная высота для избежания обрезания (135px + 15px запас)
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
-        // Считаем количество рядов
         const totalWidgets = mainStore.allWidgets.length;
         const rows = Math.ceil(totalWidgets / 6);
-        
-        // 🟢 FIX: Используем 130px (как в HEADER_MIN_H) для точного совпадения
-        headerHeightPx.value = rows * 130; 
+        headerHeightPx.value = rows * 135 + 15; 
     } else {
-        // Возвращаем стандарт (1 ряд)
-        headerHeightPx.value = 130;
+        headerHeightPx.value = 135;
     }
     
     applyHeaderHeight(headerHeightPx.value);

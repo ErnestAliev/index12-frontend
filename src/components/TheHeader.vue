@@ -1,20 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'; 
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
 import draggable from 'vuedraggable';
-
-/**
- * * --- МЕТКА ВЕРСИИ: v37.0 - EQUAL ROW HEIGHT ---
- * * ВЕРСИЯ: 37.0 - Равная высота рядов в Grid
- * * ДАТА: 2025-11-24
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) .header-dashboard.expanded: grid-auto-rows: minmax(130px, 1fr).
- * Это гарантирует, что ни один ряд не будет уже 130px, даже если контента мало.
- * Если контейнер выше, ряды растянутся равномерно (1fr).
- */
-
-console.log('--- TheHeader.vue v37.0 (Equal Row Height) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -29,27 +16,67 @@ import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v42.0 - RESIZE & SCROLL FINAL FIX ---
+ * * ВЕРСИЯ: 42.0 - Корректный скролл в свернутом режиме
+ * * ДАТА: 2025-11-25
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (CSS) .dashboard-card-wrapper: min-height: 0;
+ * Это КРИТИЧЕСКИ важно для Flex/Grid детей, чтобы они не распирали родителя
+ * и позволяли внутреннему скроллу работать.
+ * 2. (CSS) .header-dashboard: overflow: hidden (сохраняем).
+ * 3. (CSS) Карточкам передается высота 100%.
+ */
+
+console.log('--- TheHeader.vue v42.0 (Resize & Scroll Final Fix) ЗАГРУЖЕН ---');
+
 const mainStore = useMainStore();
 
-// Управление списком виджетов для драг-н-дропа
+// --- ГЛОБАЛЬНОЕ МЕНЮ ВИДЖЕТОВ ---
+const activeDropdown = ref(null);
+const searchQuery = ref('');
+
+const filteredWidgets = computed(() => {
+  if (!searchQuery.value) return mainStore.allWidgets;
+  const query = searchQuery.value.toLowerCase();
+  return mainStore.allWidgets.filter(widget => widget.name.toLowerCase().includes(query));
+});
+
+const handleOpenMenu = (payload) => {
+  const rect = payload.event.currentTarget.getBoundingClientRect();
+  activeDropdown.value = {
+    index: payload.widgetIndex,
+    key: payload.widgetKey,
+    top: rect.bottom + 5,
+    left: rect.left,
+    width: 220
+  };
+  searchQuery.value = '';
+};
+
+const handleMenuSelect = (newWidgetKey) => {
+  if (activeDropdown.value) {
+    mainStore.replaceWidget(activeDropdown.value.index, newWidgetKey);
+    activeDropdown.value = null;
+  }
+};
+
+const closeDropdown = () => {
+  activeDropdown.value = null;
+};
+
 const localWidgets = computed({
   get: () => {
     if (mainStore.isHeaderExpanded) {
       const layoutSet = new Set(mainStore.dashboardLayout);
       const allKeys = mainStore.allWidgets.map(w => w.key);
-      
       const ordered = [...mainStore.dashboardLayout];
-      
-      allKeys.forEach(k => {
-          if (!layoutSet.has(k)) ordered.push(k);
-      });
-
+      allKeys.forEach(k => { if (!layoutSet.has(k)) ordered.push(k); });
       const rowSize = 6;
       const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
       const totalSlots = rows * rowSize;
-      while (ordered.length < totalSlots) {
-        ordered.push(`placeholder_${ordered.length}`);
-      }
+      while (ordered.length < totalSlots) { ordered.push(`placeholder_${ordered.length}`); }
       return ordered;
     }
     return mainStore.dashboardLayout;
@@ -60,7 +87,7 @@ const localWidgets = computed({
   }
 });
 
-// Состояния попапов
+// ... states ...
 const isTransferPopupVisible = ref(false);
 const isTransferEditorVisible = ref(false);
 const isOperationListEditorVisible = ref(false);
@@ -70,7 +97,6 @@ const operationListEditorFilterMode = ref('default');
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
 const isWithdrawalPopupVisible = ref(false);
-
 const isEntityPopupVisible = ref(false);
 const popupTitle = ref('');
 const popupInitialValue = ref(''); 
@@ -82,7 +108,7 @@ const editorTitle = ref('');
 const editorItems = ref([]);
 const editorSavePath = ref(null);
 
-/* ======================= Адаптивность Дат ======================= */
+// ... adaptive utils ...
 const windowWidth = ref(window.innerWidth);
 const updateWidth = () => { windowWidth.value = window.innerWidth; };
 onMounted(() => window.addEventListener('resize', updateWidth));
@@ -90,108 +116,46 @@ onUnmounted(() => window.removeEventListener('resize', updateWidth));
 const isTablet = computed(() => windowWidth.value < 1400);
 const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-const todayStr = computed(() => {
-  const d = new Date();
-  return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d);
-});
+const todayStr = computed(() => { const d = new Date(); return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d); });
 const futureUntilStr = computed(() => {
   const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-  if (d && !isNaN(d.getTime())) {
-    return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d);
-  }
-  return todayStr.value;
+  return (d && !isNaN(d.getTime())) ? (isTablet.value ? ruSuperShort.format(d) : ruShort.format(d)) : todayStr.value;
 });
 
-/* ======================= Данные ======================= */
+// ... computed balances ...
 const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
 const loggedFutureTotal = computed(() => mainStore.futureTotalBalance);
-
 const mergeBalances = (currentBalances, futureBalances) => {
   let result = currentBalances || [];
   if (futureBalances) {
       const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
-      result = currentBalances.map(item => ({
-        ...item,
-        futureBalance: futureMap.get(item._id) ?? item.balance
-      }));
+      result = currentBalances.map(item => ({ ...item, futureBalance: futureMap.get(item._id) ?? item.balance }));
   }
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
-
 const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances));
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
 const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
 const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
-
 const mergedCategoryBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances);
     const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
     return allMerged.filter(c => visibleIds.has(c._id));
 });
 
-const openAddPopup = (title, storeAction) => {
-  popupTitle.value = title;
-  popupInitialValue.value = '';
-  showDeleteInPopup.value = false;
-  saveHandler.value = storeAction;
-  deleteHandler.value = null;
-  isEntityPopupVisible.value = true;
-};
-
-const openEditPopup = (title, items, path) => {
-  editorTitle.value = title;
-  editorItems.value = JSON.parse(JSON.stringify(items));
-  editorSavePath.value = path;
-  isListEditorVisible.value = true;
-};
-
+// ... popup handlers ...
+const openAddPopup = (title, storeAction) => { popupTitle.value = title; popupInitialValue.value = ''; showDeleteInPopup.value = false; saveHandler.value = storeAction; deleteHandler.value = null; isEntityPopupVisible.value = true; };
+const openEditPopup = (title, items, path) => { editorTitle.value = title; editorItems.value = JSON.parse(JSON.stringify(items)); editorSavePath.value = path; isListEditorVisible.value = true; };
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
-  popupTitle.value = title;
-  popupInitialValue.value = entity.name;
-  showDeleteInPopup.value = canDelete; 
-  saveHandler.value = async (newName) => {
-      if (entityType) {
-          const updatedItem = { ...entity, name: newName };
-          await mainStore.batchUpdateEntities(entityType, [updatedItem]);
-      }
-  };
-  if (canDelete && entityType) {
-      deleteHandler.value = async ({ deleteOperations, done }) => {
-          try {
-             await mainStore.deleteEntity(entityType, entity._id, deleteOperations);
-             isEntityPopupVisible.value = false;
-          } catch (e) {
-             alert('Ошибка удаления: ' + e.message);
-             if(done) done();
-          }
-      };
-  } else {
-      deleteHandler.value = null;
-  }
+  popupTitle.value = title; popupInitialValue.value = entity.name; showDeleteInPopup.value = canDelete; 
+  saveHandler.value = async (newName) => { if (entityType) { const updatedItem = { ...entity, name: newName }; await mainStore.batchUpdateEntities(entityType, [updatedItem]); } };
+  if (canDelete && entityType) { deleteHandler.value = async ({ deleteOperations, done }) => { try { await mainStore.deleteEntity(entityType, entity._id, deleteOperations); isEntityPopupVisible.value = false; } catch (e) { alert('Ошибка удаления: ' + e.message); if(done) done(); } }; } else { deleteHandler.value = null; }
   isEntityPopupVisible.value = true;
 };
-
-const onEntitySave = async (name) => {
-  if (saveHandler.value) {
-    try { await saveHandler.value(name); } catch (e) { console.error(e); }
-  }
-  isEntityPopupVisible.value = false;
-};
-
-const onEntityDelete = (payload) => {
-    if (deleteHandler.value) {
-        deleteHandler.value(payload);
-    }
-};
-
-const onEntityListSave = async (updatedItems) => {
-  if (editorSavePath.value) {
-    try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); }
-  }
-  isListEditorVisible.value = false;
-};
-
+const onEntitySave = async (name) => { if (saveHandler.value) { try { await saveHandler.value(name); } catch (e) { console.error(e); } } isEntityPopupVisible.value = false; };
+const onEntityDelete = (payload) => { if (deleteHandler.value) deleteHandler.value(payload); };
+const onEntityListSave = async (updatedItems) => { if (editorSavePath.value) { try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); } } isListEditorVisible.value = false; };
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 const onCategoryAdd = (widgetKey, index) => {
@@ -201,7 +165,6 @@ const onCategoryAdd = (widgetKey, index) => {
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') { isTransferPopupVisible.value = true; }
 };
-
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
@@ -211,37 +174,30 @@ const onCategoryEdit = (widgetKey) => {
     const category = mainStore.getCategoryById(catId);
     if (category) {
         const lowerName = category.name.toLowerCase();
-        const isTransfer = (lowerName === 'перевод' || lowerName === 'transfer');
-        if (isTransfer) isTransferEditorVisible.value = true;
+        if (lowerName === 'перевод' || lowerName === 'transfer') isTransferEditorVisible.value = true;
         else openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
     }
 };
-
-const onLiabilitiesEdit = () => {
-    operationListEditorTitle.value = 'Редактировать операции (Предоплаты)';
-    operationListEditorType.value = 'income';
-    operationListEditorFilterMode.value = 'prepayment_only'; 
-    isOperationListEditorVisible.value = true;
-};
-
-const handleTransferComplete = async (eventData) => {
-    if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
-    isTransferPopupVisible.value = false;
-};
-
-const handleOperationAdded = async (newOp) => {
-    if (newOp?.dateKey) await mainStore.addOperation(newOp);
-    isOperationPopupVisible.value = false;
-};
-
-const handleWithdrawalSaved = async ({ mode, id, data }) => {
-    isWithdrawalPopupVisible.value = false;
-    try { if (mode === 'create') await mainStore.createEvent(data); } catch (e) { console.error(e); alert('Ошибка сохранения вывода'); }
-};
+const onLiabilitiesEdit = () => { operationListEditorTitle.value = 'Редактировать операции (Предоплаты)'; operationListEditorType.value = 'income'; operationListEditorFilterMode.value = 'prepayment_only'; isOperationListEditorVisible.value = true; };
+const handleTransferComplete = async (eventData) => { if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey); isTransferPopupVisible.value = false; };
+const handleOperationAdded = async (newOp) => { if (newOp?.dateKey) await mainStore.addOperation(newOp); isOperationPopupVisible.value = false; };
+const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupVisible.value = false; try { if (mode === 'create') await mainStore.createEvent(data); } catch (e) { console.error(e); alert('Ошибка сохранения вывода'); } };
 </script>
 
 <template>
-  <!-- DRAGGABLE WRAPPER -->
+  <!-- ГЛОБАЛЬНОЕ МЕНЮ -->
+  <div v-if="activeDropdown" class="global-menu-overlay" @click="closeDropdown">
+    <div class="global-widget-dropdown" :style="{ top: activeDropdown.top + 'px', left: activeDropdown.left + 'px', width: activeDropdown.width + 'px' }" @click.stop>
+      <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." />
+      <ul>
+        <li v-for="widget in filteredWidgets" :key="widget.key" :class="{ 'active': widget.key === activeDropdown.key, 'disabled': mainStore.dashboardLayout.includes(widget.key) && widget.key !== activeDropdown.key }" @click="handleMenuSelect(widget.key)">
+          {{ widget.name }}
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- DRAGGABLE -->
   <draggable 
     v-model="localWidgets" 
     item-key="key"
@@ -252,14 +208,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
     :animation="200"
   >
     <template #item="{ element: widgetKey, index }">
-      
       <div class="dashboard-card-wrapper">
-        
-        <div 
-          v-if="widgetKey.startsWith('placeholder_')" 
-          class="dashboard-card placeholder-card"
-        >
-        </div>
+        <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
@@ -269,6 +219,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
           :subtitleDate="`до ${todayStr}`"
           :widgetKey="widgetKey"
           :widgetIndex="index"
+          @open-menu="handleOpenMenu"
         />
         
         <HeaderLiabilitiesCard
@@ -281,69 +232,63 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
           :widgetKey="widgetKey"
           :widgetIndex="index"
           @edit="onLiabilitiesEdit"
+          @open-menu="handleOpenMenu"
         />
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
           title="Мои счета"
-          :items="loggedAccountBalances" 
-          emptyText="...счетов нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
+          :items="loggedAccountBalances" emptyText="...счетов нет..."
+          :widgetKey="widgetKey" :widgetIndex="index"
           @add="openAddPopup('Новый счет', mainStore.addAccount)"
           @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
+          @open-menu="handleOpenMenu"
         />
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'companies'"
           title="Мои компании"
           :items="mergedCompanyBalances" emptyText="...компаний нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
+          :widgetKey="widgetKey" :widgetIndex="index"
           @add="openAddPopup('Новая компания', mainStore.addCompany)"
           @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
+          @open-menu="handleOpenMenu"
         />
-
         <HeaderBalanceCard
           v-else-if="widgetKey === 'contractors'"
           title="Мои контрагенты"
           :items="mergedContractorBalances" emptyText="...контрагентов нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
+          :widgetKey="widgetKey" :widgetIndex="index"
           @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
           @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
+          @open-menu="handleOpenMenu"
         />
-
         <HeaderBalanceCard
           v-else-if="widgetKey === 'projects'"
           title="Мои проекты"
           :items="mergedProjectBalances" emptyText="...проектов нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
+          :widgetKey="widgetKey" :widgetIndex="index"
           @add="openAddPopup('Новый проект', mainStore.addProject)"
           @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
+          @open-menu="handleOpenMenu"
         />
-
         <HeaderBalanceCard
           v-else-if="widgetKey === 'individuals'"
           title="Мои Физлица"
-          :items="mergedIndividualBalances" 
-          emptyText="...физлиц нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
+          :items="mergedIndividualBalances" emptyText="...физлиц нет..."
+          :widgetKey="widgetKey" :widgetIndex="index"
           @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
           @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
+          @open-menu="handleOpenMenu"
         />
-        
         <HeaderBalanceCard
           v-else-if="widgetKey === 'categories'"
           title="Категории"
-          :items="mergedCategoryBalances" 
-          emptyText="...категорий нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
+          :items="mergedCategoryBalances" emptyText="...категорий нет..."
+          :widgetKey="widgetKey" :widgetIndex="index"
           @add="openAddPopup('Новая категория', mainStore.addCategory)"
           @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
+          @open-menu="handleOpenMenu"
         />
 
         <HeaderTotalCard
@@ -354,6 +299,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
           :subtitleDate="`до ${futureUntilStr}`"
           :widgetKey="widgetKey"
           :widgetIndex="index"
+          @open-menu="handleOpenMenu"
         />
 
         <HeaderCategoryCard
@@ -363,162 +309,113 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
           :widgetIndex="index"
           @add="onCategoryAdd(widgetKey, index)"
           @edit="onCategoryEdit(widgetKey)"
+          @open-menu="handleOpenMenu"
         />
       </div>
     </template>
   </draggable>
 
-  <EntityPopup
-    v-if="isEntityPopupVisible"
-    :title="popupTitle"
-    :initial-value="popupInitialValue"
-    :show-delete="showDeleteInPopup"
-    @close="isEntityPopupVisible = false"
-    @save="onEntitySave"
-    @delete="onEntityDelete"
-  />
-  <EntityListEditor
-    v-if="isListEditorVisible"
-    :title="editorTitle"
-    :items="editorItems"
-    @close="isListEditorVisible = false"
-    @save="onEntityListSave"
-  />
-  <TransferPopup
-      v-if="isTransferPopupVisible"
-      :date="new Date()"
-      :cellIndex="0"
-      @close="isTransferPopupVisible = false"
-      @transfer-complete="handleTransferComplete"
-    />
-    
-  <TransferListEditor
-    v-if="isTransferEditorVisible"
-    @close="isTransferEditorVisible = false"
-  />
-
-  <OperationListEditor
-    v-if="isOperationListEditorVisible"
-    :title="operationListEditorTitle"
-    :type="operationListEditorType"
-    :filter-mode="operationListEditorFilterMode"
-    @close="isOperationListEditorVisible = false"
-  />
-
-  <OperationPopup
-    v-if="isOperationPopupVisible"
-    :type="operationPopupType"
-    :date="new Date()"
-    :cellIndex="0"
-    @close="isOperationPopupVisible = false"
-    @operation-added="handleOperationAdded"
-  />
-
-  <WithdrawalPopup 
-     v-if="isWithdrawalPopupVisible" 
-     :initial-data="{ amount: 0 }" 
-     @close="isWithdrawalPopupVisible = false" 
-     @save="handleWithdrawalSaved"
-  />
+  <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" :initial-value="popupInitialValue" :show-delete="showDeleteInPopup" @close="isEntityPopupVisible = false" @save="onEntitySave" @delete="onEntityDelete" />
+  <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="onEntityListSave" />
+  <TransferPopup v-if="isTransferPopupVisible" :date="new Date()" :cellIndex="0" @close="isTransferPopupVisible = false" @transfer-complete="handleTransferComplete" />
+  <TransferListEditor v-if="isTransferEditorVisible" @close="isTransferEditorVisible = false" />
+  <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" :filter-mode="operationListEditorFilterMode" @close="isOperationListEditorVisible = false" />
+  <OperationPopup v-if="isOperationPopupVisible" :type="operationPopupType" :date="new Date()" :cellIndex="0" @close="isOperationPopupVisible = false" @operation-added="handleOperationAdded" />
+  <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" @save="handleWithdrawalSaved" />
 </template>
 
 <style scoped>
 .header-dashboard {
-  display: grid; /* Grid всегда */
+  display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 1px; 
   padding: 1px; 
   background-color: var(--color-border); 
-  
   border-radius: 8px;
   border: 1px solid var(--color-border); 
-  
   margin-bottom: 0.4rem;
   height: 100%;
   box-sizing: border-box;
+  
+  /* 🟢 FIX: min-height: 0 и overflow: hidden были проблемой.
+     Для скролла внутри контента при фиксированном родителе нужно,
+     чтобы дети (wrapper) могли сжиматься (min-height: 0) и занимали 100%. */
   min-height: 0; 
   width: 100%;
-  overflow: hidden;
+  overflow: hidden; 
+  
+  /* В свернутом режиме: одна строка, 1fr = 100% высоты контейнера */
+  grid-template-rows: 1fr; 
 }
 
-/* Обертка карточки */
 .dashboard-card-wrapper {
   position: relative;
   display: flex;
   flex-direction: column;
   background-color: var(--color-background-soft);
   min-width: 0;
+  
+  /* 🟢 CRITICAL FIX: min-height: 0
+     Это позволяет flex-ребенку (который внутри grid) сжиматься, 
+     чтобы влезть в родителя, и активировать скролл внутри себя. */
+  min-height: 0; 
+  
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
   cursor: grab;
 }
-
-.dashboard-card-wrapper:active {
-  cursor: grabbing;
-}
+.dashboard-card-wrapper:active { cursor: grabbing; }
 
 :deep(.dashboard-card) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  flex: 1; display: flex; flex-direction: column;
+  background-color: transparent; padding: 8px 12px !important; 
+  border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important;
   
-  background-color: transparent;
-  padding: 8px 12px !important; 
-  border: none !important;
-  min-width: 0;
-  box-sizing: border-box;
-  margin: 0 !important;
+  /* 🟢 Также важно для скролла */
+  min-height: 0; 
 }
 
-/* Убираем правую границу у 6-го элемента (конец строки) */
-.dashboard-card-wrapper:nth-child(6n) {
-  border-right: none !important;
-}
+.dashboard-card-wrapper:nth-child(6n) { border-right: none !important; }
+.header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) { display: none; }
+.header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
 
-/* В свернутом режиме (1 ряд): скрываем лишние и убираем низ */
-.header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) {
-  display: none;
+.header-dashboard.expanded { 
+  grid-template-rows: none; 
+  /* В развернутом режиме: фиксированная высота рядов */
+  grid-auto-rows: minmax(130px, 1fr); 
+  overflow: hidden; 
 }
-.header-dashboard:not(.expanded) .dashboard-card-wrapper {
-  border-bottom: none !important;
-}
+.header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
 
-/* 🟢 ИЗМЕНЕНО: Grid Auto Rows с minmax, чтобы ряды были одинаковыми */
-.header-dashboard.expanded {
-  grid-auto-rows: minmax(130px, 1fr); /* Равная высота рядов */
-  overflow: hidden;
-}
+.sortable-ghost { opacity: 0.4; background-color: #333; }
+.sortable-drag { background-color: var(--color-background-soft); box-shadow: 0 5px 15px rgba(0,0,0,0.3); opacity: 1; z-index: 2000; }
 
-/* В развернутом режиме убираем нижнюю границу у последних 6 */
-.header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) {
-  border-bottom: none !important;
-}
-
-/* Стили при перетаскивании */
-.sortable-ghost {
-  opacity: 0.4;
-  background-color: #333;
-}
-.sortable-drag {
-  background-color: var(--color-background-soft);
-  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-  opacity: 1;
-  z-index: 2000;
-}
-
-/* Скрытие элементов управления в expanded режиме */
-.header-dashboard.expanded :deep(.card-title span),
-.header-dashboard.expanded :deep(.card-title-container .widget-dropdown) {
-  display: none !important;
-}
-.header-dashboard.expanded :deep(.card-title) {
-  cursor: default;
-  pointer-events: none;
-}
+.header-dashboard.expanded :deep(.card-title span) { display: none !important; }
+.header-dashboard.expanded :deep(.card-title) { cursor: default; pointer-events: none; }
 
 @media (max-height: 900px) {
-  :deep(.dashboard-card) {
-    padding: 8px 10px !important;
-  }
+  :deep(.dashboard-card) { padding: 8px 10px !important; }
 }
+
+/* Глобальное меню стили */
+.global-menu-overlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  z-index: 5000; background: transparent;
+}
+.global-widget-dropdown {
+  position: fixed; background-color: #f4f4f4; border-radius: 8px;
+  box-shadow: 0 5px 25px rgba(0,0,0,0.3); padding: 8px; box-sizing: border-box;
+  max-height: 400px; display: flex; flex-direction: column; color: #333;
+}
+.widget-search-input {
+  flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd;
+  border-radius: 6px; margin-bottom: 8px; font-size: 0.85em;
+  box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333;
+}
+.widget-search-input:focus { outline: none; border-color: #007AFF; }
+.global-widget-dropdown ul { list-style: none; margin: 0; padding: 0; flex-grow: 1; overflow-y: auto; }
+.global-widget-dropdown li { padding: 10px 12px; border-radius: 6px; font-size: 0.85em; color: #333; cursor: pointer; font-weight: 500; }
+.global-widget-dropdown li:hover { background-color: #e9e9e9; }
+.global-widget-dropdown li.active { color: #333; background-color: #e0e0e0; }
+.global-widget-dropdown li.disabled { color: #aaa; background-color: transparent; cursor: not-allowed; }
 </style>
