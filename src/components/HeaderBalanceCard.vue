@@ -5,8 +5,8 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.0 - SCROLL FIX ---
- * * ВЕРСИЯ: 4.0 - Гарантированный скролл списка
+ * * --- МЕТКА ВЕРСИИ: v4.3 - REMOVE SWITCHER ---
+ * * ВЕРСИЯ: 4.3 - Удалена функция смены виджета через заголовок
  */
 
 const props = defineProps({
@@ -17,7 +17,7 @@ const props = defineProps({
   widgetIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['add', 'edit', 'open-menu']);
+const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
 
 const showFutureBalance = computed({
@@ -75,10 +75,6 @@ const handleFilterClickOutside = (event) => {
   if (!insideTrigger && !insideDropdown) isFilterOpen.value = false;
 };
 
-const onTitleClick = (event) => {
-  emit('open-menu', { event, widgetKey: props.widgetKey, widgetIndex: props.widgetIndex });
-};
-
 const formatBalance = (balance) => {
   const num = Number(balance) || 0;
   const safeBalance = isNaN(num) ? 0 : num;
@@ -91,8 +87,8 @@ const formatBalance = (balance) => {
   <div class="dashboard-card" @click.stop="isFilterOpen = false">
     
     <div class="card-title-container">
-      <div class="card-title" @click="onTitleClick">
-        {{ props.title }} <span>▽</span>
+      <div class="card-title">
+        {{ props.title }}
       </div>
 
       <div class="card-actions">
@@ -126,21 +122,29 @@ const formatBalance = (balance) => {
 
     <Teleport to="body">
       <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @click.stop>
+        
         <div class="filter-group">
           <div class="filter-group-title">Сортировка</div>
           <ul>
-            <li :class="{ active: sortMode === 'default' }" @click="setSortMode('default')">По умолчанию</li>
-            <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')">От большего к меньшему</li>
-            <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')">От меньшего к большему</li>
+            <li :class="{ active: sortMode === 'default' }" @click="setSortMode('default')">
+               <span>По умолчанию</span>
+            </li>
+            <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')">
+               <span>По убыванию</span> <span class="symbol">▼</span>
+            </li>
+            <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')">
+               <span>По возрастанию</span> <span class="symbol">▲</span>
+            </li>
           </ul>
         </div>
+
         <div class="filter-group">
           <div class="filter-group-title">Фильтр</div>
           <ul>
-            <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Показать все</li>
-            <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нулевые</li>
-            <li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только положительные</li>
-            <li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только отрицательные</li>
+            <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li>
+            <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li>
+            <li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li>
+            <li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li>
           </ul>
         </div>
       </div>
@@ -166,16 +170,15 @@ const formatBalance = (balance) => {
 <style scoped>
 .dashboard-card { 
   display: flex; flex-direction: column; 
-  height: 100%; /* Занимаем всю высоту */
-  overflow: hidden; /* Скрываем лишнее */
+  height: 100%; 
+  overflow: hidden; 
   padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; 
 }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
 
 .card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-.card-title { font-size: 0.85em; color: #aaa; cursor: pointer; transition: color 0.2s; position: relative; z-index: 101; }
-.card-title:hover { color: #ddd; }
-.card-title span { font-size: 0.8em; margin-left: 4px; }
+/* Заголовок больше не кликабельный */
+.card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 .action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
@@ -185,11 +188,11 @@ const formatBalance = (balance) => {
 
 .card-items-list { 
   flex-grow: 1; 
-  overflow-y: auto; /* Скролл */
+  overflow-y: auto; 
   padding-right: 5px; 
   scrollbar-width: none; 
   min-height: 0; 
-  display: flex; flex-direction: column; /* Чтобы элементы шли друг за другом */
+  display: flex; flex-direction: column; 
 }
 .card-items-list::-webkit-scrollbar { display: none; }
 
@@ -208,5 +211,72 @@ const formatBalance = (balance) => {
   .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
+}
+</style>
+
+<!-- Глобальные стили для дропдауна -->
+<style>
+.filter-dropdown-fixed {
+  position: fixed; 
+  width: 160px;    
+  background-color: var(--color-background-soft, #282828);
+  border: 1px solid var(--color-border, #444);
+  border-radius: 8px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+  z-index: 9999;   
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  padding: 4px 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.filter-dropdown-fixed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.filter-dropdown-fixed li {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text, #ddd);
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-dropdown-fixed li:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.filter-dropdown-fixed li.active {
+  color: var(--color-primary, #34c759);
+  background-color: rgba(52, 199, 89, 0.1);
+  font-weight: 500;
+}
+
+.symbol {
+  color: #888;
+  font-size: 10px;
+}
+.active .symbol {
+  color: inherit;
 }
 </style>

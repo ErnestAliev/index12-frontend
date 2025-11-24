@@ -10,7 +10,7 @@ const props = defineProps({
   widgetIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['add', 'edit', 'open-menu']);
+const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
 
 const isTransferWidget = computed(() => {
@@ -64,6 +64,7 @@ const filterMode = ref('all');
 const updateFilterPosition = () => {
   if (filterBtnRef.value) {
     const rect = filterBtnRef.value.getBoundingClientRect();
+    // Позиционируем фиксированно относительно кнопки
     filterPos.value = { top: `${rect.bottom + 5}px`, left: `${rect.right - 160}px` };
   }
 };
@@ -89,18 +90,14 @@ const handleFilterClickOutside = (event) => {
 };
 
 const setFilterMode = (mode) => { filterMode.value = mode; };
-
-const onTitleClick = (event) => {
-  emit('open-menu', { event, widgetKey: props.widgetKey, widgetIndex: props.widgetIndex });
-};
 </script>
 
 <template>
   <div class="dashboard-card" @click.stop="isFilterOpen = false">
 
     <div class="card-title-container">
-      <div class="card-title" @click="onTitleClick">
-        {{ displayTitle }} <span>▽</span>
+      <div class="card-title">
+        {{ displayTitle }}
       </div>
 
       <div class="card-actions">
@@ -132,8 +129,8 @@ const onTitleClick = (event) => {
         <div class="filter-group">
            <div class="filter-group-title">Отображение</div>
            <ul>
-             <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все строки</li>
-             <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть нули</li>
+             <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li>
+             <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li>
            </ul>
         </div>
       </div>
@@ -185,9 +182,8 @@ const onTitleClick = (event) => {
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
 
 .card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-.card-title { font-size: 0.85em; color: #aaa; transition: color 0.2s; cursor: pointer; position: relative; z-index: 101; }
-.card-title:hover { color: #ddd; }
-.card-title span { font-size: 0.8em; margin-left: 4px; }
+/* Заголовок больше не кликабельный */
+.card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 .action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
@@ -197,7 +193,7 @@ const onTitleClick = (event) => {
 
 .category-items-list-scroll { 
   flex-grow: 1; 
-  overflow-y: auto; /* Скролл */
+  overflow-y: auto; 
   padding-right: 5px; 
   scrollbar-width: none; 
   min-height: 0; 
@@ -234,5 +230,64 @@ const onTitleClick = (event) => {
   .card-actions { gap: 3px; }
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
+}
+</style>
+
+<!-- Глобальные стили для дропдауна (без scoped) -->
+<style>
+.filter-dropdown-fixed {
+  position: fixed; 
+  width: 160px;    
+  background-color: var(--color-background-soft, #282828);
+  border: 1px solid var(--color-border, #444);
+  border-radius: 8px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+  z-index: 9999;   
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  padding: 4px 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.filter-dropdown-fixed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.filter-dropdown-fixed li {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text, #ddd);
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-dropdown-fixed li:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.filter-dropdown-fixed li.active {
+  color: var(--color-primary, #34c759);
+  background-color: rgba(52, 199, 89, 0.1);
+  font-weight: 500;
 }
 </style>

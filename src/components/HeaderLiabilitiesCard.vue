@@ -4,8 +4,8 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.4 - CREATE BTN ADDED ---
- * * ВЕРСИЯ: 4.4 - Добавлена кнопка Создать
+ * * --- МЕТКА ВЕРСИИ: v4.5 - REMOVE SWITCHER ---
+ * * ВЕРСИЯ: 4.5 - Удалена функция смены виджета через заголовок
  */
 
 const props = defineProps({
@@ -18,21 +18,13 @@ const props = defineProps({
   widgetIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['add', 'edit', 'open-menu']);
+const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
 
 const showFutureBalance = computed({
   get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
   set: (val) => mainStore.setForecastState(props.widgetKey, val)
 });
-
-const onTitleClick = (event) => {
-  emit('open-menu', { 
-    event, 
-    widgetKey: props.widgetKey, 
-    widgetIndex: props.widgetIndex 
-  });
-};
 
 const formatCurrency = (val) => `${formatNumber(Math.abs(val || 0))} ₸`;
 
@@ -51,8 +43,8 @@ const displayTheyOwe = computed(() => {
   <div class="dashboard-card">
     
     <div class="card-title-container">
-      <div class="card-title" @click="onTitleClick">
-        {{ title }} <span>▽</span>
+      <div class="card-title">
+        {{ title }}
       </div>
 
       <div class="card-actions">
@@ -73,7 +65,6 @@ const displayTheyOwe = computed(() => {
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
 
-        <!-- 🟢 НОВАЯ КНОПКА: Создать (+) -->
         <button 
           @click.stop="$emit('add')" 
           class="action-square-btn" 
@@ -100,16 +91,15 @@ const displayTheyOwe = computed(() => {
 <style scoped>
 .dashboard-card { 
   display: flex; flex-direction: column; 
-  height: 100%; /* Занимаем всю высоту контейнера */
-  overflow: hidden; /* Скрываем вылезающее за пределы карточки */
+  height: 100%; 
+  overflow: hidden; 
   padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; 
 }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
 
 .card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-.card-title { font-size: 0.85em; color: #aaa; cursor: pointer; transition: color 0.2s; position: relative; z-index: 101; }
-.card-title:hover { color: #ddd; }
-.card-title span { font-size: 0.8em; margin-left: 4px; }
+/* Заголовок больше не кликабельный */
+.card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 .action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
@@ -119,16 +109,15 @@ const displayTheyOwe = computed(() => {
 
 .card-items-list { 
   flex-grow: 1; 
-  overflow-y: auto; /* Разрешаем вертикальный скролл */
+  overflow-y: auto; 
   padding-right: 5px; 
-  scrollbar-width: none; /* Скрываем скроллбар (Firefox) */
+  scrollbar-width: none; 
   display: flex; flex-direction: column; gap: 4px;
-  min-height: 0; /* Важно для работы flex-grow + overflow: auto */
+  min-height: 0;
 }
-/* Скрываем скроллбар (Webkit) */
 .card-items-list::-webkit-scrollbar { display: none; }
 
-.card-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; margin-bottom: 0.25rem; flex-shrink: 0; /* Чтобы элементы не сжимались */ }
+.card-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; margin-bottom: 0.25rem; flex-shrink: 0; }
 .card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
 .card-item span:last-child { font-weight: 500; white-space: nowrap; }
 

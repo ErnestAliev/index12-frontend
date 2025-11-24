@@ -3,8 +3,8 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.0 - CENTRALIZED MENU ---
- * * ВЕРСИЯ: 4.0 - Использует глобальное меню TheHeader
+ * * --- МЕТКА ВЕРСИИ: v4.1 - REMOVE SWITCHER ---
+ * * ВЕРСИЯ: 4.1 - Удалена функция смены виджета через заголовок
  */
 
 const props = defineProps({
@@ -16,25 +16,14 @@ const props = defineProps({
   widgetIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['open-menu']);
-
-const onTitleClick = (event) => {
-  emit('open-menu', { 
-    event, 
-    widgetKey: props.widgetKey, 
-    widgetIndex: props.widgetIndex 
-  });
-};
+// emit 'open-menu' больше не используется
 </script>
 
 <template>
   <div class="dashboard-card">
-    <!-- 🟢 ADDED CLASS card-drag-handle -->
-    <div 
-      class="card-title-container card-drag-handle" 
-      @click="onTitleClick"
-    >
-      <div class="card-title">{{ title }} <span>▽</span></div>
+    <!-- card-drag-handle оставляем для перетаскивания -->
+    <div class="card-title-container card-drag-handle">
+      <div class="card-title">{{ title }}</div>
     </div>
 
     <div 
@@ -58,15 +47,15 @@ const onTitleClick = (event) => {
 .card-sub-balance { font-size: 0.8em; color: #777; }
 .card-sub-balance .subtitle-date { color: var(--color-primary); font-weight: 500; }
 
-/* 🟢 Cursor styles moved here for handle */
+/* Стили контейнера заголовка (Drag Handle) */
 .card-title-container { 
   height: 30px; margin-bottom: 0.5rem; flex-shrink: 0; 
   cursor: grab; position: relative; 
 }
 .card-title-container:active { cursor: grabbing; }
 
-.card-title { font-size: 0.85em; color: #aaa; transition: color 0.2s; }
-.card-title:hover { color: #ddd; }
-.card-title span { font-size: 0.8em; margin-left: 4px; }
+/* Заголовок больше не кликабельный */
+.card-title { font-size: 0.85em; color: #aaa; }
+
 .card-total-balance.expense { color: var(--color-danger); }
 </style>
