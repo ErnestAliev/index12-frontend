@@ -1,20 +1,20 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'; 
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
+import draggable from 'vuedraggable';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v23.0 - PLACEHOLDER GRID ---
- * * ВЕРСИЯ: 23.0 - Заполнение пустых ячеек заглушками
+ * * --- МЕТКА ВЕРСИИ: v37.0 - EQUAL ROW HEIGHT ---
+ * * ВЕРСИЯ: 37.0 - Равная высота рядов в Grid
  * * ДАТА: 2025-11-24
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) displayedWidgets в расширенном режиме теперь добавляет ключи 'placeholder_X',
- * чтобы общее количество элементов было кратно 6.
- * 2. (UI) В шаблон добавлен блок для рендеринга этих placeholder-ов (пустые div с классом dashboard-card).
- * Это создает визуальную сетку в неполных рядах.
+ * 1. (CSS) .header-dashboard.expanded: grid-auto-rows: minmax(130px, 1fr).
+ * Это гарантирует, что ни один ряд не будет уже 130px, даже если контента мало.
+ * Если контейнер выше, ряды растянутся равномерно (1fr).
  */
 
-console.log('--- TheHeader.vue v23.0 (Placeholder Grid) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v37.0 (Equal Row Height) ЗАГРУЖЕН ---');
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -31,42 +31,56 @@ import WithdrawalPopup from './WithdrawalPopup.vue';
 
 const mainStore = useMainStore();
 
-// 🟢 ВЫЧИСЛЯЕМЫЙ СПИСОК ВИДЖЕТОВ (С ЗАПОЛНЕНИЕМ ПУСТОТ)
-const displayedWidgets = computed(() => {
-  if (mainStore.isHeaderExpanded) {
-    const allKeys = mainStore.allWidgets.map(w => w.key);
-    
-    // Рассчитываем, сколько нужно добавить заглушек, чтобы заполнить ряд
-    const rowSize = 6;
-    const rows = Math.ceil(Math.max(allKeys.length, 1) / rowSize); 
-    const totalSlots = rows * rowSize;
-    
-    const result = [...allKeys];
-    
-    // Добавляем placeholder-ключи
-    while (result.length < totalSlots) {
-      result.push(`placeholder_${result.length}`);
+// Управление списком виджетов для драг-н-дропа
+const localWidgets = computed({
+  get: () => {
+    if (mainStore.isHeaderExpanded) {
+      const layoutSet = new Set(mainStore.dashboardLayout);
+      const allKeys = mainStore.allWidgets.map(w => w.key);
+      
+      const ordered = [...mainStore.dashboardLayout];
+      
+      allKeys.forEach(k => {
+          if (!layoutSet.has(k)) ordered.push(k);
+      });
+
+      const rowSize = 6;
+      const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
+      const totalSlots = rows * rowSize;
+      while (ordered.length < totalSlots) {
+        ordered.push(`placeholder_${ordered.length}`);
+      }
+      return ordered;
     }
-    
-    return result;
+    return mainStore.dashboardLayout;
+  },
+  set: (newOrder) => {
+    const realWidgets = newOrder.filter(k => !k.startsWith('placeholder_'));
+    mainStore.dashboardLayout = realWidgets;
   }
-  // В обычном режиме возвращаем как есть
-  return mainStore.dashboardLayout;
 });
 
 // Состояния попапов
 const isTransferPopupVisible = ref(false);
 const isTransferEditorVisible = ref(false);
-
 const isOperationListEditorVisible = ref(false);
 const operationListEditorType = ref('income'); 
 const operationListEditorTitle = ref('');
 const operationListEditorFilterMode = ref('default');
-
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
-
 const isWithdrawalPopupVisible = ref(false);
+
+const isEntityPopupVisible = ref(false);
+const popupTitle = ref('');
+const popupInitialValue = ref(''); 
+const saveHandler = ref(null);
+const deleteHandler = ref(null); 
+const showDeleteInPopup = ref(false); 
+const isListEditorVisible = ref(false);
+const editorTitle = ref('');
+const editorItems = ref([]);
+const editorSavePath = ref(null);
 
 /* ======================= Адаптивность Дат ======================= */
 const windowWidth = ref(window.innerWidth);
@@ -116,14 +130,6 @@ const mergedCategoryBalances = computed(() => {
     return allMerged.filter(c => visibleIds.has(c._id));
 });
 
-/* ======================= Попапы (Entity / List) ======================= */
-const isEntityPopupVisible = ref(false);
-const popupTitle = ref('');
-const popupInitialValue = ref(''); 
-const saveHandler = ref(null);
-const deleteHandler = ref(null); 
-const showDeleteInPopup = ref(false); 
-
 const openAddPopup = (title, storeAction) => {
   popupTitle.value = title;
   popupInitialValue.value = '';
@@ -144,14 +150,12 @@ const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, en
   popupTitle.value = title;
   popupInitialValue.value = entity.name;
   showDeleteInPopup.value = canDelete; 
-  
   saveHandler.value = async (newName) => {
       if (entityType) {
           const updatedItem = { ...entity, name: newName };
           await mainStore.batchUpdateEntities(entityType, [updatedItem]);
       }
   };
-
   if (canDelete && entityType) {
       deleteHandler.value = async ({ deleteOperations, done }) => {
           try {
@@ -165,7 +169,6 @@ const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, en
   } else {
       deleteHandler.value = null;
   }
-
   isEntityPopupVisible.value = true;
 };
 
@@ -182,11 +185,6 @@ const onEntityDelete = (payload) => {
     }
 };
 
-const isListEditorVisible = ref(false);
-const editorTitle = ref('');
-const editorItems = ref([]);
-const editorSavePath = ref(null);
-
 const onEntityListSave = async (updatedItems) => {
   if (editorSavePath.value) {
     try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); }
@@ -194,64 +192,28 @@ const onEntityListSave = async (updatedItems) => {
   isListEditorVisible.value = false;
 };
 
-/* ======================= Обработчики Виджетов ======================= */
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 const onCategoryAdd = (widgetKey, index) => {
-    if (widgetKey === 'incomeList') {
-        operationPopupType.value = 'income';
-        isOperationPopupVisible.value = true;
-        return;
-    }
-    if (widgetKey === 'expenseList') {
-        operationPopupType.value = 'expense';
-        isOperationPopupVisible.value = true;
-        return;
-    }
-    if (widgetKey === 'withdrawalList') {
-        isWithdrawalPopupVisible.value = true;
-        return;
-    }
-
+    if (widgetKey === 'incomeList') { operationPopupType.value = 'income'; isOperationPopupVisible.value = true; return; }
+    if (widgetKey === 'expenseList') { operationPopupType.value = 'expense'; isOperationPopupVisible.value = true; return; }
+    if (widgetKey === 'withdrawalList') { isWithdrawalPopupVisible.value = true; return; }
     const widget = getWidgetByKey(widgetKey);
-    if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') {
-        isTransferPopupVisible.value = true;
-    }
+    if (widget?.name.toLowerCase() === 'перевод' || widget?.name.toLowerCase() === 'transfer') { isTransferPopupVisible.value = true; }
 };
 
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
-
-    if (widgetKey === 'incomeList') {
-        operationListEditorTitle.value = 'Редактировать доходы';
-        operationListEditorType.value = 'income';
-        isOperationListEditorVisible.value = true;
-        return;
-    }
-    if (widgetKey === 'expenseList') {
-        operationListEditorTitle.value = 'Редактировать расходы';
-        operationListEditorType.value = 'expense';
-        isOperationListEditorVisible.value = true;
-        return;
-    }
-    if (widgetKey === 'withdrawalList') {
-        operationListEditorTitle.value = 'Редактировать выводы';
-        operationListEditorType.value = 'withdrawal';
-        isOperationListEditorVisible.value = true;
-        return;
-    }
-
+    if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
+    if (widgetKey === 'expenseList') { operationListEditorTitle.value = 'Редактировать расходы'; operationListEditorType.value = 'expense'; isOperationListEditorVisible.value = true; return; }
+    if (widgetKey === 'withdrawalList') { operationListEditorTitle.value = 'Редактировать выводы'; operationListEditorType.value = 'withdrawal'; isOperationListEditorVisible.value = true; return; }
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
         const lowerName = category.name.toLowerCase();
         const isTransfer = (lowerName === 'перевод' || lowerName === 'transfer');
-        
-        if (isTransfer) {
-            isTransferEditorVisible.value = true;
-        } else {
-            openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
-        }
+        if (isTransfer) isTransferEditorVisible.value = true;
+        else openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
     }
 };
 
@@ -274,136 +236,137 @@ const handleOperationAdded = async (newOp) => {
 
 const handleWithdrawalSaved = async ({ mode, id, data }) => {
     isWithdrawalPopupVisible.value = false;
-    try {
-        if (mode === 'create') {
-             await mainStore.createEvent(data);
-        }
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка сохранения вывода');
-    }
+    try { if (mode === 'create') await mainStore.createEvent(data); } catch (e) { console.error(e); alert('Ошибка сохранения вывода'); }
 };
 </script>
 
 <template>
-  <div 
-    class="header-dashboard" 
+  <!-- DRAGGABLE WRAPPER -->
+  <draggable 
+    v-model="localWidgets" 
+    item-key="key"
+    class="header-dashboard"
     :class="{ 'expanded': mainStore.isHeaderExpanded }"
+    ghost-class="sortable-ghost"
+    drag-class="sortable-drag"
+    :animation="200"
   >
-    <template v-for="(widgetKey, index) in displayedWidgets" :key="widgetKey">
+    <template #item="{ element: widgetKey, index }">
       
-      <!-- 🟢 ЗАГЛУШКА ДЛЯ ПУСТОЙ ЯЧЕЙКИ -->
-      <div 
-        v-if="widgetKey.startsWith('placeholder_')" 
-        class="dashboard-card placeholder-card"
-      >
+      <div class="dashboard-card-wrapper">
+        
+        <div 
+          v-if="widgetKey.startsWith('placeholder_')" 
+          class="dashboard-card placeholder-card"
+        >
+        </div>
+
+        <HeaderTotalCard
+          v-else-if="widgetKey === 'currentTotal'"
+          title="Всего (на тек. момент)"
+          :totalBalance="loggedCurrentTotal" 
+          :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
+          :subtitleDate="`до ${todayStr}`"
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+        />
+        
+        <HeaderLiabilitiesCard
+          v-else-if="widgetKey === 'liabilities'"
+          title="Мои предоплаты" 
+          :weOweAmount="mainStore.liabilitiesWeOwe"
+          :theyOweAmount="mainStore.liabilitiesTheyOwe"
+          :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
+          :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @edit="onLiabilitiesEdit"
+        />
+
+        <HeaderBalanceCard
+          v-else-if="widgetKey === 'accounts'"
+          title="Мои счета"
+          :items="loggedAccountBalances" 
+          emptyText="...счетов нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="openAddPopup('Новый счет', mainStore.addAccount)"
+          @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
+        />
+
+        <HeaderBalanceCard
+          v-else-if="widgetKey === 'companies'"
+          title="Мои компании"
+          :items="mergedCompanyBalances" emptyText="...компаний нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="openAddPopup('Новая компания', mainStore.addCompany)"
+          @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
+        />
+
+        <HeaderBalanceCard
+          v-else-if="widgetKey === 'contractors'"
+          title="Мои контрагенты"
+          :items="mergedContractorBalances" emptyText="...контрагентов нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
+          @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
+        />
+
+        <HeaderBalanceCard
+          v-else-if="widgetKey === 'projects'"
+          title="Мои проекты"
+          :items="mergedProjectBalances" emptyText="...проектов нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="openAddPopup('Новый проект', mainStore.addProject)"
+          @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
+        />
+
+        <HeaderBalanceCard
+          v-else-if="widgetKey === 'individuals'"
+          title="Мои Физлица"
+          :items="mergedIndividualBalances" 
+          emptyText="...физлиц нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
+          @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
+        />
+        
+        <HeaderBalanceCard
+          v-else-if="widgetKey === 'categories'"
+          title="Категории"
+          :items="mergedCategoryBalances" 
+          emptyText="...категорий нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="openAddPopup('Новая категория', mainStore.addCategory)"
+          @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
+        />
+
+        <HeaderTotalCard
+          v-else-if="widgetKey === 'futureTotal'"
+          title="Всего (с уч. будущих)"
+          :totalBalance="loggedFutureTotal" 
+          :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
+          :subtitleDate="`до ${futureUntilStr}`"
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+        />
+
+        <HeaderCategoryCard
+          v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
+          :title="getWidgetByKey(widgetKey)?.name || '...'"
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="onCategoryAdd(widgetKey, index)"
+          @edit="onCategoryEdit(widgetKey)"
+        />
       </div>
-
-      <HeaderTotalCard
-        v-else-if="widgetKey === 'currentTotal'"
-        title="Всего (на тек. момент)"
-        :totalBalance="loggedCurrentTotal" 
-        :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
-        :subtitleDate="`до ${todayStr}`"
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-      />
-      
-      <HeaderLiabilitiesCard
-        v-else-if="widgetKey === 'liabilities'"
-        title="Мои предоплаты" 
-        :weOweAmount="mainStore.liabilitiesWeOwe"
-        :theyOweAmount="mainStore.liabilitiesTheyOwe"
-        :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
-        :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @edit="onLiabilitiesEdit"
-      />
-
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'accounts'"
-        title="Мои счета"
-        :items="loggedAccountBalances" 
-        emptyText="...счетов нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новый счет', mainStore.addAccount)"
-        @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
-      />
-
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'companies'"
-        title="Мои компании"
-        :items="mergedCompanyBalances" emptyText="...компаний нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новая компания', mainStore.addCompany)"
-        @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
-      />
-
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'contractors'"
-        title="Мои контрагенты"
-        :items="mergedContractorBalances" emptyText="...контрагентов нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
-        @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
-      />
-
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'projects'"
-        title="Мои проекты"
-        :items="mergedProjectBalances" emptyText="...проектов нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новый проект', mainStore.addProject)"
-        @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
-      />
-
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'individuals'"
-        title="Мои Физлица"
-        :items="mergedIndividualBalances" 
-        emptyText="...физлиц нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
-        @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
-      />
-      
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'categories'"
-        title="Категории"
-        :items="mergedCategoryBalances" 
-        emptyText="...категорий нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="openAddPopup('Новая категория', mainStore.addCategory)"
-        @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
-      />
-
-      <HeaderTotalCard
-        v-else-if="widgetKey === 'futureTotal'"
-        title="Всего (с уч. будущих)"
-        :totalBalance="loggedFutureTotal" 
-        :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
-        :subtitleDate="`до ${futureUntilStr}`"
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-      />
-
-      <HeaderCategoryCard
-        v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
-        :title="getWidgetByKey(widgetKey)?.name || '...'"
-        :widgetKey="widgetKey"
-        :widgetIndex="index"
-        @add="onCategoryAdd(widgetKey, index)"
-        @edit="onCategoryEdit(widgetKey)"
-      />
     </template>
-  </div>
+  </draggable>
 
   <EntityPopup
     v-if="isEntityPopupVisible"
@@ -461,48 +424,89 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
 
 <style scoped>
 .header-dashboard {
-  display: flex;
-  justify-content: space-between;
-  background-color: var(--color-background-soft);
-  padding: 1rem 1.5rem;
+  display: grid; /* Grid всегда */
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px; 
+  padding: 1px; 
+  background-color: var(--color-border); 
+  
   border-radius: 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border); 
+  
   margin-bottom: 0.4rem;
-  gap: 1.5rem;
   height: 100%;
   box-sizing: border-box;
   min-height: 0; 
   width: 100%;
-}
-
-/* 🟢 ГРИД-РЕЖИМ (РАСШИРЕННЫЙ) */
-.header-dashboard.expanded {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr); /* 6 колонок */
-  /* 🟢 gap: 1px создает линии между ячейками, так как фон контейнера = цвету границ */
-  gap: 1px; 
-  padding: 1px; /* Чтобы был внешний контур */
-  background-color: var(--color-border); /* Цвет линий (промежутков) */
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  
-  /* Автоматические ряды для любого количества виджетов (6+6+1 и т.д.) */
-  grid-auto-rows: 1fr; 
 }
 
-/* 🟢 Адаптация карточек в гриде */
-.header-dashboard.expanded :deep(.dashboard-card) {
-  /* Фон карточки перекрывает фон контейнера, оставляя только gap как линии */
-  background-color: var(--color-background-soft);
-  border: none; /* Убираем собственные границы карточек */
-  padding: 0.5rem 1rem; 
-  min-width: 0;
+/* Обертка карточки */
+.dashboard-card-wrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: center; 
+  background-color: var(--color-background-soft);
+  min-width: 0;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  cursor: grab;
 }
 
-/* 🟢 Скрытие стрелок дропдауна в расширенном режиме */
+.dashboard-card-wrapper:active {
+  cursor: grabbing;
+}
+
+:deep(.dashboard-card) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  
+  background-color: transparent;
+  padding: 8px 12px !important; 
+  border: none !important;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 !important;
+}
+
+/* Убираем правую границу у 6-го элемента (конец строки) */
+.dashboard-card-wrapper:nth-child(6n) {
+  border-right: none !important;
+}
+
+/* В свернутом режиме (1 ряд): скрываем лишние и убираем низ */
+.header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) {
+  display: none;
+}
+.header-dashboard:not(.expanded) .dashboard-card-wrapper {
+  border-bottom: none !important;
+}
+
+/* 🟢 ИЗМЕНЕНО: Grid Auto Rows с minmax, чтобы ряды были одинаковыми */
+.header-dashboard.expanded {
+  grid-auto-rows: minmax(130px, 1fr); /* Равная высота рядов */
+  overflow: hidden;
+}
+
+/* В развернутом режиме убираем нижнюю границу у последних 6 */
+.header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) {
+  border-bottom: none !important;
+}
+
+/* Стили при перетаскивании */
+.sortable-ghost {
+  opacity: 0.4;
+  background-color: #333;
+}
+.sortable-drag {
+  background-color: var(--color-background-soft);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+  opacity: 1;
+  z-index: 2000;
+}
+
+/* Скрытие элементов управления в expanded режиме */
 .header-dashboard.expanded :deep(.card-title span),
 .header-dashboard.expanded :deep(.card-title-container .widget-dropdown) {
   display: none !important;
@@ -513,15 +517,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => {
 }
 
 @media (max-height: 900px) {
-  .header-dashboard {
-    /* В обычном режиме gap остается */
-    gap: 1rem;
-    padding: 0.8rem 1rem;
-  }
-  /* В расширенном gap должен быть 1px */
-  .header-dashboard.expanded {
-    gap: 1px;
-    padding: 1px;
+  :deep(.dashboard-card) {
+    padding: 8px 10px !important;
   }
 }
 </style>
