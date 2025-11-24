@@ -3,7 +3,8 @@ import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
-import WithdrawalPopup from './WithdrawalPopup.vue'; 
+import WithdrawalPopup from './WithdrawalPopup.vue';
+import DateRangePicker from './DateRangePicker.vue'; // 🟢 Импорт нового компонента
 
 const props = defineProps({
   title: { type: String, default: 'Редактировать операции' },
@@ -17,8 +18,9 @@ const mainStore = useMainStore();
 const localItems = ref([]);
 const isSaving = ref(false);
 
+// 🟢 ФИЛЬТРЫ: Объект dateRange вместо отдельных полей
 const filters = ref({
-  date: '',
+  dateRange: { from: null, to: null }, // { from: 'YYYY-MM-DD', to: '...' }
   owner: '',
   account: '',
   amount: '',
@@ -28,12 +30,11 @@ const filters = ref({
 });
 
 const isCreatePopupVisible = ref(false);
-const isWithdrawalPopupVisible = ref(false); // 🟢
+const isWithdrawalPopupVisible = ref(false);
 const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
 const itemToDelete = ref(null);
 
-// 🟢 Для редактирования вывода
 const withdrawalToEdit = ref(null);
 
 const accounts = computed(() => mainStore.accounts);
@@ -81,22 +82,19 @@ const isSystemPrepayment = (item) => {
            (op.categoryId && op.categoryId.isPrepayment);
 };
 
-// 🟢 Флаг режима выводов
 const isWithdrawalMode = computed(() => props.type === 'withdrawal');
 
 const loadOperations = () => {
   const allOps = mainStore.allOperationsFlat;
   
   const targetOps = allOps.filter(op => {
-    // 🟢 Логика фильтрации для выводов
     if (isWithdrawalMode.value) {
         return op.isWithdrawal;
     }
     
-    // Старая логика для доходов/расходов
     if (op.type !== props.type) return false;
     if (op.isTransfer) return false;
-    if (op.isWithdrawal) return false; // Исключаем выводы из обычных расходов
+    if (op.isWithdrawal) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     if (props.filterMode === 'prepayment_only') {
         return isSystemPrepayment(op);
@@ -119,7 +117,7 @@ const loadOperations = () => {
         contractorId: op.contractorId?._id || op.contractorId,
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
-        destination: op.destination || '', // 🟢 Для выводов
+        destination: op.destination || '',
         isDeleted: false
       };
     });
@@ -132,7 +130,17 @@ onMounted(() => {
 const filteredItems = computed(() => {
   return localItems.value.filter(item => {
     if (item.isDeleted) return false;
-    if (filters.value.date && item.date !== filters.value.date) return false;
+    
+    // 🟢 НОВАЯ ЛОГИКА ФИЛЬТРАЦИИ ПО ДИАПАЗОНУ
+    const { from, to } = filters.value.dateRange;
+    if (from) {
+       // Сравнение строк дат 'YYYY-MM-DD' работает корректно лексикографически
+       if (item.date < from) return false;
+    }
+    if (to) {
+       if (item.date > to) return false;
+    }
+
     if (filters.value.amount) {
         const searchAmount = filters.value.amount.replace(/\s/g, '');
         const itemAmount = String(item.amount);
@@ -141,7 +149,6 @@ const filteredItems = computed(() => {
     if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
     if (filters.value.account && item.accountId !== filters.value.account) return false;
     
-    // 🟢 Фильтры, которые не нужны для выводов
     if (!isWithdrawalMode.value) {
         if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
         if (filters.value.category) {
@@ -161,7 +168,12 @@ const filteredItems = computed(() => {
   });
 });
 
-const isFilterActive = computed(() => Object.values(filters.value).some(val => val !== ''));
+const isFilterActive = computed(() => {
+    const f = filters.value;
+    return f.dateRange.from !== null || f.dateRange.to !== null || 
+           f.owner !== '' || f.account !== '' || f.amount !== '' || 
+           f.contractor !== '' || f.category !== '' || f.project !== '';
+});
 
 const totalSum = computed(() => {
     const rawSum = localItems.value.reduce((acc, item) => acc + (item.amount || 0), 0);
@@ -197,14 +209,13 @@ const getInputClass = () => {
 
 const openCreatePopup = () => { 
     if (isWithdrawalMode.value) {
-        withdrawalToEdit.value = null; // Сброс для создания
+        withdrawalToEdit.value = null;
         isWithdrawalPopupVisible.value = true;
     } else {
         isCreatePopupVisible.value = true; 
     }
 };
 
-// 🟢 Обработчик клика на "Редактировать" для вывода (карандаш)
 const editWithdrawal = (item) => {
     withdrawalToEdit.value = item.originalOp;
     isWithdrawalPopupVisible.value = true;
@@ -349,22 +360,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         Редактируйте параметры операций. Нажмите на корзину для удаления.
       </p>
       
-      <div class="create-section">
-        <button 
-           class="btn-add-new" 
-           :class="{
-             'btn-income': type === 'income' && !isWithdrawalMode,
-             'btn-expense': type === 'expense',
-             'btn-withdrawal': isWithdrawalMode
-           }"
-           @click="openCreatePopup"
-        >
-          + Создать {{ isWithdrawalMode ? 'Вывод' : (type === 'income' ? 'Доход' : 'Расход') }}
-        </button>
-      </div>
-
-      <!-- Тоталы и фильтры (без изменений) -->
-      <div v-if="localItems.length > 0" class="totals-bar">
+      <div class="totals-bar">
           <div class="total-item">
               <span class="total-label">Всего:</span>
               <span class="total-value" :class="getTotalClass(totalSum)">{{ formatTotal(totalSum) }}</span>
@@ -376,12 +372,18 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       </div>
       
       <div class="filters-row">
+        
+        <!-- 🟢 ИСПОЛЬЗУЕМ НОВЫЙ КОМПОНЕНТ -->
         <div class="filter-col col-date">
-           <input type="date" v-model="filters.date" class="filter-input" placeholder="Фильтр..." />
+           <DateRangePicker 
+             v-model="filters.dateRange"
+             placeholder="Период"
+           />
         </div>
+
         <div class="filter-col col-owner">
            <select v-model="filters.owner" class="filter-input filter-select">
-              <option value="">Все</option>
+              <option value="">Владелец (Все)</option>
               <optgroup label="Компании">
                   <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
               </optgroup>
@@ -392,7 +394,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         </div>
         <div class="filter-col col-acc">
            <select v-model="filters.account" class="filter-input filter-select">
-              <option value="">Все</option>
+              <option value="">Счет (Все)</option>
               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
            </select>
         </div>
@@ -403,19 +405,19 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <template v-if="!isWithdrawalMode">
             <div class="filter-col col-contr">
                <select v-model="filters.contractor" class="filter-input filter-select">
-                  <option value="">Все</option>
+                  <option value="">Контрагент (Все)</option>
                   <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
                </select>
             </div>
             <div class="filter-col col-cat">
                <select v-model="filters.category" class="filter-input filter-select">
-                  <option value="">Все</option>
+                  <option value="">Категория (Все)</option>
                   <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
                </select>
             </div>
             <div class="filter-col col-proj">
                <select v-model="filters.project" class="filter-input filter-select">
-                  <option value="">Все</option>
+                  <option value="">Проект (Все)</option>
                   <option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option>
                </select>
             </div>
@@ -426,25 +428,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         </template>
 
         <div class="filter-col col-trash"></div>
-      </div>
-      
-      <!-- ЗАГОЛОВКИ ТАБЛИЦЫ -->
-      <div class="grid-header">
-        <span class="col-date">Дата</span>
-        <span class="col-owner">Владелец</span>
-        <span class="col-acc">Счет</span>
-        <span class="col-amount">Сумма</span>
-        
-        <template v-if="!isWithdrawalMode">
-            <span class="col-contr">Контрагент</span>
-            <span class="col-cat">Категория</span>
-            <span class="col-proj">Проект</span>
-        </template>
-        <template v-else>
-            <span class="col-destination">Назначение / Куда</span>
-        </template>
-
-        <span class="col-trash"></span>
       </div>
       
       <div class="list-scroll">
@@ -500,9 +483,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
           <template v-else>
               <div class="col-destination withdrawal-destination-cell">
-                  <!-- 🟢 ИНПУТ НАЗНАЧЕНИЯ -->
                   <input type="text" v-model="item.destination" class="edit-input" placeholder="Куда (напр. Карта)" />
-                  <!-- 🟢 КНОПКА РЕДАКТИРОВАНИЯ (КАРАНДАШ) ДЛЯ ВЫВОДА -->
                   <button class="edit-btn-icon" @click="editWithdrawal(item)" title="Подробно">
                       ✎
                   </button>
@@ -518,14 +499,29 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       </div>
 
       <div class="popup-footer">
-        <button class="btn-close" @click="$emit('close')">Отмена</button>
-        <button class="btn-save" @click="handleSave" :disabled="isSaving">{{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}</button>
+        
+        <button 
+           class="btn-add-new-footer" 
+           :class="{
+             'btn-income': type === 'income' && !isWithdrawalMode && filterMode !== 'prepayment_only',
+             'btn-expense': type === 'expense',
+             'btn-withdrawal': isWithdrawalMode,
+             'btn-prepayment': filterMode === 'prepayment_only'
+           }"
+           @click="openCreatePopup"
+        >
+          + Создать {{ isWithdrawalMode ? 'Вывод' : (filterMode === 'prepayment_only' ? 'Предоплату' : (type === 'income' ? 'Доход' : 'Расход')) }}
+        </button>
+
+        <div class="footer-actions">
+            <button class="btn-close" @click="$emit('close')">Отмена</button>
+            <button class="btn-save" @click="handleSave" :disabled="isSaving">{{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}</button>
+        </div>
       </div>
     </div>
 
     <OperationPopup v-if="isCreatePopupVisible" :type="type" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @operation-added="handleOperationAdded" />
     
-    <!-- 🟢 Попап вывода (для создания И редактирования) -->
     <WithdrawalPopup 
        v-if="isWithdrawalPopupVisible" 
        :initial-data="{ amount: 0 }" 
@@ -549,51 +545,88 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F4F4F4; border-radius: 12px; display: flex; flex-direction: column; max-height: 90vh; margin: 2rem 1rem; box-shadow: 0 15px 40px rgba(0,0,0,0.3); width: 98%; max-width: 1300px; }
+.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; max-height: 90vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 98%; max-width: 1400px; border: 1px solid #ddd; }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
-h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
+h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
 
-.create-section { margin: 0 1.5rem 1.5rem 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+.popup-footer { 
+  padding: 1.5rem; border-top: 1px solid #E0E0E0; 
+  display: flex; justify-content: space-between; 
+  align-items: center;
+  background-color: #F9F9F9; border-radius: 0 0 12px 12px; 
+}
 
-.btn-add-new { 
-  width: 100%; padding: 12px; 
+.footer-actions {
+    display: flex; 
+    gap: 12px;
+}
+
+.btn-add-new-footer { 
+  padding: 12px 20px; 
   border: 1px solid transparent; 
   border-radius: 8px; 
   color: #fff; 
-  font-size: 15px; cursor: pointer; transition: all 0.2s; 
+  font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; 
+  white-space: nowrap;
 }
+
 .btn-income { background-color: var(--color-primary); }
 .btn-income:hover { background-color: #2da84e; }
 
 .btn-expense { background-color: var(--color-danger); }
 .btn-expense:hover { background-color: #d93025; }
 
-/* 🟢 СТИЛЬ КНОПКИ ВЫВОДА */
 .btn-withdrawal { background-color: #7B1FA2; }
 .btn-withdrawal:hover { background-color: #6A1B9A; }
 
-.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.total-item { font-size: 16px; color: #333; }
-.total-label { margin-right: 8px; color: #666; }
-.total-value { font-weight: 700; }
+.btn-prepayment { background-color: #FF9D00; }
+.btn-prepayment:hover { background-color: #e68a00; }
 
-.total-income { color: #1a1a1a; font-size: 1.3em; }
+.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; align-items: baseline; }
+.total-item { font-size: 16px; color: #333; }
+.total-label { margin-right: 8px; color: #666; font-weight: 500; }
+.total-value { font-weight: 800; font-size: 1.3em; }
+
+.total-income { color: #1a1a1a; }
 .total-expense { color: var(--color-danger); }
 .total-prepayment { color: #FF9D00; }
-/* 🟢 СТИЛЬ СУММЫ ВЫВОДА */
 .total-withdrawal { color: #7B1FA2; }
 
-.filters-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; margin-bottom: 8px; }
-.filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
-.filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; padding-right: 20px; }
-.filter-input:focus { outline: none; border-color: var(--color-primary); }
+.filters-row { 
+  display: grid; 
+  grid-template-columns: 130px 1.2fr 1fr 120px 1.2fr 1.2fr 1fr 50px; 
+  gap: 12px; 
+  align-items: center; 
+  padding: 0 1.5rem; 
+  margin-bottom: 10px; 
+}
 
-.grid-header, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 8px; align-items: center; padding: 0 1.5rem; }
-.grid-header { font-size: 0.8em; color: #666; margin-bottom: 8px; font-weight: 500; }
-.grid-row { margin-bottom: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 10px 1.5rem; }
+/* Сбрасываем стили обертки, так как теперь у нас один компонент */
+.date-range-wrapper {
+  display: block;
+  padding: 0;
+  border: none;
+}
 
-/* 🟢 ШИРИНА КОЛОНКИ НАЗНАЧЕНИЯ (Объединяет 3 обычные колонки) */
+.grid-row { 
+  display: grid; 
+  grid-template-columns: 130px 1.2fr 1fr 120px 1.2fr 1.2fr 1fr 50px; 
+  gap: 12px; 
+  align-items: center; 
+  padding: 10px 1.5rem; 
+  background: #fff; 
+  border: 1px solid #E0E0E0; 
+  border-radius: 8px;
+  margin-bottom: 8px;
+  transition: box-shadow 0.2s;
+}
+.grid-row:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  border-color: #ccc;
+}
+
 .col-destination { grid-column: span 3; }
 .col-destination-filter { grid-column: span 3; }
 
@@ -616,9 +649,11 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .list-scroll::-webkit-scrollbar { display: none; }
 .edit-input { width: 100%; height: 40px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; padding: 0 8px; font-size: 0.85em; color: #333; box-sizing: border-box; margin: 0; display: block; }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
-.select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.amount-input { text-align: right; font-weight: 600; }
+.filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
+.filter-select, .select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.filter-input:focus { outline: none; border-color: var(--color-primary); }
 
+.amount-input { text-align: right; font-weight: 600; }
 .is-income { color: var(--color-primary); }
 .is-expense { color: var(--color-danger); }
 .is-prepayment { color: #FF9D00 !important; }
@@ -628,7 +663,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .delete-btn svg { width: 18px; height: 18px; stroke: #999; }
 .delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
 .delete-btn:hover svg { stroke: #FF3B30; }
-.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; gap: 10px; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
+
 .btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; font-weight: 500; color: #555; }
 .btn-close:hover { background: #eee; }
 .btn-save { padding: 12px 24px; border: none; background: #222; border-radius: 8px; cursor: pointer; font-weight: 600; color: #fff; }
@@ -636,24 +671,9 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 600; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .empty-state { text-align: center; padding: 2rem; color: #888; }
 
-.system-tag-wrapper {
-  display: flex; align-items: center; height: 40px;
-}
-.system-tag {
-  display: inline-block;
-  background-color: #e0f2f1;
-  color: #009688;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.85em;
-  font-weight: 600;
-  border: 1px solid #b2dfdb;
-}
-.system-tag.tag-orange {
-  background-color: #FFF3E0;
-  color: #FF9D00;
-  border-color: #FFE0B2;
-}
+.system-tag-wrapper { display: flex; align-items: center; height: 40px; }
+.system-tag { display: inline-block; background-color: #e0f2f1; color: #009688; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; border: 1px solid #b2dfdb; }
+.system-tag.tag-orange { background-color: #FFF3E0; color: #FF9D00; border-color: #FFE0B2; }
 
 @media (max-width: 1400px) { .grid-header, .grid-row, .filters-row { grid-template-columns: 110px 1fr 1fr 100px 1fr 1fr 1fr 40px; } }
 @media (max-width: 1100px) { .popup-content { max-width: 98vw; margin: 0.5rem; } .grid-header, .filters-row { display: none; } .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; } .grid-row > div { width: 100%; } }

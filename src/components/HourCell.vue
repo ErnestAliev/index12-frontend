@@ -4,14 +4,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.0 - NEW WITHDRAWAL COLORS ---
- * * ВЕРСИЯ: 4.0 - Новые цвета для вывода (по ТЗ)
- * * ДАТА: 2025-11-24
+ * * --- МЕТКА ВЕРСИИ: v4.2 - TRANSFER RECIPIENT FIX ---
+ * * ВЕРСИЯ: 4.2 - В чипе перевода показывается ПОЛУЧАТЕЛЬ (Компания/Физлицо), а не счет
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Обновлен класс .withdrawal:
- * - Фон: #2F3340
- * - Текст суммы: #DE8FFF
+ * 1. (LOGIC) Добавлен computed `toOwnerName`.
+ * 2. (TEMPLATE) В блоке .transfer теперь используется `toOwnerName` вместо `toAccountName`.
  */
 
 const props = defineProps({
@@ -28,7 +27,6 @@ const mainStore = useMainStore();
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
-  // Если это вывод, то он не считается обычным переводом для стилей
   if (op.isWithdrawal) return false; 
   
   if (op.type?.toLowerCase?.() === 'transfer') return true;
@@ -59,9 +57,29 @@ const isWithdrawalOp = computed(() => {
 const fromAccountName = computed(() =>
   props.operation?.fromAccountId?.name || props.operation?.fromAccountId || ''
 );
-const toAccountName = computed(() =>
-  props.operation?.toAccountId?.name || props.operation?.toAccountId || ''
-);
+
+// 🟢 Новое свойство: Имя Владельца-Получателя
+const toOwnerName = computed(() => {
+  const op = props.operation;
+  if (!op) return '';
+  
+  // Проверяем компанию
+  if (op.toCompanyId) {
+      // Если объект
+      if (typeof op.toCompanyId === 'object') return op.toCompanyId.name;
+      // Если ID - ищем в сторе (опционально, если данные не полные)
+      return 'Компания...'; 
+  }
+  
+  // Проверяем физлицо
+  if (op.toIndividualId) {
+      if (typeof op.toIndividualId === 'object') return op.toIndividualId.name;
+      return 'Физлицо...';
+  }
+  
+  // Фолбэк на счет, если владельца нет
+  return op.toAccountId?.name || 'Счет...';
+});
 
 /* Клики */
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
@@ -86,7 +104,6 @@ const onDrop = (event) => {
   let operationData = null; try { operationData = JSON.parse(raw); } catch { return; }
   if (!operationData || !operationData._id) return;
   
-  // Передаем данные наверх, DayColumn добавит toDateKey
   emit('drop-operation', {
     operation: operationData,
     toCellIndex: props.cellIndex 
@@ -108,17 +125,19 @@ const onDrop = (event) => {
          income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp, 
          expense: operation.type==='expense' && !isWithdrawalOp,
          prepayment: isPrepaymentOp,
-         withdrawal: isWithdrawalOp /* 🟢 КЛАСС ДЛЯ ВЫВОДА */
+         withdrawal: isWithdrawalOp 
       }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
+      <!-- 🟢 ПЕРЕВОД: СУММА -> ПОЛУЧАТЕЛЬ (Владелец) -->
       <template v-if="isTransferOp">
-        <span class="op-title">Перевод</span>
+        <span class="op-amount">
+          {{ formatNumber(Math.abs(operation.amount)) }}
+        </span>
         <span class="op-meta">
-          {{ fromAccountName }} → {{ toAccountName }}
-          <template v-if="operation.amount"> · {{ formatNumber(Math.abs(operation.amount)) }}</template>
+          {{ toOwnerName }}
         </span>
       </template>
 
@@ -132,6 +151,7 @@ const onDrop = (event) => {
         </span>
       </template>
 
+      <!-- ОБЫЧНЫЕ ОПЕРАЦИИ -->
       <template v-else>
         <span class="op-amount">
           {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
@@ -177,16 +197,17 @@ const onDrop = (event) => {
 /* 🟢 ПРЕДОПЛАТА (Оранжевый текст суммы) */
 .prepayment .op-amount { color: #FF9D00 !important; }
 
-/* 🟢 ВЫВОД (Новые цвета по ТЗ) */
-.withdrawal { background: #2F3340; } /* Темный фон */
+/* 🟢 ВЫВОД */
+.withdrawal { background: #2F3340; }
 .withdrawal:hover { background: #3a3f50; }
-.withdrawal .op-amount { color: #DE8FFF; } /* Светло-фиолетовый текст */
+.withdrawal .op-amount { color: #DE8FFF; }
 .withdrawal .op-meta { color: #B085D0; }
 
-/* 🟢 Нейтральный перевод (ТЕМНЫЙ ЦВЕТ) */
+/* 🟢 ПЕРЕВОД (Сумма светлая) */
 .transfer { background:#2F3340; }
 .transfer:hover { background:#3a3f50; }
-.transfer .op-title { font-weight:600; margin-right:6px; color:#d4d8e3; }
+/* Используем тот же цвет, что был у заголовка "Перевод", для суммы */
+.transfer .op-amount { color:#d4d8e3; } 
 .transfer .op-meta { color:#98a2b3; }
 
 @media (max-height: 900px) {
@@ -198,7 +219,7 @@ const onDrop = (event) => {
     font-size: 0.7em; 
     padding: 3px 6px; 
   }
-  .op-amount, .op-title {
+  .op-amount {
     margin-right: 4px; 
   }
 }
