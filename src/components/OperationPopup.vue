@@ -6,14 +6,12 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v38.0 - UI POLISH & INDIVIDUAL FIX ---
- * * ВЕРСИЯ: 38.0 - Улучшения UI для Физлиц и Контрагентов
+ * * --- МЕТКА ВЕРСИИ: v39.0 - INDIVIDUAL DEFAULTS ---
+ * * ВЕРСИЯ: 39.0 - Поддержка дефолтных проектов/категорий для Физлиц
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Динамические лейблы "На счет (Физлица)" / "Владелец (Физлицо)".
- * 2. (UI) Разделение Контрагентов и Физлиц в списке (optgroups через заголовки).
- * 3. (UI) Кнопки создания Контрагента/Физлица в одну строку через слот.
+ * 1. (LOGIC) onContractorSelected теперь обрабатывает `ind_` префикс для загрузки дефолтов.
  */
 
 const mainStore = useMainStore();
@@ -278,24 +276,32 @@ const onAccountSelected = (accountId) => {
   } else { selectedOwner.value = null; }
 };
 
+// 🟢 ОБНОВЛЕНО: Теперь умеет работать с Физлицами (ind_)
 const onContractorSelected = (val, setProject = false, setCategory = false) => {
   if (!val) return;
   const [prefix, id] = val.split('_');
   
-  if (prefix === 'contr') {
-      const contractor = mainStore.contractors.find(c => c._id === id);
-      if (contractor) {
-        if (setProject && contractor.defaultProjectId) { 
-            const pId = (contractor.defaultProjectId && typeof contractor.defaultProjectId === 'object') ? contractor.defaultProjectId._id : contractor.defaultProjectId; 
+  // Хелпер для установки
+  const applyDefaults = (entity) => {
+      if (entity) {
+        if (setProject && entity.defaultProjectId) { 
+            const pId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId; 
             selectedProjectId.value = pId; 
         }
-        if (setCategory && contractor.defaultCategoryId) { 
-            const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId;
+        if (setCategory && entity.defaultCategoryId) { 
+            const cId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
             selectedCategoryId.value = cId; 
         }
       }
+  };
+
+  if (prefix === 'contr') {
+      const contractor = mainStore.contractors.find(c => c._id === id);
+      applyDefaults(contractor);
+  } else if (prefix === 'ind') {
+      const individual = mainStore.individuals.find(i => i._id === id);
+      applyDefaults(individual);
   }
-  // Для Физлиц дефолтов пока нет, поэтому просто оставляем выбор
 };
 
 onMounted(async () => {
@@ -390,33 +396,41 @@ const handleSave = () => {
       }
   }
 
-  // 2. AUTO-LINK CONTRACTOR DEFAULTS
+  // 🟢 2. AUTO-LINK DEFAULTS (Contractor OR Individual)
+  // Если выбран контрагент
   if (contractorId) {
       const contr = mainStore.contractors.find(c => c._id === contractorId);
-      if (contr) {
-          const currentProjId = (contr.defaultProjectId && typeof contr.defaultProjectId === 'object') ? contr.defaultProjectId._id : contr.defaultProjectId;
-          const currentCatId = (contr.defaultCategoryId && typeof contr.defaultCategoryId === 'object') ? contr.defaultCategoryId._id : contr.defaultCategoryId;
-          
-          let updateNeeded = false;
-          const updateData = { _id: contr._id, name: contr.name, order: contr.order };
-          
-          if (selectedProjectId.value && selectedProjectId.value !== currentProjId) {
-              updateData.defaultProjectId = selectedProjectId.value;
-              updateNeeded = true;
-          } else {
-              updateData.defaultProjectId = currentProjId; 
-          }
+      if (contr) updateDefaults(contr, 'contractors');
+  }
+  // Если выбрано Физлицо как контрагент (есть companyId владельца)
+  else if (individualCounterpartyId) {
+      const ind = mainStore.individuals.find(i => i._id === individualCounterpartyId);
+      if (ind) updateDefaults(ind, 'individuals');
+  }
 
-          if (selectedCategoryId.value && selectedCategoryId.value !== currentCatId) {
-              updateData.defaultCategoryId = selectedCategoryId.value;
-              updateNeeded = true;
-          } else {
-              updateData.defaultCategoryId = currentCatId; 
-          }
-          
-          if (updateNeeded) {
-              mainStore.batchUpdateEntities('contractors', [updateData]);
-          }
+  function updateDefaults(entity, storePath) {
+      const currentProjId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId;
+      const currentCatId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
+      
+      let updateNeeded = false;
+      const updateData = { _id: entity._id, name: entity.name, order: entity.order };
+      
+      if (selectedProjectId.value && selectedProjectId.value !== currentProjId) {
+          updateData.defaultProjectId = selectedProjectId.value;
+          updateNeeded = true;
+      } else {
+          updateData.defaultProjectId = currentProjId; 
+      }
+
+      if (selectedCategoryId.value && selectedCategoryId.value !== currentCatId) {
+          updateData.defaultCategoryId = selectedCategoryId.value;
+          updateNeeded = true;
+      } else {
+          updateData.defaultCategoryId = currentCatId; 
+      }
+      
+      if (updateNeeded) {
+          mainStore.batchUpdateEntities(storePath, [updateData]);
       }
   }
 

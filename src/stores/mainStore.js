@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v32.0 - PERFORMANCE OPTIMIZATION ---
- * * ВЕРСИЯ: 32.0 - Оптимизация производительности переводов (Single Server Request)
+ * * --- МЕТКА ВЕРСИИ: v33.0 - SNAPSHOT SYNC FIX ---
+ * * ВЕРСИЯ: 33.0 - Исправление "Двойного счета" и редактор Физлиц
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) createTransfer теперь делает ОДИН запрос к серверу.
- * 2. (LOGIC) Вся логика разбиения на 2 операции (меж.комп) перенесена на сервер.
- * 3. (FIX) Удалены лишние вызовы refreshDay и createEvent из клиента.
+ * 1. (BUGFIX) createEvent/updateOperation теперь вызывает fetchSnapshot() для синхронизации баланса.
+ * 2. (LOGIC) createTransfer теперь тоже вызывает fetchSnapshot().
+ * 3. (REFACTOR) Добавлены поля для Individuals (projects/categories) в batchUpdateEntities.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v32.0 (Perf Optimized) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v33.0 (Snapshot Sync Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -824,7 +824,7 @@ export const useMainStore = defineStore('mainStore', () => {
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date })
+       await axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date })
             .catch(() => { refreshDay(oldDateKey); refreshDay(newDateKey); });
        
        const now = new Date();
@@ -835,9 +835,8 @@ export const useMainStore = defineStore('mainStore', () => {
        const isInSnapshot = newDate <= now;
        
        if (wasInSnapshot !== isInSnapshot) {
-           if (wasInSnapshot && !isInSnapshot) applySnapshotDelta(sourceOpData, 'remove'); 
-           else applySnapshotDelta(sourceOpData, 'add'); 
-           
+           // 🟢 BUGFIX: Вместо ручного дельта, пересчитываем снепшот, чтобы избежать рассинхрона
+           await fetchSnapshot();
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        } else {
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -847,14 +846,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
-  // 🟢 Оптимизированная функция создания перевода
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
       const transferCategory = await _getOrCreateTransferCategory();
       
-      // Авто-определение контрагентов для межкомпа (можно делать и на сервере, но здесь у нас есть объекты из стора)
       let expenseContractorId = null;
       let incomeContractorId = null;
 
@@ -874,30 +871,24 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
 
-      // Формируем ЕДИНЫЙ пейлоуд для сервера
       const payload = {
           ...transferData,
           dateKey,
           categoryId: transferData.categoryId || transferCategory,
-          expenseContractorId, // Добавляем ID контрагентов, если есть
+          expenseContractorId, 
           incomeContractorId
       };
 
-      // 🟢 ОДИН ЗАПРОС К СЕРВЕРУ
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
 
-      // Обновляем UI
       await refreshDay(dateKey);
       
       const now = new Date();
       if (finalDate <= now) {
-          // Если сервер вернул массив (inter_company), применяем дельту для каждого
-          if (Array.isArray(data)) {
-              data.forEach(op => applySnapshotDelta(op, 'add'));
-          } else {
-              applySnapshotDelta(data, 'add');
-          }
+          // 🟢 BUGFIX: Принудительно обновляем снепшот, чтобы база данных пересчитала баланс
+          // Это предотвращает "двойной счет" (snapshot + futureOps)
+          await fetchSnapshot();
       }
 
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -919,7 +910,8 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const now = new Date();
       if (new Date(newOp.date) <= now) {
-          applySnapshotDelta(newOp, 'add');
+          // 🟢 BUGFIX: Принудительно обновляем снепшот
+          await fetchSnapshot();
       }
       
       if (projection.value.mode) await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -937,15 +929,11 @@ export const useMainStore = defineStore('mainStore', () => {
       else newCellIndex = await getFirstFreeCellIndex(newDateKey);
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
       
-      if (oldOp) {
-          const now = new Date();
-          if (new Date(oldOp.date) <= now) applySnapshotDelta(oldOp, 'remove');
-          if (oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-      }
-      
+      if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       
-      fetchSnapshot();
+      // 🟢 BUGFIX: Всегда обновляем снепшот при изменении
+      await fetchSnapshot();
       
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
@@ -965,14 +953,11 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const response = await axios.put(`${API_BASE_URL}/events/${opId}`, updatePayload);
       
-      const now = new Date();
-      if (oldOp && new Date(oldOp.date) <= now) applySnapshotDelta(oldOp, 'remove');
-      
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       
-      const newOp = response.data; 
-      if (new Date(newOp.date) <= now) applySnapshotDelta(newOp, 'add');
+      // 🟢 BUGFIX: Всегда обновляем снепшот
+      await fetchSnapshot();
 
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
@@ -982,23 +967,22 @@ export const useMainStore = defineStore('mainStore', () => {
   async function deleteOperation(operation){
     const dateKey = operation.dateKey;
     if (!dateKey) return;
-    const ops = (displayCache.value[dateKey] || []).filter(o => o._id !== operation._id);
-    _syncCaches(dateKey, ops);
     
-    const now = new Date();
-    if (new Date(operation.date) <= now) applySnapshotDelta(operation, 'remove');
-    
-    updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     try {
       if (isTransfer(operation) && operation._id2) await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
       else await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
+      
+      await refreshDay(dateKey);
+      // 🟢 BUGFIX: Обновляем снепшот после удаления
+      await fetchSnapshot();
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     } catch(e) { refreshDay(dateKey); }
   }
 
   async function addOperation(op){
     if (!op.dateKey) return;
     await refreshDay(op.dateKey); 
-    fetchSnapshot();
+    await fetchSnapshot(); // 🟢 Sync
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
@@ -1037,6 +1021,7 @@ export const useMainStore = defineStore('mainStore', () => {
           return;
       }
 
+      // 🟢 ОБНОВЛЕНО: Теперь этот метод работает и для individuals (defaultProjectIds, defaultCategoryIds добавлены на бэке)
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items); 
       const sortedData = _sortByOrder(res.data);
       
@@ -1091,12 +1076,11 @@ export const useMainStore = defineStore('mainStore', () => {
 
   return {
     accounts, companies, contractors, projects, categories, individuals, 
-    visibleCategories, visibleContractors, // 🟢 EXPORTED
+    visibleCategories, visibleContractors, 
     operationsCache: displayCache, displayCache, calculationCache,
     allWidgets, dashboardLayout, projection, dashboardForecastState,
     user, isAuthLoading,
 
-    // 🟢 EXPORT
     isHeaderExpanded, toggleHeaderExpansion,
 
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,

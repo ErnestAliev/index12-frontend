@@ -6,13 +6,13 @@ import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v14.1 - DYNAMIC MODAL TITLE ---
- * * ВЕРСИЯ: 14.1 - Динамический заголовок модалки выбора для контрагентов
- * * ДАТА: 2025-11-25
+ * * --- МЕТКА ВЕРСИИ: v15.0 - INDIVIDUALS REFACTOR ---
+ * * ВЕРСИЯ: 15.0 - Редактор Физлиц теперь поддерживает Проекты и Категории
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) multiSelectTitle теперь включает имя контрагента.
- * 2. (STYLE) Имя контрагента выделяется жирным черным цветом через HTML теги.
+ * 1. (LOGIC) isIndividualEditor теперь также активирует логику isContractorEditor (пикеры).
+ * 2. (UI) В шаблон добавлены кнопки выбора проектов/категорий для Физлиц.
  */
 
 const props = defineProps({
@@ -43,7 +43,7 @@ const onAccountPickerSave = (newSelectedIds) => {
   currentItemForPicker.value = null;
 };
 
-// Открытие нового мульти-селекта (для контрагентов - проекты/категории)
+// Открытие нового мульти-селекта (для контрагентов и физлиц - проекты/категории)
 const openMultiSelect = (item, type) => {
   currentItemForPicker.value = item;
   multiSelectType.value = type;
@@ -62,7 +62,7 @@ const onMultiSelectSave = (newIds) => {
   currentItemForPicker.value = null;
 };
 
-// 🟢 Данные для мульти-селекта (Стилизованный заголовок)
+// 🟢 Данные для мульти-селекта
 const multiSelectTitle = computed(() => {
   const contractorName = currentItemForPicker.value?.name || '';
   const styledName = `<span style="color: #000000; font-weight: 800;">"${contractorName}"</span>`;
@@ -106,6 +106,9 @@ const isIndividualEditor = props.title.includes('Физлиц');
 const isProjectEditor = props.title.includes('проекты');
 const isCategoryEditor = props.title.includes('категории');
 
+// 🟢 Флаг для отображения пикеров Проектов/Категорий (Теперь и для Физлиц)
+const showDefaultsPickers = computed(() => isContractorEditor || isIndividualEditor);
+
 // Название сущности для кнопки
 let entityNameSingular = 'объект';
 if (isAccountEditor) entityNameSingular = 'счет';
@@ -129,7 +132,7 @@ const pickerHintText = computed(() => {
 const companiesList = computed(() => mainStore.companies || []);
 const individualsList = computed(() => mainStore.individuals || []);
 
-// --- ЛОГИКА СОЗДАНИЯ ВЛАДЕЛЬЦА "НА ЛЕТУ" (для счетов) ---
+// --- ЛОГИКА СОЗДАНИЯ ВЛАДЕЛЬЦА "НА ЛЕТУ" ---
 const showCreateOwnerPopup = ref(false);
 const ownerTypeToCreate = ref('company');
 const newOwnerNameInput = ref('');
@@ -210,12 +213,15 @@ const handleCreateNew = async () => {
     if (newItem) {
       const mappedItem = { ...newItem };
       if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; mappedItem.ownerValue = null; }
-      if (isContractorEditor) { 
+      
+      // 🟢 Инициализация полей для контрагентов и физлиц
+      if (isContractorEditor || isIndividualEditor) { 
           mappedItem.defaultProjectId = null; 
           mappedItem.defaultCategoryId = null; 
           mappedItem.selectedProjectIds = []; 
           mappedItem.selectedCategoryIds = []; 
       } 
+      
       if (isCompanyEditor || isIndividualEditor) { mappedItem.selectedAccountIds = []; }
       localItems.value.push(mappedItem);
       cancelCreation();
@@ -250,7 +256,9 @@ onMounted(() => {
       else if (iId) ownerVal = `individual-${iId}`;
       return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal }
     }
-    if (isContractorEditor) {
+    
+    // 🟢 ЛОГИКА ДЛЯ КОНТРАГЕНТОВ И ФИЗЛИЦ (defaults)
+    if (isContractorEditor || isIndividualEditor) {
       let pIds = item.defaultProjectIds || [];
       if (!pIds.length && item.defaultProjectId) {
           const pId = (typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
@@ -263,20 +271,26 @@ onMounted(() => {
           if(cId) cIds.push(cId);
       }
       
-      return { 
+      const baseObj = { 
           ...item, 
           selectedProjectIds: pIds,
           selectedCategoryIds: cIds
+      };
+
+      // Для Физлиц добавляем еще и привязку счетов (если они владельцы)
+      if (isIndividualEditor) {
+          const selectedAccountIds = allAccounts.filter(a => (a.individualId?._id || a.individualId) === item._id).map(a => a._id);
+          baseObj.selectedAccountIds = selectedAccountIds;
       }
+      
+      return baseObj;
     }
+
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
       return { ...item, selectedAccountIds: selectedAccountIds };
     }
-    if (isIndividualEditor) {
-      const selectedAccountIds = allAccounts.filter(a => (a.individualId?._id || a.individualId) === item._id).map(a => a._id);
-      return { ...item, selectedAccountIds: selectedAccountIds };
-    }
+    
     return item;
   });
 });
@@ -292,7 +306,9 @@ const handleSave = async () => {
             else if (type === 'individual') { data.companyId = null; data.individualId = id; }
         } else { data.companyId = null; data.individualId = null; }
     }
-    if (isContractorEditor) { 
+    
+    // 🟢 СОХРАНЕНИЕ DEFAULTS ДЛЯ КОНТРАГЕНТОВ И ФИЗЛИЦ
+    if (isContractorEditor || isIndividualEditor) { 
         data.defaultProjectIds = item.selectedProjectIds || [];
         data.defaultCategoryIds = item.selectedCategoryIds || [];
         data.defaultProjectId = data.defaultProjectIds[0] || null;
@@ -388,11 +404,15 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
           <span class="header-accounts">Привязанные счета</span>
           <span class="header-trash"></span>
         </div>
-        <div v-else-if="isIndividualEditor" class="editor-header owner-header">
+        <!-- 🟢 ОБНОВЛЕННЫЙ ЗАГОЛОВОК ДЛЯ ФИЗЛИЦ -->
+        <div v-else-if="isIndividualEditor" class="editor-header contractor-header">
           <span class="header-name">Имя Физлица</span>
-          <span class="header-accounts">Привязанные счета</span>
+          <span class="header-project">Проекты</span>
+          <span class="header-category">Категории</span>
+          <span class="header-accounts-small">Счета</span> <!-- New column -->
           <span class="header-trash"></span>
         </div>
+        <!-- 🟢 ОБНОВЛЕННЫЙ ЗАГОЛОВОК ДЛЯ КОНТРАГЕНТОВ -->
         <div v-else-if="isContractorEditor" class="editor-header contractor-header">
           <span class="header-name">Название</span>
           <span class="header-project">Проекты</span>
@@ -423,20 +443,26 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
                 <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" />
               </template>
               
-              <template v-if="isContractorEditor">
-                <!-- 🟢 МНОЖЕСТВЕННЫЙ ВЫБОР: Проекты -->
+              <!-- 🟢 ПИКЕРЫ ДЛЯ КОНТРАГЕНТОВ И ФИЗЛИЦ -->
+              <template v-if="showDefaultsPickers">
                 <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">
                    {{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}
                 </button>
-                <!-- 🟢 МНОЖЕСТВЕННЫЙ ВЫБОР: Категории -->
                 <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">
                    {{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}
                 </button>
               </template>
 
-              <template v-if="isCompanyEditor || isIndividualEditor">
+              <template v-if="isCompanyEditor">
                 <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">
                   Выбрано ({{ item.selectedAccountIds.length }})
+                </button>
+              </template>
+
+              <!-- 🟢 ПИКЕР СЧЕТОВ ДЛЯ ФИЗЛИЦ (ЕСЛИ ОНИ ВЛАДЕЛЬЦЫ) -->
+              <template v-if="isIndividualEditor">
+                 <button type="button" class="edit-input edit-account-picker-small" @click="openAccountPicker(item)">
+                  Счета ({{ item.selectedAccountIds.length }})
                 </button>
               </template>
               
@@ -453,6 +479,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       </div>
     </div>
 
+    <!-- ОСТАЛЬНОЙ КОД МОДАЛКИ БЕЗ ИЗМЕНЕНИЙ -->
     <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">
         <div v-if="isDeleting" class="deleting-state">
@@ -484,7 +511,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         <p class="sub-text">
           Создание: <b>{{ ownerTypeToCreate === 'company' ? 'Компания' : 'Физлицо' }}</b>
         </p>
-        
         <input 
           type="text" 
           v-model="newOwnerNameInput" 
@@ -494,7 +520,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
           @keyup.enter="saveNewOwner"
           @keyup.esc="cancelCreateOwner"
         />
-        
         <div class="owner-actions">
            <button class="btn-cancel" @click="cancelCreateOwner">Отмена</button>
            <button class="btn-save-owner" @click="saveNewOwner" :disabled="isSavingOwner">
@@ -513,7 +538,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       @save="onAccountPickerSave"
     />
 
-    <!-- 🟢 Новый модал для множественного выбора -->
     <MultiSelectModal
       v-if="showMultiSelect"
       :title="multiSelectTitle"
@@ -528,15 +552,12 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
-.popup-content.wide { max-width: 850px; /* 🟢 Еще шире для 3 кнопок */ }
+.popup-content.wide { max-width: 900px; /* 🟢 Еще шире для Физлиц */ }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit-edit { background-color: #222222; }
 .btn-submit-edit:hover { background-color: #444444; }
-.editor-hint { font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 1rem; }
-
-/* Create */
 .create-section { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
 .btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
@@ -557,9 +578,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .owner-header .header-accounts { flex-shrink: 0; width: 310px; }
 
-/* 🟢 Стили колонок контрагента */
-.contractor-header .header-project { flex-shrink: 0; width: 200px; } /* Увеличенная ширина */
-.contractor-header .header-category { flex-shrink: 0; width: 200px; } /* Увеличенная ширина */
+/* 🟢 Стили колонок контрагента/физлица */
+.contractor-header .header-project { flex-shrink: 0; width: 200px; } 
+.contractor-header .header-category { flex-shrink: 0; width: 200px; } 
+.contractor-header .header-accounts-small { flex-shrink: 0; width: 90px; text-align: center; } 
 
 .header-trash { width: 48px; flex-shrink: 0; }
 
@@ -572,11 +594,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 
-/* 🟢 Стили кнопок пикеров для контрагентов */
 .edit-picker-btn {
-  flex-shrink: 0; width: 200px; /* Увеличенная ширина */
+  flex-shrink: 0; width: 200px; 
   text-align: left; cursor: pointer; 
-  /* Иконка стрелочки */
   background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 10px center;
   padding-right: 20px;
@@ -592,6 +612,15 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
 .edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; font-size: 15px; display: flex; align-items: center; margin: 0; padding: 0 14px; height: 48px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; font-family: inherit; }
 .edit-account-picker:hover { border-color: #222222; }
+
+/* 🟢 Маленькая кнопка для счетов физлиц */
+.edit-account-picker-small {
+  flex-shrink: 0; width: 90px; 
+  text-align: center; padding: 0; justify-content: center;
+  font-size: 13px; 
+  background-image: none; /* Убрал стрелку для экономии места */
+}
+
 .delete-btn { width: 48px; height: 48px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 10px; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 100%; height: 100%; stroke: #999; transition: stroke 0.2s; }
 .delete-btn:hover { border-color: #FF3B30; background: #fff5f5; }
@@ -616,12 +645,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
 
-/* Styles for Create Owner Popup */
 .create-owner-box { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 350px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center; }
 .create-owner-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; }
 .sub-text { font-size: 14px; color: #666; margin-bottom: 15px; }
-
-/* 🟢 ИСПРАВЛЕНО: Явный белый фон для инпута создания владельца */
 .create-owner-input { 
   width: 100%; 
   height: 40px; 
@@ -635,7 +661,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
   color: #1a1a1a;
 }
 .create-owner-input:focus { outline: none; border-color: #222; }
-
 .owner-actions { display: flex; justify-content: space-between; align-items: center; }
 .btn-save-owner { padding: 10px 20px; background-color: #34C759; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
 .btn-save-owner:hover { background-color: #2da84e; }
