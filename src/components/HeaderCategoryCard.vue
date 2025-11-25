@@ -13,11 +13,13 @@ const props = defineProps({
 const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
 
+// 🟢 ИЗМЕНЕНО: Теперь проверяем статический ключ 'transfers'
 const isTransferWidget = computed(() => {
-  const catId = props.widgetKey.replace('cat_', '');
-  const category = mainStore.getCategoryById(catId); 
-  return category && (category.name.toLowerCase() === 'перевод' || category.name.toLowerCase() === 'transfer');
+  return props.widgetKey === 'transfers' || 
+         // Fallback для совместимости со старыми категориями (если остались в кеше)
+         (props.widgetKey.startsWith('cat_') && mainStore.getCategoryById(props.widgetKey.replace('cat_', ''))?.name.toLowerCase() === 'перевод');
 });
+
 const isIncomeListWidget = computed(() => props.widgetKey === 'incomeList');
 const isExpenseListWidget = computed(() => props.widgetKey === 'expenseList');
 const isWithdrawalListWidget = computed(() => props.widgetKey === 'withdrawalList');

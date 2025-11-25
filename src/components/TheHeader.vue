@@ -17,16 +17,16 @@ import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v43.1 - TRANSFER ADD FIX ---
- * * ВЕРСИЯ: 43.1 - Исправлен запуск попапа для виджета "Мои переводы"
+ * * --- МЕТКА ВЕРСИИ: v43.2 - STATIC TRANSFERS SUPPORT ---
+ * * ВЕРСИЯ: 43.2 - Добавлена поддержка ключа 'transfers'
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) onCategoryAdd: Улучшена проверка на категорию "Перевод".
- * Теперь проверяется реальное имя категории из стора по ID, а также вхождение подстроки в имя виджета.
+ * 1. (TEMPLATE) Добавлена проверка widgetKey === 'transfers' для рендеринга карточки.
+ * 2. (LOGIC) Обновлены onCategoryAdd/Edit для работы с 'transfers'.
  */
 
-console.log('--- TheHeader.vue v43.1 (Transfer Add Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v43.2 (Static Transfers Support) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -157,11 +157,13 @@ const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
 // 🟢 ОБРАБОТЧИК: Создание операции (кнопка "+")
 const onCategoryAdd = (widgetKey, index) => {
+    // 🟢 ИЗМЕНЕНО: Поддержка static 'transfers'
+    if (widgetKey === 'transfers') { isTransferPopupVisible.value = true; return; }
     if (widgetKey === 'incomeList') { operationPopupType.value = 'income'; isOperationPopupVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationPopupType.value = 'expense'; isOperationPopupVisible.value = true; return; }
     if (widgetKey === 'withdrawalList') { isWithdrawalPopupVisible.value = true; return; }
     
-    // Проверка: Является ли виджет категорией "Перевод"
+    // Проверка на старый формат cat_ID для перевода (для совместимости)
     if (widgetKey.startsWith('cat_')) {
         const catId = widgetKey.replace('cat_', '');
         const category = mainStore.getCategoryById(catId);
@@ -175,30 +177,30 @@ const onCategoryAdd = (widgetKey, index) => {
     }
 
     const widget = getWidgetByKey(widgetKey);
-    // 🟢 FIX: Используем .includes() вместо строгого равенства, чтобы поймать "Мои переводы"
     if (widget?.name.toLowerCase().includes('перевод') || widget?.name.toLowerCase().includes('transfer')) { 
         isTransferPopupVisible.value = true; 
         return;
     }
     
-    // Fallback для обычных категорий (обычно Доход, но можно открыть и Расход)
-    // По умолчанию открываем Расход, так как категории расходов встречаются чаще.
     operationPopupType.value = 'expense'; 
     isOperationPopupVisible.value = true;
 };
 
 // 🟢 ОБРАБОТЧИК: Создание предоплаты
 const onLiabilitiesAdd = () => {
-    // Предоплата технически создается как "Доход" в OperationPopup
     operationPopupType.value = 'income';
     isOperationPopupVisible.value = true;
 };
 
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
+    // 🟢 ИЗМЕНЕНО: Поддержка static 'transfers'
+    if (widgetKey === 'transfers') { isTransferEditorVisible.value = true; return; }
+    
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationListEditorTitle.value = 'Редактировать расходы'; operationListEditorType.value = 'expense'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'withdrawalList') { operationListEditorTitle.value = 'Редактировать выводы'; operationListEditorType.value = 'withdrawal'; isOperationListEditorVisible.value = true; return; }
+    
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
     if (category) {
@@ -332,8 +334,9 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
+        <!-- 🟢 ИЗМЕНЕНО: Добавлено условие для widgetKey === 'transfers' -->
         <HeaderCategoryCard
-          v-else-if="widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
+          v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
           :title="getWidgetByKey(widgetKey)?.name || '...'"
           :widgetKey="widgetKey"
           :widgetIndex="index"

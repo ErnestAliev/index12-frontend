@@ -1,12 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v33.0 - SNAPSHOT SYNC FIX ---
- * * ВЕРСИЯ: 33.0 - Исправление "Двойного счета" и редактор Физлиц
+ * * --- МЕТКА ВЕРСИИ: v43.2 - DEFAULT LAYOUT FIX ---
+ * * ВЕРСИЯ: 43.2 - Виджет "Переводы" добавлен в дефолтный лейаут
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (BUGFIX) createEvent/updateOperation теперь вызывает fetchSnapshot() для синхронизации баланса.
- * 2. (LOGIC) createTransfer теперь тоже вызывает fetchSnapshot().
- * 3. (REFACTOR) Добавлены поля для Individuals (projects/categories) в batchUpdateEntities.
+ * 1. (FIX) В dashboardLayout добавлен 'transfers' по умолчанию.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +27,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v33.0 (Snapshot Sync Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v43.2 (Default Layout Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -74,8 +72,9 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
     { key: 'withdrawalList', name: 'Мои выводы' },
+    { key: 'transfers',    name: 'Мои переводы' }, // 🟢 ВАЖНО: Теперь здесь
     { key: 'individuals',  name: 'Мои Физлица' },
-    { key: 'categories',   name: 'Категории' }, 
+    { key: 'categories',   name: 'Категории' },
   ]);
 
   // --- ХЕЛПЕРЫ ---
@@ -160,18 +159,13 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  const allWidgets = computed(() => {
-    const transferCategory = categories.value.find(_isTransferCategory);
-    const cats = [];
-    if (transferCategory) {
-       cats.push({ key: `cat_${transferCategory._id}`, name: 'Мои переводы' });
-    }
-     return [...staticWidgets.value, ...cats];
-  });
+  const allWidgets = computed(() => staticWidgets.value);
 
+  // 🟢 ИЗМЕНЕНО: Добавлен 'transfers' в дефолтный список
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'contractors', 'projects', 'futureTotal'
+    'currentTotal', 'accounts', 'companies', 'contractors', 'projects', 'futureTotal', 
+    'transfers'
   ]);
   watch(dashboardLayout, (n) => localStorage.setItem('dashboardLayout', JSON.stringify(n)), { deep: true });
 
@@ -711,6 +705,24 @@ export const useMainStore = defineStore('mainStore', () => {
       categories.value  = _sortByOrder([...normalCategories, ...prepaymentCategories]);
       
       await fetchSnapshot();
+
+      // 🟢 ИЗМЕНЕНО: Авто-очистка dashboardLayout от несуществующих ключей
+      const availableKeys = new Set(allWidgets.value.map(w => w.key));
+      // Добавляем префикс cat_, так как категории динамические
+      categories.value.forEach(c => availableKeys.add(`cat_${c._id}`));
+
+      const cleanLayout = dashboardLayout.value.filter(key => {
+          // Оставляем плейсхолдеры, основные виджеты и существующие категории
+          return key.startsWith('placeholder_') || availableKeys.has(key);
+      });
+      
+      if (cleanLayout.length !== dashboardLayout.value.length) {
+          console.log('[mainStore] Удалены устаревшие виджеты:', 
+              dashboardLayout.value.filter(key => !availableKeys.has(key) && !key.startsWith('placeholder_'))
+          );
+          dashboardLayout.value = cleanLayout;
+      }
+
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
@@ -1021,7 +1033,6 @@ export const useMainStore = defineStore('mainStore', () => {
           return;
       }
 
-      // 🟢 ОБНОВЛЕНО: Теперь этот метод работает и для individuals (defaultProjectIds, defaultCategoryIds добавлены на бэке)
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items); 
       const sortedData = _sortByOrder(res.data);
       

@@ -808,7 +808,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 
-/* Адаптация текста кнопок на узких экранах */
 @media (max-width: 400px) {
     .btn-dual-action { font-size: 12px; padding: 0 5px; }
 }
