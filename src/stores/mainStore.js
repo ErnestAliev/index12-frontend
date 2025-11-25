@@ -1,12 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v29.6 - HEADER EXPANSION STATE ---
- * * ВЕРСИЯ: 29.6 - Добавлено состояние isHeaderExpanded
- * * ДАТА: 2025-11-24
+ * * --- МЕТКА ВЕРСИИ: v32.0 - PERFORMANCE OPTIMIZATION ---
+ * * ВЕРСИЯ: 32.0 - Оптимизация производительности переводов (Single Server Request)
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (STATE) Добавлено isHeaderExpanded для управления режимом хедера (6 или 12 виджетов).
- * 2. (ACTION) Добавлена функция toggleHeaderExpansion.
- * 3. (FIX) replaceWidget теперь проверяет границы массива dashboardLayout.
+ * 1. (LOGIC) createTransfer теперь делает ОДИН запрос к серверу.
+ * 2. (LOGIC) Вся логика разбиения на 2 операции (меж.комп) перенесена на сервер.
+ * 3. (FIX) Удалены лишние вызовы refreshDay и createEvent из клиента.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v29.6 (Header Expansion) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v32.0 (Perf Optimized) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -58,7 +58,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const todayDayOfYear = ref(0);
   const currentYear = ref(new Date().getFullYear());
 
-  // 🟢 NEW: Состояние расширенного хедера
   const isHeaderExpanded = ref(false);
   function toggleHeaderExpansion() {
     isHeaderExpanded.value = !isHeaderExpanded.value;
@@ -84,6 +83,12 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
     return name === 'перевод' || name === 'transfer';
+  };
+
+  const _isInterCompanyCategory = (cat) => {
+      if (!cat) return false;
+      const name = cat.name.toLowerCase().trim();
+      return ['меж.комп', 'межкомпаний', 'inter-comp', 'inter_company'].includes(name);
   };
 
   const _isInterCompanyOp = (op) => {
@@ -133,6 +138,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const visibleCategories = computed(() => {
     return categories.value.filter(c => {
       if (_isTransferCategory(c)) return false;
+      if (_isInterCompanyCategory(c)) return false;
       if (c.isPrepayment) return false; 
       const n = c.name.toLowerCase().trim();
       if (n === 'предоплата' || n === 'prepayment') return false;
@@ -141,9 +147,16 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const visibleContractors = computed(() => {
+      const myEntityNames = new Set([
+          ...companies.value.map(c => c.name.toLowerCase().trim()),
+          ...individuals.value.map(i => i.name.toLowerCase().trim())
+      ]);
+
       return contractors.value.filter(c => {
           const n = c.name.toLowerCase().trim();
-          return n !== 'физлица' && n !== 'individuals';
+          if (n === 'физлица' || n === 'individuals') return false;
+          if (myEntityNames.has(n)) return false;
+          return true;
       });
   });
 
@@ -175,7 +188,6 @@ export const useMainStore = defineStore('mainStore', () => {
   watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
   
   function replaceWidget(i, key){ 
-    // 🟢 FIX: Проверка границ массива, чтобы не портить лейаут в расширенном режиме
     if (i >= 0 && i < dashboardLayout.value.length) {
         if (!dashboardLayout.value.includes(key)) {
             dashboardLayout.value[i] = key; 
@@ -835,147 +847,61 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
+  // 🟢 Оптимизированная функция создания перевода
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
       const transferCategory = await _getOrCreateTransferCategory();
       
-      if (!transferData.transferPurpose || transferData.transferPurpose === 'internal') {
-          const cellIndex = await getFirstFreeCellIndex(dateKey);
-          const response = await axios.post(`${API_BASE_URL}/transfers`, { 
-              ...transferData, 
-              dateKey, 
-              cellIndex, 
-              categoryId: transferData.categoryId || transferCategory 
-          });
-          
-          await refreshDay(dateKey);
-          const now = new Date();
-          if (finalDate <= now) applySnapshotDelta(response.data, 'add');
-          updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-          return response.data;
-      }
+      // Авто-определение контрагентов для межкомпа (можно делать и на сервере, но здесь у нас есть объекты из стора)
+      let expenseContractorId = null;
+      let incomeContractorId = null;
 
       if (transferData.transferPurpose === 'inter_company') {
-          let interCat = categories.value.find(c => ['меж.комп', 'межкомпаний', 'inter-comp'].includes(c.name.toLowerCase()));
-          let isNewCat = false;
-          if (!interCat) {
-              interCat = await addCategory('Меж.комп');
-              isNewCat = true;
-          }
-
-          // 🟢 АВТО-ОПРЕДЕЛЕНИЕ И СОЗДАНИЕ КОНТРАГЕНТОВ
           const fromCompObj = companies.value.find(c => c._id === transferData.fromCompanyId);
           const toCompObj = companies.value.find(c => c._id === transferData.toCompanyId);
-          
-          let expenseContractorId = null; 
-          let incomeContractorId = null;
 
-          // Для Расхода (отправитель) контрагент = Получатель
           if (toCompObj) {
               let c = contractors.value.find(cnt => cnt.name.toLowerCase() === toCompObj.name.toLowerCase());
-              if (!c) {
-                  console.log(`[Auto-Create] Создаю контрагента для получателя: ${toCompObj.name}`);
-                  c = await addContractor(toCompObj.name);
-              }
+              if (!c) c = await addContractor(toCompObj.name);
               expenseContractorId = c._id;
           }
-
-          // Для Дохода (получатель) контрагент = Отправитель
           if (fromCompObj) {
               let c = contractors.value.find(cnt => cnt.name.toLowerCase() === fromCompObj.name.toLowerCase());
-              if (!c) {
-                  console.log(`[Auto-Create] Создаю контрагента для отправителя: ${fromCompObj.name}`);
-                  c = await addContractor(fromCompObj.name);
-              }
+              if (!c) c = await addContractor(fromCompObj.name);
               incomeContractorId = c._id;
           }
-
-          const index1 = await getFirstFreeCellIndex(dateKey);
-          const index2 = await getFirstFreeCellIndex(dateKey, index1 + 1);
-
-          const expenseData = {
-              date: finalDate,
-              dateKey,
-              cellIndex: index2, 
-              type: 'expense',
-              amount: -Math.abs(transferData.amount),
-              accountId: transferData.fromAccountId,
-              companyId: transferData.fromCompanyId,
-              individualId: transferData.fromIndividualId,
-              categoryId: interCat._id,
-              projectId: null, 
-              contractorId: expenseContractorId, // 🟢 
-              description: 'Перевод между компаниями (Исходящий)'
-          };
-          
-          const incomeData = {
-              date: finalDate,
-              dateKey,
-              cellIndex: index1, 
-              type: 'income',
-              amount: Math.abs(transferData.amount),
-              accountId: transferData.toAccountId,
-              companyId: transferData.toCompanyId,
-              individualId: transferData.toIndividualId,
-              categoryId: interCat._id,
-              projectId: null, 
-              contractorId: incomeContractorId, // 🟢
-              description: 'Перевод между компаниями (Входящий)'
-          };
-
-          const [expenseRes, incomeRes] = await Promise.all([
-              createEvent(expenseData),
-              createEvent(incomeData)
-          ]);
-          
-          if (isNewCat) {
-              await fetchAllEntities();
-          }
-          
-          return [expenseRes, incomeRes];
       }
 
-      if (transferData.transferPurpose === 'personal') {
-          const isWithdrawal = (transferData.transferReason === 'personal_use');
-          
-          if (isWithdrawal) {
-              const toAccount = accounts.value.find(a => a._id === transferData.toAccountId);
-              const destText = toAccount ? toAccount.name : 'Личная карта';
+      // Формируем ЕДИНЫЙ пейлоуд для сервера
+      const payload = {
+          ...transferData,
+          dateKey,
+          categoryId: transferData.categoryId || transferCategory,
+          expenseContractorId, // Добавляем ID контрагентов, если есть
+          incomeContractorId
+      };
 
-              const withdrawalData = {
-                  date: finalDate,
-                  dateKey,
-                  type: 'expense',
-                  amount: -Math.abs(transferData.amount),
-                  accountId: transferData.fromAccountId,
-                  companyId: transferData.fromCompanyId,
-                  individualId: transferData.fromIndividualId,
-                  categoryId: null, 
-                  isWithdrawal: true, 
-                  destination: destText, 
-                  description: 'Вывод на личные цели'
-              };
-              
-              const res = await createEvent(withdrawalData);
-              return res;
+      // 🟢 ОДИН ЗАПРОС К СЕРВЕРУ
+      const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
+      const data = response.data;
+
+      // Обновляем UI
+      await refreshDay(dateKey);
+      
+      const now = new Date();
+      if (finalDate <= now) {
+          // Если сервер вернул массив (inter_company), применяем дельту для каждого
+          if (Array.isArray(data)) {
+              data.forEach(op => applySnapshotDelta(op, 'add'));
           } else {
-              const businessExpData = {
-                  date: finalDate,
-                  dateKey,
-                  type: 'expense',
-                  amount: -Math.abs(transferData.amount),
-                  accountId: transferData.fromAccountId,
-                  companyId: transferData.fromCompanyId,
-                  individualId: transferData.fromIndividualId,
-                  categoryId: null,
-                  description: 'Расход на развитие бизнеса (Физлицо)'
-              };
-              const res = await createEvent(businessExpData);
-              return res;
+              applySnapshotDelta(data, 'add');
           }
       }
+
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      return data;
 
     } catch (error) { throw error; }
   }
@@ -1164,8 +1090,8 @@ export const useMainStore = defineStore('mainStore', () => {
   async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
 
   return {
-    accounts, companies, contractors, projects, categories,
-    visibleCategories, visibleContractors, individuals, 
+    accounts, companies, contractors, projects, categories, individuals, 
+    visibleCategories, visibleContractors, // 🟢 EXPORTED
     operationsCache: displayCache, displayCache, calculationCache,
     allWidgets, dashboardLayout, projection, dashboardForecastState,
     user, isAuthLoading,

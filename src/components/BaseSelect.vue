@@ -2,22 +2,21 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
- * * --- КОМПОНЕНТ: BaseSelect v3.0 - FLOATING LABELS ---
- * * ВЕРСИЯ: 3.0 - Поддержка плавающих заголовков (как на макете)
- * * ДАТА: 2025-11-23
+ * * --- КОМПОНЕНТ: BaseSelect v4.0 - GROUPING & ACTIONS ---
+ * * ВЕРСИЯ: 4.0 - Поддержка заголовков групп и кастомных действий
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (PROPS) Добавлен проп `label` для отображения маленького заголовка.
- * 2. (UI) Логика отображения:
- * - Если выбрано значение: показываем label (сверху, мелко) + value (снизу, крупно).
- * - Если не выбрано: показываем placeholder (по центру, крупно).
+ * 1. (TEMPLATE) Добавлена обработка `option.isHeader` для разделителей.
+ * 2. (TEMPLATE) Добавлен слот `action-item` для кастомного содержимого (кнопки).
+ * 3. (STYLE) Стили для заголовков и слотов.
  */
 
 const props = defineProps({
   modelValue: { type: [String, Number, Object], default: null },
-  options: { type: Array, default: () => [] }, // { value, label, rightText, isSpecial }
+  options: { type: Array, default: () => [] }, // { value, label, rightText, isSpecial, isHeader, isActionRow }
   placeholder: { type: String, default: 'Выберите...' },
-  label: { type: String, default: '' }, // 🟢 Новый проп для заголовка
+  label: { type: String, default: '' }, 
   disabled: { type: Boolean, default: false }
 });
 
@@ -27,7 +26,7 @@ const isOpen = ref(false);
 const containerRef = ref(null);
 
 const selectedOption = computed(() => {
-  return props.options.find(o => o.value === props.modelValue);
+  return props.options.find(o => o.value === props.modelValue && !o.isHeader && !o.isActionRow);
 });
 
 const toggle = () => {
@@ -36,6 +35,7 @@ const toggle = () => {
 };
 
 const selectOption = (option) => {
+  if (option.isHeader || option.isActionRow || option.disabled) return;
   emit('update:modelValue', option.value);
   emit('change', option.value);
   isOpen.value = false;
@@ -58,7 +58,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
     <div class="select-trigger" @click="toggle">
       <div class="trigger-content">
         
-        <!-- 🟢 СОСТОЯНИЕ 1: ЗНАЧЕНИЕ ВЫБРАНО -->
+        <!-- СОСТОЯНИЕ 1: ЗНАЧЕНИЕ ВЫБРАНО -->
         <div v-if="selectedOption && selectedOption.value !== null" class="filled-state">
           <span class="small-label">{{ label }}</span>
           <div class="value-row">
@@ -67,7 +67,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
           </div>
         </div>
 
-        <!-- 🟢 СОСТОЯНИЕ 2: ПУСТО (Плейсхолдер) -->
+        <!-- СОСТОЯНИЕ 2: ПУСТО (Плейсхолдер) -->
         <span v-else class="placeholder">{{ placeholder }}</span>
         
       </div>
@@ -78,13 +78,29 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
     <transition name="fade">
       <ul v-if="isOpen" class="options-list">
         <li 
-          v-for="option in options" 
-          :key="option.value"
-          class="option-item"
-          :class="{ 'is-selected': option.value === modelValue, 'is-special': option.isSpecial }"
+          v-for="(option, index) in options" 
+          :key="index"
+          class="list-item-wrapper"
+          :class="{ 
+             'is-header': option.isHeader, 
+             'is-special': option.isSpecial,
+             'is-action-row': option.isActionRow,
+             'is-selected': option.value === modelValue
+          }"
           @click="selectOption(option)"
         >
-          <div class="option-row">
+          <!-- 1. Заголовок группы -->
+          <div v-if="option.isHeader" class="group-header">
+            {{ option.label }}
+          </div>
+
+          <!-- 2. Слот для действий (Кнопки) -->
+          <div v-else-if="option.isActionRow" class="action-row-container" @click.stop>
+             <slot name="action-item" :option="option"></slot>
+          </div>
+
+          <!-- 3. Обычная опция -->
+          <div v-else class="option-row">
             <span class="option-left">{{ option.label }}</span>
             <span v-if="option.rightText" class="option-right">{{ option.rightText }}</span>
           </div>
@@ -105,10 +121,10 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 /* ТРИГГЕР */
 .select-trigger {
   width: 100%;
-  height: 54px; /* Высота как на скриншоте */
+  height: 54px;
   padding: 0 14px;
   background: #FFFFFF;
-  border: 1px solid #E0E0E0; /* Светлый бордер по умолчанию */
+  border: 1px solid #E0E0E0;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -118,7 +134,6 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   user-select: none;
 }
 
-/* Активный бордер */
 .base-select.is-open .select-trigger {
   border-color: var(--focus-color, #28B8A0);
   box-shadow: 0 0 0 1px var(--focus-shadow, rgba(40, 184, 160, 0.2));
@@ -135,14 +150,13 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   height: 100%;
 }
 
-/* Стили для выбранного состояния */
 .filled-state {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
   height: 100%;
-  padding-top: 4px; /* Небольшой отступ сверху */
+  padding-top: 4px;
 }
 
 .small-label {
@@ -174,10 +188,9 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   margin-left: 8px;
 }
 
-/* Стили для плейсхолдера */
 .placeholder { 
   font-size: 15px;
-  color: #aaa; /* Серый цвет как на скрине */
+  color: #aaa;
 }
 
 .arrow { 
@@ -201,14 +214,14 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   border-bottom-right-radius: 8px;
   box-shadow: 0 10px 25px rgba(0,0,0,0.1);
   z-index: 2000;
-  max-height: 250px;
+  max-height: 280px;
   overflow-y: auto;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.option-item {
+.list-item-wrapper {
   padding: 12px 14px;
   cursor: pointer;
   font-size: 15px;
@@ -216,9 +229,35 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   transition: background-color 0.15s;
   border-bottom: 1px solid #f5f5f5;
 }
-.option-item:last-child { border-bottom: none; }
-.option-item:hover { background-color: #f2f2f2; }
-.option-item.is-selected { background-color: #e8e8e8; font-weight: 500; }
+.list-item-wrapper:last-child { border-bottom: none; }
+
+/* Hover для обычных опций */
+.list-item-wrapper:not(.is-header):not(.is-action-row):hover { background-color: #f2f2f2; }
+.list-item-wrapper.is-selected { background-color: #e8e8e8; font-weight: 500; }
+
+/* Стили заголовка */
+.list-item-wrapper.is-header {
+  background-color: #f9f9f9;
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: default;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+/* Стили Action Row (Контейнер для кнопок) */
+.list-item-wrapper.is-action-row {
+  padding: 0;
+  cursor: default;
+  background-color: #fff;
+  border-top: 1px solid #eee;
+  position: sticky;
+  bottom: 0;
+  z-index: 2010;
+}
 
 .option-row {
   display: flex;
@@ -226,28 +265,8 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   align-items: center;
   width: 100%;
 }
-.option-left {
-  text-align: left;
-  flex-grow: 1;
-}
-.option-right {
-  text-align: right;
-  font-size: 0.9em;
-  color: #aaa;
-}
-
-/* СТИЛЬ КНОПКИ "СОЗДАТЬ" */
-.option-item.is-special {
-  color: #1a1a1a;
-  font-weight: 600;
-  background-color: #FAFAFA;
-  border-top: 1px solid #E0E0E0;
-  position: sticky;
-  bottom: 0;
-}
-.option-item.is-special:hover {
-  background-color: #eee;
-}
+.option-left { text-align: left; flex-grow: 1; }
+.option-right { text-align: right; font-size: 0.9em; color: #aaa; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; transform-origin: top; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: scaleY(0.95); }

@@ -1,19 +1,19 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v18.1 - VERTICAL LAYOUT ---
- * * ВЕРСИЯ: 18.1 - Изменение верстки на одну колонку
- * * ДАТА: 2025-11-24
+ * * --- МЕТКА ВЕРСИИ: v19.0 - SCENARIO LOGIC ---
+ * * ВЕРСИЯ: 19.0 - Автоматическое определение сценариев А, Б, В
+ * * ДАТА: 2025-11-26
  * *
  * * ЧТО ИЗМЕНЕНО:
- * * 1. (UI) Селекты теперь располагаются вертикально (по одному в ряд).
- * * 2. (STYLE) Удалены классы transfer-row и half-col.
+ * * 1. (LOGIC) watch(owners): Авто-определение 'transferPurpose'.
+ * * 2. (SCENARIO C) Если получатель = Физлицо, ставим 'personal' + 'business_dev'.
+ * * 3. (UX) Заблокирован выбор "Давида" (контрагента без счета) в этом попапе (это и так невозможно, так как мы выбираем счета).
  */
 
 const mainStore = useMainStore();
@@ -35,9 +35,9 @@ const selectedFromOwner = ref(null);
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
 
-// --- НОВЫЕ ПОЛЯ (SMART LOGIC) ---
+// --- ЛОГИКА СЦЕНАРИЕВ ---
 const transferPurpose = ref('internal'); // 'internal' | 'inter_company' | 'personal'
-const transferReason = ref('personal_use'); // 'personal_use' | 'business_dev'
+const transferReason = ref('business_dev'); // 'personal_use' | 'business_dev'
 
 const purposeOptions = [
   { value: 'internal', label: 'Между счетами одной компании' },
@@ -46,23 +46,23 @@ const purposeOptions = [
 ];
 
 const reasonOptions = [
-  { value: 'personal_use', label: 'На личные цели (Вывод)' },
-  { value: 'business_dev', label: 'На развитие бизнеса' }
+  { value: 'business_dev', label: 'На развитие бизнеса (В системе)' },
+  { value: 'personal_use', label: 'На личные цели (Вывод)' }
 ];
 
 // --- ТЕКСТЫ ПОДСКАЗОК ---
 const smartHint = computed(() => {
   if (transferPurpose.value === 'internal') {
-    return 'Перевод между счетами Вашей компании. Система не учитывает комиссию банков.';
+    return 'Сценарий А: Внутренний перевод. Деньги перемещаются внутри одного баланса.';
   }
   if (transferPurpose.value === 'inter_company') {
-    return 'Система создаст две операции: "Расход" у отправителя и "Доход" у получателя.';
+    return 'Сценарий Б: Меж.комп. Расход у отправителя, Доход у получателя. Категория "Меж.комп".';
   }
   if (transferPurpose.value === 'personal') {
     if (transferReason.value === 'personal_use') {
-      return 'Деньги будут списаны и выведены из оборота (тип "Вывод").';
+      return 'Сценарий Г: Вывод средств. Деньги уходят из системы.';
     } else {
-      return 'Оформляем расход физлица, но учет в системе ведется (тип "Расход").';
+      return 'Сценарий В: Перевод на личную карту. Деньги бизнеса -> Личные деньги (но остаются в системе).';
     }
   }
   return '';
@@ -131,49 +131,38 @@ const accountOptions = computed(() => {
 const ownerOptions = computed(() => {
   const opts = [];
   mainStore.currentCompanyBalances.forEach(c => { 
-    opts.push({ 
-      value: `company-${c._id}`, 
-      label: c.name, 
-      rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`,
-      isSpecial: false 
-    }); 
+    opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`, isSpecial: false }); 
   });
   mainStore.currentIndividualBalances.forEach(i => { 
-    opts.push({ 
-      value: `individual-${i._id}`, 
-      label: i.name, 
-      rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸`,
-      isSpecial: false 
-    }); 
+    opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸`, isSpecial: false }); 
   });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию/Физлицо', isSpecial: true });
   return opts;
 });
 
-// --- SMART WATCHERS (АВТО-ОПРЕДЕЛЕНИЕ) ---
-watch([selectedFromOwner, selectedToOwner, fromAccountId, toAccountId], ([newFromOwner, newToOwner, newFromAcc, newToAcc]) => {
-  // Если мы в режиме редактирования существующего перевода - не меняем логику автоматом,
-  // если только пользователь явно не меняет поля. (В данной реализации - всегда авто, пока пользователь не сменит руками select цели)
-  
-  if (!newFromOwner || !newToOwner) return;
+// 🟢 SMART WATCHER: АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ СЦЕНАРИЯ
+watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
+  if (!newFrom || !newTo) return;
 
-  // Парсинг владельцев
-  const [fromType, fromId] = newFromOwner.split('-');
-  const [toType, toId] = newToOwner.split('-');
+  const [fromType, fromId] = newFrom.split('-');
+  const [toType, toId] = newTo.split('-');
 
-  // Сценарий А: Одна компания/физлицо
+  // Сценарий А: Внутренний (тот же владелец)
   if (fromId === toId && fromType === toType) {
       transferPurpose.value = 'internal';
   }
-  // Сценарий Б: Разные компании/физлица
   else {
-      transferPurpose.value = 'inter_company';
+      // Если получатель - Физлицо (из списка Мои Физлица) -> Сценарий В
+      if (toType === 'individual') {
+          transferPurpose.value = 'personal';
+          transferReason.value = 'business_dev'; // По умолчанию "В системе"
+      } 
+      // Иначе -> Сценарий Б (Меж.комп)
+      else {
+          transferPurpose.value = 'inter_company';
+      }
   }
-  
-  // Сценарий В (Личная карта) - оставляем на ручной выбор пользователя,
-  // так как программно сложно отличить "счет компании Б" от "личной карты" без доп. атрибутов.
 });
-
 
 const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
 const handleToAccountChange = (val) => { if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } else { onToAccountSelected(val); } };
@@ -287,7 +276,6 @@ const handleSave = async () => {
   let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
   let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
   
-  // 🟢 ФОРМИРОВАНИЕ PAYLOAD С НОВЫМИ ПОЛЯМИ
   const transferPayload = { 
       date: finalDate, 
       amount: amountParsed, 
@@ -298,7 +286,6 @@ const handleSave = async () => {
       fromIndividualId: fromIndividualId, 
       toIndividualId: toIndividualId, 
       categoryId: categoryId.value,
-      // Новые поля для Store
       transferPurpose: transferPurpose.value,
       transferReason: transferPurpose.value === 'personal' ? transferReason.value : null
   };
@@ -312,7 +299,6 @@ const closePopup = () => { emit('close'); };
 <template>
   <div class="popup-overlay" @click.self="closePopup">
     <div class="popup-content theme-edit">
-      
       <h3>{{ title }}</h3>
 
       <template v-if="!showCreateOwnerModal">
@@ -321,82 +307,29 @@ const closePopup = () => { emit('close'); };
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
-             <input 
-               type="text" 
-               inputmode="decimal" 
-               v-model="amount" 
-               :placeholder="amount ? '' : 'Перевожу деньги ₸'" 
-               ref="amountInput" 
-               class="real-input" 
-               @input="onAmountInput" 
-             />
+             <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" />
           </div>
         </div>
         
         <!-- ОТПРАВИТЕЛЬ -->
-        <!-- 🟢 ИЗМЕНЕНО: Убраны обертки transfer-row и half-col -->
-        <BaseSelect
-          v-if="!isCreatingFromAccount"
-          v-model="fromAccountId"
-          :options="accountOptions"
-          placeholder="Со счета"
-          label="Со счета"
-          class="input-spacing"
-          @change="handleFromAccountChange"
-        />
-        <!-- (Инлайн создание для счета - упрощено для читаемости, логика выше) -->
-        
-        <BaseSelect
-          v-model="selectedFromOwner"
-          :options="ownerOptions"
-          placeholder="Отправитель"
-          label="Отправитель"
-          class="input-spacing"
-          @change="handleFromOwnerChange"
-        />
+        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
+        <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange" />
 
         <!-- ПОЛУЧАТЕЛЬ -->
-        <!-- 🟢 ИЗМЕНЕНО: Убраны обертки transfer-row и half-col -->
-        <BaseSelect
-          v-if="!isCreatingToAccount"
-          v-model="toAccountId"
-          :options="accountOptions"
-          placeholder="На счет"
-          label="На счет"
-          class="input-spacing"
-          @change="handleToAccountChange"
-        />
-        
-        <BaseSelect
-          v-model="selectedToOwner"
-          :options="ownerOptions"
-          placeholder="Получатель"
-          label="Получатель"
-          class="input-spacing"
-          @change="handleToOwnerChange"
-        />
+        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
+        <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" class="input-spacing" @change="handleToOwnerChange" />
 
-        <!-- 🟢 ЦЕЛЬ ПЕРЕВОДА (УМНЫЙ СЕЛЕКТ) -->
+        <!-- ЦЕЛЬ -->
         <div class="input-spacing">
-            <BaseSelect
-                v-model="transferPurpose"
-                :options="purposeOptions"
-                placeholder="Цель перевода"
-                label="Цель перевода"
-            />
+            <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" />
         </div>
 
-        <!-- 🟢 ПРИЧИНА (ТОЛЬКО ДЛЯ ЛИЧНОГО) -->
+        <!-- ПРИЧИНА -->
         <div v-if="transferPurpose === 'personal'" class="input-spacing fade-in">
-            <BaseSelect
-                v-model="transferReason"
-                :options="reasonOptions"
-                placeholder="Причина перевода"
-                label="Причина"
-            />
+            <BaseSelect v-model="transferReason" :options="reasonOptions" placeholder="Причина перевода" label="Причина" />
         </div>
 
-        <!-- 🟢 ПОДСКАЗКА -->
+        <!-- ПОДСКАЗКА -->
         <div class="hint-box" v-if="smartHint">
             {{ smartHint }}
         </div>
@@ -407,12 +340,7 @@ const closePopup = () => { emit('close'); };
               <span class="floating-label">Дата перевода</span>
               <div class="date-display-row">
                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
-                 <input 
-                   type="date" 
-                   v-model="editableDate" 
-                   class="real-input date-overlay"
-                   :min="minDateString" :max="maxDateString" 
-                 />
+                 <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" />
                  <span class="calendar-icon">📅</span> 
               </div>
            </div>
@@ -459,28 +387,15 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
+/* (Стили не менялись) */
 .theme-edit { --focus-color: #222222; --focus-shadow: rgba(34, 34, 34, 0.2); }
-
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
-
-/* Подсказка */
-.hint-box {
-    background-color: #E3F2FD;
-    border: 1px solid #90CAF9;
-    color: #0D47A1;
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 0.85em;
-    line-height: 1.4;
-    margin-bottom: 12px;
-}
-
+.hint-box { background-color: #E3F2FD; border: 1px solid #90CAF9; color: #0D47A1; padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; margin-bottom: 12px; }
 .fade-in { animation: fadeIn 0.3s ease-in-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }
 .custom-input-box:focus-within { border-color: var(--focus-color, #222); box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2)); }
 .custom-input-box:not(.has-value) .real-input { padding-top: 10px; }

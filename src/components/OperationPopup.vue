@@ -6,14 +6,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v35.0 - AUTO LINK CONTRACTOR ---
- * * ВЕРСИЯ: 35.0 - Авто-привязка проекта и категории к контрагенту
- * * ДАТА: 2025-11-25
- * *
- * * ЧТО ИЗМЕНЕНО:
- * * 1. (LOGIC) В handleSave добавлена логика для Контрагентов.
- * * Если выбран Контрагент + Проект/Категория, и они отличаются от текущих дефолтных,
- * * мы обновляем контрагента в фоне. Это позволяет системе "обучаться".
+ * * --- МЕТКА ВЕРСИИ: v38.0 - UI POLISH & INDIVIDUAL FIX ---
+ * * ВЕРСИЯ: 38.0 - Улучшения UI для Физлиц и Контрагентов
+ * * ДАТА: 2025-11-26
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (UI) Динамические лейблы "На счет (Физлица)" / "Владелец (Физлицо)".
+ * 2. (UI) Разделение Контрагентов и Физлиц в списке (optgroups через заголовки).
+ * 3. (UI) Кнопки создания Контрагента/Физлица в одну строку через слот.
  */
 
 const mainStore = useMainStore();
@@ -35,7 +35,7 @@ const emit = defineEmits([
 const amount = ref('');
 const selectedAccountId = ref(null);
 const selectedOwner = ref(null);
-const selectedContractorId = ref(null);
+const selectedContractorValue = ref(null); // ID контрагента или физлица (prefix)
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
 
@@ -46,7 +46,6 @@ const isInitialLoad = ref(true);
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInput = ref(null);
-const isCreatingContractor = ref(false); const newContractorName = ref(''); const newContractorInput = ref(null);
 const isCreatingProject = ref(false); const newProjectName = ref(''); const newProjectInput = ref(null);
 const isCreatingCategory = ref(false); const newCategoryName = ref(''); const newCategoryInput = ref(null);
 
@@ -54,6 +53,11 @@ const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); 
 const newOwnerName = ref('');
 const newOwnerInputRef = ref(null);
+
+const showCreateContractorModal = ref(false);
+const contractorTypeToCreate = ref('contractor'); // 'contractor' | 'individual'
+const newContractorNameInput = ref('');
+const newContractorInputRef = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
@@ -90,9 +94,37 @@ const txtAmount = computed(() => ({
   lbl: 'Сумма, ₸' 
 }));
 
-const txtAccount = computed(() => ({ ph: isIncome.value ? 'На счет' : 'Со счета', lbl: isIncome.value ? 'На счет' : 'Со счета' }));
-const txtOwner = computed(() => ({ ph: 'Моей компании', lbl: 'Владелец счета (Компания)' })); 
-const txtContractor = computed(() => ({ ph: isIncome.value ? 'От контрагента' : 'Контрагенту', lbl: isIncome.value ? 'От контрагента' : 'Контрагенту' }));
+// 🟢 Динамические лейблы Счета и Владельца
+const isIndividualAccount = computed(() => {
+    if (!selectedAccountId.value) return false;
+    const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+    return acc && !!acc.individualId;
+});
+
+const txtAccount = computed(() => {
+    const suffix = isIndividualAccount.value ? ' (Физлица)' : '';
+    const base = isIncome.value ? 'На счет' : 'Со счета';
+    return { ph: base + suffix, lbl: base + suffix };
+});
+
+const txtOwner = computed(() => {
+    const suffix = isIndividualAccount.value ? ' (Физлицо)' : '';
+    return { ph: 'Владелец счета' + suffix, lbl: 'Владелец счета' + suffix };
+});
+
+// 🟢 Динамический лейбл Контрагента
+const contractorLabel = computed(() => {
+    if (selectedContractorValue.value && selectedContractorValue.value.startsWith('ind_')) {
+        return isIncome.value ? 'От физлица' : 'Физлицу';
+    }
+    return isIncome.value ? 'От контрагента' : 'Контрагенту';
+});
+
+const txtContractor = computed(() => ({ 
+    ph: contractorLabel.value, 
+    lbl: contractorLabel.value 
+}));
+
 const txtProject = computed(() => ({ ph: isIncome.value ? 'Из проекта' : 'В проект', lbl: isIncome.value ? 'От проекта' : 'В проект' }));
 const txtCategory = computed(() => ({ ph: 'По категории', lbl: 'Категория' }));
 const txtDate = computed(() => ({ ph: '', lbl: 'Дата поступления денег' }));
@@ -109,41 +141,52 @@ const accountOptions = computed(() => {
   return opts;
 });
 
+// Владельцы (Разделены)
 const ownerOptions = computed(() => {
   const opts = [];
-  mainStore.currentCompanyBalances.forEach(c => { 
-      opts.push({ 
-          value: `company-${c._id}`, 
-          label: c.name, 
-          rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`, 
-          isSpecial: false 
-      }); 
-  });
-  if (props.operationToEdit && selectedOwner.value && selectedOwner.value.startsWith('individual')) {
-      const [_, indId] = selectedOwner.value.split('-');
-      const ind = mainStore.individuals.find(i => i._id === indId);
-      if (ind) {
-          opts.push({ 
-              value: `individual-${ind._id}`, 
-              label: ind.name, 
-              rightText: `${formatBalance(Math.abs(ind.balance || 0))} ₸`, 
-              isSpecial: false 
-          });
-      }
+  
+  if (mainStore.currentCompanyBalances.length) {
+      opts.push({ label: 'Компании', isHeader: true });
+      mainStore.currentCompanyBalances.forEach(c => { 
+          opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸` }); 
+      });
   }
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию', isSpecial: true });
+  
+  if (mainStore.currentIndividualBalances.length) {
+      opts.push({ label: 'Физлица', isHeader: true });
+      mainStore.currentIndividualBalances.forEach(i => { 
+          opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸` }); 
+      });
+  }
+
+  // Спец строка для двух кнопок
+  opts.push({ isActionRow: true }); 
+  
   return opts;
 });
 
+// Контрагенты (Разделены)
 const contractorOptions = computed(() => {
-  const opts = mainStore.contractors.map(c => ({ value: c._id, label: c.name, isSpecial: false }));
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать контрагента', isSpecial: true });
+  const opts = [];
+  
+  opts.push({ label: 'Контрагенты - ТОО, ИП', isHeader: true });
+  mainStore.contractors.forEach(c => {
+      opts.push({ value: `contr_${c._id}`, label: c.name });
+  });
+  
+  opts.push({ label: 'Физлица - Физлица', isHeader: true });
+  mainStore.individuals.forEach(i => {
+      opts.push({ value: `ind_${i._id}`, label: i.name });
+  });
+
+  // Спец строка для двух кнопок
+  opts.push({ isActionRow: true });
   return opts;
 });
 
 const projectOptions = computed(() => {
-  const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name, isSpecial: false }));
-  opts.unshift({ value: null, label: txtProject.value.ph, isSpecial: false });
+  const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
+  opts.unshift({ value: null, label: txtProject.value.ph });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
 });
@@ -162,23 +205,36 @@ const categoryOptions = computed(() => {
     return !isTransfer && !isPrepay && !isInterComp;
   });
   
-  const opts = validCats.map(c => ({ value: c._id, label: c.name, isSpecial: false }));
-  opts.unshift({ value: null, label: txtCategory.value.ph, isSpecial: false });
+  const opts = validCats.map(c => ({ value: c._id, label: c.name }));
+  opts.unshift({ value: null, label: txtCategory.value.ph });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
   return opts;
 });
 
 // 🟢 HANDLERS
 const handleAccountChange = (val) => { if (val === '--CREATE_NEW--') { selectedAccountId.value = null; showAccountInput(); } else { onAccountSelected(val); } };
-const handleOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedOwner.value = null; openCreateOwnerModal(); } };
-const handleContractorChange = (val) => { if (val === '--CREATE_NEW--') { selectedContractorId.value = null; showContractorInput(); } else { onContractorSelected(val, true, true); } };
+
+// Владельцы создаются через кнопки в слоте, здесь только выбор
+const handleOwnerChange = (val) => { 
+    // Логика выбора уже работает через v-model
+};
+
+// Создание вызывается кнопками, выбор через v-model
+const handleContractorChange = (val) => { 
+    onContractorSelected(val, true, true);
+};
+
 const handleProjectChange = (val) => { if (val === '--CREATE_NEW--') { selectedProjectId.value = null; showProjectInput(); } };
 const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; showCategoryInput(); } };
 
 const triggerPrepaymentFlow = (catId) => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
+    let cId = null;
+    if (selectedContractorValue.value && selectedContractorValue.value.startsWith('contr_')) {
+        cId = selectedContractorValue.value.split('_')[1];
+    }
     const currentData = {
-        amount: rawAmount, accountId: selectedAccountId.value, contractorId: selectedContractorId.value,
+        amount: rawAmount, accountId: selectedAccountId.value, contractorId: cId,
         projectId: selectedProjectId.value, categoryId: catId,
         companyId: selectedOwner.value?.startsWith('company') ? selectedOwner.value.split('-')[1] : null,
         individualId: selectedOwner.value?.startsWith('individual') ? selectedOwner.value.split('-')[1] : null,
@@ -191,7 +247,7 @@ const handlePrepaymentClick = () => {
     errorMessage.value = '';
     const amountFromState = (amount.value || '').replace(/ /g, '');
     const amountParsed = parseFloat(amountFromState);
-    if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorId.value) {
+    if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorValue.value) {
         errorMessage.value = 'Для предоплаты заполните: Сумма, Счет, Владелец, Контрагент.';
         return;
     }
@@ -210,30 +266,58 @@ const onAmountInput = (event) => {
 const onAccountSelected = (accountId) => {
   const account = mainStore.accounts.find(a => a._id === accountId);
   if (account) {
-    if (account.companyId) { const cId = (typeof account.companyId === 'object') ? account.companyId._id : account.companyId; selectedOwner.value = `company-${cId}`; } 
-    else if (account.individualId) { const iId = (typeof account.individualId === 'object') ? account.individualId._id : account.individualId; selectedOwner.value = `individual-${iId}`; } 
+    if (account.companyId) { 
+        const cId = (typeof account.companyId === 'object') ? account.companyId._id : account.companyId; 
+        selectedOwner.value = `company-${cId}`; 
+    } 
+    else if (account.individualId) { 
+        const iId = (typeof account.individualId === 'object') ? account.individualId._id : account.individualId; 
+        selectedOwner.value = `individual-${iId}`; 
+    } 
     else { selectedOwner.value = null; }
   } else { selectedOwner.value = null; }
 };
 
-const onContractorSelected = (contractorId, setProject, setCategory) => {
-  const contractor = mainStore.contractors.find(c => c._id === contractorId);
-  if (contractor) {
-    if (setProject && contractor.defaultProjectId) { const pId = (contractor.defaultProjectId && typeof contractor.defaultProjectId === 'object') ? contractor.defaultProjectId._id : contractor.defaultProjectId; selectedProjectId.value = pId; }
-    if (setCategory && contractor.defaultCategoryId) { 
-        const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId;
-        selectedCategoryId.value = cId; 
-    }
+const onContractorSelected = (val, setProject = false, setCategory = false) => {
+  if (!val) return;
+  const [prefix, id] = val.split('_');
+  
+  if (prefix === 'contr') {
+      const contractor = mainStore.contractors.find(c => c._id === id);
+      if (contractor) {
+        if (setProject && contractor.defaultProjectId) { 
+            const pId = (contractor.defaultProjectId && typeof contractor.defaultProjectId === 'object') ? contractor.defaultProjectId._id : contractor.defaultProjectId; 
+            selectedProjectId.value = pId; 
+        }
+        if (setCategory && contractor.defaultCategoryId) { 
+            const cId = (contractor.defaultCategoryId && typeof contractor.defaultCategoryId === 'object') ? contractor.defaultCategoryId._id : contractor.defaultCategoryId;
+            selectedCategoryId.value = cId; 
+        }
+      }
   }
+  // Для Физлиц дефолтов пока нет, поэтому просто оставляем выбор
 };
 
 onMounted(async () => {
   isInitialLoad.value = true; 
   if (props.operationToEdit) {
-    const op = props.operationToEdit; amount.value = formatNumber(Math.abs(op.amount || 0)); selectedAccountId.value = op.accountId?._id || op.accountId;
+    const op = props.operationToEdit; 
+    amount.value = formatNumber(Math.abs(op.amount || 0)); 
+    selectedAccountId.value = op.accountId?._id || op.accountId;
+    
     if (op.companyId) { const cId = op.companyId?._id || op.companyId; selectedOwner.value = `company-${cId}`; } 
-    else if (op.individualId) { const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; }
-    selectedContractorId.value = op.contractorId?._id || op.contractorId;
+    else if (op.individualId && !op.contractorId) { 
+        const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
+    }
+    
+    if (op.contractorId) { 
+        const cId = op.contractorId._id || op.contractorId;
+        selectedContractorValue.value = `contr_${cId}`;
+    } else if (op.individualId && op.companyId) {
+        const iId = op.individualId._id || op.individualId;
+        selectedContractorValue.value = `ind_${iId}`;
+    }
+
     const catId = op.categoryId?._id || op.categoryId; const prepId = op.prepaymentId?._id || op.prepaymentId; 
     selectedCategoryId.value = catId || prepId || null;
     selectedProjectId.value = op.projectId?._id || op.projectId;
@@ -245,19 +329,40 @@ onMounted(async () => {
 const handleSave = () => {
   if (isInlineSaving.value) return; errorMessage.value = '';
   const amountFromState = (amount.value || '').replace(/ /g, ''); const amountParsed = parseFloat(amountFromState);
-  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorId.value) { errorMessage.value = 'Заполните: Сумма, Счет, Владелец, Контрагент.'; return; }
+  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorValue.value) { errorMessage.value = 'Заполните: Сумма, Счет, Владелец, Контрагент.'; return; }
   const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
-  let companyId = null; let individualId = null;
-  if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') companyId = id; else if (type === 'individual') individualId = id; }
   
+  let companyId = null; let individualOwnerId = null;
+  if (selectedOwner.value) { 
+      const [type, id] = selectedOwner.value.split('-'); 
+      if (type === 'company') companyId = id; 
+      else if (type === 'individual') individualOwnerId = id; 
+  }
+  
+  let contractorId = null;
+  let individualCounterpartyId = null;
+  
+  const [contrPrefix, contrId] = selectedContractorValue.value.split('_');
+  if (contrPrefix === 'contr') {
+      contractorId = contrId;
+  } else if (contrPrefix === 'ind') {
+      if (companyId) {
+          individualCounterpartyId = contrId; 
+      } else {
+          // Владелец и Контрагент оба физлица - конфликт структуры, но сохраняем Владельца.
+      }
+  }
+
+  const finalIndividualId = individualOwnerId || individualCounterpartyId;
+
   const payload = { 
       type: props.type, 
       amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed), 
       categoryId: selectedCategoryId.value || null, 
       accountId: selectedAccountId.value, 
       companyId: companyId, 
-      individualId: individualId, 
-      contractorId: selectedContractorId.value, 
+      individualId: finalIndividualId, 
+      contractorId: contractorId, 
       projectId: selectedProjectId.value || null, 
       date: finalDate,
       prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
@@ -285,9 +390,9 @@ const handleSave = () => {
       }
   }
 
-  // 🟢 2. AUTO-LINK CONTRACTOR DEFAULTS (NEW)
-  if (selectedContractorId.value) {
-      const contr = mainStore.contractors.find(c => c._id === selectedContractorId.value);
+  // 2. AUTO-LINK CONTRACTOR DEFAULTS
+  if (contractorId) {
+      const contr = mainStore.contractors.find(c => c._id === contractorId);
       if (contr) {
           const currentProjId = (contr.defaultProjectId && typeof contr.defaultProjectId === 'object') ? contr.defaultProjectId._id : contr.defaultProjectId;
           const currentCatId = (contr.defaultCategoryId && typeof contr.defaultCategoryId === 'object') ? contr.defaultCategoryId._id : contr.defaultCategoryId;
@@ -295,24 +400,21 @@ const handleSave = () => {
           let updateNeeded = false;
           const updateData = { _id: contr._id, name: contr.name, order: contr.order };
           
-          // Обновляем только если выбрано новое значение и оно отличается от текущего
-          // Если не выбрано (null), оставляем старое, чтобы случайно не стереть привязку
           if (selectedProjectId.value && selectedProjectId.value !== currentProjId) {
               updateData.defaultProjectId = selectedProjectId.value;
               updateNeeded = true;
           } else {
-              updateData.defaultProjectId = currentProjId; // Оставляем как есть
+              updateData.defaultProjectId = currentProjId; 
           }
 
           if (selectedCategoryId.value && selectedCategoryId.value !== currentCatId) {
               updateData.defaultCategoryId = selectedCategoryId.value;
               updateNeeded = true;
           } else {
-              updateData.defaultCategoryId = currentCatId; // Оставляем как есть
+              updateData.defaultCategoryId = currentCatId; 
           }
           
           if (updateNeeded) {
-              console.log(`[Auto-Link] Обновляю настройки контрагента ${contr.name}`);
               mainStore.batchUpdateEntities('contractors', [updateData]);
           }
       }
@@ -341,9 +443,6 @@ const saveNewAccount = async () => {
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } 
 };
 
-const showContractorInput = () => { isCreatingContractor.value = true; nextTick(() => newContractorInput.value?.focus()); };
-const cancelCreateContractor = () => { isCreatingContractor.value = false; newContractorName.value = ''; };
-const saveNewContractor = async () => { if (isInlineSaving.value) return; const name = newContractorName.value.trim(); if (!name) return; isInlineSaving.value = true; try { const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase()); if (existing) { selectedContractorId.value = existing._id; onContractorSelected(existing._id, true, true); } else { const newItem = await mainStore.addContractor(name); selectedContractorId.value = newItem._id; onContractorSelected(newItem._id, true, true); } cancelCreateContractor(); } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } };
 const showProjectInput = () => { isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); };
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
 const saveNewProject = async () => { if (isInlineSaving.value) return; const name = newProjectName.value.trim(); if (!name) return; isInlineSaving.value = true; try { const existing = mainStore.projects.find(p => p.name.toLowerCase() === name.toLowerCase()); if (existing) selectedProjectId.value = existing._id; else { const newItem = await mainStore.addProject(name); selectedProjectId.value = newItem._id; } cancelCreateProject(); } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } };
@@ -351,10 +450,9 @@ const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() =
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => { if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return; isInlineSaving.value = true; try { const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase()); if (existing) selectedCategoryId.value = existing._id; else { const newItem = await mainStore.addCategory(name); selectedCategoryId.value = newItem._id; } cancelCreateCategory(); } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } };
 
-const openCreateOwnerModal = () => { ownerTypeToCreate.value = 'company'; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
-const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (selectedOwner.value === '--CREATE_NEW--') selectedOwner.value = null; };
-const setOwnerTypeToCreate = (type) => { ownerTypeToCreate.value = type; newOwnerInputRef.value?.focus(); };
-
+// MODAL HANDLERS
+const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
+const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => { 
   if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); const type = ownerTypeToCreate.value; if (!name) return; isInlineSaving.value = true; 
   try { 
@@ -363,7 +461,6 @@ const saveNewOwner = async () => {
         const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase()); 
         newItem = existing ? existing : await mainStore.addCompany(name); 
     } else { 
-        // Фолбэк на всякий случай, хотя в UI он скрыт
         const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase()); 
         newItem = existing ? existing : await mainStore.addIndividual(name); 
     } 
@@ -380,6 +477,25 @@ const saveNewOwner = async () => {
     }
     showCreateOwnerModal.value = false; newOwnerName.value = ''; 
   } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } 
+};
+
+const openCreateContractorModal = (type) => { contractorTypeToCreate.value = type; newContractorNameInput.value = ''; showCreateContractorModal.value = true; nextTick(() => newContractorInputRef.value?.focus()); };
+const cancelCreateContractorModal = () => { showCreateContractorModal.value = false; newContractorNameInput.value = ''; if (!selectedContractorValue.value) selectedContractorValue.value = null; };
+const saveNewContractorModal = async () => {
+    if (isInlineSaving.value) return; const name = newContractorNameInput.value.trim(); const type = contractorTypeToCreate.value; if (!name) return; isInlineSaving.value = true;
+    try {
+        let newItem;
+        if (type === 'contractor') {
+            const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase());
+            newItem = existing ? existing : await mainStore.addContractor(name);
+            selectedContractorValue.value = `contr_${newItem._id}`;
+        } else {
+            const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase());
+            newItem = existing ? existing : await mainStore.addIndividual(name);
+            selectedContractorValue.value = `ind_${newItem._id}`;
+        }
+        showCreateContractorModal.value = false; newContractorNameInput.value = '';
+    } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
 };
 
 const closePopup = () => { if (!isInlineSaving.value) emit('close'); };
@@ -435,7 +551,7 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         </div>
       </div>
 
-      <template v-if="props.type !== 'transfer' && !showCreateOwnerModal">
+      <template v-if="props.type !== 'transfer' && !showCreateOwnerModal && !showCreateContractorModal">
         <!-- 1. СЧЕТ -->
         <BaseSelect
           v-if="!isCreatingAccount"
@@ -452,7 +568,7 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
       
-        <!-- 2. ВЛАДЕЛЕЦ (Ограничен) -->
+        <!-- 2. ВЛАДЕЛЕЦ (Компании + Физлица) -->
         <BaseSelect
           v-model="selectedOwner"
           :options="ownerOptions"
@@ -460,23 +576,41 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           :label="txtOwner.lbl"
           class="input-spacing"
           @change="handleOwnerChange"
-        />
+        >
+          <!-- СЛОТ ДЛЯ КНОПОК СОЗДАНИЯ ВЛАДЕЛЬЦА -->
+          <template #action-item>
+             <div class="dual-action-row">
+                <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">
+                   + Создать Компанию
+                </button>
+                <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">
+                   + Создать Физлицо
+                </button>
+             </div>
+          </template>
+        </BaseSelect>
 
-        <!-- 3. КОНТРАГЕНТ -->
+        <!-- 3. КОНТРАГЕНТ (Контрагенты + Физлица) -->
         <BaseSelect
-          v-if="!isCreatingContractor"
-          v-model="selectedContractorId"
+          v-model="selectedContractorValue"
           :options="contractorOptions"
           :placeholder="txtContractor.ph"
           :label="txtContractor.lbl"
           class="input-spacing"
           @change="handleContractorChange"
-        />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newContractorName" placeholder="Название контрагента" ref="newContractorInput" @keyup.enter="saveNewContractor" @keyup.esc="cancelCreateContractor" />
-          <button @click="saveNewContractor" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateContractor" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
-        </div>
+        >
+          <!-- СЛОТ ДЛЯ КНОПОК СОЗДАНИЯ КОНТРАГЕНТА -->
+          <template #action-item>
+             <div class="dual-action-row">
+                <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">
+                   + Созд. контрагента
+                </button>
+                <button @click="openCreateContractorModal('individual')" class="btn-dual-action right">
+                   + Созд. физлицо
+                </button>
+             </div>
+          </template>
+        </BaseSelect>
 
         <!-- 4. ПРОЕКТ -->
         <BaseSelect
@@ -511,10 +645,11 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         </div>
       </template>
 
+      <!-- МОДАЛКА СОЗДАНИЯ ВЛАДЕЛЬЦА -->
       <template v-if="showCreateOwnerModal">
         <div class="smart-create-owner">
-          <h4 class="smart-create-title">Создать Компанию</h4>
-          <input type="text" v-model="newOwnerName" placeholder="Название компании" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
+          <h4 class="smart-create-title">Создать: {{ ownerTypeToCreate === 'company' ? 'Компанию' : 'Физлицо' }}</h4>
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
           <div class="smart-create-actions">
             <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">Отмена</button>
             <button @click="saveNewOwner" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">Создать</button>
@@ -522,7 +657,19 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         </div>
       </template>
 
-      <template v-if="!showCreateOwnerModal">
+      <!-- МОДАЛКА СОЗДАНИЯ КОНТРАГЕНТА -->
+      <template v-if="showCreateContractorModal">
+        <div class="smart-create-owner">
+          <h4 class="smart-create-title">Создать: {{ contractorTypeToCreate === 'contractor' ? 'Контрагента' : 'Физлицо' }}</h4>
+          <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название контрагента' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" />
+          <div class="smart-create-actions">
+            <button @click="cancelCreateContractorModal" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">Отмена</button>
+            <button @click="saveNewContractorModal" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">Создать</button>
+          </div>
+        </div>
+      </template>
+
+      <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
         <!-- ДАТА -->
         <div class="custom-input-box input-spacing has-value date-box">
            <div class="input-inner-content">
@@ -574,14 +721,14 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
 </template>
 
 <style scoped>
-/* ... стили без изменений ... */
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
-.popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
-h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
-
+/* (Стили не менялись) */
 .theme-income { --focus-color: #28B8A0; --focus-shadow: rgba(40, 184, 160, 0.2); --btn-bg: #28B8A0; --btn-hover: #1f9c88; }
 .theme-expense { --focus-color: #F36F3F; --focus-shadow: rgba(243, 111, 63, 0.2); --btn-bg: #F36F3F; --btn-hover: #d95a30; }
 .theme-edit { --focus-color: #000000; --focus-shadow: rgba(0,0,0, 0.2); --btn-bg: #000000; --btn-hover: #333333; }
+
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
+.popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
+h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }
 .custom-input-box:focus-within { border-color: var(--focus-color); box-shadow: 0 0 0 1px var(--focus-shadow); }
@@ -630,4 +777,25 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .smart-create-actions .btn-submit { flex: 1; }
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
+
+/* СТИЛИ ДЛЯ ДВУХ КНОПОК В СЛОТЕ */
+.dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
+.btn-dual-action {
+    flex: 1;
+    border: none;
+    background-color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    color: #007AFF;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; }
+
+/* Адаптация текста кнопок на узких экранах */
+@media (max-width: 400px) {
+    .btn-dual-action { font-size: 12px; padding: 0 5px; }
+}
 </style>
