@@ -6,15 +6,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v12.0 - DESTINATION SELECT ---
- * * ВЕРСИЯ: 12.0 - Поле "Куда" переделано в Select
- * * ДАТА: 2025-11-24
+ * * --- МЕТКА ВЕРСИИ: v13.0 - STRICT RECIPIENT CREATE ---
+ * * ВЕРСИЯ: 13.0 - Убран ручной ввод, добавлено создание Физлица/Контрагента
+ * * ДАТА: 2025-11-25
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Поле "Куда" теперь BaseSelect вместо input text.
- * 2. (LOGIC) destinationOptions собирает Счета, Физлица и Контрагентов.
- * 3. (LOGIC) При сохранении имя выбранного объекта записывается как текст.
- * 4. (UX) Добавлена опция "Ввести вручную" для редких случаев.
+ * 1. (UI) Удален режим "Ввести вручную". Только селект.
+ * 2. (FEAT) В селект добавлены опции "+ Создать Физлицо", "+ Создать Контрагента".
+ * 3. (LOGIC) При выборе создания открывается модалка, создается сущность и выбирается.
  */
 
 const mainStore = useMainStore();
@@ -34,11 +33,14 @@ const isSaving = ref(false);
 
 // Селекты
 const fromAccountId = ref(null);
-const selectedDestinationValue = ref(null); // ID выбранного получателя (acc_ID, ind_ID и т.д.)
+const selectedDestinationValue = ref(null); 
 
-// Ручной ввод (если в списке нет нужного)
-const isCustomDestination = ref(false);
-const customDestinationText = ref('');
+// --- ЛОГИКА СОЗДАНИЯ ПОЛУЧАТЕЛЯ ---
+const showCreateRecipientModal = ref(false);
+const recipientTypeToCreate = ref('individual'); // 'individual' | 'contractor'
+const newRecipientName = ref('');
+const newRecipientInputRef = ref(null);
+const isSavingRecipient = ref(false);
 
 // --- Опции ---
 const reasonOptions = [
@@ -58,52 +60,76 @@ const accountOptions = computed(() => {
   }));
 });
 
-// Опции получателей (куда) - Сборная солянка
+// Опции получателей (куда)
 const destinationOptions = computed(() => {
     const opts = [];
     
-    // 1. Счета (кроме выбранного для списания, по хорошему, но пока покажем все)
+    // Счета (кроме текущего)
     mainStore.accounts.forEach(acc => {
-        // Исключаем текущий счет списания из списка получателей, если он выбран
         if (acc._id !== fromAccountId.value) {
             opts.push({ value: `acc_${acc._id}`, label: acc.name, rightText: 'Счет', isSpecial: false });
         }
     });
 
-    // 2. Физлица
+    // Физлица
     mainStore.individuals.forEach(ind => {
         opts.push({ value: `ind_${ind._id}`, label: ind.name, rightText: 'Физлицо', isSpecial: false });
     });
 
-    // 3. Контрагенты (иногда выводят налом через них)
+    // Контрагенты
     mainStore.contractors.forEach(c => {
         opts.push({ value: `contr_${c._id}`, label: c.name, rightText: 'Контрагент', isSpecial: false });
     });
     
-    // Опция ручного ввода
-    opts.push({ value: 'manual_input', label: '✐ Ввести вручную...', isSpecial: true });
+    // Опции создания
+    opts.push({ value: 'create-ind', label: '+ Создать Физлицо', isSpecial: true });
+    opts.push({ value: 'create-contr', label: '+ Создать Контрагента', isSpecial: true });
     
     return opts;
 });
 
-// Следим за выбором "Ввести вручную"
+// Следим за выбором создания
 watch(selectedDestinationValue, (val) => {
-    if (val === 'manual_input') {
-        isCustomDestination.value = true;
-        selectedDestinationValue.value = null; // Сбрасываем селект
-        nextTick(() => {
-            // Фокус на инпут ручного ввода
-            const input = document.querySelector('.manual-dest-input');
-            if (input) input.focus();
-        });
+    if (val === 'create-ind') {
+        selectedDestinationValue.value = null;
+        openCreateRecipient('individual');
+    } else if (val === 'create-contr') {
+        selectedDestinationValue.value = null;
+        openCreateRecipient('contractor');
     }
 });
 
-// Возврат к селекту из ручного ввода
-const clearCustomDestination = () => {
-    isCustomDestination.value = false;
-    customDestinationText.value = '';
-    selectedDestinationValue.value = null;
+const openCreateRecipient = (type) => {
+    recipientTypeToCreate.value = type;
+    newRecipientName.value = '';
+    showCreateRecipientModal.value = true;
+    nextTick(() => { if(newRecipientInputRef.value) newRecipientInputRef.value.focus(); });
+};
+
+const cancelCreateRecipient = () => {
+    showCreateRecipientModal.value = false;
+    newRecipientName.value = '';
+};
+
+const saveNewRecipient = async () => {
+    const name = newRecipientName.value.trim();
+    if (!name) return;
+    isSavingRecipient.value = true;
+    try {
+        let newItem = null;
+        if (recipientTypeToCreate.value === 'individual') {
+            newItem = await mainStore.addIndividual(name);
+            selectedDestinationValue.value = `ind_${newItem._id}`;
+        } else {
+            newItem = await mainStore.addContractor(name);
+            selectedDestinationValue.value = `contr_${newItem._id}`;
+        }
+        cancelCreateRecipient();
+    } catch (e) {
+        console.error(e);
+    } finally {
+        isSavingRecipient.value = false;
+    }
 };
 
 // --- СОСТОЯНИЯ ---
@@ -150,10 +176,7 @@ const onAmountInput = (e) => {
 };
 
 const handleSave = () => {
-  // Валидация
-  const hasDestination = isCustomDestination.value ? customDestinationText.value.trim().length > 0 : !!selectedDestinationValue.value;
-  
-  if (amount.value <= 0 || isSaving.value || !fromAccountId.value || !hasDestination) {
+  if (amount.value <= 0 || isSaving.value || !fromAccountId.value || !selectedDestinationValue.value) {
       return;
   }
   
@@ -162,33 +185,37 @@ const handleSave = () => {
   const [year, month, day] = editableDate.value.split('-').map(Number);
   const finalDate = new Date(year, month - 1, day, 12, 0, 0);
 
-  // Определяем текстовое имя получателя
-  let finalDestinationText = '';
+  // Получаем текст из опции для сохранения в destination (для совместимости)
+  // НО теперь важно сохранять и ID, если это Физлицо/Контрагент
+  const option = destinationOptions.value.find(o => o.value === selectedDestinationValue.value);
+  const destText = option ? option.label : 'Неизвестно';
   
-  if (isCustomDestination.value) {
-      finalDestinationText = customDestinationText.value;
-  } else {
-      // Ищем label в опциях
-      const option = destinationOptions.value.find(o => o.value === selectedDestinationValue.value);
-      finalDestinationText = option ? option.label : 'Неизвестно';
-  }
-
+  // Парсим ID для сохранения в companyId/individualId/contractorId
+  let indId = null, compId = null, contrId = null;
+  const [prefix, id] = selectedDestinationValue.value.split('_');
+  
+  if (prefix === 'ind') indId = id;
+  if (prefix === 'contr') contrId = id;
+  // Для счетов (acc_) пока просто текст, так как вывод на счет другого лица не линкуется в системе как transfer
+  
   const payload = {
     amount: amount.value,
-    destination: finalDestinationText, // Сохраняем как текст
+    destination: destText,
     reason: reason.value,
     type: 'expense', 
     isWithdrawal: true,
     accountId: fromAccountId.value,
-    date: finalDate
+    date: finalDate,
+    individualId: indId,
+    contractorId: contrId
   };
 
   const mode = (!isEditMode.value || isCloneMode.value) ? 'create' : 'edit';
-  const id = (mode === 'edit') ? props.operationToEdit._id : null;
+  const opId = (mode === 'edit') ? props.operationToEdit._id : null;
 
   emit('save', {
     mode,
-    id,
+    id: opId,
     data: payload,
     originalOperation: props.operationToEdit
   });
@@ -233,17 +260,18 @@ onMounted(() => {
       reason.value = op.reason || 'Личные нужды';
       editableDate.value = toInputDate(new Date(op.date));
       
-      // Попытка восстановить выбор в селекте по тексту
-      const destText = op.destination || '';
-      const foundOption = destinationOptions.value.find(o => o.label === destText);
-      
-      if (foundOption) {
-          selectedDestinationValue.value = foundOption.value;
-          isCustomDestination.value = false;
-      } else if (destText) {
-          // Если текста нет в опциях (например, удалили физлицо или был ручной ввод)
-          isCustomDestination.value = true;
-          customDestinationText.value = destText;
+      // Восстановление селекта
+      if (op.individualId) {
+          const iId = op.individualId._id || op.individualId;
+          selectedDestinationValue.value = `ind_${iId}`;
+      } else if (op.contractorId) {
+          const cId = op.contractorId._id || op.contractorId;
+          selectedDestinationValue.value = `contr_${cId}`;
+      } else {
+          // Пробуем найти по тексту destination
+          const destText = op.destination || '';
+          const found = destinationOptions.value.find(o => o.label === destText);
+          if (found) selectedDestinationValue.value = found.value;
       }
   } else {
       amount.value = props.initialData.amount || 0;
@@ -252,7 +280,6 @@ onMounted(() => {
   }
   
   formattedAmount.value = formatNumber(amount.value);
-  
   nextTick(() => document.querySelector('.wd-amount')?.focus());
 });
 </script>
@@ -263,7 +290,6 @@ onMounted(() => {
       
       <h3>{{ title }}</h3>
       
-      <!-- Инфо (только создание) -->
       <div class="wd-info-box" v-if="!isEditMode && !isCloneMode && initialData.fromAccountName">
         Вывод средств со счета <b>{{ initialData.fromAccountName }}</b>.
       </div>
@@ -282,7 +308,7 @@ onMounted(() => {
           </div>
       </div>
       
-      <!-- СЧЕТ СПИСАНИЯ (Селект) -->
+      <!-- СЧЕТ СПИСАНИЯ -->
       <BaseSelect
         v-model="fromAccountId"
         :options="accountOptions"
@@ -291,34 +317,16 @@ onMounted(() => {
         class="input-spacing"
       />
 
-      <!-- КУДА (Селект или Input) -->
-      <div class="input-spacing destination-wrapper">
-          <template v-if="!isCustomDestination">
-              <BaseSelect
-                v-model="selectedDestinationValue"
-                :options="destinationOptions"
-                label="Куда (Получатель)"
-                placeholder="Выберите получателя"
-              />
-          </template>
-          
-          <template v-else>
-              <div class="custom-input-box manual-dest-box">
-                  <div class="input-inner-content">
-                     <span class="floating-label" v-if="customDestinationText">Получатель (текст)</span>
-                     <input 
-                       type="text" 
-                       v-model="customDestinationText" 
-                       class="wd-input manual-dest-input" 
-                       placeholder="Введите имя получателя..."
-                     >
-                  </div>
-                  <button class="btn-reset-dest" @click="clearCustomDestination" title="Вернуться к списку">✕</button>
-              </div>
-          </template>
-      </div>
+      <!-- КУДА (СЕЛЕКТ) -->
+      <BaseSelect
+        v-model="selectedDestinationValue"
+        :options="destinationOptions"
+        label="Куда (Получатель)"
+        placeholder="Выберите получателя"
+        class="input-spacing"
+      />
 
-      <!-- ПРИЧИНА (Селект) -->
+      <!-- ПРИЧИНА -->
       <BaseSelect
         v-model="reason"
         :options="reasonOptions"
@@ -345,16 +353,14 @@ onMounted(() => {
 
       <!-- ФУТЕР -->
       <div class="popup-actions-row">
-        <!-- Кнопка Сохранить (СЛЕВА) -->
         <button 
           class="btn-submit save-wide wd-btn-confirm" 
           @click="handleSave" 
-          :disabled="amount <= 0 || isSaving || !fromAccountId || (!selectedDestinationValue && !customDestinationText)"
+          :disabled="amount <= 0 || isSaving || !fromAccountId || !selectedDestinationValue"
         >
           {{ btnText }}
         </button>
 
-        <!-- Иконки (СПРАВА, только при редактировании) -->
         <div class="icon-actions" v-if="isEditMode">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopy" :disabled="isSaving">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
@@ -365,6 +371,34 @@ onMounted(() => {
         </div>
       </div>
       
+    </div>
+
+    <!-- МОДАЛКА СОЗДАНИЯ ПОЛУЧАТЕЛЯ -->
+    <div v-if="showCreateRecipientModal" class="inner-overlay" @click.self="cancelCreateRecipient">
+      <div class="create-recipient-box">
+        <h4>Новый получатель</h4>
+        <p class="sub-text">
+          Создание: <b>{{ recipientTypeToCreate === 'individual' ? 'Физлицо' : 'Контрагент' }}</b>
+        </p>
+        
+        <!-- 🟢 БЕЛЫЙ ИНПУТ ДЛЯ НАЗВАНИЯ -->
+        <input 
+          type="text" 
+          v-model="newRecipientName" 
+          class="create-recipient-input"
+          placeholder="Введите имя/название"
+          ref="newRecipientInputRef"
+          @keyup.enter="saveNewRecipient"
+          @keyup.esc="cancelCreateRecipient"
+        />
+        
+        <div class="recipient-actions">
+           <button class="btn-cancel" @click="cancelCreateRecipient">Отмена</button>
+           <button class="btn-save-recipient" @click="saveNewRecipient" :disabled="isSavingRecipient">
+             {{ isSavingRecipient ? '...' : 'Создать' }}
+           </button>
+        </div>
+      </div>
     </div>
 
     <!-- ПОПАП УДАЛЕНИЯ -->
@@ -429,18 +463,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 .input-spacing { margin-bottom: 12px; }
 
-/* Manual Destination Styles */
-.manual-dest-box {
-    padding-right: 40px; /* Место для крестика */
-}
-.btn-reset-dest {
-    position: absolute; right: 0; top: 0; bottom: 0;
-    width: 40px; border: none; background: transparent;
-    color: #999; font-size: 18px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-}
-.btn-reset-dest:hover { color: #FF3B30; }
-
 .date-box { justify-content: space-between; }
 .date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
@@ -476,4 +498,27 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
 .icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
+
+/* CREATE RECIPIENT MODAL */
+.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 3010; }
+.create-recipient-box { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 350px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center; }
+.create-recipient-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; }
+.sub-text { font-size: 14px; color: #666; margin-bottom: 15px; }
+
+/* 🟢 БЕЛЫЙ ИНПУТ ДЛЯ СОЗДАНИЯ */
+.create-recipient-input { 
+  width: 100%; height: 40px; 
+  border: 1px solid #ccc; border-radius: 6px; 
+  padding: 0 10px; font-size: 15px; margin-bottom: 20px; 
+  box-sizing: border-box; 
+  background-color: #ffffff; color: #1a1a1a;
+}
+.create-recipient-input:focus { outline: none; border-color: #7B1FA2; }
+
+.recipient-actions { display: flex; justify-content: space-between; align-items: center; }
+.btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+.btn-cancel:hover { background: #d1d1d1; }
+.btn-save-recipient { padding: 10px 20px; background-color: #7B1FA2; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+.btn-save-recipient:hover { background-color: #6A1B9A; }
+.btn-save-recipient:disabled { opacity: 0.7; cursor: wait; }
 </style>

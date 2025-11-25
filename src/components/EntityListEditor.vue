@@ -3,16 +3,16 @@ import { ref, onMounted, nextTick, computed } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 import AccountPickerModal from './AccountPickerModal.vue';
+import MultiSelectModal from './MultiSelectModal.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.6 - FORCE SORT ON MOUNT ---
- * * ВЕРСИЯ: 10.6 - Принудительная сортировка списка при открытии
- * * ДАТА: 2025-11-22
+ * * --- МЕТКА ВЕРСИИ: v14.1 - DYNAMIC MODAL TITLE ---
+ * * ВЕРСИЯ: 14.1 - Динамический заголовок модалки выбора для контрагентов
+ * * ДАТА: 2025-11-25
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В onMounted добавлена сортировка items по полю order.
- * Это устраняет проблему, когда при открытии редактора список мог быть хаотичным,
- * и перетаскивание работало некорректно относительно реального порядка.
+ * 1. (LOGIC) multiSelectTitle теперь включает имя контрагента.
+ * 2. (STYLE) Имя контрагента выделяется жирным черным цветом через HTML теги.
  */
 
 const props = defineProps({
@@ -23,12 +23,14 @@ const emit = defineEmits(['close', 'save']);
 
 const mainStore = useMainStore();
 const localItems = ref([]);
-const localAccounts = ref([]);
 
-// --- Логика выбора счетов (для Компаний/Физлиц) ---
+// --- Логика выбора (AccountPicker старый + MultiSelect новый) ---
 const showAccountPicker = ref(false);
+const showMultiSelect = ref(false); 
 const currentItemForPicker = ref(null);
+const multiSelectType = ref(''); // 'projects' | 'categories'
 
+// Открытие старого пикера счетов (для компаний/физлиц - владельцев)
 const openAccountPicker = (item) => {
   currentItemForPicker.value = item;
   showAccountPicker.value = true;
@@ -40,6 +42,52 @@ const onAccountPickerSave = (newSelectedIds) => {
   showAccountPicker.value = false;
   currentItemForPicker.value = null;
 };
+
+// Открытие нового мульти-селекта (для контрагентов - проекты/категории)
+const openMultiSelect = (item, type) => {
+  currentItemForPicker.value = item;
+  multiSelectType.value = type;
+  showMultiSelect.value = true;
+};
+
+const onMultiSelectSave = (newIds) => {
+  if (currentItemForPicker.value) {
+    if (multiSelectType.value === 'projects') {
+      currentItemForPicker.value.selectedProjectIds = newIds;
+    } else if (multiSelectType.value === 'categories') {
+      currentItemForPicker.value.selectedCategoryIds = newIds;
+    }
+  }
+  showMultiSelect.value = false;
+  currentItemForPicker.value = null;
+};
+
+// 🟢 Данные для мульти-селекта (Стилизованный заголовок)
+const multiSelectTitle = computed(() => {
+  const contractorName = currentItemForPicker.value?.name || '';
+  const styledName = `<span style="color: #000000; font-weight: 800;">"${contractorName}"</span>`;
+  
+  if (multiSelectType.value === 'projects') {
+      return `Выберите Проекты для ${styledName}`;
+  }
+  if (multiSelectType.value === 'categories') {
+      return `Выберите Категории для ${styledName}`;
+  }
+  return '';
+});
+
+const multiSelectItems = computed(() => {
+  if (multiSelectType.value === 'projects') return mainStore.projects || [];
+  if (multiSelectType.value === 'categories') return mainStore.categories || [];
+  return [];
+});
+const multiSelectInitialIds = computed(() => {
+  if (!currentItemForPicker.value) return [];
+  if (multiSelectType.value === 'projects') return currentItemForPicker.value.selectedProjectIds || [];
+  if (multiSelectType.value === 'categories') return currentItemForPicker.value.selectedCategoryIds || [];
+  return [];
+});
+
 
 // Определяем тип сущности
 let entityPath = '';
@@ -77,7 +125,64 @@ const pickerHintText = computed(() => {
     return "";
 });
 
-// --- ЛОГИКА СОЗДАНИЯ ---
+// Опции владельцев (для счетов)
+const companiesList = computed(() => mainStore.companies || []);
+const individualsList = computed(() => mainStore.individuals || []);
+
+// --- ЛОГИКА СОЗДАНИЯ ВЛАДЕЛЬЦА "НА ЛЕТУ" (для счетов) ---
+const showCreateOwnerPopup = ref(false);
+const ownerTypeToCreate = ref('company');
+const newOwnerNameInput = ref('');
+const pendingAccountItem = ref(null);
+const newOwnerInputRef = ref(null);
+const isSavingOwner = ref(false);
+
+const handleOwnerSelectChange = (item) => {
+  const val = item.ownerValue;
+  if (val === 'create-company') {
+    item.ownerValue = null;
+    openCreateOwnerModal('company', item);
+  } else if (val === 'create-individual') {
+    item.ownerValue = null;
+    openCreateOwnerModal('individual', item);
+  }
+};
+
+const openCreateOwnerModal = (type, item) => {
+  ownerTypeToCreate.value = type;
+  pendingAccountItem.value = item;
+  newOwnerNameInput.value = '';
+  showCreateOwnerPopup.value = true;
+  nextTick(() => {
+    if (newOwnerInputRef.value) newOwnerInputRef.value.focus();
+  });
+};
+
+const cancelCreateOwner = () => {
+  showCreateOwnerPopup.value = false;
+  newOwnerNameInput.value = '';
+  pendingAccountItem.value = null;
+};
+
+const saveNewOwner = async () => {
+  const name = newOwnerNameInput.value.trim();
+  if (!name) return;
+  isSavingOwner.value = true;
+  try {
+    let newItem = null;
+    const type = ownerTypeToCreate.value;
+    if (type === 'company') { newItem = await mainStore.addCompany(name); } 
+    else { newItem = await mainStore.addIndividual(name); }
+
+    if (newItem && pendingAccountItem.value) {
+      pendingAccountItem.value.ownerValue = `${type}-${newItem._id}`;
+    }
+    cancelCreateOwner();
+  } catch (e) { console.error(e); alert('Ошибка создания: ' + e.message); } 
+  finally { isSavingOwner.value = false; }
+};
+
+// --- ЛОГИКА СОЗДАНИЯ СУЩНОСТИ (ВЕРХНЯЯ ПАНЕЛЬ) ---
 const isCreating = ref(false);
 const newItemName = ref('');
 const newItemInputRef = ref(null);
@@ -86,20 +191,12 @@ const isSavingNew = ref(false);
 const startCreation = () => {
   isCreating.value = true;
   newItemName.value = '';
-  nextTick(() => {
-    if (newItemInputRef.value) newItemInputRef.value.focus();
-  });
+  nextTick(() => { if (newItemInputRef.value) newItemInputRef.value.focus(); });
 };
-
-const cancelCreation = () => {
-  isCreating.value = false;
-  newItemName.value = '';
-};
+const cancelCreation = () => { isCreating.value = false; newItemName.value = ''; };
 
 const handleCreateNew = async () => {
-  const name = newItemName.value.trim();
-  if (!name) return;
-  
+  const name = newItemName.value.trim(); if (!name) return;
   isSavingNew.value = true;
   try {
     let newItem = null;
@@ -112,10 +209,14 @@ const handleCreateNew = async () => {
 
     if (newItem) {
       const mappedItem = { ...newItem };
-      if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; }
-      if (isContractorEditor) { mappedItem.defaultProjectId = null; mappedItem.defaultCategoryId = null; }
+      if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; mappedItem.ownerValue = null; }
+      if (isContractorEditor) { 
+          mappedItem.defaultProjectId = null; 
+          mappedItem.defaultCategoryId = null; 
+          mappedItem.selectedProjectIds = []; 
+          mappedItem.selectedCategoryIds = []; 
+      } 
       if (isCompanyEditor || isIndividualEditor) { mappedItem.selectedAccountIds = []; }
-      
       localItems.value.push(mappedItem);
       cancelCreation();
     }
@@ -136,23 +237,37 @@ const onAmountInput = (item) => {
 
 onMounted(() => {
   const allAccounts = mainStore.accounts;
-  
-  // Клонируем пропсы, чтобы не мутировать их напрямую
   let rawItems = JSON.parse(JSON.stringify(props.items));
-
-  // 🟢 FIX v10.6: Сортируем список по order перед отрисовкой
-  // Это гарантирует, что визуальный порядок соответствует сохраненному индексу
   rawItems.sort((a, b) => (a.order || 0) - (b.order || 0));
 
   localItems.value = rawItems.map(item => {
     if (isAccountEditor) {
       const balance = item.initialBalance || 0;
-      return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance) }
+      let ownerVal = null;
+      const cId = (item.companyId && typeof item.companyId === 'object') ? item.companyId._id : item.companyId;
+      const iId = (item.individualId && typeof item.individualId === 'object') ? item.individualId._id : item.individualId;
+      if (cId) ownerVal = `company-${cId}`;
+      else if (iId) ownerVal = `individual-${iId}`;
+      return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal }
     }
     if (isContractorEditor) {
-      const pId = (item.defaultProjectId && typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
-      const cId = (item.defaultCategoryId && typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId;
-      return { ...item, defaultProjectId: pId || null, defaultCategoryId: cId || null }
+      let pIds = item.defaultProjectIds || [];
+      if (!pIds.length && item.defaultProjectId) {
+          const pId = (typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId;
+          if(pId) pIds.push(pId);
+      }
+
+      let cIds = item.defaultCategoryIds || [];
+      if (!cIds.length && item.defaultCategoryId) {
+          const cId = (typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId;
+          if(cId) cIds.push(cId);
+      }
+      
+      return { 
+          ...item, 
+          selectedProjectIds: pIds,
+          selectedCategoryIds: cIds
+      }
     }
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
@@ -164,22 +279,25 @@ onMounted(() => {
     }
     return item;
   });
-
-  if (isCompanyEditor || isIndividualEditor) {
-    localAccounts.value = JSON.parse(JSON.stringify(mainStore.accounts)).map(acc => {
-      const cId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-      const iId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-      return { ...acc, companyId: cId || null, individualId: iId || null };
-    });
-  }
 });
 
 const handleSave = async () => {
   const itemsToSave = localItems.value.map((item, index) => {
-    // Сохраняем текущий визуальный индекс как order
     const data = { _id: item._id, name: item.name, order: index }; 
-    if (isAccountEditor) data.initialBalance = item.initialBalance || 0;
-    if (isContractorEditor) { data.defaultProjectId = item.defaultProjectId || null; data.defaultCategoryId = item.defaultCategoryId || null; }
+    if (isAccountEditor) {
+        data.initialBalance = item.initialBalance || 0;
+        if (item.ownerValue) {
+            const [type, id] = item.ownerValue.split('-');
+            if (type === 'company') { data.companyId = id; data.individualId = null; } 
+            else if (type === 'individual') { data.companyId = null; data.individualId = id; }
+        } else { data.companyId = null; data.individualId = null; }
+    }
+    if (isContractorEditor) { 
+        data.defaultProjectIds = item.selectedProjectIds || [];
+        data.defaultCategoryIds = item.selectedCategoryIds || [];
+        data.defaultProjectId = data.defaultProjectIds[0] || null;
+        data.defaultCategoryId = data.defaultCategoryIds[0] || null;
+    }
     return data;
   });
   
@@ -188,12 +306,12 @@ const handleSave = async () => {
   if (isCompanyEditor || isIndividualEditor) {
     const accountsToUpdate = new Map();
     const allStoreAccounts = JSON.parse(JSON.stringify(mainStore.accounts));
-    
+    const entityType = isCompanyEditor ? 'company' : 'individual';
+
     for (const ownerItem of localItems.value) {
       const ownerId = ownerItem._id;
       const newAccountIds = new Set(ownerItem.selectedAccountIds);
-      const ownerType = isCompanyEditor ? 'company' : 'individual';
-
+      
       for (const acc of allStoreAccounts) {
         const accId = acc._id;
         const isSelected = newAccountIds.has(accId);
@@ -201,15 +319,17 @@ const handleSave = async () => {
         const currentIndividualOwner = acc.individualId?._id || acc.individualId;
         
         if (isSelected) {
-          if (ownerType === 'company' && currentCompanyOwner !== ownerId) {
-            acc.companyId = ownerId; acc.individualId = null; accountsToUpdate.set(accId, acc);
-          } else if (ownerType === 'individual' && currentIndividualOwner !== ownerId) {
-            acc.companyId = null; acc.individualId = ownerId; accountsToUpdate.set(accId, acc);
+          if (entityType === 'company' && currentCompanyOwner !== ownerId) {
+             acc.companyId = ownerId; acc.individualId = null;
+             accountsToUpdate.set(accId, acc);
+          } else if (entityType === 'individual' && currentIndividualOwner !== ownerId) {
+             acc.companyId = null; acc.individualId = ownerId;
+             accountsToUpdate.set(accId, acc);
           }
         } else {
-          if (ownerType === 'company' && currentCompanyOwner === ownerId) {
+          if (entityType === 'company' && currentCompanyOwner === ownerId) {
             acc.companyId = null; accountsToUpdate.set(accId, acc);
-          } else if (ownerType === 'individual' && currentIndividualOwner === ownerId) {
+          } else if (entityType === 'individual' && currentIndividualOwner === ownerId) {
             acc.individualId = null; accountsToUpdate.set(accId, acc);
           }
         }
@@ -240,7 +360,8 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
-    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor }">
+    <!-- Добавляем класс wide для счетов, чтобы вместить колонку Владелец -->
+    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor }">
       <h3>{{ title }}</h3>
       
       <div class="create-section">
@@ -258,6 +379,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       <template v-if="localItems.length > 0">
         <div v-if="isAccountEditor" class="editor-header account-header-simple">
           <span class="header-name">Название счета</span>
+          <span class="header-owner">Владелец</span>
           <span class="header-balance">Нач. баланс</span>
           <span class="header-trash"></span>
         </div>
@@ -273,8 +395,8 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         </div>
         <div v-else-if="isContractorEditor" class="editor-header contractor-header">
           <span class="header-name">Название</span>
-          <span class="header-project">Проект</span>
-          <span class="header-category">Категория</span>
+          <span class="header-project">Проекты</span>
+          <span class="header-category">Категории</span>
           <span class="header-trash"></span>
         </div>
         <div v-else class="editor-header default-header">
@@ -291,26 +413,25 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
               <input type="text" v-model="item.name" class="edit-input edit-name" />
               
               <template v-if="isAccountEditor">
-                <input 
-                  type="text" 
-                  inputmode="decimal" 
-                  v-model="item.initialBalanceFormatted" 
-                  @input="onAmountInput(item)" 
-                  @focus="$event.target.select()"
-                  class="edit-input edit-balance" 
-                  placeholder="0" 
-                />
+                <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item)" class="edit-input edit-owner">
+                    <option :value="null">Нет владельца</option>
+                    <option value="create-company" class="create-option">+ Создать Компанию</option>
+                    <option value="create-individual" class="create-option">+ Создать Физлицо</option>
+                    <optgroup label="Компании"><option v-for="c in companiesList" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
+                    <optgroup label="Физлица"><option v-for="i in individualsList" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
+                </select>
+                <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" />
               </template>
               
               <template v-if="isContractorEditor">
-                <select v-model="item.defaultProjectId" class="edit-input edit-project">
-                  <option :value="null">Без проекта</option>
-                  <option v-for="p in mainStore.projects" :key="p._id" :value="p._id">{{ p.name }}</option>
-                </select>
-                <select v-model="item.defaultCategoryId" class="edit-input edit-category">
-                  <option :value="null">Без категории</option>
-                  <option v-for="c in mainStore.categories" :key="c._id" :value="c._id">{{ c.name }}</option>
-                </select>
+                <!-- 🟢 МНОЖЕСТВЕННЫЙ ВЫБОР: Проекты -->
+                <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">
+                   {{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}
+                </button>
+                <!-- 🟢 МНОЖЕСТВЕННЫЙ ВЫБОР: Категории -->
+                <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">
+                   {{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}
+                </button>
               </template>
 
               <template v-if="isCompanyEditor || isIndividualEditor">
@@ -357,6 +478,32 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       </div>
     </div>
 
+    <div v-if="showCreateOwnerPopup" class="inner-overlay" @click.self="cancelCreateOwner">
+      <div class="create-owner-box">
+        <h4>Новый владелец</h4>
+        <p class="sub-text">
+          Создание: <b>{{ ownerTypeToCreate === 'company' ? 'Компания' : 'Физлицо' }}</b>
+        </p>
+        
+        <input 
+          type="text" 
+          v-model="newOwnerNameInput" 
+          class="create-owner-input"
+          placeholder="Введите название"
+          ref="newOwnerInputRef"
+          @keyup.enter="saveNewOwner"
+          @keyup.esc="cancelCreateOwner"
+        />
+        
+        <div class="owner-actions">
+           <button class="btn-cancel" @click="cancelCreateOwner">Отмена</button>
+           <button class="btn-save-owner" @click="saveNewOwner" :disabled="isSavingOwner">
+             {{ isSavingOwner ? '...' : 'Создать' }}
+           </button>
+        </div>
+      </div>
+    </div>
+
     <AccountPickerModal
       v-if="showAccountPicker"
       :all-accounts="mainStore.accounts"
@@ -365,13 +512,23 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       @close="showAccountPicker = false"
       @save="onAccountPickerSave"
     />
+
+    <!-- 🟢 Новый модал для множественного выбора -->
+    <MultiSelectModal
+      v-if="showMultiSelect"
+      :title="multiSelectTitle"
+      :items="multiSelectItems"
+      :initial-selected-ids="multiSelectInitialIds"
+      @close="showMultiSelect = false"
+      @save="onMultiSelectSave"
+    />
   </div>
 </template>
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
-.popup-content.wide { max-width: 680px; }
+.popup-content.wide { max-width: 850px; /* 🟢 Еще шире для 3 кнопок */ }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
@@ -395,11 +552,15 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 .account-header-simple .header-name { width: 100%; }
-/* 🟢 STYLE FIX: Увеличена ширина баланса в заголовке и инпуте (+30%) */
 .account-header-simple .header-balance { flex-shrink: 0; width: 130px; text-align: right; padding-right: 14px; }
+.account-header-simple .header-owner { flex-shrink: 0; width: 200px; }
+
 .owner-header .header-accounts { flex-shrink: 0; width: 310px; }
-.contractor-header .header-project { flex-shrink: 0; width: 150px; }
-.contractor-header .header-category { flex-shrink: 0; width: 150px; }
+
+/* 🟢 Стили колонок контрагента */
+.contractor-header .header-project { flex-shrink: 0; width: 200px; } /* Увеличенная ширина */
+.contractor-header .header-category { flex-shrink: 0; width: 200px; } /* Увеличенная ширина */
+
 .header-trash { width: 48px; flex-shrink: 0; }
 
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
@@ -410,8 +571,24 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-input { height: 48px; padding: 0 14px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; margin: 0; }
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
-.edit-project, .edit-category { flex-shrink: 0; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; width: 150px; }
-/* 🟢 STYLE FIX: Увеличена ширина инпута баланса */
+
+/* 🟢 Стили кнопок пикеров для контрагентов */
+.edit-picker-btn {
+  flex-shrink: 0; width: 200px; /* Увеличенная ширина */
+  text-align: left; cursor: pointer; 
+  /* Иконка стрелочки */
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  padding-right: 20px;
+  display: flex; align-items: center; 
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.edit-picker-btn:hover { border-color: #222; }
+
+.edit-owner { flex-shrink: 0; width: 200px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
+
+.create-option { font-weight: 600; color: #007AFF; background-color: #f0f8ff; }
+
 .edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
 .edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; font-size: 15px; display: flex; align-items: center; margin: 0; padding: 0 14px; height: 48px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; font-family: inherit; }
 .edit-account-picker:hover { border-color: #222222; }
@@ -438,4 +615,29 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
 .progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
+
+/* Styles for Create Owner Popup */
+.create-owner-box { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 350px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center; }
+.create-owner-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; }
+.sub-text { font-size: 14px; color: #666; margin-bottom: 15px; }
+
+/* 🟢 ИСПРАВЛЕНО: Явный белый фон для инпута создания владельца */
+.create-owner-input { 
+  width: 100%; 
+  height: 40px; 
+  border: 1px solid #ccc; 
+  border-radius: 6px; 
+  padding: 0 10px; 
+  font-size: 15px; 
+  margin-bottom: 20px; 
+  box-sizing: border-box; 
+  background-color: #ffffff; 
+  color: #1a1a1a;
+}
+.create-owner-input:focus { outline: none; border-color: #222; }
+
+.owner-actions { display: flex; justify-content: space-between; align-items: center; }
+.btn-save-owner { padding: 10px 20px; background-color: #34C759; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+.btn-save-owner:hover { background-color: #2da84e; }
+.btn-save-owner:disabled { opacity: 0.7; cursor: wait; }
 </style>
