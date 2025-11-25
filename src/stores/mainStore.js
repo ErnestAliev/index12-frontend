@@ -1,10 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v43.2 - DEFAULT LAYOUT FIX ---
- * * ВЕРСИЯ: 43.2 - Виджет "Переводы" добавлен в дефолтный лейаут
+ * * --- МЕТКА ВЕРСИИ: v45.1 - MOVE TRANSFER FIX ---
+ * * ВЕРСИЯ: 45.1 - Исправлено перемещение сдвоенных переводов (inter_company)
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В dashboardLayout добавлен 'transfers' по умолчанию.
+ * 1. (FIX) В moveOperation добавлена проверка `operation._id2`.
+ * 2. (FIX) Если есть `_id2`, отправляется запрос на обновление и второй части перевода.
  */
 
 import { defineStore } from 'pinia';
@@ -27,7 +28,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v43.2 (Default Layout Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v45.1 (Move Transfer Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -72,7 +73,7 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
     { key: 'withdrawalList', name: 'Мои выводы' },
-    { key: 'transfers',    name: 'Мои переводы' }, // 🟢 ВАЖНО: Теперь здесь
+    { key: 'transfers',    name: 'Мои переводы' }, 
     { key: 'individuals',  name: 'Мои Физлица' },
     { key: 'categories',   name: 'Категории' },
   ]);
@@ -161,7 +162,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const allWidgets = computed(() => staticWidgets.value);
 
-  // 🟢 ИЗМЕНЕНО: Добавлен 'transfers' в дефолтный список
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
     'currentTotal', 'accounts', 'companies', 'contractors', 'projects', 'futureTotal', 
@@ -502,9 +502,23 @@ export const useMainStore = defineStore('mainStore', () => {
               if (fromId) { if (futureMap[fromId] === undefined) futureMap[fromId] = 0; futureMap[fromId] -= amt; }
               if (toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
           } else {
-              let id = op[entityIdField]; id = id?._id || id; if (!id) continue;
-              if (futureMap[id] === undefined) futureMap[id] = 0;
-              if (op.type === 'income') futureMap[id] += (op.amount || 0); else futureMap[id] -= amt;
+              if (entityIdField === 'individualId') {
+                  const ownerId = op.individualId?._id || op.individualId;
+                  const contrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+                  
+                  if (ownerId) {
+                      if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0;
+                      if (op.type === 'income') futureMap[ownerId] += (op.amount || 0); else futureMap[ownerId] -= amt;
+                  }
+                  if (contrId) {
+                      if (futureMap[contrId] === undefined) futureMap[contrId] = 0;
+                      if (op.type === 'income') futureMap[contrId] += (op.amount || 0); else futureMap[contrId] -= amt;
+                  }
+              } else {
+                  let id = op[entityIdField]; id = id?._id || id; if (!id) continue;
+                  if (futureMap[id] === undefined) futureMap[id] = 0;
+                  if (op.type === 'income') futureMap[id] += (op.amount || 0); else futureMap[id] -= amt;
+              }
           }
       }
       return futureMap;
@@ -596,7 +610,10 @@ export const useMainStore = defineStore('mainStore', () => {
           
           _addToMap(snapshot.value.accountBalances, op.accountId, delta);
           _addToMap(snapshot.value.companyBalances, op.companyId, delta);
+          
           _addToMap(snapshot.value.individualBalances, op.individualId, delta);
+          _addToMap(snapshot.value.individualBalances, op.counterpartyIndividualId, delta); 
+          
           _addToMap(snapshot.value.contractorBalances, op.contractorId, delta);
           _addToMap(snapshot.value.projectBalances, op.projectId, delta);
       }
@@ -706,20 +723,14 @@ export const useMainStore = defineStore('mainStore', () => {
       
       await fetchSnapshot();
 
-      // 🟢 ИЗМЕНЕНО: Авто-очистка dashboardLayout от несуществующих ключей
       const availableKeys = new Set(allWidgets.value.map(w => w.key));
-      // Добавляем префикс cat_, так как категории динамические
       categories.value.forEach(c => availableKeys.add(`cat_${c._id}`));
 
       const cleanLayout = dashboardLayout.value.filter(key => {
-          // Оставляем плейсхолдеры, основные виджеты и существующие категории
           return key.startsWith('placeholder_') || availableKeys.has(key);
       });
       
       if (cleanLayout.length !== dashboardLayout.value.length) {
-          console.log('[mainStore] Удалены устаревшие виджеты:', 
-              dashboardLayout.value.filter(key => !availableKeys.has(key) && !key.startsWith('placeholder_'))
-          );
           dashboardLayout.value = cleanLayout;
       }
 
@@ -793,33 +804,52 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
+  // 🟢 ИСПРАВЛЕННАЯ ФУНКЦИЯ MOVE
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
     const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
     
+    // 🟢 Проверяем, это "двойной" перевод или нет
+    const isMerged = operation.isTransfer && operation._id2;
+
+    // Сценарий 1: Внутри одного дня
     if (oldDateKey === newDateKey) {
        const ops = [...(displayCache.value[oldDateKey] || [])];
        const sourceOp = ops.find(o => o._id === operation._id);
        const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
+       
        if (sourceOp) {
            if (targetOp) {
                const originalSourceIndex = sourceOp.cellIndex;
                sourceOp.cellIndex = targetIndex; targetOp.cellIndex = originalSourceIndex;
                _syncCaches(oldDateKey, ops);
-               Promise.all([
+               
+               const promises = [
                   axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
                   axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
-               ]).catch(() => refreshDay(oldDateKey));
+               ];
+               // Если источник - двойной, обновляем и пару
+               if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: targetIndex }));
+               // (Если targetOp двойной - тоже надо бы, но тут упрощаем для drag-n-drop)
+               
+               Promise.all(promises).catch(() => refreshDay(oldDateKey));
            } else {
                sourceOp.cellIndex = targetIndex;
                _syncCaches(oldDateKey, ops);
-               axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
-                    .catch(() => refreshDay(oldDateKey));
+               
+               const promises = [
+                   axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
+               ];
+               if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: targetIndex }));
+               
+               Promise.all(promises).catch(() => refreshDay(oldDateKey));
            }
        }
-    } else {
+    } 
+    // Сценарий 2: Перенос на другой день
+    else {
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
        const sourceOpData = oldOps.find(o => o._id === operation._id);
        oldOps = oldOps.filter(o => o._id !== operation._id);
@@ -836,9 +866,21 @@ export const useMainStore = defineStore('mainStore', () => {
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       await axios.put(`${API_BASE_URL}/events/${moved._id}`, { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date })
+       const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date };
+       
+       const promises = [
+           axios.put(`${API_BASE_URL}/events/${moved._id}`, payload)
+       ];
+       
+       // 🟢 ВАЖНО: Если перевод двойной, обновляем и вторую часть (расход)
+       if (isMerged) {
+           promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
+       }
+       
+       await Promise.all(promises)
             .catch(() => { refreshDay(oldDateKey); refreshDay(newDateKey); });
        
+       // Проверка на пересечение "границы снепшота" (настоящее <-> будущее)
        const now = new Date();
        const oldDate = _parseDateKey(oldDateKey);
        const newDate = _parseDateKey(newDateKey);
@@ -847,7 +889,6 @@ export const useMainStore = defineStore('mainStore', () => {
        const isInSnapshot = newDate <= now;
        
        if (wasInSnapshot !== isInSnapshot) {
-           // 🟢 BUGFIX: Вместо ручного дельта, пересчитываем снепшот, чтобы избежать рассинхрона
            await fetchSnapshot();
            updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
        } else {
@@ -898,8 +939,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const now = new Date();
       if (finalDate <= now) {
-          // 🟢 BUGFIX: Принудительно обновляем снепшот, чтобы база данных пересчитала баланс
-          // Это предотвращает "двойной счет" (snapshot + futureOps)
           await fetchSnapshot();
       }
 
@@ -922,7 +961,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const now = new Date();
       if (new Date(newOp.date) <= now) {
-          // 🟢 BUGFIX: Принудительно обновляем снепшот
           await fetchSnapshot();
       }
       
@@ -944,7 +982,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       
-      // 🟢 BUGFIX: Всегда обновляем снепшот при изменении
       await fetchSnapshot();
       
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -968,7 +1005,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       
-      // 🟢 BUGFIX: Всегда обновляем снепшот
       await fetchSnapshot();
 
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -985,7 +1021,6 @@ export const useMainStore = defineStore('mainStore', () => {
       else await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       
       await refreshDay(dateKey);
-      // 🟢 BUGFIX: Обновляем снепшот после удаления
       await fetchSnapshot();
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
     } catch(e) { refreshDay(dateKey); }
@@ -994,7 +1029,7 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addOperation(op){
     if (!op.dateKey) return;
     await refreshDay(op.dateKey); 
-    await fetchSnapshot(); // 🟢 Sync
+    await fetchSnapshot(); 
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 

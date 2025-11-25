@@ -17,16 +17,15 @@ import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v43.2 - STATIC TRANSFERS SUPPORT ---
- * * ВЕРСИЯ: 43.2 - Добавлена поддержка ключа 'transfers'
+ * * --- МЕТКА ВЕРСИИ: v45.0 - HIDE MY COMPANIES FROM CONTRACTORS ---
+ * * ВЕРСИЯ: 45.0 - Скрытие "Моих компаний" из виджета "Мои контрагенты"
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (TEMPLATE) Добавлена проверка widgetKey === 'transfers' для рендеринга карточки.
- * 2. (LOGIC) Обновлены onCategoryAdd/Edit для работы с 'transfers'.
+ * 1. (LOGIC) mergedContractorBalances теперь фильтрует контрагентов, чьи имена совпадают с именами моих компаний.
  */
 
-console.log('--- TheHeader.vue v43.2 (Static Transfers Support) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v45.0 (Hide My Companies) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -34,10 +33,12 @@ const mainStore = useMainStore();
 const activeDropdown = ref(null);
 const searchQuery = ref('');
 
-const filteredWidgets = computed(() => {
+const filteredWidgets = computed(function() {
   if (!searchQuery.value) return mainStore.allWidgets;
   const query = searchQuery.value.toLowerCase();
-  return mainStore.allWidgets.filter(widget => widget.name.toLowerCase().includes(query));
+  return mainStore.allWidgets.filter(function(widget) {
+    return widget.name.toLowerCase().includes(query);
+  });
 });
 
 const handleOpenMenu = (payload) => {
@@ -132,9 +133,37 @@ const mergeBalances = (currentBalances, futureBalances) => {
 };
 const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances));
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
-const mergedContractorBalances = computed(() => mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances));
+
+// 🟢 ФИЛЬТРАЦИЯ: Скрываем "Мои компании" из списка контрагентов
+const mergedContractorBalances = computed(() => {
+    const allMerged = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances);
+    
+    // Собираем имена моих компаний (в нижнем регистре для надежного сравнения)
+    const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
+
+    // Оставляем только тех контрагентов, чье имя НЕ совпадает с именем моей компании
+    return allMerged.filter(contr => !myCompanyNames.has(contr.name.trim().toLowerCase()));
+});
+
 const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
-const mergedIndividualBalances = computed(() => mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances));
+
+// 🟢 ФИЛЬТРАЦИЯ: Скрываем владельцев счетов из списка физлиц
+const mergedIndividualBalances = computed(() => {
+    const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances);
+    
+    // Собираем ID физлиц, которые являются владельцами счетов
+    const ownerIds = new Set();
+    mainStore.accounts.forEach(acc => {
+        if (acc.individualId) {
+            const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+            if (iId) ownerIds.add(iId);
+        }
+    });
+
+    // Оставляем только тех, кто НЕ владелец счета (контрагенты)
+    return allMerged.filter(ind => !ownerIds.has(ind._id));
+});
+
 const mergedCategoryBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances);
     const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
@@ -155,15 +184,12 @@ const onEntityDelete = (payload) => { if (deleteHandler.value) deleteHandler.val
 const onEntityListSave = async (updatedItems) => { if (editorSavePath.value) { try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); } } isListEditorVisible.value = false; };
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
-// 🟢 ОБРАБОТЧИК: Создание операции (кнопка "+")
 const onCategoryAdd = (widgetKey, index) => {
-    // 🟢 ИЗМЕНЕНО: Поддержка static 'transfers'
     if (widgetKey === 'transfers') { isTransferPopupVisible.value = true; return; }
     if (widgetKey === 'incomeList') { operationPopupType.value = 'income'; isOperationPopupVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationPopupType.value = 'expense'; isOperationPopupVisible.value = true; return; }
     if (widgetKey === 'withdrawalList') { isWithdrawalPopupVisible.value = true; return; }
     
-    // Проверка на старый формат cat_ID для перевода (для совместимости)
     if (widgetKey.startsWith('cat_')) {
         const catId = widgetKey.replace('cat_', '');
         const category = mainStore.getCategoryById(catId);
@@ -186,7 +212,6 @@ const onCategoryAdd = (widgetKey, index) => {
     isOperationPopupVisible.value = true;
 };
 
-// 🟢 ОБРАБОТЧИК: Создание предоплаты
 const onLiabilitiesAdd = () => {
     operationPopupType.value = 'income';
     isOperationPopupVisible.value = true;
@@ -194,7 +219,6 @@ const onLiabilitiesAdd = () => {
 
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
-    // 🟢 ИЗМЕНЕНО: Поддержка static 'transfers'
     if (widgetKey === 'transfers') { isTransferEditorVisible.value = true; return; }
     
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
@@ -334,7 +358,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ИЗМЕНЕНО: Добавлено условие для widgetKey === 'transfers' -->
         <HeaderCategoryCard
           v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
           :title="getWidgetByKey(widgetKey)?.name || '...'"

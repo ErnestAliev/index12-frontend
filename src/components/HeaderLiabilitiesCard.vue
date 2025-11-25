@@ -1,11 +1,12 @@
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import RetailClosurePopup from './RetailClosurePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.5 - REMOVE SWITCHER ---
- * * ВЕРСИЯ: 4.5 - Удалена функция смены виджета через заголовок
+ * * --- МЕТКА ВЕРСИИ: v50.0 - RETAIL CLOSURE ---
+ * * ВЕРСИЯ: 50.0 - Добавлена кнопка "Закрыть день (Розница)"
  */
 
 const props = defineProps({
@@ -20,6 +21,7 @@ const props = defineProps({
 
 const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
+const showClosurePopup = ref(false);
 
 const showFutureBalance = computed({
   get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
@@ -37,6 +39,15 @@ const displayTheyOwe = computed(() => {
     if (!showFutureBalance.value) return formatCurrency(props.theyOweAmount);
     return `${formatCurrency(props.theyOweAmount)} > ${formatCurrency(props.theyOweAmountFuture)}`;
 });
+
+const handleRetailClosure = async (amount) => {
+    try {
+        await mainStore.closeRetailDaily(amount, new Date());
+        showClosurePopup.value = false;
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+};
 </script>
 
 <template>
@@ -48,6 +59,15 @@ const displayTheyOwe = computed(() => {
       </div>
 
       <div class="card-actions">
+        <!-- 🟢 КНОПКА ЗАКРЫТИЯ СМЕНЫ (РОЗНИЦА) -->
+        <button 
+           class="action-square-btn btn-retail" 
+           @click.stop="showClosurePopup = true"
+           title="Закрыть выработку (Розница)"
+        >
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </button>
+        
         <button 
           class="action-square-btn"
           :class="{ 'active': showFutureBalance }"
@@ -57,19 +77,11 @@ const displayTheyOwe = computed(() => {
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
         
-        <button 
-          @click.stop="$emit('edit')" 
-          class="action-square-btn"
-          title="Редактировать"
-        >
+        <button @click.stop="$emit('edit')" class="action-square-btn" title="Редактировать">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
 
-        <button 
-          @click.stop="$emit('add')" 
-          class="action-square-btn" 
-          title="Добавить"
-        >
+        <button @click.stop="$emit('add')" class="action-square-btn" title="Добавить">
            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
       </div>
@@ -85,45 +97,29 @@ const displayTheyOwe = computed(() => {
         <span class="value-orange">{{ displayTheyOwe }}</span>
       </div>
     </div>
+    
+    <RetailClosurePopup v-if="showClosurePopup" @close="showClosurePopup = false" @confirm="handleRetailClosure" />
   </div>
 </template>
 
 <style scoped>
-.dashboard-card { 
-  display: flex; flex-direction: column; 
-  height: 100%; 
-  overflow: hidden; 
-  padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; 
-}
+.dashboard-card { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
-
 .card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-/* Заголовок больше не кликабельный */
 .card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
-
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 .action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
-
-.card-items-list { 
-  flex-grow: 1; 
-  overflow-y: auto; 
-  padding-right: 5px; 
-  scrollbar-width: none; 
-  display: flex; flex-direction: column; gap: 4px;
-  min-height: 0;
-}
+.btn-retail:hover { background-color: #34c759; color: #fff; }
+.card-items-list { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
 .card-items-list::-webkit-scrollbar { display: none; }
-
 .card-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; margin-bottom: 0.25rem; flex-shrink: 0; }
 .card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
 .card-item span:last-child { font-weight: 500; white-space: nowrap; }
-
 .value-expense { color: var(--color-danger); }
 .value-orange { color: #FF9D00; }
-
 @media (max-height: 900px) {
   .dashboard-card { min-width: 100px; padding-right: 1rem; }
   .card-title { font-size: 0.8em; }

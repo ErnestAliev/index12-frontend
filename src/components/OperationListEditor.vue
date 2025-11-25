@@ -4,7 +4,19 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
-import DateRangePicker from './DateRangePicker.vue'; // 🟢 Импорт нового компонента
+import DateRangePicker from './DateRangePicker.vue';
+
+/**
+ * * --- МЕТКА ВЕРСИИ: v16.1 - CONTRACTOR FILTER FIX ---
+ * * ВЕРСИЯ: 16.1 - Фильтрация "Моих компаний" и поддержка Физлиц-контрагентов
+ * * ДАТА: 2025-11-26
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) contractorOptions: исключает "Мои компании" и "Владельцев счетов".
+ * 2. (LOGIC) contractorOptions: объединяет Контрагентов (contr_) и Физлиц (ind_).
+ * 3. (DATA) loadOperations: маппит contractorId/counterpartyIndividualId в contractorValue.
+ * 4. (SAVE) handleSave: разделяет contractorValue на contractorId и counterpartyIndividualId.
+ */
 
 const props = defineProps({
   title: { type: String, default: 'Редактировать операции' },
@@ -18,13 +30,13 @@ const mainStore = useMainStore();
 const localItems = ref([]);
 const isSaving = ref(false);
 
-// 🟢 ФИЛЬТРЫ: Объект dateRange вместо отдельных полей
+// 🟢 ОБНОВЛЕНО: filters теперь использует contractorValue (с префиксом)
 const filters = ref({
-  dateRange: { from: null, to: null }, // { from: 'YYYY-MM-DD', to: '...' }
+  dateRange: { from: null, to: null },
   owner: '',
   account: '',
   amount: '',
-  contractor: '',
+  contractorValue: '', // Было contractor
   category: '',
   project: ''
 });
@@ -47,9 +59,48 @@ const categories = computed(() => {
   }).sort((a, b) => a.name.localeCompare(b.name)); 
 });
 
-const contractors = computed(() => mainStore.contractors);
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
+
+// 🟢 ВЫЧИСЛЯЕМЫЙ СПИСОК КОНТРАГЕНТОВ (С ФИЛЬТРАЦИЕЙ)
+const contractorOptions = computed(() => {
+  const opts = [];
+  
+  // 1. Контрагенты (ТОО/ИП) - Исключаем "Мои компании"
+  const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
+  const filteredContractors = mainStore.contractors.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
+
+  // Группа Юрлица
+  if (filteredContractors.length > 0) {
+      const group = { label: 'Юрлица / ИП', options: [] };
+      filteredContractors.forEach(c => {
+          group.options.push({ value: `contr_${c._id}`, label: c.name });
+      });
+      opts.push(group);
+  }
+  
+  // 2. Физлица - Исключаем Владельцев счетов
+  const ownerIds = new Set();
+  mainStore.accounts.forEach(acc => {
+      if (acc.individualId) {
+          const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+          if (iId) ownerIds.add(iId);
+      }
+  });
+  const filteredIndividuals = mainStore.individuals.filter(i => !ownerIds.has(i._id));
+
+  // Группа Физлица
+  if (filteredIndividuals.length > 0) {
+      const group = { label: 'Физлица (Контрагенты)', options: [] };
+      filteredIndividuals.forEach(i => {
+          group.options.push({ value: `ind_${i._id}`, label: i.name });
+      });
+      opts.push(group);
+  }
+
+  return opts;
+});
+
 
 const toInputDate = (dateVal) => {
   if (!dateVal) return '';
@@ -106,6 +157,15 @@ const loadOperations = () => {
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .map(op => {
       const ownerId = getOwnerId(op.companyId, op.individualId);
+      
+      // 🟢 ОПРЕДЕЛЯЕМ ЗНАЧЕНИЕ КОНТРАГЕНТА (С ПРЕФИКСОМ)
+      let contrVal = null;
+      const cId = op.contractorId?._id || op.contractorId;
+      const indContrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+
+      if (cId) contrVal = `contr_${cId}`;
+      else if (indContrId) contrVal = `ind_${indContrId}`;
+
       return {
         _id: op._id,
         originalOp: op,
@@ -114,7 +174,7 @@ const loadOperations = () => {
         amountFormatted: formatNumber(Math.abs(op.amount)),
         accountId: op.accountId?._id || op.accountId,
         ownerId: ownerId,
-        contractorId: op.contractorId?._id || op.contractorId,
+        contractorValue: contrVal, // 🟢 Новое поле
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
         destination: op.destination || '',
@@ -131,15 +191,9 @@ const filteredItems = computed(() => {
   return localItems.value.filter(item => {
     if (item.isDeleted) return false;
     
-    // 🟢 НОВАЯ ЛОГИКА ФИЛЬТРАЦИИ ПО ДИАПАЗОНУ
     const { from, to } = filters.value.dateRange;
-    if (from) {
-       // Сравнение строк дат 'YYYY-MM-DD' работает корректно лексикографически
-       if (item.date < from) return false;
-    }
-    if (to) {
-       if (item.date > to) return false;
-    }
+    if (from && item.date < from) return false;
+    if (to && item.date > to) return false;
 
     if (filters.value.amount) {
         const searchAmount = filters.value.amount.replace(/\s/g, '');
@@ -150,7 +204,9 @@ const filteredItems = computed(() => {
     if (filters.value.account && item.accountId !== filters.value.account) return false;
     
     if (!isWithdrawalMode.value) {
-        if (filters.value.contractor && item.contractorId !== filters.value.contractor) return false;
+        // 🟢 ФИЛЬТР ПО НОВОМУ ПОЛЮ contractorValue
+        if (filters.value.contractorValue && item.contractorValue !== filters.value.contractorValue) return false;
+        
         if (filters.value.category) {
             const selectedCatId = filters.value.category;
             const prepayIds = mainStore.getPrepaymentCategoryIds;
@@ -172,7 +228,7 @@ const isFilterActive = computed(() => {
     const f = filters.value;
     return f.dateRange.from !== null || f.dateRange.to !== null || 
            f.owner !== '' || f.account !== '' || f.amount !== '' || 
-           f.contractor !== '' || f.category !== '' || f.project !== '';
+           f.contractorValue !== '' || f.category !== '' || f.project !== '';
 });
 
 const totalSum = computed(() => {
@@ -267,14 +323,22 @@ const onAccountChange = (item) => {
   }
 };
 
+// 🟢 АВТО-ЗАПОЛНЕНИЕ КАТЕГОРИИ/ПРОЕКТА ПРИ ВЫБОРЕ КОНТРАГЕНТА
 const onContractorChange = (item) => {
-  const contr = contractors.value.find(c => c._id === item.contractorId);
-  if (contr) {
-      if (contr.defaultCategoryId) {
-          item.categoryId = (typeof contr.defaultCategoryId === 'object') ? contr.defaultCategoryId._id : contr.defaultCategoryId;
+  const val = item.contractorValue;
+  if (!val) return;
+  const [prefix, id] = val.split('_');
+
+  let entity = null;
+  if (prefix === 'contr') entity = mainStore.contractors.find(c => c._id === id);
+  else if (prefix === 'ind') entity = mainStore.individuals.find(i => i._id === id);
+
+  if (entity) {
+      if (entity.defaultCategoryId) {
+          item.categoryId = (typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
       }
-      if (contr.defaultProjectId) {
-          item.projectId = (typeof contr.defaultProjectId === 'object') ? contr.defaultProjectId._id : contr.defaultProjectId;
+      if (entity.defaultProjectId) {
+          item.projectId = (typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId;
       }
   }
 };
@@ -300,7 +364,14 @@ const handleSave = async () => {
         toInputDate(original.date) !== item.date ||
         Math.abs(original.amount) !== item.amount ||
         (original.accountId?._id || original.accountId) !== item.accountId ||
-        (original.contractorId?._id || original.contractorId) !== item.contractorId ||
+        
+        // 🟢 ПРОВЕРКА ИЗМЕНЕНИЯ КОНТРАГЕНТА (ПО НОВОЙ ЛОГИКЕ)
+        (
+            (original.contractorId && `contr_${original.contractorId._id || original.contractorId}` !== item.contractorValue) ||
+            (original.counterpartyIndividualId && `ind_${original.counterpartyIndividualId._id || original.counterpartyIndividualId}` !== item.contractorValue) ||
+            (!original.contractorId && !original.counterpartyIndividualId && item.contractorValue)
+        ) ||
+
         (original.categoryId?._id || original.categoryId) !== item.categoryId ||
         (original.projectId?._id || original.projectId) !== item.projectId ||
         getOwnerId(original.companyId, original.individualId) !== item.ownerId ||
@@ -309,13 +380,23 @@ const handleSave = async () => {
       if (isChanged) {
         const signedAmount = (props.type === 'income' && !isWithdrawalMode.value) ? item.amount : -Math.abs(item.amount);
         
+        // 🟢 РАЗБОР НОВОГО ЗНАЧЕНИЯ КОНТРАГЕНТА
+        let contractorId = null;
+        let counterpartyIndividualId = null;
+        if (item.contractorValue) {
+            const [p, id] = item.contractorValue.split('_');
+            if (p === 'contr') contractorId = id;
+            else if (p === 'ind') counterpartyIndividualId = id;
+        }
+
         updates.push(mainStore.updateOperation(item._id, {
           date: newDateObj,
           amount: signedAmount,
           accountId: item.accountId,
           companyId: compId,
-          individualId: indId,
-          contractorId: item.contractorId,
+          individualId: indId, // Владелец
+          contractorId: contractorId, // ТОО/ИП
+          counterpartyIndividualId: counterpartyIndividualId, // Физлицо
           categoryId: item.categoryId,
           projectId: item.projectId,
           destination: item.destination, 
@@ -373,12 +454,8 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       
       <div class="filters-row">
         
-        <!-- 🟢 ИСПОЛЬЗУЕМ НОВЫЙ КОМПОНЕНТ -->
         <div class="filter-col col-date">
-           <DateRangePicker 
-             v-model="filters.dateRange"
-             placeholder="Период"
-           />
+           <DateRangePicker v-model="filters.dateRange" placeholder="Период" />
         </div>
 
         <div class="filter-col col-owner">
@@ -403,10 +480,15 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         </div>
         
         <template v-if="!isWithdrawalMode">
+            <!-- 🟢 ОБНОВЛЕННЫЙ ФИЛЬТР КОНТРАГЕНТОВ -->
             <div class="filter-col col-contr">
-               <select v-model="filters.contractor" class="filter-input filter-select">
+               <select v-model="filters.contractorValue" class="filter-input filter-select">
                   <option value="">Контрагент (Все)</option>
-                  <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+                  <optgroup v-for="group in contractorOptions" :key="group.label" :label="group.label">
+                     <option v-for="opt in group.options" :key="opt.value" :value="opt.value">
+                        {{ opt.label }}
+                     </option>
+                  </optgroup>
                </select>
             </div>
             <div class="filter-col col-cat">
@@ -454,10 +536,15 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
           </div>
           
           <template v-if="!isWithdrawalMode">
+              <!-- 🟢 ОБНОВЛЕННЫЙ СЕЛЕКТ КОНТРАГЕНТА -->
               <div class="col-contr">
-                 <select v-model="item.contractorId" @change="onContractorChange(item)" class="edit-input select-input">
+                 <select v-model="item.contractorValue" @change="onContractorChange(item)" class="edit-input select-input">
                     <option :value="null">-</option>
-                    <option v-for="c in contractors" :key="c._id" :value="c._id">{{ c.name }}</option>
+                    <optgroup v-for="group in contractorOptions" :key="group.label" :label="group.label">
+                         <option v-for="opt in group.options" :key="opt.value" :value="opt.value">
+                            {{ opt.label }}
+                         </option>
+                    </optgroup>
                  </select>
               </div>
               

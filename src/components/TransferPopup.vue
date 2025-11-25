@@ -6,14 +6,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.0 - SCENARIO LOGIC ---
- * * ВЕРСИЯ: 19.0 - Автоматическое определение сценариев А, Б, В
+ * * --- МЕТКА ВЕРСИИ: v19.3 - AUTO LINK OWNERS ---
+ * * ВЕРСИЯ: 19.3 - Автоматическая привязка владельца к счету при сохранении перевода
  * * ДАТА: 2025-11-26
  * *
  * * ЧТО ИЗМЕНЕНО:
- * * 1. (LOGIC) watch(owners): Авто-определение 'transferPurpose'.
- * * 2. (SCENARIO C) Если получатель = Физлицо, ставим 'personal' + 'business_dev'.
- * * 3. (UX) Заблокирован выбор "Давида" (контрагента без счета) в этом попапе (это и так невозможно, так как мы выбираем счета).
+ * * 1. (LOGIC) В handleSave добавлена проверка и обновление владельцев счетов (From/To),
+ * * если они отличаются от выбранных в дропдауне (аналогично OperationPopup).
+ * * 2. (TEMPLATE) Восстановлены инпуты для создания новых счетов (v-else блоки).
  */
 
 const mainStore = useMainStore();
@@ -276,6 +276,66 @@ const handleSave = async () => {
   let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
   let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
   
+  // 🟢 Fix for Inter-Company Transfer
+  // If it's inter-company, we must send null categoryId to let backend assign "Меж.комп"
+  let finalCategoryId = categoryId.value;
+  if (transferPurpose.value === 'inter_company') {
+      finalCategoryId = null;
+  }
+
+  // 🟢 FIX: АВТОМАТИЧЕСКОЕ СОХРАНЕНИЕ СВЯЗКИ (Account + Owner)
+  const updates = [];
+  
+  // 1. From Account Link
+  if (fromAccountId.value && selectedFromOwner.value) {
+      const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
+      if (acc) {
+          const [type, id] = selectedFromOwner.value.split('-');
+          const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+          const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+          
+          let needsUpdate = false;
+          if (type === 'company' && currentCompId !== id) needsUpdate = true;
+          if (type === 'individual' && currentIndId !== id) needsUpdate = true;
+          
+          if (needsUpdate) {
+              const updateData = { _id: acc._id, name: acc.name, order: acc.order };
+              if (type === 'company') { updateData.companyId = id; updateData.individualId = null; }
+              else { updateData.companyId = null; updateData.individualId = id; }
+              updates.push(updateData);
+          }
+      }
+  }
+
+  // 2. To Account Link
+  if (toAccountId.value && selectedToOwner.value) {
+      const acc = mainStore.accounts.find(a => a._id === toAccountId.value);
+      if (acc) {
+          const [type, id] = selectedToOwner.value.split('-');
+          const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+          const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+          
+          let needsUpdate = false;
+          if (type === 'company' && currentCompId !== id) needsUpdate = true;
+          if (type === 'individual' && currentIndId !== id) needsUpdate = true;
+          
+          if (needsUpdate) {
+              // Check if already in updates (edge case: same account for from/to - blocked by validation but safe to check)
+              const existing = updates.find(u => u._id === acc._id);
+              if (!existing) {
+                  const updateData = { _id: acc._id, name: acc.name, order: acc.order };
+                  if (type === 'company') { updateData.companyId = id; updateData.individualId = null; }
+                  else { updateData.companyId = null; updateData.individualId = id; }
+                  updates.push(updateData);
+              }
+          }
+      }
+  }
+
+  if (updates.length > 0) {
+      await mainStore.batchUpdateEntities('accounts', updates);
+  }
+
   const transferPayload = { 
       date: finalDate, 
       amount: amountParsed, 
@@ -285,7 +345,7 @@ const handleSave = async () => {
       toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, 
       toIndividualId: toIndividualId, 
-      categoryId: categoryId.value,
+      categoryId: finalCategoryId, 
       transferPurpose: transferPurpose.value,
       transferReason: transferPurpose.value === 'personal' ? transferReason.value : null
   };
@@ -313,10 +373,24 @@ const closePopup = () => { emit('close'); };
         
         <!-- ОТПРАВИТЕЛЬ -->
         <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
+        <!-- 🟢 ИСПРАВЛЕНО: Добавлено поле создания счета отправителя -->
+        <div v-else class="inline-create-form input-spacing">
+          <input type="text" v-model="newFromAccountName" placeholder="Название счета" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
+          <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+        </div>
+
         <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange" />
 
         <!-- ПОЛУЧАТЕЛЬ -->
         <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
+        <!-- 🟢 ИСПРАВЛЕНО: Добавлено поле создания счета получателя -->
+        <div v-else class="inline-create-form input-spacing">
+          <input type="text" v-model="newToAccountName" placeholder="Название счета" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
+          <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+        </div>
+
         <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" class="input-spacing" @change="handleToOwnerChange" />
 
         <!-- ЦЕЛЬ -->
@@ -433,4 +507,12 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .smart-create-tabs button.active { background: #222222; color: #FFFFFF; border-color: #222222; }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
+
+/* 🟢 СТИЛИ ДЛЯ ИНЛАЙН СОЗДАНИЯ СЧЕТА (добавлены) */
+.inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
+.inline-create-form input:focus { outline: none; border-color: var(--focus-color, #222); }
+.inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.btn-inline-save { background-color: #34C759; }
+.btn-inline-cancel { background-color: #FF3B30; }
 </style>

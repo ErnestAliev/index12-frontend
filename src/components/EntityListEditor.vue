@@ -6,13 +6,14 @@ import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v15.0 - INDIVIDUALS REFACTOR ---
- * * ВЕРСИЯ: 15.0 - Редактор Физлиц теперь поддерживает Проекты и Категории
+ * * --- МЕТКА ВЕРСИИ: v16.0 - SPLIT INDIVIDUALS ---
+ * * ВЕРСИЯ: 16.0 - Разделение физлиц на Владельцев и Контрагентов
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) isIndividualEditor теперь также активирует логику isContractorEditor (пикеры).
- * 2. (UI) В шаблон добавлены кнопки выбора проектов/категорий для Физлиц.
+ * 1. (UI) В редакторе физлиц список разделен на "Владельцы счетов" и "Физлица (Контрагенты)".
+ * 2. (UI) Убрана кнопка "Счета" для физлиц (привязка только через счета).
+ * 3. (LOGIC) handleSave собирает данные из обоих списков.
  */
 
 const props = defineProps({
@@ -22,7 +23,9 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save']);
 
 const mainStore = useMainStore();
-const localItems = ref([]);
+const localItems = ref([]); // Для всех кроме физлиц
+const ownerItems = ref([]); // Для физлиц-владельцев
+const otherItems = ref([]); // Для остальных физлиц
 
 // --- Логика выбора (AccountPicker старый + MultiSelect новый) ---
 const showAccountPicker = ref(false);
@@ -30,7 +33,7 @@ const showMultiSelect = ref(false);
 const currentItemForPicker = ref(null);
 const multiSelectType = ref(''); // 'projects' | 'categories'
 
-// Открытие старого пикера счетов (для компаний/физлиц - владельцев)
+// Открытие старого пикера счетов (для компаний)
 const openAccountPicker = (item) => {
   currentItemForPicker.value = item;
   showAccountPicker.value = true;
@@ -106,7 +109,7 @@ const isIndividualEditor = props.title.includes('Физлиц');
 const isProjectEditor = props.title.includes('проекты');
 const isCategoryEditor = props.title.includes('категории');
 
-// 🟢 Флаг для отображения пикеров Проектов/Категорий (Теперь и для Физлиц)
+// 🟢 Флаг для отображения пикеров Проектов/Категорий
 const showDefaultsPickers = computed(() => isContractorEditor || isIndividualEditor);
 
 // Название сущности для кнопки
@@ -124,7 +127,6 @@ const pickerHintText = computed(() => {
     const coloredName = `<span style="color: var(--color-primary); font-weight: 600;">${name}</span>`;
     
     if (isCompanyEditor) return `Привяжите ${coloredName} к вашим счетам.`;
-    if (isIndividualEditor) return `Привяжите ${coloredName} к вашим счетам.`;
     return "";
 });
 
@@ -214,7 +216,6 @@ const handleCreateNew = async () => {
       const mappedItem = { ...newItem };
       if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; mappedItem.ownerValue = null; }
       
-      // 🟢 Инициализация полей для контрагентов и физлиц
       if (isContractorEditor || isIndividualEditor) { 
           mappedItem.defaultProjectId = null; 
           mappedItem.defaultCategoryId = null; 
@@ -222,8 +223,15 @@ const handleCreateNew = async () => {
           mappedItem.selectedCategoryIds = []; 
       } 
       
-      if (isCompanyEditor || isIndividualEditor) { mappedItem.selectedAccountIds = []; }
-      localItems.value.push(mappedItem);
+      if (isCompanyEditor) { mappedItem.selectedAccountIds = []; }
+
+      // Если это физлицо - добавляем в список "Остальные"
+      if (isIndividualEditor) {
+        otherItems.value.push(mappedItem);
+      } else {
+        localItems.value.push(mappedItem);
+      }
+      
       cancelCreation();
     }
   } catch (e) { console.error(e); alert('Ошибка при создании: ' + e.message); } 
@@ -246,7 +254,8 @@ onMounted(() => {
   let rawItems = JSON.parse(JSON.stringify(props.items));
   rawItems.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  localItems.value = rawItems.map(item => {
+  // Предобработка элементов
+  const processedItems = rawItems.map(item => {
     if (isAccountEditor) {
       const balance = item.initialBalance || 0;
       let ownerVal = null;
@@ -257,7 +266,6 @@ onMounted(() => {
       return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal }
     }
     
-    // 🟢 ЛОГИКА ДЛЯ КОНТРАГЕНТОВ И ФИЗЛИЦ (defaults)
     if (isContractorEditor || isIndividualEditor) {
       let pIds = item.defaultProjectIds || [];
       if (!pIds.length && item.defaultProjectId) {
@@ -271,19 +279,11 @@ onMounted(() => {
           if(cId) cIds.push(cId);
       }
       
-      const baseObj = { 
+      return { 
           ...item, 
           selectedProjectIds: pIds,
           selectedCategoryIds: cIds
       };
-
-      // Для Физлиц добавляем еще и привязку счетов (если они владельцы)
-      if (isIndividualEditor) {
-          const selectedAccountIds = allAccounts.filter(a => (a.individualId?._id || a.individualId) === item._id).map(a => a._id);
-          baseObj.selectedAccountIds = selectedAccountIds;
-      }
-      
-      return baseObj;
     }
 
     if (isCompanyEditor) {
@@ -293,11 +293,34 @@ onMounted(() => {
     
     return item;
   });
+
+  // 🟢 Разделение списков для физлиц
+  if (isIndividualEditor) {
+      const ownerIds = new Set();
+      mainStore.accounts.forEach(acc => {
+          if (acc.individualId) {
+              const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+              if (iId) ownerIds.add(iId);
+          }
+      });
+      
+      ownerItems.value = processedItems.filter(item => ownerIds.has(item._id));
+      otherItems.value = processedItems.filter(item => !ownerIds.has(item._id));
+  } else {
+      localItems.value = processedItems;
+  }
 });
 
 const handleSave = async () => {
-  const itemsToSave = localItems.value.map((item, index) => {
-    const data = { _id: item._id, name: item.name, order: index }; 
+  // Собираем все элементы (для физлиц - из двух списков)
+  const finalItems = isIndividualEditor 
+    ? [...ownerItems.value, ...otherItems.value]
+    : localItems.value;
+
+  const itemsToSave = finalItems.map((item, index) => {
+    const data = { _id: item._id, name: item.name, order: index }; // Общий order или пересчитывать?
+    // Order важен, поэтому лучше сохранять сквозной порядок
+    
     if (isAccountEditor) {
         data.initialBalance = item.initialBalance || 0;
         if (item.ownerValue) {
@@ -307,7 +330,6 @@ const handleSave = async () => {
         } else { data.companyId = null; data.individualId = null; }
     }
     
-    // 🟢 СОХРАНЕНИЕ DEFAULTS ДЛЯ КОНТРАГЕНТОВ И ФИЗЛИЦ
     if (isContractorEditor || isIndividualEditor) { 
         data.defaultProjectIds = item.selectedProjectIds || [];
         data.defaultCategoryIds = item.selectedCategoryIds || [];
@@ -319,11 +341,10 @@ const handleSave = async () => {
   
   emit('save', itemsToSave);
 
-  if (isCompanyEditor || isIndividualEditor) {
+  if (isCompanyEditor) {
     const accountsToUpdate = new Map();
     const allStoreAccounts = JSON.parse(JSON.stringify(mainStore.accounts));
-    const entityType = isCompanyEditor ? 'company' : 'individual';
-
+    
     for (const ownerItem of localItems.value) {
       const ownerId = ownerItem._id;
       const newAccountIds = new Set(ownerItem.selectedAccountIds);
@@ -332,21 +353,15 @@ const handleSave = async () => {
         const accId = acc._id;
         const isSelected = newAccountIds.has(accId);
         const currentCompanyOwner = acc.companyId?._id || acc.companyId;
-        const currentIndividualOwner = acc.individualId?._id || acc.individualId;
         
         if (isSelected) {
-          if (entityType === 'company' && currentCompanyOwner !== ownerId) {
+          if (currentCompanyOwner !== ownerId) {
              acc.companyId = ownerId; acc.individualId = null;
-             accountsToUpdate.set(accId, acc);
-          } else if (entityType === 'individual' && currentIndividualOwner !== ownerId) {
-             acc.companyId = null; acc.individualId = ownerId;
              accountsToUpdate.set(accId, acc);
           }
         } else {
-          if (entityType === 'company' && currentCompanyOwner === ownerId) {
+          if (currentCompanyOwner === ownerId) {
             acc.companyId = null; accountsToUpdate.set(accId, acc);
-          } else if (entityType === 'individual' && currentIndividualOwner === ownerId) {
-            acc.individualId = null; accountsToUpdate.set(accId, acc);
           }
         }
       }
@@ -367,7 +382,14 @@ const confirmDelete = async (deleteOperations) => {
   try {
     await new Promise(resolve => setTimeout(resolve, 500)); 
     await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
-    localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
+    
+    if (isIndividualEditor) {
+        ownerItems.value = ownerItems.value.filter(i => i._id !== itemToDelete.value._id);
+        otherItems.value = otherItems.value.filter(i => i._id !== itemToDelete.value._id);
+    } else {
+        localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
+    }
+    
   } catch (e) { alert('Ошибка при удалении: ' + e.message); isDeleting.value = false; return; }
   isDeleting.value = false; await nextTick(); showDeletePopup.value = false; itemToDelete.value = null;
 };
@@ -376,7 +398,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
-    <!-- Добавляем класс wide для счетов, чтобы вместить колонку Владелец -->
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor }">
       <h3>{{ title }}</h3>
       
@@ -392,7 +413,8 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         </div>
       </div>
 
-      <template v-if="localItems.length > 0">
+      <!-- ЗАГОЛОВОК (ОБЩИЙ ИЛИ СКРЫТ ДЛЯ ФИЗЛИЦ) -->
+      <template v-if="!isIndividualEditor && localItems.length > 0">
         <div v-if="isAccountEditor" class="editor-header account-header-simple">
           <span class="header-name">Название счета</span>
           <span class="header-owner">Владелец</span>
@@ -404,15 +426,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
           <span class="header-accounts">Привязанные счета</span>
           <span class="header-trash"></span>
         </div>
-        <!-- 🟢 ОБНОВЛЕННЫЙ ЗАГОЛОВОК ДЛЯ ФИЗЛИЦ -->
-        <div v-else-if="isIndividualEditor" class="editor-header contractor-header">
-          <span class="header-name">Имя Физлица</span>
-          <span class="header-project">Проекты</span>
-          <span class="header-category">Категории</span>
-          <span class="header-accounts-small">Счета</span> <!-- New column -->
-          <span class="header-trash"></span>
-        </div>
-        <!-- 🟢 ОБНОВЛЕННЫЙ ЗАГОЛОВОК ДЛЯ КОНТРАГЕНТОВ -->
         <div v-else-if="isContractorEditor" class="editor-header contractor-header">
           <span class="header-name">Название</span>
           <span class="header-project">Проекты</span>
@@ -426,7 +439,71 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       </template>
       
       <div class="list-editor">
-        <draggable v-model="localItems" item-key="_id" handle=".drag-handle" ghost-class="ghost">
+        <!-- 🟢 СПЕЦИАЛЬНЫЙ РЕЖИМ ДЛЯ ФИЗЛИЦ: ДВЕ ГРУППЫ -->
+        <template v-if="isIndividualEditor">
+            <!-- Группа 1: Владельцы -->
+            <div v-if="ownerItems.length > 0" class="group-section">
+                <div class="group-title">Владельцы счетов (Привязка через счета)</div>
+                <!-- Заголовок столбцов для владельцев -->
+                 <div class="editor-header contractor-header small-header">
+                    <span class="header-name">Имя</span>
+                    <span class="header-project">Проекты</span>
+                    <span class="header-category">Категории</span>
+                    <span class="header-trash"></span>
+                </div>
+                
+                <draggable v-model="ownerItems" item-key="_id" handle=".drag-handle" ghost-class="ghost">
+                    <template #item="{ element: item }">
+                        <div class="edit-item">
+                            <span class="drag-handle">⠿</span>
+                            <input type="text" v-model="item.name" class="edit-input edit-name" />
+                            <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">
+                                {{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}
+                            </button>
+                            <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">
+                                {{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}
+                            </button>
+                            <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </template>
+                </draggable>
+            </div>
+
+            <!-- Группа 2: Остальные -->
+            <div class="group-section">
+                <div class="group-title">Физлица (Контрагенты)</div>
+                 <div class="editor-header contractor-header small-header">
+                    <span class="header-name">Имя</span>
+                    <span class="header-project">Проекты</span>
+                    <span class="header-category">Категории</span>
+                    <span class="header-trash"></span>
+                </div>
+                <div v-if="otherItems.length === 0" class="empty-list">Нет контрагентов</div>
+
+                <draggable v-model="otherItems" item-key="_id" handle=".drag-handle" ghost-class="ghost">
+                    <template #item="{ element: item }">
+                        <div class="edit-item">
+                            <span class="drag-handle">⠿</span>
+                            <input type="text" v-model="item.name" class="edit-input edit-name" />
+                            <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">
+                                {{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}
+                            </button>
+                            <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">
+                                {{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}
+                            </button>
+                            <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </template>
+                </draggable>
+            </div>
+        </template>
+
+        <!-- ОБЫЧНЫЙ РЕЖИМ (НЕ ФИЗЛИЦА) -->
+        <draggable v-else v-model="localItems" item-key="_id" handle=".drag-handle" ghost-class="ghost">
           <template #item="{ element: item }">
             <div class="edit-item">
               <span class="drag-handle">⠿</span>
@@ -443,8 +520,8 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
                 <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" />
               </template>
               
-              <!-- 🟢 ПИКЕРЫ ДЛЯ КОНТРАГЕНТОВ И ФИЗЛИЦ -->
-              <template v-if="showDefaultsPickers">
+              <!-- Пикеры для Контрагентов (не физлиц) -->
+              <template v-if="isContractorEditor">
                 <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">
                    {{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}
                 </button>
@@ -456,13 +533,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
               <template v-if="isCompanyEditor">
                 <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">
                   Выбрано ({{ item.selectedAccountIds.length }})
-                </button>
-              </template>
-
-              <!-- 🟢 ПИКЕР СЧЕТОВ ДЛЯ ФИЗЛИЦ (ЕСЛИ ОНИ ВЛАДЕЛЬЦЫ) -->
-              <template v-if="isIndividualEditor">
-                 <button type="button" class="edit-input edit-account-picker-small" @click="openAccountPicker(item)">
-                  Счета ({{ item.selectedAccountIds.length }})
                 </button>
               </template>
               
@@ -552,7 +622,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
-.popup-content.wide { max-width: 900px; /* 🟢 Еще шире для Физлиц */ }
+.popup-content.wide { max-width: 900px; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
@@ -578,10 +648,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .owner-header .header-accounts { flex-shrink: 0; width: 310px; }
 
-/* 🟢 Стили колонок контрагента/физлица */
 .contractor-header .header-project { flex-shrink: 0; width: 200px; } 
 .contractor-header .header-category { flex-shrink: 0; width: 200px; } 
-.contractor-header .header-accounts-small { flex-shrink: 0; width: 90px; text-align: center; } 
+.small-header { margin-left: 32px; margin-top: 5px; margin-bottom: 5px; }
 
 .header-trash { width: 48px; flex-shrink: 0; }
 
@@ -612,14 +681,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
 .edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; font-size: 15px; display: flex; align-items: center; margin: 0; padding: 0 14px; height: 48px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; font-family: inherit; }
 .edit-account-picker:hover { border-color: #222222; }
-
-/* 🟢 Маленькая кнопка для счетов физлиц */
-.edit-account-picker-small {
-  flex-shrink: 0; width: 90px; 
-  text-align: center; padding: 0; justify-content: center;
-  font-size: 13px; 
-  background-image: none; /* Убрал стрелку для экономии места */
-}
 
 .delete-btn { width: 48px; height: 48px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 10px; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 100%; height: 100%; stroke: #999; transition: stroke 0.2s; }
@@ -665,4 +726,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-save-owner { padding: 10px 20px; background-color: #34C759; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
 .btn-save-owner:hover { background-color: #2da84e; }
 .btn-save-owner:disabled { opacity: 0.7; cursor: wait; }
+
+/* 🟢 Стили групп */
+.group-section { margin-bottom: 25px; }
+.group-title { font-size: 14px; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 8px; padding-left: 36px; letter-spacing: 0.5px; }
+.empty-list { padding: 20px; text-align: center; color: #999; font-style: italic; background: #fcfcfc; border: 1px dashed #ddd; border-radius: 8px; margin-left: 36px; }
 </style>

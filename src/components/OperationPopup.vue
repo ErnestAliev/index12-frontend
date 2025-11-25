@@ -6,12 +6,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v39.0 - INDIVIDUAL DEFAULTS ---
- * * ВЕРСИЯ: 39.0 - Поддержка дефолтных проектов/категорий для Физлиц
+ * * --- МЕТКА ВЕРСИИ: v46.0 - HIDE OWNERS IN OPTIONS ---
+ * * ВЕРСИЯ: 46.0 - Фильтрация "Моих компаний" и "Владельцев" в списке контрагентов
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) onContractorSelected теперь обрабатывает `ind_` префикс для загрузки дефолтов.
+ * 1. (LOGIC) contractorOptions теперь фильтрует список:
+ * - Контрагенты: скрываются те, чьи имена совпадают с "Моими компаниями".
+ * - Физлица: скрываются те, кто является владельцем счета.
  */
 
 const mainStore = useMainStore();
@@ -163,17 +165,31 @@ const ownerOptions = computed(() => {
   return opts;
 });
 
-// Контрагенты (Разделены)
+// 🟢 ФИЛЬТРАЦИЯ СПИСКА КОНТРАГЕНТОВ И ФИЗЛИЦ
 const contractorOptions = computed(() => {
   const opts = [];
   
+  // 1. Фильтруем Контрагентов: Исключаем тех, чье имя совпадает с именем одной из "Моих компаний"
+  const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
+  const filteredContractors = mainStore.contractors.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
+
   opts.push({ label: 'Контрагенты - ТОО, ИП', isHeader: true });
-  mainStore.contractors.forEach(c => {
+  filteredContractors.forEach(c => {
       opts.push({ value: `contr_${c._id}`, label: c.name });
   });
   
-  opts.push({ label: 'Физлица - Физлица', isHeader: true });
-  mainStore.individuals.forEach(i => {
+  // 2. Фильтруем Физлиц: Исключаем тех, кто является Владельцем счета
+  const ownerIds = new Set();
+  mainStore.accounts.forEach(acc => {
+      if (acc.individualId) {
+          const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+          if (iId) ownerIds.add(iId);
+      }
+  });
+  const filteredIndividuals = mainStore.individuals.filter(i => !ownerIds.has(i._id));
+
+  opts.push({ label: 'Физлица (Контрагенты)', isHeader: true });
+  filteredIndividuals.forEach(i => {
       opts.push({ value: `ind_${i._id}`, label: i.name });
   });
 
@@ -319,7 +335,12 @@ onMounted(async () => {
     if (op.contractorId) { 
         const cId = op.contractorId._id || op.contractorId;
         selectedContractorValue.value = `contr_${cId}`;
+    } else if (op.counterpartyIndividualId) {
+        // 🟢 Восстанавливаем физлицо-контрагента
+        const iId = op.counterpartyIndividualId._id || op.counterpartyIndividualId;
+        selectedContractorValue.value = `ind_${iId}`;
     } else if (op.individualId && op.companyId) {
+        // Старая логика (fallback)
         const iId = op.individualId._id || op.individualId;
         selectedContractorValue.value = `ind_${iId}`;
     }
@@ -345,21 +366,17 @@ const handleSave = () => {
       else if (type === 'individual') individualOwnerId = id; 
   }
   
+  // 🟢 НОВАЯ ЛОГИКА: Разделяем контрагента-ТОО и контрагента-Физлицо
   let contractorId = null;
-  let individualCounterpartyId = null;
+  let counterpartyIndividualId = null;
   
   const [contrPrefix, contrId] = selectedContractorValue.value.split('_');
   if (contrPrefix === 'contr') {
-      contractorId = contrId;
+      contractorId = contrId; 
   } else if (contrPrefix === 'ind') {
-      if (companyId) {
-          individualCounterpartyId = contrId; 
-      } else {
-          // Владелец и Контрагент оба физлица - конфликт структуры, но сохраняем Владельца.
-      }
+      // 🟢 Если выбран контрагент-физлицо, пишем его в отдельное поле
+      counterpartyIndividualId = contrId;
   }
-
-  const finalIndividualId = individualOwnerId || individualCounterpartyId;
 
   const payload = { 
       type: props.type, 
@@ -367,8 +384,9 @@ const handleSave = () => {
       categoryId: selectedCategoryId.value || null, 
       accountId: selectedAccountId.value, 
       companyId: companyId, 
-      individualId: finalIndividualId, 
-      contractorId: contractorId, 
+      individualId: individualOwnerId, // Сюда только владелец (если есть)
+      contractorId: contractorId,      // Сюда только ТОО/ИП
+      counterpartyIndividualId: counterpartyIndividualId, // 🟢 Сюда Физлицо-контрагент
       projectId: selectedProjectId.value || null, 
       date: finalDate,
       prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
@@ -396,15 +414,13 @@ const handleSave = () => {
       }
   }
 
-  // 🟢 2. AUTO-LINK DEFAULTS (Contractor OR Individual)
-  // Если выбран контрагент
+  // 2. AUTO-LINK DEFAULTS
   if (contractorId) {
       const contr = mainStore.contractors.find(c => c._id === contractorId);
       if (contr) updateDefaults(contr, 'contractors');
   }
-  // Если выбрано Физлицо как контрагент (есть companyId владельца)
-  else if (individualCounterpartyId) {
-      const ind = mainStore.individuals.find(i => i._id === individualCounterpartyId);
+  else if (counterpartyIndividualId) {
+      const ind = mainStore.individuals.find(i => i._id === counterpartyIndividualId);
       if (ind) updateDefaults(ind, 'individuals');
   }
 
