@@ -1,11 +1,11 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v13.10 - RANGE TOTAL FIX ---
- * * ВЕРСИЯ: 13.10 - Учет начального баланса в Range Total
- * ДАТА: 2025-11-21
+ * * --- МЕТКА ВЕРСИИ: v13.11 - RANGE TOTAL LOGIC FIX ---
+ * * ВЕРСИЯ: 13.11 - Исправление расчета итогового баланса в графике
+ * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В rangeTotal добавлен расчет начального баланса счетов (mainStore.accounts).
- * 2. (LOGIC) В сумму добавлено поле prepayment (предоплаты), чтобы цифра сходилась с графиком.
+ * 1. (LOGIC) rangeTotal теперь ищет closingBalance (накопительный итог) на последний день периода из mainStore.dailyChartData.
+ * Это учитывает все операции с начала времен, а не только за видимый период.
  -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
@@ -33,25 +33,34 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// Расчет общей суммы за период (включая начальные остатки)
+// 🟢 ИСПРАВЛЕНО: Расчет общей суммы на конец периода
 const rangeTotal = computed(() => {
-  // 1. Считаем сумму начальных балансов всех счетов
-  const initialBalanceSum = (mainStore.accounts || []).reduce((acc, item) => acc + (item.initialBalance || 0), 0);
+  // Базовое значение = Сумма начальных балансов счетов
+  let total = (mainStore.accounts || []).reduce((acc, item) => acc + (item.initialBalance || 0), 0);
 
-  if (!visibleDays.value || visibleDays.value.length === 0) return initialBalanceSum;
-  
-  let total = initialBalanceSum;
-  
-  for (const day of visibleDays.value) {
-    const dateKey = _getDateKey(day.date);
-    const data = mainStore.dailyChartData?.get(dateKey);
-    if (data) {
-      // Суммируем Доход + Предоплату и вычитаем Расход
-      const income = (data.income || 0) + (data.prepayment || 0);
-      const expense = (data.expense || 0);
-      total += income - expense;
-    }
+  if (!visibleDays.value || visibleDays.value.length === 0) return total;
+
+  // Берем дату последнего дня видимого диапазона
+  const lastVisibleDate = visibleDays.value[visibleDays.value.length - 1].date;
+  const lastVisibleTime = lastVisibleDate.getTime();
+
+  // Ищем в dailyChartData (там хранятся уже рассчитанные накопительные итоги по дням)
+  // Нам нужно найти запись, дата которой <= lastVisibleDate, но максимально близкая к ней.
+  if (mainStore.dailyChartData && mainStore.dailyChartData.size > 0) {
+      const entries = Array.from(mainStore.dailyChartData.values());
+      
+      // Сортируем по дате (на всякий случай)
+      entries.sort((a, b) => a.date - b.date);
+      
+      // Идем с конца, чтобы найти последнюю актуальную запись
+      for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].date.getTime() <= lastVisibleTime) {
+              total = entries[i].closingBalance;
+              break; // Нашли актуальный баланс на конец периода
+          }
+      }
   }
+  
   return total;
 });
 
