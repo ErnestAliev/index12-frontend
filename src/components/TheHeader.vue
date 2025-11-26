@@ -17,15 +17,16 @@ import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v45.0 - HIDE MY COMPANIES FROM CONTRACTORS ---
- * * ВЕРСИЯ: 45.0 - Скрытие "Моих компаний" из виджета "Мои контрагенты"
+ * * --- МЕТКА ВЕРСИИ: v48.0 - DELTA MERGE FIX ---
+ * * ВЕРСИЯ: 48.0 - Исправление бага с дублированием баланса в прогнозе
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) mergedContractorBalances теперь фильтрует контрагентов, чьи имена совпадают с именами моих компаний.
+ * 1. (LOGIC) Функция `mergeBalances` теперь принимает третий аргумент `isDelta`.
+ * 2. (LOGIC) Если `isDelta === true`, то при отсутствии будущих операций подставляется 0 (а не текущий баланс).
  */
 
-console.log('--- TheHeader.vue v45.0 (Hide My Companies) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v48.0 (Delta Merge Fix) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -123,35 +124,40 @@ const futureUntilStr = computed(() => {
 // ... computed balances ...
 const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
 const loggedFutureTotal = computed(() => mainStore.futureTotalBalance);
-const mergeBalances = (currentBalances, futureBalances) => {
+
+// 🟢 ИСПРАВЛЕННАЯ ФУНКЦИЯ СЛИЯНИЯ
+// Добавлен флаг isDelta. Если он true, default значения = 0.
+const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   let result = currentBalances || [];
-  if (futureBalances) {
-      const futureMap = new Map(futureBalances.map(item => [item._id, item.balance]));
-      result = currentBalances.map(item => ({ ...item, futureBalance: futureMap.get(item._id) ?? item.balance }));
+  if (futureData) {
+      const futureMap = new Map(futureData.map(item => [item._id, item.balance]));
+      result = currentBalances.map(item => {
+          // Если прогноз для элемента есть в futureMap - берем его.
+          // Если нет:
+          //   - в режиме Дельты (isDelta=true) считаем, что изменений нет (0).
+          //   - в режиме Накопления (isDelta=false) считаем, что баланс не изменился (item.balance).
+          const fallback = isDelta ? 0 : item.balance;
+          return { ...item, futureBalance: futureMap.get(item._id) ?? fallback };
+      });
   }
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
-const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances));
-const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances));
 
-// 🟢 ФИЛЬТРАЦИЯ: Скрываем "Мои компании" из списка контрагентов
+// 1. Накопительные (Счета, Компании) -> isDelta = false
+const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false));
+const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false));
+
+// 2. Дельта (Контрагенты, Проекты, Физлица, Категории) -> isDelta = true
 const mergedContractorBalances = computed(() => {
-    const allMerged = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorBalances);
-    
-    // Собираем имена моих компаний (в нижнем регистре для надежного сравнения)
+    const allMerged = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
     const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-
-    // Оставляем только тех контрагентов, чье имя НЕ совпадает с именем моей компании
     return allMerged.filter(contr => !myCompanyNames.has(contr.name.trim().toLowerCase()));
 });
 
-const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectBalances));
+const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true));
 
-// 🟢 ФИЛЬТРАЦИЯ: Скрываем владельцев счетов из списка физлиц
 const mergedIndividualBalances = computed(() => {
-    const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualBalances);
-    
-    // Собираем ID физлиц, которые являются владельцами счетов
+    const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
     const ownerIds = new Set();
     mainStore.accounts.forEach(acc => {
         if (acc.individualId) {
@@ -159,13 +165,11 @@ const mergedIndividualBalances = computed(() => {
             if (iId) ownerIds.add(iId);
         }
     });
-
-    // Оставляем только тех, кто НЕ владелец счета (контрагенты)
     return allMerged.filter(ind => !ownerIds.has(ind._id));
 });
 
 const mergedCategoryBalances = computed(() => {
-    const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryBalances);
+    const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryChanges, true);
     const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
     return allMerged.filter(c => visibleIds.has(c._id));
 });
@@ -296,6 +300,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           title="Мои счета"
           :items="loggedAccountBalances" emptyText="...счетов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
+          :isDeltaMode="false"
           @add="openAddPopup('Новый счет', mainStore.addAccount)"
           @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
           @open-menu="handleOpenMenu"
@@ -306,42 +311,51 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           title="Мои компании"
           :items="mergedCompanyBalances" emptyText="...компаний нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
+          :isDeltaMode="false"
           @add="openAddPopup('Новая компания', mainStore.addCompany)"
           @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
           @open-menu="handleOpenMenu"
         />
+
         <HeaderBalanceCard
           v-else-if="widgetKey === 'contractors'"
           title="Мои контрагенты"
           :items="mergedContractorBalances" emptyText="...контрагентов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
+          :isDeltaMode="true"
           @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
           @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
           @open-menu="handleOpenMenu"
         />
+
         <HeaderBalanceCard
           v-else-if="widgetKey === 'projects'"
           title="Мои проекты"
           :items="mergedProjectBalances" emptyText="...проектов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
+          :isDeltaMode="true"
           @add="openAddPopup('Новый проект', mainStore.addProject)"
           @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
           @open-menu="handleOpenMenu"
         />
+
         <HeaderBalanceCard
           v-else-if="widgetKey === 'individuals'"
           title="Мои Физлица"
           :items="mergedIndividualBalances" emptyText="...физлиц нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
+          :isDeltaMode="true"
           @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
           @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
           @open-menu="handleOpenMenu"
         />
+
         <HeaderBalanceCard
           v-else-if="widgetKey === 'categories'"
           title="Категории"
           :items="mergedCategoryBalances" emptyText="...категорий нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
+          :isDeltaMode="true"
           @add="openAddPopup('Новая категория', mainStore.addCategory)"
           @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
           @open-menu="handleOpenMenu"

@@ -1,10 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.21 - REFUND CALC FIX ---
- * * ВЕРСИЯ: 26.11.21 - Исправление логики обязательств при возврате
+ * * --- МЕТКА ВЕРСИИ: v26.11.23 - DELTA TIME FIX ---
+ * * ВЕРСИЯ: 26.11.23 - Исправлена точка отсечки прогноза
  * * ДАТА: 2025-11-26
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) liabilitiesWeOwe: Теперь учитывает операции "Возврат" (уменьшает долг перед клиентом).
- * 2. (LOGIC) liabilitiesTheyOwe: Больше не учитывает операции "Возврат" (долг клиента остается "не тронутым", согласно задаче).
+ * 1. (LOGIC) futureOps теперь использует Math.max(snapshotTime, Date.now()) для определения "будущего".
+ * 2. (LOGIC) Это исключает операции, которые уже произошли в реальном времени, даже если БД (snapshot) отстает.
  */
 
 import { defineStore } from 'pinia';
@@ -27,7 +27,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.11.21 (Refund Calc Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.11.23 (Delta Time Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -288,6 +288,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureOps = computed(() => {
     const snapshotTime = snapshot.value.timestamp ? new Date(snapshot.value.timestamp).getTime() : Date.now();
+    
+    // 🟢 FIX: Используем "плавающее окно" старта прогноза.
+    // Мы не должны показывать операции из прошлого как прогноз, даже если snapshotTime отстает.
+    // Берем МАКСИМУМ из (Время Снапшота, Текущее Время).
+    // Это гарантирует, что операции за 21.11 (при сегодня 26.11) точно отсекутся, так как они < Date.now()
+    const cutOffTime = Math.max(snapshotTime, Date.now());
+
     let endDate;
     if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate).getTime(); } 
     else { endDate = Date.now() + 365*24*60*60*1000; }
@@ -296,12 +303,16 @@ export const useMainStore = defineStore('mainStore', () => {
     for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
         const date = _parseDateKey(dateKey);
         const time = date.getTime();
-        if (time >= snapshotTime - 86400000 && time <= endDate) {
+        
+        // Оптимизация: Пропускаем дни, которые явно раньше cutoff (с запасом 24ч на часовые пояса)
+        if (time >= cutOffTime - 86400000 && time <= endDate) {
             if (Array.isArray(ops)) {
                 for (const op of ops) {
                     if (!op.date) continue;
                     const opTime = new Date(op.date).getTime();
-                    if (opTime > snapshotTime) {
+                    
+                    // Строгое условие: операция должна быть ПОЗЖЕ точки отсчета
+                    if (opTime > cutOffTime) {
                         result.push(op);
                     }
                 }
@@ -418,14 +429,12 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
       const isAct = (catId && actIds.includes(catId));
-      const isRefund = refundCatId && catId === refundCatId; // 🟢 Проверка на возврат
+      const isRefund = refundCatId && catId === refundCatId; 
       
       if (isPrepay && op.type === 'income') {
           totalPrepaymentReceived += (op.amount || 0);
       }
       
-      // 🟢 ВАЖНО: Возврат (Расход) уменьшает сумму полученных нами денег
-      // Это значит, что мы меньше должны клиенту
       if (isRefund && op.type === 'expense') {
           totalPrepaymentReceived -= Math.abs(op.amount || 0);
       }
@@ -462,9 +471,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }
           receivedSum += (op.amount || 0);
       }
-      
-      // 🟢 ВАЖНО: Операция "Возврат" (расход) ЗДЕСЬ ИГНОРИРУЕТСЯ
-      // По задаче: "Нам должны" остается не тронутой
     }
     const result = totalDealSum - receivedSum;
     return result > 0 ? result : 0;
@@ -494,8 +500,9 @@ export const useMainStore = defineStore('mainStore', () => {
     return mapped;
   });
 
+  // 🟢 Категории (Расчет ДЕЛЬТЫ для виджета прогноза)
   const futureCategoryBreakdowns = computed(() => {
-    const map = JSON.parse(JSON.stringify(snapshot.value.categoryTotals || {}));
+    const map = {}; 
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
       if (!op?.categoryId) continue;
@@ -515,11 +522,62 @@ export const useMainStore = defineStore('mainStore', () => {
     const breakdown = futureCategoryBreakdowns.value;
     return categories.value.map(c => ({ ...c, balance: (breakdown[`cat_${c._id}`]?.total || 0) }));
   });
+  
+  // 🟢 Геттеры для Дельты (Изменения) в будущем для Сущностей
+  const _calculateFutureEntityChange = (entityIdField) => {
+      const futureMap = {}; 
+      for (const op of futureOps.value) {
+          if (_isRetailWriteOff(op)) continue;
+
+          const amt = Math.abs(op.amount || 0);
+          if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
+
+          if (isTransfer(op)) {
+              let fromId, toId;
+              if (entityIdField === 'accountId') { fromId = op.fromAccountId; toId = op.toAccountId; }
+              else if (entityIdField === 'companyId') { fromId = op.fromCompanyId; toId = op.toCompanyId; }
+              else if (entityIdField === 'individualId') { fromId = op.fromIndividualId; toId = op.toIndividualId; }
+              else continue; 
+              fromId = fromId?._id || fromId; toId = toId?._id || toId;
+              if (fromId) { if (futureMap[fromId] === undefined) futureMap[fromId] = 0; futureMap[fromId] -= amt; }
+              if (toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
+          } else {
+              if (entityIdField === 'individualId') {
+                  const ownerId = op.individualId?._id || op.individualId;
+                  const contrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+                  if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (op.amount || 0); else futureMap[ownerId] -= amt; }
+                  if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (op.amount || 0); else futureMap[contrId] -= amt; }
+              } else {
+                  let id = op[entityIdField]; id = id?._id || id; if (!id) continue;
+                  if (futureMap[id] === undefined) futureMap[id] = 0;
+                  if (op.type === 'income') futureMap[id] += (op.amount || 0); else futureMap[id] -= amt;
+              }
+          }
+      }
+      return futureMap;
+  };
+
+  const futureContractorChanges = computed(() => {
+    const futureMap = _calculateFutureEntityChange('contractorId');
+    return contractors.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
+  });
+
+  const futureProjectChanges = computed(() => {
+    const futureMap = _calculateFutureEntityChange('projectId');
+    return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
+  });
+
+  const futureIndividualChanges = computed(() => {
+    const futureMap = _calculateFutureEntityChange('individualId');
+    return individuals.value.map(i => ({ ...i, balance: futureMap[i._id] || 0 }));
+  });
+  
+  const futureCategoryChanges = computed(() => futureCategoryBalances.value);
 
   const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0));
   
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
-      const futureMap = { ...snapshotMap };
+      const futureMap = { ...snapshotMap }; 
       for (const op of futureOps.value) {
           if (_isRetailWriteOff(op)) continue;
 
@@ -1222,6 +1280,9 @@ export const useMainStore = defineStore('mainStore', () => {
     getPrepaymentCategoryIds, getActCategoryIds,
     
     currentCategoryBalances, futureCategoryBalances,
+    
+    // 🟢 Экспортируем НОВЫЕ геттеры изменений
+    futureContractorChanges, futureProjectChanges, futureIndividualChanges, futureCategoryChanges,
     
     currentOps, 
     

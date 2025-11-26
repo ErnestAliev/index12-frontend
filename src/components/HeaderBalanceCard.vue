@@ -5,8 +5,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.3 - REMOVE SWITCHER ---
- * * ВЕРСИЯ: 4.3 - Удалена функция смены виджета через заголовок
+ * * --- МЕТКА ВЕРСИИ: v47.0 - DELTA VISUALIZATION ---
+ * * ВЕРСИЯ: 47.0 - Поддержка визуализации дельты (+/-)
+ * * ДАТА: 2025-11-26
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (PROPS) Добавлен prop `isDeltaMode` (по умолчанию false).
+ * 2. (TEMPLATE) Если `isDeltaMode` включен, прогноз отображается с +/- и цветом (зеленый/красный).
+ * 3. (STYLE) Добавлен класс `.income` для зеленого цвета.
  */
 
 const props = defineProps({
@@ -14,7 +20,9 @@ const props = defineProps({
   items: { type: Array, required: true },
   emptyText: { type: String, default: "...нет..." },
   widgetKey: { type: String, required: true },
-  widgetIndex: { type: Number, required: true }
+  widgetIndex: { type: Number, required: true },
+  // 🟢 Новый проп для переключения режима отображения прогноза
+  isDeltaMode: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['add', 'edit']);
@@ -75,11 +83,20 @@ const handleFilterClickOutside = (event) => {
   if (!insideTrigger && !insideDropdown) isFilterOpen.value = false;
 };
 
+// Старый форматтер для обычного баланса
 const formatBalance = (balance) => {
   const num = Number(balance) || 0;
   const safeBalance = isNaN(num) ? 0 : num;
   const formatted = formatNumber(Math.abs(safeBalance)); 
   return safeBalance < 0 ? `- ${formatted}` : formatted;
+};
+
+// 🟢 Новый форматтер для дельты (+/-)
+const formatDelta = (val) => {
+  const num = Number(val) || 0;
+  if (num === 0) return '0';
+  const formatted = formatNumber(Math.abs(num));
+  return num > 0 ? `+ ${formatted}` : `- ${formatted}`;
 };
 </script>
 
@@ -153,13 +170,28 @@ const formatBalance = (balance) => {
     <div class="card-items-list">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
         <span>{{ item.name }}</span>
+        
+        <!-- 1. ТЕКУЩИЙ БАЛАНС (Если прогноз выключен) -->
         <span v-if="!showFutureBalance" :class="{ 'expense': item.balance < 0 }">
           ₸ {{ formatBalance(item.balance) }}
         </span>
+
+        <!-- 2. ПРОГНОЗ -->
         <span v-else class="forecast-display">
+          <!-- Текущее значение (слева) -->
           <span :class="{ 'expense': item.balance < 0 }">₸ {{ formatBalance(item.balance) }}</span>
+          
           <span class="forecast-arrow">></span>
-          <span :class="{ 'expense': item.futureBalance < 0 }">{{ formatBalance(item.futureBalance) }}</span>
+          
+          <!-- 🔴 БУДУЩЕЕ ЗНАЧЕНИЕ -->
+          <!-- Вариант А: Дельта (+/-) -->
+          <span v-if="isDeltaMode" :class="{ 'income': item.futureBalance > 0, 'expense': item.futureBalance < 0 }">
+             {{ formatDelta(item.futureBalance) }}
+          </span>
+          <!-- Вариант Б: Накопительный итог (Старый) -->
+          <span v-else :class="{ 'expense': item.futureBalance < 0 }">
+             {{ formatBalance(item.futureBalance) }}
+          </span>
         </span>
       </div>
       <p v-if="!processedItems.length" class="card-item-empty">{{ props.emptyText }}</p>
@@ -200,10 +232,15 @@ const formatBalance = (balance) => {
 .card-item-empty { font-size: 0.9em; color: #666; }
 .card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
 .card-item span:last-child { color: var(--color-text); font-weight: 500; white-space: nowrap; }
+
+/* Цвета значений */
 .card-item span.expense { color: var(--color-danger); }
+.card-item span.income { color: var(--color-primary); } /* 🟢 Новый класс */
+
 .forecast-display { display: flex; align-items: center; gap: 4px; color: var(--color-text); font-weight: 500; white-space: nowrap; }
 .forecast-arrow { font-size: 0.9em; color: #777; }
 .forecast-display span.expense { color: var(--color-danger); }
+.forecast-display span.income { color: var(--color-primary); } /* 🟢 Для стрелки */
 
 @media (max-height: 900px) {
   .dashboard-card { min-width: 100px; padding-right: 1rem; }
