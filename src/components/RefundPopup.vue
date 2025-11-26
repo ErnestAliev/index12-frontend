@@ -280,13 +280,13 @@ h3 { margin: 0; color: #222; font-size: 1.2rem; font-weight: 700; }
 
 /* 🟢 ИЗМЕНЕНО: background-color: #ffffff */
 .amount-input { width: 100%; font-size: 18px; font-weight: 700; padding: 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; text-align: right; color: #222; box-sizing: border-box; background-color: #ffffff; }
-.amount-input:focus { border-color: #7B1FA2; }
+.amount-input:focus { border-color: #111827; }
 
 .date-input { width: 100%; height: 42px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #222; background: #fff; box-sizing: border-box; }
 
 .actions { display: flex; gap: 10px; margin-top: 15px; }
 .btn-cancel { flex: 1; padding: 12px; background: #eee; border: none; border-radius: 6px; cursor: pointer; color: #333; font-weight: 500; }
-.btn-confirm { flex: 1; padding: 12px; background: #7B1FA2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+.btn-confirm { flex: 1; padding: 12px; background: #111827; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
 .btn-confirm:disabled { opacity: 0.6; }
 
 .btn-icon-delete { background: none; border: none; cursor: pointer; color: #ff3b30; }

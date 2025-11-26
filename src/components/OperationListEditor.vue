@@ -535,7 +535,7 @@ const handleSave = async () => {
 
       <div class="popup-footer">
         <div class="footer-left-actions">
-            <button v-if="activeTab !== 'history'" class="btn-add-new-footer btn-income" @click="openCreatePopup">+ Создать</button>
+            <!--<button v-if="activeTab !== 'history'" class="btn-add-new-footer btn-income" @click="openCreatePopup">+ Создать</button>-->
             <button v-if="activeTab === 'retail' && props.filterMode === 'prepayment_only'" class="btn-add-new-footer btn-orange-retail" @click="showRetailPopup = true">Внести сумму выполненных работ</button>
             <button v-if="activeTab === 'retail' && props.filterMode === 'prepayment_only'" class="btn-add-new-footer btn-refund" @click="openRefundPopup">Оформить возврат</button>
         </div>
@@ -565,7 +565,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 
 .tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 1rem; border-bottom: 1px solid #e5e7eb; }
 .tab-btn { background: none; border: none; border-bottom: 3px solid transparent; font-size: 15px; font-weight: 600; color: #6b7280; padding: 12px 0; cursor: pointer; transition: all 0.2s; }
-.tab-btn.active { color: #10b981; border-color: #10b981; }
+.tab-btn.active { color: #111827; border-color: #111827; }
 .tab-btn:hover { color: #374151; }
 
 .summary-bar { display: flex; align-items: center; gap: 15px; padding: 15px 24px; background-color: #fff; border-bottom: 1px solid #eee; font-size: 15px; color: #333; }
@@ -576,11 +576,11 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .income-text { color: #10b981; }
 .warn-text { color: #f59e0b; }
 
-.btn-orange-retail { background-color: #f59e0b !important; color: white; }
-.btn-orange-retail:hover { background-color: #d97706 !important; }
+.btn-orange-retail { background-color: #111827 !important; color: white; }
+.btn-orange-retail:hover { background-color: #111827 !important; }
 
-.btn-refund { background-color: #DE8FFF !important; color: white; margin-left: 10px; }
-.btn-refund:hover { background-color: #be70df !important; }
+.btn-refund { background-color: #111827 !important; color: white; margin-left: 10px; }
+.btn-refund:hover { background-color: #111827 !important; }
 
 /* 🟢 GRID LAYOUTS: Default no check column (removed 50px at start) */
 .filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; }
