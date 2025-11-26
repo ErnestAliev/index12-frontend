@@ -5,14 +5,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v47.0 - DELTA VISUALIZATION ---
- * * ВЕРСИЯ: 47.0 - Поддержка визуализации дельты (+/-)
+ * * --- МЕТКА ВЕРСИИ: v49.1 - GRID RESIZE FIX ---
+ * * ВЕРСИЯ: 49.1 - Исправление ресайза в Grid (min-width: 0)
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (PROPS) Добавлен prop `isDeltaMode` (по умолчанию false).
- * 2. (TEMPLATE) Если `isDeltaMode` включен, прогноз отображается с +/- и цветом (зеленый/красный).
- * 3. (STYLE) Добавлен класс `.income` для зеленого цвета.
+ * 1. (CSS) .name-cell: добавлено min-width: 0 для корректного сжатия текста в Grid.
+ * 2. (CSS) .forecast-mode: добавлено align-content: start во избежание вертикального растяжения.
  */
 
 const props = defineProps({
@@ -21,7 +20,6 @@ const props = defineProps({
   emptyText: { type: String, default: "...нет..." },
   widgetKey: { type: String, required: true },
   widgetIndex: { type: Number, required: true },
-  // 🟢 Новый проп для переключения режима отображения прогноза
   isDeltaMode: { type: Boolean, default: false }
 });
 
@@ -91,7 +89,7 @@ const formatBalance = (balance) => {
   return safeBalance < 0 ? `- ${formatted}` : formatted;
 };
 
-// 🟢 Новый форматтер для дельты (+/-)
+// Новый форматтер для дельты (+/-)
 const formatDelta = (val) => {
   const num = Number(val) || 0;
   if (num === 0) return '0';
@@ -167,29 +165,31 @@ const formatDelta = (val) => {
       </div>
     </Teleport>
     
-    <div class="card-items-list">
+    <!-- 🟢 Добавлен класс forecast-mode -->
+    <div class="card-items-list" :class="{ 'forecast-mode': showFutureBalance }">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
-        <span>{{ item.name }}</span>
+        <span class="name-cell">{{ item.name }}</span>
         
         <!-- 1. ТЕКУЩИЙ БАЛАНС (Если прогноз выключен) -->
-        <span v-if="!showFutureBalance" :class="{ 'expense': item.balance < 0 }">
+        <span v-if="!showFutureBalance" class="single-balance" :class="{ 'expense': item.balance < 0 }">
           ₸ {{ formatBalance(item.balance) }}
         </span>
 
-        <!-- 2. ПРОГНОЗ -->
+        <!-- 2. ПРОГНОЗ (Grid-структура через display: contents) -->
         <span v-else class="forecast-display">
-          <!-- Текущее значение (слева) -->
-          <span :class="{ 'expense': item.balance < 0 }">₸ {{ formatBalance(item.balance) }}</span>
+          <!-- Текущее -->
+          <span class="current-cell" :class="{ 'expense': item.balance < 0 }">
+             <span class="currency">₸</span> {{ formatBalance(item.balance) }}
+          </span>
           
-          <span class="forecast-arrow">></span>
+          <!-- Стрелка -->
+          <span class="arrow-cell">></span>
           
-          <!-- 🔴 БУДУЩЕЕ ЗНАЧЕНИЕ -->
-          <!-- Вариант А: Дельта (+/-) -->
-          <span v-if="isDeltaMode" :class="{ 'income': item.futureBalance > 0, 'expense': item.futureBalance < 0 }">
+          <!-- Будущее -->
+          <span v-if="isDeltaMode" class="future-cell" :class="{ 'income': item.futureBalance > 0, 'expense': item.futureBalance < 0 }">
              {{ formatDelta(item.futureBalance) }}
           </span>
-          <!-- Вариант Б: Накопительный итог (Старый) -->
-          <span v-else :class="{ 'expense': item.futureBalance < 0 }">
+          <span v-else class="future-cell" :class="{ 'expense': item.futureBalance < 0 }">
              {{ formatBalance(item.futureBalance) }}
           </span>
         </span>
@@ -209,7 +209,6 @@ const formatDelta = (val) => {
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
 
 .card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-/* Заголовок больше не кликабельный */
 .card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
@@ -218,29 +217,96 @@ const formatDelta = (val) => {
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
+/* --- СПИСОК (ОБЫЧНЫЙ РЕЖИМ) --- */
 .card-items-list { 
   flex-grow: 1; 
   overflow-y: auto; 
   padding-right: 5px; 
   scrollbar-width: none; 
   min-height: 0; 
-  display: flex; flex-direction: column; 
+  display: flex; 
+  flex-direction: column; 
 }
 .card-items-list::-webkit-scrollbar { display: none; }
 
-.card-item { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 0.25rem; flex-shrink: 0; }
-.card-item-empty { font-size: 0.9em; color: #666; }
-.card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
-.card-item span:last-child { color: var(--color-text); font-weight: 500; white-space: nowrap; }
+.card-item { 
+  display: flex; 
+  justify-content: space-between; 
+  font-size: 0.9em; 
+  margin-bottom: 0.25rem; 
+  flex-shrink: 0; 
+}
+
+/* --- СПИСОК (РЕЖИМ ПРОГНОЗА - GRID) --- */
+/* 🟢 Включаем CSS Grid для контейнера при forecast-mode */
+.card-items-list.forecast-mode {
+  display: grid;
+  /* Название (auto) | Текущее (сжато) | Стрелка | Будущее (сжато) */
+  /* minmax(0, 1fr) заставляет название сжиматься и показывать троеточие */
+  grid-template-columns: minmax(0, 1fr) auto 16px auto; 
+  column-gap: 6px;
+  row-gap: 4px;
+  align-items: center;
+  /* FIX: Избегаем растягивания строк по высоте при малом контенте */
+  align-content: start;
+}
+
+/* 🟢 Flattening: Делаем элементы строки "прозрачными" для грида */
+.card-items-list.forecast-mode .card-item {
+  display: contents;
+}
+.card-items-list.forecast-mode .forecast-display {
+  display: contents;
+}
+
+/* 🟢 Стили колонок в гриде */
+.name-cell {
+  color: #ccc; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  /* FIX: Критично для работы text-overflow в grid */
+  min-width: 0;
+}
+
+.current-cell {
+  color: var(--color-text);
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums; /* Цифры одной ширины */
+  font-size: 0.9em; /* Чуть меньше, чтобы влезло */
+}
+
+.arrow-cell {
+  color: #777;
+  font-size: 0.9em;
+  text-align: center;
+  user-select: none;
+}
+
+.future-cell {
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9em;
+}
+
+.currency {
+  font-size: 0.85em;
+  color: #777;
+  margin-right: 2px;
+}
+
+
+.card-item-empty { font-size: 0.9em; color: #666; grid-column: 1 / -1; }
 
 /* Цвета значений */
-.card-item span.expense { color: var(--color-danger); }
-.card-item span.income { color: var(--color-primary); } /* 🟢 Новый класс */
-
-.forecast-display { display: flex; align-items: center; gap: 4px; color: var(--color-text); font-weight: 500; white-space: nowrap; }
-.forecast-arrow { font-size: 0.9em; color: #777; }
-.forecast-display span.expense { color: var(--color-danger); }
-.forecast-display span.income { color: var(--color-primary); } /* 🟢 Для стрелки */
+.expense { color: var(--color-danger) !important; }
+.income { color: var(--color-primary) !important; }
+.single-balance { color: var(--color-text); font-weight: 500; white-space: nowrap; }
+.single-balance.expense { color: var(--color-danger); }
 
 @media (max-height: 900px) {
   .dashboard-card { min-width: 100px; padding-right: 1rem; }
@@ -248,72 +314,5 @@ const formatDelta = (val) => {
   .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .action-square-btn { width: 16px; height: 16px; }
   .icon-svg { width: 10px; height: 10px; }
-}
-</style>
-
-<!-- Глобальные стили для дропдауна -->
-<style>
-.filter-dropdown-fixed {
-  position: fixed; 
-  width: 160px;    
-  background-color: var(--color-background-soft, #282828);
-  border: 1px solid var(--color-border, #444);
-  border-radius: 8px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
-  z-index: 9999;   
-  padding: 8px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.filter-group-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: #888;
-  padding: 4px 12px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-}
-
-.filter-dropdown-fixed ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.filter-dropdown-fixed li {
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--color-text, #ddd);
-  cursor: pointer;
-  transition: background-color 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.filter-dropdown-fixed li:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-.filter-dropdown-fixed li.active {
-  color: var(--color-primary, #34c759);
-  background-color: rgba(52, 199, 89, 0.1);
-  font-weight: 500;
-}
-
-.symbol {
-  color: #888;
-  font-size: 10px;
-}
-.active .symbol {
-  color: inherit;
 }
 </style>
