@@ -6,14 +6,12 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v19.3 - AUTO LINK OWNERS ---
- * * ВЕРСИЯ: 19.3 - Автоматическая привязка владельца к счету при сохранении перевода
+ * * --- МЕТКА ВЕРСИИ: v26.11.11 - REMOVE REASON ---
+ * * ВЕРСИЯ: 26.11.11 - Удалено поле "Причина"
  * * ДАТА: 2025-11-26
- * *
  * * ЧТО ИЗМЕНЕНО:
- * * 1. (LOGIC) В handleSave добавлена проверка и обновление владельцев счетов (From/To),
- * * если они отличаются от выбранных в дропдауне (аналогично OperationPopup).
- * * 2. (TEMPLATE) Восстановлены инпуты для создания новых счетов (v-else блоки).
+ * 1. Удален `transferReason` и `reasonOptions`.
+ * 2. Удален блок выбора причины из шаблона.
  */
 
 const mainStore = useMainStore();
@@ -37,17 +35,11 @@ const isInlineSaving = ref(false);
 
 // --- ЛОГИКА СЦЕНАРИЕВ ---
 const transferPurpose = ref('internal'); // 'internal' | 'inter_company' | 'personal'
-const transferReason = ref('business_dev'); // 'personal_use' | 'business_dev'
 
 const purposeOptions = [
   { value: 'internal', label: 'Между счетами одной компании' },
   { value: 'inter_company', label: 'Между моими компаниями' },
   { value: 'personal', label: 'Перевод на личную карту' }
-];
-
-const reasonOptions = [
-  { value: 'business_dev', label: 'На развитие бизнеса (В системе)' },
-  { value: 'personal_use', label: 'На личные цели (Вывод)' }
 ];
 
 // --- ТЕКСТЫ ПОДСКАЗОК ---
@@ -59,11 +51,7 @@ const smartHint = computed(() => {
     return 'Сценарий Б: Меж.комп. Расход у отправителя, Доход у получателя. Категория "Меж.комп".';
   }
   if (transferPurpose.value === 'personal') {
-    if (transferReason.value === 'personal_use') {
-      return 'Сценарий Г: Вывод средств. Деньги уходят из системы.';
-    } else {
       return 'Сценарий В: Перевод на личную карту. Деньги бизнеса -> Личные деньги (но остаются в системе).';
-    }
   }
   return '';
 });
@@ -155,7 +143,6 @@ watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
       // Если получатель - Физлицо (из списка Мои Физлица) -> Сценарий В
       if (toType === 'individual') {
           transferPurpose.value = 'personal';
-          transferReason.value = 'business_dev'; // По умолчанию "В системе"
       } 
       // Иначе -> Сценарий Б (Меж.комп)
       else {
@@ -276,17 +263,13 @@ const handleSave = async () => {
   let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
   let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
   
-  // 🟢 Fix for Inter-Company Transfer
-  // If it's inter-company, we must send null categoryId to let backend assign "Меж.комп"
   let finalCategoryId = categoryId.value;
   if (transferPurpose.value === 'inter_company') {
       finalCategoryId = null;
   }
 
-  // 🟢 FIX: АВТОМАТИЧЕСКОЕ СОХРАНЕНИЕ СВЯЗКИ (Account + Owner)
   const updates = [];
   
-  // 1. From Account Link
   if (fromAccountId.value && selectedFromOwner.value) {
       const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
       if (acc) {
@@ -307,7 +290,6 @@ const handleSave = async () => {
       }
   }
 
-  // 2. To Account Link
   if (toAccountId.value && selectedToOwner.value) {
       const acc = mainStore.accounts.find(a => a._id === toAccountId.value);
       if (acc) {
@@ -320,7 +302,6 @@ const handleSave = async () => {
           if (type === 'individual' && currentIndId !== id) needsUpdate = true;
           
           if (needsUpdate) {
-              // Check if already in updates (edge case: same account for from/to - blocked by validation but safe to check)
               const existing = updates.find(u => u._id === acc._id);
               if (!existing) {
                   const updateData = { _id: acc._id, name: acc.name, order: acc.order };
@@ -347,7 +328,8 @@ const handleSave = async () => {
       toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, 
       transferPurpose: transferPurpose.value,
-      transferReason: transferPurpose.value === 'personal' ? transferReason.value : null
+      // Причина больше не используется
+      transferReason: null 
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
@@ -373,7 +355,6 @@ const closePopup = () => { emit('close'); };
         
         <!-- ОТПРАВИТЕЛЬ -->
         <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
-        <!-- 🟢 ИСПРАВЛЕНО: Добавлено поле создания счета отправителя -->
         <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newFromAccountName" placeholder="Название счета" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
           <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
@@ -384,7 +365,6 @@ const closePopup = () => { emit('close'); };
 
         <!-- ПОЛУЧАТЕЛЬ -->
         <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
-        <!-- 🟢 ИСПРАВЛЕНО: Добавлено поле создания счета получателя -->
         <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newToAccountName" placeholder="Название счета" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
           <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
@@ -396,11 +376,6 @@ const closePopup = () => { emit('close'); };
         <!-- ЦЕЛЬ -->
         <div class="input-spacing">
             <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" />
-        </div>
-
-        <!-- ПРИЧИНА -->
-        <div v-if="transferPurpose === 'personal'" class="input-spacing fade-in">
-            <BaseSelect v-model="transferReason" :options="reasonOptions" placeholder="Причина перевода" label="Причина" />
         </div>
 
         <!-- ПОДСКАЗКА -->
@@ -508,7 +483,6 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
 
-/* 🟢 СТИЛИ ДЛЯ ИНЛАЙН СОЗДАНИЯ СЧЕТА (добавлены) */
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: var(--focus-color, #222); }

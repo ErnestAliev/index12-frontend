@@ -6,14 +6,14 @@ import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v16.0 - SPLIT INDIVIDUALS ---
- * * ВЕРСИЯ: 16.0 - Разделение физлиц на Владельцев и Контрагентов
+ * * --- МЕТКА ВЕРСИИ: v26.11 - REFACTORING STAGE 1 ---
+ * * ВЕРСИЯ: 26.11 - Очистка списков и UI унификация (28px)
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UI) В редакторе физлиц список разделен на "Владельцы счетов" и "Физлица (Контрагенты)".
- * 2. (UI) Убрана кнопка "Счета" для физлиц (привязка только через счета).
- * 3. (LOGIC) handleSave собирает данные из обоих списков.
+ * 1. (LOGIC) Скрыты системные сущности "Розница" (в физлицах) и "Реализация" (в категориях).
+ * 2. (STYLE) Высота всех строк, инпутов и кнопок приведена к 28px.
+ * 3. (STYLE) Шрифты уменьшены до 13px для соответствия компактному виду.
  */
 
 const props = defineProps({
@@ -252,6 +252,17 @@ const onAmountInput = (item) => {
 onMounted(() => {
   const allAccounts = mainStore.accounts;
   let rawItems = JSON.parse(JSON.stringify(props.items));
+  
+  // 🟢 FIX: Скрываем системные сущности из списка
+  rawItems = rawItems.filter(item => {
+      const name = item.name.trim().toLowerCase();
+      // Скрываем "Розница" в физлицах
+      if (isIndividualEditor && name === 'розница') return false;
+      // Скрываем "Реализация" в категориях
+      if (isCategoryEditor && name === 'реализация') return false;
+      return true;
+  });
+
   rawItems.sort((a, b) => (a.order || 0) - (b.order || 0));
 
   // Предобработка элементов
@@ -318,8 +329,7 @@ const handleSave = async () => {
     : localItems.value;
 
   const itemsToSave = finalItems.map((item, index) => {
-    const data = { _id: item._id, name: item.name, order: index }; // Общий order или пересчитывать?
-    // Order важен, поэтому лучше сохранять сквозной порядок
+    const data = { _id: item._id, name: item.name, order: index };
     
     if (isAccountEditor) {
         data.initialBalance = item.initialBalance || 0;
@@ -629,12 +639,25 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .btn-submit-edit { background-color: #222222; }
 .btn-submit-edit:hover { background-color: #444444; }
 .create-section { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.btn-add-new { width: 100%; padding: 12px; border: 1px dashed #aaa; background-color: transparent; border-radius: 8px; color: #555; font-size: 15px; cursor: pointer; transition: all 0.2s; }
+
+/* 🟢 УНИФИКАЦИЯ UI: Высота 28px */
+.btn-add-new { 
+  width: 100%; padding: 0 12px; height: 28px; 
+  border: 1px dashed #aaa; background-color: transparent; 
+  border-radius: 6px; color: #555; font-size: 13px; 
+  cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; 
+}
 .btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
+
 .inline-create-row { display: flex; gap: 8px; align-items: center; }
-.create-input { flex-grow: 1; height: 44px; padding: 0 14px; background: #fff; border: 1px solid #222; border-radius: 8px; font-size: 15px; color: #1a1a1a; margin-bottom: 0 !important; }
+.create-input { flex-grow: 1; height: 28px; padding: 0 10px; background: #fff; border: 1px solid #222; border-radius: 6px; font-size: 13px; color: #1a1a1a; margin-bottom: 0 !important; }
 .create-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(34,34,34,0.2); }
-.btn-icon-save, .btn-icon-cancel { width: 44px; height: 44px; border: none; border-radius: 8px; cursor: pointer; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+.btn-icon-save, .btn-icon-cancel { 
+  width: 28px; height: 28px; border: none; border-radius: 6px; 
+  cursor: pointer; color: #fff; font-size: 14px; 
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; 
+}
 .btn-icon-save { background-color: #34C759; }
 .btn-icon-save:hover { background-color: #2da84e; }
 .btn-icon-cancel { background-color: #FF3B30; }
@@ -652,14 +675,21 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .contractor-header .header-category { flex-shrink: 0; width: 200px; } 
 .small-header { margin-left: 32px; margin-top: 5px; margin-bottom: 5px; }
 
-.header-trash { width: 48px; flex-shrink: 0; }
+.header-trash { width: 28px; flex-shrink: 0; }
 
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
 .list-editor::-webkit-scrollbar { display: none; }
-.edit-item { display: flex; align-items: center; margin-bottom: 10px; gap: 10px; }
-.drag-handle { cursor: grab; font-size: 1.5em; color: #999; user-select: none; flex-shrink: 0; width: 22px; height: 48px; display: flex; align-items: center; justify-content: center; margin: 0; }
+.edit-item { display: flex; align-items: center; margin-bottom: 6px; gap: 10px; }
+.drag-handle { cursor: grab; font-size: 1.2em; color: #999; user-select: none; flex-shrink: 0; width: 22px; height: 28px; display: flex; align-items: center; justify-content: center; margin: 0; }
 .edit-item:active { cursor: grabbing; }
-.edit-input { height: 48px; padding: 0 14px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; margin: 0; }
+
+/* 🟢 УНИФИКАЦИЯ UI: Высота 28px и шрифт 13px */
+.edit-input { 
+  height: 28px; padding: 0 10px; background: #FFFFFF; 
+  border: 1px solid #E0E0E0; border-radius: 6px; 
+  color: #1a1a1a; font-size: 13px; font-family: inherit; 
+  box-sizing: border-box; margin: 0; 
+}
 .edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 
@@ -674,18 +704,23 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 }
 .edit-picker-btn:hover { border-color: #222; }
 
-.edit-owner { flex-shrink: 0; width: 200px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
+.edit-owner { flex-shrink: 0; width: 200px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; }
 
 .create-option { font-weight: 600; color: #007AFF; background-color: #f0f8ff; }
 
 .edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
-.edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; font-size: 15px; display: flex; align-items: center; margin: 0; padding: 0 14px; height: 48px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; font-family: inherit; }
+.edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; font-size: 13px; display: flex; align-items: center; margin: 0; padding: 0 10px; height: 28px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; font-family: inherit; }
 .edit-account-picker:hover { border-color: #222222; }
 
-.delete-btn { width: 48px; height: 48px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 10px; box-sizing: border-box; margin: 0; }
-.delete-btn svg { width: 100%; height: 100%; stroke: #999; transition: stroke 0.2s; }
+.delete-btn { 
+  width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; 
+  border-radius: 6px; display: flex; align-items: center; justify-content: center; 
+  cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; 
+}
+.delete-btn svg { width: 14px; height: 14px; stroke: #999; transition: stroke 0.2s; }
 .delete-btn:hover { border-color: #FF3B30; background: #fff5f5; }
 .delete-btn:hover svg { stroke: #FF3B30; }
+
 .ghost { opacity: 0.5; background: #c0c0c0; }
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.3); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
 .delete-confirm-box { background: #fff; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); text-align: center; }

@@ -6,9 +6,12 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v47.0 - RETAIL LINK FIX ---
- * * ВЕРСИЯ: 47.0 - Исправление привязки Розницы (counterpartyIndividualId)
- * * ДАТА: 2025-11-27
+ * * --- МЕТКА ВЕРСИИ: v48.0 - HIDE RETAIL FROM OWNERS ---
+ * * ВЕРСИЯ: 48.0 - Скрытие "Розничных клиентов" из списка владельцев
+ * * ДАТА: 2025-11-26
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) В `ownerOptions` добавлена фильтрация: системная сущность "Розничные клиенты" (или "Розница") исключается из списка физлиц.
  */
 
 const mainStore = useMainStore();
@@ -34,7 +37,6 @@ const selectedContractorValue = ref(null); // ID контрагента или �
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
 
-// ... (Остальные ref переменные без изменений) ...
 const errorMessage = ref('');
 const amountInput = ref(null);
 const isInlineSaving = ref(false);
@@ -90,7 +92,6 @@ const txtAmount = computed(() => ({
   lbl: 'Сумма, ₸' 
 }));
 
-// 🟢 Динамические лейблы Счета и Владельца
 const isIndividualAccount = computed(() => {
     if (!selectedAccountId.value) return false;
     const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
@@ -108,7 +109,6 @@ const txtOwner = computed(() => {
     return { ph: 'Владелец счета' + suffix, lbl: 'Владелец счета' + suffix };
 });
 
-// 🟢 Динамический лейбл Контрагента
 const contractorLabel = computed(() => {
     if (selectedContractorValue.value && selectedContractorValue.value.startsWith('ind_')) {
         return isIncome.value ? 'От физлица' : 'Физлицу';
@@ -151,6 +151,12 @@ const ownerOptions = computed(() => {
   if (mainStore.currentIndividualBalances.length) {
       opts.push({ label: 'Физлица', isHeader: true });
       mainStore.currentIndividualBalances.forEach(i => { 
+          // 🟢 ФИЛЬТР: Скрываем системную сущность "Розничные клиенты"
+          const nameLower = i.name.trim().toLowerCase();
+          if (nameLower === 'розничные клиенты' || nameLower === 'розница') {
+              return;
+          }
+
           opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸` }); 
       });
   }
@@ -180,6 +186,7 @@ const contractorOptions = computed(() => {
           if (iId) ownerIds.add(iId);
       }
   });
+  
   // Здесь "Розница" разрешена, чтобы мы могли выбрать её, если это обычная операция
   const filteredIndividuals = mainStore.individuals.filter(i => !ownerIds.has(i._id));
 
@@ -229,8 +236,6 @@ const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selected
 const triggerPrepaymentFlow = (catId) => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, '')) || 0;
     let cId = null;
-    // 🟢 Важно: Если выбран 'ind_', передаем его как contractorId (для прокидывания в PrepaymentModal, там разберемся)
-    // Или лучше сразу подготовить структуру
     let indId = null;
     if (selectedContractorValue.value) {
         const [prefix, id] = selectedContractorValue.value.split('_');
@@ -241,7 +246,7 @@ const triggerPrepaymentFlow = (catId) => {
     const currentData = {
         amount: rawAmount, accountId: selectedAccountId.value, 
         contractorId: cId,
-        counterpartyIndividualId: indId, // 🟢 Передаем физлицо
+        counterpartyIndividualId: indId, 
         projectId: selectedProjectId.value, categoryId: catId,
         companyId: selectedOwner.value?.startsWith('company') ? selectedOwner.value.split('-')[1] : null,
         individualId: selectedOwner.value?.startsWith('individual') ? selectedOwner.value.split('-')[1] : null,
@@ -329,11 +334,9 @@ onMounted(async () => {
         const cId = op.contractorId._id || op.contractorId;
         selectedContractorValue.value = `contr_${cId}`;
     } else if (op.counterpartyIndividualId) {
-        // 🟢 Восстанавливаем физлицо-контрагента (В ТОМ ЧИСЛЕ РОЗНИЦУ)
         const iId = op.counterpartyIndividualId._id || op.counterpartyIndividualId;
         selectedContractorValue.value = `ind_${iId}`;
     } else if (op.individualId && op.companyId) {
-        // Старый фоллбэк
         const iId = op.individualId._id || op.individualId;
         selectedContractorValue.value = `ind_${iId}`;
     }
@@ -366,7 +369,6 @@ const handleSave = () => {
   if (contrPrefix === 'contr') {
       contractorId = contrId; 
   } else if (contrPrefix === 'ind') {
-      // 🟢 Если выбрано физлицо (или Розница), сохраняем сюда
       counterpartyIndividualId = contrId;
   }
 
@@ -378,7 +380,7 @@ const handleSave = () => {
       companyId: companyId, 
       individualId: individualOwnerId, 
       contractorId: contractorId,      
-      counterpartyIndividualId: counterpartyIndividualId, // 🟢 Важно для восстановления
+      counterpartyIndividualId: counterpartyIndividualId, 
       projectId: selectedProjectId.value || null, 
       date: finalDate,
       prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
@@ -417,7 +419,6 @@ const handleSave = () => {
   }
 
   function updateDefaults(entity, storePath) {
-      // ... (логика дефолтов без изменений)
       const currentProjId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId;
       const currentCatId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
       
@@ -447,7 +448,6 @@ const handleSave = () => {
   emit('save', { mode: isEdit ? 'edit' : 'create', id: isEdit ? props.operationToEdit._id : null, data: payload, originalOperation: isEdit ? props.operationToEdit : null });
 };
 
-// ... (Остальные методы без изменений)
 // INLINE CREATE HANDLERS
 const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
@@ -489,7 +489,6 @@ const saveNewOwner = async () => {
         newItem = existing ? existing : await mainStore.addIndividual(name); 
     } 
     selectedOwner.value = `${type}-${newItem._id}`; 
-    // Auto Link
     if (selectedAccountId.value) {
         const currentAccount = mainStore.accounts.find(a => a._id === selectedAccountId.value);
         if (currentAccount) {
@@ -555,7 +554,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
 </script>
 
 <template>
-  <!-- Шаблон тот же, что и был, просто логика выше обновлена -->
   <div class="popup-overlay" @click.self="closePopup">
     <div class="popup-content" :class="popupTheme">
       <h3>{{ title }}</h3>

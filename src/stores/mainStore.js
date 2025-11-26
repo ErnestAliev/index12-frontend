@@ -1,7 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v22.0 - LOGIC FIX (RETAIL/WRITE-OFF) ---
- * * ВЕРСИЯ: 22.0 - Исправление логики закрытия смены и предоплат (Без счета)
- * * ДАТА: 2025-11-27
+ * * --- МЕТКА ВЕРСИИ: v26.11.12 - CRITICAL FIXES ---
+ * * ВЕРСИЯ: 26.11.12 - Исправление ReferenceError и обновления данных
+ * * ДАТА: 2025-11-26
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. Исправлена ошибка "fetchOperations is not defined" (функция поднята выше).
+ * 2. createTransfer: Добавлен await fetchAllEntities() для обновления виджетов компаний/счетов.
+ * 3. Улучшена логика обновления после операций.
  */
 
 import { defineStore } from 'pinia';
@@ -24,7 +28,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v22.0 (Logic Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.11.12 (Critical Fixes) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -274,7 +278,6 @@ export const useMainStore = defineStore('mainStore', () => {
            for (const op of ops) {
                if (isTransfer(op)) continue;
                
-               // 🟢 Игнорируем безналичные операции (списание долга) при подсчете ДЕНЕГ на графике
                if (!op.accountId) continue;
 
                const amt = op.amount || 0;
@@ -351,8 +354,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🟢 ПРАВИЛЬНЫЙ РАСЧЕТ: Мы должны = (Сумма авансов - Сумма актов)
-  // Учитывает безналичные списания (акты)
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
@@ -362,8 +363,6 @@ export const useMainStore = defineStore('mainStore', () => {
     
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
-      
-      // Если операция закрыта галочкой, считаем, что долг погашен
       if (op.isClosed) continue; 
 
       const catId = op.categoryId?._id || op.categoryId;
@@ -372,12 +371,10 @@ export const useMainStore = defineStore('mainStore', () => {
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
       const isAct = (catId && actIds.includes(catId));
       
-      // Суммируем входящие авансы
       if (isPrepay && op.type === 'income') {
           totalPrepaymentReceived += (op.amount || 0);
       }
       
-      // Суммируем исходящие акты (списания) - даже если accountId = null
       if (isAct && op.type === 'expense') {
           totalActsSum += Math.abs(op.amount || 0);
       }
@@ -438,11 +435,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const map = JSON.parse(JSON.stringify(snapshot.value.categoryTotals || {}));
     for (const op of futureOps.value) {
       if (isTransfer(op)) continue;
-      
-      // 🟢 Игнорируем безналичные операции для виджетов баланса (если нужно)
-      // Но для категорий (например Реализация) мы хотим видеть движение
-      // Оставим как есть для категорий, но проверим, чтобы это не ломало балансы счетов
-      
       if (!op?.categoryId) continue;
       const cId = op.categoryId._id || op.categoryId;
       if (!map[cId]) map[cId] = { income: 0, expense: 0, total: 0 };
@@ -467,8 +459,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const futureMap = { ...snapshotMap };
       for (const op of futureOps.value) {
           const amt = Math.abs(op.amount || 0);
-          
-          // Если это операция с аккаунтом, проверяем, что accountId существует
           if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
 
           if (isTransfer(op)) {
@@ -548,7 +538,6 @@ export const useMainStore = defineStore('mainStore', () => {
     let total = currentTotalBalance.value;
     for (const op of futureOps.value) {
         if (isTransfer(op)) continue; 
-        // 🟢 Игнорируем безналичные операции (акты/списания без счета) при расчете ДЕНЕГ
         if (!op.accountId) continue;
 
         const amt = Math.abs(op.amount || 0);
@@ -556,9 +545,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     return total;
   });
-
-  // ... (Методы работы с API без изменений: fetchOperationsRange, createTransfer и т.д.) ...
-  // ... (Часть кода пропущена для краткости, она остается без изменений) ...
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
@@ -637,7 +623,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
       categories.value  = _sortByOrder([...normalCategories, ...prepaymentCategories]);
       
-      // 🟢 ГАРАНТИРУЕМ НАЛИЧИЕ "РОЗНИЦЫ" И "РЕАЛИЗАЦИИ"
+      // 🟢 ГАРАНТИЯ УНИКАЛЬНОСТИ (ИЩЕМ И УДАЛЯЕМ ДУБЛИКАТЫ)
       await ensureSystemEntities();
 
       await fetchSnapshot();
@@ -655,6 +641,19 @@ export const useMainStore = defineStore('mainStore', () => {
 
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
+  
+  // 🟢 VOID: fetchOperations is defined here to be available in scope
+  async function fetchOperations(dateKey, force = false) {
+    if (!dateKey) return;
+    if (displayCache.value[dateKey] && !force) return;
+    try {
+      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
+      const raw = Array.isArray(res.data) ? res.data.slice() : [];
+      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
+      displayCache.value[dateKey] = processedOps;
+    } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
+  }
+
   function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
 
   function _mergeTransfers(list) {
@@ -702,17 +701,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return transferCategory._id;
   }
 
-  async function fetchOperations(dateKey, force = false) {
-    if (!dateKey) return;
-    if (displayCache.value[dateKey] && !force) return;
-    try {
-      const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
-      const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-      displayCache.value[dateKey] = processedOps;
-    } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
-  }
-
   async function refreshDay(dateKey) {
     if (!dateKey) return;
     try {
@@ -723,16 +711,9 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  // ... (moveOperation, createTransfer, etc. - Без изменений) ...
-  // Для краткости эти функции здесь не дублирую, так как они не менялись логически, 
-  // кроме импортов и API вызовов, которые уже есть. 
-  // Используем их из предыдущей версии файла.
-
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
-    // ... (Код moveOperation) ...
-    // Вставить код из предыдущей версии, он не менялся
-    // Внимание: Я не могу пропустить кусок, поэтому вот он:
     if (!oldDateKey || !newDateKey) return;
+    // 🟢 FIX: fetchOperations is now defined above
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
     const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
@@ -845,14 +826,11 @@ export const useMainStore = defineStore('mainStore', () => {
 
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
-
-      await refreshDay(dateKey);
       
-      const now = new Date();
-      if (finalDate <= now) {
-          await fetchSnapshot();
-      }
-
+      // 🟢 FIX: Принудительно обновляем всё
+      await refreshDay(dateKey);
+      await fetchSnapshot();
+      await fetchAllEntities(); // Для обновления балансов компаний
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return data;
 
@@ -1033,25 +1011,71 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // 🟢 СИСТЕМНЫЕ СУЩНОСТИ И ЗАКРЫТИЕ СМЕНЫ/ПРЕДОПЛАТ
   async function ensureSystemEntities() {
-      let retailInd = individuals.value.find(i => i.name.toLowerCase() === 'розница');
-      if (!retailInd) retailInd = await addIndividual('Розница');
+      // 1. Розничные клиенты (ищем по новым и старым именам)
+      // 🟢 FIX: Ищем ВСЕ дубликаты
+      let retailDuplicates = individuals.value.filter(i => {
+          const n = i.name.trim().toLowerCase();
+          return n === 'розничные клиенты' || n === 'розница';
+      });
+
+      let retailInd = null;
+
+      if (retailDuplicates.length === 0) {
+          // Создаем сразу с правильным именем
+          retailInd = await addIndividual('Розничные клиенты');
+      } else {
+          // Берем первый как основной
+          retailInd = retailDuplicates[0];
+          
+          // Если есть дубликаты - удаляем лишние
+          if (retailDuplicates.length > 1) {
+              for (let i = 1; i < retailDuplicates.length; i++) {
+                  const dup = retailDuplicates[i];
+                  try {
+                      await deleteEntity('individuals', dup._id, false); 
+                  } catch (e) { console.error('Ошибка удаления дубликата:', e); }
+              }
+          }
+
+          // Если имя старое "Розница" - переименовываем
+          if (retailInd.name.trim().toLowerCase() === 'розница') {
+              try {
+                  await axios.put(`${API_BASE_URL}/individuals/batch-update`, [{ _id: retailInd._id, name: 'Розничные клиенты' }]);
+                  retailInd.name = 'Розничные клиенты'; 
+              } catch (e) { console.error(e); }
+          }
+      }
       
-      let realizationCat = categories.value.find(c => c.name.toLowerCase() === 'реализация');
-      if (!realizationCat) realizationCat = await addCategory('Реализация');
+      // 2. Реализация (Аналогичная логика дедупликации)
+      let realizationDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'реализация');
+      let realizationCat = null;
+
+      if (realizationDuplicates.length === 0) {
+          realizationCat = await addCategory('Реализация');
+      } else {
+          realizationCat = realizationDuplicates[0];
+          if (realizationDuplicates.length > 1) {
+               for (let i = 1; i < realizationDuplicates.length; i++) {
+                  try { await deleteEntity('categories', realizationDuplicates[i]._id, false); } 
+                  catch (e) {}
+               }
+          }
+      }
       
       return { retailInd, realizationCat };
   }
 
-  // 🟢 ИСПРАВЛЕНО: Списание ("Реализация") теперь идет с accountId: null (не трогает деньги)
-  async function closeRetailDaily(amount, date) {
+  // 🟢 ИСПРАВЛЕНО: Списание ("Реализация") теперь идет с projectId (если выбран)
+  async function closeRetailDaily(amount, date, projectId = null) {
       try {
           const { retailInd, realizationCat } = await ensureSystemEntities();
           const opData = {
               type: 'expense', 
               amount: -Math.abs(amount),
-              accountId: null, // 🔴 Безналичное списание!
-              counterpartyIndividualId: retailInd._id, // Контрагент = Розница
-              categoryId: realizationCat._id, // Категория = Реализация
+              accountId: null, 
+              counterpartyIndividualId: retailInd._id, 
+              categoryId: realizationCat._id, 
+              projectId: projectId, // 🟢 Передаем проект
               date: date,
               description: 'Закрытие смены (Розница)'
           };
@@ -1059,14 +1083,13 @@ export const useMainStore = defineStore('mainStore', () => {
       } catch (e) { throw e; }
   }
 
-  // 🟢 ИСПРАВЛЕНО: Списание долга ("Закрытие") теперь идет с accountId: null
   async function closePrepaymentDeal(originalOp) {
       try {
           const amount = Math.abs(originalOp.amount);
           const opData = {
-              type: 'expense', // Встречный расход (Акт)
+              type: 'expense', 
               amount: -amount,
-              accountId: null, // 🔴 Безналичное списание!
+              accountId: null, 
               companyId: originalOp.companyId,
               individualId: originalOp.individualId, 
               contractorId: originalOp.contractorId, 
@@ -1081,20 +1104,20 @@ export const useMainStore = defineStore('mainStore', () => {
       } catch (e) { throw e; }
   }
 
-  // 🟢 ПОЛУЧЕНИЕ ИСТОРИИ СПИСАНИЙ ДЛЯ РОЗНИЦЫ
   const getRetailWriteOffs = computed(() => {
-      const retail = individuals.value.find(i => i.name.toLowerCase().trim() === 'розница');
+      // Ищем розницу по любому из имен
+      const retail = individuals.value.find(i => {
+          const n = i.name.trim().toLowerCase();
+          return n === 'розничные клиенты' || n === 'розница';
+      });
       const realCat = categories.value.find(c => c.name.toLowerCase().trim() === 'реализация');
       
       if (!retail || !realCat) return [];
 
       return allOperationsFlat.value.filter(op => {
-         // Это должен быть Расход
          if (op.type !== 'expense') return false;
-         // Категория Реализация
          const catId = op.categoryId?._id || op.categoryId;
          if (catId !== realCat._id) return false;
-         // Контрагент Розница
          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
          return indId === retail._id;
       }).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1157,6 +1180,6 @@ export const useMainStore = defineStore('mainStore', () => {
     _sortByOrder,
     
     closeRetailDaily, closePrepaymentDeal, ensureSystemEntities,
-    getRetailWriteOffs // 🟢 Новый геттер для истории
+    getRetailWriteOffs 
   };
 });

@@ -5,6 +5,16 @@ import { formatNumber } from '@/utils/formatters.js';
 import TransferPopup from './TransferPopup.vue'; 
 import DateRangePicker from './DateRangePicker.vue';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v26.11 - REFACTORING STAGE 2 ---
+ * * ВЕРСИЯ: 26.11 - Унификация UI (28px)
+ * * ДАТА: 2025-11-26
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (STYLE) Высота всех строк, инпутов и кнопок приведена к 28px.
+ * 2. (STYLE) Шрифты уменьшены до 13px.
+ */
+
 const props = defineProps({
   title: { type: String, default: 'Редактировать переводы' }
 });
@@ -301,8 +311,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <div class="filter-col col-trash"></div>
       </div>
       
-      <!-- 🟢 Заголовки удалены -->
-      
       <div class="list-scroll">
         <div v-if="localItems.length === 0" class="empty-state">Нет переводов.</div>
         <div v-else-if="filteredItems.length === 0" class="empty-state">Нет переводов по фильтру.</div>
@@ -344,7 +352,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
       <!-- Footer -->
       <div class="popup-footer">
-        <!-- LEFT: Create -->
+        <!-- 🟢 УНИФИКАЦИЯ UI: Высота 28px -->
         <button class="btn-add-new-footer btn-transfer" @click="openCreatePopup">
           + Создать перевод
         </button>
@@ -395,14 +403,12 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 
 .filters-row { margin-bottom: 10px; }
 
-/* 🟢 Стили заголовков удалены, так как блока больше нет */
-
 .grid-row { 
-  padding: 10px 1.5rem; 
+  padding: 4px 1.5rem; 
   background: #fff; 
   border: 1px solid #E0E0E0; 
   border-radius: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   transition: box-shadow 0.2s;
 }
 .grid-row:hover {
@@ -413,17 +419,17 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-/* Inputs */
+/* Inputs (28px) */
 .edit-input { 
-  width: 100%; height: 40px; 
+  width: 100%; height: 28px; 
   background: #FFFFFF; border: 1px solid #ccc; border-radius: 6px; 
-  padding: 0 10px; font-size: 0.9em; color: #333; 
+  padding: 0 10px; font-size: 13px; color: #333; 
   box-sizing: border-box; margin: 0; display: block; 
 }
 .edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
 
-/* Filter Inputs */
-.filter-input { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 0.8em; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
+/* Filter Inputs (28px) */
+.filter-input { width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 13px; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
 .filter-select, .select-input { 
   -webkit-appearance: none; appearance: none; 
   background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); 
@@ -436,20 +442,20 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .date-input { color: #555; }
 
 .delete-btn { 
-  width: 38px; height: 38px; 
+  width: 28px; height: 28px; 
   border: 1px solid #E0E0E0; background: #fff; 
   border-radius: 6px; 
   display: flex; align-items: center; justify-content: center; 
   cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; 
 }
-.delete-btn svg { width: 18px; height: 18px; stroke: #999; }
+.delete-btn svg { width: 14px; height: 14px; stroke: #999; }
 .delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
 /* Footer Styles */
 .popup-footer { 
   padding: 1.5rem; border-top: 1px solid #E0E0E0; 
-  display: flex; justify-content: space-between; /* Spread left and right */
+  display: flex; justify-content: space-between;
   align-items: center;
   background-color: #F9F9F9; border-radius: 0 0 12px 12px; 
 }
@@ -460,21 +466,22 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 }
 
 .btn-add-new-footer { 
-  padding: 12px 20px; 
+  padding: 0 16px; height: 28px;
   border: 1px solid transparent; 
-  border-radius: 8px; 
+  border-radius: 6px; 
   color: #fff; 
-  font-size: 15px; font-weight: 600;
+  font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all 0.2s; 
   white-space: nowrap;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .btn-transfer { background-color: #2F3340; }
 .btn-transfer:hover { background-color: #3a3f50; }
 
-.btn-close { padding: 12px 24px; border: 1px solid #ccc; background: transparent; border-radius: 8px; cursor: pointer; font-weight: 500; color: #555; }
+.btn-close { padding: 0 16px; height: 28px; border: 1px solid #ccc; background: transparent; border-radius: 6px; cursor: pointer; font-weight: 500; color: #555; font-size: 13px; display: flex; align-items: center; justify-content: center; }
 .btn-close:hover { background: #eee; }
-.btn-save { padding: 12px 24px; border: none; background: #222; border-radius: 8px; cursor: pointer; font-weight: 600; color: #fff; }
+.btn-save { padding: 0 16px; height: 28px; border: none; background: #222; border-radius: 6px; cursor: pointer; font-weight: 600; color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; }
 .btn-save:hover:not(:disabled) { background: #444; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -483,7 +490,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 @media (max-width: 1200px) { 
   .popup-content { max-width: 95vw; margin: 1rem; } 
   .filters-row { display: none; }
-  /* .grid-header { display: none; } - Удалено, так как заголовка больше нет */
   .grid-row { display: flex; flex-direction: column; height: auto; padding: 1rem; gap: 10px; } 
   .grid-row > div { width: 100%; } 
   .col-date, .col-amount, .col-trash { width: 100%; } 

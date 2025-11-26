@@ -148,7 +148,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
       
       <!-- 🟢 Унифицированная иконка (серый SVG) -->
       <span v-else class="calendar-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="16" y1="2" x2="16" y2="6"></line>
           <line x1="8" y1="2" x2="8" y2="6"></line>
@@ -181,19 +181,27 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 </template>
 
 <style scoped>
-.date-range-picker { position: relative; width: 100%; font-family: inherit; }
+/* 🟢 FIX: Добавлен flex и align-items, чтобы компонент не проваливался вниз */
+.date-range-picker { 
+  position: relative; 
+  width: 100%; 
+  font-family: inherit;
+  display: flex;          /* ВАЖНО */
+  align-items: center;    /* ВАЖНО: Центрирует внутренний триггер по вертикали */
+}
 
+/* 🟢 ИСПРАВЛЕНО: Высота 28px, Шрифт 13px, Border #E0E0E0 */
 .picker-trigger {
-  width: 100%; height: 32px; 
-  background: #FFFFFF; border: 1px solid #ccc; border-radius: 6px; 
+  width: 100%; height: 28px; 
+  background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; 
   padding: 0 8px; display: flex; align-items: center; justify-content: space-between;
   cursor: pointer; transition: border-color 0.2s; box-sizing: border-box;
 }
 .date-range-picker.is-open .picker-trigger { border-color: #222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.1); }
 
-.trigger-content { flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.8em; color: #333; }
-.placeholder { color: #aaa; }
-.value-text { font-weight: 500; }
+.trigger-content { flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #1a1a1a; }
+.placeholder { color: #aaa; font-size: 13px; }
+.value-text { font-weight: 500; font-size: 13px; }
 
 .calendar-icon { display: flex; align-items: center; color: #999; }
 .btn-clear { background: none; border: none; cursor: pointer; font-size: 12px; color: #999; padding: 0 4px; line-height: 1; }
