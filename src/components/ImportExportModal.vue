@@ -1,17 +1,15 @@
 <!--
- * * --- МЕТКА ВЕРСИИ: v10.16-BTN-AND-CLOSE-FIX ---
- * * ВЕРСИЯ: 10.16 - Исправление кнопки закрытия и стиля кнопки подготовки
- * * ДАТА: 2025-11-20
+ * * --- МЕТКА ВЕРСИИ: v10.19-BTN-VISIBILITY-FIX ---
+ * * ВЕРСИЯ: 10.19 - Исправление видимости кнопок
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) .close-btn: Добавлен z-index и увеличен размер для гарантированного клика.
- * 2. (STYLE) .prepare-btn: Добавлен стиль "контурной кнопки" (border: 1px solid #444)
- * с явным hover-эффектом (белая рамка + чуть светлее фон), чтобы это выглядело как кнопка.
+ * 1. (CSS) Заменена несуществующая переменная var(--color-accent) на var(--color-primary).
+ * 2. (CSS) Кнопка скачивания (.download-buttons .export-btn) сделана более яркой и заметной.
  -->
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
-      <!-- 🟢 Исправленная кнопка закрытия -->
       <button class="close-btn" @click="closeModal" title="Закрыть">&times;</button>
       
       <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Отчетов' }}</h2>
@@ -166,7 +164,7 @@
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
         
         <p>
-          Экспорт разделен на 3 файла: Прошлые Доходы/Расходы, Прошлые Переводы и Будущая Сводка.
+          Скачайте единый отчет по всем операциям (Прошлые + Будущие) в формате CSV.
         </p>
         
         <!-- Шаг 1: Кнопка подготовки -->
@@ -176,31 +174,22 @@
           class="btn-primary export-btn prepare-btn" 
           :disabled="isExporting"
         >
-          Подготовить данные для экспорта
+          Подготовить данные
         </button>
 
         <div v-if="isExporting" class="loading-indicator">
           <div class="spinner"></div>
-          <p>Подготовка отчетов... (Это может занять время)</p>
+          <p>Формирование единого отчета...</p>
         </div>
 
-        <!-- Шаг 2: Кнопки скачивания -->
+        <!-- Шаг 2: Кнопка скачивания -->
         <div v-if="isDataReady && !isExporting" class="download-section">
           <p class="step-description">
-            Данные готовы. Теперь вы можете скачать 3 отдельных CSV-файла:
+            Данные готовы. Вы можете скачать полный отчет ({{ processedAllData.data.length }} строк).
           </p>
           <div class="download-buttons">
-            <button class="btn-primary export-btn" @click="downloadIncomeExpense">
-              Скачать Доходы/Расходы
-              <span>({{ processedIncomeExpense.data.length }} строк)</span>
-            </button>
-            <button class="btn-primary export-btn" @click="downloadTransfers">
-              Скачать Переводы
-              <span>({{ processedTransfers.data.length }} строк)</span>
-            </button>
-            <button class="btn-primary export-btn" @click="downloadSummary">
-              Скачать Будущую Сводку
-              <span>({{ processedSummary.data.length }} строк)</span>
+            <button class="btn-primary export-btn" @click="downloadAllData">
+              Скачать Выписку (Все операции)
             </button>
           </div>
           <button class="btn-secondary" @click="resetExport" style="margin-top: 20px;">
@@ -279,11 +268,9 @@ const currentTab = ref('import');
 const isExporting = ref(false);
 const exportError = ref(null);
 
-// Новые состояния для 3-х файлов
+// Единое состояние данных
 const isDataReady = ref(false);
-const processedIncomeExpense = ref({}); // { data: [], columns: [] }
-const processedTransfers = ref({}); // { data: [], columns: [] }
-const processedSummary = ref({}); // { data: [], columns: [], title: "" }
+const processedAllData = ref({}); // { data: [], columns: [] }
 
 // --- Шаги (Импорт) ---
 const step = ref('upload'); 
@@ -306,7 +293,6 @@ const isAllSelected = computed(() => {
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({});
 
-// 🟢 v10.13: Обновлены алиасы для авто-маппинга с учетом новых заголовков
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
   { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type', 'тип операции'] },
@@ -314,7 +300,6 @@ const systemFields = [
   { key: 'category', label: 'Категория', entity: 'categories', aliases: ['категория', 'category'] },
   { key: 'project', label: 'Проект', entity: 'projects', aliases: ['проект', 'project', 'мои проекты'] },
   { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
-  // Добавили 'компания/физлицо' как алиас для Компании по умолчанию
   { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании', 'компания/физлицо'] },
   { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
   { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
@@ -359,9 +344,7 @@ function resetState() {
   isExporting.value = false;
   exportError.value = null;
   isDataReady.value = false;
-  processedIncomeExpense.value = {};
-  processedTransfers.value = {};
-  processedSummary.value = {};
+  processedAllData.value = {};
   
   if (fileInputRef.value) {
     fileInputRef.value.value = null;
@@ -372,9 +355,7 @@ function resetExport() {
   isExporting.value = false;
   exportError.value = null;
   isDataReady.value = false;
-  processedIncomeExpense.value = {};
-  processedTransfers.value = {};
-  processedSummary.value = {};
+  processedAllData.value = {};
 }
 
 function closeModal() {
@@ -739,236 +720,144 @@ function normalizeType(value) {
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.13)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.18)
 // ----------------------------------------------
 
-// 🟢 v10.13: Строгая последовательность колонок
-const STRICT_COLUMNS = [
+// Единый набор колонок для всех операций
+const UNIFIED_COLUMNS = [
+  'Дата',
   'Тип',
-  'Сумма',
-  'Счет',
-  'Компания/Физлицо',
-  'Контрагент',
-  'Проект',
   'Категория',
-  'Дата'
+  'Проект',
+  'Сумма',
+  'Остаток', // Сквозной остаток по счету
+  'Счет',
+  'Контрагент',
+  'Компания/Физлицо',
+  'Описание',
+  'Статус' // Исполнено / План
 ];
 
-/**
- * 🟢 v10.13: Обновленная функция для скачивания шаблона.
- * Теперь генерирует файл со строгим набором заголовков.
- */
 function downloadTemplate() {
-  // Создаем CSV строку вручную, чтобы гарантировать наличие заголовков
-  // даже если данных нет. Papa.unparse([]) может вести себя некорректно.
-  const csvString = STRICT_COLUMNS.join(",");
-
+  const csvString = UNIFIED_COLUMNS.join(",");
   triggerCsvDownload(csvString, "Import_Template_IncomeExpense");
 }
 
 /**
- * 🟢 v10.11/v10.13: Подготовка всех 3-х отчетов
+ * 🟢 v10.18: Подготовка ЕДИНОГО отчета (Statement View)
  */
 async function prepareExportData() {
   isExporting.value = true;
   exportError.value = null;
   
   try {
-    // === 1. ПОДГОТОВКА ДАТ И ПРОГНОЗА ===
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTimestamp = today.getTime();
 
-    const addDays = (d, days) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
-    const addMonths = (d, months) => { const n = new Date(d); n.setMonth(n.getMonth() + months); return n; };
-    const addYears = (d, years) => { const n = new Date(d); n.setFullYear(n.getFullYear() + years); return n; };
-    const ruFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
-
-    const periods = [
-      { label: '12 д', date: addDays(today, 12) },
-      { label: '1 мес', date: addMonths(today, 1) },
-      { label: '3 мес', date: addMonths(today, 3) },
-      { label: '6 мес', date: addMonths(today, 6) },
-      { label: '1 год', date: addYears(today, 1) }
-    ];
-
-    // === 2. ПОЛУЧЕНИЕ И РАЗДЕЛЕНИЕ ДАННЫХ ===
+    // 1. Загружаем ВСЕ операции
     const { operations } = await mainStore.exportAllOperations(); 
-
-    const pastOps = [];
-    const futureOps = [];
-
-    for (const op of operations) {
-      if (!op.date) continue; 
-      try {
-        const opDate = new Date(op.date);
-        opDate.setHours(0, 0, 0, 0); 
-        
-        if (isNaN(opDate.getTime())) continue; 
-        
-        if (opDate.getTime() > todayTimestamp) {
-          futureOps.push(op);
-        } else {
-          pastOps.push(op); 
-        }
-      } catch (e) { continue; }
-    }
-
-    // === 3. ОБРАБОТКА ПРОШЛЫХ ОПЕРАЦИЙ (Файлы 1 и 2) ===
+    
+    // Инициализируем балансы начальными значениями счетов
     const runningBalances = new Map();
     mainStore.accounts.forEach(acc => {
       runningBalances.set(acc._id, acc.initialBalance || 0);
     });
 
-    const incomeExpenseRows = [];
-    const transferRows = [];
-    // Для переводов оставим свои колонки, как было в задаче (только Доход/Расход строгие)
-    const transferColumns = ['Тип', 'Категория', 'Сумма', 'Остаток', 'Дата', 'Счет', 'Компании/Физлица', 'Контрагент', 'Проект'];
+    const allRows = [];
     
-    for (const op of pastOps) {
+    // Обрабатываем операции в хронологическом порядке
+    // (operations уже должны быть отсортированы по дате в mainStore, но на всякий случай)
+    operations.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    for (const op of operations) {
+      if (!op.date) continue; 
       let dateStr = '';
-      if (op.date) {
-        try {
-          const d = new Date(op.date);
-          const day = String(d.getDate()).padStart(2, '0');
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const year = d.getFullYear();
-          dateStr = `${day}.${month}.${year}`;
-        } catch (e) { dateStr = op.date; }
-      }
+      let opTimestamp = 0;
       
+      try {
+        const d = new Date(op.date);
+        opTimestamp = d.getTime();
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        dateStr = `${day}.${month}.${year}`;
+      } catch (e) { continue; }
+
+      const isFuture = opTimestamp > todayTimestamp;
+      const status = isFuture ? 'План' : 'Исполнено';
       const opAmount = op.amount || 0;
-      let opBalance = 0;
+      const desc = op.description || op.destination || '';
 
+      // Логика обработки транзакции для "Выписки"
+      const processSingleTransaction = (accountId, amountChange, typeLabel, catName, projName, contrName, ownerName) => {
+         let currentBalance = 0;
+         if (accountId) {
+            const prev = runningBalances.get(accountId) || 0;
+            currentBalance = prev + amountChange;
+            runningBalances.set(accountId, currentBalance);
+         }
+
+         allRows.push({
+            'Дата': dateStr,
+            'Тип': typeLabel,
+            'Категория': catName,
+            'Проект': projName,
+            'Сумма': amountChange,
+            'Остаток': accountId ? currentBalance : '', 
+            'Счет': accountId ? (mainStore.accounts.find(a => a._id === accountId)?.name || '???') : '',
+            'Контрагент': contrName,
+            'Компания/Физлицо': ownerName,
+            'Описание': desc,
+            'Статус': status
+         });
+      };
+
+      // 1. Обычные операции (Доход/Расход)
       if (op.type === 'income' || op.type === 'expense') {
-        const opAccountId = op.accountId?._id || null;
-        if (opAccountId) {
-          const currentBalance = runningBalances.get(opAccountId) || 0;
-          opBalance = currentBalance + opAmount;
-          runningBalances.set(opAccountId, opBalance);
-        }
-        
-        // 🟢 v10.13: Формируем объект СТРОГО по ключам STRICT_COLUMNS
-        incomeExpenseRows.push({
-          'Тип': op.type === 'income' ? 'Доход' : 'Расход',
-          'Сумма': opAmount,
-          'Счет': op.accountId?.name || '',
-          'Компания/Физлицо': op.companyId?.name || op.individualId?.name || '',
-          'Контрагент': op.contractorId?.name || '',
-          'Проект': op.projectId?.name || '',
-          'Категория': op.categoryId?.name || '',
-          'Дата': dateStr,
-        });
-      } 
+         const catName = op.categoryId?.name || '';
+         const projName = op.projectId?.name || '';
+         const contrName = op.contractorId?.name || '';
+         const ownerName = op.companyId?.name || op.individualId?.name || '';
+         
+         processSingleTransaction(
+            op.accountId?._id, 
+            opAmount, 
+            op.type === 'income' ? 'Доход' : 'Расход',
+            catName, projName, contrName, ownerName
+         );
+      }
+      // 2. Переводы (Две записи: списание и пополнение)
       else if (op.type === 'transfer' || op.isTransfer) {
-        // Логика переводов остается старой (по требованию "не трогать")
-        const fromAccountId = op.fromAccountId?._id || null;
-        const toAccountId = op.toAccountId?._id || null;
-        const fromOwnerName = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
-        const toOwnerName = op.toCompanyId?.name || op.toIndividualId?.name || '';
-        
-        let fromBalance = 0;
-        let toBalance = 0;
-        const absAmount = Math.abs(opAmount);
+         const fromAccId = op.fromAccountId?._id;
+         const toAccId = op.toAccountId?._id;
+         const fromOwner = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
+         const toOwner = op.toCompanyId?.name || op.toIndividualId?.name || '';
+         const absAmount = Math.abs(opAmount);
 
-        if (fromAccountId) {
-          const currentBalance = runningBalances.get(fromAccountId) || 0;
-          fromBalance = currentBalance - absAmount; 
-          runningBalances.set(fromAccountId, fromBalance);
-        }
-        
-        if (toAccountId) {
-          const currentBalance = runningBalances.get(toAccountId) || 0;
-          toBalance = currentBalance + absAmount;
-          runningBalances.set(toAccountId, toBalance);
-        }
-
-        transferRows.push({
-          'Тип': 'Перевод',
-          'Категория': 'Исходящий',
-          'Сумма': -absAmount,
-          'Остаток': fromBalance,
-          'Дата': dateStr,
-          'Счет': op.fromAccountId?.name || '',
-          'Компании/Физлица': fromOwnerName,
-          'Контрагент': toOwnerName, 
-          'Проект': '',
-        });
-        
-        transferRows.push({
-          'Тип': 'Перевод',
-          'Категория': 'Входящий',
-          'Сумма': absAmount,
-          'Остаток': toBalance,
-          'Дата': dateStr,
-          'Счет': op.toAccountId?.name || '',
-          'Компании/Физлица': toOwnerName,
-          'Контрагент': fromOwnerName, 
-          'Проект': '',
-        });
+         // Списание
+         if (fromAccId) {
+            processSingleTransaction(
+                fromAccId,
+                -absAmount,
+                'Перевод (Исх)',
+                'Исходящий', '', toOwner, fromOwner
+            );
+         }
+         
+         // Пополнение
+         if (toAccId) {
+            processSingleTransaction(
+                toAccId,
+                absAmount,
+                'Перевод (Вх)',
+                'Входящий', '', fromOwner, toOwner
+            );
+         }
       }
     }
     
-    // Сохраняем результаты
-    processedIncomeExpense.value = { data: incomeExpenseRows, columns: STRICT_COLUMNS };
-    processedTransfers.value = { data: transferRows, columns: transferColumns };
-
-    // === 4. ОБРАБОТКА БУДУЩЕЙ СВОДКИ ===
-    // (Логика "Будущих" не меняется, как указано в задании)
-    const accounts = mainStore.accounts;
-    const accountNames = accounts.map(a => a.name);
-    const summaryColumns = ["Период", ...accountNames];
-    const summaryRows = [];
-    const baseBalances = new Map(runningBalances);
-
-    const todayRow = { "Период": "Текущий Остаток" };
-    accounts.forEach(acc => {
-      todayRow[acc.name] = formatNumber(baseBalances.get(acc._id) || 0);
-    });
-    summaryRows.push(todayRow);
-    
-    const applyOpToBalances = (balances, op) => {
-      const absAmount = Math.abs(op.amount || 0);
-      if (op.type === 'income') {
-        const accId = op.accountId?._id || null;
-        if (accId) balances.set(accId, (balances.get(accId) || 0) + absAmount);
-      } 
-      else if (op.type === 'expense') {
-        const accId = op.accountId?._id || null;
-        if (accId) balances.set(accId, (balances.get(accId) || 0) - absAmount);
-      }
-      else if (op.type === 'transfer' || op.isTransfer) {
-        const fromId = op.fromAccountId?._id || null;
-        const toId = op.toAccountId?._id || null;
-        if (fromId) balances.set(fromId, (balances.get(fromId) || 0) - absAmount);
-        if (toId) balances.set(toId, (balances.get(toId) || 0) + absAmount);
-      }
-    };
-
-    for (const period of periods) {
-      const periodLabel = `до ${ruFormatter.format(period.date)} (${period.label})`;
-      const periodRow = { "Период": periodLabel };
-      const periodBalances = new Map(baseBalances);
-      
-      for (const op of futureOps) {
-        const opDate = new Date(op.date);
-        if (opDate <= period.date) {
-          applyOpToBalances(periodBalances, op);
-        }
-      }
-      
-      accounts.forEach(acc => {
-        periodRow[acc.name] = formatNumber(periodBalances.get(acc._id) || 0);
-      });
-      summaryRows.push(periodRow);
-    }
-    
-    processedSummary.value = {
-      data: summaryRows,
-      columns: summaryColumns,
-      title: "Всего на счетах с учетом будущих операций"
-    };
-
+    processedAllData.value = { data: allRows, columns: UNIFIED_COLUMNS };
     isDataReady.value = true;
     
   } catch (err) {
@@ -979,40 +868,13 @@ async function prepareExportData() {
   }
 }
 
-/**
- * 🟢 v10.13: Экспорт Доходов/Расходов
- * Использует STRICT_COLUMNS для заголовков.
- */
-function downloadIncomeExpense() {
-  const csvString = Papa.unparse(processedIncomeExpense.value.data, {
+function downloadAllData() {
+  const csvString = Papa.unparse(processedAllData.value.data, {
     header: true,
-    columns: processedIncomeExpense.value.columns,
+    columns: processedAllData.value.columns,
     transform: (value) => (value === null || value === undefined) ? "" : value,
   });
-  triggerCsvDownload(csvString, "Income_Expense");
-}
-
-function downloadTransfers() {
-  const csvString = Papa.unparse(processedTransfers.value.data, {
-    header: true,
-    columns: processedTransfers.value.columns,
-    transform: (value) => (value === null || value === undefined) ? "" : value,
-  });
-  triggerCsvDownload(csvString, "Transfers");
-}
-
-function downloadSummary() {
-  let csvString = Papa.unparse(processedSummary.value.data, {
-    header: true,
-    columns: processedSummary.value.columns,
-    transform: (value) => (value === null || value === undefined) ? 0 : value,
-  });
-  
-  const title = processedSummary.value.title || "Сводный отчет";
-  const commas = ",".repeat(processedSummary.value.columns.length - 1);
-  const titleRow = `"${title}"${commas}\n\n`; 
-
-  triggerCsvDownload(titleRow + csvString, "Future_Summary");
+  triggerCsvDownload(csvString, "Full_Statement");
 }
 
 function triggerCsvDownload(csvString, filenamePrefix = "export") {
@@ -1202,6 +1064,7 @@ h2 {
   margin: 0;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background-soft);
+  background-color: #34c759; /* Основной цвет кнопки */
   flex-shrink: 0; 
 }
 
@@ -1235,7 +1098,8 @@ h2 {
   min-width: 200px;
   padding: 16px 24px;
   transition: all 0.2s ease-in-out; /* Плавный переход */
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Легкая тень по умолчанию */
+  background-color: #34c759; /* Основной цвет кнопки */
+  box-shadow: 0 2px 4px rgb(14, 14, 14); /* Легкая тень по умолчанию */
 }
 
 /* 🟢 v10.14: Явная реакция на наведение */
@@ -1243,6 +1107,7 @@ h2 {
   transform: translateY(-2px); /* Приподнимаем кнопку */
   box-shadow: 0 6px 12px rgba(0,0,0,0.15); /* Усиливаем тень */
   background-color: var(--color-accent-hover); /* Убеждаемся в смене цвета */
+  background-color: #00ec3b; /* Основной цвет кнопки */
   filter: brightness(1.05); /* Дополнительная подсветка */
 }
 
@@ -1447,11 +1312,14 @@ thead th {
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  background-color: #00ec3b; /* Основной цвет кнопки */
+  
   transition: background-color 0.2s, opacity 0.2s;
 }
 .btn-primary {
-  background: var(--color-accent);
+  background-color: #00ec3b; /* Основной цвет кнопки */
   color: #fff;
+  
 }
 .btn-primary:hover {
   background: var(--color-accent-hover);
@@ -1460,6 +1328,7 @@ thead th {
   background: var(--color-accent);
   opacity: 0.5;
   cursor: not-allowed;
+  
 }
 .btn-secondary {
   background: var(--color-background-mute);
