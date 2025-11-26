@@ -7,12 +7,17 @@ import WithdrawalPopup from './WithdrawalPopup.vue';
 import DateRangePicker from './DateRangePicker.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import RetailClosurePopup from './RetailClosurePopup.vue';
-import RefundPopup from './RefundPopup.vue'; // 🟢 Импорт
+import RefundPopup from './RefundPopup.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.19 - ADD REFUND BUTTON ---
- * * ВЕРСИЯ: 26.11.19 - Кнопка "Оформить возврат"
+ * * --- МЕТКА ВЕРСИИ: v26.11.23 - REMOVE COL-CHECK & FIX FILTER ---
+ * * ВЕРСИЯ: 26.11.23 - Удаление пустой колонки col-check и скрытие списаний из расходов
  * * ДАТА: 2025-11-26
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) loadOperations: Исключаем списания розницы из списка расходов (filterMode='default').
+ * 2. (STYLE) Grid по умолчанию теперь без первой колонки 50px.
+ * 3. (TEMPLATE) col-check скрыт через v-if, если не нужен.
  */
 
 const props = defineProps({
@@ -33,7 +38,7 @@ const showCloseConfirm = ref(false);
 const itemToClose = ref(null);
 const processingItems = ref(new Set());
 const showRetailPopup = ref(false);
-const showRefundPopup = ref(false); // 🟢 State для попапа возврата
+const showRefundPopup = ref(false); 
 
 const showDeleteWriteOffConfirm = ref(false);
 const writeOffToDelete = ref(null);
@@ -118,11 +123,16 @@ const getOwnerId = (compId, indId) => {
 };
 const formatTotal = (val) => `${formatNumber(Math.abs(val))} ₸`;
 
+// 🟢 Computed Property для показа колонки с чекбоксом
+const showCheckCol = computed(() => {
+    // Показываем только в режиме "Предоплаты -> Клиенты"
+    return props.filterMode === 'prepayment_only' && activeTab.value === 'clients';
+});
+
 // ЛОГИКА ФИЛЬТРАЦИИ
 const isSystemPrepayment = (item) => {
     const op = item.originalOp || item;
     
-    // 🟢 FIX: Если это возврат, тоже показываем в списке (но он будет с минусом)
     if (mainStore._isRetailRefund(op)) return true;
 
     const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
@@ -146,15 +156,16 @@ const loadOperations = () => {
   const targetOps = allOps.filter(op => {
     if (isWithdrawalMode.value) return op.isWithdrawal;
     
-    // 🟢 FIX: Если это возврат (расход), но мы в режиме предоплат (income), мы должны его включить?
-    // В задаче сказано "система создает расход". А Prepayment Editor обычно фильтрует `props.type`.
-    // Если `type`=='income', то расходы не попадают.
-    // Разрешаем 'expense' если это возврат в режиме prepayment_only
     if (props.filterMode === 'prepayment_only' && op.type === 'expense' && mainStore._isRetailRefund(op)) {
         return true;
     }
 
-    if (op.type !== props.type) return false; // Основной фильтр типа
+    // 🟢 FIX: Исключаем списания розницы из обычного списка расходов
+    if (props.filterMode === 'default' && props.type === 'expense') {
+        if (mainStore._isRetailWriteOff(op)) return false;
+    }
+
+    if (op.type !== props.type) return false; 
 
     if (op.isTransfer || op.isWithdrawal) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
@@ -174,11 +185,7 @@ const loadOperations = () => {
       if (cId) contrVal = `contr_${cId}`;
       else if (indContrId) contrVal = `ind_${indContrId}`;
 
-      // Определяем знак суммы для отображения
       let amount = Math.abs(op.amount);
-      // Если это расход (возврат), он должен быть с минусом в интерфейсе? 
-      // Или просто красным? Обычно в редакторе сумма положительная, но тип операции важен.
-      // Но если мы смешиваем типы, лучше хранить amount как есть или добавить флаг isExpense
       
       return {
         _id: op._id,
@@ -197,7 +204,7 @@ const loadOperations = () => {
         isDeleted: false,
         rawIndContractorId: indContrId,
         projectName: op.projectId?.name || '---',
-        isRefund: op.type === 'expense' // 🟢 Флаг возврата
+        isRefund: op.type === 'expense' // Флаг возврата
       };
     });
 };
@@ -279,7 +286,7 @@ const clientsSummary = computed(() => {
     clientItems.value.forEach(item => {
         if (item.isClosed) return;
         totalDeal += (item.totalDealAmount || 0);
-        if (item.isRefund) prepayment -= (item.amount || 0); // Вычитаем возврат
+        if (item.isRefund) prepayment -= (item.amount || 0); 
         else prepayment += (item.amount || 0);
     });
     const debt = totalDeal > prepayment ? totalDeal - prepayment : 0;
@@ -287,7 +294,6 @@ const clientsSummary = computed(() => {
 });
 
 const retailSummary = computed(() => {
-    // Получено: Сумма (Доходы) - Возвраты (Расходы)
     const received = retailItems.value.reduce((acc, item) => {
         if (item.isRefund) return acc - (item.amount || 0);
         return acc + (item.amount || 0);
@@ -320,10 +326,11 @@ const confirmClosePrepayment = async () => {
     finally { processingItems.value.delete(item._id); itemToClose.value = null; }
 };
 
-const handleRetailClosure = async ({ amount, projectIds }) => {
+const handleRetailClosure = async ({ amount, projectIds, date }) => {
     try {
         const projectId = (projectIds && projectIds.length > 0) ? projectIds[0] : null;
-        await mainStore.closeRetailDaily(amount, new Date(), projectId);
+        const closureDate = date ? new Date(date) : new Date(); 
+        await mainStore.closeRetailDaily(amount, closureDate, projectId);
         showRetailPopup.value = false;
         await mainStore.fetchAllEntities();
         loadOperations();
@@ -340,14 +347,13 @@ const handleRefundSave = async ({ mode, id, data }) => {
              }
              await mainStore.createEvent(data);
         } else {
-            // edit not implemented yet fully, but structure is ready
+             await mainStore.updateOperation(id, data);
         }
         await mainStore.fetchAllEntities();
         loadOperations();
     } catch(e) { console.error(e); alert('Ошибка сохранения возврата'); }
 };
 
-// Открытие создания возврата (предустановка розницы)
 const openRefundPopup = () => {
     showRefundPopup.value = true;
 };
@@ -383,7 +389,6 @@ const handleSave = async () => {
       if (item.isDeleted) continue;
       const original = item.originalOp;
       
-      // Пропускаем сохранение для возвратов через этот метод (для безопасности)
       if (item.isRefund) continue; 
 
       let companyId = null; let individualId = null;
@@ -455,8 +460,9 @@ const handleSave = async () => {
       </div>
 
       <!-- FILTERS -->
-      <div class="filters-row" :class="{ 'with-checkbox': props.filterMode === 'prepayment_only' && activeTab === 'clients', 'history-mode': activeTab === 'history' }">
-        <div class="filter-col col-check"><span v-if="activeTab === 'clients' && props.filterMode === 'prepayment_only'">Закр.</span><span v-if="activeTab === 'history'">Статус</span></div>
+      <div class="filters-row" :class="{ 'with-checkbox': showCheckCol, 'history-mode': activeTab === 'history' }">
+        <!-- 🟢 Скрываем col-check, если showCheckCol false -->
+        <div class="filter-col col-check" v-if="showCheckCol || activeTab === 'history'"><span v-if="showCheckCol">Закр.</span><span v-if="activeTab === 'history'">Статус</span></div>
         <div class="filter-col col-date"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
         <template v-if="activeTab !== 'history'">
             <div class="filter-col col-owner"><select v-model="filters.owner" class="filter-input filter-select"><option value="">Владелец</option><optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup></select></div>
@@ -480,20 +486,18 @@ const handleSave = async () => {
         <div v-if="activeTab !== 'history' && filteredItems.length === 0" class="empty-state">Операций не найдено.</div>
         
         <template v-if="activeTab !== 'history'">
-            <div v-for="item in filteredItems" :key="item._id" class="grid-row" :class="{ 'is-closed': item.isClosed, 'with-checkbox': props.filterMode === 'prepayment_only' && activeTab === 'clients', 'is-refund': item.isRefund }">
-              <div class="col-check">
-                 <template v-if="props.filterMode === 'prepayment_only' && activeTab === 'clients'">
+            <div v-for="item in filteredItems" :key="item._id" class="grid-row" :class="{ 'is-closed': item.isClosed, 'with-checkbox': showCheckCol }">
+              <!-- 🟢 Скрываем col-check, если showCheckCol false -->
+              <div class="col-check" v-if="showCheckCol">
+                 <template v-if="showCheckCol">
                     <div v-if="processingItems.has(item._id)" class="spinner-mini"></div>
                     <input v-else type="checkbox" :checked="item.isClosed" @click.prevent="initiateClosePrepayment(item)" />
                  </template>
-                 <!-- 🟢 Метка возврата -->
-                 <span v-if="item.isRefund" class="refund-badge">↺</span>
               </div>
               <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" :disabled="item.isClosed" /></div>
               <div class="col-owner"><select v-model="item.ownerId" class="edit-input select-input" :disabled="item.isClosed"><option :value="null">-</option><optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup></select></div>
               <div class="col-acc"><select v-model="item.accountId" class="edit-input select-input" :disabled="item.isClosed"><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
               <div class="col-amount">
-                  <!-- 🟢 Для возвратов показываем минус и делаем красным -->
                   <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="{'text-red': item.isRefund}" :disabled="item.isClosed" />
               </div>
               
@@ -533,7 +537,6 @@ const handleSave = async () => {
         <div class="footer-left-actions">
             <button v-if="activeTab !== 'history'" class="btn-add-new-footer btn-income" @click="openCreatePopup">+ Создать</button>
             <button v-if="activeTab === 'retail' && props.filterMode === 'prepayment_only'" class="btn-add-new-footer btn-orange-retail" @click="showRetailPopup = true">Внести сумму выполненных работ</button>
-            <!-- 🟢 Кнопка возврата -->
             <button v-if="activeTab === 'retail' && props.filterMode === 'prepayment_only'" class="btn-add-new-footer btn-refund" @click="openRefundPopup">Оформить возврат</button>
         </div>
         <div class="footer-actions">
@@ -579,9 +582,14 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .btn-refund { background-color: #DE8FFF !important; color: white; margin-left: 10px; }
 .btn-refund:hover { background-color: #be70df !important; }
 
-.filters-row, .grid-row { display: grid; grid-template-columns: 50px 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; }
+/* 🟢 GRID LAYOUTS: Default no check column (removed 50px at start) */
+.filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; }
+
+/* History mode grid (explicit) */
 .history-row-short { grid-template-columns: 50px 150px 150px 1fr 50px !important; }
 .filters-row.history-mode { grid-template-columns: 50px 150px 150px 1fr 50px !important; }
+
+/* 🟢 With checkbox (add back 50px at start) */
 .filters-row.with-checkbox, .grid-row.with-checkbox { grid-template-columns: 50px 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; }
 
 .status-dot { width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; }
@@ -591,12 +599,10 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .grid-row:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-color: #ccc; }
 .grid-row.is-closed { background-color: #f3f4f6; opacity: 0.8; }
 .grid-row.is-closed .edit-input { color: #9ca3af; text-decoration: line-through; background-color: transparent; border-color: transparent; }
-.grid-row.is-refund { background-color: #fdf2f8; } /* Слегка розоватый фон для возврата */
 
-.refund-badge { color: #DE8FFF; font-weight: bold; font-size: 18px; }
 .text-red { color: #ff3b30 !important; }
 
-.col-check, .col-trash { display: flex; justify-content: center; align-items: center; }
+.col-check, .col-trash { display: flex; justify-content: left; align-items: center; }
 .col-date { display: flex; align-items: center; }
 .col-check input { width: 20px; height: 20px; border-radius: 4px; border: 2px solid #d1d5db; cursor: pointer; accent-color: #10b981; }
 .spinner-mini { width: 20px; height: 20px; border: 2px solid #e5e7eb; border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -633,7 +639,6 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .btn-close:hover { background: #f3f4f6; }
 .empty-state { text-align: center; padding: 4rem; color: #9ca3af; font-style: italic; }
 
-/* 🟢 FIX: Стили подтверждения удаления */
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
 .delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
 .delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
@@ -643,4 +648,9 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .btn-cancel:hover { background: #d1d1d1; }
 .btn-delete-confirm { background: #ff3b30; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-delete-confirm:hover { background: #e02e24; }
+.deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
+.sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
+.progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
+.progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
+@keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
 </style>

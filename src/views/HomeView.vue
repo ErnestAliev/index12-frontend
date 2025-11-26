@@ -17,19 +17,20 @@ import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
-import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; // 🟢 Импортируем
+import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
+import RefundPopup from '@/components/RefundPopup.vue'; // 🟢 Импортируем RefundPopup
 
 /**
- * * --- МЕТКА ВЕРСИИ: v38.0 - RETAIL POPUP CONNECT ---
- * * ВЕРСИЯ: 38.0 - Подключение редактора списаний
+ * * --- МЕТКА ВЕРСИИ: v39.0 - REFUND CLICK HANDLER ---
+ * * ВЕРСИЯ: 39.0 - Обработка клика по чипу "Возврат"
  * * ДАТА: 2025-11-26
  * * ЧТО ИЗМЕНЕНО:
- * 1. handleEditOperation теперь проверяет _isRetailWriteOff.
- * 2. Если это списание, открывается RetailClosurePopup (а не OperationPopup).
- * 3. Добавлены обработчики handleRetailSave и handleRetailDelete.
+ * 1. (IMPORT) Добавлен RefundPopup.
+ * 2. (LOGIC) handleEditOperation теперь проверяет категорию "Возврат" (refundCategoryId).
+ * 3. (LOGIC) Добавлены хендлеры handleRefundSave и handleRefundDelete.
  */
 
-console.log('--- HomeView.vue v38.0 (Retail Popup) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v39.0 (Refund Handler) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -62,8 +63,11 @@ const prepaymentDateKey = ref('');
 // Состояние для Withdrawal Popup
 const isWithdrawalPopupVisible = ref(false);
 
-// 🟢 Состояние для Retail Popup (Закрытие смены / Редактор списаний)
+// Состояние для Retail Popup (Закрытие смены / Редактор списаний)
 const isRetailPopupVisible = ref(false);
+
+// 🟢 Состояние для Refund Popup (Редактирование возврата)
+const isRefundPopupVisible = ref(false);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -233,18 +237,17 @@ const handleWithdrawalSave = async ({ mode, id, data, originalOperation }) => {
     }
 };
 
-// 🟢 СОХРАНЕНИЕ СПИСАНИЯ (ОБНОВЛЕНИЕ)
+// СОХРАНЕНИЕ СПИСАНИЯ (ОБНОВЛЕНИЕ)
 const handleRetailSave = async ({ id, data }) => {
     isRetailPopupVisible.value = false;
     operationToEdit.value = null;
     try {
         const updatedData = {
             amount: -Math.abs(data.amount),
-            projectId: data.projectIds[0] || null, // Берем первый (так как списание обычно по одному проекту)
+            projectId: data.projectIds[0] || null, 
             date: new Date(data.date)
         };
         
-        // Используем updateOperation из стора
         await mainStore.updateOperation(id, updatedData);
         await mainStore.loadCalculationData(viewMode.value, today.value);
     } catch (error) {
@@ -253,7 +256,7 @@ const handleRetailSave = async ({ id, data }) => {
     }
 };
 
-// 🟢 УДАЛЕНИЕ СПИСАНИЯ
+// УДАЛЕНИЕ СПИСАНИЯ
 const handleRetailDelete = async (operation) => {
     isRetailPopupVisible.value = false;
     operationToEdit.value = null;
@@ -263,6 +266,41 @@ const handleRetailDelete = async (operation) => {
     } catch (error) {
         console.error('Error deleting retail write-off:', error);
         alert('Ошибка удаления списания.');
+    }
+};
+
+// 🟢 СОХРАНЕНИЕ ВОЗВРАТА
+const handleRefundSave = async ({ mode, id, data }) => {
+    isRefundPopupVisible.value = false;
+    operationToEdit.value = null;
+    try {
+        if (mode === 'create') {
+             if (data.cellIndex === undefined) {
+                 const dateKey = mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+             }
+             await mainStore.createEvent(data);
+        } else {
+             // Редактирование
+             await mainStore.updateOperation(id, data);
+        }
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+    } catch (error) {
+        console.error('Error saving refund:', error);
+        alert('Ошибка сохранения возврата.');
+    }
+};
+
+// 🟢 УДАЛЕНИЕ ВОЗВРАТА
+const handleRefundDelete = async (operation) => {
+    isRefundPopupVisible.value = false;
+    operationToEdit.value = null;
+    try {
+        await mainStore.deleteOperation(operation);
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+    } catch (error) {
+        console.error('Error deleting refund:', error);
+        alert('Ошибка удаления возврата.');
     }
 };
 
@@ -336,7 +374,7 @@ const HEADER_MAX_H_RATIO = 0.8;
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
 
-// 🟢 WATCHER: Увеличенная высота для избежания обрезания (135px + 15px запас)
+// WATCHER: Увеличенная высота для избежания обрезания
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
         const totalWidgets = mainStore.allWidgets.length;
@@ -388,7 +426,14 @@ const handleEditOperation = (operation) => {
       return;
   }
 
-  // 2. Остальное
+  // 🟢 2. Проверка на ВОЗВРАТ (Refund)
+  const catId = operation.categoryId?._id || operation.categoryId;
+  if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) {
+      isRefundPopupVisible.value = true;
+      return;
+  }
+
+  // 3. Остальное
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
   } 
@@ -516,13 +561,22 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
        @save="handleWithdrawalSave"
     />
 
-    <!-- 🟢 НОВЫЙ ПОПАП СПИСАНИЯ -->
+    <!-- НОВЫЙ ПОПАП СПИСАНИЯ -->
     <RetailClosurePopup 
        v-if="isRetailPopupVisible" 
        :operation-to-edit="operationToEdit"
        @close="isRetailPopupVisible = false" 
        @save="handleRetailSave"
        @delete="handleRetailDelete"
+    />
+
+    <!-- 🟢 ПОПАП ВОЗВРАТА -->
+    <RefundPopup 
+       v-if="isRefundPopupVisible" 
+       :operation-to-edit="operationToEdit"
+       @close="isRefundPopupVisible = false" 
+       @save="handleRefundSave"
+       @delete="handleRefundDelete"
     />
 
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
@@ -566,13 +620,11 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
 .home-right-panel { width: 60px; flex-shrink: 0; overflow-y: auto; background-color: var(--color-background-soft); border-left: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; position: relative; }
 .home-right-panel::-webkit-scrollbar { display: none; }
 
-/* 🟢 СТИЛИ КНОПКИ РАСШИРЕНИЯ */
 .header-expand-btn { position: absolute; top: 8px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
 .header-expand-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .header-expand-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
 .header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-/* Остальные кнопки смещены вниз (top увеличен на 40px) */
 .import-export-btn { position: absolute; top: 48px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
 .import-export-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }

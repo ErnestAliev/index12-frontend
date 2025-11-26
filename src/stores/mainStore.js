@@ -1,12 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.19 - REFUND LOGIC ---
- * * ВЕРСИЯ: 26.11.19 - Логика Возвратов (Refund)
+ * * --- МЕТКА ВЕРСИИ: v26.11.21 - REFUND CALC FIX ---
+ * * ВЕРСИЯ: 26.11.21 - Исправление логики обязательств при возврате
  * * ДАТА: 2025-11-26
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) ensureSystemEntities создает категорию "Возврат".
- * 2. (GETTER) refundCategoryId.
- * 3. (HELPER) _isRetailRefund(op).
- * 4. (CALC) liabilitiesTheyOwe теперь вычитает расходы с категорией "Возврат".
+ * 1. (LOGIC) liabilitiesWeOwe: Теперь учитывает операции "Возврат" (уменьшает долг перед клиентом).
+ * 2. (LOGIC) liabilitiesTheyOwe: Больше не учитывает операции "Возврат" (долг клиента остается "не тронутым", согласно задаче).
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +27,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.11.19 (Refund Logic) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.11.21 (Refund Calc Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -112,7 +110,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   };
 
-  // 🟢 ГЕТТЕРЫ ДЛЯ СИСТЕМНЫХ СУЩНОСТЕЙ
   const retailIndividualId = computed(() => {
       const retail = individuals.value.find(i => {
           const n = i.name.trim().toLowerCase();
@@ -131,17 +128,15 @@ export const useMainStore = defineStore('mainStore', () => {
       return cat ? cat._id : null;
   });
 
-  // 🟢 ГЕТТЕР: Возврат
   const refundCategoryId = computed(() => {
       const cat = categories.value.find(c => c.name.trim().toLowerCase() === 'возврат');
       return cat ? cat._id : null;
   });
 
-  // 🟢 ХЕЛПЕР: Определение операции списания (Розница)
   const _isRetailWriteOff = (op) => {
       if (!op) return false;
       if (op.type !== 'expense') return false;
-      if (op.accountId) return false; // Списание всегда без счета
+      if (op.accountId) return false; 
       
       const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
       if (indId && indId === retailIndividualId.value) return true;
@@ -149,7 +144,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return false;
   };
 
-  // 🟢 ХЕЛПЕР: Определение операции возврата (Розница)
   const _isRetailRefund = (op) => {
       if (!op) return false;
       if (op.type !== 'expense') return false;
@@ -329,7 +323,7 @@ export const useMainStore = defineStore('mainStore', () => {
            for (const op of ops) {
                if (isTransfer(op)) continue;
                
-               if (!op.accountId) continue; // Пропускаем безналичные (списания)
+               if (!op.accountId) continue; 
 
                const amt = op.amount || 0;
                const absAmt = Math.abs(amt);
@@ -346,7 +340,6 @@ export const useMainStore = defineStore('mainStore', () => {
                    else dayRec.income += amt;
                    dayRec.dayTotal += amt;
                } else if (op.type === 'expense') {
-                   // 🟢 FIX: Не включаем списания (безналичные) в график расходов
                    if (_isRetailWriteOff(op)) continue;
 
                    dayRec.expense += absAmt;
@@ -411,6 +404,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
+    const refundCatId = refundCategoryId.value; 
     
     let totalPrepaymentReceived = 0;
     let totalActsSum = 0;
@@ -424,9 +418,16 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
       const isAct = (catId && actIds.includes(catId));
+      const isRefund = refundCatId && catId === refundCatId; // 🟢 Проверка на возврат
       
       if (isPrepay && op.type === 'income') {
           totalPrepaymentReceived += (op.amount || 0);
+      }
+      
+      // 🟢 ВАЖНО: Возврат (Расход) уменьшает сумму полученных нами денег
+      // Это значит, что мы меньше должны клиенту
+      if (isRefund && op.type === 'expense') {
+          totalPrepaymentReceived -= Math.abs(op.amount || 0);
       }
       
       if (isAct && op.type === 'expense') {
@@ -443,8 +444,6 @@ export const useMainStore = defineStore('mainStore', () => {
     
     const prepayIds = getPrepaymentCategoryIds.value;
     const debtCatId = remainingDebtCategoryId.value;
-    // 🟢 Геттер ID возврата
-    const refundCatId = refundCategoryId.value;
 
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
@@ -456,7 +455,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const isDebtPayment = debtCatId && catId === debtCatId;
 
-      // Доходы (предоплата или остаток долга)
       if ((isPrepay || isDebtPayment) && op.type === 'income') {
           const dealTotal = op.totalDealAmount || 0;
           if (dealTotal > 0) {
@@ -465,10 +463,8 @@ export const useMainStore = defineStore('mainStore', () => {
           receivedSum += (op.amount || 0);
       }
       
-      // 🟢 РАСХОД "ВОЗВРАТ" УМЕНЬШАЕТ ПОЛУЧЕННУЮ СУММУ
-      if (op.type === 'expense' && refundCatId && catId === refundCatId) {
-          receivedSum -= Math.abs(op.amount || 0);
-      }
+      // 🟢 ВАЖНО: Операция "Возврат" (расход) ЗДЕСЬ ИГНОРИРУЕТСЯ
+      // По задаче: "Нам должны" остается не тронутой
     }
     const result = totalDealSum - receivedSum;
     return result > 0 ? result : 0;
@@ -480,7 +476,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
-  // 🟢 FIX: Исключаем списания из списка расходов (они в "Истории списаний")
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
   const currentWithdrawals = computed(() => currentOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -526,7 +521,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
       const futureMap = { ...snapshotMap };
       for (const op of futureOps.value) {
-          // Если это списание розницы, пропускаем его для расчетов балансов сущностей
           if (_isRetailWriteOff(op)) continue;
 
           const amt = Math.abs(op.amount || 0);
@@ -694,7 +688,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
       categories.value  = _sortByOrder([...normalCategories, ...prepaymentCategories]);
       
-      // 🟢 ГАРАНТИЯ УНИКАЛЬНОСТИ (ИЩЕМ И УДАЛЯЕМ ДУБЛИКАТЫ)
       await ensureSystemEntities();
 
       await fetchSnapshot();
@@ -713,7 +706,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
   
-  // 🟢 VOID: fetchOperations is defined here to be available in scope
   async function fetchOperations(dateKey, force = false) {
     if (!dateKey) return;
     if (displayCache.value[dateKey] && !force) return;
@@ -784,7 +776,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
     if (!oldDateKey || !newDateKey) return;
-    // 🟢 FIX: fetchOperations is now defined above
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
     const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
@@ -898,10 +889,9 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
-      // 🟢 FIX: Принудительно обновляем всё
       await refreshDay(dateKey);
       await fetchSnapshot();
-      await fetchAllEntities(); // Для обновления балансов компаний
+      await fetchAllEntities(); 
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return data;
 
@@ -1080,10 +1070,7 @@ export const useMainStore = defineStore('mainStore', () => {
   function computeTotalDaysForMode(mode, baseDate) { return getViewModeInfo(mode).total; }
   async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
 
-  // 🟢 СИСТЕМНЫЕ СУЩНОСТИ И ЗАКРЫТИЕ СМЕНЫ/ПРЕДОПЛАТ
   async function ensureSystemEntities() {
-      // 1. Розничные клиенты (ищем по новым и старым именам)
-      // 🟢 FIX: Ищем ВСЕ дубликаты
       let retailDuplicates = individuals.value.filter(i => {
           const n = i.name.trim().toLowerCase();
           return n === 'розничные клиенты' || n === 'розница';
@@ -1092,13 +1079,10 @@ export const useMainStore = defineStore('mainStore', () => {
       let retailInd = null;
 
       if (retailDuplicates.length === 0) {
-          // Создаем сразу с правильным именем
           retailInd = await addIndividual('Розничные клиенты');
       } else {
-          // Берем первый как основной
           retailInd = retailDuplicates[0];
           
-          // Если есть дубликаты - удаляем лишние
           if (retailDuplicates.length > 1) {
               for (let i = 1; i < retailDuplicates.length; i++) {
                   const dup = retailDuplicates[i];
@@ -1108,7 +1092,6 @@ export const useMainStore = defineStore('mainStore', () => {
               }
           }
 
-          // Если имя старое "Розница" - переименовываем
           if (retailInd.name.trim().toLowerCase() === 'розница') {
               try {
                   await axios.put(`${API_BASE_URL}/individuals/batch-update`, [{ _id: retailInd._id, name: 'Розничные клиенты' }]);
@@ -1117,7 +1100,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
       
-      // 2. Реализация (Аналогичная логика дедупликации)
       let realizationDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'реализация');
       let realizationCat = null;
 
@@ -1133,7 +1115,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
 
-      // 🟢 3. Остаток долга (Создаем системную категорию, с дедупликацией)
       let debtDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'остаток долга');
       let debtCat = null;
 
@@ -1141,7 +1122,6 @@ export const useMainStore = defineStore('mainStore', () => {
           debtCat = await addCategory('Остаток долга');
       } else {
           debtCat = debtDuplicates[0];
-          // Удаляем дубликаты, если есть
           if (debtDuplicates.length > 1) {
                for (let i = 1; i < debtDuplicates.length; i++) {
                   try { await deleteEntity('categories', debtDuplicates[i]._id, false); } 
@@ -1150,7 +1130,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
       
-      // 🟢 4. Возврат (Системная категория)
       let refundDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'возврат');
       let refundCat = null;
 
@@ -1169,7 +1148,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return { retailInd, realizationCat, debtCat, refundCat };
   }
 
-  // 🟢 ИСПРАВЛЕНО: Списание ("Реализация") теперь идет с projectId (если выбран)
   async function closeRetailDaily(amount, date, projectId = null) {
       try {
           const { retailInd, realizationCat } = await ensureSystemEntities();
@@ -1179,7 +1157,7 @@ export const useMainStore = defineStore('mainStore', () => {
               accountId: null, 
               counterpartyIndividualId: retailInd._id, 
               categoryId: realizationCat._id, 
-              projectId: projectId, // 🟢 Передаем проект
+              projectId: projectId, 
               date: date,
               description: 'Закрытие смены (Розница)'
           };
@@ -1209,7 +1187,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   const getRetailWriteOffs = computed(() => {
-      // Ищем розницу по любому из имен
       const retail = individuals.value.find(i => {
           const n = i.name.trim().toLowerCase();
           return n === 'розничные клиенты' || n === 'розница';
@@ -1218,10 +1195,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!retail) return [];
 
       return allOperationsFlat.value.filter(op => {
-         // Проверяем через наш новый хелпер (безопаснее)
-         // Но так как allOperationsFlat содержит простые объекты, дублируем логику
          if (op.type !== 'expense') return false;
-         if (op.accountId) return false; // Списание всегда без счета
+         if (op.accountId) return false; 
          
          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
          return indId === retail._id;
@@ -1287,7 +1262,7 @@ export const useMainStore = defineStore('mainStore', () => {
     closeRetailDaily, closePrepaymentDeal, ensureSystemEntities,
     getRetailWriteOffs,
     
-    retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId, // 🟢 EXPORTED
+    retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId, 
     _isRetailWriteOff, _isRetailRefund
   };
 });

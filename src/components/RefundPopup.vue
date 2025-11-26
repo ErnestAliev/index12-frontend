@@ -5,8 +5,8 @@ import { useMainStore } from '@/stores/mainStore';
 import BaseSelect from './BaseSelect.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.0 - REFUND POPUP ---
- * * ВЕРСИЯ: 1.0 - Попап оформления возврата
+ * * --- МЕТКА ВЕРСИИ: v1.1 - STYLES FIX ---
+ * * ВЕРСИЯ: 1.1 - Исправление стилей (белый фон, ширина)
  * * ДАТА: 2025-11-26
  */
 
@@ -268,7 +268,8 @@ onMounted(async () => {
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3000; }
-.popup-content { background: #F4F4F4; padding: 20px; border-radius: 12px; width: 360px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 10px; }
+/* 🟢 ИЗМЕНЕНО: Ширина увеличена до 420px */
+.popup-content { background: #F4F4F4; padding: 20px; border-radius: 12px; width: 420px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 10px; }
 
 .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
 h3 { margin: 0; color: #222; font-size: 1.2rem; font-weight: 700; }
@@ -277,14 +278,15 @@ h3 { margin: 0; color: #222; font-size: 1.2rem; font-weight: 700; }
 .field-label { display: block; font-size: 11px; color: #888; margin-bottom: 2px; margin-left: 2px; font-weight: 500; }
 .input-spacing { margin-bottom: 8px; }
 
-.amount-input { width: 100%; font-size: 18px; font-weight: 700; padding: 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; text-align: right; color: #222; box-sizing: border-box; }
+/* 🟢 ИЗМЕНЕНО: background-color: #ffffff */
+.amount-input { width: 100%; font-size: 18px; font-weight: 700; padding: 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; text-align: right; color: #222; box-sizing: border-box; background-color: #ffffff; }
 .amount-input:focus { border-color: #7B1FA2; }
 
 .date-input { width: 100%; height: 42px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #222; background: #fff; box-sizing: border-box; }
 
 .actions { display: flex; gap: 10px; margin-top: 15px; }
 .btn-cancel { flex: 1; padding: 12px; background: #eee; border: none; border-radius: 6px; cursor: pointer; color: #333; font-weight: 500; }
-.btn-confirm { flex: 1; padding: 12px; background: #7B1FA2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.btn-confirm { flex: 1; padding: 12px; background: #7B1FA2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
 .btn-confirm:disabled { opacity: 0.6; }
 
 .btn-icon-delete { background: none; border: none; cursor: pointer; color: #ff3b30; }
