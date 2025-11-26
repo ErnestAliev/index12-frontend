@@ -10,14 +10,13 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.23 - REMOVE COL-CHECK & FIX FILTER ---
- * * ВЕРСИЯ: 26.11.23 - Удаление пустой колонки col-check и скрытие списаний из расходов
+ * * --- МЕТКА ВЕРСИИ: v26.11.25 - FIX OWNER FILTER ---
+ * * ВЕРСИЯ: 26.11.25 - Исправление фильтрации по владельцу
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) loadOperations: Исключаем списания розницы из списка расходов (filterMode='default').
- * 2. (STYLE) Grid по умолчанию теперь без первой колонки 50px.
- * 3. (TEMPLATE) col-check скрыт через v-if, если не нужен.
+ * 1. (LOGIC) В loadOperations добавлено автоматическое определение владельца (ownerId) через счет (mainStore.accounts), 
+ * если в операции поля companyId/individualId пусты. Это критично для выводов.
  */
 
 const props = defineProps({
@@ -123,9 +122,7 @@ const getOwnerId = (compId, indId) => {
 };
 const formatTotal = (val) => `${formatNumber(Math.abs(val))} ₸`;
 
-// 🟢 Computed Property для показа колонки с чекбоксом
 const showCheckCol = computed(() => {
-    // Показываем только в режиме "Предоплаты -> Клиенты"
     return props.filterMode === 'prepayment_only' && activeTab.value === 'clients';
 });
 
@@ -160,7 +157,6 @@ const loadOperations = () => {
         return true;
     }
 
-    // 🟢 FIX: Исключаем списания розницы из обычного списка расходов
     if (props.filterMode === 'default' && props.type === 'expense') {
         if (mainStore._isRetailWriteOff(op)) return false;
     }
@@ -178,15 +174,32 @@ const loadOperations = () => {
   });
 
   localItems.value = targetOps.sort((a, b) => new Date(b.date) - new Date(a.date)).map(op => {
-      const ownerId = getOwnerId(op.companyId, op.individualId);
+      // 🟢 FIX: Авто-определение владельца через счет
+      let cId = op.companyId;
+      let iId = op.individualId;
+
+      if (!cId && !iId && op.accountId) {
+          const accId = (typeof op.accountId === 'object') ? op.accountId._id : op.accountId;
+          const storeAccount = mainStore.accounts.find(a => a._id === accId);
+          if (storeAccount) {
+              cId = storeAccount.companyId;
+              iId = storeAccount.individualId;
+          }
+      }
+
+      const ownerId = getOwnerId(cId, iId);
+      
       let contrVal = null;
-      const cId = op.contractorId?._id || op.contractorId;
+      const contrId = op.contractorId?._id || op.contractorId;
       const indContrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-      if (cId) contrVal = `contr_${cId}`;
+      if (contrId) contrVal = `contr_${contrId}`;
       else if (indContrId) contrVal = `ind_${indContrId}`;
 
       let amount = Math.abs(op.amount);
       
+      // Для вывода формируем название ноды
+      const nodeName = op.reason || op.destination || 'Вывод средств';
+
       return {
         _id: op._id,
         originalOp: op,
@@ -195,16 +208,18 @@ const loadOperations = () => {
         amountFormatted: formatNumber(amount),
         totalDealAmount: op.totalDealAmount || 0, 
         accountId: op.accountId?._id || op.accountId,
-        ownerId: ownerId,
+        ownerId: ownerId, // Теперь здесь корректный владелец
         contractorValue: contrVal, 
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
         destination: op.destination || '',
+        reason: op.reason || '', 
+        nodeName: nodeName,      
         isClosed: !!op.isClosed, 
         isDeleted: false,
         rawIndContractorId: indContrId,
         projectName: op.projectId?.name || '---',
-        isRefund: op.type === 'expense' // Флаг возврата
+        isRefund: op.type === 'expense' 
       };
     });
 };
@@ -214,7 +229,6 @@ onMounted(() => {
     if (!mainStore.retailIndividualId) mainStore.fetchAllEntities();
 });
 
-// РАЗДЕЛЕНИЕ СПИСКОВ ПО ТАБАМ
 const clientItems = computed(() => {
     return localItems.value.filter(item => {
         return item.rawIndContractorId !== mainStore.retailIndividualId;
@@ -263,6 +277,8 @@ const filteredItems = computed(() => {
     if (filters.value.amount && !String(itemAmt).includes(filters.value.amount.replace(/\s/g, ''))) return false;
     
     if (activeTab.value !== 'history') {
+        // 🟢 Здесь фильтрация по владельцу будет работать корректно, 
+        // так как item.ownerId теперь заполняется из счета, если он пуст в операции
         if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
         if (filters.value.account && item.accountId !== filters.value.account) return false;
     }
@@ -381,6 +397,15 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 const onAmountInput = (item) => { const raw = item.amountFormatted.replace(/[^0-9]/g, ''); item.amountFormatted = formatNumber(raw); item.amount = Number(raw); };
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.value = true; try { await mainStore.deleteOperation(itemToDelete.value.originalOp); itemToDelete.value.isDeleted = true; showDeleteConfirm.value = false; } catch (e) { alert(e.message); } finally { isDeleting.value = false; } };
+
+// 🟢 OPEN EDIT (WITHDRAWAL)
+const openEdit = (item) => {
+    if (isWithdrawalMode.value) {
+        withdrawalToEdit.value = item.originalOp;
+        isWithdrawalPopupVisible.value = true;
+    }
+};
+
 const handleSave = async () => {
   isSaving.value = true;
   try {
@@ -460,15 +485,18 @@ const handleSave = async () => {
       </div>
 
       <!-- FILTERS -->
-      <div class="filters-row" :class="{ 'with-checkbox': showCheckCol, 'history-mode': activeTab === 'history' }">
-        <!-- 🟢 Скрываем col-check, если showCheckCol false -->
+      <div class="filters-row" :class="{ 'with-checkbox': showCheckCol, 'history-mode': activeTab === 'history', 'withdrawal-mode': isWithdrawalMode }">
+        
         <div class="filter-col col-check" v-if="showCheckCol || activeTab === 'history'"><span v-if="showCheckCol">Закр.</span><span v-if="activeTab === 'history'">Статус</span></div>
         <div class="filter-col col-date"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
+        
         <template v-if="activeTab !== 'history'">
             <div class="filter-col col-owner"><select v-model="filters.owner" class="filter-input filter-select"><option value="">Владелец</option><optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup></select></div>
             <div class="filter-col col-acc"><select v-model="filters.account" class="filter-input filter-select"><option value="">Счет</option><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
         </template>
+        
         <div class="filter-col col-amount"><input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма" /></div>
+        
         <template v-if="!isWithdrawalMode && activeTab !== 'history'">
             <div class="filter-col col-contr" v-if="activeTab === 'clients' || props.filterMode === 'default'">
                <select v-model="filters.contractorValue" class="filter-input filter-select"><option value="">Контрагент</option><optgroup v-for="g in contractorOptions" :key="g.label" :label="g.label"><option v-for="o in g.options" :key="o.value" :value="o.value">{{ o.label }}</option></optgroup></select>
@@ -476,6 +504,12 @@ const handleSave = async () => {
             <div class="filter-col col-cat"><select v-model="filters.category" class="filter-input filter-select"><option value="">Категория</option><option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option></select></div>
             <div class="filter-col col-proj"><select v-model="filters.project" class="filter-input filter-select"><option value="">Проект</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
         </template>
+        
+        <!-- 🟢 Заголовок "Назначение" для выводов -->
+        <template v-if="isWithdrawalMode">
+             <div class="filter-col col-node-header"><span class="header-label">Назначение / Причина</span></div>
+        </template>
+
         <template v-if="activeTab === 'history'">
              <div class="filter-col col-proj"><select v-model="filters.project" class="filter-input filter-select"><option value="">Проект</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
         </template>
@@ -486,14 +520,15 @@ const handleSave = async () => {
         <div v-if="activeTab !== 'history' && filteredItems.length === 0" class="empty-state">Операций не найдено.</div>
         
         <template v-if="activeTab !== 'history'">
-            <div v-for="item in filteredItems" :key="item._id" class="grid-row" :class="{ 'is-closed': item.isClosed, 'with-checkbox': showCheckCol }">
-              <!-- 🟢 Скрываем col-check, если showCheckCol false -->
+            <div v-for="item in filteredItems" :key="item._id" class="grid-row" :class="{ 'is-closed': item.isClosed, 'with-checkbox': showCheckCol, 'withdrawal-mode': isWithdrawalMode }">
+              
               <div class="col-check" v-if="showCheckCol">
                  <template v-if="showCheckCol">
                     <div v-if="processingItems.has(item._id)" class="spinner-mini"></div>
                     <input v-else type="checkbox" :checked="item.isClosed" @click.prevent="initiateClosePrepayment(item)" />
                  </template>
               </div>
+              
               <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" :disabled="item.isClosed" /></div>
               <div class="col-owner"><select v-model="item.ownerId" class="edit-input select-input" :disabled="item.isClosed"><option :value="null">-</option><optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup></select></div>
               <div class="col-acc"><select v-model="item.accountId" class="edit-input select-input" :disabled="item.isClosed"><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
@@ -507,6 +542,15 @@ const handleSave = async () => {
                   </div>
                   <div class="col-cat"><select v-model="item.categoryId" class="edit-input select-input" :disabled="item.isClosed"><option :value="null">-</option><option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option></select></div>
                   <div class="col-proj"><select v-model="item.projectId" class="edit-input select-input" :disabled="item.isClosed"><option :value="null">-</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
+              </template>
+
+              <!-- 🟢 НОДА ДЛЯ ВЫВОДА -->
+              <template v-else>
+                  <div class="col-node">
+                      <div class="withdrawal-node" @click="openEdit(item)">
+                          {{ item.nodeName }}
+                      </div>
+                  </div>
               </template>
 
               <div class="col-trash">
@@ -535,18 +579,28 @@ const handleSave = async () => {
 
       <div class="popup-footer">
         <div class="footer-left-actions">
-            <!--<button v-if="activeTab !== 'history'" class="btn-add-new-footer btn-income" @click="openCreatePopup">+ Создать</button>-->
+            <button v-if="activeTab !== 'history'" class="btn-add-new-footer btn-income" @click="openCreatePopup">+ Создать</button>
             <button v-if="activeTab === 'retail' && props.filterMode === 'prepayment_only'" class="btn-add-new-footer btn-orange-retail" @click="showRetailPopup = true">Внести сумму выполненных работ</button>
             <button v-if="activeTab === 'retail' && props.filterMode === 'prepayment_only'" class="btn-add-new-footer btn-refund" @click="openRefundPopup">Оформить возврат</button>
         </div>
         <div class="footer-actions">
             <button class="btn-close" @click="$emit('close')">Закрыть</button>
-            <button v-if="activeTab !== 'history'" class="btn-save" @click="handleSave" :disabled="isSaving">Сохранить изменения</button>
+            <button v-if="activeTab !== 'history' && !isWithdrawalMode" class="btn-save" @click="handleSave" :disabled="isSaving">Сохранить изменения</button>
         </div>
       </div>
     </div>
 
     <OperationPopup v-if="isCreatePopupVisible" :type="type" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @operation-added="handleOperationAdded" />
+    
+    <!-- 🟢 WithdrawalPopup для редактирования -->
+    <WithdrawalPopup 
+       v-if="isWithdrawalPopupVisible" 
+       :operation-to-edit="withdrawalToEdit"
+       :initial-data="{ amount: 0 }"
+       @close="isWithdrawalPopupVisible = false" 
+       @save="handleWithdrawalSaved"
+    />
+
     <RetailClosurePopup v-if="showRetailPopup" @close="showRetailPopup = false" @confirm="handleRetailClosure" />
     <RefundPopup v-if="showRefundPopup" :initial-data="{ contractorValue: `ind_${mainStore.retailIndividualId}` }" @close="showRefundPopup = false" @save="handleRefundSave" />
     
@@ -565,7 +619,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 
 .tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 1rem; border-bottom: 1px solid #e5e7eb; }
 .tab-btn { background: none; border: none; border-bottom: 3px solid transparent; font-size: 15px; font-weight: 600; color: #6b7280; padding: 12px 0; cursor: pointer; transition: all 0.2s; }
-.tab-btn.active { color: #111827; border-color: #111827; }
+.tab-btn.active { color: #111827 ; border-color: #111827 ; }
 .tab-btn:hover { color: #374151; }
 
 .summary-bar { display: flex; align-items: center; gap: 15px; padding: 15px 24px; background-color: #fff; border-bottom: 1px solid #eee; font-size: 15px; color: #333; }
@@ -577,19 +631,22 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .warn-text { color: #f59e0b; }
 
 .btn-orange-retail { background-color: #111827 !important; color: white; }
-.btn-orange-retail:hover { background-color: #111827 !important; }
+.btn-orange-retail:hover { background-color: #d97706 !important; }
 
-.btn-refund { background-color: #111827 !important; color: white; margin-left: 10px; }
-.btn-refund:hover { background-color: #111827 !important; }
+.btn-refund { background-color: #111827  !important; color: white; margin-left: 10px; }
+.btn-refund:hover { background-color: #be70df !important; }
 
-/* 🟢 GRID LAYOUTS: Default no check column (removed 50px at start) */
+/* 🟢 GRID LAYOUTS */
 .filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; }
+
+/* Withdrawal Mode Grid: 1fr для ноды */
+.filters-row.withdrawal-mode, .grid-row.withdrawal-mode { grid-template-columns: 130px 1fr 1fr 120px 2fr 50px; }
 
 /* History mode grid (explicit) */
 .history-row-short { grid-template-columns: 50px 150px 150px 1fr 50px !important; }
 .filters-row.history-mode { grid-template-columns: 50px 150px 150px 1fr 50px !important; }
 
-/* 🟢 With checkbox (add back 50px at start) */
+/* With checkbox */
 .filters-row.with-checkbox, .grid-row.with-checkbox { grid-template-columns: 50px 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; }
 
 .status-dot { width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; }
@@ -621,6 +678,27 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .filter-input:focus { outline: none; border-color: var(--color-primary); }
 .amount-input { text-align: right; font-weight: 700; color: #333; }
 .date-input { color: #555; }
+
+/* 🟢 Withdrawal Node Style */
+.col-node-header .header-label { font-size: 13px; font-weight: 500; color: #666; }
+.withdrawal-node {
+    display: inline-block;
+    padding: 4px 12px;
+    background-color: #DE8FFF; /* Светло-фиолетовый */
+    color: #FFFFFF;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    transition: opacity 0.2s;
+}
+.withdrawal-node:hover {
+    opacity: 0.9;
+}
 
 .delete-btn { width: 28px; height: 28px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: #999; }
