@@ -16,12 +16,12 @@ import {
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v23.2 - CONTRACTOR NAME FIX ---
- * * ВЕРСИЯ: 23.2 - Отображение имени физлиц (розницы) в тултипах
+ * * --- МЕТКА ВЕРСИИ: v23.3 - TOOLTIP DATE ---
+ * * ВЕРСИЯ: 23.3 - Добавлена дата в тултипы
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) getTooltipOperationList теперь читает op.counterpartyIndividualId?.name.
+ * 1. (TOOLTIP) В callbacks.label добавлена строка с датой (берется из labels по индексу).
  */
 
 const props = defineProps({
@@ -214,7 +214,14 @@ const chartData = computed(() => {
     expenseDetails.push(getTooltipOperationList(expenseOps));
     withdrawalDetails.push(getTooltipOperationList(withdrawalOps));
 
-    labels.push(day.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
+    // 🟢 ВАЖНО: Форматируем дату для оси X (и для тултипов)
+    const labelDate = day.date.toLocaleDateString('ru-RU', { 
+        weekday: 'short', 
+        day: 'numeric', 
+        month: 'short',
+        year: 'numeric' // Добавляем год, чтобы в labels был полный формат (можно скрыть год в scale callback если нужно)
+    });
+    labels.push(labelDate);
     
     incomeData.push(data.income);
     prepaymentData.push(data.prepayment || 0); 
@@ -283,6 +290,9 @@ const chartOptions = computed(() => {
             const totalLabel = dataset.label || '';
             const totalValue = context.raw;
             
+            // 🟢 Получаем дату из labels
+            const dateLabel = context.chart.data.labels[index];
+
             // Пропускаем пустые значения в тултипе
             if (!totalValue) return null;
 
@@ -290,7 +300,8 @@ const chartOptions = computed(() => {
               ? formatNumber(-Math.abs(totalValue)) 
               : formatNumber(totalValue);
             
-            const lines = [`${totalLabel}: ${formattedTotal} т`];
+            // 🟢 Добавляем дату в первую строку или перед общей суммой
+            const lines = [`${dateLabel}`, `${totalLabel}: ${formattedTotal} т`];
 
             const opsList = dataset.details?.[index];
             if (!opsList || opsList.length === 0) {
@@ -326,7 +337,10 @@ const chartOptions = computed(() => {
       }
     },
     scales: {
-      x: { stacked: true, display: false },
+      x: { 
+        stacked: true, 
+        display: false, // Ось X скрыта, но данные (labels) используются для тултипа
+      },
       y: { stacked: true, max: yMax, min: 0, display: false }
     }
   };
