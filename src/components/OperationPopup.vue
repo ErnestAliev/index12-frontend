@@ -6,12 +6,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v48.0 - HIDE RETAIL FROM OWNERS ---
- * * ВЕРСИЯ: 48.0 - Скрытие "Розничных клиентов" из списка владельцев
+ * * --- МЕТКА ВЕРСИИ: v48.3 - DEBT & RETAIL FIX ---
+ * * ВЕРСИЯ: 48.3 - Исправление автозаполнения и выбора "Остаток долга"
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В `ownerOptions` добавлена фильтрация: системная сущность "Розничные клиенты" (или "Розница") исключается из списка физлиц.
+ * 1. (LOGIC) watch(selectedContractorValue): Теперь автозаполнение "Реализация" срабатывает ТОЛЬКО если категория еще не выбрана или пуста.
+ * Это позволяет пользователю вручную выбрать "Остаток долга" и он не будет перезаписан.
+ * 2. (LOGIC) categoryOptions: "Остаток долга" уже включен в список (был в 48.2), но теперь его выбор не сбрасывается.
  */
 
 const mainStore = useMainStore();
@@ -151,7 +153,7 @@ const ownerOptions = computed(() => {
   if (mainStore.currentIndividualBalances.length) {
       opts.push({ label: 'Физлица', isHeader: true });
       mainStore.currentIndividualBalances.forEach(i => { 
-          // 🟢 ФИЛЬТР: Скрываем системную сущность "Розничные клиенты"
+          // ФИЛЬТР: Скрываем системную сущность "Розничные клиенты"
           const nameLower = i.name.trim().toLowerCase();
           if (nameLower === 'розничные клиенты' || nameLower === 'розница') {
               return;
@@ -167,7 +169,7 @@ const ownerOptions = computed(() => {
   return opts;
 });
 
-// 🟢 ФИЛЬТРАЦИЯ СПИСКА КОНТРАГЕНТОВ И ФИЗЛИЦ
+// ФИЛЬТРАЦИЯ СПИСКА КОНТРАГЕНТОВ И ФИЗЛИЦ
 const contractorOptions = computed(() => {
   const opts = [];
   
@@ -187,7 +189,6 @@ const contractorOptions = computed(() => {
       }
   });
   
-  // Здесь "Розница" разрешена, чтобы мы могли выбрать её, если это обычная операция
   const filteredIndividuals = mainStore.individuals.filter(i => !ownerIds.has(i._id));
 
   opts.push({ label: 'Физлица (Контрагенты)', isHeader: true });
@@ -206,6 +207,7 @@ const projectOptions = computed(() => {
   return opts;
 });
 
+// 🟢 ИСПРАВЛЕННЫЙ ФИЛЬТР КАТЕГОРИЙ
 const categoryOptions = computed(() => {
   const prepayIds = mainStore.getPrepaymentCategoryIds;
   const currentOpCatId = props.operationToEdit ? (props.operationToEdit.categoryId?._id || props.operationToEdit.categoryId || props.operationToEdit.prepaymentId?._id || props.operationToEdit.prepaymentId) : null;
@@ -213,6 +215,10 @@ const categoryOptions = computed(() => {
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
     const isTransfer = name === 'перевод' || name === 'transfer';
+    
+    // 🟢 FIX: Всегда разрешаем категорию "Остаток долга"
+    if (name === 'остаток долга') return true;
+
     const isPrepay = prepayIds.includes(c._id) || c.isPrepayment;
     const isInterComp = ['меж.комп', 'межкомпаний', 'inter-comp'].includes(name);
 
@@ -224,6 +230,23 @@ const categoryOptions = computed(() => {
   opts.unshift({ value: null, label: txtCategory.value.ph });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
   return opts;
+});
+
+// 🟢 AUTOFILL WATCHER (РОЗНИЦА -> РЕАЛИЗАЦИЯ)
+watch(selectedContractorValue, (newValue) => {
+    if (!newValue) return;
+    
+    // Если выбран "Розничные клиенты", и есть ID "Реализации"
+    if (mainStore.retailIndividualId) {
+        const retailVal = `ind_${mainStore.retailIndividualId}`;
+        if (newValue === retailVal) {
+            // 🟢 FIX: Автозаполняем "Реализацию" ТОЛЬКО если категория еще не выбрана
+            // Это позволяет пользователю выбрать "Остаток долга" вручную
+            if (mainStore.realizationCategoryId && !selectedCategoryId.value) {
+                selectedCategoryId.value = mainStore.realizationCategoryId;
+            }
+        }
+    }
 });
 
 // 🟢 HANDLERS
@@ -300,7 +323,8 @@ const onContractorSelected = (val, setProject = false, setCategory = false) => {
             const pId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId; 
             selectedProjectId.value = pId; 
         }
-        if (setCategory && entity.defaultCategoryId) { 
+        // Применяем категорию по умолчанию только если это не "Розница" (т.к. для розницы работает отдельный watcher)
+        if (setCategory && entity.defaultCategoryId && entity._id !== mainStore.retailIndividualId) { 
             const cId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
             selectedCategoryId.value = cId; 
         }
@@ -329,7 +353,7 @@ onMounted(async () => {
         const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
     }
     
-    // 🟢 ВОССТАНОВЛЕНИЕ КОНТРАГЕНТА
+    // ВОССТАНОВЛЕНИЕ КОНТРАГЕНТА
     if (op.contractorId) { 
         const cId = op.contractorId._id || op.contractorId;
         selectedContractorValue.value = `contr_${cId}`;

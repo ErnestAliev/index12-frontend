@@ -4,13 +4,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.2 - TRANSFER RECIPIENT FIX ---
- * * ВЕРСИЯ: 4.2 - В чипе перевода показывается ПОЛУЧАТЕЛЬ (Компания/Физлицо), а не счет
+ * * --- МЕТКА ВЕРСИИ: v4.3 - WRITE-OFF LABEL FIX ---
+ * * ВЕРСИЯ: 4.3 - Исправлено название чипа для списаний ("Списание" вместо "Реализация")
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлен computed `toOwnerName`.
- * 2. (TEMPLATE) В блоке .transfer теперь используется `toOwnerName` вместо `toAccountName`.
+ * 1. (LOGIC) Добавлен computed `isRetailWriteOffOp` (использует _isRetailWriteOff из стора).
+ * 2. (TEMPLATE) В блоке `op-meta` для списаний выводится "Списание".
  */
 
 const props = defineProps({
@@ -42,6 +42,13 @@ const isPrepaymentOp = computed(() => {
     if (!op || isTransferOp.value || op.isWithdrawal) return false;
     if (op.type !== 'income') return false;
     
+    // 🟢 FIX: Доход от Розницы без суммы сделки — НЕ предоплата (это обычный доход)
+    // Но если есть сумма сделки — это предоплата.
+    const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+    if (indId && indId === mainStore.retailIndividualId) {
+        return (op.totalDealAmount || 0) > 0;
+    }
+
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
@@ -53,6 +60,12 @@ const isPrepaymentOp = computed(() => {
 const isWithdrawalOp = computed(() => {
     return props.operation && props.operation.isWithdrawal;
 });
+
+// 🟢 UI-детектор списания (Розница)
+const isRetailWriteOffOp = computed(() => {
+    return mainStore._isRetailWriteOff(props.operation);
+});
+
 
 const fromAccountName = computed(() =>
   props.operation?.fromAccountId?.name || props.operation?.fromAccountId || ''
@@ -125,7 +138,8 @@ const onDrop = (event) => {
          income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp, 
          expense: operation.type==='expense' && !isWithdrawalOp,
          prepayment: isPrepaymentOp,
-         withdrawal: isWithdrawalOp 
+         withdrawal: isWithdrawalOp,
+         writeoff: isRetailWriteOffOp /* 🟢 Спец класс для списания */
       }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
@@ -148,6 +162,16 @@ const onDrop = (event) => {
         </span>
         <span class="op-meta">
            {{ operation.destination || 'Вывод' }}
+        </span>
+      </template>
+
+      <!-- 🟢 СПИСАНИЕ (РОЗНИЦА) -->
+      <template v-else-if="isRetailWriteOffOp">
+        <span class="op-amount">
+          - {{ formatNumber(Math.abs(operation.amount)) }}
+        </span>
+        <span class="op-meta">
+           Списание
         </span>
       </template>
 
@@ -202,6 +226,10 @@ const onDrop = (event) => {
 .withdrawal:hover { background: #3a3f50; }
 .withdrawal .op-amount { color: #DE8FFF; }
 .withdrawal .op-meta { color: #B085D0; }
+
+/* 🟢 СПИСАНИЕ (Визуально как расход, но чуть бледнее или так же) */
+.writeoff .op-amount { color: #ef4444; } /* Красный как расход */
+.writeoff .op-meta { font-style: normal; }
 
 /* 🟢 ПЕРЕВОД (Сумма светлая) */
 .transfer { background:#2F3340; }

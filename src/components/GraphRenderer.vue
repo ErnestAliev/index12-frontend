@@ -16,12 +16,12 @@ import {
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v23.0 - WITHDRAWAL COLOR UPDATE ---
- * * ВЕРСИЯ: 23.0 - Обновлен цвет графика вывода
- * * ДАТА: 2025-11-24
+ * * --- МЕТКА ВЕРСИИ: v23.2 - CONTRACTOR NAME FIX ---
+ * * ВЕРСИЯ: 23.2 - Отображение имени физлиц (розницы) в тултипах
+ * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (GRAPH) Цвет dataset 'Вывод' изменен на #DE8FFF (согласно ТЗ).
+ * 1. (LOGIC) getTooltipOperationList теперь читает op.counterpartyIndividualId?.name.
  */
 
 const props = defineProps({
@@ -150,7 +150,8 @@ const getTooltipOperationList = (ops) => {
     return {
       isIncome: op.type === 'income',
       accName: op.accountId?.name || '???',
-      contName: op.contractorId?.name || '---',
+      // 🟢 FIX: Добавлена проверка counterpartyIndividualId для Физлиц (в т.ч. Розницы)
+      contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
       projName: op.projectId?.name || '---',
       catName: catName, 
       amount: op.amount,
@@ -178,7 +179,7 @@ const chartData = computed(() => {
     if (!day || !day.date) continue; 
 
     const dateKey = _getDateKey(day.date);
-    // Получаем данные, разделенные в сторе
+    // Получаем данные, разделенные в сторе (там списания уже исключены из .expense)
     const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0 };
     
     const allOps = (mainStore.allOperationsFlat || []);
@@ -193,6 +194,10 @@ const chartData = computed(() => {
         if (op.isWithdrawal) {
             withdrawalOps.push(op);
         } else if (op.type === 'expense') {
+            // 🟢 FIX: Исключаем списания из тултипов!
+            // Они не должны показываться ни как расход, ни как что-либо еще на графике
+            if (mainStore._isRetailWriteOff(op)) return;
+
             expenseOps.push(op);
         } else if (op.type === 'income') {
             const catId = op.categoryId?._id || op.categoryId;

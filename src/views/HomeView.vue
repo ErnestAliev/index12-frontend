@@ -17,18 +17,19 @@ import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
+import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; // 🟢 Импортируем
 
 /**
- * * --- МЕТКА ВЕРСИИ: v37.1 - HEIGHT FIX ---
- * * ВЕРСИЯ: 37.1 - Добавлен запас высоты +15px для отображения границ
- * * ДАТА: 2025-11-24
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Расчет высоты: rows * 135 + 15.
- * 2. (LOGIC) Базовая высота: 135px.
+ * * --- МЕТКА ВЕРСИИ: v38.0 - RETAIL POPUP CONNECT ---
+ * * ВЕРСИЯ: 38.0 - Подключение редактора списаний
+ * * ДАТА: 2025-11-26
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. handleEditOperation теперь проверяет _isRetailWriteOff.
+ * 2. Если это списание, открывается RetailClosurePopup (а не OperationPopup).
+ * 3. Добавлены обработчики handleRetailSave и handleRetailDelete.
  */
 
-console.log('--- HomeView.vue v37.1 (Height Fix) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v38.0 (Retail Popup) ЗАГРУЖЕН ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -60,6 +61,9 @@ const prepaymentDateKey = ref('');
 
 // Состояние для Withdrawal Popup
 const isWithdrawalPopupVisible = ref(false);
+
+// 🟢 Состояние для Retail Popup (Закрытие смены / Редактор списаний)
+const isRetailPopupVisible = ref(false);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -229,6 +233,39 @@ const handleWithdrawalSave = async ({ mode, id, data, originalOperation }) => {
     }
 };
 
+// 🟢 СОХРАНЕНИЕ СПИСАНИЯ (ОБНОВЛЕНИЕ)
+const handleRetailSave = async ({ id, data }) => {
+    isRetailPopupVisible.value = false;
+    operationToEdit.value = null;
+    try {
+        const updatedData = {
+            amount: -Math.abs(data.amount),
+            projectId: data.projectIds[0] || null, // Берем первый (так как списание обычно по одному проекту)
+            date: new Date(data.date)
+        };
+        
+        // Используем updateOperation из стора
+        await mainStore.updateOperation(id, updatedData);
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+    } catch (error) {
+        console.error('Error saving retail write-off:', error);
+        alert('Ошибка сохранения списания.');
+    }
+};
+
+// 🟢 УДАЛЕНИЕ СПИСАНИЯ
+const handleRetailDelete = async (operation) => {
+    isRetailPopupVisible.value = false;
+    operationToEdit.value = null;
+    try {
+        await mainStore.deleteOperation(operation);
+        await mainStore.loadCalculationData(viewMode.value, today.value);
+    } catch (error) {
+        console.error('Error deleting retail write-off:', error);
+        alert('Ошибка удаления списания.');
+    }
+};
+
 
 /* ===================== ДАТЫ / ВИРТУАЛКА ===================== */
 const initializeToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }
@@ -338,12 +375,20 @@ const handleContextMenuSelect = (type) => {
 
 const openPopup = (type) => { operationType.value = type; isPopupVisible.value = true; };
 
+// 🟢 ГЛАВНАЯ ЛОГИКА ОТКРЫТИЯ РЕДАКТОРОВ
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
 
+  // 1. Проверка на Списание (Розница)
+  if (mainStore._isRetailWriteOff(operation)) {
+      isRetailPopupVisible.value = true;
+      return;
+  }
+
+  // 2. Остальное
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
   } 
@@ -469,6 +514,15 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
        :operation-to-edit="operationToEdit"
        @close="handleCloseWithdrawalPopup" 
        @save="handleWithdrawalSave"
+    />
+
+    <!-- 🟢 НОВЫЙ ПОПАП СПИСАНИЯ -->
+    <RetailClosurePopup 
+       v-if="isRetailPopupVisible" 
+       :operation-to-edit="operationToEdit"
+       @close="isRetailPopupVisible = false" 
+       @save="handleRetailSave"
+       @delete="handleRetailDelete"
     />
 
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />

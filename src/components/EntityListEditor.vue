@@ -6,14 +6,12 @@ import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11 - REFACTORING STAGE 1 ---
- * * ВЕРСИЯ: 26.11 - Очистка списков и UI унификация (28px)
+ * * --- МЕТКА ВЕРСИИ: v26.11.16 - HIDE RETAIL & DEBT IN LIST ---
+ * * ВЕРСИЯ: 26.11.16 - Скрытие "Розничные клиенты" и "Остаток долга" в списке
  * * ДАТА: 2025-11-26
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Скрыты системные сущности "Розница" (в физлицах) и "Реализация" (в категориях).
- * 2. (STYLE) Высота всех строк, инпутов и кнопок приведена к 28px.
- * 3. (STYLE) Шрифты уменьшены до 13px для соответствия компактному виду.
+ * 1. (LOGIC) В фильтре onMounted добавлена проверка на имя "остаток долга" (категории).
  */
 
 const props = defineProps({
@@ -256,10 +254,18 @@ onMounted(() => {
   // 🟢 FIX: Скрываем системные сущности из списка
   rawItems = rawItems.filter(item => {
       const name = item.name.trim().toLowerCase();
-      // Скрываем "Розница" в физлицах
-      if (isIndividualEditor && name === 'розница') return false;
-      // Скрываем "Реализация" в категориях
-      if (isCategoryEditor && name === 'реализация') return false;
+      
+      // Скрываем "Розница" и "Розничные клиенты" в физлицах
+      if (isIndividualEditor) {
+          if (mainStore.retailIndividualId && item._id === mainStore.retailIndividualId) return false;
+          if (name === 'розница' || name === 'розничные клиенты') return false;
+      }
+      
+      // Скрываем "Реализация" и "Остаток долга" в категориях
+      if (isCategoryEditor) {
+          if (name === 'реализация') return false;
+          if (name === 'остаток долга') return false;
+      }
       return true;
   });
 
@@ -630,7 +636,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
 .popup-content.wide { max-width: 900px; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }

@@ -1,11 +1,12 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.12 - CRITICAL FIXES ---
- * * ВЕРСИЯ: 26.11.12 - Исправление ReferenceError и обновления данных
+ * * --- МЕТКА ВЕРСИИ: v26.11.19 - REFUND LOGIC ---
+ * * ВЕРСИЯ: 26.11.19 - Логика Возвратов (Refund)
  * * ДАТА: 2025-11-26
  * * ЧТО ИЗМЕНЕНО:
- * 1. Исправлена ошибка "fetchOperations is not defined" (функция поднята выше).
- * 2. createTransfer: Добавлен await fetchAllEntities() для обновления виджетов компаний/счетов.
- * 3. Улучшена логика обновления после операций.
+ * 1. (LOGIC) ensureSystemEntities создает категорию "Возврат".
+ * 2. (GETTER) refundCategoryId.
+ * 3. (HELPER) _isRetailRefund(op).
+ * 4. (CALC) liabilitiesTheyOwe теперь вычитает расходы с категорией "Возврат".
  */
 
 import { defineStore } from 'pinia';
@@ -28,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.11.12 (Critical Fixes) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.11.19 (Refund Logic) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -109,6 +110,56 @@ export const useMainStore = defineStore('mainStore', () => {
         if (orderDiff !== 0) return orderDiff;
         return (a._id || '').toString().localeCompare((b._id || '').toString());
     });
+  };
+
+  // 🟢 ГЕТТЕРЫ ДЛЯ СИСТЕМНЫХ СУЩНОСТЕЙ
+  const retailIndividualId = computed(() => {
+      const retail = individuals.value.find(i => {
+          const n = i.name.trim().toLowerCase();
+          return n === 'розничные клиенты' || n === 'розница';
+      });
+      return retail ? retail._id : null;
+  });
+
+  const realizationCategoryId = computed(() => {
+      const cat = categories.value.find(c => c.name.trim().toLowerCase() === 'реализация');
+      return cat ? cat._id : null;
+  });
+  
+  const remainingDebtCategoryId = computed(() => {
+      const cat = categories.value.find(c => c.name.trim().toLowerCase() === 'остаток долга');
+      return cat ? cat._id : null;
+  });
+
+  // 🟢 ГЕТТЕР: Возврат
+  const refundCategoryId = computed(() => {
+      const cat = categories.value.find(c => c.name.trim().toLowerCase() === 'возврат');
+      return cat ? cat._id : null;
+  });
+
+  // 🟢 ХЕЛПЕР: Определение операции списания (Розница)
+  const _isRetailWriteOff = (op) => {
+      if (!op) return false;
+      if (op.type !== 'expense') return false;
+      if (op.accountId) return false; // Списание всегда без счета
+      
+      const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+      if (indId && indId === retailIndividualId.value) return true;
+      
+      return false;
+  };
+
+  // 🟢 ХЕЛПЕР: Определение операции возврата (Розница)
+  const _isRetailRefund = (op) => {
+      if (!op) return false;
+      if (op.type !== 'expense') return false;
+      
+      const catId = op.categoryId?._id || op.categoryId;
+      if (catId && catId === refundCategoryId.value) {
+          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+          return indId && indId === retailIndividualId.value;
+      }
+      return false;
   };
 
   const prepaymentCategoryIdsSet = computed(() => {
@@ -278,7 +329,7 @@ export const useMainStore = defineStore('mainStore', () => {
            for (const op of ops) {
                if (isTransfer(op)) continue;
                
-               if (!op.accountId) continue;
+               if (!op.accountId) continue; // Пропускаем безналичные (списания)
 
                const amt = op.amount || 0;
                const absAmt = Math.abs(amt);
@@ -295,6 +346,9 @@ export const useMainStore = defineStore('mainStore', () => {
                    else dayRec.income += amt;
                    dayRec.dayTotal += amt;
                } else if (op.type === 'expense') {
+                   // 🟢 FIX: Не включаем списания (безналичные) в график расходов
+                   if (_isRetailWriteOff(op)) continue;
+
                    dayRec.expense += absAmt;
                    dayRec.dayTotal -= absAmt;
                }
@@ -388,6 +442,9 @@ export const useMainStore = defineStore('mainStore', () => {
     let receivedSum = 0;
     
     const prepayIds = getPrepaymentCategoryIds.value;
+    const debtCatId = remainingDebtCategoryId.value;
+    // 🟢 Геттер ID возврата
+    const refundCatId = refundCategoryId.value;
 
     for (const op of currentOps.value) {
       if (isTransfer(op)) continue;
@@ -397,12 +454,20 @@ export const useMainStore = defineStore('mainStore', () => {
       const prepId = op.prepaymentId?._id || op.prepaymentId;
       const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
       
-      if (isPrepay && op.type === 'income') {
+      const isDebtPayment = debtCatId && catId === debtCatId;
+
+      // Доходы (предоплата или остаток долга)
+      if ((isPrepay || isDebtPayment) && op.type === 'income') {
           const dealTotal = op.totalDealAmount || 0;
           if (dealTotal > 0) {
               totalDealSum += dealTotal;
-              receivedSum += (op.amount || 0);
           }
+          receivedSum += (op.amount || 0);
+      }
+      
+      // 🟢 РАСХОД "ВОЗВРАТ" УМЕНЬШАЕТ ПОЛУЧЕННУЮ СУММУ
+      if (op.type === 'expense' && refundCatId && catId === refundCatId) {
+          receivedSum -= Math.abs(op.amount || 0);
       }
     }
     const result = totalDealSum - receivedSum;
@@ -414,12 +479,15 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  
+  // 🟢 FIX: Исключаем списания из списка расходов (они в "Истории списаний")
+  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  
   const currentWithdrawals = computed(() => currentOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureWithdrawals = computed(() => futureOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
   const getCategoryById = (id) => categories.value.find(c => c._id === id);
@@ -458,6 +526,9 @@ export const useMainStore = defineStore('mainStore', () => {
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
       const futureMap = { ...snapshotMap };
       for (const op of futureOps.value) {
+          // Если это списание розницы, пропускаем его для расчетов балансов сущностей
+          if (_isRetailWriteOff(op)) continue;
+
           const amt = Math.abs(op.amount || 0);
           if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
 
@@ -1061,8 +1132,41 @@ export const useMainStore = defineStore('mainStore', () => {
                }
           }
       }
+
+      // 🟢 3. Остаток долга (Создаем системную категорию, с дедупликацией)
+      let debtDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'остаток долга');
+      let debtCat = null;
+
+      if (debtDuplicates.length === 0) {
+          debtCat = await addCategory('Остаток долга');
+      } else {
+          debtCat = debtDuplicates[0];
+          // Удаляем дубликаты, если есть
+          if (debtDuplicates.length > 1) {
+               for (let i = 1; i < debtDuplicates.length; i++) {
+                  try { await deleteEntity('categories', debtDuplicates[i]._id, false); } 
+                  catch (e) {}
+               }
+          }
+      }
       
-      return { retailInd, realizationCat };
+      // 🟢 4. Возврат (Системная категория)
+      let refundDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'возврат');
+      let refundCat = null;
+
+      if (refundDuplicates.length === 0) {
+          refundCat = await addCategory('Возврат');
+      } else {
+          refundCat = refundDuplicates[0];
+          if (refundDuplicates.length > 1) {
+               for (let i = 1; i < refundDuplicates.length; i++) {
+                  try { await deleteEntity('categories', refundDuplicates[i]._id, false); } 
+                  catch (e) {}
+               }
+          }
+      }
+      
+      return { retailInd, realizationCat, debtCat, refundCat };
   }
 
   // 🟢 ИСПРАВЛЕНО: Списание ("Реализация") теперь идет с projectId (если выбран)
@@ -1110,14 +1214,15 @@ export const useMainStore = defineStore('mainStore', () => {
           const n = i.name.trim().toLowerCase();
           return n === 'розничные клиенты' || n === 'розница';
       });
-      const realCat = categories.value.find(c => c.name.toLowerCase().trim() === 'реализация');
       
-      if (!retail || !realCat) return [];
+      if (!retail) return [];
 
       return allOperationsFlat.value.filter(op => {
+         // Проверяем через наш новый хелпер (безопаснее)
+         // Но так как allOperationsFlat содержит простые объекты, дублируем логику
          if (op.type !== 'expense') return false;
-         const catId = op.categoryId?._id || op.categoryId;
-         if (catId !== realCat._id) return false;
+         if (op.accountId) return false; // Списание всегда без счета
+         
          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
          return indId === retail._id;
       }).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1180,6 +1285,9 @@ export const useMainStore = defineStore('mainStore', () => {
     _sortByOrder,
     
     closeRetailDaily, closePrepaymentDeal, ensureSystemEntities,
-    getRetailWriteOffs 
+    getRetailWriteOffs,
+    
+    retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId, // 🟢 EXPORTED
+    _isRetailWriteOff, _isRetailRefund
   };
 });
