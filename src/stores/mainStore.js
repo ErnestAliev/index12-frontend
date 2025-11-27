@@ -1,10 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.23 - DELTA TIME FIX ---
- * * ВЕРСИЯ: 26.11.23 - Исправлена точка отсечки прогноза
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v26.11.26 - SYNC OPTIMISTIC UPDATE ---
+ * * ВЕРСИЯ: 26.11.26 - Исправление двойного расчета при перемещении
+ * * ДАТА: 2025-11-27
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) futureOps теперь использует Math.max(snapshotTime, Date.now()) для определения "будущего".
- * 2. (LOGIC) Это исключает операции, которые уже произошли в реальном времени, даже если БД (snapshot) отстает.
+ * 1. (LOGIC) В moveOperation расчет wasInSnapshot/isInSnapshot и вызов _applyOptimisticSnapshotUpdate
+ * перенесены ДО await Promise.all. Это устраняет лаг виджетов "Мои счета" и "Всего".
  */
 
 import { defineStore } from 'pinia';
@@ -27,7 +27,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.11.23 (Delta Time Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.11.26 (Sync Optimistic) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -288,11 +288,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureOps = computed(() => {
     const snapshotTime = snapshot.value.timestamp ? new Date(snapshot.value.timestamp).getTime() : Date.now();
-    
-    // 🟢 FIX: Используем "плавающее окно" старта прогноза.
-    // Мы не должны показывать операции из прошлого как прогноз, даже если snapshotTime отстает.
-    // Берем МАКСИМУМ из (Время Снапшота, Текущее Время).
-    // Это гарантирует, что операции за 21.11 (при сегодня 26.11) точно отсекутся, так как они < Date.now()
     const cutOffTime = Math.max(snapshotTime, Date.now());
 
     let endDate;
@@ -304,14 +299,11 @@ export const useMainStore = defineStore('mainStore', () => {
         const date = _parseDateKey(dateKey);
         const time = date.getTime();
         
-        // Оптимизация: Пропускаем дни, которые явно раньше cutoff (с запасом 24ч на часовые пояса)
         if (time >= cutOffTime - 86400000 && time <= endDate) {
             if (Array.isArray(ops)) {
                 for (const op of ops) {
                     if (!op.date) continue;
                     const opTime = new Date(op.date).getTime();
-                    
-                    // Строгое условие: операция должна быть ПОЗЖЕ точки отсчета
                     if (opTime > cutOffTime) {
                         result.push(op);
                     }
@@ -411,6 +403,59 @@ export const useMainStore = defineStore('mainStore', () => {
       console.error('Failed to fetch snapshot', e);
     }
   }
+
+  // 🟢 ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ (Helper)
+  const _applyOptimisticSnapshotUpdate = (op, sign) => {
+      // sign: 1 (добавить в snapshot), -1 (убрать из snapshot)
+      const s = snapshot.value;
+      const absAmt = Math.abs(op.amount || 0);
+
+      const updateMap = (map, id, delta) => {
+          if (!id) return;
+          const key = (typeof id === 'object' ? id._id : id).toString();
+          if (map[key] === undefined) map[key] = 0;
+          map[key] += delta;
+      };
+
+      if (isTransfer(op)) {
+          updateMap(s.accountBalances, op.fromAccountId, -absAmt * sign);
+          updateMap(s.accountBalances, op.toAccountId, absAmt * sign);
+          updateMap(s.companyBalances, op.fromCompanyId, -absAmt * sign);
+          updateMap(s.companyBalances, op.toCompanyId, absAmt * sign);
+          updateMap(s.individualBalances, op.fromIndividualId, -absAmt * sign);
+          updateMap(s.individualBalances, op.toIndividualId, absAmt * sign);
+      } else {
+          if (_isRetailWriteOff(op)) return; // Списания не влияют на балансы
+
+          const isIncome = op.type === 'income';
+          const signedAmt = (isIncome ? absAmt : -absAmt);
+          const netChange = signedAmt * sign;
+
+          if (op.accountId) {
+              s.totalBalance += netChange;
+              updateMap(s.accountBalances, op.accountId, netChange);
+          }
+
+          updateMap(s.companyBalances, op.companyId, netChange);
+          updateMap(s.individualBalances, op.individualId, netChange);
+          updateMap(s.individualBalances, op.counterpartyIndividualId, netChange);
+          updateMap(s.contractorBalances, op.contractorId, netChange);
+          updateMap(s.projectBalances, op.projectId, netChange);
+
+          const catId = op.categoryId ? (typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId).toString() : null;
+          if (catId) {
+              if (!s.categoryTotals[catId]) s.categoryTotals[catId] = { income: 0, expense: 0, total: 0 };
+              const catEntry = s.categoryTotals[catId];
+              if (isIncome) {
+                  catEntry.income += (absAmt * sign);
+                  catEntry.total += (absAmt * sign);
+              } else {
+                  catEntry.expense += (absAmt * sign);
+                  catEntry.total -= (absAmt * sign);
+              }
+          }
+      }
+  };
 
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
@@ -884,6 +929,26 @@ export const useMainStore = defineStore('mainStore', () => {
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
+       // 🟢 ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ (ПЕРЕНЕСЕНО ДО ЗАПРОСА)
+       const now = new Date();
+       const oldDate = _parseDateKey(oldDateKey);
+       const newDate = _parseDateKey(newDateKey);
+       const wasInSnapshot = oldDate <= now;
+       const isInSnapshot = newDate <= now;
+       
+       const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
+
+       if (needsSnapshotUpdate) {
+           const sign = isInSnapshot ? 1 : -1;
+           const opToUpdate = moved || sourceOpData; 
+           if (opToUpdate) {
+                _applyOptimisticSnapshotUpdate(opToUpdate, sign);
+           }
+       }
+       
+       // Обновляем прогноз немедленно, чтобы futureOps пересчитался
+       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+
        const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date };
        const promises = [
            axios.put(`${API_BASE_URL}/events/${moved._id}`, payload)
@@ -891,21 +956,19 @@ export const useMainStore = defineStore('mainStore', () => {
        if (isMerged) {
            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
        }
+       
        await Promise.all(promises)
-            .catch(() => { refreshDay(oldDateKey); refreshDay(newDateKey); });
-       
-       const now = new Date();
-       const oldDate = _parseDateKey(oldDateKey);
-       const newDate = _parseDateKey(newDateKey);
-       const wasInSnapshot = oldDate <= now;
-       const isInSnapshot = newDate <= now;
-       
-       if (wasInSnapshot !== isInSnapshot) {
-           await fetchSnapshot();
-           updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-       } else {
-           updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-       }
+            .then(() => {
+                if (needsSnapshotUpdate) {
+                    // Фоновая синхронизация для гарантии консистентности
+                    fetchSnapshot().catch(e => console.error("Background snapshot sync failed", e));
+                }
+            })
+            .catch(() => { 
+                refreshDay(oldDateKey); 
+                refreshDay(newDateKey); 
+                fetchSnapshot(); // Revert snapshot on error
+            });
     }
   }
 

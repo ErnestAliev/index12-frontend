@@ -6,14 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v48.3 - DEBT & RETAIL FIX ---
- * * ВЕРСИЯ: 48.3 - Исправление автозаполнения и выбора "Остаток долга"
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v48.4 - OWNER RESTORE FIX ---
+ * * ВЕРСИЯ: 48.4 - Исправлено восстановление владельца (физлица) при редактировании
+ * * ДАТА: 2025-11-27
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) watch(selectedContractorValue): Теперь автозаполнение "Реализация" срабатывает ТОЛЬКО если категория еще не выбрана или пуста.
- * Это позволяет пользователю вручную выбрать "Остаток долга" и он не будет перезаписан.
- * 2. (LOGIC) categoryOptions: "Остаток долга" уже включен в список (был в 48.2), но теперь его выбор не сбрасывается.
+ * 1. (LOGIC) В onMounted убрана проверка (!op.contractorId && !op.counterpartyIndividualId) при восстановлении владельца-физлица.
+ * Теперь владелец подставляется всегда, если есть op.individualId.
  */
 
 const mainStore = useMainStore();
@@ -348,8 +347,9 @@ onMounted(async () => {
     selectedAccountId.value = op.accountId?._id || op.accountId;
     
     if (op.companyId) { const cId = op.companyId?._id || op.companyId; selectedOwner.value = `company-${cId}`; } 
-    else if (op.individualId && !op.contractorId && !op.counterpartyIndividualId) { 
-        // Владелец (если не контрагент)
+    else if (op.individualId) { 
+        // 🟢 FIX: Убрана блокирующая проверка (!op.contractorId ...)
+        // Теперь владелец-физлицо восстанавливается всегда
         const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
     }
     
@@ -359,9 +359,6 @@ onMounted(async () => {
         selectedContractorValue.value = `contr_${cId}`;
     } else if (op.counterpartyIndividualId) {
         const iId = op.counterpartyIndividualId._id || op.counterpartyIndividualId;
-        selectedContractorValue.value = `ind_${iId}`;
-    } else if (op.individualId && op.companyId) {
-        const iId = op.individualId._id || op.individualId;
         selectedContractorValue.value = `ind_${iId}`;
     }
 
