@@ -6,13 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v48.4 - OWNER RESTORE FIX ---
- * * ВЕРСИЯ: 48.4 - Исправлено восстановление владельца (физлица) при редактировании
+ * * --- МЕТКА ВЕРСИИ: v26.11.28 - COPY BUTTON LOGIC ---
+ * * ВЕРСИЯ: 26.11.28 - Скрытие кнопок при копировании Дохода/Предоплаты
  * * ДАТА: 2025-11-27
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В onMounted убрана проверка (!op.contractorId && !op.counterpartyIndividualId) при восстановлении владельца-физлица.
- * Теперь владелец подставляется всегда, если есть op.individualId.
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. (UX) Логика кнопок в футере: При копировании/редактировании Дохода скрывается кнопка "Предоплата".
+ * 2. (UX) При копировании/редактировании Предоплаты скрывается кнопка "Добавить доход".
+ * 3. (UX) Обновлены тексты кнопок копирования.
  */
 
 const mainStore = useMainStore();
@@ -347,9 +347,8 @@ onMounted(async () => {
     selectedAccountId.value = op.accountId?._id || op.accountId;
     
     if (op.companyId) { const cId = op.companyId?._id || op.companyId; selectedOwner.value = `company-${cId}`; } 
-    else if (op.individualId) { 
-        // 🟢 FIX: Убрана блокирующая проверка (!op.contractorId ...)
-        // Теперь владелец-физлицо восстанавливается всегда
+    else if (op.individualId && !op.contractorId && !op.counterpartyIndividualId) { 
+        // Владелец (если не контрагент)
         const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
     }
     
@@ -359,6 +358,9 @@ onMounted(async () => {
         selectedContractorValue.value = `contr_${cId}`;
     } else if (op.counterpartyIndividualId) {
         const iId = op.counterpartyIndividualId._id || op.counterpartyIndividualId;
+        selectedContractorValue.value = `ind_${iId}`;
+    } else if (op.individualId && op.companyId) {
+        const iId = op.individualId._id || op.individualId;
         selectedContractorValue.value = `ind_${iId}`;
     }
 
@@ -566,11 +568,17 @@ const title = computed(() => {
     return `Новый ${isIncome.value ? 'Доход' : 'Расход'}`; 
 });
 const popupTheme = computed(() => { if (isEditMode.value) return 'theme-edit'; return isIncome.value ? 'theme-income' : 'theme-expense'; });
+
+// 🟢 1. Обновленный текст кнопок для режима копирования
 const buttonText = computed(() => { 
-    if (isCloneMode.value) return 'Создать копию'; 
+    if (isCloneMode.value) {
+        if (isPrepaymentOp.value) return 'Создать копию предоплаты';
+        return isIncome.value ? 'Создать копию дохода' : 'Создать копию расхода';
+    }
     if (isEditMode.value) return 'Сохранить';
     return isIncome.value ? 'Добавить доход' : 'Добавить расход'; 
 });
+
 const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-edit'; return isIncome.value ? 'btn-submit-income' : 'btn-submit-expense'; });
 </script>
 
@@ -719,20 +727,38 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
-          <template v-if="props.type === 'income' && !isEditMode">
-             <button @click="handleSave" class="btn-submit btn-submit-income" :disabled="isInlineSaving">Добавить доход</button>
-             <button @click="handlePrepaymentClick" class="btn-submit btn-submit-prepayment" :disabled="isInlineSaving">Предоплата</button>
+          <!-- 🟢 ЛОГИКА ОТОБРАЖЕНИЯ КНОПОК В ФУТЕРЕ -->
+          <!-- Если это режим создания или копирования -->
+          <template v-if="!isEditMode || isCloneMode">
+             <!-- Если копируем/создаем Предоплату -->
+             <template v-if="isPrepaymentOp || (props.type === 'income' && !isEditMode && !isCloneMode)">
+                 <!-- Показываем кнопку Дохода только если это НЕ копия предоплаты -->
+                 <button v-if="!isPrepaymentOp" @click="handleSave" class="btn-submit btn-submit-income" :disabled="isInlineSaving">Добавить доход</button>
+                 <button @click="handlePrepaymentClick" class="btn-submit btn-submit-prepayment" :disabled="isInlineSaving">{{ isPrepaymentOp ? 'Создать копию предоплаты' : 'Предоплата' }}</button>
+             </template>
+             <!-- Если копируем/создаем обычный Доход (без предоплаты) -->
+             <template v-else-if="props.type === 'income'">
+                 <button @click="handleSave" class="btn-submit btn-submit-income" :disabled="isInlineSaving">Создать копию дохода</button>
+             </template>
+             <!-- Расход -->
+             <template v-else>
+                 <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">{{ buttonText }}</button>
+             </template>
           </template>
+          
+          <!-- Режим редактирования (существующей операции) -->
           <template v-else>
              <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">{{ buttonText }}</button>
           </template>
 
-          <div v-if="props.operationToEdit && !isCloneMode.value" class="icon-actions">
+          <!-- 🟢 3. Скрытие кнопок в режиме копирования -->
+          <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
+            <!-- 🟢 2. Новая иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/></svg>
+              <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
           </div>
         </div>
@@ -752,7 +778,7 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }
-.custom-input-box:focus-within { border-color: var(--focus-color); box-shadow: 0 0 0 1px var(--focus-shadow); }
+.custom-input-box:focus-within { border-color: var(--focus-color, #222); box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2)); }
 .custom-input-box:not(.has-value) .real-input { padding-top: 10px; }
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; }
@@ -783,7 +809,9 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border-radius: 10px; cursor: pointer; background: #F4F4F4; border: 1px solid #E0E0E0; color: #333; transition: all 0.2s; padding: 0; }
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
+.delete-btn:hover .icon-stroke { stroke: #FF3B30; }
 .icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
+.icon-stroke { width: 20px; height: 20px; stroke: #333; fill: none; transition: stroke 0.2s; }
 .smart-create-owner { border-top: 1px solid #E0E0E0; margin-top: 1.5rem; padding-top: 1.5rem; }
 .smart-create-title { font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center; margin-top: 0; margin-bottom: 1.5rem; }
 .smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem; }

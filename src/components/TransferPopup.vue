@@ -6,12 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.11 - REMOVE REASON ---
- * * ВЕРСИЯ: 26.11.11 - Удалено поле "Причина"
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v26.11.27 - COPY LOGIC FIX ---
+ * * ВЕРСИЯ: 26.11.27 - Обновление логики копирования и иконки удаления
+ * * ДАТА: 2025-11-27
  * * ЧТО ИЗМЕНЕНО:
- * 1. Удален `transferReason` и `reasonOptions`.
- * 2. Удален блок выбора причины из шаблона.
+ * 1. (UX) Текст кнопки при копировании: "Создать копию перевода".
+ * 2. (STYLE) Иконка удаления заменена на stroke-svg.
+ * 3. (UX) Скрытие кнопок действий при копировании.
  */
 
 const mainStore = useMainStore();
@@ -199,7 +200,13 @@ onMounted(async () => {
 });
 
 const title = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Редактировать перевод'; return 'Новый перевод'; });
-const buttonText = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Сохранить'; return 'Добавить перевод'; });
+
+// 🟢 1. Обновленный текст кнопки
+const buttonText = computed(() => { 
+    if (isCloneMode.value) return 'Создать копию перевода';
+    if (props.transferToEdit) return 'Сохранить'; 
+    return 'Добавить перевод'; 
+});
 
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 const onDeleteConfirmed = async () => {
@@ -402,12 +409,14 @@ const closePopup = () => { emit('close'); };
             {{ buttonText }}
           </button>
 
-          <div v-if="props.transferToEdit && !isCloneMode.value" class="icon-actions">
+          <!-- 🟢 3. Скрытие кнопок в режиме копирования -->
+          <div v-if="props.transferToEdit && !isCloneMode" class="icon-actions">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
+            <!-- 🟢 2. Новая иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/></svg>
+              <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
           </div>
         </div>
@@ -466,7 +475,9 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border-radius: 10px; cursor: pointer; background: #F4F4F4; border: 1px solid #E0E0E0; color: #333; transition: all 0.2s; padding: 0; }
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
+.delete-btn:hover .icon-stroke { stroke: #FF3B30; }
 .icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
+.icon-stroke { width: 20px; height: 20px; stroke: #333; fill: none; transition: stroke 0.2s; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-submit-transfer { background-color: #2f3340; }

@@ -6,14 +6,14 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v14.0 - NO RECIPIENT ---
- * * ВЕРСИЯ: 14.0 - Удалено поле получатель
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v14.1 - COPY LOGIC FIX ---
+ * * ВЕРСИЯ: 14.1 - Обновление логики копирования и иконки удаления
+ * * ДАТА: 2025-11-27
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Полностью удалена логика выбора и создания получателя (destinationOptions, createRecipient...).
- * 2. (UI) Удален BaseSelect "Куда (Получатель)".
- * 3. (SAVE) В handleSave destination теперь равен reason, ID получателей = null.
+ * 1. (UX) Текст кнопки при копировании: "Создать копию вывод денег".
+ * 2. (STYLE) Иконка удаления заменена на stroke-svg.
+ * 3. (UX) Скрытие кнопок действий при копировании.
  */
 
 const mainStore = useMainStore();
@@ -67,9 +67,10 @@ const title = computed(() => {
     return 'Оформление вывода';
 });
 
+// 🟢 1. Обновленный текст кнопки
 const btnText = computed(() => {
     if (isSaving.value) return 'Сохранение...';
-    if (isCloneMode.value) return 'Создать копию';
+    if (isCloneMode.value) return 'Создать копию вывод денег';
     if (isEditMode.value) return 'Сохранить';
     return 'Подтвердить';
 });
@@ -96,7 +97,6 @@ const onAmountInput = (e) => {
 };
 
 const handleSave = () => {
-  // 🟢 Убрана проверка !selectedDestinationValue
   if (amount.value <= 0 || isSaving.value || !fromAccountId.value) {
       return;
   }
@@ -106,7 +106,6 @@ const handleSave = () => {
   const [year, month, day] = editableDate.value.split('-').map(Number);
   const finalDate = new Date(year, month - 1, day, 12, 0, 0);
 
-  // 🟢 destination теперь дублирует reason для совместимости, получатели null
   const payload = {
     amount: amount.value,
     destination: reason.value, // Записываем причину как назначение
@@ -168,7 +167,6 @@ onMounted(() => {
       fromAccountId.value = op.accountId?._id || op.accountId;
       reason.value = op.reason || 'Личные нужды';
       editableDate.value = toInputDate(new Date(op.date));
-      // Получателей не восстанавливаем, так как поля удалены
   } else {
       amount.value = props.initialData.amount || 0;
       fromAccountId.value = props.initialData.fromAccountId || null;
@@ -213,8 +211,6 @@ onMounted(() => {
         class="input-spacing"
       />
 
-      <!-- 🔴 УДАЛЕНО: BaseSelect КУДА (Получатель) -->
-
       <!-- ПРИЧИНА -->
       <BaseSelect
         v-model="reason"
@@ -242,7 +238,6 @@ onMounted(() => {
 
       <!-- ФУТЕР -->
       <div class="popup-actions-row">
-        <!-- 🟢 Убрана проверка selectedDestinationValue из disabled -->
         <button 
           class="btn-submit save-wide wd-btn-confirm" 
           @click="handleSave" 
@@ -251,12 +246,14 @@ onMounted(() => {
           {{ btnText }}
         </button>
 
+        <!-- 🟢 3. Скрытие кнопок в режиме копирования -->
         <div class="icon-actions" v-if="isEditMode">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopy" :disabled="isSaving">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
+            <!-- 🟢 2. Новая иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6a1 1 0 0 1 1 1v1h5v2H3V5h5V4a1 1 0 0 1 1-1Zm2 6h2v9h-2V9Zm6 0h2v9h-2V9ZM5 9h2v9H5V9Z"/></svg>
+              <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
         </div>
       </div>
@@ -359,5 +356,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 }
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
+.delete-btn:hover .icon-stroke { stroke: #FF3B30; }
 .icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
+.icon-stroke { width: 20px; height: 20px; stroke: #333; fill: none; transition: stroke 0.2s; }
 </style>
