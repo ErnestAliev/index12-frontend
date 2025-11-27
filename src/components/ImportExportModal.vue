@@ -1,259 +1,3 @@
-<!--
- * * --- МЕТКА ВЕРСИИ: v10.19-BTN-VISIBILITY-FIX ---
- * * ВЕРСИЯ: 10.19 - Исправление видимости кнопок
- * * ДАТА: 2025-11-26
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) Заменена несуществующая переменная var(--color-accent) на var(--color-primary).
- * 2. (CSS) Кнопка скачивания (.download-buttons .export-btn) сделана более яркой и заметной.
- -->
-<template>
-  <div class="modal-overlay" @click.self="closeModal">
-    <div class="modal-content">
-      <button class="close-btn" @click="closeModal" title="Закрыть">&times;</button>
-      
-      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Отчетов' }}</h2>
-      
-      <div class="modal-tabs">
-        <button 
-          class="tab-btn" 
-          :class="{ active: currentTab === 'import' }"
-          @click="currentTab = 'import'"
-        >
-          Импорт (CSV)
-        </button>
-        <button 
-          class="tab-btn" 
-          :class="{ active: currentTab === 'export' }"
-          @click="currentTab = 'export'"
-        >
-          Экспорт (CSV)
-        </button>
-      </div>
-
-      <!-- ============================================= -->
-      <!-- Вкладка "ИМПОРТ"                            -->
-      <!-- ============================================= -->
-      <div v-if="currentTab === 'import'" class="import-content-wrapper">
-        
-        <div v-if="step === 'upload'" class="modal-step-content">
-          <div 
-            class="drop-zone" 
-            @dragover.prevent="dragOver = true"
-            @dragleave.prevent="dragOver = false"
-            @drop.prevent="handleDrop"
-            :class="{ 'drag-over': dragOver }"
-          >
-            <div v-if="!isLoading">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <p>Перетащите CSV файл сюда</p>
-              <p class="small-text">или</p>
-              <label class="file-input-label">
-                Выберите файл
-                <input 
-                  ref="fileInputRef"
-                  type="file" 
-                  accept=".csv" 
-                  @change="handleFileSelect" 
-                  class="file-input" 
-                />
-              </label>
-              
-              <button 
-                type="button" 
-                class="btn-secondary download-template-btn" 
-                @click.stop="downloadTemplate"
-              >
-                Скачать шаблон (Доход/Расход)
-              </button>
-              
-            </div>
-            <div v-if="isLoading" class="loading-indicator">
-              <div class="spinner"></div>
-              <p>Парсинг файла...</p>
-            </div>
-          </div>
-          <div v-if="error" class="error-message">{{ error }}</div>
-        </div>
-
-        <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
-          <p class="step-description">
-            Сопоставьте колонки из вашего CSV-файла с полями системы.
-          </p>
-          <div class="mapping-table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th class="checkbox-col">
-                    <input 
-                      type="checkbox" 
-                      @change="toggleSelectAll" 
-                      :checked="isAllSelected"
-                      title="Выбрать все/Снять все"
-                    />
-                  </th>
-                  <th v-for="header in csvHeaders" :key="header">
-                    <div class="header-cell">
-                      <span class="csv-header-name" :title="header">{{ header }}</span>
-                      <select v-model="columnMapping[header]" class="mapping-select">
-                        <option :value="null">-- Не использовать --</option>
-                        <option disabled>-----------------</option>
-                        <option v-for="field in systemFields" :key="field.key" :value="field.key">
-                          {{ field.label }}
-                        </option>
-                      </select>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, rowIndex) in previewData" :key="rowIndex" :class="{ 'row-disabled': !isValidRow(row) }">
-                  <td class="checkbox-col">
-                    <input 
-                      type="checkbox" 
-                      :value="rowIndex" 
-                      v-model="selectedRows"
-                      :disabled="!isValidRow(row)"
-                    />
-                  </td>
-                  <td v-for="(header, colIndex) in csvHeaders" :key="colIndex" :title="row[header]">
-                    {{ row[header] }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-if="error" class="error-message">{{ error }}</div>
-        </div>
-
-        <div v-if="step === 'review'" class="modal-step-content review-step">
-          <p class="step-description">
-            Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
-          </p>
-          <p>Следующие новые элементы будут созданы автоматически. Пожалуйста, проверьте:</p>
-          
-          <div class="new-entities-container">
-            <div v-for="entityType in Object.keys(newEntities)" :key="entityType">
-              <div v-if="newEntities[entityType].length > 0" class="entity-list">
-                <h4>Новые {{ getEntityName(entityType) }}:</h4>
-                <ul>
-                  <li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li>
-                </ul>
-              </div>
-            </div>
-            <p v-if="Object.values(newEntities).every(arr => arr.length === 0)">
-              Новых элементов для создания не найдено. Все данные ссылаются на существующие сущности.
-            </p>
-          </div>
-          <div v-if="error" class="error-message">{{ error }}</div>
-        </div>
-        
-        <div v-if="step === 'importing'" class="modal-step-content">
-          <div class="loading-indicator">
-            <div class="spinner"></div>
-            <p>Идет импорт данных... Пожалуйста, подождите.</p>
-            <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
-          </div>
-        </div>
-
-      </div>
-      
-      <!-- =========================================== -->
-      <!-- Вкладка "ЭКСПОРТ (CSV)"                     -->
-      <!-- =========================================== -->
-      <div v-if="currentTab === 'export'" class="modal-step-content export-step">
-        
-        <p>
-          Скачайте единый отчет по всем операциям (Прошлые + Будущие) в формате CSV.
-        </p>
-        
-        <!-- Шаг 1: Кнопка подготовки -->
-        <button 
-          v-if="!isDataReady"
-          @click="prepareExportData" 
-          class="btn-primary export-btn prepare-btn" 
-          :disabled="isExporting"
-        >
-          Подготовить данные
-        </button>
-
-        <div v-if="isExporting" class="loading-indicator">
-          <div class="spinner"></div>
-          <p>Формирование единого отчета...</p>
-        </div>
-
-        <!-- Шаг 2: Кнопка скачивания -->
-        <div v-if="isDataReady && !isExporting" class="download-section">
-          <p class="step-description">
-            Данные готовы. Вы можете скачать полный отчет ({{ processedAllData.data.length }} строк).
-          </p>
-          <div class="download-buttons">
-            <button class="btn-primary export-btn" @click="downloadAllData">
-              Скачать Выписку (Все операции)
-            </button>
-          </div>
-          <button class="btn-secondary" @click="resetExport" style="margin-top: 20px;">
-            Начать заново
-          </button>
-        </div>
-        
-        <div v-if="exportError" class="error-message">
-          {{ exportError }}
-        </div>
-      </div>
-
-      <!-- Футер для ИМПОРТА -->
-      <div v-if="currentTab === 'import'" class="modal-actions">
-        <button 
-          @click="closeModal" 
-          class="btn-secondary"
-          :disabled="step === 'importing'"
-        >
-          Отмена
-        </button>
-        
-        <button 
-          @click="previousStep" 
-          v-if="step === 'mapping' || step === 'review'" 
-          class="btn-secondary"
-          :disabled="step === 'importing'"
-        >
-          Назад
-        </button>
-        
-        <button 
-          @click="goToReviewStep" 
-          v-if="step === 'mapping'" 
-          class="btn-primary"
-          :disabled="isReviewDisabled"
-        >
-          Проверить ({{ selectedRows.size }})
-        </button>
-        
-        <button 
-          @click="startImport" 
-          v-if="step === 'review'" 
-          class="btn-primary"
-          :disabled="operationsToImport.length === 0"
-        >
-          Начать импорт ({{ operationsToImport.length }})
-        </button>
-      </div>
-
-      <!-- Футер для ЭКСПОРТА -->
-      <div v-if="currentTab === 'export'" class="modal-actions">
-        <button 
-          @click="closeModal" 
-          class="btn-secondary"
-          :disabled="isExporting"
-        >
-          Закрыть
-        </button>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup>
 import { ref, computed } from 'vue';
 import Papa from 'papaparse';
@@ -270,7 +14,7 @@ const exportError = ref(null);
 
 // Единое состояние данных
 const isDataReady = ref(false);
-const processedAllData = ref({}); // { data: [], columns: [] }
+const processedAllData = ref({}); 
 
 // --- Шаги (Импорт) ---
 const step = ref('upload'); 
@@ -715,27 +459,37 @@ function normalizeType(value) {
   if (['перевод', 'transfer'].includes(lower)) {
     return 'transfer';
   }
+  if (['вывод', 'вывод средств', 'withdrawal'].includes(lower)) {
+    return 'withdrawal';
+  }
+  // 🟢 v10.22: Добавлена "предоплата" для корректного обратного импорта
+  if (['предоплата', 'prepayment'].includes(lower)) {
+    return 'prepayment';
+  }
   return null;
 }
 
 
 // ----------------------------------------------
-// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.18)
+// 🔴 ФУНКЦИИ ДЛЯ ЭКСПОРТА (v10.23 ID FIX)
 // ----------------------------------------------
 
-// Единый набор колонок для всех операций
 const UNIFIED_COLUMNS = [
   'Дата',
   'Тип',
   'Категория',
   'Проект',
   'Сумма',
-  'Остаток', // Сквозной остаток по счету
+  'Прогноз', // 🟢 v10.22: Переименовано из "Остаток"
   'Счет',
   'Контрагент',
   'Компания/Физлицо',
   'Описание',
-  'Статус' // Исполнено / План
+  'Статус',
+  // Технические поля
+  'account_id',
+  'category_id',
+  'project_id'
 ];
 
 function downloadTemplate() {
@@ -743,8 +497,41 @@ function downloadTemplate() {
   triggerCsvDownload(csvString, "Import_Template_IncomeExpense");
 }
 
+function resolveEntityName(entityOrId, storeList) {
+  if (!entityOrId) return '';
+  if (typeof entityOrId === 'object' && entityOrId.name) return entityOrId.name;
+  if (typeof entityOrId === 'string' && storeList) {
+    const found = storeList.find(item => item._id === entityOrId);
+    return found ? found.name : '';
+  }
+  return '';
+}
+
+// 🟢 v10.23: Функция для получения ID сущности (по объекту, ID или имени)
+function resolveEntityId(entityOrId, storeList) {
+  if (!entityOrId) return '';
+  // Если это объект и у него есть ID
+  if (typeof entityOrId === 'object' && entityOrId._id) return entityOrId._id;
+  // Если это ID (строка 24 символа или меньше/больше, но точно не имя)
+  // Для надежности: если это имя, то пытаемся найти ID по имени
+  if (typeof entityOrId === 'string') {
+      // Если это похоже на ID (простая проверка на длину или формат, но тут просто ищем совпадение)
+      const foundById = storeList.find(item => item._id === entityOrId);
+      if (foundById) return foundById._id;
+      
+      // Если по ID не нашли, ищем по имени
+      const foundByName = storeList.find(item => item.name && item.name.toLowerCase() === entityOrId.toLowerCase());
+      if (foundByName) return foundByName._id;
+      
+      // Если ничего не нашли, возвращаем как есть (хотя это скорее всего ошибка, но лучше чем ничего)
+      // или пустую строку, если мы уверены что это мусор
+      return entityOrId; 
+  }
+  return '';
+}
+
 /**
- * 🟢 v10.18: Подготовка ЕДИНОГО отчета (Statement View)
+ * 🟢 v10.23: Полностью обновленная функция подготовки данных
  */
 async function prepareExportData() {
   isExporting.value = true;
@@ -766,9 +553,15 @@ async function prepareExportData() {
 
     const allRows = [];
     
-    // Обрабатываем операции в хронологическом порядке
-    // (operations уже должны быть отсортированы по дате в mainStore, но на всякий случай)
-    operations.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Сортировка по хронологии
+    operations.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return createdA - createdB;
+    });
     
     for (const op of operations) {
       if (!op.date) continue; 
@@ -787,73 +580,203 @@ async function prepareExportData() {
       const isFuture = opTimestamp > todayTimestamp;
       const status = isFuture ? 'План' : 'Исполнено';
       const opAmount = op.amount || 0;
-      const desc = op.description || op.destination || '';
 
-      // Логика обработки транзакции для "Выписки"
-      const processSingleTransaction = (accountId, amountChange, typeLabel, catName, projName, contrName, ownerName) => {
+      // Резолвим базовые поля (ИМЕНА)
+      let catName = resolveEntityName(op.categoryId, mainStore.categories);
+      let projName = resolveEntityName(op.projectId, mainStore.projects);
+      let contrName = resolveEntityName(op.contractorId, mainStore.contractors);
+      let ownerName = resolveEntityName(op.companyId, mainStore.companies) || resolveEntityName(op.individualId, mainStore.individuals);
+
+      // Резолвим базовые поля (ID) - 🟢 v10.23: Гарантируем получение ID
+      let catId = resolveEntityId(op.categoryId, mainStore.categories);
+      let projId = resolveEntityId(op.projectId, mainStore.projects);
+      let accountId = resolveEntityId(op.accountId, mainStore.accounts);
+
+      // 🟢 v10.22: Логика "Без проекта"
+      if (!projName || projName.trim() === '') {
+        projName = 'Без проекта';
+      }
+
+      // 🟢 Вспомогательная функция для добавления строки
+      const addRow = (accId, amountChange, typeLabel, desc, overrides = {}) => {
          let currentBalance = 0;
-         if (accountId) {
-            const prev = runningBalances.get(accountId) || 0;
+         let accName = '';
+         
+         if (accId) {
+            const prev = runningBalances.get(accId) || 0;
             currentBalance = prev + amountChange;
-            runningBalances.set(accountId, currentBalance);
+            runningBalances.set(accId, currentBalance);
+            accName = mainStore.accounts.find(a => a._id === accId)?.name || '???';
+         }
+
+         // Используем override значения или базовые, но при этом для ID тоже должна быть логика
+         // Если override.category (имя) задано, нам нужно найти его ID для полноты данных
+         let finalCatId = catId;
+         if (overrides.category && overrides.category !== catName) {
+             finalCatId = resolveEntityId(overrides.category, mainStore.categories);
          }
 
          allRows.push({
             'Дата': dateStr,
             'Тип': typeLabel,
-            'Категория': catName,
-            'Проект': projName,
+            'Категория': overrides.category !== undefined ? overrides.category : catName, 
+            'Проект': projName, 
             'Сумма': amountChange,
-            'Остаток': accountId ? currentBalance : '', 
-            'Счет': accountId ? (mainStore.accounts.find(a => a._id === accountId)?.name || '???') : '',
-            'Контрагент': contrName,
-            'Компания/Физлицо': ownerName,
-            'Описание': desc,
-            'Статус': status
+            'Прогноз': accId ? currentBalance : '', 
+            'Счет': accName,
+            'Контрагент': overrides.contractor !== undefined ? overrides.contractor : contrName,
+            'Компания/Физлицо': overrides.owner !== undefined ? overrides.owner : ownerName,
+            'Описание': desc, 
+            'Статус': status,
+            // 🟢 v10.23: Технические поля теперь заполняются надежно
+            'account_id': accId || '',
+            'category_id': finalCatId || '', 
+            'project_id': projId || ''
          });
       };
 
-      // 1. Обычные операции (Доход/Расход)
-      if (op.type === 'income' || op.type === 'expense') {
-         const catName = op.categoryId?.name || '';
-         const projName = op.projectId?.name || '';
-         const contrName = op.contractorId?.name || '';
-         const ownerName = op.companyId?.name || op.individualId?.name || '';
+      // ------------------------------------------
+      // 1. ЛОГИКА ПЕРЕВОДОВ (v10.22 REWORK)
+      // ------------------------------------------
+      if (op.type === 'transfer' || op.isTransfer) {
+         const fromAccId = resolveEntityId(op.fromAccountId, mainStore.accounts);
+         const toAccId = resolveEntityId(op.toAccountId, mainStore.accounts);
          
-         processSingleTransaction(
-            op.accountId?._id, 
-            opAmount, 
-            op.type === 'income' ? 'Доход' : 'Расход',
-            catName, projName, contrName, ownerName
-         );
-      }
-      // 2. Переводы (Две записи: списание и пополнение)
-      else if (op.type === 'transfer' || op.isTransfer) {
-         const fromAccId = op.fromAccountId?._id;
-         const toAccId = op.toAccountId?._id;
-         const fromOwner = op.fromCompanyId?.name || op.fromIndividualId?.name || '';
-         const toOwner = op.toCompanyId?.name || op.toIndividualId?.name || '';
+         const fromOwner = resolveEntityName(op.fromCompanyId, mainStore.companies) || resolveEntityName(op.fromIndividualId, mainStore.individuals);
+         const toOwner = resolveEntityName(op.toCompanyId, mainStore.companies) || resolveEntityName(op.toIndividualId, mainStore.individuals);
+         
          const absAmount = Math.abs(opAmount);
 
-         // Списание
-         if (fromAccId) {
-            processSingleTransaction(
-                fromAccId,
-                -absAmount,
-                'Перевод (Исх)',
-                'Исходящий', '', toOwner, fromOwner
-            );
+         // 🟢 FIX: Принудительная категория "Перевод", если пусто
+         const transferCategory = catName || 'Перевод';
+
+         // Сценарий Б: Между разными компаниями (Разбиваем на Расход и Доход)
+         const isInterCompany = op.fromCompanyId && op.toCompanyId && (
+            (op.fromCompanyId._id || op.fromCompanyId) !== (op.toCompanyId._id || op.toCompanyId)
+         );
+
+         // Сценарий В: Перевод на личную карту (Если получатель - физлицо, а отправитель - нет?)
+         const isToPersonal = !!op.toIndividualId; 
+
+         if (isInterCompany) {
+             // 1. У Отправителя -> РАСХОД
+             if (fromAccId) {
+                addRow(fromAccId, -absAmount, 'Расход', `Перевод в ${toOwner}`, {
+                    owner: fromOwner,
+                    contractor: toOwner, // Контрагент = получатель
+                    category: transferCategory 
+                });
+             }
+             // 2. У Получателя -> ДОХОД
+             if (toAccId) {
+                 addRow(toAccId, absAmount, 'Доход', `Поступление от ${fromOwner}`, {
+                     owner: toOwner,
+                     contractor: fromOwner, // Контрагент = отправитель
+                     category: transferCategory 
+                 });
+             }
          }
-         
-         // Пополнение
-         if (toAccId) {
-            processSingleTransaction(
-                toAccId,
-                absAmount,
-                'Перевод (Вх)',
-                'Входящий', '', fromOwner, toOwner
-            );
+         else if (isToPersonal) {
+             const personalDesc = "На развитие бизнеса";
+             // Списание
+             if (fromAccId) {
+                 addRow(fromAccId, -absAmount, 'Перевод (Исх)', personalDesc, { 
+                     owner: fromOwner, 
+                     contractor: toOwner,
+                     category: transferCategory 
+                 });
+             }
+             // Пополнение
+             if (toAccId) {
+                 addRow(toAccId, absAmount, 'Перевод (Вх)', personalDesc, { 
+                     owner: toOwner, 
+                     contractor: fromOwner,
+                     category: transferCategory 
+                 });
+             }
          }
+         else {
+             // Сценарий А: Обычный перевод между своими счетами
+             const stdDesc = op.description || `Перевод: ${fromOwner || 'Счет'} -> ${toOwner || 'Счет'}`;
+             
+             if (fromAccId) {
+                addRow(fromAccId, -absAmount, 'Перевод (Исх)', stdDesc, { 
+                    owner: fromOwner, 
+                    contractor: toOwner,
+                    category: transferCategory 
+                });
+             }
+             if (toAccId) {
+                addRow(toAccId, absAmount, 'Перевод (Вх)', stdDesc, { 
+                    owner: toOwner, 
+                    contractor: fromOwner,
+                    category: transferCategory 
+                });
+             }
+         }
+      }
+      
+      // ------------------------------------------
+      // 2. ВЫВОД СРЕДСТВ (v10.22)
+      // ------------------------------------------
+      else if (op.type === 'withdrawal') {
+          // Контрагент = Владелец счета списания (Физлицо)
+          const acc = mainStore.accounts.find(a => a._id === accountId);
+          let withdrawalContr = '';
+          if (acc && acc.individualId) {
+              withdrawalContr = resolveEntityName(acc.individualId, mainStore.individuals);
+          }
+          const desc = op.description || `Вывод средств (${withdrawalContr})`;
+          // 🟢 FIX: Категория для вывода
+          const withdrawalCategory = catName || 'Вывод средств';
+          
+          addRow(
+             accountId,
+             opAmount,
+             'Вывод средств',
+             desc,
+             { 
+                 contractor: withdrawalContr,
+                 category: withdrawalCategory 
+             }
+          );
+      }
+
+      // ------------------------------------------
+      // 3. ОБЫЧНЫЕ ОПЕРАЦИИ (Доход, Расход, Предоплата)
+      // ------------------------------------------
+      else {
+         let typeLabel = 'Расход';
+         let finalDesc = op.description || '';
+
+         if (op.type === 'income') {
+             // 🟢 v10.22: Логика ПРЕДОПЛАТЫ
+             // Проверяем имя категории
+             const catNameLower = catName.toLowerCase().trim();
+             if (catNameLower.includes('розничн') || catNameLower.includes('реализация')) {
+                 typeLabel = 'Предоплата';
+                 if (!finalDesc) finalDesc = `Предоплата: ${catName}`;
+             } else {
+                 typeLabel = 'Доход';
+                 if (!finalDesc) finalDesc = `Доход: ${catName}`;
+             }
+         }
+         else if (op.type === 'prepayment') {
+             typeLabel = 'Предоплата';
+             if (!finalDesc) finalDesc = `Предоплата по проекту ${projName}`;
+         }
+         else {
+             // Расход
+             if (!finalDesc) finalDesc = `Расход: ${catName}`;
+         }
+
+         addRow(
+            accountId, 
+            opAmount, 
+            typeLabel,
+            finalDesc,
+            {} 
+         );
       }
     }
     
@@ -899,6 +822,256 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
   URL.revokeObjectURL(url);
 }
 </script>
+<template>
+  <div class="modal-overlay" @click.self="closeModal">
+    <div class="modal-content">
+      <button class="close-btn" @click="closeModal" title="Закрыть">&times;</button>
+      
+      <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Отчетов' }}</h2>
+      
+      <div class="modal-tabs">
+        <button 
+          class="tab-btn" 
+          :class="{ active: currentTab === 'import' }"
+          @click="currentTab = 'import'"
+        >
+          Импорт (CSV)
+        </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: currentTab === 'export' }"
+          @click="currentTab = 'export'"
+        >
+          Экспорт (CSV)
+        </button>
+      </div>
+
+      <!-- ============================================= -->
+      <!-- Вкладка "ИМПОРТ"                            -->
+      <!-- ============================================= -->
+      <div v-if="currentTab === 'import'" class="import-content-wrapper">
+        
+        <div v-if="step === 'upload'" class="modal-step-content">
+          <div 
+            class="drop-zone" 
+            @dragover.prevent="dragOver = true"
+            @dragleave.prevent="dragOver = false"
+            @drop.prevent="handleDrop"
+            :class="{ 'drag-over': dragOver }"
+          >
+            <div v-if="!isLoading">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p>Перетащите CSV файл сюда</p>
+              <p class="small-text">или</p>
+              <label class="file-input-label">
+                Выберите файл
+                <input 
+                  ref="fileInputRef"
+                  type="file" 
+                  accept=".csv" 
+                  @change="handleFileSelect" 
+                  class="file-input" 
+                />
+              </label>
+              
+              <button 
+                type="button" 
+                class="btn-secondary download-template-btn" 
+                @click.stop="downloadTemplate"
+              >
+                Скачать шаблон (Доход/Расход)
+              </button>
+              
+            </div>
+            <div v-if="isLoading" class="loading-indicator">
+              <div class="spinner"></div>
+              <p>Парсинг файла...</p>
+            </div>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+
+        <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
+          <p class="step-description">
+            Сопоставьте колонки из вашего CSV-файла с полями системы.
+          </p>
+          <div class="mapping-table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      @change="toggleSelectAll" 
+                      :checked="isAllSelected"
+                      title="Выбрать все/Снять все"
+                    />
+                  </th>
+                  <th v-for="header in csvHeaders" :key="header">
+                    <div class="header-cell">
+                      <span class="csv-header-name" :title="header">{{ header }}</span>
+                      <select v-model="columnMapping[header]" class="mapping-select">
+                        <option :value="null">-- Не использовать --</option>
+                        <option disabled>-----------------</option>
+                        <option v-for="field in systemFields" :key="field.key" :value="field.key">
+                          {{ field.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in previewData" :key="rowIndex" :class="{ 'row-disabled': !isValidRow(row) }">
+                  <td class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      :value="rowIndex" 
+                      v-model="selectedRows"
+                      :disabled="!isValidRow(row)"
+                    />
+                  </td>
+                  <td v-for="(header, colIndex) in csvHeaders" :key="colIndex" :title="row[header]">
+                    {{ row[header] }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+
+        <div v-if="step === 'review'" class="modal-step-content review-step">
+          <p class="step-description">
+            Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
+          </p>
+          <p>Следующие новые элементы будут созданы автоматически. Пожалуйста, проверьте:</p>
+          
+          <div class="new-entities-container">
+            <div v-for="entityType in Object.keys(newEntities)" :key="entityType">
+              <div v-if="newEntities[entityType].length > 0" class="entity-list">
+                <h4>Новые {{ getEntityName(entityType) }}:</h4>
+                <ul>
+                  <li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+            <p v-if="Object.values(newEntities).every(arr => arr.length === 0)">
+              Новых элементов для создания не найдено. Все данные ссылаются на существующие сущности.
+            </p>
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+        </div>
+        
+        <div v-if="step === 'importing'" class="modal-step-content">
+          <div class="loading-indicator">
+            <div class="spinner"></div>
+            <p>Идет импорт данных... Пожалуйста, подождите.</p>
+            <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
+          </div>
+        </div>
+
+      </div>
+      
+      <!-- =========================================== -->
+      <!-- Вкладка "ЭКСПОРТ (CSV)"                     -->
+      <!-- =========================================== -->
+      <div v-if="currentTab === 'export'" class="modal-step-content export-step">
+        
+        <p>
+          Скачайте единый отчет по всем операциям (Прошлые + Будущие) в формате CSV.<br>
+          <small style="color: var(--color-text-soft);">
+            Включает: Доходы, Расходы, Переводы (в т.ч. между компаниями), Вывод средств, Предоплаты.<br>
+            Колонка "Прогноз" показывает остаток с учетом будущих операций.
+          </small>
+        </p>
+        
+        <!-- Шаг 1: Кнопка подготовки -->
+        <button 
+          v-if="!isDataReady"
+          @click="prepareExportData" 
+          class="btn-primary export-btn prepare-btn" 
+          :disabled="isExporting"
+        >
+          Подготовить данные
+        </button>
+
+        <div v-if="isExporting" class="loading-indicator">
+          <div class="spinner"></div>
+          <p>Формирование единого отчета и расчет прогноза...</p>
+        </div>
+
+        <!-- Шаг 2: Кнопка скачивания -->
+        <div v-if="isDataReady && !isExporting" class="download-section">
+          <p class="step-description">
+            Данные готовы. Вы можете скачать полный отчет ({{ processedAllData.data.length }} строк).
+          </p>
+          <div class="download-buttons">
+            <button class="btn-primary export-btn" @click="downloadAllData">
+              Скачать Выписку (Все операции)
+            </button>
+          </div>
+          <button class="btn-secondary" @click="resetExport" style="margin-top: 20px;">
+            Начать заново
+          </button>
+        </div>
+        
+        <div v-if="exportError" class="error-message">
+          {{ exportError }}
+        </div>
+      </div>
+
+      <!-- Футер для ИМПОРТА -->
+      <div v-if="currentTab === 'import'" class="modal-actions">
+        <button 
+          @click="closeModal" 
+          class="btn-secondary"
+          :disabled="step === 'importing'"
+        >
+          Отмена
+        </button>
+        
+        <button 
+          @click="previousStep" 
+          v-if="step === 'mapping' || step === 'review'" 
+          class="btn-secondary"
+          :disabled="step === 'importing'"
+        >
+          Назад
+        </button>
+        
+        <button 
+          @click="goToReviewStep" 
+          v-if="step === 'mapping'" 
+          class="btn-primary"
+          :disabled="isReviewDisabled"
+        >
+          Проверить ({{ selectedRows.size }})
+        </button>
+        
+        <button 
+          @click="startImport" 
+          v-if="step === 'review'" 
+          class="btn-primary"
+          :disabled="operationsToImport.length === 0"
+        >
+          Начать импорт ({{ operationsToImport.length }})
+        </button>
+      </div>
+
+      <!-- Футер для ЭКСПОРТА -->
+      <div v-if="currentTab === 'export'" class="modal-actions">
+        <button 
+          @click="closeModal" 
+          class="btn-secondary"
+          :disabled="isExporting"
+        >
+          Закрыть
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .modal-overlay {

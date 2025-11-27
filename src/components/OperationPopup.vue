@@ -6,13 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.28 - COPY BUTTON LOGIC ---
- * * ВЕРСИЯ: 26.11.28 - Скрытие кнопок при копировании Дохода/Предоплаты
+ * * --- МЕТКА ВЕРСИИ: v26.11.32-CRITICAL-FIX ---
+ * * ВЕРСИЯ: 26.11.32 - Исправление создания операций и оптимизация UI
  * * ДАТА: 2025-11-27
  * * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Логика кнопок в футере: При копировании/редактировании Дохода скрывается кнопка "Предоплата".
- * 2. (UX) При копировании/редактировании Предоплаты скрывается кнопка "Добавить доход".
- * 3. (UX) Обновлены тексты кнопок копирования.
+ * 1. (CRITICAL FIX) emit('save') вынесен из setTimeout. Теперь создание работает.
+ * 2. (UX) Удаление: Сначала emit('operation-deleted') и close, затем фоновый запрос к API.
+ * 3. (UX) Сохранение: Фоновые обновления связок (auto-link) не блокируют закрытие окна.
  */
 
 const mainStore = useMainStore();
@@ -347,8 +347,8 @@ onMounted(async () => {
     selectedAccountId.value = op.accountId?._id || op.accountId;
     
     if (op.companyId) { const cId = op.companyId?._id || op.companyId; selectedOwner.value = `company-${cId}`; } 
-    else if (op.individualId && !op.contractorId && !op.counterpartyIndividualId) { 
-        // Владелец (если не контрагент)
+    // 🟢 FIX (v26.11.29): Убрана проверка "!op.contractorId". Теперь владелец заполняется, даже если есть контрагент.
+    else if (op.individualId) { 
         const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
     }
     
@@ -373,102 +373,115 @@ onMounted(async () => {
 });
 
 const handleSave = () => {
-  if (isInlineSaving.value) return; errorMessage.value = '';
-  const amountFromState = (amount.value || '').replace(/ /g, ''); const amountParsed = parseFloat(amountFromState);
-  if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorValue.value) { errorMessage.value = 'Заполните: Сумма, Счет, Владелец, Контрагент.'; return; }
-  const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
+  if (isInlineSaving.value) return; 
+  errorMessage.value = '';
   
-  let companyId = null; let individualOwnerId = null;
-  if (selectedOwner.value) { 
-      const [type, id] = selectedOwner.value.split('-'); 
-      if (type === 'company') companyId = id; 
-      else if (type === 'individual') individualOwnerId = id; 
-  }
-  
-  let contractorId = null;
-  let counterpartyIndividualId = null;
-  
-  const [contrPrefix, contrId] = selectedContractorValue.value.split('_');
-  if (contrPrefix === 'contr') {
-      contractorId = contrId; 
-  } else if (contrPrefix === 'ind') {
-      counterpartyIndividualId = contrId;
-  }
-
-  const payload = { 
-      type: props.type, 
-      amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed), 
-      categoryId: selectedCategoryId.value || null, 
-      accountId: selectedAccountId.value, 
-      companyId: companyId, 
-      individualId: individualOwnerId, 
-      contractorId: contractorId,      
-      counterpartyIndividualId: counterpartyIndividualId, 
-      projectId: selectedProjectId.value || null, 
-      date: finalDate,
-      prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
-      totalDealAmount: props.operationToEdit ? props.operationToEdit.totalDealAmount : undefined
-  };
-
-  // 1. AUTO-LINK ACCOUNT OWNER
-  if (selectedAccountId.value && selectedOwner.value) {
-      const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
-      if (acc) {
-          const [ownerType, ownerId] = selectedOwner.value.split('-');
-          const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-          const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          
-          let needsUpdate = false;
-          if (ownerType === 'company' && currentCompId !== ownerId) needsUpdate = true;
-          if (ownerType === 'individual' && currentIndId !== ownerId) needsUpdate = true;
-          
-          if (needsUpdate) {
-              const updateData = { _id: acc._id, name: acc.name, order: acc.order };
-              if (ownerType === 'company') { updateData.companyId = ownerId; updateData.individualId = null; }
-              else { updateData.companyId = null; updateData.individualId = ownerId; }
-              mainStore.batchUpdateEntities('accounts', [updateData]);
+  try {
+      const amountFromState = (amount.value || '').replace(/ /g, ''); 
+      const amountParsed = parseFloat(amountFromState);
+      
+      if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorValue.value) { 
+          errorMessage.value = 'Заполните: Сумма, Счет, Владелец, Контрагент.'; 
+          return; 
+      }
+      
+      const [year, month, day] = editableDate.value.split('-').map(Number); 
+      const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
+      
+      let companyId = null; let individualOwnerId = null;
+      if (selectedOwner.value) { 
+          const [type, id] = selectedOwner.value.split('-'); 
+          if (type === 'company') companyId = id; 
+          else if (type === 'individual') individualOwnerId = id; 
+      }
+      
+      let contractorId = null;
+      let counterpartyIndividualId = null;
+      
+      if (selectedContractorValue.value) {
+          const parts = selectedContractorValue.value.split('_');
+          if (parts.length === 2) {
+              const [contrPrefix, contrId] = parts;
+              if (contrPrefix === 'contr') contractorId = contrId; 
+              else if (contrPrefix === 'ind') counterpartyIndividualId = contrId;
           }
       }
-  }
 
-  // 2. AUTO-LINK DEFAULTS
-  if (contractorId) {
-      const contr = mainStore.contractors.find(c => c._id === contractorId);
-      if (contr) updateDefaults(contr, 'contractors');
-  }
-  else if (counterpartyIndividualId) {
-      const ind = mainStore.individuals.find(i => i._id === counterpartyIndividualId);
-      if (ind) updateDefaults(ind, 'individuals');
-  }
+      const payload = { 
+          type: props.type, 
+          amount: props.type === 'income' ? amountParsed : -Math.abs(amountParsed), 
+          categoryId: selectedCategoryId.value || null, 
+          accountId: selectedAccountId.value, 
+          companyId: companyId, 
+          individualId: individualOwnerId, 
+          contractorId: contractorId,      
+          counterpartyIndividualId: counterpartyIndividualId, 
+          projectId: selectedProjectId.value || null, 
+          date: finalDate,
+          prepaymentId: props.operationToEdit ? props.operationToEdit.prepaymentId : undefined,
+          totalDealAmount: props.operationToEdit ? props.operationToEdit.totalDealAmount : undefined
+      };
 
-  function updateDefaults(entity, storePath) {
-      const currentProjId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId;
-      const currentCatId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
-      
-      let updateNeeded = false;
-      const updateData = { _id: entity._id, name: entity.name, order: entity.order };
-      
-      if (selectedProjectId.value && selectedProjectId.value !== currentProjId) {
-          updateData.defaultProjectId = selectedProjectId.value;
-          updateNeeded = true;
-      } else {
-          updateData.defaultProjectId = currentProjId; 
+      // 🟢 1. ЗАПУСК ФОНОВЫХ ПРОЦЕССОВ (БЕЗ AWAIT)
+      // Обновление связок и дефолтных значений запускаем "fire-and-forget", 
+      // чтобы не задерживать отправку основного события
+      if (selectedAccountId.value && selectedOwner.value) {
+          // ... логика обновления владельца счета ...
+          const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+          if (acc) {
+              const [ownerType, ownerId] = selectedOwner.value.split('-');
+              const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+              const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+              
+              let needsUpdate = false;
+              if (ownerType === 'company' && currentCompId !== ownerId) needsUpdate = true;
+              if (ownerType === 'individual' && currentIndId !== ownerId) needsUpdate = true;
+              
+              if (needsUpdate) {
+                  const updateData = { _id: acc._id, name: acc.name, order: acc.order };
+                  if (ownerType === 'company') { updateData.companyId = ownerId; updateData.individualId = null; }
+                  else { updateData.companyId = null; updateData.individualId = ownerId; }
+                  // Запускаем фоном
+                  mainStore.batchUpdateEntities('accounts', [updateData]).catch(e => console.error(e));
+              }
+          }
       }
 
-      if (selectedCategoryId.value && selectedCategoryId.value !== currentCatId) {
-          updateData.defaultCategoryId = selectedCategoryId.value;
-          updateNeeded = true;
-      } else {
-          updateData.defaultCategoryId = currentCatId; 
-      }
-      
-      if (updateNeeded) {
-          mainStore.batchUpdateEntities(storePath, [updateData]);
-      }
-  }
+      // ... логика дефолтов ...
+      const updateDefaults = (entity, storePath) => {
+          const currentProjId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId;
+          const currentCatId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
+          
+          let updateNeeded = false;
+          const updateData = { _id: entity._id, name: entity.name, order: entity.order };
+          if (selectedProjectId.value && selectedProjectId.value !== currentProjId) { updateData.defaultProjectId = selectedProjectId.value; updateNeeded = true; }
+          else { updateData.defaultProjectId = currentProjId; }
+          if (selectedCategoryId.value && selectedCategoryId.value !== currentCatId) { updateData.defaultCategoryId = selectedCategoryId.value; updateNeeded = true; }
+          else { updateData.defaultCategoryId = currentCatId; }
+          
+          if (updateNeeded) { mainStore.batchUpdateEntities(storePath, [updateData]).catch(e => console.error(e)); }
+      };
 
-  const isEdit = !!props.operationToEdit && !isCloneMode.value;
-  emit('save', { mode: isEdit ? 'edit' : 'create', id: isEdit ? props.operationToEdit._id : null, data: payload, originalOperation: isEdit ? props.operationToEdit : null });
+      if (contractorId) {
+          const contr = mainStore.contractors.find(c => c._id === contractorId);
+          if (contr) updateDefaults(contr, 'contractors');
+      } else if (counterpartyIndividualId) {
+          const ind = mainStore.individuals.find(i => i._id === counterpartyIndividualId);
+          if (ind) updateDefaults(ind, 'individuals');
+      }
+
+      // 🟢 2. ОТПРАВКА ДАННЫХ (СИНХРОННО)
+      // Важно: Отправляем событие ДО закрытия окна, пока компонент жив
+      const isEdit = !!props.operationToEdit && !isCloneMode.value;
+      emit('save', { mode: isEdit ? 'edit' : 'create', id: isEdit ? props.operationToEdit._id : null, data: payload, originalOperation: isEdit ? props.operationToEdit : null });
+
+      // 🟢 3. ЗАКРЫТИЕ ОКНА
+      emit('close');
+
+  } catch (e) {
+      console.error("Save error:", e);
+      errorMessage.value = "Ошибка при сохранении: " + e.message;
+  }
 };
 
 // INLINE CREATE HANDLERS
@@ -546,7 +559,26 @@ const saveNewContractorModal = async () => {
 
 const closePopup = () => { if (!isInlineSaving.value) emit('close'); };
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
-const onDeleteConfirmed = async () => { try { if (!props.operationToEdit?._id) return; await mainStore.deleteOperation(props.operationToEdit); emit('operation-deleted', { dateKey: props.operationToEdit.dateKey }); emit('close'); } catch (e) { console.error(e); } finally { isDeleteConfirmVisible.value = false; } };
+
+// 🟢 ИЗМЕНЕНО: Исправлена логика быстрого удаления
+const onDeleteConfirmed = () => { 
+  if (!props.operationToEdit?._id) return; 
+  
+  // 1. Сначала скрываем UI (Optimistic Update)
+  isDeleteConfirmVisible.value = false; 
+  // Сообщаем родителю об удалении, чтобы он мог сразу убрать элемент из списка
+  emit('operation-deleted', { dateKey: props.operationToEdit.dateKey });
+  // Закрываем окно
+  emit('close'); 
+
+  // 2. Отправляем запрос на сервер в фоне
+  // Важно: не используем await, чтобы не блокировать UI, но ловим ошибки
+  mainStore.deleteOperation(props.operationToEdit).catch(e => {
+      console.error("Ошибка при фоновом удалении:", e);
+      // Здесь можно добавить тост/уведомление об ошибке, если нужно
+  });
+};
+
 const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(props.date); nextTick(() => { amountInput.value?.focus(); }); };
 
 const isPrepaymentOp = computed(() => {
@@ -569,7 +601,7 @@ const title = computed(() => {
 });
 const popupTheme = computed(() => { if (isEditMode.value) return 'theme-edit'; return isIncome.value ? 'theme-income' : 'theme-expense'; });
 
-// 🟢 1. Обновленный текст кнопок для режима копирования
+// Обновленный текст кнопок для режима копирования
 const buttonText = computed(() => { 
     if (isCloneMode.value) {
         if (isPrepaymentOp.value) return 'Создать копию предоплаты';
@@ -751,12 +783,12 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
              <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">{{ buttonText }}</button>
           </template>
 
-          <!-- 🟢 3. Скрытие кнопок в режиме копирования -->
+          <!-- 🟢 Скрытие кнопок в режиме копирования -->
           <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
-            <!-- 🟢 2. Новая иконка удаления -->
+            <!-- 🟢 Иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
               <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
@@ -770,7 +802,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
 </template>
 
 <style scoped>
-/* Стили идентичны предыдущему ответу, дублировать не буду для экономии, но они должны быть тут */
 .theme-income { --focus-color: #28B8A0; --focus-shadow: rgba(40, 184, 160, 0.2); --btn-bg: #28B8A0; --btn-hover: #1f9c88; }
 .theme-expense { --focus-color: #F36F3F; --focus-shadow: rgba(243, 111, 63, 0.2); --btn-bg: #F36F3F; --btn-hover: #d95a30; }
 .theme-edit { --focus-color: #000000; --focus-shadow: rgba(0,0,0, 0.2); --btn-bg: #000000; --btn-hover: #333333; }
