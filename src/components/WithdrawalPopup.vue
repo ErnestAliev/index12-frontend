@@ -6,15 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v15.0 - RECIPIENT & DESCRIPTION FIX ---
- * * ВЕРСИЯ: 15.0 - Добавлен выбор Физлица и корректное описание
+ * * --- МЕТКА ВЕРСИИ: v15.2 - NO RELOAD ON DELETE ---
+ * * ВЕРСИЯ: 15.2 - Убран forceRefreshAll при удалении
  * * ДАТА: 2025-11-28
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлено поле выбора Физлица (Получателя).
- * 2. (LOGIC) Автоматический поиск/создание категории "Вывод средств".
- * 3. (LOGIC) Описание операции теперь берется из поля "Причина".
- * 4. (UI) Добавлена возможность создания нового физлица.
+ * 1. (FIX) В `confirmDelete` убран вызов `mainStore.forceRefreshAll()`.
+ * Удаление происходит тихо в фоне, обновляя только нужный день через стор.
  */
 
 const mainStore = useMainStore();
@@ -80,7 +78,7 @@ const individualOptions = computed(() => {
 // --- СОСТОЯНИЯ ---
 const isCloneMode = ref(false);
 const isDeleteConfirmVisible = ref(false);
-const isDeleting = ref(false);
+// const isDeleting = ref(false); // Больше не нужно, так как закрываем мгновенно
 const editableDate = ref('');
 
 // --- ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ---
@@ -181,13 +179,13 @@ const handleSave = async () => {
     amount: amount.value,
     destination: reason.value, 
     reason: reason.value,
-    description: reason.value, // 🟢 Явное описание
+    description: reason.value, 
     type: 'expense', 
     isWithdrawal: true,
     accountId: fromAccountId.value,
     date: finalDate,
-    categoryId: withdrawalCat ? withdrawalCat._id : null, // 🟢 Категория
-    counterpartyIndividualId: selectedIndividualId.value, // 🟢 Контрагент (Физлицо)
+    categoryId: withdrawalCat ? withdrawalCat._id : null,
+    counterpartyIndividualId: selectedIndividualId.value,
     individualId: null,
     contractorId: null
   };
@@ -219,20 +217,20 @@ const handleDeleteClick = () => {
     isDeleteConfirmVisible.value = true;
 };
 
-const confirmDelete = async () => {
+// 🟢 ИЗМЕНЕНО: Мгновенное удаление БЕЗ полной перезагрузки
+const confirmDelete = () => {
     if (!props.operationToEdit?._id) return;
-    isDeleting.value = true;
-    try {
-        await mainStore.deleteOperation(props.operationToEdit);
-        await mainStore.forceRefreshAll();
-        emit('close'); 
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка удаления: ' + e.message);
-    } finally {
-        isDeleting.value = false;
-        isDeleteConfirmVisible.value = false;
-    }
+
+    // 1. Скрываем подтверждение и закрываем попап МГНОВЕННО
+    isDeleteConfirmVisible.value = false;
+    emit('close'); 
+
+    // 2. Запускаем удаление в фоне.
+    // deleteOperation сама обновит кеш нужного дня.
+    mainStore.deleteOperation(props.operationToEdit)
+        .catch(e => {
+            console.error("Ошибка при фоновом удалении вывода:", e);
+        });
 };
 
 onMounted(() => {

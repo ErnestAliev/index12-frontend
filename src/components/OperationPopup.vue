@@ -6,13 +6,11 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.1 - CONTRACTOR FILTER FIX ---
- * * ВЕРСИЯ: 27.1 - Исправление списка физлиц-контрагентов
+ * * --- МЕТКА ВЕРСИИ: v27.4 - CSS FIX ---
+ * * ВЕРСИЯ: 27.4 - Запрет переноса строк в кнопках
  * * ДАТА: 2025-11-28
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В `contractorOptions` убрана фильтрация `!ownerIds.has(i._id)`. 
- * Теперь любое физлицо может быть выбрано как контрагент (получатель расхода), 
- * даже если оно владеет каким-то счетом.
+ * 1. (CSS) .btn-dual-action: добавлено white-space: nowrap.
  */
 
 const mainStore = useMainStore();
@@ -809,7 +807,17 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
-.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #007AFF; cursor: pointer; transition: background-color 0.2s; }
+.btn-dual-action {
+  flex: 1;
+  border: none;
+  background-color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: #007AFF;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  white-space: nowrap; /* <--- Added this */
+}
 .btn-dual-action:hover { background-color: #f0f8ff; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
