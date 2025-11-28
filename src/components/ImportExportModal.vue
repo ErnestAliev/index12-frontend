@@ -20,6 +20,8 @@ const showExportPreview = ref(false);
 
 // 🟢 v10.28: Состояние отображения ID для отладки
 const showDebugIds = ref(false);
+// 🟢 v10.29: Состояние "По ширине текста"
+const isFitContent = ref(false);
 
 // 🟢 v10.25: Фильтры экспорта
 const exportFilters = ref({
@@ -856,9 +858,15 @@ const filteredExportData = computed(() => {
   return data;
 });
 
-// 🟢 v10.28: КОНФИГУРАЦИЯ СЕТКИ (GRID) - ЭКСПОРТ
+// 🟢 КОНФИГУРАЦИЯ СЕТКИ (GRID) - ЭКСПОРТ
 // Определяем ширину каждой колонки
 const gridTemplate = computed(() => {
+  if (isFitContent.value) {
+    // 🟢 Если включен режим "По ширине текста", используем max-content для всех колонок
+    const colCount = visibleColumns.value.length;
+    return Array(colCount).fill('max-content').join(' ');
+  }
+
   const widths = [
     '140px', // Дата
     '90px',  // Тип
@@ -902,11 +910,13 @@ const visibleCsvHeaders = computed(() => {
 });
 
 const importGridTemplate = computed(() => {
-  // Чекбокс (40px) + N колонок для CSV полей
-  const widths = ['40px']; 
+  // 🟢 Чекбокс: фиксированные 48px
+  const widths = ['48px']; 
+  const size = isFitContent.value ? 'max-content' : 'minmax(200px, 1fr)';
+  
   if (visibleCsvHeaders.value.length) {
     for (let i = 0; i < visibleCsvHeaders.value.length; i++) {
-       widths.push('minmax(200px, 1fr)');
+       widths.push(size);
     }
   }
   return widths.join(' ');
@@ -966,12 +976,15 @@ const importGridTemplate = computed(() => {
           <div v-if="error" class="error-message">{{ error }}</div>
         </div>
 
-        <!-- 🟢 ИМПОРТ: STEP MAPPING (Grid Layout как в Экспорте) -->
+        <!-- 🟢 ИМПОРТ: STEP MAPPING (UNIFIED GRID LAYOUT) -->
         <div v-if="step === 'mapping'" class="export-preview-container">
            <!-- HEADER BAR -->
            <div class="preview-header-bar">
               <h3>Сопоставьте колонки</h3>
               <div class="header-controls">
+                  <label class="debug-toggle">
+                    <input type="checkbox" v-model="isFitContent"> ↔ По ширине
+                  </label>
                   <label class="debug-toggle">
                     <input type="checkbox" v-model="showDebugIds"> Показать ID
                   </label>
@@ -982,39 +995,37 @@ const importGridTemplate = computed(() => {
               </div>
            </div>
            
-           <!-- GRID TABLE -->
+           <!-- GRID TABLE CONTAINER (SCROLLABLE) -->
            <div class="grid-table-container">
-              <!-- Grid Header -->
-              <div class="grid-header-row" :style="{ gridTemplateColumns: importGridTemplate }">
-                 <div class="grid-header-cell center-content">
-                    <input type="checkbox" @change="toggleSelectAll" :checked="isAllSelected" />
+              <!-- UNIFIED GRID (PARENT) -->
+              <div class="unified-grid" :class="{ 'fit-mode': isFitContent }" :style="{ gridTemplateColumns: importGridTemplate }">
+                 
+                 <!-- HEADER GROUP (STICKY) -->
+                 <div class="header-group contents-display">
+                     <div class="grid-header-cell center-content sticky">
+                        <input type="checkbox" @change="toggleSelectAll" :checked="isAllSelected" />
+                     </div>
+                     <div v-for="header in visibleCsvHeaders" :key="header" class="grid-header-cell import-grid-header sticky">
+                         <span class="csv-header-name" :title="header">{{ header }}</span>
+                         <select v-model="columnMapping[header]" class="mapping-select">
+                            <option :value="null">-- Не использовать --</option>
+                            <option v-for="field in systemFields" :key="field.key" :value="field.key">{{ field.label }}</option>
+                         </select>
+                     </div>
                  </div>
-                 <div v-for="header in visibleCsvHeaders" :key="header" class="grid-header-cell import-grid-header">
-                     <!-- Кастомный заголовок импорта с селектом -->
-                     <span class="csv-header-name" :title="header">{{ header }}</span>
-                     <select v-model="columnMapping[header]" class="mapping-select">
-                        <option :value="null">-- Не использовать --</option>
-                        <option v-for="field in systemFields" :key="field.key" :value="field.key">{{ field.label }}</option>
-                     </select>
-                 </div>
-              </div>
 
-              <!-- Grid Body -->
-              <div class="grid-body">
-                 <div v-for="(row, rowIndex) in previewData" 
-                      :key="rowIndex" 
-                      class="grid-row" 
-                      :class="{ 'row-disabled': !isValidRow(row) }"
-                      :style="{ gridTemplateColumns: importGridTemplate }">
-                    
-                    <div class="grid-cell center-content">
+                 <!-- BODY ROWS (FLATTENED via contents) -->
+                 <div v-for="(row, rowIndex) in previewData" :key="rowIndex" class="row-group contents-display">
+                    <!-- Checkbox Cell -->
+                    <div class="grid-cell center-content" :class="{ 'row-disabled': !isValidRow(row) }">
                        <input type="checkbox" :value="rowIndex" v-model="selectedRows" :disabled="!isValidRow(row)" />
                     </div>
-                    
-                    <div v-for="(header, colIndex) in visibleCsvHeaders" :key="colIndex" class="grid-cell" :title="row[header]">
+                    <!-- Data Cells -->
+                    <div v-for="(header, colIndex) in visibleCsvHeaders" :key="colIndex" class="grid-cell" :class="{ 'row-disabled': !isValidRow(row) }" :title="row[header]">
                        {{ row[header] }}
                     </div>
                  </div>
+
               </div>
            </div>
            <div v-if="error" class="error-message" style="margin: 10px 24px;">{{ error }}</div>
@@ -1061,11 +1072,14 @@ const importGridTemplate = computed(() => {
             <div v-if="exportError" class="error-message">{{ exportError }}</div>
         </div>
 
-        <!-- 🟢 ПРЕДПРОСМОТР (GRID LAYOUT) -->
+        <!-- 🟢 ПРЕДПРОСМОТР (UNIFIED GRID LAYOUT) -->
         <div v-if="showExportPreview" class="export-preview-container">
             <div class="preview-header-bar">
                 <h3>Предпросмотр</h3>
                 <div class="header-controls">
+                    <label class="debug-toggle">
+                      <input type="checkbox" v-model="isFitContent"> ↔ По ширине
+                    </label>
                     <label class="debug-toggle">
                       <input type="checkbox" v-model="showDebugIds"> Показать ID
                     </label>
@@ -1079,73 +1093,75 @@ const importGridTemplate = computed(() => {
                 </div>
             </div>
 
-            <!-- 🟢 GRID TABLE STRUCTURE -->
+            <!-- GRID TABLE CONTAINER (SCROLLABLE) -->
             <div class="grid-table-container">
-                <!-- 1. HEADER ROW (Overflow Visible for Dropdowns) -->
-                <div class="grid-header-row" :style="{ gridTemplateColumns: gridTemplate }">
-                    <div v-for="col in visibleColumns" :key="col" class="grid-header-cell">
-                        
-                        <!-- Filters -->
-                        <div v-if="col === 'Дата'" class="filter-wrapper">
-                           <!-- 🟢 FIX: Добавлен класс no-bg-hover для исправления двойного фона -->
-                           <DateRangePicker v-model="dateRangeFilter" placeholder="Дата" class="header-filter-control no-bg-hover"/>
+                <!-- UNIFIED GRID (PARENT) -->
+                <div class="unified-grid" :class="{ 'fit-mode': isFitContent }" :style="{ gridTemplateColumns: gridTemplate }">
+                    
+                    <!-- HEADER GROUP (STICKY) -->
+                    <div class="header-group contents-display">
+                        <div v-for="col in visibleColumns" :key="col" class="grid-header-cell sticky">
+                            
+                            <!-- Filters (unchanged) -->
+                            <div v-if="col === 'Дата'" class="filter-wrapper">
+                               <DateRangePicker v-model="dateRangeFilter" placeholder="Дата" class="header-filter-control no-bg-hover"/>
+                            </div>
+                            <div v-else-if="col === 'Тип'" class="filter-wrapper">
+                               <select v-model="exportFilters.type" class="header-filter-control has-arrow">
+                                  <option value="">Тип</option>
+                                  <option v-for="opt in exportFilterOptions.type" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            <div v-else-if="col === 'Категория'" class="filter-wrapper">
+                                <select v-model="exportFilters.category" class="header-filter-control has-arrow">
+                                  <option value="">Категория</option>
+                                  <option v-for="opt in exportFilterOptions.category" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            <div v-else-if="col === 'Проект'" class="filter-wrapper">
+                                <select v-model="exportFilters.project" class="header-filter-control has-arrow">
+                                  <option value="">Проект</option>
+                                  <option v-for="opt in exportFilterOptions.project" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            <div v-else-if="col === 'Счет'" class="filter-wrapper">
+                                <select v-model="exportFilters.account" class="header-filter-control has-arrow">
+                                  <option value="">Счет</option>
+                                  <option v-for="opt in exportFilterOptions.account" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            <div v-else-if="col === 'Контрагент'" class="filter-wrapper">
+                                <select v-model="exportFilters.contractor" class="header-filter-control has-arrow">
+                                  <option value="">Контрагент</option>
+                                  <option v-for="opt in exportFilterOptions.contractor" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            <div v-else-if="col === 'Компания/Физлицо'" class="filter-wrapper">
+                                <select v-model="exportFilters.owner" class="header-filter-control has-arrow">
+                                  <option value="">Комп./Физ.</option>
+                                  <option v-for="opt in exportFilterOptions.owner" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            <div v-else-if="col === 'Статус'" class="filter-wrapper">
+                                <select v-model="exportFilters.status" class="header-filter-control has-arrow">
+                                  <option value="">Статус</option>
+                                  <option v-for="opt in exportFilterOptions.status" :key="opt" :value="opt">{{ opt }}</option>
+                               </select>
+                            </div>
+                            
+                            <!-- Simple Header -->
+                            <span v-else class="header-label">{{ col }}</span>
                         </div>
-                        <div v-else-if="col === 'Тип'" class="filter-wrapper">
-                           <select v-model="exportFilters.type" class="header-filter-control has-arrow">
-                              <option value="">Тип</option>
-                              <option v-for="opt in exportFilterOptions.type" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        <div v-else-if="col === 'Категория'" class="filter-wrapper">
-                            <select v-model="exportFilters.category" class="header-filter-control has-arrow">
-                              <option value="">Категория</option>
-                              <option v-for="opt in exportFilterOptions.category" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        <div v-else-if="col === 'Проект'" class="filter-wrapper">
-                            <select v-model="exportFilters.project" class="header-filter-control has-arrow">
-                              <option value="">Проект</option>
-                              <option v-for="opt in exportFilterOptions.project" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        <div v-else-if="col === 'Счет'" class="filter-wrapper">
-                            <select v-model="exportFilters.account" class="header-filter-control has-arrow">
-                              <option value="">Счет</option>
-                              <option v-for="opt in exportFilterOptions.account" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        <div v-else-if="col === 'Контрагент'" class="filter-wrapper">
-                            <select v-model="exportFilters.contractor" class="header-filter-control has-arrow">
-                              <option value="">Контрагент</option>
-                              <option v-for="opt in exportFilterOptions.contractor" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        <div v-else-if="col === 'Компания/Физлицо'" class="filter-wrapper">
-                            <select v-model="exportFilters.owner" class="header-filter-control has-arrow">
-                              <option value="">Комп./Физ.</option>
-                              <option v-for="opt in exportFilterOptions.owner" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        <div v-else-if="col === 'Статус'" class="filter-wrapper">
-                            <select v-model="exportFilters.status" class="header-filter-control has-arrow">
-                              <option value="">Статус</option>
-                              <option v-for="opt in exportFilterOptions.status" :key="opt" :value="opt">{{ opt }}</option>
-                           </select>
-                        </div>
-                        
-                        <!-- Simple Header -->
-                        <span v-else class="header-label">{{ col }}</span>
                     </div>
-                </div>
 
-                <!-- 2. BODY (Scrollable) -->
-                <div class="grid-body">
-                    <div v-for="(row, idx) in filteredExportData" :key="idx" class="grid-row" :style="{ gridTemplateColumns: gridTemplate }">
+                    <!-- BODY ROWS (FLATTENED via contents) -->
+                    <div v-for="(row, idx) in filteredExportData" :key="idx" class="row-group contents-display">
                         <div v-for="col in visibleColumns" :key="col" class="grid-cell" :title="row[col]">
                             {{ row[col] }}
                         </div>
                     </div>
-                    <div v-if="filteredExportData.length === 0" class="empty-state">
+                    
+                    <div v-if="filteredExportData.length === 0" class="empty-state" style="grid-column: 1 / -1;">
                         Нет данных
                     </div>
                 </div>
@@ -1179,32 +1195,69 @@ const importGridTemplate = computed(() => {
   box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; flex-direction: column; position: relative;
 }
 
-/* 🟢 GRID TABLE STYLES */
+/* 🟢 GRID TABLE STYLES (UNIFIED) */
 .grid-table-container {
-  display: flex; flex-direction: column; flex: 1; overflow: auto; /* Allow X/Y scrolling for whole table */
-  position: relative; /* Context for sticky */
+  display: block; /* Важно: блок для скролла */
+  overflow: auto; 
+  flex: 1;
+  position: relative;
   border-top: 1px solid var(--color-border);
 }
 
-.grid-header-row {
+/* Сам грид */
+.unified-grid {
   display: grid;
-  /* Columns are defined inline */
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background-soft);
-  z-index: 20; /* High z-index to stay on top */
-  position: sticky; /* Sticky relative to .grid-table-container */
-  top: 0;
-  width: fit-content; /* Ensure it expands to full content width */
-  min-width: 100%;
+  /* Columns задаются инлайново через computed */
+  align-items: center;
+  min-width: 100%; /* Растягиваемся, если контента мало */
+  width: max-content; /* Позволяем расти, если контента много (для fit-content) */
 }
 
+/* Группы (Header Row, Body Row) исчезают из потока грида */
+.contents-display {
+  display: contents;
+}
+
+/* Ячейки заголовка */
 .grid-header-cell {
-  padding: 4px;
-  display: flex; align-items: center; /* Vertical Center */
-  height: 40px; /* Fixed Header Height */
+  background: var(--color-background-soft);
+  border-bottom: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border-hover);
-  overflow: visible; /* Allow Dropdowns out */
-  padding-top: 15px;
+  padding: 4px;
+  height: 50px; /* 🟢 FIX: Фикс. высота заголовка */
+  display: flex; 
+  align-items: center;
+  overflow: visible; 
+  box-sizing: border-box;
+}
+
+/* Sticky Header */
+.grid-header-cell.sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+/* Ячейки тела */
+.grid-cell {
+  padding: 0 8px; /* 🟢 FIX: Отступы только по бокам */
+  font-size: 13px;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--color-background); /* Фон нужен, чтобы не просвечивало при скролле */
+  height: 40px; /* 🟢 FIX: Фикс. высота строки */
+  display: flex;
+  align-items: center; /* 🟢 FIX: Вертикальное центрирование */
+  box-sizing: border-box;
+}
+
+/* 🟢 FIT MODE: Убираем обрезание */
+.unified-grid.fit-mode .grid-cell {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 /* 🟢 Специфично для заголовков импорта в Grid */
@@ -1212,10 +1265,8 @@ const importGridTemplate = computed(() => {
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 0; /* Reset global padding */
+  padding-top: 0; 
   padding: 4px 8px;
-  height: auto; /* Allow growth */
-  min-height: 50px;
 }
 .csv-header-name {
   font-size: 11px;
@@ -1234,30 +1285,38 @@ const importGridTemplate = computed(() => {
   width: 100%;
   height: 24px;
   font-size: 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid transparent; /* Изменено: прозрачная рамка по умолчанию */
   border-radius: 4px;
-  background-color: var(--color-background);
-  color: var(--color-text);
+  background-color: transparent; /* Изменено: прозрачный фон */
+  color: var(--color-heading);   /* Изменено: яркий цвет текста (белый) */
+  font-weight: 600;              /* Добавлено: жирность для читаемости */
   appearance: none; /* Remove default browser styling */
   -webkit-appearance: none;
   -moz-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
-  padding-right: 20px;
-  padding-left: 8px;
+  padding: 0 20px 0 4px !important; /* 🟢 FIX: Принудительный сброс вертикальных отступов */
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mapping-select:hover {
+  background-color: var(--color-background); /* Фон при наведении */
+  border-color: var(--color-border);
 }
 
 .mapping-select:focus {
+  background-color: var(--color-background);
   border-color: var(--color-accent);
   outline: none;
 }
 
 /* Ensure options are also styled */
 .mapping-select option {
-  background-color: var(--color-background);
+  background-color: var(--color-background-soft); /* Явный фон для выпадающего списка */
   color: var(--color-text);
+  padding: 4px;
 }
 
 .center-content {
@@ -1265,30 +1324,11 @@ const importGridTemplate = computed(() => {
   padding-top: 0;
 }
 
-.grid-body {
-  /* No overflow here, parent scrolls */
-  width: fit-content; /* Ensure it expands */
-  min-width: 100%;
-  padding-bottom: 60px; /* Space for dropdown to overflow */
-}
-
-.grid-row {
-  display: grid;
-  border-bottom: 1px solid var(--color-border);
-  width: fit-content; /* Ensure row matches header width */
-  min-width: 100%;
-}
-.grid-row:hover { background: var(--color-background-soft); }
-
-.grid-cell {
-  padding: 8px; font-size: 13px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  border-right: 1px solid transparent;
-}
-.row-disabled { opacity: 0.5; background: #fafafa; } /* Light grey for disabled rows */
+/* Disabled Rows Style */
+.row-disabled { opacity: 0.5; background: #fafafa; } 
 
 /* 🟢 FILTERS & INPUTS (Strict 28px) */
-.filter-wrapper { width: 100%; position: relative; }
+.filter-wrapper { width: 100%; position: relative; margin-top: 10px;}
 
 .header-filter-control {
   height: 28px; width: 100%;
@@ -1296,11 +1336,9 @@ const importGridTemplate = computed(() => {
   background: transparent; border: 1px solid transparent; border-radius: 4px;
   color: var(--color-text); font-weight: 600;
   cursor: pointer; box-sizing: border-box;
-  
 }
 .header-filter-control:hover, .header-filter-control:focus {
   background: var(--color-background); border-color: var(--color-border);
-  
 }
 
 /* 🟢 FIX: Стили для отключения фона у обертки даты */
@@ -1325,7 +1363,7 @@ const importGridTemplate = computed(() => {
   margin-bottom: 10px; 
   font-size: 12px; 
   font-weight: 600; 
-  color: var(--color-text) !important; /* 🟢 FIX: Force text color */
+  color: var(--color-text) !important; 
 }
 
 /* 🟢 FIX: Force text color specifically for value text elements */
@@ -1335,7 +1373,6 @@ const importGridTemplate = computed(() => {
 
 :deep(.picker-trigger:hover) {
   border-color: var(--color-border); background: var(--color-background);
-  
 }
 
 /* PREVIEW HEADER */
@@ -1352,14 +1389,14 @@ const importGridTemplate = computed(() => {
 .header-label {
   display: flex;
   align-items: center;
-  height: 28px; /* Match filter height */
+  height: 28px; 
   width: 100%;
   padding: 0 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text);
   box-sizing: border-box;
-  padding-bottom: 10px
+  margin-top: 0 px;;
 }
 
 /* OTHER STYLES (Keep existing) */
@@ -1370,20 +1407,20 @@ h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border)
 .tab-btn.active { color: var(--color-accent); border-bottom-color: var(--color-accent); }
 .import-content-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .modal-step-content { flex: 1; padding: 24px; overflow-y: auto; }
-.export-step { padding: 0; display: flex; flex-direction: column; } /* IMPORTANT */
+.export-step { padding: 0; display: flex; flex-direction: column; } 
 .export-controls-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .export-preview-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .empty-state { padding: 20px; text-align: center; color: var(--color-text-soft); }
 .modal-actions { padding: 16px 24px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
-.export-description { margin-bottom: 32px; } /* 🟢 */
+.export-description { margin-bottom: 32px; } 
 .btn-primary { 
   padding: 8px 16px; 
-  background: #3b3b3b; /* 🟢 Темный фон */
+  background: #3b3b3b; 
   color: white; 
   border: none; 
   border-radius: 6px; 
   cursor: pointer; 
-  margin-right: 10px; /* 🟢 Отступ */
+  margin-right: 10px; 
 }
 .btn-secondary { padding: 8px 16px; background: var(--color-background-mute); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 6px; cursor: pointer; }
 .btn-small { padding: 4px 8px; font-size: 11px; height: 24px; }
@@ -1393,6 +1430,4 @@ h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border)
 .drop-zone { border: 2px dashed var(--color-border); padding: 40px; text-align: center; margin-bottom: 20px; }
 .file-input { display: none; }
 .file-input-label { background: var(--color-accent); color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: inline-block; margin: 10px 0; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--color-border); }
 </style>
