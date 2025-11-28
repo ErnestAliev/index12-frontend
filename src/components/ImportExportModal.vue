@@ -20,8 +20,8 @@ const showExportPreview = ref(false);
 
 // 🟢 v10.28: Состояние отображения ID для отладки
 const showDebugIds = ref(false);
-// 🟢 v10.29: Состояние "По ширине текста"
-const isFitContent = ref(false);
+// 🟢 v10.29: Состояние "По ширине текста" (Изменено на true по умолчанию)
+const isFitContent = ref(true);
 
 // 🟢 v10.25: Фильтры экспорта
 const exportFilters = ref({
@@ -75,16 +75,24 @@ const isAllSelected = computed(() => {
 // --- Сопоставление (Mapping) ---
 const columnMapping = ref({});
 
+// 🟢 ОБНОВЛЕНО: Список полей приведен в соответствие с заголовками экспорта
 const systemFields = [
   { key: 'date', label: 'Дата', entity: null, aliases: ['дата', 'date'] },
-  { key: 'type', label: 'Тип операции', entity: null, aliases: ['тип', 'операция', 'type', 'тип операции'] },
-  { key: 'amount', label: 'Сумма', entity: null, aliases: ['сумма', 'amount'] },
+  { key: 'type', label: 'Тип', entity: null, aliases: ['тип', 'операция', 'type', 'тип операции'] },
   { key: 'category', label: 'Категория', entity: 'categories', aliases: ['категория', 'category'] },
   { key: 'project', label: 'Проект', entity: 'projects', aliases: ['проект', 'project', 'мои проекты'] },
+  { key: 'amount', label: 'Сумма', entity: null, aliases: ['сумма', 'amount'] },
+  // Добавлено поле Прогноз для полного соответствия экспорту
+  { key: 'forecast', label: 'Прогноз', entity: null, aliases: ['прогноз', 'forecast', 'баланс'] },
   { key: 'account', label: 'Счет', entity: 'accounts', aliases: ['счет', 'account', 'мои счета'] },
-  { key: 'company', label: 'Компания', entity: 'companies', aliases: ['компания', 'company', 'мои компании', 'компания/физлицо'] },
-  { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
   { key: 'contractor', label: 'Контрагент', entity: 'contractors', aliases: ['контрагент', 'contractor', 'мои контрагенты'] },
+  // Объединяем визуально метку для компании, чтобы соответствовать экспорту 'Компания/Физлицо'
+  { key: 'company', label: 'Компания/Физлицо', entity: 'companies', aliases: ['компания', 'company', 'мои компании', 'компания/физлицо'] },
+  // Новые поля для полного соответствия
+  { key: 'description', label: 'Описание', entity: null, aliases: ['описание', 'description', 'назначение', 'комментарий'] },
+  { key: 'status', label: 'Статус', entity: null, aliases: ['статус', 'status'] },
+  // Физлицо оставляем для возможности ручного выбора, если это необходимо
+  { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
 ];
 
 // --- Подтверждение (Review) ---
@@ -1008,7 +1016,7 @@ const importGridTemplate = computed(() => {
                      <div v-for="header in visibleCsvHeaders" :key="header" class="grid-header-cell import-grid-header sticky">
                          <span class="csv-header-name" :title="header">{{ header }}</span>
                          <select v-model="columnMapping[header]" class="mapping-select">
-                            <option :value="null">-- Не использовать --</option>
+                            <!-- УДАЛЕНО: <option :value="null">-- Не использовать --</option> -->
                             <option v-for="field in systemFields" :key="field.key" :value="field.key">{{ field.label }}</option>
                          </select>
                      </div>
