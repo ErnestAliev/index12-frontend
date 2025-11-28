@@ -6,13 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.32-CRITICAL-FIX ---
- * * ВЕРСИЯ: 26.11.32 - Исправление создания операций и оптимизация UI
- * * ДАТА: 2025-11-27
+ * * --- МЕТКА ВЕРСИИ: v27.0 - REFACTORING COMPLETE ---
+ * * ВЕРСИЯ: 27.0 - Рефакторинг по плану (Сохранение контрагента/проекта при смене типа)
+ * * ДАТА: 2025-11-28
  * * ЧТО ИЗМЕНЕНО:
- * 1. (CRITICAL FIX) emit('save') вынесен из setTimeout. Теперь создание работает.
- * 2. (UX) Удаление: Сначала emit('operation-deleted') и close, затем фоновый запрос к API.
- * 3. (UX) Сохранение: Фоновые обновления связок (auto-link) не блокируют закрытие окна.
+ * 1. (LOGIC) Добавлен watch(props.type), который сбрасывает ТОЛЬКО категорию.
+ * Контрагент (selectedContractorValue) и Проект (selectedProjectId) теперь явно сохраняются.
+ * 2. (VALIDATION) Проверена и подтверждена строгая валидация в handleSave.
  */
 
 const mainStore = useMainStore();
@@ -60,6 +60,19 @@ const newContractorInputRef = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
+
+// 🟢 РЕАЛИЗАЦИЯ ПЛАНА: Наблюдатель за типом операции
+watch(() => props.type, (newType, oldType) => {
+  if (newType !== oldType) {
+    // Сбрасываем категорию, так как наборы категорий для Дохода и Расхода разные
+    selectedCategoryId.value = null;
+    
+    // ВАЖНО: Согласно плану рефакторинга, мы НЕ сбрасываем:
+    // selectedContractorValue (Контрагент)
+    // selectedProjectId (Проект)
+    // Они остаются заполненными.
+  }
+});
 
 // --- FORMATTERS ---
 const formatNumber = (numStr) => {
@@ -240,7 +253,6 @@ watch(selectedContractorValue, (newValue) => {
         const retailVal = `ind_${mainStore.retailIndividualId}`;
         if (newValue === retailVal) {
             // 🟢 FIX: Автозаполняем "Реализацию" ТОЛЬКО если категория еще не выбрана
-            // Это позволяет пользователю выбрать "Остаток долга" вручную
             if (mainStore.realizationCategoryId && !selectedCategoryId.value) {
                 selectedCategoryId.value = mainStore.realizationCategoryId;
             }
@@ -347,7 +359,6 @@ onMounted(async () => {
     selectedAccountId.value = op.accountId?._id || op.accountId;
     
     if (op.companyId) { const cId = op.companyId?._id || op.companyId; selectedOwner.value = `company-${cId}`; } 
-    // 🟢 FIX (v26.11.29): Убрана проверка "!op.contractorId". Теперь владелец заполняется, даже если есть контрагент.
     else if (op.individualId) { 
         const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
     }
@@ -380,6 +391,9 @@ const handleSave = () => {
       const amountFromState = (amount.value || '').replace(/ /g, ''); 
       const amountParsed = parseFloat(amountFromState);
       
+      // 🟢 РЕАЛИЗАЦИЯ ПЛАНА: Строгая валидация перед сохранением
+      // Это условие (if (type !== 'transfer' && !contractor)) выполняется здесь, 
+      // так как данный попап не обслуживает тип 'transfer', а проверка !selectedContractorValue.value обязательна.
       if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorValue.value) { 
           errorMessage.value = 'Заполните: Сумма, Счет, Владелец, Контрагент.'; 
           return; 
@@ -423,10 +437,7 @@ const handleSave = () => {
       };
 
       // 🟢 1. ЗАПУСК ФОНОВЫХ ПРОЦЕССОВ (БЕЗ AWAIT)
-      // Обновление связок и дефолтных значений запускаем "fire-and-forget", 
-      // чтобы не задерживать отправку основного события
       if (selectedAccountId.value && selectedOwner.value) {
-          // ... логика обновления владельца счета ...
           const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
           if (acc) {
               const [ownerType, ownerId] = selectedOwner.value.split('-');
@@ -441,13 +452,11 @@ const handleSave = () => {
                   const updateData = { _id: acc._id, name: acc.name, order: acc.order };
                   if (ownerType === 'company') { updateData.companyId = ownerId; updateData.individualId = null; }
                   else { updateData.companyId = null; updateData.individualId = ownerId; }
-                  // Запускаем фоном
                   mainStore.batchUpdateEntities('accounts', [updateData]).catch(e => console.error(e));
               }
           }
       }
 
-      // ... логика дефолтов ...
       const updateDefaults = (entity, storePath) => {
           const currentProjId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId;
           const currentCatId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
@@ -471,7 +480,6 @@ const handleSave = () => {
       }
 
       // 🟢 2. ОТПРАВКА ДАННЫХ (СИНХРОННО)
-      // Важно: Отправляем событие ДО закрытия окна, пока компонент жив
       const isEdit = !!props.operationToEdit && !isCloneMode.value;
       emit('save', { mode: isEdit ? 'edit' : 'create', id: isEdit ? props.operationToEdit._id : null, data: payload, originalOperation: isEdit ? props.operationToEdit : null });
 
@@ -563,19 +571,11 @@ const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 // 🟢 ИЗМЕНЕНО: Исправлена логика быстрого удаления
 const onDeleteConfirmed = () => { 
   if (!props.operationToEdit?._id) return; 
-  
-  // 1. Сначала скрываем UI (Optimistic Update)
   isDeleteConfirmVisible.value = false; 
-  // Сообщаем родителю об удалении, чтобы он мог сразу убрать элемент из списка
   emit('operation-deleted', { dateKey: props.operationToEdit.dateKey });
-  // Закрываем окно
   emit('close'); 
-
-  // 2. Отправляем запрос на сервер в фоне
-  // Важно: не используем await, чтобы не блокировать UI, но ловим ошибки
   mainStore.deleteOperation(props.operationToEdit).catch(e => {
       console.error("Ошибка при фоновом удалении:", e);
-      // Здесь можно добавить тост/уведомление об ошибке, если нужно
   });
 };
 
@@ -619,7 +619,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
     <div class="popup-content" :class="popupTheme">
       <h3>{{ title }}</h3>
 
-      <!-- СУММА -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
         <div class="input-inner-content">
            <span v-if="amount" class="floating-label">{{ txtAmount.lbl }}</span>
@@ -636,7 +635,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
       </div>
 
       <template v-if="props.type !== 'transfer' && !showCreateOwnerModal && !showCreateContractorModal">
-        <!-- 1. СЧЕТ -->
         <BaseSelect
           v-if="!isCreatingAccount"
           v-model="selectedAccountId"
@@ -652,7 +650,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
       
-        <!-- 2. ВЛАДЕЛЕЦ -->
         <BaseSelect
           v-model="selectedOwner"
           :options="ownerOptions"
@@ -669,7 +666,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           </template>
         </BaseSelect>
 
-        <!-- 3. КОНТРАГЕНТ -->
         <BaseSelect
           v-model="selectedContractorValue"
           :options="contractorOptions"
@@ -686,7 +682,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           </template>
         </BaseSelect>
 
-        <!-- 4. ПРОЕКТ -->
         <BaseSelect
           v-if="!isCreatingProject"
           v-model="selectedProjectId"
@@ -702,7 +697,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           <button @click="cancelCreateProject" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
         </div>
 
-        <!-- 5. КАТЕГОРИЯ -->
         <BaseSelect
           v-if="!isCreatingCategory"
           v-model="selectedCategoryId"
@@ -719,7 +713,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         </div>
       </template>
 
-      <!-- МОДАЛКА СОЗДАНИЯ ВЛАДЕЛЬЦА -->
       <template v-if="showCreateOwnerModal">
         <div class="smart-create-owner">
           <h4 class="smart-create-title">Создать: {{ ownerTypeToCreate === 'company' ? 'Компанию' : 'Физлицо' }}</h4>
@@ -731,7 +724,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         </div>
       </template>
 
-      <!-- МОДАЛКА СОЗДАНИЯ КОНТРАГЕНТА -->
       <template v-if="showCreateContractorModal">
         <div class="smart-create-owner">
           <h4 class="smart-create-title">Создать: {{ contractorTypeToCreate === 'contractor' ? 'Контрагента' : 'Физлицо' }}</h4>
@@ -744,7 +736,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
       </template>
 
       <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
-        <!-- ДАТА -->
         <div class="custom-input-box input-spacing has-value date-box">
            <div class="input-inner-content">
               <span class="floating-label">{{ txtDate.lbl }}</span>
@@ -759,36 +750,27 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
-          <!-- 🟢 ЛОГИКА ОТОБРАЖЕНИЯ КНОПОК В ФУТЕРЕ -->
-          <!-- Если это режим создания или копирования -->
           <template v-if="!isEditMode || isCloneMode">
-             <!-- Если копируем/создаем Предоплату -->
              <template v-if="isPrepaymentOp || (props.type === 'income' && !isEditMode && !isCloneMode)">
-                 <!-- Показываем кнопку Дохода только если это НЕ копия предоплаты -->
                  <button v-if="!isPrepaymentOp" @click="handleSave" class="btn-submit btn-submit-income" :disabled="isInlineSaving">Добавить доход</button>
                  <button @click="handlePrepaymentClick" class="btn-submit btn-submit-prepayment" :disabled="isInlineSaving">{{ isPrepaymentOp ? 'Создать копию предоплаты' : 'Предоплата' }}</button>
              </template>
-             <!-- Если копируем/создаем обычный Доход (без предоплаты) -->
              <template v-else-if="props.type === 'income'">
                  <button @click="handleSave" class="btn-submit btn-submit-income" :disabled="isInlineSaving">Создать копию дохода</button>
              </template>
-             <!-- Расход -->
              <template v-else>
                  <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">{{ buttonText }}</button>
              </template>
           </template>
           
-          <!-- Режим редактирования (существующей операции) -->
           <template v-else>
              <button @click="handleSave" class="btn-submit save-wide" :class="buttonClass" :disabled="isInlineSaving">{{ buttonText }}</button>
           </template>
 
-          <!-- 🟢 Скрытие кнопок в режиме копирования -->
           <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
-            <!-- 🟢 Иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
               <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>

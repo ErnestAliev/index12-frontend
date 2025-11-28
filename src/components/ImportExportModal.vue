@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import Papa from 'papaparse';
 import { useMainStore } from '@/stores/mainStore';
-import { formatNumber } from '@/utils/formatters.js';
+// 🟢 Импортируем компонент
+import DateRangePicker from '@/components/DateRangePicker.vue';
 
 // --- Компонент ---
 const emit = defineEmits(['close', 'import-complete']);
@@ -15,6 +16,41 @@ const exportError = ref(null);
 // Единое состояние данных
 const isDataReady = ref(false);
 const processedAllData = ref({}); 
+const showExportPreview = ref(false);
+
+// 🟢 v10.28: Состояние отображения ID для отладки
+const showDebugIds = ref(false);
+
+// 🟢 v10.25: Фильтры экспорта
+const exportFilters = ref({
+  dateFrom: '',
+  dateTo: '',
+  type: '',
+  category: '',
+  account: '',
+  project: '',
+  status: '',
+  contractor: '',
+  owner: ''
+});
+
+// Адаптер для DateRangePicker
+const dateRangeFilter = computed({
+  get: () => ({
+    from: exportFilters.value.dateFrom || null,
+    to: exportFilters.value.dateTo || null
+  }),
+  set: (val) => {
+    exportFilters.value.dateFrom = val?.from || '';
+    exportFilters.value.dateTo = val?.to || '';
+  }
+});
+
+// Хелпер: есть ли активные фильтры
+const hasActiveFilters = computed(() => {
+  const f = exportFilters.value;
+  return f.dateFrom || f.dateTo || f.type || f.category || f.account || f.project || f.status || f.contractor || f.owner;
+});
 
 // --- Шаги (Импорт) ---
 const step = ref('upload'); 
@@ -72,7 +108,6 @@ const isReviewDisabled = computed(() => {
 // --- Функции ---
 
 function resetState() {
-  console.log("Очистка состояния ImportExportModal...");
   step.value = 'upload';
   error.value = null;
   isLoading.value = false;
@@ -89,6 +124,8 @@ function resetState() {
   exportError.value = null;
   isDataReady.value = false;
   processedAllData.value = {};
+  showExportPreview.value = false;
+  resetExportFilters(); 
   
   if (fileInputRef.value) {
     fileInputRef.value.value = null;
@@ -100,6 +137,22 @@ function resetExport() {
   exportError.value = null;
   isDataReady.value = false;
   processedAllData.value = {};
+  showExportPreview.value = false; 
+  resetExportFilters(); 
+}
+
+function resetExportFilters() {
+  exportFilters.value = {
+    dateFrom: '',
+    dateTo: '',
+    type: '',
+    category: '',
+    account: '',
+    project: '',
+    status: '',
+    contractor: '',
+    owner: ''
+  };
 }
 
 function closeModal() {
@@ -126,7 +179,6 @@ function handleFileSelect(event) {
     file.value = f;
     parseCsv();
   }
-  
   if (event.target) {
     event.target.value = null;
   }
@@ -162,13 +214,10 @@ function parseCsv() {
         isLoading.value = false;
         return;
       }
-      
       csvHeaders.value = results.meta.fields;
       csvData.value = results.data;
-      
       autoMapHeaders();
       autoSelectValidRows(); 
-      
       isLoading.value = false;
       step.value = 'mapping';
     },
@@ -185,11 +234,9 @@ function autoMapHeaders() {
 
   for (const csvHeader of csvHeaders.value) {
     const csvHeaderLower = csvHeader.trim().toLowerCase();
-    
     const foundField = systemFields.find(field => 
       field.aliases.includes(csvHeaderLower) && !usedSystemKeys.has(field.key)
     );
-    
     if (foundField) {
       mapping[csvHeader] = foundField.key;
       usedSystemKeys.add(foundField.key); 
@@ -230,12 +277,10 @@ function toggleSelectAll() {
 
 function goToReviewStep() {
   error.value = null;
-  
   if (isReviewDisabled.value) {
     error.value = 'Необходимо сопоставить обязательные поля (Дата, Сумма, Тип) и выбрать хотя бы одну строку.';
     return;
   }
-  
   operationsToImport.value = transformDataForImport(selectedRows.value);
   identifyNewEntities();
   step.value = 'review';
@@ -256,19 +301,16 @@ function identifyNewEntities() {
   for (const field of entityFields) {
     const fieldKey = field.key; 
     const entityName = field.entity;
-
     const storeEntities = mainStore[entityName].value || [];
     const storeEntityNames = new Set(storeEntities.map(e => e.name.toLowerCase().trim()));
     
     for (const op of operationsToImport.value) {
       if (fieldKey === 'category' && op.type === 'transfer') continue;
-
       const value = op[fieldKey]; 
       
       if (value) {
         const trimmedValue = value.trim();
         const lowerValue = trimmedValue.toLowerCase();
-        
         if (!storeEntityNames.has(lowerValue) && !newFound[entityName].has(trimmedValue)) {
           newFound[entityName].add(trimmedValue);
         }
@@ -312,10 +354,8 @@ async function startImport() {
         importProgress.value = progress;
       }
     );
-    
     importProgress.value = createdDocs.length;
     emit('import-complete');
-    
   } catch (err) {
     console.error('Ошибка импорта:', err);
     error.value = `Ошибка импорта: ${err.message || 'Неизвестная ошибка'}`;
@@ -344,7 +384,6 @@ function transformDataForImport(selectedIndices) {
     
   for (const row of dataToProcess) {
     const op = {};
-    
     const typeHeader = reverseMapping['type'];
     let opType = null;
     if (typeHeader && row[typeHeader]) {
@@ -354,7 +393,6 @@ function transformDataForImport(selectedIndices) {
 
     for (const field of systemFields) {
       if (field.key === 'type') continue; 
-
       const systemKey = field.key;
       const csvHeader = reverseMapping[systemKey];
       
@@ -369,7 +407,6 @@ function transformDataForImport(selectedIndices) {
         } else if (systemKey === 'date') {
           value = parseDate(value); 
         }
-        
         op[systemKey] = value;
       }
     }
@@ -378,17 +415,12 @@ function transformDataForImport(selectedIndices) {
       operations.push(op);
     }
   }
-  
   return operations;
 }
 
 function cleanAmount(value) {
   if (typeof value !== 'string') return null;
-  
-  let cleaned = value
-    .replace(/₸/g, '')      
-    .replace(/[^\d.,-]/g, ''); 
-
+  let cleaned = value.replace(/₸/g, '').replace(/[^\d.,-]/g, ''); 
   const lastComma = cleaned.lastIndexOf(',');
   const lastDot = cleaned.lastIndexOf('.');
   
@@ -410,16 +442,13 @@ function cleanAmount(value) {
        cleaned = cleaned.replace(/\./g, (match, offset) => offset === lastDot ? '.' : '');
     }
   }
-  
   cleaned = cleaned.replace(/\s/g, '');
-  
   const num = parseFloat(cleaned);
   return isNaN(num) ? null : num;
 }
 
 function parseDate(value) {
   if (typeof value !== 'string') return null;
-  
   let parts = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (parts) {
     const day = parseInt(parts[1], 10);
@@ -428,7 +457,6 @@ function parseDate(value) {
     const date = new Date(year, month, day);
     return date.toISOString();
   }
-  
   parts = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (parts) {
      const year = parseInt(parts[1], 10);
@@ -437,35 +465,21 @@ function parseDate(value) {
      const date = new Date(year, month, day);
      return date.toISOString();
   }
-
   const d = new Date(value);
   if (!isNaN(d.getTime())) {
     return d.toISOString();
   }
-  
   return null;
 }
 
 function normalizeType(value) {
   if (typeof value !== 'string') return null;
   const lower = value.toLowerCase().trim();
-  
-  if (['доход', 'income', 'приход', 'поступление'].includes(lower)) {
-    return 'income';
-  }
-  if (['расход', 'expense', 'убыток', 'трата', 'списание'].includes(lower)) {
-    return 'expense';
-  }
-  if (['перевод', 'transfer'].includes(lower)) {
-    return 'transfer';
-  }
-  if (['вывод', 'вывод средств', 'withdrawal'].includes(lower)) {
-    return 'withdrawal';
-  }
-  // 🟢 v10.22: Добавлена "предоплата" для корректного обратного импорта
-  if (['предоплата', 'prepayment'].includes(lower)) {
-    return 'prepayment';
-  }
+  if (['доход', 'income', 'приход', 'поступление'].includes(lower)) return 'income';
+  if (['расход', 'expense', 'убыток', 'трата', 'списание'].includes(lower)) return 'expense';
+  if (['перевод', 'transfer'].includes(lower)) return 'transfer';
+  if (['вывод', 'вывод средств', 'withdrawal'].includes(lower)) return 'withdrawal';
+  if (['предоплата', 'prepayment'].includes(lower)) return 'prepayment';
   return null;
 }
 
@@ -480,13 +494,12 @@ const UNIFIED_COLUMNS = [
   'Категория',
   'Проект',
   'Сумма',
-  'Прогноз', // 🟢 v10.22: Переименовано из "Остаток"
+  'Прогноз',
   'Счет',
   'Контрагент',
   'Компания/Физлицо',
   'Описание',
   'Статус',
-  // Технические поля
   'account_id',
   'category_id',
   'project_id'
@@ -507,24 +520,14 @@ function resolveEntityName(entityOrId, storeList) {
   return '';
 }
 
-// 🟢 v10.23: Функция для получения ID сущности (по объекту, ID или имени)
 function resolveEntityId(entityOrId, storeList) {
   if (!entityOrId) return '';
-  // Если это объект и у него есть ID
   if (typeof entityOrId === 'object' && entityOrId._id) return entityOrId._id;
-  // Если это ID (строка 24 символа или меньше/больше, но точно не имя)
-  // Для надежности: если это имя, то пытаемся найти ID по имени
   if (typeof entityOrId === 'string') {
-      // Если это похоже на ID (простая проверка на длину или формат, но тут просто ищем совпадение)
       const foundById = storeList.find(item => item._id === entityOrId);
       if (foundById) return foundById._id;
-      
-      // Если по ID не нашли, ищем по имени
       const foundByName = storeList.find(item => item.name && item.name.toLowerCase() === entityOrId.toLowerCase());
       if (foundByName) return foundByName._id;
-      
-      // Если ничего не нашли, возвращаем как есть (хотя это скорее всего ошибка, но лучше чем ничего)
-      // или пустую строку, если мы уверены что это мусор
       return entityOrId; 
   }
   return '';
@@ -536,16 +539,16 @@ function resolveEntityId(entityOrId, storeList) {
 async function prepareExportData() {
   isExporting.value = true;
   exportError.value = null;
+  showExportPreview.value = false;
+  resetExportFilters(); 
   
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTimestamp = today.getTime();
 
-    // 1. Загружаем ВСЕ операции
     const { operations } = await mainStore.exportAllOperations(); 
     
-    // Инициализируем балансы начальными значениями счетов
     const runningBalances = new Map();
     mainStore.accounts.forEach(acc => {
       runningBalances.set(acc._id, acc.initialBalance || 0);
@@ -553,7 +556,6 @@ async function prepareExportData() {
 
     const allRows = [];
     
-    // Сортировка по хронологии
     operations.sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
@@ -581,23 +583,19 @@ async function prepareExportData() {
       const status = isFuture ? 'План' : 'Исполнено';
       const opAmount = op.amount || 0;
 
-      // Резолвим базовые поля (ИМЕНА)
       let catName = resolveEntityName(op.categoryId, mainStore.categories);
       let projName = resolveEntityName(op.projectId, mainStore.projects);
       let contrName = resolveEntityName(op.contractorId, mainStore.contractors);
       let ownerName = resolveEntityName(op.companyId, mainStore.companies) || resolveEntityName(op.individualId, mainStore.individuals);
 
-      // Резолвим базовые поля (ID) - 🟢 v10.23: Гарантируем получение ID
       let catId = resolveEntityId(op.categoryId, mainStore.categories);
       let projId = resolveEntityId(op.projectId, mainStore.projects);
       let accountId = resolveEntityId(op.accountId, mainStore.accounts);
 
-      // 🟢 v10.22: Логика "Без проекта"
       if (!projName || projName.trim() === '') {
         projName = 'Без проекта';
       }
 
-      // 🟢 Вспомогательная функция для добавления строки
       const addRow = (accId, amountChange, typeLabel, desc, overrides = {}) => {
          let currentBalance = 0;
          let accName = '';
@@ -609,8 +607,6 @@ async function prepareExportData() {
             accName = mainStore.accounts.find(a => a._id === accId)?.name || '???';
          }
 
-         // Используем override значения или базовые, но при этом для ID тоже должна быть логика
-         // Если override.category (имя) задано, нам нужно найти его ID для полноты данных
          let finalCatId = catId;
          if (overrides.category && overrides.category !== catName) {
              finalCatId = resolveEntityId(overrides.category, mainStore.categories);
@@ -628,16 +624,12 @@ async function prepareExportData() {
             'Компания/Физлицо': overrides.owner !== undefined ? overrides.owner : ownerName,
             'Описание': desc, 
             'Статус': status,
-            // 🟢 v10.23: Технические поля теперь заполняются надежно
             'account_id': accId || '',
             'category_id': finalCatId || '', 
             'project_id': projId || ''
          });
       };
 
-      // ------------------------------------------
-      // 1. ЛОГИКА ПЕРЕВОДОВ (v10.22 REWORK)
-      // ------------------------------------------
       if (op.type === 'transfer' || op.isTransfer) {
          const fromAccId = resolveEntityId(op.fromAccountId, mainStore.accounts);
          const toAccId = resolveEntityId(op.toAccountId, mainStore.accounts);
@@ -646,39 +638,31 @@ async function prepareExportData() {
          const toOwner = resolveEntityName(op.toCompanyId, mainStore.companies) || resolveEntityName(op.toIndividualId, mainStore.individuals);
          
          const absAmount = Math.abs(opAmount);
-
-         // 🟢 FIX: Принудительная категория "Перевод", если пусто
          const transferCategory = catName || 'Перевод';
 
-         // Сценарий Б: Между разными компаниями (Разбиваем на Расход и Доход)
          const isInterCompany = op.fromCompanyId && op.toCompanyId && (
             (op.fromCompanyId._id || op.fromCompanyId) !== (op.toCompanyId._id || op.toCompanyId)
          );
-
-         // Сценарий В: Перевод на личную карту (Если получатель - физлицо, а отправитель - нет?)
          const isToPersonal = !!op.toIndividualId; 
 
          if (isInterCompany) {
-             // 1. У Отправителя -> РАСХОД
              if (fromAccId) {
                 addRow(fromAccId, -absAmount, 'Расход', `Перевод в ${toOwner}`, {
                     owner: fromOwner,
-                    contractor: toOwner, // Контрагент = получатель
+                    contractor: toOwner, 
                     category: transferCategory 
                 });
              }
-             // 2. У Получателя -> ДОХОД
              if (toAccId) {
                  addRow(toAccId, absAmount, 'Доход', `Поступление от ${fromOwner}`, {
                      owner: toOwner,
-                     contractor: fromOwner, // Контрагент = отправитель
+                     contractor: fromOwner,
                      category: transferCategory 
                  });
              }
          }
          else if (isToPersonal) {
              const personalDesc = "На развитие бизнеса";
-             // Списание
              if (fromAccId) {
                  addRow(fromAccId, -absAmount, 'Перевод (Исх)', personalDesc, { 
                      owner: fromOwner, 
@@ -686,7 +670,6 @@ async function prepareExportData() {
                      category: transferCategory 
                  });
              }
-             // Пополнение
              if (toAccId) {
                  addRow(toAccId, absAmount, 'Перевод (Вх)', personalDesc, { 
                      owner: toOwner, 
@@ -696,9 +679,7 @@ async function prepareExportData() {
              }
          }
          else {
-             // Сценарий А: Обычный перевод между своими счетами
              const stdDesc = op.description || `Перевод: ${fromOwner || 'Счет'} -> ${toOwner || 'Счет'}`;
-             
              if (fromAccId) {
                 addRow(fromAccId, -absAmount, 'Перевод (Исх)', stdDesc, { 
                     owner: fromOwner, 
@@ -715,21 +696,14 @@ async function prepareExportData() {
              }
          }
       }
-      
-      // ------------------------------------------
-      // 2. ВЫВОД СРЕДСТВ (v10.22)
-      // ------------------------------------------
       else if (op.type === 'withdrawal') {
-          // Контрагент = Владелец счета списания (Физлицо)
           const acc = mainStore.accounts.find(a => a._id === accountId);
           let withdrawalContr = '';
           if (acc && acc.individualId) {
               withdrawalContr = resolveEntityName(acc.individualId, mainStore.individuals);
           }
           const desc = op.description || `Вывод средств (${withdrawalContr})`;
-          // 🟢 FIX: Категория для вывода
           const withdrawalCategory = catName || 'Вывод средств';
-          
           addRow(
              accountId,
              opAmount,
@@ -741,17 +715,11 @@ async function prepareExportData() {
              }
           );
       }
-
-      // ------------------------------------------
-      // 3. ОБЫЧНЫЕ ОПЕРАЦИИ (Доход, Расход, Предоплата)
-      // ------------------------------------------
       else {
          let typeLabel = 'Расход';
          let finalDesc = op.description || '';
 
          if (op.type === 'income') {
-             // 🟢 v10.22: Логика ПРЕДОПЛАТЫ
-             // Проверяем имя категории
              const catNameLower = catName.toLowerCase().trim();
              if (catNameLower.includes('розничн') || catNameLower.includes('реализация')) {
                  typeLabel = 'Предоплата';
@@ -766,7 +734,6 @@ async function prepareExportData() {
              if (!finalDesc) finalDesc = `Предоплата по проекту ${projName}`;
          }
          else {
-             // Расход
              if (!finalDesc) finalDesc = `Расход: ${catName}`;
          }
 
@@ -802,25 +769,149 @@ function downloadAllData() {
 
 function triggerCsvDownload(csvString, filenamePrefix = "export") {
   const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
-  
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
-  
   link.setAttribute('href', url);
-  
   const d = new Date();
   const pad = (num) => String(num).padStart(2, '0');
   const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  
   link.setAttribute('download', `index12_${filenamePrefix}_${timestamp}.csv`);
-  
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  
   URL.revokeObjectURL(url);
 }
+
+// ----------------------------------------------
+// 🟢 v10.25: ФИЛЬТРАЦИЯ
+// ----------------------------------------------
+
+const exportFilterOptions = computed(() => {
+  const data = processedAllData.value.data || [];
+  const options = {
+    type: new Set(),
+    category: new Set(),
+    account: new Set(),
+    project: new Set(),
+    status: new Set(),
+    contractor: new Set(),
+    owner: new Set()
+  };
+
+  data.forEach(row => {
+    if (row['Тип']) options.type.add(row['Тип']);
+    if (row['Категория']) options.category.add(row['Категория']);
+    if (row['Счет']) options.account.add(row['Счет']);
+    if (row['Проект']) options.project.add(row['Проект']);
+    if (row['Статус']) options.status.add(row['Статус']);
+    if (row['Контрагент']) options.contractor.add(row['Контрагент']);
+    if (row['Компания/Физлицо']) options.owner.add(row['Компания/Физлицо']);
+  });
+
+  return {
+    type: Array.from(options.type).sort(),
+    category: Array.from(options.category).sort(),
+    account: Array.from(options.account).sort(),
+    project: Array.from(options.project).sort(),
+    status: Array.from(options.status).sort(),
+    contractor: Array.from(options.contractor).sort(),
+    owner: Array.from(options.owner).sort()
+  };
+});
+
+function parseRowDate(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split('.');
+  if (parts.length !== 3) return null;
+  return new Date(parts[2], parts[1] - 1, parts[0]);
+}
+
+const filteredExportData = computed(() => {
+  let data = processedAllData.value.data || [];
+  const f = exportFilters.value;
+
+  if (f.type) data = data.filter(r => r['Тип'] === f.type);
+  if (f.category) data = data.filter(r => r['Категория'] === f.category);
+  if (f.account) data = data.filter(r => r['Счет'] === f.account);
+  if (f.project) data = data.filter(r => r['Проект'] === f.project);
+  if (f.status) data = data.filter(r => r['Статус'] === f.status);
+  if (f.contractor) data = data.filter(r => r['Контрагент'] === f.contractor);
+  if (f.owner) data = data.filter(r => r['Компания/Физлицо'] === f.owner);
+
+  if (f.dateFrom || f.dateTo) {
+    const from = f.dateFrom ? new Date(f.dateFrom) : null;
+    const to = f.dateTo ? new Date(f.dateTo) : null;
+    if (from) from.setHours(0,0,0,0);
+    if (to) to.setHours(23,59,59,999);
+
+    data = data.filter(r => {
+      const rDate = parseRowDate(r['Дата']);
+      if (!rDate) return false;
+      if (from && rDate < from) return false;
+      if (to && rDate > to) return false;
+      return true;
+    });
+  }
+  return data;
+});
+
+// 🟢 v10.28: КОНФИГУРАЦИЯ СЕТКИ (GRID) - ЭКСПОРТ
+// Определяем ширину каждой колонки
+const gridTemplate = computed(() => {
+  const widths = [
+    '140px', // Дата
+    '90px',  // Тип
+    '130px', // Категория
+    '120px', // Проект
+    '90px',  // Сумма
+    '90px',  // Прогноз
+    '130px', // Счет
+    '130px', // Контрагент
+    '130px', // Компания/Физлицо
+    'minmax(200px, 1fr)', // Описание
+    '90px',  // Статус
+  ];
+  
+  if (showDebugIds.value) {
+    widths.push('200px'); // account_id
+    widths.push('200px'); // category_id
+    widths.push('200px'); // project_id
+  }
+  
+  return widths.join(' ');
+});
+
+const visibleColumns = computed(() => {
+  const cols = [...UNIFIED_COLUMNS];
+  if (!showDebugIds.value) {
+    // Убираем ID-колонки, если отладка выключена
+    return cols.filter(c => !c.includes('_id'));
+  }
+  return cols;
+});
+
+// 🟢 КОНФИГУРАЦИЯ СЕТКИ (GRID) - ИМПОРТ
+const visibleCsvHeaders = computed(() => {
+  if (showDebugIds.value) return csvHeaders.value;
+  // Скрываем колонки, оканчивающиеся на _id или равные id
+  return csvHeaders.value.filter(h => {
+      const lower = h.trim().toLowerCase();
+      return !lower.endsWith('_id') && lower !== 'id' && lower !== '_id';
+  });
+});
+
+const importGridTemplate = computed(() => {
+  // Чекбокс (40px) + N колонок для CSV полей
+  const widths = ['40px']; 
+  if (visibleCsvHeaders.value.length) {
+    for (let i = 0; i < visibleCsvHeaders.value.length; i++) {
+       widths.push('minmax(200px, 1fr)');
+    }
+  }
+  return widths.join(' ');
+});
+
 </script>
 <template>
   <div class="modal-overlay" @click.self="closeModal">
@@ -846,11 +937,8 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
         </button>
       </div>
 
-      <!-- ============================================= -->
-      <!-- Вкладка "ИМПОРТ"                            -->
-      <!-- ============================================= -->
+      <!-- Вкладка ИМПОРТ -->
       <div v-if="currentTab === 'import'" class="import-content-wrapper">
-        
         <div v-if="step === 'upload'" class="modal-step-content">
           <div 
             class="drop-zone" 
@@ -862,26 +950,13 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
             <div v-if="!isLoading">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               <p>Перетащите CSV файл сюда</p>
-              <p class="small-text">или</p>
               <label class="file-input-label">
                 Выберите файл
-                <input 
-                  ref="fileInputRef"
-                  type="file" 
-                  accept=".csv" 
-                  @change="handleFileSelect" 
-                  class="file-input" 
-                />
+                <input ref="fileInputRef" type="file" accept=".csv" @change="handleFileSelect" class="file-input" />
               </label>
-              
-              <button 
-                type="button" 
-                class="btn-secondary download-template-btn" 
-                @click.stop="downloadTemplate"
-              >
-                Скачать шаблон (Доход/Расход)
+              <button type="button" class="btn-secondary download-template-btn" @click.stop="downloadTemplate">
+                Скачать шаблон
               </button>
-              
             </div>
             <div v-if="isLoading" class="loading-indicator">
               <div class="spinner"></div>
@@ -891,74 +966,69 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
           <div v-if="error" class="error-message">{{ error }}</div>
         </div>
 
-        <div v-if="step === 'mapping'" class="modal-step-content mapping-step">
-          <p class="step-description">
-            Сопоставьте колонки из вашего CSV-файла с полями системы.
-          </p>
-          <div class="mapping-table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th class="checkbox-col">
-                    <input 
-                      type="checkbox" 
-                      @change="toggleSelectAll" 
-                      :checked="isAllSelected"
-                      title="Выбрать все/Снять все"
-                    />
-                  </th>
-                  <th v-for="header in csvHeaders" :key="header">
-                    <div class="header-cell">
-                      <span class="csv-header-name" :title="header">{{ header }}</span>
-                      <select v-model="columnMapping[header]" class="mapping-select">
+        <!-- 🟢 ИМПОРТ: STEP MAPPING (Grid Layout как в Экспорте) -->
+        <div v-if="step === 'mapping'" class="export-preview-container">
+           <!-- HEADER BAR -->
+           <div class="preview-header-bar">
+              <h3>Сопоставьте колонки</h3>
+              <div class="header-controls">
+                  <label class="debug-toggle">
+                    <input type="checkbox" v-model="showDebugIds"> Показать ID
+                  </label>
+                  <span class="count-label">Строк: {{ csvData.length }}</span>
+                  <button class="btn-secondary" @click="resetState">
+                      &times; Сброс
+                  </button>
+              </div>
+           </div>
+           
+           <!-- GRID TABLE -->
+           <div class="grid-table-container">
+              <!-- Grid Header -->
+              <div class="grid-header-row" :style="{ gridTemplateColumns: importGridTemplate }">
+                 <div class="grid-header-cell center-content">
+                    <input type="checkbox" @change="toggleSelectAll" :checked="isAllSelected" />
+                 </div>
+                 <div v-for="header in visibleCsvHeaders" :key="header" class="grid-header-cell import-grid-header">
+                     <!-- Кастомный заголовок импорта с селектом -->
+                     <span class="csv-header-name" :title="header">{{ header }}</span>
+                     <select v-model="columnMapping[header]" class="mapping-select">
                         <option :value="null">-- Не использовать --</option>
-                        <option disabled>-----------------</option>
-                        <option v-for="field in systemFields" :key="field.key" :value="field.key">
-                          {{ field.label }}
-                        </option>
-                      </select>
+                        <option v-for="field in systemFields" :key="field.key" :value="field.key">{{ field.label }}</option>
+                     </select>
+                 </div>
+              </div>
+
+              <!-- Grid Body -->
+              <div class="grid-body">
+                 <div v-for="(row, rowIndex) in previewData" 
+                      :key="rowIndex" 
+                      class="grid-row" 
+                      :class="{ 'row-disabled': !isValidRow(row) }"
+                      :style="{ gridTemplateColumns: importGridTemplate }">
+                    
+                    <div class="grid-cell center-content">
+                       <input type="checkbox" :value="rowIndex" v-model="selectedRows" :disabled="!isValidRow(row)" />
                     </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, rowIndex) in previewData" :key="rowIndex" :class="{ 'row-disabled': !isValidRow(row) }">
-                  <td class="checkbox-col">
-                    <input 
-                      type="checkbox" 
-                      :value="rowIndex" 
-                      v-model="selectedRows"
-                      :disabled="!isValidRow(row)"
-                    />
-                  </td>
-                  <td v-for="(header, colIndex) in csvHeaders" :key="colIndex" :title="row[header]">
-                    {{ row[header] }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-if="error" class="error-message">{{ error }}</div>
+                    
+                    <div v-for="(header, colIndex) in visibleCsvHeaders" :key="colIndex" class="grid-cell" :title="row[header]">
+                       {{ row[header] }}
+                    </div>
+                 </div>
+              </div>
+           </div>
+           <div v-if="error" class="error-message" style="margin: 10px 24px;">{{ error }}</div>
         </div>
 
         <div v-if="step === 'review'" class="modal-step-content review-step">
-          <p class="step-description">
-            Будет импортировано **{{ operationsToImport.length }}** операций (выбрано {{ selectedRows.size }} из {{ csvData.length }} строк).
-          </p>
-          <p>Следующие новые элементы будут созданы автоматически. Пожалуйста, проверьте:</p>
-          
+          <p class="step-description">Проверка перед импортом</p>
           <div class="new-entities-container">
             <div v-for="entityType in Object.keys(newEntities)" :key="entityType">
               <div v-if="newEntities[entityType].length > 0" class="entity-list">
                 <h4>Новые {{ getEntityName(entityType) }}:</h4>
-                <ul>
-                  <li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li>
-                </ul>
+                <ul><li v-for="item in newEntities[entityType]" :key="item">{{ item }}</li></ul>
               </div>
             </div>
-            <p v-if="Object.values(newEntities).every(arr => arr.length === 0)">
-              Новых элементов для создания не найдено. Все данные ссылаются на существующие сущности.
-            </p>
           </div>
           <div v-if="error" class="error-message">{{ error }}</div>
         </div>
@@ -966,554 +1036,363 @@ function triggerCsvDownload(csvString, filenamePrefix = "export") {
         <div v-if="step === 'importing'" class="modal-step-content">
           <div class="loading-indicator">
             <div class="spinner"></div>
-            <p>Идет импорт данных... Пожалуйста, подождите.</p>
-            <p class="small-text">{{ importProgress }} / {{ operationsToImport.length }}</p>
+            <p>Импорт... {{ importProgress }} / {{ operationsToImport.length }}</p>
           </div>
         </div>
-
       </div>
       
-      <!-- =========================================== -->
-      <!-- Вкладка "ЭКСПОРТ (CSV)"                     -->
-      <!-- =========================================== -->
+      <!-- Вкладка ЭКСПОРТ -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
-        
-        <p>
-          Скачайте единый отчет по всем операциям (Прошлые + Будущие) в формате CSV.<br>
-          <small style="color: var(--color-text-soft);">
-            Включает: Доходы, Расходы, Переводы (в т.ч. между компаниями), Вывод средств, Предоплаты.<br>
-            Колонка "Прогноз" показывает остаток с учетом будущих операций.
-          </small>
-        </p>
-        
-        <!-- Шаг 1: Кнопка подготовки -->
-        <button 
-          v-if="!isDataReady"
-          @click="prepareExportData" 
-          class="btn-primary export-btn prepare-btn" 
-          :disabled="isExporting"
-        >
-          Подготовить данные
-        </button>
-
-        <div v-if="isExporting" class="loading-indicator">
-          <div class="spinner"></div>
-          <p>Формирование единого отчета и расчет прогноза...</p>
-        </div>
-
-        <!-- Шаг 2: Кнопка скачивания -->
-        <div v-if="isDataReady && !isExporting" class="download-section">
-          <p class="step-description">
-            Данные готовы. Вы можете скачать полный отчет ({{ processedAllData.data.length }} строк).
-          </p>
-          <div class="download-buttons">
-            <button class="btn-primary export-btn" @click="downloadAllData">
-              Скачать Выписку (Все операции)
+        <div v-if="!showExportPreview" class="export-controls-container">
+            <!-- 🟢 Отдельный стиль для описания -->
+            <p class="export-description">Скачайте единый отчет по всем операциям.</p>
+            <button v-if="!isDataReady" @click="prepareExportData" class="btn-primary export-btn prepare-btn" :disabled="isExporting">
+              Подготовить данные
             </button>
-          </div>
-          <button class="btn-secondary" @click="resetExport" style="margin-top: 20px;">
-            Начать заново
-          </button>
+            <div v-if="isExporting" class="loading-indicator"><div class="spinner"></div></div>
+            <div v-if="isDataReady && !isExporting" class="download-section">
+              <div class="download-buttons">
+                <!-- 🟢 Кнопка Скачать -->
+                <button class="btn-primary export-btn" @click="downloadAllData">Скачать выписку</button>
+                <button class="btn-primary export-btn view-btn" @click="showExportPreview = true">Смотреть выписку</button>
+              </div>
+              <button class="btn-secondary" @click="resetExport" style="margin-top: 20px;">Начать заново</button>
+            </div>
+            <div v-if="exportError" class="error-message">{{ exportError }}</div>
         </div>
-        
-        <div v-if="exportError" class="error-message">
-          {{ exportError }}
+
+        <!-- 🟢 ПРЕДПРОСМОТР (GRID LAYOUT) -->
+        <div v-if="showExportPreview" class="export-preview-container">
+            <div class="preview-header-bar">
+                <h3>Предпросмотр</h3>
+                <div class="header-controls">
+                    <label class="debug-toggle">
+                      <input type="checkbox" v-model="showDebugIds"> Показать ID
+                    </label>
+                    <span class="count-label">Строк: {{ filteredExportData.length }}</span>
+                    <button v-if="hasActiveFilters" class="btn-secondary btn-small" @click="resetExportFilters">
+                      &times; Сброс
+                    </button>
+                    <button class="btn-secondary" @click="showExportPreview = false">
+                        &larr; Назад
+                    </button>
+                </div>
+            </div>
+
+            <!-- 🟢 GRID TABLE STRUCTURE -->
+            <div class="grid-table-container">
+                <!-- 1. HEADER ROW (Overflow Visible for Dropdowns) -->
+                <div class="grid-header-row" :style="{ gridTemplateColumns: gridTemplate }">
+                    <div v-for="col in visibleColumns" :key="col" class="grid-header-cell">
+                        
+                        <!-- Filters -->
+                        <div v-if="col === 'Дата'" class="filter-wrapper">
+                           <!-- 🟢 FIX: Добавлен класс no-bg-hover для исправления двойного фона -->
+                           <DateRangePicker v-model="dateRangeFilter" placeholder="Дата" class="header-filter-control no-bg-hover"/>
+                        </div>
+                        <div v-else-if="col === 'Тип'" class="filter-wrapper">
+                           <select v-model="exportFilters.type" class="header-filter-control has-arrow">
+                              <option value="">Тип</option>
+                              <option v-for="opt in exportFilterOptions.type" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        <div v-else-if="col === 'Категория'" class="filter-wrapper">
+                            <select v-model="exportFilters.category" class="header-filter-control has-arrow">
+                              <option value="">Категория</option>
+                              <option v-for="opt in exportFilterOptions.category" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        <div v-else-if="col === 'Проект'" class="filter-wrapper">
+                            <select v-model="exportFilters.project" class="header-filter-control has-arrow">
+                              <option value="">Проект</option>
+                              <option v-for="opt in exportFilterOptions.project" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        <div v-else-if="col === 'Счет'" class="filter-wrapper">
+                            <select v-model="exportFilters.account" class="header-filter-control has-arrow">
+                              <option value="">Счет</option>
+                              <option v-for="opt in exportFilterOptions.account" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        <div v-else-if="col === 'Контрагент'" class="filter-wrapper">
+                            <select v-model="exportFilters.contractor" class="header-filter-control has-arrow">
+                              <option value="">Контрагент</option>
+                              <option v-for="opt in exportFilterOptions.contractor" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        <div v-else-if="col === 'Компания/Физлицо'" class="filter-wrapper">
+                            <select v-model="exportFilters.owner" class="header-filter-control has-arrow">
+                              <option value="">Комп./Физ.</option>
+                              <option v-for="opt in exportFilterOptions.owner" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        <div v-else-if="col === 'Статус'" class="filter-wrapper">
+                            <select v-model="exportFilters.status" class="header-filter-control has-arrow">
+                              <option value="">Статус</option>
+                              <option v-for="opt in exportFilterOptions.status" :key="opt" :value="opt">{{ opt }}</option>
+                           </select>
+                        </div>
+                        
+                        <!-- Simple Header -->
+                        <span v-else class="header-label">{{ col }}</span>
+                    </div>
+                </div>
+
+                <!-- 2. BODY (Scrollable) -->
+                <div class="grid-body">
+                    <div v-for="(row, idx) in filteredExportData" :key="idx" class="grid-row" :style="{ gridTemplateColumns: gridTemplate }">
+                        <div v-for="col in visibleColumns" :key="col" class="grid-cell" :title="row[col]">
+                            {{ row[col] }}
+                        </div>
+                    </div>
+                    <div v-if="filteredExportData.length === 0" class="empty-state">
+                        Нет данных
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
 
-      <!-- Футер для ИМПОРТА -->
+      <!-- Футер -->
       <div v-if="currentTab === 'import'" class="modal-actions">
-        <button 
-          @click="closeModal" 
-          class="btn-secondary"
-          :disabled="step === 'importing'"
-        >
-          Отмена
-        </button>
-        
-        <button 
-          @click="previousStep" 
-          v-if="step === 'mapping' || step === 'review'" 
-          class="btn-secondary"
-          :disabled="step === 'importing'"
-        >
-          Назад
-        </button>
-        
-        <button 
-          @click="goToReviewStep" 
-          v-if="step === 'mapping'" 
-          class="btn-primary"
-          :disabled="isReviewDisabled"
-        >
-          Проверить ({{ selectedRows.size }})
-        </button>
-        
-        <button 
-          @click="startImport" 
-          v-if="step === 'review'" 
-          class="btn-primary"
-          :disabled="operationsToImport.length === 0"
-        >
-          Начать импорт ({{ operationsToImport.length }})
-        </button>
+        <button @click="closeModal" class="btn-secondary">Отмена</button>
+        <button @click="previousStep" v-if="step !== 'upload' && step !== 'importing'" class="btn-secondary">Назад</button>
+        <button @click="goToReviewStep" v-if="step === 'mapping'" class="btn-primary" :disabled="isReviewDisabled">Проверить</button>
+        <button @click="startImport" v-if="step === 'review'" class="btn-primary" :disabled="operationsToImport.length === 0">Начать</button>
       </div>
-
-      <!-- Футер для ЭКСПОРТА -->
       <div v-if="currentTab === 'export'" class="modal-actions">
-        <button 
-          @click="closeModal" 
-          class="btn-secondary"
-          :disabled="isExporting"
-        >
-          Закрыть
-        </button>
+        <button @click="closeModal" class="btn-secondary">Закрыть</button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* 🟢 МОДАЛЬНОЕ ОКНО - ШИРОКОЕ */
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000;
 }
-
 .modal-content {
-  width: 90vw;
-  max-width: 1200px;
-  height: 90vh;
-  max-height: 800px;
-  background: var(--color-background);
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-  display: flex;
-  flex-direction: column;
-  position: relative;
+  width: 95vw; max-width: 1400px; height: 90vh; max-height: 900px;
+  background: var(--color-background); border-radius: 8px; border: 1px solid var(--color-border);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; flex-direction: column; position: relative;
 }
 
-/* 🟢 ИСПРАВЛЕНО: Кнопка закрытия (увеличен хитбокс, добавлен z-index, pointer) */
-.close-btn {
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  background: none;
-  border: none;
-  font-size: 32px; /* Чуть крупнее символ */
-  color: var(--color-text-soft);
-  cursor: pointer;
-  padding: 10px; /* Увеличенный паддинг для клика */
-  line-height: 0.8;
-  z-index: 1001; /* Чтобы точно была поверх всего */
-  transition: color 0.2s;
-}
-.close-btn:hover {
-  color: var(--color-text);
+/* 🟢 GRID TABLE STYLES */
+.grid-table-container {
+  display: flex; flex-direction: column; flex: 1; overflow: auto; /* Allow X/Y scrolling for whole table */
+  position: relative; /* Context for sticky */
+  border-top: 1px solid var(--color-border);
 }
 
-h2 {
-  padding: 20px 24px;
-  margin: 0;
-  border-bottom: 1px solid var(--color-border);
-  font-weight: 600;
-  flex-shrink: 0; 
-}
-
-.modal-tabs {
-  display: flex;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-.tab-btn {
-  padding: 12px 16px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--color-text-soft);
-  cursor: pointer;
-  font-size: 15px;
-  margin-bottom: -1px; /* Нахлест на border-bottom */
-}
-.tab-btn.active {
-  color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
-}
-
-
-.import-content-wrapper {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0; /* Важно для flex-grow */
-}
-
-.modal-step-content {
-  flex-grow: 1;
-  padding: 24px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-/* --- Шаг 1: Загрузка --- */
-.drop-zone {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background-soft);
-  color: var(--color-text-soft);
-  transition: background-color 0.2s, border-color 0.2s;
-}
-.drop-zone.drag-over {
-  border-color: var(--color-accent);
-  background: var(--color-background-mute);
-}
-.drop-zone p {
-  margin: 8px 0;
-  font-size: 16px;
-  color: var(--color-text);
-}
-.drop-zone .small-text {
-  font-size: 14px;
-  color: var(--color-text-soft);
-}
-.drop-zone svg {
-  color: var(--color-text-soft);
-  margin-bottom: 16px;
-}
-
-.file-input {
-  display: none;
-}
-.file-input-label {
-  display: inline-block;
-  padding: 10px 20px;
-  background: var(--color-accent);
-  color: #fff;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
-  margin-top: 16px;
-}
-.file-input-label:hover {
-  background: var(--color-accent-hover);
-}
-
-.download-template-btn {
-  margin-top: 16px;
-  font-size: 14px;
-  padding: 8px 16px;
-  background: var(--color-background-mute);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-}
-.download-template-btn:hover {
-  background: var(--color-background-soft);
-  border-color: var(--color-border-hover);
-}
-
-
-/* --- Шаг 2: Сопоставление --- */
-.mapping-step {
-  padding: 0;
-}
-.step-description {
-  padding: 16px 24px;
-  margin: 0;
+.grid-header-row {
+  display: grid;
+  /* Columns are defined inline */
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background-soft);
-  background-color: #34c759; /* Основной цвет кнопки */
-  flex-shrink: 0; 
-}
-
-.download-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.download-section .step-description {
-  border: none;
-  background: none;
-  padding-bottom: 0;
-  text-align: center;
-  color: var(--color-text);
-}
-.download-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  justify-content: center;
-  margin-top: 20px;
-}
-
-/* 🟢 v10.14: Улучшенные стили для кнопок экспорта */
-.download-buttons .export-btn {
-  margin-top: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-width: 200px;
-  padding: 16px 24px;
-  transition: all 0.2s ease-in-out; /* Плавный переход */
-  background-color: #34c759; /* Основной цвет кнопки */
-  box-shadow: 0 2px 4px rgb(14, 14, 14); /* Легкая тень по умолчанию */
-}
-
-/* 🟢 v10.14: Явная реакция на наведение */
-.download-buttons .export-btn:hover {
-  transform: translateY(-2px); /* Приподнимаем кнопку */
-  box-shadow: 0 6px 12px rgba(0,0,0,0.15); /* Усиливаем тень */
-  background-color: var(--color-accent-hover); /* Убеждаемся в смене цвета */
-  background-color: #00ec3b; /* Основной цвет кнопки */
-  filter: brightness(1.05); /* Дополнительная подсветка */
-}
-
-.download-buttons .export-btn span {
-  font-size: 0.8em;
-  font-weight: 400;
-  opacity: 0.7;
-  margin-top: 4px;
-}
-
-/* 🟢 ОБНОВЛЕННЫЙ СТИЛЬ для кнопки "Подготовить данные" */
-.prepare-btn {
-  /* Стиль контурной кнопки как "Скачать шаблон" */
-  background-color: transparent !important; /* Прозрачный фон */
-  border: 1px solid var(--color-border) !important; /* Рамка цвета бордера */
-  color: var(--color-text) !important; /* Цвет текста обычный */
-  
-  padding: 14px 28px;
-  font-size: 1.1em;
-  cursor: pointer;
-  border-radius: 8px; /* Скругление */
-  transition: all 0.2s ease;
-}
-
-/* Hover для .prepare-btn */
-.prepare-btn:hover {
-  background-color: var(--color-background-soft) !important; /* Светлее фон */
-  border-color: var(--color-text) !important; /* Рамка ярче (белее) */
-  transform: translateY(-1px); /* Легкий подъем */
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3); /* Тень */
-}
-
-/* Active (нажатие) */
-.prepare-btn:active {
-  transform: translateY(0);
-  background-color: var(--color-background-mute) !important;
-}
-
-.mapping-table-container {
-  overflow-x: auto;
-  flex-grow: 1;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-th, td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-  font-size: 13px;
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-thead th {
-  background: var(--color-background-soft);
-  border-bottom: 2px solid var(--color-border);
-  position: sticky;
+  z-index: 20; /* High z-index to stay on top */
+  position: sticky; /* Sticky relative to .grid-table-container */
   top: 0;
-  z-index: 10;
+  width: fit-content; /* Ensure it expands to full content width */
+  min-width: 100%;
 }
 
-.checkbox-col {
-  width: 40px;
-  max-width: 40px;
-  padding: 10px;
-  text-align: center;
-}
-.row-disabled {
-  background-color: var(--color-background-soft);
-  color: var(--color-text-faded);
-  opacity: 0.6;
-}
-.row-disabled .mapping-select {
-  opacity: 0.7;
+.grid-header-cell {
+  padding: 4px;
+  display: flex; align-items: center; /* Vertical Center */
+  height: 40px; /* Fixed Header Height */
+  border-right: 1px solid var(--color-border-hover);
+  overflow: visible; /* Allow Dropdowns out */
+  padding-top: 15px;
 }
 
-
-.header-cell {
-  display: flex;
+/* 🟢 Специфично для заголовков импорта в Grid */
+.grid-header-cell.import-grid-header {
   flex-direction: column;
-  min-width: 150px;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 0; /* Reset global padding */
+  padding: 4px 8px;
+  height: auto; /* Allow growth */
+  min-height: 50px;
 }
 .csv-header-name {
+  font-size: 11px;
   font-weight: 600;
-  color: var(--color-text);
-  margin-bottom: 8px;
+  color: var(--color-text-soft);
+  margin-bottom: 4px;
+  display: block;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  width: 100%;
 }
+
+/* 🟢 FIX: Force styles for mapping select to ensure visibility */
 .mapping-select {
   width: 100%;
-  padding: 6px 8px;
-  background: var(--color-background);
-  border: 1px solid var(--color-border-hover);
-  border-radius: 4px;
-  color: var(--color-text);
+  height: 24px;
   font-size: 12px;
-}
-
-/* --- Шаг 3: Подтверждение --- */
-.review-step {
-  padding: 24px;
-}
-.new-entities-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  overflow-y: auto;
-  max-height: 400px; /* Ограничиваем высоту */
-  padding: 10px;
-  background: var(--color-background-soft);
-  border-radius: 6px;
-  margin-top: 16px;
-}
-.entity-list {
-  min-width: 200px;
-}
-.entity-list h4 {
-  margin: 0 0 10px 0;
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: 5px;
-}
-.entity-list ul {
-  margin: 0;
-  padding-left: 20px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-.entity-list li {
-  font-size: 14px;
-  color: var(--color-text-soft);
-}
-
-.export-step {
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  font-size: 16px;
-}
-.export-step p {
-  max-width: 500px;
-  color: var(--color-text-soft);
-  line-height: 1.6;
-}
-.export-btn {
-  padding: 12px 24px;
-  font-size: 16px;
-  margin-top: 24px;
-}
-
-/* --- Загрузка / Спиннер --- */
-.loading-indicator {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text);
-}
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid var(--color-border);
-  border-top-color: var(--color-accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 16px;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* --- Футер --- */
-.modal-actions {
-  padding: 16px 24px;
-  border-top: 1px solid var(--color-border);
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  background: var(--color-background);
-  flex-shrink: 0; 
-}
-
-/* --- Общие элементы --- */
-.error-message {
-  color: var(--color-danger);
-  background: var(--color-danger-bg);
-  border: 1px solid var(--color-danger);
-  padding: 12px;
-  border-radius: 6px;
-  margin-top: 16px;
-}
-
-/* --- Стили кнопок (для модалки) --- */
-.btn-primary, .btn-secondary {
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  background-color: #00ec3b; /* Основной цвет кнопки */
-  
-  transition: background-color 0.2s, opacity 0.2s;
-}
-.btn-primary {
-  background-color: #00ec3b; /* Основной цвет кнопки */
-  color: #fff;
-  
-}
-.btn-primary:hover {
-  background: var(--color-accent-hover);
-}
-.btn-primary:disabled {
-  background: var(--color-accent);
-  opacity: 0.5;
-  cursor: not-allowed;
-  
-}
-.btn-secondary {
-  background: var(--color-background-mute);
-  color: var(--color-text);
   border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  appearance: none; /* Remove default browser styling */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 20px;
+  padding-left: 8px;
+  cursor: pointer;
 }
-.btn-secondary:hover {
-  background: var(--color-background-soft);
-  border-color: var(--color-border-hover);
+
+.mapping-select:focus {
+  border-color: var(--color-accent);
+  outline: none;
 }
-.btn-secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+
+/* Ensure options are also styled */
+.mapping-select option {
+  background-color: var(--color-background);
+  color: var(--color-text);
 }
+
+.center-content {
+  justify-content: center;
+  padding-top: 0;
+}
+
+.grid-body {
+  /* No overflow here, parent scrolls */
+  width: fit-content; /* Ensure it expands */
+  min-width: 100%;
+  padding-bottom: 60px; /* Space for dropdown to overflow */
+}
+
+.grid-row {
+  display: grid;
+  border-bottom: 1px solid var(--color-border);
+  width: fit-content; /* Ensure row matches header width */
+  min-width: 100%;
+}
+.grid-row:hover { background: var(--color-background-soft); }
+
+.grid-cell {
+  padding: 8px; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-right: 1px solid transparent;
+}
+.row-disabled { opacity: 0.5; background: #fafafa; } /* Light grey for disabled rows */
+
+/* 🟢 FILTERS & INPUTS (Strict 28px) */
+.filter-wrapper { width: 100%; position: relative; }
+
+.header-filter-control {
+  height: 28px; width: 100%;
+  padding: 0 6px; font-size: 12px;
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--color-text); font-weight: 600;
+  cursor: pointer; box-sizing: border-box;
+  
+}
+.header-filter-control:hover, .header-filter-control:focus {
+  background: var(--color-background); border-color: var(--color-border);
+  
+}
+
+/* 🟢 FIX: Стили для отключения фона у обертки даты */
+.no-bg-hover:hover {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.has-arrow {
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 4px center;
+  padding-right: 16px;
+}
+
+/* Date Picker Overrides */
+:deep(.picker-trigger) {
+  height: 28px !important; 
+  border: 1px solid transparent; 
+  background: transparent; 
+  padding: 0 4px !important;
+  margin-bottom: 10px; 
+  font-size: 12px; 
+  font-weight: 600; 
+  color: var(--color-text) !important; /* 🟢 FIX: Force text color */
+}
+
+/* 🟢 FIX: Force text color specifically for value text elements */
+:deep(.value-text) {
+  color: var(--color-text) !important; 
+}
+
+:deep(.picker-trigger:hover) {
+  border-color: var(--color-border); background: var(--color-background);
+  
+}
+
+/* PREVIEW HEADER */
+.preview-header-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.header-controls { display: flex; gap: 12px; align-items: center; }
+.debug-toggle { font-size: 12px; color: var(--color-text-soft); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.count-label { font-size: 12px; color: var(--color-text-soft); }
+
+/* Unified Header Label Style */
+.header-label {
+  display: flex;
+  align-items: center;
+  height: 28px; /* Match filter height */
+  width: 100%;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  box-sizing: border-box;
+  padding-bottom: 10px
+}
+
+/* OTHER STYLES (Keep existing) */
+.close-btn { position: absolute; top: 10px; right: 15px; font-size: 32px; color: var(--color-text-soft); background: none; border: none; cursor: pointer; z-index: 1001; }
+h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
+.modal-tabs { display: flex; padding: 0 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
+.tab-btn { padding: 12px 16px; background: none; border: none; color: var(--color-text-soft); cursor: pointer; border-bottom: 2px solid transparent; }
+.tab-btn.active { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.import-content-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.modal-step-content { flex: 1; padding: 24px; overflow-y: auto; }
+.export-step { padding: 0; display: flex; flex-direction: column; } /* IMPORTANT */
+.export-controls-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.export-preview-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.empty-state { padding: 20px; text-align: center; color: var(--color-text-soft); }
+.modal-actions { padding: 16px 24px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
+.export-description { margin-bottom: 32px; } /* 🟢 */
+.btn-primary { 
+  padding: 8px 16px; 
+  background: #3b3b3b; /* 🟢 Темный фон */
+  color: white; 
+  border: none; 
+  border-radius: 6px; 
+  cursor: pointer; 
+  margin-right: 10px; /* 🟢 Отступ */
+}
+.btn-secondary { padding: 8px 16px; background: var(--color-background-mute); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 6px; cursor: pointer; }
+.btn-small { padding: 4px 8px; font-size: 11px; height: 24px; }
+.loading-indicator { display: flex; flex-direction: column; align-items: center; }
+.spinner { width: 30px; height: 30px; border: 3px solid var(--color-border); border-top-color: var(--color-accent); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.drop-zone { border: 2px dashed var(--color-border); padding: 40px; text-align: center; margin-bottom: 20px; }
+.file-input { display: none; }
+.file-input-label { background: var(--color-accent); color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: inline-block; margin: 10px 0; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--color-border); }
 </style>

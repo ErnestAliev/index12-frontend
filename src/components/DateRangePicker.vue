@@ -211,6 +211,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   position: absolute; top: 100%; left: 0; width: 260px;
   background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 2000; margin-top: 4px; padding: 10px;
+  
 }
 .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .month-label { font-size: 14px; font-weight: 600; color: #333; }
