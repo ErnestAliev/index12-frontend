@@ -10,13 +10,13 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.25 - FIX OWNER FILTER ---
- * * ВЕРСИЯ: 26.11.25 - Исправление фильтрации по владельцу
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v27.3 - OWNER DROPDOWN FIX ---
+ * * ВЕРСИЯ: 27.3 - Добавлены физлица в выпадающий список владельцев
+ * * ДАТА: 2025-11-28
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В loadOperations добавлено автоматическое определение владельца (ownerId) через счет (mainStore.accounts), 
- * если в операции поля companyId/individualId пусты. Это критично для выводов.
+ * 1. (TEMPLATE) В col-owner (фильтр и строка) добавлен <optgroup label="Физлица">.
+ * Теперь владельцы-физлица отображаются корректно, а не как пустое поле.
  */
 
 const props = defineProps({
@@ -67,6 +67,7 @@ const categories = computed(() => mainStore.categories.filter(c => !['перев
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
 
+// 🟢 ИСПРАВЛЕННЫЙ СПИСОК КОНТРАГЕНТОВ (для фильтрации и выбора)
 const contractorOptions = computed(() => {
   const opts = [];
   const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
@@ -78,19 +79,15 @@ const contractorOptions = computed(() => {
       opts.push(group);
   }
   
-  const ownerIds = new Set();
-  mainStore.accounts.forEach(acc => {
-      if (acc.individualId) {
-          const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          if (iId) ownerIds.add(iId);
-      }
-  });
-  
+  // Убрана фильтрация по владельцам счетов
   const filteredIndividuals = mainStore.individuals.filter(i => {
-      if (ownerIds.has(i._id)) return false;
       if (props.filterMode === 'prepayment_only' && i._id === mainStore.retailIndividualId) {
           return false;
       }
+      // Скрываем только системные сущности розницы, если не режим розницы
+      const name = i.name.trim().toLowerCase();
+      if (name === 'розничные клиенты' || name === 'розница') return false;
+      
       return true;
   });
 
@@ -174,7 +171,7 @@ const loadOperations = () => {
   });
 
   localItems.value = targetOps.sort((a, b) => new Date(b.date) - new Date(a.date)).map(op => {
-      // 🟢 FIX: Авто-определение владельца через счет
+      // 🟢 Авто-определение владельца через счет
       let cId = op.companyId;
       let iId = op.individualId;
 
@@ -197,7 +194,6 @@ const loadOperations = () => {
 
       let amount = Math.abs(op.amount);
       
-      // Для вывода формируем название ноды
       const nodeName = op.reason || op.destination || 'Вывод средств';
 
       return {
@@ -208,7 +204,7 @@ const loadOperations = () => {
         amountFormatted: formatNumber(amount),
         totalDealAmount: op.totalDealAmount || 0, 
         accountId: op.accountId?._id || op.accountId,
-        ownerId: ownerId, // Теперь здесь корректный владелец
+        ownerId: ownerId, 
         contractorValue: contrVal, 
         categoryId: op.categoryId?._id || op.categoryId,
         projectId: op.projectId?._id || op.projectId,
@@ -228,6 +224,11 @@ onMounted(() => {
     loadOperations(); 
     if (!mainStore.retailIndividualId) mainStore.fetchAllEntities();
 });
+
+// 🟢 РЕАКТИВНОСТЬ: Перезагрузка при обновлении списка счетов
+watch(() => mainStore.accounts, () => {
+    loadOperations();
+}, { deep: true });
 
 const clientItems = computed(() => {
     return localItems.value.filter(item => {
@@ -277,8 +278,6 @@ const filteredItems = computed(() => {
     if (filters.value.amount && !String(itemAmt).includes(filters.value.amount.replace(/\s/g, ''))) return false;
     
     if (activeTab.value !== 'history') {
-        // 🟢 Здесь фильтрация по владельцу будет работать корректно, 
-        // так как item.ownerId теперь заполняется из счета, если он пуст в операции
         if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
         if (filters.value.account && item.accountId !== filters.value.account) return false;
     }
@@ -398,7 +397,6 @@ const onAmountInput = (item) => { const raw = item.amountFormatted.replace(/[^0-
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.value = true; try { await mainStore.deleteOperation(itemToDelete.value.originalOp); itemToDelete.value.isDeleted = true; showDeleteConfirm.value = false; } catch (e) { alert(e.message); } finally { isDeleting.value = false; } };
 
-// 🟢 OPEN EDIT (WITHDRAWAL)
 const openEdit = (item) => {
     if (isWithdrawalMode.value) {
         withdrawalToEdit.value = item.originalOp;
@@ -491,7 +489,18 @@ const handleSave = async () => {
         <div class="filter-col col-date"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
         
         <template v-if="activeTab !== 'history'">
-            <div class="filter-col col-owner"><select v-model="filters.owner" class="filter-input filter-select"><option value="">Владелец</option><optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup></select></div>
+            <div class="filter-col col-owner">
+                <!-- 🟢 ФИЛЬТР ВЛАДЕЛЬЦА (С ФИЗЛИЦАМИ) -->
+                <select v-model="filters.owner" class="filter-input filter-select">
+                    <option value="">Владелец</option>
+                    <optgroup label="Компании">
+                        <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
+                    </optgroup>
+                    <optgroup label="Физлица">
+                        <option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
+                    </optgroup>
+                </select>
+            </div>
             <div class="filter-col col-acc"><select v-model="filters.account" class="filter-input filter-select"><option value="">Счет</option><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
         </template>
         
@@ -505,7 +514,6 @@ const handleSave = async () => {
             <div class="filter-col col-proj"><select v-model="filters.project" class="filter-input filter-select"><option value="">Проект</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
         </template>
         
-        <!-- 🟢 Заголовок "Назначение" для выводов -->
         <template v-if="isWithdrawalMode">
              <div class="filter-col col-node-header"><span class="header-label">Назначение / Причина</span></div>
         </template>
@@ -530,7 +538,20 @@ const handleSave = async () => {
               </div>
               
               <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" :disabled="item.isClosed" /></div>
-              <div class="col-owner"><select v-model="item.ownerId" class="edit-input select-input" :disabled="item.isClosed"><option :value="null">-</option><optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup></select></div>
+              
+              <div class="col-owner">
+                  <!-- 🟢 ВЫБОР ВЛАДЕЛЬЦА (С ФИЗЛИЦАМИ) -->
+                  <select v-model="item.ownerId" class="edit-input select-input" :disabled="item.isClosed">
+                      <option :value="null">-</option>
+                      <optgroup label="Компании">
+                          <option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option>
+                      </optgroup>
+                      <optgroup label="Физлица">
+                          <option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option>
+                      </optgroup>
+                  </select>
+              </div>
+
               <div class="col-acc"><select v-model="item.accountId" class="edit-input select-input" :disabled="item.isClosed"><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
               <div class="col-amount">
                   <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" :class="{'text-red': item.isRefund}" :disabled="item.isClosed" />
@@ -544,7 +565,6 @@ const handleSave = async () => {
                   <div class="col-proj"><select v-model="item.projectId" class="edit-input select-input" :disabled="item.isClosed"><option :value="null">-</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
               </template>
 
-              <!-- 🟢 НОДА ДЛЯ ВЫВОДА -->
               <template v-else>
                   <div class="col-node">
                       <div class="withdrawal-node" @click="openEdit(item)">

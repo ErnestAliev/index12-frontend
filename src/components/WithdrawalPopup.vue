@@ -6,14 +6,15 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v14.1 - COPY LOGIC FIX ---
- * * ВЕРСИЯ: 14.1 - Обновление логики копирования и иконки удаления
- * * ДАТА: 2025-11-27
+ * * --- МЕТКА ВЕРСИИ: v15.0 - RECIPIENT & DESCRIPTION FIX ---
+ * * ВЕРСИЯ: 15.0 - Добавлен выбор Физлица и корректное описание
+ * * ДАТА: 2025-11-28
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Текст кнопки при копировании: "Создать копию вывод денег".
- * 2. (STYLE) Иконка удаления заменена на stroke-svg.
- * 3. (UX) Скрытие кнопок действий при копировании.
+ * 1. (FEAT) Добавлено поле выбора Физлица (Получателя).
+ * 2. (LOGIC) Автоматический поиск/создание категории "Вывод средств".
+ * 3. (LOGIC) Описание операции теперь берется из поля "Причина".
+ * 4. (UI) Добавлена возможность создания нового физлица.
  */
 
 const mainStore = useMainStore();
@@ -33,6 +34,12 @@ const isSaving = ref(false);
 
 // Селекты
 const fromAccountId = ref(null);
+const selectedIndividualId = ref(null); // ID получателя (Физлицо)
+
+// --- Создание нового физлица ---
+const isCreatingIndividual = ref(false);
+const newIndividualName = ref('');
+const newIndividualInputRef = ref(null);
 
 // --- Опции ---
 const reasonOptions = [
@@ -52,6 +59,24 @@ const accountOptions = computed(() => {
   }));
 });
 
+// Опции Физлиц (Получателей)
+const individualOptions = computed(() => {
+  // Исключаем системные сущности (Розница) и владельцев счетов (опционально, но пользователь просил просто список)
+  // Пользователь просил: "выбор поля физлица из списка созданных или предложить создать новое"
+  const opts = mainStore.individuals
+    .filter(i => {
+        const name = i.name.toLowerCase().trim();
+        return name !== 'розничные клиенты' && name !== 'розница';
+    })
+    .map(i => ({
+        value: i._id,
+        label: i.name
+    }));
+    
+  opts.push({ value: '--CREATE_NEW--', label: '+ Создать Физлицо', isSpecial: true });
+  return opts;
+});
+
 // --- СОСТОЯНИЯ ---
 const isCloneMode = ref(false);
 const isDeleteConfirmVisible = ref(false);
@@ -67,10 +92,9 @@ const title = computed(() => {
     return 'Оформление вывода';
 });
 
-// 🟢 1. Обновленный текст кнопки
 const btnText = computed(() => {
     if (isSaving.value) return 'Сохранение...';
-    if (isCloneMode.value) return 'Создать копию вывод денег';
+    if (isCloneMode.value) return 'Создать копию вывода';
     if (isEditMode.value) return 'Сохранить';
     return 'Подтвердить';
 });
@@ -96,8 +120,41 @@ const onAmountInput = (e) => {
   formattedAmount.value = formatNumber(Number(raw));
 };
 
-const handleSave = () => {
+// Обработка выбора физлица
+const handleIndividualChange = (val) => {
+    if (val === '--CREATE_NEW--') {
+        selectedIndividualId.value = null;
+        isCreatingIndividual.value = true;
+        nextTick(() => newIndividualInputRef.value?.focus());
+    }
+};
+
+// Создание физлица
+const createIndividual = async () => {
+    const name = newIndividualName.value.trim();
+    if (!name) return;
+    try {
+        const newInd = await mainStore.addIndividual(name);
+        selectedIndividualId.value = newInd._id;
+        isCreatingIndividual.value = false;
+        newIndividualName.value = '';
+    } catch (e) {
+        alert('Ошибка создания: ' + e.message);
+    }
+};
+
+const cancelCreateIndividual = () => {
+    isCreatingIndividual.value = false;
+    newIndividualName.value = '';
+};
+
+const handleSave = async () => {
   if (amount.value <= 0 || isSaving.value || !fromAccountId.value) {
+      return;
+  }
+  
+  if (!selectedIndividualId.value) {
+      alert('Выберите получателя (Физлицо)');
       return;
   }
   
@@ -106,14 +163,31 @@ const handleSave = () => {
   const [year, month, day] = editableDate.value.split('-').map(Number);
   const finalDate = new Date(year, month - 1, day, 12, 0, 0);
 
+  // 1. Находим или создаем категорию "Вывод средств"
+  let withdrawalCat = mainStore.categories.find(c => {
+      const n = c.name.toLowerCase().trim();
+      return n === 'вывод средств' || n === 'вывод' || n === 'withdrawal';
+  });
+  
+  if (!withdrawalCat) {
+      try {
+          withdrawalCat = await mainStore.addCategory('Вывод средств');
+      } catch (e) {
+          console.error("Failed to create category", e);
+      }
+  }
+
   const payload = {
     amount: amount.value,
-    destination: reason.value, // Записываем причину как назначение
+    destination: reason.value, 
     reason: reason.value,
+    description: reason.value, // 🟢 Явное описание
     type: 'expense', 
     isWithdrawal: true,
     accountId: fromAccountId.value,
     date: finalDate,
+    categoryId: withdrawalCat ? withdrawalCat._id : null, // 🟢 Категория
+    counterpartyIndividualId: selectedIndividualId.value, // 🟢 Контрагент (Физлицо)
     individualId: null,
     contractorId: null
   };
@@ -128,6 +202,7 @@ const handleSave = () => {
     originalOperation: props.operationToEdit
   });
 
+  // Fallback
   setTimeout(() => { isSaving.value = false; }, 3000);
 };
 
@@ -165,7 +240,8 @@ onMounted(() => {
       const op = props.operationToEdit;
       amount.value = Math.abs(op.amount || 0);
       fromAccountId.value = op.accountId?._id || op.accountId;
-      reason.value = op.reason || 'Личные нужды';
+      reason.value = op.reason || op.description || 'Личные нужды';
+      selectedIndividualId.value = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
       editableDate.value = toInputDate(new Date(op.date));
   } else {
       amount.value = props.initialData.amount || 0;
@@ -211,6 +287,23 @@ onMounted(() => {
         class="input-spacing"
       />
 
+      <!-- ПОЛУЧАТЕЛЬ (ФИЗЛИЦО) -->
+      <template v-if="!isCreatingIndividual">
+          <BaseSelect
+            v-model="selectedIndividualId"
+            :options="individualOptions"
+            label="Получатель (Физлицо)"
+            placeholder="Выберите получателя"
+            class="input-spacing"
+            @change="handleIndividualChange"
+          />
+      </template>
+      <div v-else class="inline-create-form input-spacing">
+          <input type="text" v-model="newIndividualName" placeholder="Имя нового физлица" ref="newIndividualInputRef" class="create-input" @keyup.enter="createIndividual" @keyup.esc="cancelCreateIndividual" />
+          <button @click="createIndividual" class="btn-icon-save" :disabled="isSaving">✓</button>
+          <button @click="cancelCreateIndividual" class="btn-icon-cancel" :disabled="isSaving">✕</button>
+      </div>
+
       <!-- ПРИЧИНА -->
       <BaseSelect
         v-model="reason"
@@ -241,17 +334,15 @@ onMounted(() => {
         <button 
           class="btn-submit save-wide wd-btn-confirm" 
           @click="handleSave" 
-          :disabled="amount <= 0 || isSaving || !fromAccountId"
+          :disabled="amount <= 0 || isSaving || !fromAccountId || !selectedIndividualId"
         >
           {{ btnText }}
         </button>
 
-        <!-- 🟢 3. Скрытие кнопок в режиме копирования -->
         <div class="icon-actions" v-if="isEditMode">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopy" :disabled="isSaving">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
-            <!-- 🟢 2. Новая иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving">
               <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
@@ -327,6 +418,14 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .calendar-icon { font-size: 16px; color: #999; }
+
+/* Inline create styles */
+.inline-create-form { display: flex; gap: 8px; align-items: center; }
+.create-input { flex-grow: 1; height: 48px; padding: 0 10px; border: 1px solid #7B1FA2; border-radius: 6px; font-size: 14px; margin: 0; }
+.create-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(123, 31, 162, 0.2); }
+.btn-icon-save, .btn-icon-cancel { width: 48px; height: 48px; border: none; border-radius: 6px; cursor: pointer; color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.btn-icon-save { background-color: #34C759; }
+.btn-icon-cancel { background-color: #FF3B30; }
 
 /* Футер */
 .popup-actions-row { 

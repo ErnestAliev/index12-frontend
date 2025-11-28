@@ -6,13 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.0 - REFACTORING COMPLETE ---
- * * ВЕРСИЯ: 27.0 - Рефакторинг по плану (Сохранение контрагента/проекта при смене типа)
+ * * --- МЕТКА ВЕРСИИ: v27.1 - CONTRACTOR FILTER FIX ---
+ * * ВЕРСИЯ: 27.1 - Исправление списка физлиц-контрагентов
  * * ДАТА: 2025-11-28
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлен watch(props.type), который сбрасывает ТОЛЬКО категорию.
- * Контрагент (selectedContractorValue) и Проект (selectedProjectId) теперь явно сохраняются.
- * 2. (VALIDATION) Проверена и подтверждена строгая валидация в handleSave.
+ * 1. (LOGIC) В `contractorOptions` убрана фильтрация `!ownerIds.has(i._id)`. 
+ * Теперь любое физлицо может быть выбрано как контрагент (получатель расхода), 
+ * даже если оно владеет каким-то счетом.
  */
 
 const mainStore = useMainStore();
@@ -61,16 +61,10 @@ const newContractorInputRef = ref(null);
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-// 🟢 РЕАЛИЗАЦИЯ ПЛАНА: Наблюдатель за типом операции
+// Наблюдатель за типом операции
 watch(() => props.type, (newType, oldType) => {
   if (newType !== oldType) {
-    // Сбрасываем категорию, так как наборы категорий для Дохода и Расхода разные
     selectedCategoryId.value = null;
-    
-    // ВАЖНО: Согласно плану рефакторинга, мы НЕ сбрасываем:
-    // selectedContractorValue (Контрагент)
-    // selectedProjectId (Проект)
-    // Они остаются заполненными.
   }
 });
 
@@ -175,16 +169,15 @@ const ownerOptions = computed(() => {
       });
   }
 
-  // Спец строка для двух кнопок
   opts.push({ isActionRow: true }); 
-  
   return opts;
 });
 
-// ФИЛЬТРАЦИЯ СПИСКА КОНТРАГЕНТОВ И ФИЗЛИЦ
+// 🟢 ИСПРАВЛЕНО: ФИЛЬТРАЦИЯ СПИСКА КОНТРАГЕНТОВ И ФИЗЛИЦ
 const contractorOptions = computed(() => {
   const opts = [];
   
+  // 1. Юрлица
   const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
   const filteredContractors = mainStore.contractors.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
 
@@ -193,15 +186,12 @@ const contractorOptions = computed(() => {
       opts.push({ value: `contr_${c._id}`, label: c.name });
   });
   
-  const ownerIds = new Set();
-  mainStore.accounts.forEach(acc => {
-      if (acc.individualId) {
-          const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          if (iId) ownerIds.add(iId);
-      }
+  // 2. Физлица (Убрана фильтрация владельцев счетов!)
+  const filteredIndividuals = mainStore.individuals.filter(i => {
+      const name = i.name.trim().toLowerCase();
+      // Скрываем только системные сущности розницы, всех остальных показываем
+      return name !== 'розничные клиенты' && name !== 'розница';
   });
-  
-  const filteredIndividuals = mainStore.individuals.filter(i => !ownerIds.has(i._id));
 
   opts.push({ label: 'Физлица (Контрагенты)', isHeader: true });
   filteredIndividuals.forEach(i => {
@@ -219,7 +209,6 @@ const projectOptions = computed(() => {
   return opts;
 });
 
-// 🟢 ИСПРАВЛЕННЫЙ ФИЛЬТР КАТЕГОРИЙ
 const categoryOptions = computed(() => {
   const prepayIds = mainStore.getPrepaymentCategoryIds;
   const currentOpCatId = props.operationToEdit ? (props.operationToEdit.categoryId?._id || props.operationToEdit.categoryId || props.operationToEdit.prepaymentId?._id || props.operationToEdit.prepaymentId) : null;
@@ -227,8 +216,6 @@ const categoryOptions = computed(() => {
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
     const isTransfer = name === 'перевод' || name === 'transfer';
-    
-    // 🟢 FIX: Всегда разрешаем категорию "Остаток долга"
     if (name === 'остаток долга') return true;
 
     const isPrepay = prepayIds.includes(c._id) || c.isPrepayment;
@@ -247,12 +234,9 @@ const categoryOptions = computed(() => {
 // 🟢 AUTOFILL WATCHER (РОЗНИЦА -> РЕАЛИЗАЦИЯ)
 watch(selectedContractorValue, (newValue) => {
     if (!newValue) return;
-    
-    // Если выбран "Розничные клиенты", и есть ID "Реализации"
     if (mainStore.retailIndividualId) {
         const retailVal = `ind_${mainStore.retailIndividualId}`;
         if (newValue === retailVal) {
-            // 🟢 FIX: Автозаполняем "Реализацию" ТОЛЬКО если категория еще не выбрана
             if (mainStore.realizationCategoryId && !selectedCategoryId.value) {
                 selectedCategoryId.value = mainStore.realizationCategoryId;
             }
@@ -334,7 +318,6 @@ const onContractorSelected = (val, setProject = false, setCategory = false) => {
             const pId = (entity.defaultProjectId && typeof entity.defaultProjectId === 'object') ? entity.defaultProjectId._id : entity.defaultProjectId; 
             selectedProjectId.value = pId; 
         }
-        // Применяем категорию по умолчанию только если это не "Розница" (т.к. для розницы работает отдельный watcher)
         if (setCategory && entity.defaultCategoryId && entity._id !== mainStore.retailIndividualId) { 
             const cId = (entity.defaultCategoryId && typeof entity.defaultCategoryId === 'object') ? entity.defaultCategoryId._id : entity.defaultCategoryId;
             selectedCategoryId.value = cId; 
@@ -371,6 +354,7 @@ onMounted(async () => {
         const iId = op.counterpartyIndividualId._id || op.counterpartyIndividualId;
         selectedContractorValue.value = `ind_${iId}`;
     } else if (op.individualId && op.companyId) {
+        // Fallback for some legacy records
         const iId = op.individualId._id || op.individualId;
         selectedContractorValue.value = `ind_${iId}`;
     }
@@ -391,9 +375,6 @@ const handleSave = () => {
       const amountFromState = (amount.value || '').replace(/ /g, ''); 
       const amountParsed = parseFloat(amountFromState);
       
-      // 🟢 РЕАЛИЗАЦИЯ ПЛАНА: Строгая валидация перед сохранением
-      // Это условие (if (type !== 'transfer' && !contractor)) выполняется здесь, 
-      // так как данный попап не обслуживает тип 'transfer', а проверка !selectedContractorValue.value обязательна.
       if (isNaN(amountParsed) || amountParsed <= 0 || !selectedAccountId.value || !selectedOwner.value || !selectedContractorValue.value) { 
           errorMessage.value = 'Заполните: Сумма, Счет, Владелец, Контрагент.'; 
           return; 
@@ -436,7 +417,6 @@ const handleSave = () => {
           totalDealAmount: props.operationToEdit ? props.operationToEdit.totalDealAmount : undefined
       };
 
-      // 🟢 1. ЗАПУСК ФОНОВЫХ ПРОЦЕССОВ (БЕЗ AWAIT)
       if (selectedAccountId.value && selectedOwner.value) {
           const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
           if (acc) {
@@ -479,11 +459,8 @@ const handleSave = () => {
           if (ind) updateDefaults(ind, 'individuals');
       }
 
-      // 🟢 2. ОТПРАВКА ДАННЫХ (СИНХРОННО)
       const isEdit = !!props.operationToEdit && !isCloneMode.value;
       emit('save', { mode: isEdit ? 'edit' : 'create', id: isEdit ? props.operationToEdit._id : null, data: payload, originalOperation: isEdit ? props.operationToEdit : null });
-
-      // 🟢 3. ЗАКРЫТИЕ ОКНА
       emit('close');
 
   } catch (e) {
@@ -518,7 +495,6 @@ const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() =
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => { if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return; isInlineSaving.value = true; try { const existing = mainStore.categories.find(c => c.name.toLowerCase() === name.toLowerCase()); if (existing) selectedCategoryId.value = existing._id; else { const newItem = await mainStore.addCategory(name); selectedCategoryId.value = newItem._id; } cancelCreateCategory(); } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } };
 
-// MODAL HANDLERS
 const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => { 
@@ -568,7 +544,6 @@ const saveNewContractorModal = async () => {
 const closePopup = () => { if (!isInlineSaving.value) emit('close'); };
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 
-// 🟢 ИЗМЕНЕНО: Исправлена логика быстрого удаления
 const onDeleteConfirmed = () => { 
   if (!props.operationToEdit?._id) return; 
   isDeleteConfirmVisible.value = false; 
@@ -601,7 +576,6 @@ const title = computed(() => {
 });
 const popupTheme = computed(() => { if (isEditMode.value) return 'theme-edit'; return isIncome.value ? 'theme-income' : 'theme-expense'; });
 
-// Обновленный текст кнопок для режима копирования
 const buttonText = computed(() => { 
     if (isCloneMode.value) {
         if (isPrepaymentOp.value) return 'Создать копию предоплаты';

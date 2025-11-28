@@ -5,6 +5,18 @@ import { useMainStore } from '@/stores/mainStore';
 // 🟢 Импортируем компонент
 import DateRangePicker from '@/components/DateRangePicker.vue';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v10.31 - EXPORT OWNER FALLBACK ---
+ * * ВЕРСИЯ: 10.31 - Исправление пустого владельца при экспорте
+ * * ДАТА: 2025-11-28
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) В `prepareExportData` добавлен fallback для `ownerName`.
+ * Если в операции нет companyId/individualId, скрипт ищет владельца через accountId.
+ * 2. (LOGIC) В блоке `withdrawal` исправлено определение контрагента: 
+ * теперь приоритет у `contrName` (явно выбранного получателя).
+ */
+
 // --- Компонент ---
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
@@ -595,8 +607,22 @@ async function prepareExportData() {
 
       let catName = resolveEntityName(op.categoryId, mainStore.categories);
       let projName = resolveEntityName(op.projectId, mainStore.projects);
-      let contrName = resolveEntityName(op.contractorId, mainStore.contractors);
+      
+      // 🟢 FIX: Ищем имя контрагента в contractorId (Юрлица) ИЛИ в counterpartyIndividualId (Физлица)
+      let contrName = resolveEntityName(op.contractorId, mainStore.contractors) || 
+                      resolveEntityName(op.counterpartyIndividualId, mainStore.individuals);
+
       let ownerName = resolveEntityName(op.companyId, mainStore.companies) || resolveEntityName(op.individualId, mainStore.individuals);
+      
+      // 🟢 FIX 2: Если владелец не найден в операции, берем его из счета (актуально для выводов)
+      if (!ownerName && op.accountId) {
+          const accIdRaw = resolveEntityId(op.accountId, mainStore.accounts);
+          const accObj = mainStore.accounts.find(a => a._id === accIdRaw);
+          if (accObj) {
+              ownerName = resolveEntityName(accObj.companyId, mainStore.companies) || 
+                          resolveEntityName(accObj.individualId, mainStore.individuals);
+          }
+      }
 
       let catId = resolveEntityId(op.categoryId, mainStore.categories);
       let projId = resolveEntityId(op.projectId, mainStore.projects);
@@ -708,10 +734,12 @@ async function prepareExportData() {
       }
       else if (op.type === 'withdrawal') {
           const acc = mainStore.accounts.find(a => a._id === accountId);
-          let withdrawalContr = '';
-          if (acc && acc.individualId) {
+          // 🟢 FIX 3: Используем явного получателя (contrName), если он есть
+          let withdrawalContr = contrName; 
+          if (!withdrawalContr && acc && acc.individualId) {
               withdrawalContr = resolveEntityName(acc.individualId, mainStore.individuals);
           }
+          
           const desc = op.description || `Вывод средств (${withdrawalContr})`;
           const withdrawalCategory = catName || 'Вывод средств';
           addRow(

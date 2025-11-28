@@ -17,16 +17,16 @@ import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v48.0 - DELTA MERGE FIX ---
- * * ВЕРСИЯ: 48.0 - Исправление бага с дублированием баланса в прогнозе
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v49.0 - SHOW LINKED INDIVIDUALS ---
+ * * ВЕРСИЯ: 49.0 - Возврат владельцев счетов в виджет "Мои физлица"
+ * * ДАТА: 2025-11-28
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Функция `mergeBalances` теперь принимает третий аргумент `isDelta`.
- * 2. (LOGIC) Если `isDelta === true`, то при отсутствии будущих операций подставляется 0 (а не текущий баланс).
+ * 1. (LOGIC) В `mergedIndividualBalances` убрана фильтрация, скрывающая владельцев счетов.
+ * 2. (LOGIC) Добавлено поле `linkedAccountName`, если физлицо привязано к счету.
  */
 
-console.log('--- TheHeader.vue v48.0 (Delta Merge Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v49.0 (Show Linked Individuals) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -158,14 +158,22 @@ const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProj
 
 const mergedIndividualBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
-    const ownerIds = new Set();
+    
+    // 🟢 1. Собираем карту связей с аккаунтами
+    const accountMap = new Map();
     mainStore.accounts.forEach(acc => {
         if (acc.individualId) {
             const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-            if (iId) ownerIds.add(iId);
+            if (iId) accountMap.set(iId, acc.name);
         }
     });
-    return allMerged.filter(ind => !ownerIds.has(ind._id));
+
+    // 🟢 2. Возвращаем всех, проставляя имя счета (если есть)
+    // Раньше тут была фильтрация .filter(ind => !ownerIds.has(ind._id)), теперь мы её убрали.
+    return allMerged.map(ind => ({
+        ...ind,
+        linkedAccountName: accountMap.get(ind._id) || null
+    }));
 });
 
 const mergedCategoryBalances = computed(() => {

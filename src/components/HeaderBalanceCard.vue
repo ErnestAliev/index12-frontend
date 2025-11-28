@@ -5,13 +5,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v49.1 - GRID RESIZE FIX ---
- * * ВЕРСИЯ: 49.1 - Исправление ресайза в Grid (min-width: 0)
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v49.2 - LINKED ICON ---
+ * * ВЕРСИЯ: 49.2 - Иконка связи с аккаунтом
+ * * ДАТА: 2025-11-28
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) .name-cell: добавлено min-width: 0 для корректного сжатия текста в Grid.
- * 2. (CSS) .forecast-mode: добавлено align-content: start во избежание вертикального растяжения.
+ * 1. (UI) Добавлена SVG-иконка в `.name-cell` для элементов с `linkedAccountName`.
+ * 2. (UI) Добавлены стили `.link-icon`.
  */
 
 const props = defineProps({
@@ -165,10 +165,15 @@ const formatDelta = (val) => {
       </div>
     </Teleport>
     
-    <!-- 🟢 Добавлен класс forecast-mode -->
     <div class="card-items-list" :class="{ 'forecast-mode': showFutureBalance }">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
-        <span class="name-cell">{{ item.name }}</span>
+        <span class="name-cell">
+          {{ item.name }}
+          <!-- 🟢 ИКОНКА СВЯЗИ СО СЧЕТОМ -->
+          <span v-if="item.linkedAccountName" class="link-icon" :title="`Связан со счетом: ${item.linkedAccountName}`">
+             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          </span>
+        </span>
         
         <!-- 1. ТЕКУЩИЙ БАЛАНС (Если прогноз выключен) -->
         <span v-if="!showFutureBalance" class="single-balance" :class="{ 'expense': item.balance < 0 }">
@@ -265,9 +270,22 @@ const formatDelta = (val) => {
   white-space: nowrap; 
   overflow: hidden; 
   text-overflow: ellipsis; 
-  /* FIX: Критично для работы text-overflow в grid */
   min-width: 0;
+  display: flex; 
+  align-items: center; 
+  gap: 6px; /* Отступ между текстом и иконкой */
 }
+
+/* Иконка связи */
+.link-icon {
+  color: #34c759;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  cursor: help;
+}
+.link-icon:hover { opacity: 1; }
 
 .current-cell {
   color: var(--color-text);
