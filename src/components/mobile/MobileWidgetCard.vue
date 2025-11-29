@@ -258,36 +258,38 @@ const handleClick = () => {
 
     <div class="widget-body scrollable-list">
       <div v-if="isEmpty" class="empty-text">Нет данных</div>
-      <div v-else class="items-list">
+      
+      <!-- 🟢 GRID для выравнивания (как в десктопе HeaderBalanceCard.vue) -->
+      <div v-else class="items-list" :class="{ 'forecast-mode': isForecastActive }">
         <div v-for="item in items.slice(0, 3)" :key="item._id" class="list-item">
-          <div class="item-left">
-              <span class="item-name">{{ item.name }}</span>
+          
+          <div class="name-cell">
+              {{ item.name }}
           </div>
           
-          <div class="item-right">
-              <!-- 🟢 UNIVERSAL FORECAST DISPLAY -->
-              <template v-if="isForecastActive">
-                  <!-- Current Balance -->
-                  <span class="item-val" :class="getValueClass(item.currentBalance)">
-                    {{ formatVal(item.currentBalance) }}
-                  </span>
-                  
-                  <!-- Arrow Separator -->
-                  <span class="arrow-sep">&gt;</span>
-                  
-                  <!-- Delta (Change) -->
-                  <span class="item-delta" :class="getDeltaClass(item.futureChange)">
-                    {{ formatDelta(item.futureChange) }}
-                  </span>
-              </template>
+          <!-- 🟢 UNIVERSAL FORECAST DISPLAY (Flattened for Grid) -->
+          <template v-if="isForecastActive">
+              <!-- Current Balance (Aligned Right) -->
+              <div class="current-cell" :class="getValueClass(item.currentBalance)">
+                {{ formatVal(item.currentBalance) }}
+              </div>
+              
+              <!-- Arrow Separator -->
+              <div class="arrow-cell">&gt;</div>
+              
+              <!-- Delta (Change) (Aligned Right) -->
+              <div class="future-cell" :class="getDeltaClass(item.futureChange)">
+                {{ formatDelta(item.futureChange) }}
+              </div>
+          </template>
 
-              <!-- 🟢 NORMAL MODE -->
-              <template v-else>
-                  <span class="item-val" :class="getValueClass(item.balance || item.currentBalance)">
-                    {{ formatVal(item.balance || item.currentBalance) }}
-                  </span>
-              </template>
-          </div>
+          <!-- 🟢 NORMAL MODE -->
+          <template v-else>
+              <div class="single-val-cell" :class="getValueClass(item.balance || item.currentBalance)">
+                {{ formatVal(item.balance || item.currentBalance) }}
+              </div>
+          </template>
+          
         </div>
         
         <div v-if="items.length > 3" class="more-text">
@@ -349,34 +351,84 @@ const handleClick = () => {
 
 .widget-body { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
 
-.items-list { display: flex; flex-direction: column; gap: 3px; }
+/* 🟢 Standard List (Flex) */
+.items-list { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 3px; 
+}
 
 .list-item { 
-    display: flex; justify-content: space-between; align-items: center; 
-    font-size: 10px; line-height: 1.4; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  font-size: 10px; 
+  line-height: 1.4; 
 }
 
-.item-left { display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 50%; }
-.item-name { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* Right side container */
-.item-right { 
-    display: flex; 
-    align-items: center; 
-    justify-content: flex-end; 
-    gap: 4px; 
-    max-width: 50%; 
+/* 🟢 Forecast Mode (Grid Layout for Alignment) */
+.items-list.forecast-mode {
+  display: grid;
+  /* Name (auto) | Current (right) | Arrow | Future (right) */
+  /* minmax(0, 1fr) for name allows it to truncate properly */
+  grid-template-columns: minmax(0, 1fr) auto 12px auto; 
+  column-gap: 4px;
+  row-gap: 3px;
+  align-items: center;
+  align-content: center; /* Center content vertically in available space */
 }
 
-.item-val { color: #fff;  white-space: nowrap; font-size: 10px; }
-.item-delta { font-size: 10px; white-space: nowrap; font-weight: 600; }
-.arrow-sep { color: #666; font-size: 9px; margin: 0 1px; }
+/* Make list-item transparent to grid in forecast mode */
+.items-list.forecast-mode .list-item {
+  display: contents;
+}
 
+/* --- CELL STYLES --- */
+
+.name-cell { 
+  color: #ccc; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  text-align: left;
+}
+
+/* Used in normal mode (flex) */
+.single-val-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Used in forecast mode (grid) */
+.current-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums; /* Monospace digits for alignment */
+}
+
+.arrow-cell {
+  text-align: center;
+  color: #666;
+  font-size: 9px;
+}
+
+.future-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* COLORS */
 .red-text { color: #ff3b30; }
 .green-text { color: #34c759; }
 .orange-text { color: #FF9D00; }
 .white-text { color: #fff; }
 
 .empty-text { font-size: 10px; color: #555; text-align: center; margin-top: 0; }
-.more-text { font-size: 10px; color: #666; text-align: right; margin-top: 2px; }
+.more-text { 
+  font-size: 10px; color: #666; text-align: right; margin-top: 2px; 
+  /* Make sure more-text spans all columns in grid mode */
+  grid-column: 1 / -1; 
+}
 </style>
