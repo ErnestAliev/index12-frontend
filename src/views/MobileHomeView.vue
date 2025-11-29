@@ -21,12 +21,26 @@ import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
 import RefundPopup from '@/components/RefundPopup.vue';
 import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
 const timelineRef = ref(null);
 const chartRef = ref(null);
 
 const showGraphModal = ref(false);
 const isDataLoaded = ref(false); 
+
+// Ссылки авторизации
+const googleAuthUrl = computed(() => {
+  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
+  return `${baseUrl}/auth/google`;
+});
+const devAuthUrl = computed(() => {
+  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
+  return `${baseUrl}/auth/dev-login`;
+});
+const isLocalhost = computed(() => {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+});
 
 // --- Widget Fullscreen Logic ---
 const activeWidgetKey = ref(null);
@@ -196,6 +210,9 @@ const getDayOfYear = (date) => {
 
 onMounted(async () => {
   await mainStore.checkAuth();
+  
+  // Если пользователь не авторизован, дальнейшая загрузка не имеет смысла,
+  // шаблон отобразит экран входа.
   if (!mainStore.user) return;
   
   await mainStore.fetchAllEntities();
@@ -204,20 +221,16 @@ onMounted(async () => {
   const todayDay = getDayOfYear(today);
   mainStore.setToday(todayDay);
 
-  // 🟢 ИСПРАВЛЕНИЕ ЗАГРУЗКИ (Ошибка 2)
-  // 1. Принудительно и мгновенно загружаем '12d', чтобы UI появился быстро
+  // 1. Принудительно загружаем '12d'
   await mainStore.loadCalculationData('12d', today);
-  isDataLoaded.value = true; // Показываем контент
+  isDataLoaded.value = true; 
 
-  // 2. Проверяем сохраненный режим в LocalStorage
+  // 2. Проверяем сохраненный режим
   const savedProj = localStorage.getItem('projection');
   if (savedProj) {
       try {
           const parsed = JSON.parse(savedProj);
-          // Если сохраненный режим НЕ 12d (например '1y'), загружаем его в фоне
           if (parsed.mode && parsed.mode !== '12d') {
-              console.log(`[MobileHome] Background loading saved mode: ${parsed.mode}`);
-              // Небольшая задержка, чтобы UI успел отрисоваться
               setTimeout(async () => {
                   await mainStore.updateFutureProjectionByMode(parsed.mode, today);
                   await mainStore.loadCalculationData(parsed.mode, today);
@@ -252,107 +265,124 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 <template>
   <div class="mobile-layout">
     
-    <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
-        <div class="fs-header">
-            <div class="fs-title">{{ activeWidgetTitle }}</div>
-            <div class="fs-controls">
-                <button ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                </button>
-                <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-                </button>
-            </div>
-        </div>
+    <!-- 🟢 ЭКРАН ЗАГРУЗКИ / ВХОДА -->
+    <div v-if="mainStore.isAuthLoading" class="loading-screen">
+      <div class="spinner"></div>
+      <p>Загрузка...</p>
+    </div>
 
-        <Teleport to="body">
-          <div v-if="isFilterOpen" class="filter-dropdown-fixed mobile-filter-menu" :style="filterPos" @click.stop>
-            <div class="filter-group">
-               <div class="filter-group-title">Сортировка</div>
-               <ul>
-                 <li :class="{ active: sortMode === 'default' }" @click="setSortMode('default')">По умолчанию</li>
-                 <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')">По убыванию</li>
-                 <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')">По возрастанию</li>
-               </ul>
-            </div>
-            <div class="filter-group">
-               <div class="filter-group-title">Фильтр</div>
-               <ul>
-                 <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li>
-                 <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li>
-                 <li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li>
-                 <li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li>
-               </ul>
-            </div>
-          </div>
-        </Teleport>
+    <div v-else-if="!mainStore.user" class="login-screen">
+      <div class="login-box">
+        <h1>INDEX12</h1>
+        <p>Управляйте финансами легко</p>
+        <a :href="googleAuthUrl" class="google-login-button">Войти через Google</a>
+        <a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тест вход</a>
+      </div>
+    </div>
 
-        <div class="fs-body">
-            <div v-if="activeWidgetItems.length === 0" class="fs-empty">Нет данных</div>
-            <div v-else class="fs-list">
-                <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item">
-                    <span class="fs-name">{{ item.name }}</span>
-                    <span v-if="!showFutureBalance" class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
-                        {{ formatVal(item.balance) }}
-                    </span>
-                    <div v-else class="fs-val-forecast">
-                        <span class="fs-curr" :class="{ 'red-text': isExpense(item.balance) }">
+    <!-- 🟢 ОСНОВНОЙ КОНТЕНТ (ТОЛЬКО ЕСЛИ АВТОРИЗОВАН) -->
+    <template v-else>
+        <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
+            <div class="fs-header">
+                <div class="fs-title">{{ activeWidgetTitle }}</div>
+                <div class="fs-controls">
+                    <button ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                    </button>
+                    <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+                    </button>
+                </div>
+            </div>
+
+            <Teleport to="body">
+              <div v-if="isFilterOpen" class="filter-dropdown-fixed mobile-filter-menu" :style="filterPos" @click.stop>
+                <div class="filter-group">
+                   <div class="filter-group-title">Сортировка</div>
+                   <ul>
+                     <li :class="{ active: sortMode === 'default' }" @click="setSortMode('default')">По умолчанию</li>
+                     <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')">По убыванию</li>
+                     <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')">По возрастанию</li>
+                   </ul>
+                </div>
+                <div class="filter-group">
+                   <div class="filter-group-title">Фильтр</div>
+                   <ul>
+                     <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li>
+                     <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li>
+                     <li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li>
+                     <li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li>
+                   </ul>
+                </div>
+              </div>
+            </Teleport>
+
+            <div class="fs-body">
+                <div v-if="activeWidgetItems.length === 0" class="fs-empty">Нет данных</div>
+                <div v-else class="fs-list">
+                    <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item">
+                        <span class="fs-name">{{ item.name }}</span>
+                        <span v-if="!showFutureBalance" class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
                             {{ formatVal(item.balance) }}
                         </span>
-                        <span class="fs-arrow">></span>
-                        <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'red-text': item.futureBalance < 0, 'green-text': item.futureBalance > 0 }">
-                            {{ formatDelta(item.futureBalance) }}
-                        </span>
-                        <span v-else class="fs-fut" :class="{ 'red-text': isExpense(item.futureBalance) }">
-                            {{ formatVal(item.futureBalance) }}
-                        </span>
+                        <div v-else class="fs-val-forecast">
+                            <span class="fs-curr" :class="{ 'red-text': isExpense(item.balance) }">
+                                {{ formatVal(item.balance) }}
+                            </span>
+                            <span class="fs-arrow">></span>
+                            <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'red-text': item.futureBalance < 0, 'green-text': item.futureBalance > 0 }">
+                                {{ formatDelta(item.futureBalance) }}
+                            </span>
+                            <span v-else class="fs-fut" :class="{ 'red-text': isExpense(item.futureBalance) }">
+                                {{ formatVal(item.futureBalance) }}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <div class="fs-footer">
+                <button class="btn-back" @click="handleWidgetBack">Назад</button>
+            </div>
         </div>
 
-        <div class="fs-footer">
-            <button class="btn-back" @click="handleWidgetBack">Назад</button>
-        </div>
-    </div>
+        <!-- ОБЫЧНЫЙ РЕЖИМ -->
+        <template v-else>
+            <MobileHeaderTotals class="fixed-header" />
+            <div class="layout-body">
+              <MobileWidgetGrid 
+                 v-show="mainStore.isHeaderExpanded" 
+                 class="section-widgets" 
+                 @widget-click="onWidgetClick" 
+                 @widget-add="(w) => { /* Add logic */ }"
+                 @widget-edit="(w) => { /* Edit logic */ }"
+              />
+              <div class="section-timeline">
+                <MobileTimeline v-if="isDataLoaded" ref="timelineRef" />
+              </div>
+              <div class="section-chart">
+                <MobileChartSection v-if="isDataLoaded" ref="chartRef" @scroll="onChartScroll" />
+              </div>
+            </div>
+            <div class="fixed-footer">
+              <MobileActionPanel 
+                 @action="handleAction" 
+                 @open-graph="showGraphModal = true" 
+              />
+            </div>
+        </template>
 
-    <!-- ОБЫЧНЫЙ РЕЖИМ -->
-    <template v-else>
-        <MobileHeaderTotals class="fixed-header" />
-        <div class="layout-body">
-          <MobileWidgetGrid 
-             v-show="mainStore.isHeaderExpanded" 
-             class="section-widgets" 
-             @widget-click="onWidgetClick" 
-             @widget-add="(w) => { /* Add logic */ }"
-             @widget-edit="(w) => { /* Edit logic */ }"
-          />
-          <!-- 🟢 MobileTimeline теперь поддерживает виртуализацию -->
-          <div class="section-timeline">
-            <MobileTimeline v-if="isDataLoaded" ref="timelineRef" />
-          </div>
-          <div class="section-chart">
-            <MobileChartSection v-if="isDataLoaded" ref="chartRef" @scroll="onChartScroll" />
-          </div>
-        </div>
-        <div class="fixed-footer">
-          <MobileActionPanel 
-             @action="handleAction" 
-             @open-graph="showGraphModal = true" 
-          />
-        </div>
+        <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
+        
+        <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" @close="isEntityPopupVisible = false" @save="(val) => popupSaveAction(val)" />
+        <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="(items) => { /* save logic */ }" />
+        <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" @close="isOperationListEditorVisible = false" />
+        <OperationPopup v-if="isOperationPopupVisible" :type="operationType" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="isOperationPopupVisible = false" />
+        <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" />
+        <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
+        <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
+        <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />
     </template>
-
-    <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-    
-    <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" @close="isEntityPopupVisible = false" @save="(val) => popupSaveAction(val)" />
-    <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="(items) => { /* save logic */ }" />
-    <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" @close="isOperationListEditorVisible = false" />
-    <OperationPopup v-if="isOperationPopupVisible" :type="operationType" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="isOperationPopupVisible = false" />
-    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" />
-    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
-    <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
-    <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />
   </div>
 </template>
 
@@ -362,6 +392,18 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
   background-color: var(--color-background, #1a1a1a);
   display: flex; flex-direction: column; overflow: hidden; 
 }
+
+/* Стили для экрана загрузки и входа */
+.loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+.spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.login-screen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #1a1a1a; padding: 20px; box-sizing: border-box; }
+.login-box { width: 100%; max-width: 320px; text-align: center; }
+.login-box h1 { color: #fff; font-size: 24px; margin-bottom: 10px; font-weight: 700; }
+.login-box p { color: #888; font-size: 14px; margin-bottom: 30px; }
+.google-login-button { display: block; width: 100%; padding: 12px; background: #fff; color: #333; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+.dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
 
 /* FULLSCREEN STYLES */
 .fullscreen-widget-overlay {
