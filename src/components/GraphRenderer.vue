@@ -267,8 +267,10 @@ const chartData = computed(() => {
     const dateKey = _getDateKey(day.date);
     const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0 };
     
-    const allOps = (mainStore.allOperationsFlat || []);
-    const dayOps = allOps.filter(op => op.dateKey === dateKey);
+    // 🟢 OPTIMIZATION FIX: v29.11
+    // Вместо .filter() по огромному массиву allOperationsFlat (O(N^2)),
+    // используем прямой доступ к кешу через стор (O(1)).
+    const dayOps = mainStore.getOperationsForDay(dateKey) || [];
     
     const incomeOps = [];
     const prepayOps = [];
@@ -443,8 +445,6 @@ watch([chartData, chartOptions], async () => {
     </div>
 
     <!-- 🟢 ГЛАВНЫЙ ФИКС: ДИНАМИЧЕСКИЕ КОЛОНКИ -->
-    <!-- На десктопе visibleDays.length = 12, получаем repeat(12, 1fr) -->
-    <!-- На мобильном visibleDays.length = 30, получаем repeat(30, 1fr) -->
     <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${visibleDays.length}, 1fr)` }">
       <div
         v-for="(day, index) in summaries"

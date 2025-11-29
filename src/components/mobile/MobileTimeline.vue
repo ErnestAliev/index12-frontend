@@ -6,19 +6,20 @@ import MobileDayColumn from './MobileDayColumn.vue';
 const emit = defineEmits(['show-menu']);
 const mainStore = useMainStore();
 
-// "Полный" список дней (все данные)
 const allDays = ref([]);
-// "Видимый" список дней (только те, что рендерим сейчас)
 const visibleDays = ref([]);
 
 const scrollContainer = ref(null);
 const windowWidth = ref(window.innerWidth);
 
-// Константы виртуализации
-const COL_WIDTH_VW = 25; // Ширина одной колонки в VW
-const BUFFER_COLS = 4;   // Сколько колонок рендерить за краями экрана (прелоад)
+// Храним полную дату центрального элемента для точного восстановления
+const currentCenterDate = ref(new Date());
+// Флаг для блокировки событий скролла при программной прокрутке
+const ignoreScrollEvents = ref(false);
 
-// --- Хелперы ---
+const COL_WIDTH_VW = 25; 
+const BUFFER_COLS = 4;
+
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
@@ -27,7 +28,6 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 ГЕНЕРАЦИЯ ВСЕХ ДНЕЙ (ДАННЫЕ)
 const generateAllDays = () => {
   const proj = mainStore.projection;
   if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
@@ -50,102 +50,155 @@ const generateAllDays = () => {
       id: i,
       date: new Date(d),
       isToday: sameDay(d, todayReal),
+      dayOfYear: getDayOfYear(d),
       dateKey: _getDateKey(d)
     });
   }
   
   allDays.value = days;
-  updateVisibleDays(); // Первичный расчет видимых
+  // Сразу обновляем видимые дни для корректной отрисовки DOM
+  updateVisibleDays();
 };
 
-// 🟢 ВИРТУАЛИЗАЦИЯ: Расчет видимых колонок
 const updateVisibleDays = () => {
   if (!scrollContainer.value) return;
   
   const scrollLeft = scrollContainer.value.scrollLeft;
   const containerW = scrollContainer.value.clientWidth || windowWidth.value;
   
-  // Ширина одной колонки в пикселях
   const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
   if (!colWidthPx) return;
 
-  // Индексы
   const startIndex = Math.floor(scrollLeft / colWidthPx);
   const endIndex = Math.ceil((scrollLeft + containerW) / colWidthPx);
 
-  // Добавляем буфер
   const renderStart = Math.max(0, startIndex - BUFFER_COLS);
   const renderEnd = Math.min(allDays.value.length, endIndex + BUFFER_COLS);
 
-  // Вырезаем кусок
   visibleDays.value = allDays.value.slice(renderStart, renderEnd);
-  
-  // Сдвиг сетки, чтобы компенсировать пропущенные колонки
   currentPaddingLeft.value = renderStart * COL_WIDTH_VW;
 };
 
-// 🟢 НОВОЕ: Загрузка данных для видимых дней
-// Если данных нет в кеше, загружаем их точечно
 const fetchVisibleData = () => {
     visibleDays.value.forEach(day => {
-        // Проверяем, есть ли данные в кеше магазина
-        // (Функция fetchOperations сама проверяет кеш, так что можно вызывать безопасно)
         mainStore.fetchOperations(day.dateKey);
     });
 };
 
 const currentPaddingLeft = ref(0);
 
-// Скролл хендлер
-const onScroll = () => {
-  window.requestAnimationFrame(updateVisibleDays);
+const debounce = (fn, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
 };
 
-// Центрирование (переписано под виртуализацию)
+const updateCenterDate = debounce(() => {
+    if (!scrollContainer.value || allDays.value.length === 0) return;
+    
+    const el = scrollContainer.value;
+    const containerW = el.clientWidth;
+    const centerPx = el.scrollLeft + (containerW / 2);
+    const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
+    
+    if (!colWidthPx) return;
+
+    const centerIndex = Math.floor(centerPx / colWidthPx);
+    
+    if (centerIndex >= 0 && centerIndex < allDays.value.length) {
+        const centerDay = allDays.value[centerIndex];
+        if (centerDay) {
+            currentCenterDate.value = new Date(centerDay.date);
+            
+            // 🟢 ВАЖНО: Просто обновляем метку "текущий просмотр"
+            // Не трогаем mainStore.setToday(), чтобы не сдвигать проекцию
+            mainStore.setCurrentViewDate(centerDay.date);
+        }
+    }
+}, 150);
+
+const onScroll = () => {
+  if (ignoreScrollEvents.value) return; 
+  window.requestAnimationFrame(updateVisibleDays);
+  updateCenterDate();
+};
+
 const scrollToCenter = () => {
     if (scrollContainer.value && allDays.value.length > 0) {
         const el = scrollContainer.value;
+        ignoreScrollEvents.value = true; // Блокируем обновление state от скролла
+
         const colWidthPx = (el.clientWidth / 100) * COL_WIDTH_VW;
         
-        const todayIndex = allDays.value.findIndex(d => d.isToday);
+        // 1. Ищем точную дату (год+месяц+день)
+        let targetIndex = allDays.value.findIndex(d => sameDay(d.date, currentCenterDate.value));
+        
+        // 2. Если нет точной, ищем по DOY (на случай смены года в логике)
+        if (targetIndex === -1) {
+             targetIndex = allDays.value.findIndex(d => d.dayOfYear === mainStore.todayDayOfYear);
+        }
+        // 3. Fallback: Сегодня
+        if (targetIndex === -1) {
+            targetIndex = allDays.value.findIndex(d => d.isToday);
+        }
+        // 4. Fallback: Середина
+        if (targetIndex === -1) {
+            targetIndex = Math.floor(allDays.value.length / 2);
+        }
         
         let targetScroll = 0;
-        if (todayIndex !== -1) {
-            targetScroll = (todayIndex * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
-        } else {
-            const totalWidthPx = allDays.value.length * colWidthPx;
-            targetScroll = (totalWidthPx / 2) - (el.clientWidth / 2);
+        if (targetIndex !== -1) {
+            targetScroll = (targetIndex * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
         }
         
         el.scrollLeft = targetScroll > 0 ? targetScroll : 0;
-        updateVisibleDays(); // Форсируем обновление после прыжка
+        
+        updateVisibleDays();
+
+        // Разблокируем через небольшую паузу
+        setTimeout(() => {
+            ignoreScrollEvents.value = false;
+        }, 200);
     }
 };
 
-// Вотчеры
-watch(() => mainStore.projection, () => {
+// Следим за изменением проекции (данных)
+watch(() => mainStore.projection, async () => {
   generateAllDays();
-  nextTick(() => {
-      scrollToCenter();
+  await nextTick();
+  // Двойной RAF для гарантии пересчета стилей браузером
+  requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+          scrollToCenter();
+      });
   });
-}, { deep: true, immediate: true });
+}, { deep: true });
 
-// Когда меняются видимые дни, пробуем подгрузить данные
 watch(visibleDays, () => {
     fetchVisibleData();
 }, { deep: true });
 
 onMounted(() => {
   windowWidth.value = window.innerWidth;
+  
+  // Инициализация центральной даты
+  if (mainStore.currentViewDate) {
+      currentCenterDate.value = new Date(mainStore.currentViewDate);
+  } else if (mainStore.todayDayOfYear) {
+      const projStart = mainStore.projection?.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : new Date();
+      const year = projStart.getFullYear();
+      const d = new Date(year, 0); 
+      d.setDate(mainStore.todayDayOfYear);
+      currentCenterDate.value = d;
+  } else {
+      currentCenterDate.value = new Date();
+  }
+
   generateAllDays();
   setTimeout(scrollToCenter, 100);
 });
-
-// Динамические стили для эмуляции полной ширины
-const spacerStyle = computed(() => ({
-  width: `${allDays.value.length * COL_WIDTH_VW}vw`,
-  height: '1px' // Распорка только для ширины
-}));
 
 const gridStyle = computed(() => ({
   display: 'grid',
@@ -153,17 +206,12 @@ const gridStyle = computed(() => ({
   paddingLeft: `${currentPaddingLeft.value}vw`,
   height: '100%'
 }));
-
 </script>
 
 <template>
   <div class="timeline-container">
     <div class="timeline-scroll-area" ref="scrollContainer" @scroll="onScroll">
-      
-      <!-- Контейнер-обертка с реальной шириной контента -->
       <div class="timeline-wrapper" :style="{ width: `${allDays.length * COL_WIDTH_VW}vw` }">
-        
-        <!-- Сетка с видимыми колонками и отступом слева -->
         <div class="timeline-grid" :style="gridStyle">
           <MobileDayColumn 
             v-for="day in visibleDays"
@@ -174,7 +222,6 @@ const gridStyle = computed(() => ({
             @show-menu="(payload) => emit('show-menu', payload)"
           />
         </div>
-
       </div>
     </div>
   </div>
@@ -203,11 +250,9 @@ const gridStyle = computed(() => ({
 .timeline-wrapper {
   height: 100%;
   position: relative;
-  /* Ширина задается инлайново */
 }
 
 .timeline-grid {
-  /* Grid template и padding-left задаются инлайново для виртуализации */
   height: 100%;
   box-sizing: border-box;
 }

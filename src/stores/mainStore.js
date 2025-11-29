@@ -1,11 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v28.11.02 - PERF FIX ---
- * * ВЕРСИЯ: 28.11.02 - Ускорение работы с кэшем (Object.assign)
+ * * --- МЕТКА ВЕРСИИ: v28.11.06 - NO AUTO SHIFT ---
+ * * ВЕРСИЯ: 28.11.06 - Разделение даты просмотра и якоря диапазона
  * * ДАТА: 2025-11-29
  * * ЧТО ИЗМЕНЕНО:
- * 1. (PERF) В `fetchOperationsRange`, `refreshDay`, `moveOperation`, `_syncCaches` заменено 
- * копирование всего объекта кэша (`{...cache}`) на мутацию (`Object.assign` или прямое присваивание).
- * Это устраняет фризы при обновлении данных, когда кэш становится большим.
+ * 1. (FIX) `setCurrentViewDate` теперь НЕ обновляет `todayDayOfYear`.
+ * Это предотвращает автоматический сдвиг диапазона при скролле.
  */
 
 import { defineStore } from 'pinia';
@@ -28,7 +27,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v28.11.02 (Perf Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v28.11.06 (No Auto Shift) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -55,6 +54,10 @@ export const useMainStore = defineStore('mainStore', () => {
   const categories  = ref([]);
   
   const todayDayOfYear = ref(0);
+  
+  // 🟢 Храним дату, которая сейчас в центре экрана (для переключений)
+  const currentViewDate = ref(new Date());
+  
   const currentYear = ref(new Date().getFullYear());
 
   const isHeaderExpanded = ref(false);
@@ -77,6 +80,33 @@ export const useMainStore = defineStore('mainStore', () => {
   ]);
 
   // --- ХЕЛПЕРЫ ---
+  const _getDayOfYear = (date) => {
+    const start = new Date(date.getFullYear(), 0, 0);
+    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
+    return Math.floor(diff / 86400000);
+  };
+
+  // Этот метод устанавливает ЯКОРЬ (вокруг чего строится график)
+  function setToday(d){ 
+    todayDayOfYear.value = d; 
+    localStorage.setItem('todayDayOfYear', d.toString());
+  }
+  
+  // 🟢 Этот метод просто запоминает, куда смотрит юзер (БЕЗ смены якоря)
+  function setCurrentViewDate(date) {
+      if (!date) return;
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return;
+      currentViewDate.value = d;
+      // ВАЖНО: Мы НЕ вызываем setToday() здесь, чтобы не сдвигать проекцию
+  }
+
+  const savedToday = localStorage.getItem('todayDayOfYear');
+  if (savedToday) {
+    todayDayOfYear.value = parseInt(savedToday);
+  }
+  
+  // ... (Остальной код хелперов и геттеров без изменений)
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
@@ -235,20 +265,7 @@ export const useMainStore = defineStore('mainStore', () => {
   function setForecastState(widgetKey, value) {
     dashboardForecastState.value[widgetKey] = !!value;
   }
-  function setToday(d){ 
-    todayDayOfYear.value = d; 
-    localStorage.setItem('todayDayOfYear', d.toString());
-  }
-  const savedToday = localStorage.getItem('todayDayOfYear');
-  if (savedToday) {
-    todayDayOfYear.value = parseInt(savedToday);
-  }
   
-  const _getDayOfYear = (date) => {
-    const start = new Date(date.getFullYear(), 0, 0);
-    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
-    return Math.floor(diff / 86400000);
-  };
   const _getDateKey = (date) => {
     const year = date.getFullYear();
     const doy = _getDayOfYear(date);
@@ -1384,6 +1401,8 @@ export const useMainStore = defineStore('mainStore', () => {
     getOperationsForDay, 
 
     setToday, replaceWidget, setForecastState,
+    setCurrentViewDate, currentViewDate,
+    
     fetchAllEntities, fetchOperations, refreshDay, 
     
     addOperation, deleteOperation, moveOperation,
