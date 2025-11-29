@@ -9,8 +9,10 @@ import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
 import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
 import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
+// MobileBottomNav удален
 
-// Modals
+// Modals (Оставляем импорты на случай, если они нужны для чтения, но триггеры удалены из UI)
+// В режиме "Только просмотр" они фактически не вызываются пользователем
 import EntityPopup from '@/components/EntityPopup.vue';
 import EntityListEditor from '@/components/EntityListEditor.vue';
 import OperationListEditor from '@/components/OperationListEditor.vue';
@@ -66,92 +68,45 @@ const showFutureBalance = computed({
   set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); }
 });
 
-// 🟢 Helper: Объединение текущего и будущего баланса (как на десктопе)
-const mergeBalances = (currentBalances, futureData, isDelta = false) => {
-  let result = currentBalances || [];
-  if (futureData) {
-      const futureMap = new Map(futureData.map(item => [item._id, item.balance]));
-      result = currentBalances.map(item => {
-          // Если режим дельты (например, категории), то fallback = 0.
-          // Если режим накопительный (счета), fallback = текущий баланс.
-          const fallback = isDelta ? 0 : item.balance;
-          const futureVal = futureMap.get(item._id) ?? fallback;
-          return { ...item, futureBalance: futureVal };
-      });
-  } else {
-      // Если данных прогноза нет, заполняем futureBalance текущим (или нулем)
-      result = currentBalances.map(item => ({ ...item, futureBalance: isDelta ? 0 : item.balance }));
-  }
-  return result;
-};
-
-// 🟢 Определяем, является ли виджет "Дельта" (изменения) или "Накопительный" (счета)
-const isWidgetDeltaMode = computed(() => {
-    const k = activeWidgetKey.value;
-    // Дельта-режим для: контрагентов, проектов, физлиц, категорий
-    return ['contractors', 'projects', 'individuals', 'categories'].includes(k);
-});
-
 // Получение и фильтрация данных для полноэкранного списка
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value;
   if (!k) return [];
   
+  const useFuture = showFutureBalance.value;
   let items = [];
   
-  // 🟢 ЛОГИКА СЛИЯНИЯ ДАННЫХ (вместо простого переключения массивов)
-  if (k === 'accounts') {
-      items = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
-  } 
-  else if (k === 'companies') {
-      items = mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false);
-  } 
+  if (k === 'accounts') items = useFuture ? mainStore.futureAccountBalances : mainStore.currentAccountBalances;
+  else if (k === 'companies') items = useFuture ? mainStore.futureCompanyBalances : mainStore.currentCompanyBalances;
   else if (k === 'contractors') {
-      // Используем futureContractorChanges для дельты
-      items = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
+      const source = useFuture ? mainStore.futureContractorBalances : mainStore.currentContractorBalances;
       const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-      items = items.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
+      items = (source || []).filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
   }
-  else if (k === 'projects') {
-      items = mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true);
-  }
-  else if (k === 'individuals') {
-      items = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
-  }
+  else if (k === 'projects') items = useFuture ? mainStore.futureProjectBalances : mainStore.currentProjectBalances;
+  else if (k === 'individuals') items = useFuture ? mainStore.futureIndividualBalances : mainStore.currentIndividualBalances;
   else if (k === 'categories') {
-      items = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryChanges, true);
+      const source = useFuture ? mainStore.futureCategoryBalances : mainStore.currentCategoryBalances;
       const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
-      items = items.filter(c => visibleIds.has(c._id));
+      items = (source || []).filter(c => visibleIds.has(c._id));
   }
   else if (['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k)) {
-      let listCurr = [];
-      let listFut = [];
-      
-      if (k === 'incomeList') { listCurr = mainStore.currentIncomes; listFut = mainStore.futureIncomes; }
-      else if (k === 'expenseList') { listCurr = mainStore.currentExpenses; listFut = mainStore.futureExpenses; }
-      else if (k === 'withdrawalList') { listCurr = mainStore.currentWithdrawals; listFut = mainStore.futureWithdrawals; }
-      else if (k === 'transfers') { listCurr = mainStore.currentTransfers; listFut = mainStore.futureTransfers; }
-      
-      const sumCurr = (listCurr || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      const sumFut = (listFut || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      
-      // Для списков "futureBalance" будет суммой "Текущее + Будущее"
-      items = [{ _id: 'total', name: 'Всего', balance: sumCurr, futureBalance: sumCurr + sumFut }];
+      let list = [];
+      if (k === 'incomeList') list = mainStore.currentIncomes;
+      else if (k === 'expenseList') list = mainStore.currentExpenses;
+      else if (k === 'withdrawalList') list = mainStore.currentWithdrawals;
+      else if (k === 'transfers') list = mainStore.currentTransfers;
+      const sum = (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
+      items = [{ _id: 'total', name: 'Всего за период', balance: sum }];
   }
 
-  // Фильтрация
   let filtered = [...items];
-  const targetBalanceKey = showFutureBalance.value ? 'futureBalance' : 'balance'; // Фильтруем по тому значению, которое активно
+  if (filterMode.value === 'positive') filtered = filtered.filter(i => (i.balance || 0) > 0);
+  else if (filterMode.value === 'negative') filtered = filtered.filter(i => (i.balance || 0) < 0);
+  else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => (i.balance || 0) !== 0);
 
-  if (filterMode.value === 'positive') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) > 0);
-  else if (filterMode.value === 'negative') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) < 0);
-  else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) !== 0);
-
-  // Сортировка
-  const getSortVal = (i) => i[targetBalanceKey] || 0;
-  if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
-  else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
-  // default - по порядку (order) уже в mergeBalances отсортировано или из стора
+  if (sortMode.value === 'desc') filtered.sort((a, b) => (b.balance || 0) - (a.balance || 0));
+  else if (sortMode.value === 'asc') filtered.sort((a, b) => (a.balance || 0) - (b.balance || 0));
 
   return filtered;
 });
@@ -162,19 +117,7 @@ const handleWidgetBack = () => {
 };
 const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 
-// --- Helpers Formatters ---
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
-const formatDelta = (val) => {
-  const num = Number(val) || 0;
-  if (num === 0) return '0 ₸';
-  const formatted = formatNumber(Math.abs(num));
-  return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
-};
-const isExpense = (val) => Number(val) < 0;
-
-// ... (остальной код компонентов и хуков без изменений) ...
-// --- Handlers for Entity Popups, Action, etc. ---
-// ...
+// --- Handlers for Entity Popups (Removed from UI but kept for safety/logic integrity) ---
 const isEntityPopupVisible = ref(false);
 const isListEditorVisible = ref(false);
 const popupTitle = ref('');
@@ -185,6 +128,8 @@ const editorSavePath = ref(null);
 const isOperationListEditorVisible = ref(false);
 const operationListEditorTitle = ref('');
 const operationListEditorType = ref('income');
+
+// --- Operation Modals (Removed triggers) ---
 const isOperationPopupVisible = ref(false);
 const operationType = ref('income');
 const isTransferPopupVisible = ref(false);
@@ -194,9 +139,26 @@ const isRefundPopupVisible = ref(false);
 const operationToEdit = ref(null);
 const selectedDate = ref(new Date());
 const selectedCellIndex = ref(0);
-const handleAction = (type) => { console.log('Action:', type); };
-const handleOpClick = (op) => {};
-const handleOpAdd = () => {};
+
+// Action handler обновлен (но сами кнопки действий удалены в MobileActionPanel)
+const handleAction = (type) => {
+  // Заглушка, если вдруг вызов придет
+  console.log('Action triggered:', type);
+};
+
+// Клик по операции отключен на уровне ячейки (MobileHourCell), 
+// но если нужно, можно оставить пустую функцию
+const handleOpClick = (op) => {
+  // Режим просмотра: можно открыть попап только для чтения, 
+  // но по ТЗ "Вносить данные будет через десктоп", подразумевается 
+  // и редактирование тоже. Пока отключаем реакцию.
+  console.log('Op click disabled for view-only mode');
+};
+
+const handleOpAdd = ({ date, cellIndex }) => {
+  // Отключено
+};
+
 let isSyncing = false;
 const onTimelineScroll = (event) => { if (isSyncing) return; isSyncing = true; if (chartRef.value) chartRef.value.setScroll(event.target.scrollLeft); requestAnimationFrame(() => isSyncing = false); };
 const onChartScroll = (left) => { if (isSyncing) return; isSyncing = true; const el = timelineRef.value?.$el.querySelector('.timeline-grid'); if (el) el.scrollLeft = left; requestAnimationFrame(() => isSyncing = false); };
@@ -221,6 +183,9 @@ const handleGlobalClick = (e) => {
 };
 onMounted(() => document.addEventListener('click', handleGlobalClick));
 onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
+
+const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
+const isExpense = (val) => Number(val) < 0;
 </script>
 
 <template>
@@ -231,12 +196,13 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
         <div class="fs-header">
             <div class="fs-title">{{ activeWidgetTitle }}</div>
             
+            <!-- 🟢 ПАНЕЛЬ УПРАВЛЕНИЯ (Убраны Редактировать и Создать) -->
             <div class="fs-controls">
                 <!-- Фильтр -->
                 <button ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                 </button>
-                <!-- Прогноз -->
+                <!-- Прогноз (Реализация п.5 ТЗ) -->
                 <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
                 </button>
@@ -271,27 +237,9 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
             <div v-else class="fs-list">
                 <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item">
                     <span class="fs-name">{{ item.name }}</span>
-                    
-                    <!-- СЦЕНАРИЙ 1: ПРОГНОЗ ВЫКЛЮЧЕН (Показываем текущее) -->
-                    <span v-if="!showFutureBalance" class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
+                    <span class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
                         {{ formatVal(item.balance) }}
                     </span>
-
-                    <!-- СЦЕНАРИЙ 2: ПРОГНОЗ ВКЛЮЧЕН (Показываем Текущее > Будущее) -->
-                    <div v-else class="fs-val-forecast">
-                        <span class="fs-curr" :class="{ 'red-text': isExpense(item.balance) }">
-                            {{ formatVal(item.balance) }}
-                        </span>
-                        <span class="fs-arrow">></span>
-                        <!-- Для дельты (изменения) используем +/- -->
-                        <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'red-text': item.futureBalance < 0, 'green-text': item.futureBalance > 0 }">
-                            {{ formatDelta(item.futureBalance) }}
-                        </span>
-                        <!-- Для накопительного итога (счета) используем просто число -->
-                        <span v-else class="fs-fut" :class="{ 'red-text': isExpense(item.futureBalance) }">
-                            {{ formatVal(item.futureBalance) }}
-                        </span>
-                    </div>
                 </div>
             </div>
         </div>
@@ -304,23 +252,37 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
     <!-- ОБЫЧНЫЙ РЕЖИМ -->
     <template v-else>
         <MobileHeaderTotals class="fixed-header" />
+        
         <div class="layout-body">
+          <!-- 
+             🟢 ЛОГИКА ОТОБРАЖЕНИЯ (п.6 ТЗ): 
+             MobileWidgetGrid скрыт по умолчанию (v-show).
+             Тоталы показаны в MobileHeaderTotals (всегда).
+             Остальные виджеты - в MobileWidgetGrid, который зависит от isHeaderExpanded.
+          -->
           <MobileWidgetGrid 
              v-show="mainStore.isHeaderExpanded" 
              class="section-widgets" 
              @widget-click="onWidgetClick" 
           />
+          
           <div class="section-timeline">
+            <!-- События клика и добавления отключены -->
             <MobileTimeline ref="timelineRef" />
           </div>
           <div class="section-chart">
             <MobileChartSection ref="chartRef" @scroll="onChartScroll" />
           </div>
         </div>
+        
         <div class="fixed-footer">
           <MobileActionPanel @action="handleAction" />
+          <!-- MobileBottomNav удален -->
         </div>
     </template>
+
+    <!-- Modals (Оставлены в коде, но UI вызова удален) -->
+    <!-- ...код модалок остался для компиляции, но они не открываются... -->
   </div>
 </template>
 
@@ -358,6 +320,7 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 
+
 .fs-body { flex-grow: 1; overflow-y: auto; padding: 16px; }
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
 .fs-item {
@@ -365,23 +328,9 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
     background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444);
     border-radius: 8px;
 }
-.fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; }
 .fs-val { font-size: 14px; color: #fff; font-weight: 700; }
-
-/* Styles for Forecast Display */
-.fs-val-forecast {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-}
-.fs-curr { color: #ccc; font-weight: 500; }
-.fs-arrow { color: #666; font-size: 12px; }
-.fs-fut { font-weight: 700; color: #fff; }
-
-.red-text { color: #ff3b30 !important; }
-.green-text { color: #34c759 !important; }
-
+.red-text { color: #ff3b30; }
 .fs-empty { text-align: center; color: #666; margin-top: 50px; }
 
 .fs-footer {
@@ -403,7 +352,6 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 </style>
 
 <style>
-/* Global styles for dropdown (teleport) */
 .mobile-filter-menu {
     z-index: 5001 !important;
     background-color: #333 !important;
