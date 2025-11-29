@@ -59,7 +59,8 @@ const chartWidthStyle = computed(() => ({
 
 <template>
   <div class="mobile-chart-section">
-    <div class="chart-scroll-area" ref="scrollContainer" @scroll="onScroll">
+    <!-- 🟢 FIX: Добавлен класс scroll-touch для инерции -->
+    <div class="chart-scroll-area scroll-touch" ref="scrollContainer" @scroll="onScroll">
       <div class="chart-wide-wrapper" :style="chartWidthStyle">
         <GraphRenderer 
           v-if="visibleDays.length"
@@ -91,6 +92,7 @@ const chartWidthStyle = computed(() => ({
   
   /* 🟢 FIX: Инерция и правильная обработка тачей */
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   touch-action: pan-x;
 }
 .chart-scroll-area::-webkit-scrollbar { display: none; }

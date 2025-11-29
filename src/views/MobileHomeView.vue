@@ -210,22 +210,16 @@ const getDayOfYear = (date) => {
 
 onMounted(async () => {
   await mainStore.checkAuth();
-  
-  // Если пользователь не авторизован, дальнейшая загрузка не имеет смысла,
-  // шаблон отобразит экран входа.
   if (!mainStore.user) return;
-  
   await mainStore.fetchAllEntities();
   
   const today = new Date();
   const todayDay = getDayOfYear(today);
   mainStore.setToday(todayDay);
 
-  // 1. Принудительно загружаем '12d'
   await mainStore.loadCalculationData('12d', today);
   isDataLoaded.value = true; 
 
-  // 2. Проверяем сохраненный режим
   const savedProj = localStorage.getItem('projection');
   if (savedProj) {
       try {
@@ -350,6 +344,10 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
         <template v-else>
             <MobileHeaderTotals class="fixed-header" />
             <div class="layout-body">
+              <!-- 
+                🟢 FIX: Добавлены стили для секции виджетов для корректного скролла на iOS.
+                v-show используется для переключения видимости (развернуть/свернуть)
+              -->
               <MobileWidgetGrid 
                  v-show="mainStore.isHeaderExpanded" 
                  class="section-widgets" 
@@ -393,7 +391,6 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
   display: flex; flex-direction: column; overflow: hidden; 
 }
 
-/* Стили для экрана загрузки и входа */
 .loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
 .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -438,6 +435,7 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
     padding: 16px; 
     scrollbar-width: none; 
     -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch; /* Инерция на iOS */
 }
 .fs-body::-webkit-scrollbar { display: none; }
 
@@ -472,7 +470,18 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 /* Normal Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; }
+
+/* 🟢 FIX: Стили для контейнера виджетов - ИСПРАВЛЕНИЕ ОШИБКИ 1 и 3 */
+.section-widgets { 
+    flex-shrink: 0; 
+    max-height: 60vh; 
+    overflow-y: auto; 
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch; /* Важно для iOS */
+    overscroll-behavior: contain;
+}
+.section-widgets::-webkit-scrollbar { display: none; }
+
 .section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
 .section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
 .fixed-footer { flex-shrink: 0; z-index: 200; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }

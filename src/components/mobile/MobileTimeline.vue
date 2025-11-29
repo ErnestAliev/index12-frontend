@@ -151,7 +151,7 @@ const gridStyle = computed(() => ({
 
 <template>
   <div class="timeline-container">
-    <div class="timeline-scroll-area" ref="scrollContainer" @scroll="onScroll">
+    <div class="timeline-scroll-area scroll-touch" ref="scrollContainer" @scroll="onScroll">
       <div class="timeline-wrapper" :style="{ width: `${allDays.length * COL_WIDTH_VW}vw` }">
         <div class="timeline-grid" :style="gridStyle">
           <MobileDayColumn 
@@ -183,9 +183,10 @@ const gridStyle = computed(() => ({
   overflow-x: auto; 
   overflow-y: hidden;
   
-  /* 🟢 FIX: Инерция и правильная обработка тачей */
+  /* 🟢 FIX: Инерция и правильная обработка тачей для iOS */
   -webkit-overflow-scrolling: touch; 
-  touch-action: pan-x; 
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
   
   scrollbar-width: none; 
 }

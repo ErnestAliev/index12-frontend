@@ -17,18 +17,20 @@
   padding: 0;
   position: relative;
   font-weight: normal;
-  /* Убираем глобальный тач-скролл, будем включать точечно */
 }
 
 html {
   height: 100%;
   width: 100%;
-  overflow: hidden; /* Запрещаем скролл на уровне html */
+  /* На iOS важно не запрещать скролл глобально, если мы хотим нативный опыт,
+     но для SPA приложений часто блокируют, чтобы не скроллилась "подложка".
+     Оставляем hidden, но разрешаем внутри контейнеров.
+  */
+  overflow: hidden; 
   overscroll-behavior: none;
 }
 
 body {
-  /* 🟢 FIX: Жесткая фиксация тела страницы */
   position: fixed; 
   top: 0;
   left: 0;
@@ -47,9 +49,23 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Включаем инерционный скролл только там, где он нужен */
-.scrollable, .mobile-widgets-wrapper, .timeline-scroll-area, .chart-scroll-area, .list-scroll, .fs-body, .category-items-list-scroll {
+/* 🟢 FIX: Глобальный класс для включения инерции на iOS */
+.scroll-touch {
     -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain;
+}
+
+/* Применяем ко всем известным скролл-контейнерам */
+.scrollable, 
+.mobile-widgets-wrapper, 
+.timeline-scroll-area, 
+.chart-scroll-area, 
+.list-scroll, 
+.fs-body, 
+.category-items-list-scroll,
+.mobile-totals-wrapper {
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain; /* Предотвращает "резиновый" эффект на всю страницу */
 }
 
 /* Стили для кнопок */
