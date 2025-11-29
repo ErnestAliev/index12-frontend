@@ -9,10 +9,11 @@ const props = defineProps({
   cellIndex: { type: Number, required: true }
 });
 
-const emit = defineEmits(['click', 'add']);
+// 🟢 Новое событие show-menu
+const emit = defineEmits(['show-menu']);
 const mainStore = useMainStore();
 
-/* Логика определения типов операций (копия из HourCell для сохранения поведения) */
+/* Логика определения типов операций */
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
@@ -52,14 +53,20 @@ const toOwnerName = computed(() => {
   return op.toAccountId?.name || 'Счет...';
 });
 
-const handleClick = () => {
-  if (props.operation) emit('click', props.operation);
-  else emit('add', props.cellIndex);
+// 🟢 Обработчик клика
+const handleClick = (event) => {
+  // Передаем данные ячейки родителю для открытия меню
+  emit('show-menu', {
+      operation: props.operation,
+      dateKey: props.dateKey,
+      cellIndex: props.cellIndex,
+      // Можно передать координаты для анимации, если нужно, но просили по центру
+  });
 };
 </script>
 
 <template>
-  <div class="mobile-cell" @click="handleClick">
+  <div class="mobile-cell" @click.stop="handleClick">
     <div
       v-if="operation"
       class="op-chip"
@@ -110,6 +117,11 @@ const handleClick = () => {
   border-bottom: 1px solid rgba(255,255,255,0.05);
   padding: 2px 4px;
   box-sizing: border-box;
+  cursor: pointer; /* Добавили курсор */
+}
+/* Эффект нажатия */
+.mobile-cell:active {
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
 .empty-slot {

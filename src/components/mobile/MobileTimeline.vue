@@ -3,10 +3,11 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import MobileDayColumn from './MobileDayColumn.vue';
 
-const emit = defineEmits(['op-click', 'op-add']);
+// 🟢 Обновили emit
+const emit = defineEmits(['show-menu']);
 const mainStore = useMainStore();
 
-// --- Логика генерации дней (упрощенная версия из HomeView) ---
+// ... (остальной код без изменений)
 const today = ref(new Date());
 const visibleDays = ref([]);
 
@@ -18,14 +19,12 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// Реакция на изменение режима (12д, 1мес и т.д.) через mainStore.projection
 const viewMode = computed(() => mainStore.projection?.mode || '12d');
 
 const generateDays = () => {
   const mode = viewMode.value;
   const t = new Date(); t.setHours(0,0,0,0);
   
-  // Берем totalDays из стора или дефолт
   let total = 12;
   if (mode === '1m') total = 30;
   else if (mode === '3m') total = 90;
@@ -33,7 +32,6 @@ const generateDays = () => {
   else if (mode === '1y') total = 360;
   else total = 12;
 
-  // Логика смещения: начинаем за 5 дней до сегодня (как в десктопе)
   let startDate = new Date(t);
   startDate.setDate(startDate.getDate() - 5);
 
@@ -49,8 +47,6 @@ const generateDays = () => {
     });
   }
   visibleDays.value = days;
-  
-  // Подгружаем данные
   days.forEach(day => mainStore.fetchOperations(day.dateKey));
 };
 
@@ -60,23 +56,16 @@ watch(viewMode, () => {
 
 onMounted(() => {
   generateDays();
-  // Скроллим к "сегодня" (5-й день)
-  // Небольшая задержка, чтобы DOM отрисовался
   setTimeout(() => {
       const el = document.querySelector('.timeline-grid');
       if (el) {
-          // Ширина колонки 25vw. Сегодня это 6-я колонка (индекс 5).
-          // Хотим, чтобы она была где-то в начале/центре.
-          // 5 * 25vw = 125vw. Скролл на 100vw покажет 5-8 дни.
-          const scrollPos = (window.innerWidth * 0.25) * 4; // Скролл на 4 колонки
+          const scrollPos = (window.innerWidth * 0.25) * 4; 
           el.scrollLeft = scrollPos;
       }
   }, 100);
 });
 
 const gridStyle = computed(() => {
-  // Ширина каждой колонки 25% от ширины экрана (4 колонки в зоне видимости)
-  // Всего колонок: visibleDays.length
   return {
     gridTemplateColumns: `repeat(${visibleDays.value.length}, 25vw)`
   };
@@ -92,8 +81,7 @@ const gridStyle = computed(() => {
         :date="day.date"
         :is-today="day.isToday"
         :date-key="day.dateKey"
-        @op-click="(op) => emit('op-click', op)"
-        @op-add="(payload) => emit('op-add', payload)"
+        @show-menu="(payload) => emit('show-menu', payload)"
       />
     </div>
   </div>
@@ -102,7 +90,7 @@ const gridStyle = computed(() => {
 <style scoped>
 .timeline-container {
   width: 100%;
-  height: 100%; /* Занимает всю высоту родителя (timeline-area) */
+  height: 100%; 
   background-color: var(--color-background, #1a1a1a);
   overflow: hidden;
 }
@@ -110,9 +98,8 @@ const gridStyle = computed(() => {
 .timeline-grid {
   display: grid;
   height: 100%;
-  overflow-x: auto; /* Горизонтальный скролл */
+  overflow-x: auto; 
   overflow-y: hidden;
-  /* Скрытие скроллбара */
   scrollbar-width: none; 
 }
 .timeline-grid::-webkit-scrollbar { display: none; }

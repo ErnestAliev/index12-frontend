@@ -9,15 +9,14 @@ const props = defineProps({
   dateKey: { type: String, required: true }
 });
 
-const emit = defineEmits(['op-click', 'op-add']);
+// 🟢 Обновили emit
+const emit = defineEmits(['show-menu']); 
 const mainStore = useMainStore();
 
-// Получаем операции из стора по ключу даты
 const operations = computed(() => {
   return mainStore.getOperationsForDay(props.dateKey);
 });
 
-// Генерируем 24 ячейки (для сохранения структуры времени/порядка)
 const cells = computed(() => {
   const cellArray = [];
   const ops = operations.value;
@@ -33,6 +32,12 @@ const cells = computed(() => {
 const headerDate = computed(() => {
   return props.date.toLocaleString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
 });
+
+// 🟢 Обработчик клика из ячейки
+const handleShowMenu = (payload) => {
+    // Добавляем дату в payload, так как ячейка знает только dateKey
+    emit('show-menu', { ...payload, date: props.date });
+};
 </script>
 
 <template>
@@ -45,8 +50,7 @@ const headerDate = computed(() => {
         :operation="cell.operation"
         :date-key="dateKey"
         :cell-index="cell.id"
-        @click="(op) => emit('op-click', op)"
-        @add="(idx) => emit('op-add', { date: props.date, cellIndex: idx })"
+        @show-menu="handleShowMenu" 
       />
     </div>
   </div>
