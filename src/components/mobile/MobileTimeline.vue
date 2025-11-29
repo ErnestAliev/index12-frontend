@@ -17,109 +17,68 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// Режим из стора
-const viewMode = computed(() => mainStore.projection?.mode || '12d');
-
-// Текущая якорная дата из стора
-const currentTodayDate = computed(() => {
-    const year = new Date().getFullYear();
-    const date = new Date(year, 0, 1);
-    const day = mainStore.todayDayOfYear || getDayOfYear(new Date());
-    date.setDate(day);
-    return date;
-});
-
+// 🟢 СТРОГАЯ СИНХРОНИЗАЦИЯ С ГРАФИКОМ
+// Мы строим дни на основе проекции, рассчитанной в сторе (updateFutureProjectionByMode).
+// Это гарантирует, что начало и конец таймлайна совпадают с датами в заголовке "Всего".
 const generateDays = () => {
-  const mode = viewMode.value;
-  // Создаем копию даты, чтобы не мутировать computed
-  const anchorDate = new Date(currentTodayDate.value); 
-  anchorDate.setHours(0,0,0,0);
+  const proj = mainStore.projection;
+  if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
+
+  const start = new Date(proj.rangeStartDate);
+  const end = new Date(proj.rangeEndDate);
   
-  let total = 12;
-  let offsetStart = -5; 
-
-  // 🟢 СТРОГОЕ СООТВЕТСТВИЕ ДЕСКТОПНОЙ ЛОГИКЕ
-  // Логика: показываем симметричный диапазон вокруг текущей даты.
-  // Это гарантирует, что "Сегодня" всегда будет (примерно) в центре.
-  if (mode === '1m') { 
-      total = 30; 
-      offsetStart = -15; 
-  } else if (mode === '3m') { 
-      total = 90; 
-      offsetStart = -45; 
-  } else if (mode === '6m') { 
-      total = 180; 
-      offsetStart = -90; 
-  } else if (mode === '1y') { 
-      total = 360; 
-      offsetStart = -180; 
-  } else { 
-      // 12d
-      total = 12; 
-      offsetStart = -5; 
-  }
-
-  // Расчет даты начала сетки
-  let startDate = new Date(anchorDate);
-  startDate.setDate(startDate.getDate() + offsetStart);
-
+  // Рассчитываем количество дней между датами
+  // Добавляем 1, т.к. разница дат 13-13 = 0, но это 1 день
+  const totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+  
   const days = [];
   const todayReal = new Date();
 
-  for (let i = 0; i < total; i++) {
-    const d = new Date(startDate);
-    d.setDate(startDate.getDate() + i);
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
     
     days.push({
       id: i,
-      date: new Date(d), // Важно создавать новый объект даты
-      isToday: sameDay(d, todayReal), // Подсветка "настоящего" сегодня
-      isAnchor: sameDay(d, anchorDate), // (Опционально) можно использовать для центрирования
+      date: new Date(d),
+      isToday: sameDay(d, todayReal), // Подсветка реального "сегодня"
       dateKey: _getDateKey(d)
     });
   }
   
   visibleDays.value = days;
   
-  // Принудительно запрашиваем операции для новых дней.
-  // Это не должно вызывать тормозов, если бэкенд отвечает быстро, 
-  // но гарантирует наличие данных при смене режима.
-  // Оптимизация: можно запрашивать диапазоном, если API позволяет, но пока оставим как есть для надежности.
-  // days.forEach(day => mainStore.fetchOperations(day.dateKey));
+  // 🟢 ВАЖНО: Убран индивидуальный fetch. Данные загружаются оптом в ActionPanel.
 };
 
 const scrollToCenter = () => {
     if (scrollContainer.value) {
         const el = scrollContainer.value;
-        const totalWidthVW = visibleDays.value.length * 25; // 25vw ширина одной колонки
+        const totalWidthVW = visibleDays.value.length * 25; // 25vw ширина колонки
         const centerVW = totalWidthVW / 2;
-        // Расчет пикселей: (Центр всего контента в VW * ширину окна / 100) - (половина ширины экрана)
         const scrollPos = (centerVW * window.innerWidth / 100) - (window.innerWidth / 2);
         el.scrollLeft = scrollPos > 0 ? scrollPos : 0;
     }
 };
 
-// Следим за изменением даты или режима
-watch([() => mainStore.todayDayOfYear, viewMode], async () => {
+// Реактивно обновляем сетку при любом изменении проекции (даты или режима)
+watch(() => mainStore.projection, () => {
   generateDays();
-  await nextTick();
-  // При смене режима (но не даты) можно центрировать.
-  // Если меняется дата (стрелками), лучше не дергать скролл резко, или дергать плавно.
-  // Сейчас центрируем всегда для предсказуемости.
-  scrollToCenter();
-}, { immediate: true });
+  // Скроллим к центру только если изменился режим (длина массива сильно изменилась)
+  // Для плавности при навигации можно добавить условия, но для старта это надежно.
+  nextTick(() => {
+      // Центрируем, если это смена режима
+      scrollToCenter();
+  });
+}, { deep: true, immediate: true });
 
 onMounted(() => {
   generateDays();
-  // Скролл к центру при первой загрузке
-  setTimeout(() => {
-      scrollToCenter();
-  }, 100);
+  setTimeout(scrollToCenter, 100);
 });
 
 const gridStyle = computed(() => {
   return {
-    // Ширина сетки = кол-во дней * 25vw
     gridTemplateColumns: `repeat(${visibleDays.value.length}, 25vw)`
   };
 });

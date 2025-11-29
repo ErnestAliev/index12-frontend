@@ -5,7 +5,7 @@ import { useMainStore } from '@/stores/mainStore';
 const emit = defineEmits(['action', 'open-graph']);
 const mainStore = useMainStore();
 
-// Режимы (Строго как в Desktop)
+// Режимы
 const viewModes = [
   { key: '12d', num: '12', unit: 'ДНЕЙ' },
   { key: '1m',  num: '1',  unit: 'МЕСЯЦ' },
@@ -14,19 +14,15 @@ const viewModes = [
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
 
-// Текущий режим из стора
 const viewModeKey = computed(() => mainStore.projection?.mode || '12d');
 
 const currentViewIndex = computed(() => {
-    return viewModes.findIndex(v => v.key === viewModeKey.value);
+    const idx = viewModes.findIndex(v => v.key === viewModeKey.value);
+    return idx !== -1 ? idx : 0;
 });
 
-const currentDisplay = computed(() => {
-    const idx = currentViewIndex.value !== -1 ? currentViewIndex.value : 0;
-    return viewModes[idx];
-});
+const currentDisplay = computed(() => viewModes[currentViewIndex.value]);
 
-// Получение текущей даты
 const getCurrentDate = () => {
     const year = new Date().getFullYear();
     const currentDay = mainStore.todayDayOfYear || 1;
@@ -35,39 +31,32 @@ const getCurrentDate = () => {
     return date;
 };
 
-// 🟢 ПЕРЕКЛЮЧЕНИЕ РЕЖИМА (СТРЕЛКИ В ЦЕНТРЕ)
-const changeViewMode = (direction) => {
-    let nextIndex = currentViewIndex.value + direction;
-    
-    // Цикл по кругу
-    if (nextIndex < 0) nextIndex = viewModes.length - 1;
+// 🟢 ПЕРЕКЛЮЧЕНИЕ РЕЖИМА (КЛИК ПО ЦЕНТРУ)
+const switchViewMode = async () => {
+    let nextIndex = currentViewIndex.value + 1;
     if (nextIndex >= viewModes.length) nextIndex = 0;
     
     const newMode = viewModes[nextIndex].key;
     const currentDate = getCurrentDate();
 
-    // 1. МГНОВЕННОЕ обновление состояния (Optimistic UI)
-    // Мы вручную меняем режим в проекции, чтобы интерфейс (цифра и таймлайн) отреагировали сразу
-    if (mainStore.projection) {
-        mainStore.projection.mode = newMode;
-    }
-    // Вызываем метод стора для пересчета дат проекции (rangeStartDate/EndDate)
+    // 1. Обновляем режим
     mainStore.updateFutureProjectionByMode(newMode, currentDate);
-    
-    // 2. Фоновая загрузка данных (виджеты и операции)
-    // Не используем await, чтобы не фризить UI
-    mainStore.loadCalculationData(newMode, currentDate).catch(err => {
-        console.error("Ошибка загрузки данных:", err);
-    });
+    // 2. Грузим данные
+    await mainStore.loadCalculationData(newMode, currentDate);
 };
 
-const shiftPeriod = (direction) => {
+// 🟢 СДВИГ ПЕРИОДА (СТРЕЛКИ)
+const shiftPeriod = async (direction) => {
     const date = getCurrentDate();
     const mode = viewModeKey.value;
 
-    // Логика сдвига (как в Desktop)
+    // Сдвигаем дату на шаг, равный режиму
     if (mode === '12d') {
-        date.setDate(date.getDate() + (direction * 1));
+        // Для 12 дней сдвиг на 1 день (как в десктопе обычно) или на 12?
+        // Обычно в календарях "вправо" = +1 шаг сетки. Если сетка 12 дней, логично сдвинуть на 1 день или на 12.
+        // В десктопе у вас стрелки меняют VIEW (режим), а не дату?
+        // Вы писали: "нажимаю стрелку в право на 1 мес а значение 12 дней не меняется" - это значит, вы хотите сдвинуть ДАТУ.
+        date.setDate(date.getDate() + (direction * 1)); 
     } else {
         const step = mode.includes('m') ? parseInt(mode) : 1;
         if (mode === '1y') {
@@ -77,7 +66,7 @@ const shiftPeriod = (direction) => {
         }
     }
 
-    // Сохраняем новый день
+    // Сохраняем новую дату
     const startOfYear = new Date(date.getFullYear(), 0, 0);
     const diff = date - startOfYear;
     const oneDay = 1000 * 60 * 60 * 24;
@@ -85,23 +74,22 @@ const shiftPeriod = (direction) => {
     
     mainStore.setToday(newDayOfYear);
     
-    // Обновляем проекцию и данные
+    // Обновляем данные для НОВОЙ даты, но ТОГО ЖЕ режима
     mainStore.updateFutureProjectionByMode(mode, date);
-    mainStore.loadCalculationData(mode, date);
+    await mainStore.loadCalculationData(mode, date);
 };
 
 const openGraph = () => emit('open-graph');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
 onMounted(async () => {
-    // Гарантированный старт с 12 дней, если режим не задан
+    // Старт с 12 дней
     if (viewModeKey.value !== '12d') {
         const today = new Date();
         const todayDay = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
-        
         mainStore.setToday(todayDay);
         mainStore.updateFutureProjectionByMode('12d', today);
-        mainStore.loadCalculationData('12d', today);
+        await mainStore.loadCalculationData('12d', today);
     }
 });
 </script>
@@ -116,17 +104,19 @@ onMounted(async () => {
       
       <!-- Навигация -->
       <div class="nav-center">
-        <button class="arrow-btn" @click="changeViewMode(-1)">
+        <!-- Сдвиг назад -->
+        <button class="arrow-btn" @click="shiftPeriod(-1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
-        <!-- Текст режима -->
-        <div class="period-label">
+        <!-- Переключение режима (Центр) -->
+        <div class="period-label" @click="switchViewMode">
           <span class="days-num">{{ currentDisplay.num }}</span>
           <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
         </div>
         
-        <button class="arrow-btn" @click="changeViewMode(1)">
+        <!-- Сдвиг вперед -->
+        <button class="arrow-btn" @click="shiftPeriod(1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
@@ -176,7 +166,7 @@ onMounted(async () => {
 
 .period-label { 
     display: flex; flex-direction: column; align-items: center; 
-    cursor: default; line-height: 1; user-select: none; width: 70px;
+    cursor: pointer; line-height: 1; user-select: none; width: 70px;
 }
 .days-num { font-size: 20px; font-weight: 700; color: #fff; }
 .days-text { font-size: 9px; color: #888; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
