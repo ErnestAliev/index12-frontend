@@ -10,13 +10,15 @@ const currentTotal = computed(() => mainStore.currentTotalBalance);
 const futureTotal = computed(() => mainStore.futureTotalBalance);
 const accountsCount = computed(() => mainStore.currentAccountBalances.length);
 
+// 🟢 ИЗМЕНЕНО: year: '2-digit'
 const todayStr = computed(() => {
-  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date());
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date());
 });
 
+// 🟢 ИЗМЕНЕНО: year: '2-digit'
 const futureDateStr = computed(() => {
   const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date();
-  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' }).format(d);
 });
 </script>
 

@@ -21,10 +21,22 @@
   padding: 0;
   position: relative;
   font-weight: normal;
+  
+  /* 🟢 1. Включаем гладкий скролл (инерцию) на iOS для всех элементов */
+  -webkit-overflow-scrolling: touch;
 }
 
-body {
+html, body {
   min-height: 100vh;
+  height: 100%; /* Фиксируем высоту */
+  width: 100%;  /* Фиксируем ширину */
+  
+  /* 🟢 2. Запрещаем скролл самого тела страницы ("стоит намертво") */
+  overflow: hidden; 
+  
+  /* Отключаем "резиновый" эффект (баунс) всей страницы */
+  overscroll-behavior: none; 
+  
   color: var(--color-text);
   background: var(--color-background);
   transition: color 0.5s, background-color 0.5s;
@@ -46,6 +58,9 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  /* Убираем подсветку при тапе на мобильных */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Стили для кнопок */
