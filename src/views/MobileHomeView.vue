@@ -29,6 +29,41 @@ const chartRef = ref(null);
 const showGraphModal = ref(false);
 const isDataLoaded = ref(false); 
 
+// --- ГЛОБАЛЬНЫЕ ФУНКЦИИ И ХЕЛПЕРЫ (ОПРЕДЕЛЯЕМ ВНАЧАЛЕ) ---
+
+const getDayOfYear = (date) => {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+};
+
+let isSyncing = false;
+
+const onTimelineScroll = (event) => { 
+    if (isSyncing) return; 
+    isSyncing = true; 
+    if (chartRef.value) chartRef.value.setScroll(event.target.scrollLeft); 
+    requestAnimationFrame(() => isSyncing = false); 
+};
+
+const onChartScroll = (left) => { 
+    if (isSyncing) return; 
+    isSyncing = true; 
+    const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); 
+    if (el) el.scrollLeft = left; 
+    requestAnimationFrame(() => isSyncing = false); 
+};
+
+const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
+const formatDelta = (val) => {
+  const num = Number(val) || 0;
+  if (num === 0) return '0 ₸';
+  const formatted = formatNumber(Math.abs(num));
+  return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
+};
+const isExpense = (val) => Number(val) < 0;
+const formatDate = (date) => date ? new Date(date).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'}) : '';
+
 // Ссылки авторизации
 const googleAuthUrl = computed(() => {
   const baseUrl = API_BASE_URL.replace(/\/api$/, '');
@@ -56,11 +91,6 @@ watch(isWidgetFullscreen, (isOpen) => {
     }
 });
 
-onUnmounted(() => {
-    document.body.style.overflow = '';
-    document.documentElement.style.overflow = '';
-});
-
 const activeWidgetTitle = computed(() => {
   if (!activeWidgetKey.value) return '';
   const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value);
@@ -71,8 +101,10 @@ const activeWidgetTitle = computed(() => {
 const isFilterOpen = ref(false);
 const filterBtnRef = ref(null); 
 const filterPos = ref({ top: '0px', right: '16px' }); 
-const sortMode = ref('default'); 
-const filterMode = ref('all'); 
+
+// 🟢 Используем глобальное состояние из стора
+const sortMode = computed(() => mainStore.widgetSortMode); 
+const filterMode = computed(() => mainStore.widgetFilterMode); 
 
 const toggleFilter = (event) => {
     if (isFilterOpen.value) {
@@ -90,8 +122,10 @@ const toggleFilter = (event) => {
 };
 
 const closeFilter = () => { isFilterOpen.value = false; };
-const setSortMode = (mode) => { sortMode.value = mode; isFilterOpen.value = false; };
-const setFilterMode = (mode) => { filterMode.value = mode; isFilterOpen.value = false; };
+
+// 🟢 Обновляем состояние в сторе
+const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; };
+const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
 
 const showFutureBalance = computed({
   get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false,
@@ -112,6 +146,12 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   }
   return result;
 };
+
+// Определяем, является ли виджет списком
+const isListWidget = computed(() => {
+    const k = activeWidgetKey.value;
+    return ['incomeList', 'expenseList', 'withdrawalList', 'transfers', 'liabilities'].includes(k);
+});
 
 const isWidgetDeltaMode = computed(() => {
     const k = activeWidgetKey.value;
@@ -138,28 +178,55 @@ const activeWidgetItems = computed(() => {
       const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
       items = items.filter(c => visibleIds.has(c._id));
   }
-  else if (['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k)) {
-      let listCurr = [], listFut = [];
-      if (k === 'incomeList') { listCurr = mainStore.currentIncomes; listFut = mainStore.futureIncomes; }
-      else if (k === 'expenseList') { listCurr = mainStore.currentExpenses; listFut = mainStore.futureExpenses; }
-      else if (k === 'withdrawalList') { listCurr = mainStore.currentWithdrawals; listFut = mainStore.futureWithdrawals; }
-      else if (k === 'transfers') { listCurr = mainStore.currentTransfers; listFut = mainStore.futureTransfers; }
+  else if (isListWidget.value) {
+      let list = [];
+      if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes;
+      else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses;
+      else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals;
+      else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
+      else if (k === 'liabilities') {
+          return [
+              { _id: 'we', name: 'Мы должны', balance: showFutureBalance.value ? mainStore.liabilitiesWeOweFuture : mainStore.liabilitiesWeOwe },
+              { _id: 'they', name: 'Нам должны', balance: showFutureBalance.value ? mainStore.liabilitiesTheyOweFuture : mainStore.liabilitiesTheyOwe, isIncome: true }
+          ];
+      }
       
-      const sumCurr = (listCurr || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      const sumFut = (listFut || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      items = [{ _id: 'total', name: 'Всего', balance: sumCurr, futureBalance: sumCurr + sumFut }];
+      // Маппим операции
+      return list.map(op => {
+          let name = op.categoryId?.name || 'Без категории';
+          if (op.type === 'transfer' || op.isTransfer) {
+              const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId._id || op.toAccountId));
+              name = toAcc ? `-> ${toAcc.name}` : 'Перевод';
+          }
+          if (op.isWithdrawal) name = 'Вывод средств';
+          
+          return { 
+              _id: op._id, 
+              name: name, 
+              balance: op.amount,
+              date: op.date,
+              isList: true,
+              isIncome: op.type === 'income' 
+          };
+      });
   }
 
   let filtered = [...items];
-  const targetBalanceKey = showFutureBalance.value ? 'futureBalance' : 'balance'; 
+  
+  if (!isListWidget.value) {
+      const targetBalanceKey = showFutureBalance.value ? 'futureBalance' : 'balance'; 
 
-  if (filterMode.value === 'positive') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) > 0);
-  else if (filterMode.value === 'negative') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) < 0);
-  else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) !== 0);
+      if (filterMode.value === 'positive') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) > 0);
+      else if (filterMode.value === 'negative') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) < 0);
+      else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) !== 0);
 
-  const getSortVal = (i) => i[targetBalanceKey] || 0;
-  if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
-  else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
+      const getSortVal = (i) => i[targetBalanceKey] || 0;
+      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
+      else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
+  } else {
+      // Сортировка для списков (по дате)
+      filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
 
   return filtered;
 });
@@ -167,83 +234,7 @@ const activeWidgetItems = computed(() => {
 const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; };
 const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
-const formatDelta = (val) => {
-  const num = Number(val) || 0;
-  if (num === 0) return '0 ₸';
-  const formatted = formatNumber(Math.abs(num));
-  return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
-};
-const isExpense = (val) => Number(val) < 0;
-
-// Popup States
-const isEntityPopupVisible = ref(false);
-const isListEditorVisible = ref(false);
-const popupTitle = ref('');
-const popupSaveAction = ref(null);
-const editorTitle = ref('');
-const editorItems = ref([]);
-const editorSavePath = ref(null);
-const isOperationListEditorVisible = ref(false);
-const operationListEditorTitle = ref('');
-const operationListEditorType = ref('income');
-const isOperationPopupVisible = ref(false);
-const operationType = ref('income');
-const isTransferPopupVisible = ref(false);
-const isWithdrawalPopupVisible = ref(false);
-const isRetailPopupVisible = ref(false);
-const isRefundPopupVisible = ref(false);
-const operationToEdit = ref(null);
-const selectedDate = ref(new Date());
-const selectedCellIndex = ref(0);
-
-const handleAction = (type) => { console.log('Action:', type); };
-let isSyncing = false;
-const onTimelineScroll = (event) => { if (isSyncing) return; isSyncing = true; if (chartRef.value) chartRef.value.setScroll(event.target.scrollLeft); requestAnimationFrame(() => isSyncing = false); };
-const onChartScroll = (left) => { if (isSyncing) return; isSyncing = true; const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); if (el) el.scrollLeft = left; requestAnimationFrame(() => isSyncing = false); };
-
-const getDayOfYear = (date) => {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
-};
-
-onMounted(async () => {
-  await mainStore.checkAuth();
-  if (!mainStore.user) return;
-  await mainStore.fetchAllEntities();
-  
-  const today = new Date();
-  const todayDay = getDayOfYear(today);
-  mainStore.setToday(todayDay);
-
-  await mainStore.loadCalculationData('12d', today);
-  isDataLoaded.value = true; 
-
-  const savedProj = localStorage.getItem('projection');
-  if (savedProj) {
-      try {
-          const parsed = JSON.parse(savedProj);
-          if (parsed.mode && parsed.mode !== '12d') {
-              setTimeout(async () => {
-                  await mainStore.updateFutureProjectionByMode(parsed.mode, today);
-                  await mainStore.loadCalculationData(parsed.mode, today);
-              }, 300);
-          }
-      } catch (e) { console.error("Error parsing saved projection", e); }
-  }
-
-  nextTick(() => {
-      const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
-      if (el) { 
-          el.addEventListener('scroll', onTimelineScroll); 
-          const w = window.innerWidth * 0.25; 
-          el.scrollLeft = w * 4; 
-          if (chartRef.value) chartRef.value.setScroll(w * 4); 
-      }
-  });
-});
-
+// --- Lifecycle ---
 const handleGlobalClick = (e) => {
     if (isFilterOpen.value && filterBtnRef.value && !filterBtnRef.value.contains(e.target)) {
         const menu = document.querySelector('.filter-dropdown-fixed');
@@ -252,14 +243,54 @@ const handleGlobalClick = (e) => {
         }
     }
 };
+
 onMounted(() => document.addEventListener('click', handleGlobalClick));
 onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
+
+onMounted(async () => {
+  try {
+      await mainStore.checkAuth();
+      if (!mainStore.user) return;
+      await mainStore.fetchAllEntities();
+      
+      const today = new Date();
+      const todayDay = getDayOfYear(today);
+      mainStore.setToday(todayDay);
+
+      await mainStore.loadCalculationData('12d', today);
+      isDataLoaded.value = true; 
+
+      const savedProj = localStorage.getItem('projection');
+      if (savedProj) {
+          try {
+              const parsed = JSON.parse(savedProj);
+              if (parsed.mode && parsed.mode !== '12d') {
+                  setTimeout(async () => {
+                      await mainStore.updateFutureProjectionByMode(parsed.mode, today);
+                      await mainStore.loadCalculationData(parsed.mode, today);
+                  }, 300);
+              }
+          } catch (e) { console.error("Error parsing saved projection", e); }
+      }
+
+      nextTick(() => {
+          const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
+          if (el) { 
+              el.addEventListener('scroll', onTimelineScroll); 
+              const w = window.innerWidth * 0.25; 
+              el.scrollLeft = w * 4; 
+              if (chartRef.value) chartRef.value.setScroll(w * 4); 
+          }
+      });
+  } catch (error) {
+      console.error("Critical error in MobileHomeView mount:", error);
+  }
+});
 </script>
 
 <template>
   <div class="mobile-layout">
     
-    <!-- 🟢 ЭКРАН ЗАГРУЗКИ / ВХОДА -->
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>
       <p>Загрузка...</p>
@@ -274,13 +305,12 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
       </div>
     </div>
 
-    <!-- 🟢 ОСНОВНОЙ КОНТЕНТ (ТОЛЬКО ЕСЛИ АВТОРИЗОВАН) -->
     <template v-else>
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
             <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
-                    <button ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
+                    <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     </button>
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
@@ -315,22 +345,32 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
                 <div v-if="activeWidgetItems.length === 0" class="fs-empty">Нет данных</div>
                 <div v-else class="fs-list">
                     <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item">
-                        <span class="fs-name">{{ item.name }}</span>
-                        <span v-if="!showFutureBalance" class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
+                        <div class="fs-item-left">
+                            <span v-if="item.isList" class="fs-date">{{ formatDate(item.date) }}</span>
+                            <span class="fs-name">{{ item.name }}</span>
+                        </div>
+                        
+                        <span v-if="isListWidget" class="fs-val" :class="{ 'red-text': isExpense(item.balance) && !item.isIncome, 'green-text': item.isIncome }">
                             {{ formatVal(item.balance) }}
                         </span>
-                        <div v-else class="fs-val-forecast">
-                            <span class="fs-curr" :class="{ 'red-text': isExpense(item.balance) }">
+
+                        <template v-else>
+                            <span v-if="!showFutureBalance" class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
                                 {{ formatVal(item.balance) }}
                             </span>
-                            <span class="fs-arrow">></span>
-                            <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'red-text': item.futureBalance < 0, 'green-text': item.futureBalance > 0 }">
-                                {{ formatDelta(item.futureBalance) }}
-                            </span>
-                            <span v-else class="fs-fut" :class="{ 'red-text': isExpense(item.futureBalance) }">
-                                {{ formatVal(item.futureBalance) }}
-                            </span>
-                        </div>
+                            <div v-else class="fs-val-forecast">
+                                <span class="fs-curr" :class="{ 'red-text': isExpense(item.balance) }">
+                                    {{ formatVal(item.balance) }}
+                                </span>
+                                <span class="fs-arrow">></span>
+                                <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'red-text': item.futureBalance < 0, 'green-text': item.futureBalance > 0 }">
+                                    {{ formatDelta(item.futureBalance) }}
+                                </span>
+                                <span v-else class="fs-fut" :class="{ 'red-text': isExpense(item.futureBalance) }">
+                                    {{ formatVal(item.futureBalance) }}
+                                </span>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -340,14 +380,9 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
             </div>
         </div>
 
-        <!-- ОБЫЧНЫЙ РЕЖИМ -->
         <template v-else>
             <MobileHeaderTotals class="fixed-header" />
             <div class="layout-body">
-              <!-- 
-                🟢 FIX: Добавлены стили для секции виджетов для корректного скролла на iOS.
-                v-show используется для переключения видимости (развернуть/свернуть)
-              -->
               <MobileWidgetGrid 
                  v-show="mainStore.isHeaderExpanded" 
                  class="section-widgets" 
@@ -371,7 +406,6 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
         </template>
 
         <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-        
         <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" @close="isEntityPopupVisible = false" @save="(val) => popupSaveAction(val)" />
         <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="(items) => { /* save logic */ }" />
         <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" @close="isOperationListEditorVisible = false" />
@@ -385,6 +419,9 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 </template>
 
 <style scoped>
+.fs-item-left { display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 60%; }
+.fs-date { color: #666; font-size: 11px; min-width: 32px; }
+
 .mobile-layout {
   height: 100vh; height: 100dvh; width: 100vw;
   background-color: var(--color-background, #1a1a1a);
@@ -402,7 +439,6 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 .google-login-button { display: block; width: 100%; padding: 12px; background: #fff; color: #333; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
 .dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
 
-/* FULLSCREEN STYLES */
 .fullscreen-widget-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background-color: var(--color-background, #1a1a1a);
@@ -435,7 +471,7 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
     padding: 16px; 
     scrollbar-width: none; 
     -ms-overflow-style: none;
-    -webkit-overflow-scrolling: touch; /* Инерция на iOS */
+    -webkit-overflow-scrolling: touch;
 }
 .fs-body::-webkit-scrollbar { display: none; }
 
@@ -445,7 +481,7 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
     background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444);
     border-radius: 8px;
 }
-.fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-val { font-size: 14px; color: #fff; font-weight: 700; }
 
 .fs-val-forecast { display: flex; align-items: center; gap: 6px; font-size: 14px; }
@@ -467,17 +503,15 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
     border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;
 }
 
-/* Normal Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 
-/* 🟢 FIX: Стили для контейнера виджетов - ИСПРАВЛЕНИЕ ОШИБКИ 1 и 3 */
 .section-widgets { 
     flex-shrink: 0; 
     max-height: 60vh; 
     overflow-y: auto; 
     scrollbar-width: none;
-    -webkit-overflow-scrolling: touch; /* Важно для iOS */
+    -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
 }
 .section-widgets::-webkit-scrollbar { display: none; }

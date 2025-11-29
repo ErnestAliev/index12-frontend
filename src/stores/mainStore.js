@@ -1,10 +1,10 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v28.11.06 - NO AUTO SHIFT ---
- * * ВЕРСИЯ: 28.11.06 - Разделение даты просмотра и якоря диапазона
+ * * --- МЕТКА ВЕРСИИ: v29.11.05 - GLOBAL SORT STATE ---
+ * * ВЕРСИЯ: 29.11.05 - Добавлено глобальное состояние сортировки/фильтрации виджетов
  * * ДАТА: 2025-11-29
  * * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) `setCurrentViewDate` теперь НЕ обновляет `todayDayOfYear`.
- * Это предотвращает автоматический сдвиг диапазона при скролле.
+ * 1. (NEW) widgetSortMode, widgetFilterMode добавлены в state.
+ * 2. (NEW) Actions: setWidgetSortMode, setWidgetFilterMode.
  */
 
 import { defineStore } from 'pinia';
@@ -27,11 +27,18 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v28.11.06 (No Auto Shift) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v29.11.05 (Global Sort) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
   
+  // --- СОСТОЯНИЕ ВИДЖЕТОВ (СОРТИРОВКА / ФИЛЬТР) ---
+  const widgetSortMode = ref('default'); // 'default' | 'asc' | 'desc'
+  const widgetFilterMode = ref('all');   // 'all' | 'positive' | 'negative' | 'nonZero'
+
+  function setWidgetSortMode(mode) { widgetSortMode.value = mode; }
+  function setWidgetFilterMode(mode) { widgetFilterMode.value = mode; }
+
   const snapshot = ref({
     totalBalance: 0,
     accountBalances: {},
@@ -54,10 +61,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const categories  = ref([]);
   
   const todayDayOfYear = ref(0);
-  
-  // 🟢 Храним дату, которая сейчас в центре экрана (для переключений)
   const currentViewDate = ref(new Date());
-  
   const currentYear = ref(new Date().getFullYear());
 
   const isHeaderExpanded = ref(false);
@@ -86,19 +90,16 @@ export const useMainStore = defineStore('mainStore', () => {
     return Math.floor(diff / 86400000);
   };
 
-  // Этот метод устанавливает ЯКОРЬ (вокруг чего строится график)
   function setToday(d){ 
     todayDayOfYear.value = d; 
     localStorage.setItem('todayDayOfYear', d.toString());
   }
   
-  // 🟢 Этот метод просто запоминает, куда смотрит юзер (БЕЗ смены якоря)
   function setCurrentViewDate(date) {
       if (!date) return;
       const d = new Date(date);
       if (isNaN(d.getTime())) return;
       currentViewDate.value = d;
-      // ВАЖНО: Мы НЕ вызываем setToday() здесь, чтобы не сдвигать проекцию
   }
 
   const savedToday = localStorage.getItem('todayDayOfYear');
@@ -106,7 +107,6 @@ export const useMainStore = defineStore('mainStore', () => {
     todayDayOfYear.value = parseInt(savedToday);
   }
   
-  // ... (Остальной код хелперов и геттеров без изменений)
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
@@ -409,10 +409,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   });
 
-  const opsUpToForecast = computed(() => {
-    return [...currentOps.value, ...futureOps.value];
-  });
-
   async function fetchSnapshot() {
     try {
       const res = await axios.get(`${API_BASE_URL}/snapshot`);
@@ -668,10 +664,19 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
-  const currentAccountBalances = computed(() => accounts.value.map(a => ({ ...a, balance: snapshot.value.accountBalances[a._id] || 0 })));
+  // 🟢 FIX: Добавлен initialBalance к snapshot
+  const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
+      ...a, 
+      balance: (snapshot.value.accountBalances[a._id] || 0) + (a.initialBalance || 0) 
+  })));
+
+  // 🟢 FIX: Добавлен initialBalance к future
   const futureAccountBalances = computed(() => {
     const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
-    return accounts.value.map(a => ({ ...a, balance: futureMap[a._id] || 0 }));
+    return accounts.value.map(a => ({ 
+        ...a, 
+        balance: (futureMap[a._id] || 0) + (a.initialBalance || 0) 
+    }));
   });
   
   const currentCompanyBalances = computed(() => {
@@ -708,10 +713,35 @@ export const useMainStore = defineStore('mainStore', () => {
     return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
   });
 
-  const currentIndividualBalances = computed(() => individuals.value.map(i => ({ ...i, balance: snapshot.value.individualBalances[i._id] || 0 })));
+  // 🟢 FIX: Учет начальных балансов связанных счетов для физлиц
+  const currentIndividualBalances = computed(() => {
+      return individuals.value.map(i => {
+          const opsBalance = snapshot.value.individualBalances[i._id] || 0;
+          
+          const linkedAccounts = currentAccountBalances.value.filter(a => {
+              const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
+              return indId === i._id;
+          });
+          
+          const accountsBalance = linkedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+          return { ...i, balance: accountsBalance + opsBalance };
+      });
+  });
+
   const futureIndividualBalances = computed(() => {
-    const futureMap = _calculateFutureEntityBalance(snapshot.value.individualBalances, 'individualId');
-    return individuals.value.map(i => ({ ...i, balance: futureMap[i._id] || 0 }));
+      const futureOpsMap = _calculateFutureEntityBalance(snapshot.value.individualBalances, 'individualId');
+      
+      return individuals.value.map(i => {
+          const opsBalance = futureOpsMap[i._id] || 0;
+          
+          const linkedAccounts = futureAccountBalances.value.filter(a => {
+              const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
+              return indId === i._id;
+          });
+          
+          const accountsBalance = linkedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+          return { ...i, balance: accountsBalance + opsBalance };
+      });
   });
 
   const currentTotalBalance = computed(() => snapshot.value.totalBalance || 0);
@@ -735,7 +765,6 @@ export const useMainStore = defineStore('mainStore', () => {
     projection.value = { mode, totalDays: computeTotalDaysForMode(mode, base), rangeStartDate: startDate, rangeEndDate: endDate, futureIncomeSum, futureExpenseSum };
   }
 
-  // 🟢 ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ ЗАГРУЗКИ (Chunked Loading + Mutation)
   async function fetchOperationsRange(startDate, endDate) {
     try {
       const dateKeysToFetch = [];
@@ -760,17 +789,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
           const results = await Promise.all(promises);
           
-          // 🟢 ПЕРФОРМАНС: Мутация объекта вместо спреда
           for (const { dateKey, data } of results) {
               const raw = Array.isArray(data) ? data.slice() : [];
               const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey, date: op.date || _parseDateKey(dateKey) }));
               
-              // Записываем сразу в state (Pinia реактивна к мутациям)
               displayCache.value[dateKey] = processedOps;
               calculationCache.value[dateKey] = processedOps;
           }
           
-          // 🟢 Даем браузеру передохнуть (10мс)
           await new Promise(r => setTimeout(r, 10));
       }
 
@@ -780,7 +806,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   const _syncCaches = (key, ops) => {
-      // 🟢 ПЕРФОРМАНС: Прямое присваивание
       displayCache.value[key] = [...ops]; 
       calculationCache.value[key] = [...ops];
   };
@@ -816,6 +841,11 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function fetchAllEntities(){
+    // 🟢 GUARD: Не загружать данные, если пользователь не авторизован
+    if (!user.value) {
+        return; 
+    }
+
     try{
       const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
@@ -859,7 +889,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-      // 🟢 ПЕРФОРМАНС: Обновляем только ключ
       displayCache.value[dateKey] = processedOps;
       calculationCache.value[dateKey] = processedOps;
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
@@ -1373,6 +1402,9 @@ export const useMainStore = defineStore('mainStore', () => {
     allWidgets, dashboardLayout, projection, dashboardForecastState,
     user, isAuthLoading,
 
+    // 🟢 Экспортируем новое состояние сортировки
+    widgetSortMode, widgetFilterMode, setWidgetSortMode, setWidgetFilterMode,
+
     isHeaderExpanded, toggleHeaderExpansion,
 
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
@@ -1386,7 +1418,6 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentCategoryBalances, futureCategoryBalances,
     
-    // 🟢 Экспортируем НОВЫЕ геттеры изменений
     futureContractorChanges, futureProjectChanges, futureIndividualChanges, futureCategoryChanges,
     
     currentOps, 
