@@ -20,7 +20,8 @@ const viewMode = computed(() => mainStore.projection?.mode || '12d');
 const currentToday = computed(() => {
     const year = new Date().getFullYear();
     const date = new Date(year, 0);
-    // Если todayDayOfYear не задан, берем сегодня
+    // 🟢 Используем сегодняшнюю дату, если store не готов, но это редко, так как MobileHomeView устанавливает его.
+    // Важно: если 0, то будет Январь.
     const day = mainStore.todayDayOfYear || getDayOfYear(new Date());
     date.setDate(day);
     return date;
@@ -45,8 +46,8 @@ const generateDays = () => {
   visibleDays.value = days;
 };
 
-// Реактивность
-watch(() => mainStore.todayDayOfYear, generateDays);
+// 🟢 Re-generate when data changes
+watch(() => mainStore.todayDayOfYear, generateDays, { immediate: true });
 watch(viewMode, generateDays);
 
 onMounted(() => {
@@ -82,7 +83,7 @@ defineExpose({ setScroll });
   height: 100%;
   background-color: var(--color-background, #1a1a1a);
   border-top: 1px solid var(--color-border, #444);
-  min-height: 0; /* Важно для Flexbox */
+  min-height: 0; 
 }
 
 .chart-scroll-area {
@@ -96,6 +97,6 @@ defineExpose({ setScroll });
 
 .chart-wide-wrapper {
   height: 100%;
-  width: 300vw; /* 12 колонок */
+  width: 300vw; 
 }
 </style>

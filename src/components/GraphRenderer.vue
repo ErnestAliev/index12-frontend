@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, ref, watch, nextTick, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
@@ -15,15 +15,6 @@ import {
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
-/**
- * * --- МЕТКА ВЕРСИИ: v23.3 - TOOLTIP DATE ---
- * * ВЕРСИЯ: 23.3 - Добавлена дата в тултипы
- * * ДАТА: 2025-11-26
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (TOOLTIP) В callbacks.label добавлена строка с датой (берется из labels по индексу).
- */
-
 const props = defineProps({
   visibleDays: { type: Array, required: true, default: () => [] }, 
   animate: { type: Boolean, default: false },
@@ -32,6 +23,129 @@ const props = defineProps({
 const emit = defineEmits(['update:yLabels']);
 
 const mainStore = useMainStore();
+
+// --- ВНЕШНИЙ ТУЛТИП (HTML) ---
+// Позволяет отображать тултип поверх скролл-контейнеров на мобильных
+const externalTooltipHandler = (context) => {
+  // 1. Ищем или создаем элемент тултипа
+  let tooltipEl = document.getElementById('chartjs-custom-tooltip');
+
+  if (!tooltipEl) {
+    tooltipEl = document.createElement('div');
+    tooltipEl.id = 'chartjs-custom-tooltip';
+    // Базовые стили
+    Object.assign(tooltipEl.style, {
+        background: 'rgba(26, 26, 26, 0.95)',
+        border: '1px solid #444',
+        borderRadius: '8px',
+        color: 'white',
+        opacity: 0,
+        pointerEvents: 'none',
+        position: 'fixed', // ВАЖНО: Fixed позиционирование
+        zIndex: 9999,
+        fontSize: '12px',
+        padding: '12px',
+        lineHeight: '1.4',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        transition: 'opacity .15s ease',
+        // 🟢 ИЗМЕНЕНО: Адаптивная ширина
+        width: 'max-content', // По умолчанию под контент (десктоп)
+        maxWidth: '100vw',    // Ограничение по ширине экрана (мобилка)
+        boxSizing: 'border-box' // Чтобы padding не вылезал за 100vw
+    });
+    document.body.appendChild(tooltipEl);
+  }
+
+  const tooltipModel = context.tooltip;
+
+  // 2. Скрываем, если тултип неактивен
+  if (tooltipModel.opacity === 0) {
+    tooltipEl.style.opacity = 0;
+    return;
+  }
+
+  // 3. Формируем контент (используя данные из callbacks)
+  if (tooltipModel.body) {
+    const bodyLines = tooltipModel.body.map(b => b.lines).flat();
+    
+    let innerHtml = '';
+    bodyLines.forEach((line, i) => {
+       if (line === '---') {
+           innerHtml += '<div style="height:1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>';
+           return;
+       }
+       if (!line) return;
+
+       // Стилизация строк
+       // 🟢 ИЗМЕНЕНО: white-space: nowrap для предотвращения переноса
+       let style = 'color: #ddd; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'; 
+       
+       if (i === 0) style = 'color: #888; margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;'; // Дата
+       else if (i === 1) style = 'font-weight: 700; font-size: 15px; margin-bottom: 8px; color: #fff; white-space: nowrap;'; // Итоговая сумма
+
+       innerHtml += `<div style="${style}">${line}</div>`;
+    });
+
+    tooltipEl.innerHTML = innerHtml;
+  }
+
+  // 4. Позиционирование (С учетом границ экрана)
+  const position = context.chart.canvas.getBoundingClientRect();
+  const viewportX = position.left + tooltipModel.caretX;
+  const viewportY = position.top + tooltipModel.caretY;
+  
+  const tooltipWidth = tooltipEl.offsetWidth;
+  const tooltipHeight = tooltipEl.offsetHeight;
+  const screenWidth = window.innerWidth;
+  const screenHeight = window.innerHeight;
+
+  let left = viewportX;
+  let top = viewportY;
+  
+  // Горизонтальное выравнивание (Clamp)
+  let transformX = '-50%';
+  
+  // Если упирается влево
+  if (left < tooltipWidth / 2 + 10) {
+      left = 10;
+      transformX = '0%';
+  } 
+  // Если упирается вправо
+  else if (left + tooltipWidth / 2 > screenWidth - 10) {
+      left = screenWidth - 10;
+      transformX = '-100%';
+      
+      // 🟢 FIX: Если ширина тултипа больше, чем доступное место слева при выравнивании по правому краю, сдвигаем его так, чтобы влез
+      if (left - tooltipWidth < 0) {
+          // Крайний случай для очень узких экранов: принудительно ставим слева 0
+          left = 0;
+          transformX = '0%';
+      }
+  }
+
+  // Вертикальное выравнивание
+  // По умолчанию сверху
+  top = top - 10; 
+  let transformY = '-100%'; 
+
+  // Если упирается в верх экрана - переносим вниз
+  if (top - tooltipHeight < 10) {
+      top = viewportY + 20; 
+      transformY = '0%';
+  }
+
+  tooltipEl.style.transform = `translate(${transformX}, ${transformY})`;
+  tooltipEl.style.left = left + 'px';
+  tooltipEl.style.top = top + 'px';
+  tooltipEl.style.opacity = 1;
+};
+
+// Очистка при размонтировании
+onUnmounted(() => {
+    const el = document.getElementById('chartjs-custom-tooltip');
+    if (el) el.remove();
+});
 
 const _getDayOfYear = (date) => {
   if (!date) return 0; 
@@ -50,10 +164,8 @@ const rawMaxY = computed(() => {
   let max = 0;
   if (mainStore.dailyChartData) {
       for (const [, data] of mainStore.dailyChartData) {
-        // Max is sum of income + prepayment (так как они в одном стеке положительных значений)
         const totalIncome = (data.income || 0) + (data.prepayment || 0);
         if (totalIncome > max) max = totalIncome;
-        // Max for expense + withdrawal (negative stack)
         const totalExpense = Math.abs(data.expense || 0) + Math.abs(data.withdrawal || 0);
         if (totalExpense > max) max = totalExpense;
       }
@@ -120,7 +232,6 @@ const summaries = computed(() => {
     const dateKey = _getDateKey(day.date);
     const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0, closingBalance: 0 };
     
-    // В итогах суммируем обычный доход и предоплату для отображения "общих денег"
     return {
       date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: (data.income || 0) + (data.prepayment || 0),
@@ -136,7 +247,6 @@ const getTooltipOperationList = (ops) => {
   return sortedOps.map(op => {
     if (op.isTransfer && !op.isWithdrawal) return null;
     
-    // Проверка на предоплату для подписи
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
@@ -150,7 +260,6 @@ const getTooltipOperationList = (ops) => {
     return {
       isIncome: op.type === 'income',
       accName: op.accountId?.name || '???',
-      // 🟢 FIX: Добавлена проверка counterpartyIndividualId для Физлиц (в т.ч. Розницы)
       contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
       projName: op.projectId?.name || '---',
       catName: catName, 
@@ -163,9 +272,9 @@ const getTooltipOperationList = (ops) => {
 const chartData = computed(() => {
   const labels = [];
   const incomeData = [];
-  const prepaymentData = []; // 🟢 Данные для предоплат
+  const prepaymentData = [];
   const expenseData = [];
-  const withdrawalData = []; // 🟢 Данные для вывода
+  const withdrawalData = [];
   
   const incomeDetails = []; 
   const prepaymentDetails = [];
@@ -179,7 +288,6 @@ const chartData = computed(() => {
     if (!day || !day.date) continue; 
 
     const dateKey = _getDateKey(day.date);
-    // Получаем данные, разделенные в сторе (там списания уже исключены из .expense)
     const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0 };
     
     const allOps = (mainStore.allOperationsFlat || []);
@@ -194,10 +302,7 @@ const chartData = computed(() => {
         if (op.isWithdrawal) {
             withdrawalOps.push(op);
         } else if (op.type === 'expense') {
-            // 🟢 FIX: Исключаем списания из тултипов!
-            // Они не должны показываться ни как расход, ни как что-либо еще на графике
             if (mainStore._isRetailWriteOff(op)) return;
-
             expenseOps.push(op);
         } else if (op.type === 'income') {
             const catId = op.categoryId?._id || op.categoryId;
@@ -214,12 +319,8 @@ const chartData = computed(() => {
     expenseDetails.push(getTooltipOperationList(expenseOps));
     withdrawalDetails.push(getTooltipOperationList(withdrawalOps));
 
-    // 🟢 ВАЖНО: Форматируем дату для оси X (и для тултипов)
     const labelDate = day.date.toLocaleDateString('ru-RU', { 
-        weekday: 'short', 
-        day: 'numeric', 
-        month: 'short',
-        year: 'numeric' // Добавляем год, чтобы в labels был полный формат (можно скрыть год в scale callback если нужно)
+        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' 
     });
     labels.push(labelDate);
     
@@ -232,7 +333,6 @@ const chartData = computed(() => {
   return {
     labels,
     datasets: [
-      // 🟢 1. ПРЕДОПЛАТА (Оранжевый)
       { 
         label: 'Предоплата', 
         backgroundColor: '#FF9D00', 
@@ -241,7 +341,6 @@ const chartData = computed(() => {
         details: prepaymentDetails,
         order: 1
       },
-      // 2. ОБЫЧНЫЙ ДОХОД (Зеленый)
       { 
         label: 'Доход',
         backgroundColor: '#34c759', 
@@ -250,7 +349,6 @@ const chartData = computed(() => {
         details: incomeDetails,
         order: 2
       },
-      // 3. РАСХОД (Красный)
       { 
         label: 'Расход', 
         backgroundColor: '#ff3b30', 
@@ -259,7 +357,6 @@ const chartData = computed(() => {
         details: expenseDetails,
         order: 3
       },
-      // 🟢 4. ВЫВОД (Светло-фиолетовый #DE8FFF)
       { 
         label: 'Вывод', 
         backgroundColor: '#DE8FFF', 
@@ -281,7 +378,11 @@ const chartOptions = computed(() => {
     plugins: {
       legend: { display: false },
       tooltip: {
-        enabled: true,
+        // 🟢 ОТКЛЮЧАЕМ стандартный канвас-тултип
+        enabled: false,
+        // 🟢 ПОДКЛЮЧАЕМ внешний обработчик
+        external: externalTooltipHandler,
+        
         callbacks: {
           title: () => null,
           label: (context) => {
@@ -289,18 +390,14 @@ const chartOptions = computed(() => {
             const index = context.dataIndex;
             const totalLabel = dataset.label || '';
             const totalValue = context.raw;
-            
-            // 🟢 Получаем дату из labels
             const dateLabel = context.chart.data.labels[index];
 
-            // Пропускаем пустые значения в тултипе
             if (!totalValue) return null;
 
             const formattedTotal = (totalLabel === 'Расход' || totalLabel === 'Вывод') 
               ? formatNumber(-Math.abs(totalValue)) 
               : formatNumber(totalValue);
             
-            // 🟢 Добавляем дату в первую строку или перед общей суммой
             const lines = [`${dateLabel}`, `${totalLabel}: ${formattedTotal} т`];
 
             const opsList = dataset.details?.[index];
@@ -322,7 +419,6 @@ const chartOptions = computed(() => {
               if (op.isIncome) {
                 lines.push(`${amountStr} < ${acc} < ${cont} < ${proj} < ${cat}`);
               } else {
-                // Для вывода можно немного поменять формат
                 if (op.isWithdrawal) {
                     lines.push(`${amountStr} > ${acc} (Вывод средств)`);
                 } else {
@@ -339,7 +435,7 @@ const chartOptions = computed(() => {
     scales: {
       x: { 
         stacked: true, 
-        display: false, // Ось X скрыта, но данные (labels) используются для тултипа
+        display: false, 
       },
       y: { stacked: true, max: yMax, min: 0, display: false }
     }

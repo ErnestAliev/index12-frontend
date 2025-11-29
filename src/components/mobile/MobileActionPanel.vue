@@ -38,36 +38,33 @@ const shiftPeriod = async (direction) => {
     const year = new Date().getFullYear();
     const currentDay = mainStore.todayDayOfYear || 0;
     
-    // Воссоздаем дату из дня года
-    const date = new Date(year, 0, 1);
-    if (currentDay > 0) {
-        date.setDate(currentDay + 1); // +1 так как jan 1 это 0-й индекс смещения или 1-й день? обычно dayOfYear 1-based
-    } else {
-        const now = new Date();
-        date.setMonth(now.getMonth());
-        date.setDate(now.getDate());
-    }
+    // Воссоздаем дату из дня года (надежный способ)
+    const date = new Date(year, 0); // 1 янв
+    // Добавляем дни (dayOfYear обычно 0-based в нашей логике getDayOfYear, где 0 = 1 янв? 
+    // В mainStore: Math.floor(diff / 86400000). 1 янв - 1 янв = 0. Да, 0-based.
+    date.setDate(date.getDate() + currentDay);
 
     if (viewMode.value === '12d') {
         date.setDate(date.getDate() + (direction * 1));
     } else {
         const step = viewMode.value.includes('m') ? parseInt(viewMode.value) : 1;
-        // Для года (1y) шаг 1, но метод setFullYear/setMonth
         if (viewMode.value === '1y') {
-             // Сдвиг на полгода или год? Обычно шаг навигации = периоду.
-             // В коде было (direction * step) для месяцев. 
-             // Если '1y', parseInt вернет 1. Сдвинем на 12 месяцев или 6?
-             // Оставим логику месяцев:
-             date.setMonth(date.getMonth() + (direction * (viewMode.value === '1y' ? 12 : step)));
+             date.setMonth(date.getMonth() + (direction * 12));
         } else {
              date.setMonth(date.getMonth() + (direction * step));
         }
     }
 
+    // Рассчитываем новый dayOfYear
     const newDayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
+    
+    // 1. Сохраняем в стор (это триггернет обновление Timeline через watch)
     mainStore.setToday(newDayOfYear);
+    
+    // 2. Обновляем проекцию (даты начала/конца периода)
     await mainStore.updateFutureProjectionByMode(viewMode.value, date);
-    // 🟢 Важно: перезагружаем данные после сдвига
+    
+    // 3. 🟢 ВАЖНО: Загружаем данные для нового периода (перерасчет виджетов)
     await mainStore.loadCalculationData(viewMode.value, date);
 };
 
@@ -87,7 +84,7 @@ const toggleWidgets = () => {
          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
       </button>
       
-      <!-- Центр: Навигация (12 ДНЕЙ) -->
+      <!-- Центр: Навигация -->
       <div class="nav-center">
         <button class="arrow-btn" @click="shiftPeriod(-1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -103,7 +100,7 @@ const toggleWidgets = () => {
         </button>
       </div>
 
-      <!-- Правая иконка: Сетка (Кнопка переключения виджетов) -->
+      <!-- Правая иконка: Сетка -->
       <button 
         class="header-expand-btn" 
         :class="{ 'active': mainStore.isHeaderExpanded }"
