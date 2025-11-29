@@ -24,9 +24,11 @@ import WithdrawalPopup from './WithdrawalPopup.vue';
  * ЧТО ИЗМЕНЕНО:
  * 1. (LOGIC) В `mergedIndividualBalances` убрана фильтрация, скрывающая владельцев счетов.
  * 2. (LOGIC) Добавлено поле `linkedAccountName`, если физлицо привязано к счету.
+ * * * --- ОБНОВЛЕНИЕ ТЕКСТОВ (29.11.2025) ---
+ * Обновлены props title для HeaderTotalCard с переносом строк (\n).
  */
 
-console.log('--- TheHeader.vue v49.0 (Show Linked Individuals) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v49.0 (Show Linked Individuals + Text Updates) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -278,9 +280,10 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       <div class="dashboard-card-wrapper">
         <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
+        <!-- 🟢 ИЗМЕНЕНО: Добавлены \n в title для переноса строк -->
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
-          title="Всего (на тек. момент)"
+          :title="'Всего на счетах\nна текущий момент'"
           :totalBalance="loggedCurrentTotal" 
           :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
           :subtitleDate="`до ${todayStr}`"
@@ -369,9 +372,10 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
+        <!-- 🟢 ИЗМЕНЕНО: Добавлены \n в title для переноса строк -->
         <HeaderTotalCard
           v-else-if="widgetKey === 'futureTotal'"
-          title="Всего (с уч. будущих)"
+          :title="'Всего на счетах\nс учетом будущих'"
           :totalBalance="loggedFutureTotal" 
           :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
           :subtitleDate="`до ${futureUntilStr}`"

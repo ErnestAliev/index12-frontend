@@ -5,6 +5,8 @@
  * * ЧТО ИЗМЕНЕНО:
  * 1. (LOGIC) В moveOperation расчет wasInSnapshot/isInSnapshot и вызов _applyOptimisticSnapshotUpdate
  * перенесены ДО await Promise.all. Это устраняет лаг виджетов "Мои счета" и "Всего".
+ * * * --- ОБНОВЛЕНИЕ ТЕКСТОВ (29.11.2025) ---
+ * Обновлены названия виджетов 'currentTotal' и 'futureTotal' с переносом строк.
  */
 
 import { defineStore } from 'pinia';
@@ -27,7 +29,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.11.26 (Sync Optimistic) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v26.11.26 (Sync Optimistic + Text Updates) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -60,12 +62,12 @@ export const useMainStore = defineStore('mainStore', () => {
   function toggleHeaderExpansion() { isHeaderExpanded.value = !isHeaderExpanded.value; }
 
   const staticWidgets = ref([
-    { key: 'currentTotal', name: 'Всего (на тек. момент)' },
+    { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, // 🟢 Обновлено с переносом
     { key: 'accounts',     name: 'Мои счета' },
     { key: 'companies',    name: 'Мои компании' },
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
-    { key: 'futureTotal',  name: 'Всего (с уч. будущих)' },
+    { key: 'futureTotal',  name: 'Всего на счетах\nс учетом будущих' }, // 🟢 Обновлено с переносом
     { key: 'liabilities',  name: 'Мои предоплаты' },
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
