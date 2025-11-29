@@ -1,66 +1,55 @@
 /* base.css - Основные стили */
 
-/* Переменные для цветов */
 :root {
-  --color-background: #1a1a1a; /* Темный фон */
+  --color-background: #1a1a1a;
   --color-background-soft: #282828;
   --color-border: #444;
   --color-heading: #fff;
   --color-text: #ddd;
-  --color-primary: #34c759; /* Зеленый акцент */
-  --color-danger: #ff3b30; /* Красный для ошибок/удаления */
-  --color-warning: #ffcc00; /* Желтый для предупреждений */
+  --color-primary: #34c759;
+  --color-danger: #ff3b30;
+  --color-warning: #ffcc00;
 }
 
-/* Общий сброс и базовые стили */
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
   position: relative;
   font-weight: normal;
-  
-  /* 🟢 1. Включаем гладкий скролл (инерцию) на iOS для всех элементов */
-  -webkit-overflow-scrolling: touch;
+  /* Убираем глобальный тач-скролл, будем включать точечно */
 }
 
-html, body {
-  min-height: 100vh;
-  height: 100%; /* Фиксируем высоту */
-  width: 100%;  /* Фиксируем ширину */
-  
-  /* 🟢 2. Запрещаем скролл самого тела страницы ("стоит намертво") */
-  overflow: hidden; 
-  
-  /* Отключаем "резиновый" эффект (баунс) всей страницы */
-  overscroll-behavior: none; 
+html {
+  height: 100%;
+  width: 100%;
+  overflow: hidden; /* Запрещаем скролл на уровне html */
+  overscroll-behavior: none;
+}
+
+body {
+  /* 🟢 FIX: Жесткая фиксация тела страницы */
+  position: fixed; 
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   
   color: var(--color-text);
   background: var(--color-background);
-  transition: color 0.5s, background-color 0.5s;
   line-height: 1.6;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 15px;
-  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  
-  /* Убираем подсветку при тапе на мобильных */
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Включаем инерционный скролл только там, где он нужен */
+.scrollable, .mobile-widgets-wrapper, .timeline-scroll-area, .chart-scroll-area, .list-scroll, .fs-body, .category-items-list-scroll {
+    -webkit-overflow-scrolling: touch !important;
 }
 
 /* Стили для кнопок */
@@ -76,7 +65,7 @@ button {
 }
 
 button:hover {
-  background-color: #28a745; /* Чуть темнее зеленый */
+  background-color: #28a745;
 }
 
 button.btn-secondary {
@@ -88,7 +77,6 @@ button.btn-secondary:hover {
   background-color: #3a3a3a;
 }
 
-/* Стили для полей ввода (input, select) */
 input[type="text"],
 input[type="number"],
 select {

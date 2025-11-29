@@ -16,7 +16,6 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 ГЕНЕРАЦИЯ ДНЕЙ ДЛЯ ГРАФИКА
 const generateDays = () => {
   const proj = mainStore.projection;
   if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
@@ -45,16 +44,13 @@ const generateDays = () => {
   visibleDays.value = days;
 };
 
-// Следим за изменениями в сторе
 watch(() => mainStore.projection, generateDays, { deep: true, immediate: true });
 
-// Скролл
 const scrollContainer = ref(null);
 const onScroll = (e) => { emit('scroll', e.target.scrollLeft); };
 const setScroll = (left) => { if (scrollContainer.value) scrollContainer.value.scrollLeft = left; };
 defineExpose({ setScroll });
 
-// Динамическая ширина
 const chartWidthStyle = computed(() => ({
   width: `${visibleDays.value.length * 25}vw`,
   height: '100%'
@@ -93,10 +89,9 @@ const chartWidthStyle = computed(() => ({
   scrollbar-width: none;
   position: relative;
   
-  /* 🟢 УБРАНО: scroll-behavior: smooth; */
-  /* Чтобы график двигался синхронно с таймлайном без задержек */
+  /* 🟢 FIX: Инерция и правильная обработка тачей */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
 }
 .chart-scroll-area::-webkit-scrollbar { display: none; }
-
-/* .chart-wide-wrapper ширина задается инлайново через :style */
 </style>
