@@ -9,8 +9,7 @@ const props = defineProps({
   cellIndex: { type: Number, required: true }
 });
 
-// 🟢 Новое событие show-menu
-const emit = defineEmits(['show-menu']);
+// Событие show-menu удалено, так как взаимодействия отключены
 const mainStore = useMainStore();
 
 /* Логика определения типов операций */
@@ -53,20 +52,12 @@ const toOwnerName = computed(() => {
   return op.toAccountId?.name || 'Счет...';
 });
 
-// 🟢 Обработчик клика
-const handleClick = (event) => {
-  // Передаем данные ячейки родителю для открытия меню
-  emit('show-menu', {
-      operation: props.operation,
-      dateKey: props.dateKey,
-      cellIndex: props.cellIndex,
-      // Можно передать координаты для анимации, если нужно, но просили по центру
-  });
-};
+// Обработчик клика удален
 </script>
 
 <template>
-  <div class="mobile-cell" @click.stop="handleClick">
+  <!-- Удален @click.stop="handleClick" и класс cursor-pointer из стилей -->
+  <div class="mobile-cell">
     <div
       v-if="operation"
       class="op-chip"
@@ -105,7 +96,7 @@ const handleClick = (event) => {
       </template>
     </div>
     
-    <!-- Пустая ячейка (прозрачная зона для клика) -->
+    <!-- Пустая ячейка -->
     <div v-else class="empty-slot"></div>
   </div>
 </template>
@@ -113,16 +104,13 @@ const handleClick = (event) => {
 <style scoped>
 .mobile-cell {
   width: 100%;
-  height: 28px; /* Чуть компактнее чем на десктопе (36px) */
+  height: 28px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
   padding: 2px 4px;
   box-sizing: border-box;
-  cursor: pointer; /* Добавили курсор */
+  /* cursor: pointer; — УДАЛЕНО */
 }
-/* Эффект нажатия */
-.mobile-cell:active {
-    background-color: rgba(255, 255, 255, 0.05);
-}
+/* Эффект нажатия удален */
 
 .empty-slot {
   width: 100%;
@@ -147,7 +135,7 @@ const handleClick = (event) => {
 .amt { font-weight: 700; margin-right: 4px; }
 .desc { font-weight: 400; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; }
 
-/* Цвета (как на десктопе) */
+/* Цвета */
 .income .amt { color: var(--color-primary, #34c759); }
 .expense .amt { color: var(--color-danger, #ff3b30); }
 .prepayment .amt { color: #FF9D00; }

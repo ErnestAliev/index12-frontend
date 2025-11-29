@@ -7,8 +7,8 @@ const props = defineProps({
   widgetKey: { type: String, required: true },
 });
 
-// Событие клика для открытия на весь экран
-const emit = defineEmits(['click']);
+// События клика, добавления и редактирования
+const emit = defineEmits(['click', 'add', 'edit']);
 
 const mainStore = useMainStore();
 
@@ -17,20 +17,26 @@ const widgetInfo = computed(() => {
   return w ? w.name : 'Виджет';
 });
 
-// Получаем данные (учитываем глобальный прогноз или локальный, но для превью можно брать текущие)
+// Проверяем, включен ли прогноз для этого виджета
+const isForecastActive = computed(() => {
+  return mainStore.dashboardForecastState[props.widgetKey] ?? false;
+});
+
+// Получаем данные (Синхронизировано с логикой TheHeader.vue)
 const items = computed(() => {
   const k = props.widgetKey;
-  // Для превью в сетке показываем текущие данные (или можно смотреть настройки стора)
-  // Упростим для превью - показываем текущее состояние
-  const useFuture = mainStore.dashboardForecastState[k] ?? false;
+  const useFuture = isForecastActive.value;
   
   if (k === 'accounts') return useFuture ? mainStore.futureAccountBalances : mainStore.currentAccountBalances;
   if (k === 'companies') return useFuture ? mainStore.futureCompanyBalances : mainStore.currentCompanyBalances;
+  
   if (k === 'contractors') {
       const source = useFuture ? mainStore.futureContractorBalances : mainStore.currentContractorBalances;
+      // Фильтр: исключаем свои компании из списка контрагентов (как на десктопе)
       const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
       return (source || []).filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
   }
+  
   if (k === 'projects') return useFuture ? mainStore.futureProjectBalances : mainStore.currentProjectBalances;
   if (k === 'individuals') return useFuture ? mainStore.futureIndividualBalances : mainStore.currentIndividualBalances;
   
@@ -40,15 +46,19 @@ const items = computed(() => {
       return (source || []).filter(c => visibleIds.has(c._id));
   }
   
+  // Для списков операций показываем агрегированную сумму "Всего"
   if (['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k)) {
       let list = [];
-      if (k === 'incomeList') list = mainStore.currentIncomes;
-      else if (k === 'expenseList') list = mainStore.currentExpenses;
-      else if (k === 'withdrawalList') list = mainStore.currentWithdrawals;
-      else if (k === 'transfers') list = mainStore.currentTransfers;
+      if (k === 'incomeList') list = useFuture ? mainStore.futureIncomes : mainStore.currentIncomes;
+      else if (k === 'expenseList') list = useFuture ? mainStore.futureExpenses : mainStore.currentExpenses;
+      else if (k === 'withdrawalList') list = useFuture ? mainStore.futureWithdrawals : mainStore.currentWithdrawals;
+      else if (k === 'transfers') list = useFuture ? mainStore.futureTransfers : mainStore.currentTransfers;
+      
       const sum = (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      return [{ _id: 'total', name: 'Всего', balance: sum }];
+      const label = useFuture ? 'Всего (Прогноз)' : 'Всего (Текущее)';
+      return [{ _id: 'total', name: label, balance: sum }];
   }
+  
   return [];
 });
 
@@ -64,17 +74,19 @@ const handleClick = () => {
 <template>
   <div class="mobile-widget-card" @click="handleClick">
     <div class="widget-header">
-      <div class="widget-title">{{ widgetInfo }}</div>
-      <!-- Кнопки убраны, так как они теперь в полноэкранном режиме -->
+      <div class="widget-title-row">
+        <span class="widget-title">{{ widgetInfo }}</span>
+        <span v-if="isForecastActive" class="forecast-badge">Прогноз</span>
+      </div>
       <div class="widget-arrow">
          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
       </div>
     </div>
 
     <div class="widget-body scrollable-list">
-      <div v-if="isEmpty" class="empty-text">...</div>
+      <div v-if="isEmpty" class="empty-text">Нет данных</div>
       <div v-else class="items-list">
-        <!-- Показываем топ-3 элемента для превью -->
+        <!-- Показываем топ-3 элемента -->
         <div v-for="item in items.slice(0, 3)" :key="item._id" class="list-item">
           <span class="item-name">{{ item.name }}</span>
           <span class="item-val" :class="{ 'red-text': isExpense(item.balance) }">
@@ -114,9 +126,25 @@ const handleClick = () => {
   height: 20px;
 }
 
+.widget-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
 .widget-title {
   font-size: 11px; color: #aaa; font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.forecast-badge {
+  font-size: 9px;
+  background-color: rgba(52, 199, 89, 0.15);
+  color: var(--color-primary, #34c759);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
 }
 
 .widget-body { flex-grow: 1; overflow: hidden; }

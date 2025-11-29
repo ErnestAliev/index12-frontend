@@ -55,10 +55,7 @@ const toggleWidgets = () => {
     mainStore.toggleHeaderExpansion();
 };
 
-// --- ДЕЙСТВИЯ ---
-const handleAction = (type) => {
-  emit('action', type);
-};
+// Функция handleAction больше не нужна, так как кнопки удалены
 </script>
 
 <template>
@@ -88,7 +85,6 @@ const handleAction = (type) => {
       </div>
 
       <!-- Правая иконка: Сетка (Кнопка переключения виджетов) -->
-      <!-- 🟢 ИСПОЛЬЗУЕМ СТИЛЬ ИЗ TheHeader -->
       <button 
         class="header-expand-btn" 
         :class="{ 'active': mainStore.isHeaderExpanded }"
@@ -103,18 +99,7 @@ const handleAction = (type) => {
       </button>
     </div>
 
-    <!-- РЯД 2: Кнопки действий -->
-    <div class="buttons-row">
-      <button class="action-btn btn-income" @click="handleAction('income')">
-        + Доход
-      </button>
-      <button class="action-btn btn-expense" @click="handleAction('expense')">
-        Расход
-      </button>
-      <button class="action-btn btn-transfer" @click="handleAction('transfer')">
-        Перевод
-      </button>
-    </div>
+    <!-- Ряд кнопок удален согласно ТЗ -->
 
   </div>
 </template>
@@ -136,7 +121,7 @@ const handleAction = (type) => {
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: none; /* Убрал бордер, так как под ним ничего нет */
 }
 
 .nav-center { display: flex; align-items: center; gap: 20px; }
@@ -156,10 +141,10 @@ const handleAction = (type) => {
   color: #aaa;
 }
 
-/* 🟢 СТИЛИ ДЛЯ ПРАВОЙ КНОПКИ (Как в TheHeader) */
+/* СТИЛИ ДЛЯ ПРАВОЙ КНОПКИ */
 .header-expand-btn {
-  background: transparent; /* Прозрачный фон по умолчанию */
-  border: 1px solid rgba(255,255,255,0.1); /* Тонкая рамка как у левой */
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 50%;
   width: 32px;
   height: 32px;
@@ -167,7 +152,7 @@ const handleAction = (type) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #aaa; /* Цвет иконки по умолчанию */
+  color: #aaa;
   padding: 0;
   transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
@@ -189,32 +174,4 @@ const handleAction = (type) => {
   height: 18px;
   stroke: currentColor;
 }
-
-/* --- РЯД 2: КНОПКИ --- */
-.buttons-row {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 12px;
- 
-}
-
-.action-btn {
-  flex: 1;
-  height: 32px; /* Уменьшенная высота */
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.1s;
-}
-.action-btn:active { transform: scale(0.98); }
-.btn-income { background-color: var(--color-primary, #34c759); }
-.btn-expense { background-color: var(--color-danger, #ff3b30); }
-.btn-transfer { background-color: #3b3f46; }
 </style>
