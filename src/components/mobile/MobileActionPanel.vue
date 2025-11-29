@@ -1,106 +1,137 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
-// 🟢 3. Добавлено событие 'open-graph'
 const emit = defineEmits(['action', 'open-graph']);
 const mainStore = useMainStore();
 
-// --- ЛОГИКА УПРАВЛЕНИЯ ГРАФИКОМ ---
-const viewModes = ['12d', '1m', '3m', '6m', '1y'];
-const displayModes = { '12d': '12 ДНЕЙ', '1m': '1 МЕС', '3m': '3 МЕС', '6m': '6 МЕС', '1y': '1 ГОД' };
+// Режимы (Строго как в Desktop)
+const viewModes = [
+  { key: '12d', num: '12', unit: 'ДНЕЙ' },
+  { key: '1m',  num: '1',  unit: 'МЕСЯЦ' },
+  { key: '3m',  num: '3',  text: 'МЕСЯЦА', unit: 'МЕСЯЦА' },
+  { key: '6m',  num: '6',  text: 'МЕСЯЦЕВ', unit: 'МЕСЯЦЕВ' },
+  { key: '1y',  num: '1',  unit: 'ГОД' }
+];
 
-const viewMode = computed(() => mainStore.projection?.mode || '12d');
+// Текущий режим из стора
+const viewModeKey = computed(() => mainStore.projection?.mode || '12d');
 
-const displayModeText = computed(() => displayModes[viewMode.value] || '12 ДНЕЙ');
-const displayNum = computed(() => displayModeText.value.split(' ')[0]);
-const displayText = computed(() => displayModeText.value.split(' ')[1]);
+const currentViewIndex = computed(() => {
+    return viewModes.findIndex(v => v.key === viewModeKey.value);
+});
 
-const switchViewMode = async () => {
-    const currentIndex = viewModes.indexOf(viewMode.value);
-    const nextIndex = (currentIndex + 1) % viewModes.length;
-    const newMode = viewModes[nextIndex];
-    
-    // 🟢 2. Исправлена логика получения текущей даты для переключения
-    const currentTodayDate = new Date(); 
-    if (mainStore.todayDayOfYear) {
-       const year = currentTodayDate.getFullYear();
-       const startOfYear = new Date(year, 0, 1);
-       // Устанавливаем дату на основе дня года
-       currentTodayDate.setTime(startOfYear.getTime() + (mainStore.todayDayOfYear * 24 * 60 * 60 * 1000));
-    }
-    
-    await mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
-    await mainStore.loadCalculationData(newMode, currentTodayDate);
+const currentDisplay = computed(() => {
+    const idx = currentViewIndex.value !== -1 ? currentViewIndex.value : 0;
+    return viewModes[idx];
+});
+
+// Получение текущей даты
+const getCurrentDate = () => {
+    const year = new Date().getFullYear();
+    const currentDay = mainStore.todayDayOfYear || 1;
+    const date = new Date(year, 0, 1);
+    date.setDate(currentDay);
+    return date;
 };
 
-const shiftPeriod = async (direction) => {
-    const year = new Date().getFullYear();
-    const currentDay = mainStore.todayDayOfYear || 0;
+// 🟢 ПЕРЕКЛЮЧЕНИЕ РЕЖИМА (СТРЕЛКИ В ЦЕНТРЕ)
+const changeViewMode = (direction) => {
+    let nextIndex = currentViewIndex.value + direction;
     
-    // Воссоздаем дату из дня года (надежный способ)
-    const date = new Date(year, 0); // 1 янв
-    // Добавляем дни (dayOfYear обычно 0-based в нашей логике getDayOfYear, где 0 = 1 янв? 
-    // В mainStore: Math.floor(diff / 86400000). 1 янв - 1 янв = 0. Да, 0-based.
-    date.setDate(date.getDate() + currentDay);
+    // Цикл по кругу
+    if (nextIndex < 0) nextIndex = viewModes.length - 1;
+    if (nextIndex >= viewModes.length) nextIndex = 0;
+    
+    const newMode = viewModes[nextIndex].key;
+    const currentDate = getCurrentDate();
 
-    if (viewMode.value === '12d') {
+    // 1. МГНОВЕННОЕ обновление состояния (Optimistic UI)
+    // Мы вручную меняем режим в проекции, чтобы интерфейс (цифра и таймлайн) отреагировали сразу
+    if (mainStore.projection) {
+        mainStore.projection.mode = newMode;
+    }
+    // Вызываем метод стора для пересчета дат проекции (rangeStartDate/EndDate)
+    mainStore.updateFutureProjectionByMode(newMode, currentDate);
+    
+    // 2. Фоновая загрузка данных (виджеты и операции)
+    // Не используем await, чтобы не фризить UI
+    mainStore.loadCalculationData(newMode, currentDate).catch(err => {
+        console.error("Ошибка загрузки данных:", err);
+    });
+};
+
+const shiftPeriod = (direction) => {
+    const date = getCurrentDate();
+    const mode = viewModeKey.value;
+
+    // Логика сдвига (как в Desktop)
+    if (mode === '12d') {
         date.setDate(date.getDate() + (direction * 1));
     } else {
-        const step = viewMode.value.includes('m') ? parseInt(viewMode.value) : 1;
-        if (viewMode.value === '1y') {
+        const step = mode.includes('m') ? parseInt(mode) : 1;
+        if (mode === '1y') {
              date.setMonth(date.getMonth() + (direction * 12));
         } else {
              date.setMonth(date.getMonth() + (direction * step));
         }
     }
 
-    // Рассчитываем новый dayOfYear
-    const newDayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
+    // Сохраняем новый день
+    const startOfYear = new Date(date.getFullYear(), 0, 0);
+    const diff = date - startOfYear;
+    const oneDay = 1000 * 60 * 60 * 24;
+    const newDayOfYear = Math.floor(diff / oneDay);
     
-    // 1. Сохраняем в стор (это триггернет обновление Timeline через watch)
     mainStore.setToday(newDayOfYear);
     
-    // 2. Обновляем проекцию (даты начала/конца периода)
-    await mainStore.updateFutureProjectionByMode(viewMode.value, date);
-    
-    // 3. 🟢 ВАЖНО: Загружаем данные для нового периода (перерасчет виджетов)
-    await mainStore.loadCalculationData(viewMode.value, date);
+    // Обновляем проекцию и данные
+    mainStore.updateFutureProjectionByMode(mode, date);
+    mainStore.loadCalculationData(mode, date);
 };
 
-// --- ЛОГИКА ВИДЖЕТОВ ---
-const toggleWidgets = () => {
-    mainStore.toggleHeaderExpansion();
-};
+const openGraph = () => emit('open-graph');
+const toggleWidgets = () => mainStore.toggleHeaderExpansion();
+
+onMounted(async () => {
+    // Гарантированный старт с 12 дней, если режим не задан
+    if (viewModeKey.value !== '12d') {
+        const today = new Date();
+        const todayDay = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
+        
+        mainStore.setToday(todayDay);
+        mainStore.updateFutureProjectionByMode('12d', today);
+        mainStore.loadCalculationData('12d', today);
+    }
+});
 </script>
 
 <template>
   <div class="mobile-action-panel-wrapper">
-    
-    <!-- РЯД 1: Управление графиком и виджетами -->
     <div class="chart-controls-row">
-      <!-- 🟢 3. Левая иконка: Сделана кнопкой, вызывает событие -->
-      <button class="icon-circle clickable" @click="$emit('open-graph')">
+      <!-- График -->
+      <button class="icon-circle clickable" @click="openGraph">
          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
       </button>
       
-      <!-- Центр: Навигация -->
+      <!-- Навигация -->
       <div class="nav-center">
-        <button class="arrow-btn" @click="shiftPeriod(-1)">
+        <button class="arrow-btn" @click="changeViewMode(-1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
-        <div class="period-label" @click="switchViewMode">
-          <span class="days-num">{{ displayNum }}</span>
-          <span class="days-text">{{ displayText }}</span>
+        <!-- Текст режима -->
+        <div class="period-label">
+          <span class="days-num">{{ currentDisplay.num }}</span>
+          <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
         </div>
         
-        <button class="arrow-btn" @click="shiftPeriod(1)">
+        <button class="arrow-btn" @click="changeViewMode(1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
 
-      <!-- Правая иконка: Сетка -->
+      <!-- Виджеты -->
       <button 
         class="header-expand-btn" 
         :class="{ 'active': mainStore.isHeaderExpanded }"
@@ -114,7 +145,6 @@ const toggleWidgets = () => {
         </svg>
       </button>
     </div>
-
   </div>
 </template>
 
@@ -126,71 +156,44 @@ const toggleWidgets = () => {
   border-top: 1px solid var(--color-border, #444);
   flex-shrink: 0;
   z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* --- РЯД 1: КОНТРОЛЫ --- */
 .chart-controls-row {
   height: 56px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 24px;
-  border-bottom: none; 
+  padding: 0 16px;
 }
 
 .nav-center { display: flex; align-items: center; gap: 20px; }
-.arrow-btn { background: none; border: none; padding: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.arrow-btn:active { opacity: 0.7; }
+.arrow-btn { 
+    background: none; border: none; padding: 10px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; 
+}
+.arrow-btn:active { opacity: 0.7; transform: scale(0.95); }
 
-.period-label { display: flex; flex-direction: column; align-items: center; cursor: pointer; line-height: 1; user-select: none; }
+.period-label { 
+    display: flex; flex-direction: column; align-items: center; 
+    cursor: default; line-height: 1; user-select: none; width: 70px;
+}
 .days-num { font-size: 20px; font-weight: 700; color: #fff; }
 .days-text { font-size: 9px; color: #888; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
 
-/* Левая иконка (кнопка) */
-.icon-circle {
-  width: 32px; height: 32px;
+.icon-circle, .header-expand-btn {
+  width: 36px; height: 36px;
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,0.1);
   display: flex; align-items: center; justify-content: center;
-  color: #aaa;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
+  color: #aaa; background: transparent; padding: 0; cursor: pointer;
   transition: all 0.2s;
 }
-.icon-circle:active { background-color: rgba(255,255,255,0.1); color: #fff; border-color: #fff; }
-
-/* СТИЛИ ДЛЯ ПРАВОЙ КНОПКИ */
-.header-expand-btn {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: #aaa;
-  padding: 0;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
-}
-
-.header-expand-btn:hover {
-  background: rgba(255,255,255,0.05);
-  border-color: rgba(255,255,255,0.2);
-  color: #fff;
-}
+.icon-circle:active, .header-expand-btn:active { background-color: rgba(255,255,255,0.1); color: #fff; border-color: #fff; }
 
 .header-expand-btn.active {
   color: var(--color-primary, #34c759);
   border-color: var(--color-primary, #34c759);
   background: rgba(52, 199, 89, 0.1);
-}
-
-.header-expand-btn svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
 }
 </style>
