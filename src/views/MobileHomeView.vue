@@ -29,7 +29,7 @@ const chartRef = ref(null);
 const showGraphModal = ref(false);
 const isDataLoaded = ref(false); 
 
-// --- ГЛОБАЛЬНЫЕ ФУНКЦИИ И ХЕЛПЕРЫ (ОПРЕДЕЛЯЕМ ВНАЧАЛЕ) ---
+// --- ГЛОБАЛЬНЫЕ ФУНКЦИИ И ХЕЛПЕРЫ ---
 
 const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
@@ -81,6 +81,7 @@ const isLocalhost = computed(() => {
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
+// 🟢 FIX 2: Восстановление графиков при выходе из полноэкранного режима
 watch(isWidgetFullscreen, (isOpen) => {
     if (isOpen) {
         document.body.style.overflow = 'hidden';
@@ -88,6 +89,14 @@ watch(isWidgetFullscreen, (isOpen) => {
     } else {
         document.body.style.overflow = '';
         document.documentElement.style.overflow = '';
+        
+        // Ожидаем рендера DOM (v-else блок) и инициализируем скролл заново
+        nextTick(() => {
+            // Небольшая задержка для гарантии монтирования дочерних компонентов
+            setTimeout(() => {
+                initScrollSync();
+            }, 150);
+        });
     }
 });
 
@@ -102,7 +111,6 @@ const isFilterOpen = ref(false);
 const filterBtnRef = ref(null); 
 const filterPos = ref({ top: '0px', right: '16px' }); 
 
-// 🟢 Используем глобальное состояние из стора
 const sortMode = computed(() => mainStore.widgetSortMode); 
 const filterMode = computed(() => mainStore.widgetFilterMode); 
 
@@ -121,9 +129,6 @@ const toggleFilter = (event) => {
     }
 };
 
-const closeFilter = () => { isFilterOpen.value = false; };
-
-// 🟢 Обновляем состояние в сторе
 const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; };
 const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
 
@@ -147,10 +152,10 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   return result;
 };
 
-// Определяем, является ли виджет списком
+// 🟢 FIX 1: Убрали 'liabilities' из списка для полноэкранного режима
 const isListWidget = computed(() => {
     const k = activeWidgetKey.value;
-    return ['incomeList', 'expenseList', 'withdrawalList', 'transfers', 'liabilities'].includes(k);
+    return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k);
 });
 
 const isWidgetDeltaMode = computed(() => {
@@ -178,20 +183,20 @@ const activeWidgetItems = computed(() => {
       const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
       items = items.filter(c => visibleIds.has(c._id));
   }
+  // 🟢 FIX: Liabilities обрабатываются как обычный виджет (не список), чтобы работали фильтры
+  else if (k === 'liabilities') {
+      items = [
+          { _id: 'we', name: 'Мы должны', balance: mainStore.liabilitiesWeOwe, futureBalance: mainStore.liabilitiesWeOweFuture },
+          { _id: 'they', name: 'Нам должны', balance: mainStore.liabilitiesTheyOwe, futureBalance: mainStore.liabilitiesTheyOweFuture, isIncome: true }
+      ];
+  }
   else if (isListWidget.value) {
       let list = [];
       if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes;
       else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses;
       else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals;
       else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
-      else if (k === 'liabilities') {
-          return [
-              { _id: 'we', name: 'Мы должны', balance: showFutureBalance.value ? mainStore.liabilitiesWeOweFuture : mainStore.liabilitiesWeOwe },
-              { _id: 'they', name: 'Нам должны', balance: showFutureBalance.value ? mainStore.liabilitiesTheyOweFuture : mainStore.liabilitiesTheyOwe, isIncome: true }
-          ];
-      }
       
-      // Маппим операции
       return list.map(op => {
           let name = op.categoryId?.name || 'Без категории';
           if (op.type === 'transfer' || op.isTransfer) {
@@ -214,17 +219,28 @@ const activeWidgetItems = computed(() => {
   let filtered = [...items];
   
   if (!isListWidget.value) {
+      // 🟢 FIX: Для виджетов-дельт (Категории и т.д.) сортируем и фильтруем по ПРОГНОЗНОМУ ИТОГУ (Баланс + Дельта),
+      // а не только по Дельте. Это предотвращает исчезновение категорий с ненулевым текущим балансом, 
+      // но нулевым прогнозом (когда фильтр "Скрыть 0").
+      const isDeltaWidget = isWidgetDeltaMode.value;
       const targetBalanceKey = showFutureBalance.value ? 'futureBalance' : 'balance'; 
 
-      if (filterMode.value === 'positive') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) > 0);
-      else if (filterMode.value === 'negative') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) < 0);
-      else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => (i[targetBalanceKey] || 0) !== 0);
+      const getFilterVal = (i) => {
+          if (showFutureBalance.value && isDeltaWidget) {
+              return (i.balance || 0) + (i.futureBalance || 0);
+          }
+          return i[targetBalanceKey] || 0;
+      };
 
-      const getSortVal = (i) => i[targetBalanceKey] || 0;
+      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0);
+      else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0);
+      else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
+
+      const getSortVal = (i) => getFilterVal(i);
+      
       if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
       else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
   } else {
-      // Сортировка для списков (по дате)
       filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
@@ -234,13 +250,28 @@ const activeWidgetItems = computed(() => {
 const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; };
 const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 
-// --- Lifecycle ---
 const handleGlobalClick = (e) => {
     if (isFilterOpen.value && filterBtnRef.value && !filterBtnRef.value.contains(e.target)) {
         const menu = document.querySelector('.filter-dropdown-fixed');
         if (menu && !menu.contains(e.target)) {
             isFilterOpen.value = false;
         }
+    }
+};
+
+// 🟢 Инициализация скролла вынесена в функцию
+const initScrollSync = () => {
+    if (!timelineRef.value) return;
+    const el = timelineRef.value.$el.querySelector('.timeline-scroll-area');
+    if (el) { 
+        // Удаляем старый листенер, чтобы не дублировать
+        el.removeEventListener('scroll', onTimelineScroll);
+        el.addEventListener('scroll', onTimelineScroll); 
+        
+        // Устанавливаем начальную позицию (центр)
+        const w = window.innerWidth * 0.25; 
+        el.scrollLeft = w * 4; 
+        if (chartRef.value) chartRef.value.setScroll(w * 4); 
     }
 };
 
@@ -274,13 +305,7 @@ onMounted(async () => {
       }
 
       nextTick(() => {
-          const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
-          if (el) { 
-              el.addEventListener('scroll', onTimelineScroll); 
-              const w = window.innerWidth * 0.25; 
-              el.scrollLeft = w * 4; 
-              if (chartRef.value) chartRef.value.setScroll(w * 4); 
-          }
+          initScrollSync();
       });
   } catch (error) {
       console.error("Critical error in MobileHomeView mount:", error);

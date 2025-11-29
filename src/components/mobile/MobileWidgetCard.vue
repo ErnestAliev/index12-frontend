@@ -19,57 +19,158 @@ const isForecastActive = computed(() => {
   return mainStore.dashboardForecastState[props.widgetKey] ?? false;
 });
 
+// 🟢 FIX: Exclude 'liabilities' from lists so filtering applies
 const isListWidget = computed(() => {
-    return ['incomeList', 'expenseList', 'withdrawalList', 'transfers', 'liabilities'].includes(props.widgetKey);
+    return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(props.widgetKey);
 });
 
-// 🟢 Получаем глобальные настройки сортировки
+// 🟢 Global sort/filter settings
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
 const items = computed(() => {
   const k = props.widgetKey;
-  const useFuture = isForecastActive.value;
   
-  if (k === 'accounts') return filterAndSort(useFuture ? mainStore.futureAccountBalances : mainStore.currentAccountBalances);
-  if (k === 'companies') return filterAndSort(useFuture ? mainStore.futureCompanyBalances : mainStore.currentCompanyBalances);
-  
-  if (k === 'contractors') {
-      const source = useFuture ? mainStore.futureContractorBalances : mainStore.currentContractorBalances;
-      const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-      const list = (source || []).filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
-      return filterAndSort(list);
-  }
-  
-  if (k === 'projects') return filterAndSort(useFuture ? mainStore.futureProjectBalances : mainStore.currentProjectBalances);
-  if (k === 'individuals') return filterAndSort(useFuture ? mainStore.futureIndividualBalances : mainStore.currentIndividualBalances);
-  
-  if (k === 'categories') {
-      const source = useFuture ? mainStore.futureCategoryBalances : mainStore.currentCategoryBalances;
-      const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
-      const list = (source || []).filter(c => visibleIds.has(c._id));
-      return filterAndSort(list);
-  }
-  
-  if (isListWidget.value) {
-      let list = [];
-      if (k === 'incomeList') list = useFuture ? mainStore.futureIncomes : mainStore.currentIncomes;
-      else if (k === 'expenseList') list = useFuture ? mainStore.futureExpenses : mainStore.currentExpenses;
-      else if (k === 'withdrawalList') list = useFuture ? mainStore.futureWithdrawals : mainStore.currentWithdrawals;
-      else if (k === 'transfers') list = useFuture ? mainStore.futureTransfers : mainStore.currentTransfers;
-      else if (k === 'liabilities') {
-          return [
-              { _id: 'we', name: 'Мы должны', balance: useFuture ? mainStore.liabilitiesWeOweFuture : mainStore.liabilitiesWeOwe },
-              { _id: 'they', name: 'Нам должны', balance: useFuture ? mainStore.liabilitiesTheyOweFuture : mainStore.liabilitiesTheyOwe, isIncome: true }
-          ];
-      }
+  // Helper to create a unified object with SEPARATE fields
+  const mapItem = (item, futureMap) => {
+      const currentVal = item.balance || 0;
+      const rawFutureVal = futureMap ? (futureMap.get(item._id) || 0) : 0;
+      let delta = 0;
       
-      const totalSum = list.reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
+      // For Accounts & Companies, store has TOTAL forecast. Calculate Delta.
+      if (['accounts', 'companies'].includes(k)) {
+          if (futureMap) {
+             delta = rawFutureVal - currentVal;
+          }
+      } else {
+          // For others (contractors, projects, categories, individuals), store has DELTA.
+          delta = rawFutureVal;
+      }
+
+      return {
+          ...item,
+          currentBalance: currentVal,
+          futureChange: delta,
+          totalForecast: currentVal + delta 
+      };
+  };
+
+  // 1. ACCOUNTS
+  if (k === 'accounts') {
+      const current = mainStore.currentAccountBalances || [];
+      const future = mainStore.futureAccountBalances || []; 
+      const futureMap = new Map(future.map(i => [i._id, i.balance]));
+      const list = current.map(item => mapItem(item, futureMap));
+      return filterAndSort(list);
+  }
+
+  // 2. COMPANIES
+  if (k === 'companies') {
+      const current = mainStore.currentCompanyBalances || [];
+      const future = mainStore.futureCompanyBalances || []; 
+      const futureMap = new Map(future.map(i => [i._id, i.balance]));
+      const list = current.map(item => mapItem(item, futureMap));
+      return filterAndSort(list);
+  }
+  
+  // 3. CONTRACTORS
+  if (k === 'contractors') {
+      const current = mainStore.currentContractorBalances || [];
+      const future = mainStore.futureContractorChanges || []; 
+      const futureMap = new Map(future.map(c => [c._id, c.balance]));
+      let list = current.map(item => mapItem(item, futureMap));
+      const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
+      list = list.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
+      return filterAndSort(list);
+  }
+  
+  // 4. PROJECTS
+  if (k === 'projects') {
+      const current = mainStore.currentProjectBalances || [];
+      const future = mainStore.futureProjectChanges || []; 
+      const futureMap = new Map(future.map(p => [p._id, p.balance]));
+      const list = current.map(item => mapItem(item, futureMap));
+      return filterAndSort(list);
+  }
+
+  // 5. INDIVIDUALS
+  if (k === 'individuals') {
+      const current = mainStore.currentIndividualBalances || [];
+      const future = mainStore.futureIndividualChanges || []; 
+      const futureMap = new Map(future.map(i => [i._id, i.balance]));
+      const list = current.map(item => mapItem(item, futureMap));
+      return filterAndSort(list);
+  }
+  
+  // 6. CATEGORIES
+  if (k === 'categories') {
+      const current = mainStore.currentCategoryBalances || [];
+      const future = mainStore.futureCategoryBalances || []; 
+      const futureMap = new Map(future.map(c => [c._id, c.balance]));
+      let list = current.map(item => mapItem(item, futureMap));
+      const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
+      list = list.filter(c => visibleIds.has(c._id));
+      return filterAndSort(list);
+  }
+
+  // 7. LIABILITIES
+  if (k === 'liabilities') {
+      const weOweCurrent = mainStore.liabilitiesWeOwe || 0;
+      const weOweFuture = mainStore.liabilitiesWeOweFuture || 0; 
+      const theyOweCurrent = mainStore.liabilitiesTheyOwe || 0;
+      const theyOweFuture = mainStore.liabilitiesTheyOweFuture || 0;
+
+      const rawList = [
+          { 
+              _id: 'we', 
+              name: 'Мы должны', 
+              currentBalance: weOweCurrent,
+              futureChange: weOweFuture - weOweCurrent, 
+              totalForecast: weOweFuture 
+          },
+          { 
+              _id: 'they', 
+              name: 'Нам должны', 
+              currentBalance: theyOweCurrent,
+              futureChange: theyOweFuture - theyOweCurrent, 
+              totalForecast: theyOweFuture,
+              isIncome: true 
+          }
+      ];
+      return filterAndSort(rawList);
+  }
+  
+  // 8. LISTS (UPDATED for Split View)
+  if (isListWidget.value) {
+      // Get Current lists (Fact)
+      let currentList = [];
+      if (k === 'incomeList') currentList = mainStore.currentIncomes;
+      else if (k === 'expenseList') currentList = mainStore.currentExpenses;
+      else if (k === 'withdrawalList') currentList = mainStore.currentWithdrawals;
+      else if (k === 'transfers') currentList = mainStore.currentTransfers;
+      
+      const currentSum = currentList.reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
+
+      // Get Future lists (Forecast)
+      let futureList = [];
+      if (k === 'incomeList') futureList = mainStore.futureIncomes;
+      else if (k === 'expenseList') futureList = mainStore.futureExpenses;
+      else if (k === 'withdrawalList') futureList = mainStore.futureWithdrawals;
+      else if (k === 'transfers') futureList = mainStore.futureTransfers;
+
+      const futureSum = futureList.reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
+      
+      // If forecast is NOT active, we just show current sum (balance)
+      // If forecast IS active, we show currentSum > futureSum (as delta)
       
       return [{
           _id: 'total',
           name: 'Всего',
-          balance: totalSum,
+          currentBalance: currentSum,
+          futureChange: futureSum, // In this context, future list IS the delta (items that haven't happened yet)
+          totalForecast: currentSum + futureSum,
+          // Legacy field for non-forecast mode
+          balance: isForecastActive.value ? (currentSum + futureSum) : currentSum,
           isList: true,
           isIncome: k === 'incomeList'
       }];
@@ -78,20 +179,24 @@ const items = computed(() => {
   return [];
 });
 
-// 🟢 Функция фильтрации и сортировки (аналогична MobileHomeView)
+// 🟢 Sorting & Filtering Logic
 function filterAndSort(originalList) {
     let list = [...(originalList || [])];
-    const targetKey = isForecastActive.value ? 'futureBalance' : 'balance';
+    
+    const getFilterValue = (item) => {
+        if (isForecastActive.value && item.totalForecast !== undefined) {
+            return item.totalForecast;
+        }
+        return item.balance !== undefined ? item.balance : item.currentBalance;
+    };
 
-    // Фильтр
-    if (filterMode.value === 'positive') list = list.filter(i => (i[targetKey] || 0) > 0);
-    else if (filterMode.value === 'negative') list = list.filter(i => (i[targetKey] || 0) < 0);
-    else if (filterMode.value === 'nonZero') list = list.filter(i => (i[targetKey] || 0) !== 0);
+    if (filterMode.value === 'positive') list = list.filter(i => getFilterValue(i) > 0);
+    else if (filterMode.value === 'negative') list = list.filter(i => getFilterValue(i) < 0);
+    else if (filterMode.value === 'nonZero') list = list.filter(i => getFilterValue(i) !== 0);
 
-    // Сортировка
-    const getVal = (i) => i[targetKey] || 0;
-    if (sortMode.value === 'desc') list.sort((a, b) => getVal(b) - getVal(a));
-    else if (sortMode.value === 'asc') list.sort((a, b) => getVal(a) - getVal(b));
+    const getSortVal = (i) => getFilterValue(i);
+    if (sortMode.value === 'desc') list.sort((a, b) => getSortVal(b) - getSortVal(a));
+    else if (sortMode.value === 'asc') list.sort((a, b) => getSortVal(a) - getSortVal(b));
 
     return list;
 }
@@ -102,21 +207,36 @@ const isEmpty = computed(() => {
 });
 
 const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
+const formatDelta = (val) => {
+  const num = Number(val) || 0;
+  if (num === 0) return '0'; 
+  const formatted = formatNumber(Math.abs(num));
+  return num > 0 ? `+ ${formatted}` : `- ${formatted}`; // Removed ₸ to save space if needed, or keep it
+};
 
-const getValueClass = (item) => {
-    const val = Number(item.balance) || 0;
+const getValueClass = (val, isIncomeWidget = false) => {
+    const num = Number(val) || 0;
+    
     if (props.widgetKey === 'liabilities') {
-        if (item.isIncome) return 'orange-text'; 
-        return 'red-text';
+        return num < 0 ? 'red-text' : 'white-text'; 
     }
     
-    if (item.isList) {
+    if (isListWidget.value) {
         if (props.widgetKey === 'incomeList') return 'green-text';
         if (props.widgetKey === 'transfers') return 'white-text';
         return 'red-text';
     }
     
-    return val < 0 ? 'red-text' : 'white-text';
+    return num < 0 ? 'red-text' : 'white-text';
+};
+
+const getDeltaClass = (val) => {
+    const num = Number(val) || 0;
+    
+    // For expense/withdrawal lists, a positive delta means MORE expense, so it should probably be red?
+    // Or stick to green = plus, red = minus mathematically.
+    // Let's stick to math logic: + is green, - is red.
+    return num > 0 ? 'green-text' : (num < 0 ? 'red-text' : 'white-text');
 };
 
 const handleClick = () => {
@@ -139,14 +259,35 @@ const handleClick = () => {
     <div class="widget-body scrollable-list">
       <div v-if="isEmpty" class="empty-text">Нет данных</div>
       <div v-else class="items-list">
-        <!-- Показываем элементы (Для Доходов/Расходов тут будет 1 строка "Всего") -->
         <div v-for="item in items.slice(0, 3)" :key="item._id" class="list-item">
           <div class="item-left">
               <span class="item-name">{{ item.name }}</span>
           </div>
-          <span class="item-val" :class="getValueClass(item)">
-            {{ formatVal(item.balance) }}
-          </span>
+          
+          <div class="item-right">
+              <!-- 🟢 UNIVERSAL FORECAST DISPLAY -->
+              <template v-if="isForecastActive">
+                  <!-- Current Balance -->
+                  <span class="item-val" :class="getValueClass(item.currentBalance)">
+                    {{ formatVal(item.currentBalance) }}
+                  </span>
+                  
+                  <!-- Arrow Separator -->
+                  <span class="arrow-sep">&gt;</span>
+                  
+                  <!-- Delta (Change) -->
+                  <span class="item-delta" :class="getDeltaClass(item.futureChange)">
+                    {{ formatDelta(item.futureChange) }}
+                  </span>
+              </template>
+
+              <!-- 🟢 NORMAL MODE -->
+              <template v-else>
+                  <span class="item-val" :class="getValueClass(item.balance || item.currentBalance)">
+                    {{ formatVal(item.balance || item.currentBalance) }}
+                  </span>
+              </template>
+          </div>
         </div>
         
         <div v-if="items.length > 3" class="more-text">
@@ -215,10 +356,21 @@ const handleClick = () => {
     font-size: 10px; line-height: 1.4; 
 }
 
-.item-left { display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 65%; }
+.item-left { display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 50%; }
 .item-name { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Right side container */
+.item-right { 
+    display: flex; 
+    align-items: center; 
+    justify-content: flex-end; 
+    gap: 4px; 
+    max-width: 50%; 
+}
+
 .item-val { color: #fff;  white-space: nowrap; font-size: 10px; }
+.item-delta { font-size: 10px; white-space: nowrap; font-weight: 600; }
+.arrow-sep { color: #666; font-size: 9px; margin: 0 1px; }
 
 .red-text { color: #ff3b30; }
 .green-text { color: #34c759; }
