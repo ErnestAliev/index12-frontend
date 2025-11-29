@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, onMounted, watch, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import MobileDayColumn from './MobileDayColumn.vue';
 
@@ -17,19 +17,21 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 СТРОГАЯ СИНХРОНИЗАЦИЯ С ГРАФИКОМ
-// Мы строим дни на основе проекции, рассчитанной в сторе (updateFutureProjectionByMode).
-// Это гарантирует, что начало и конец таймлайна совпадают с датами в заголовке "Всего".
+// 🟢 ГЕНЕРАЦИЯ ДНЕЙ ИЗ ПРОЕКЦИИ СТОРА
+// Это ключевой момент синхронизации. Мы не придумываем даты сами,
+// а берем ровно тот диапазон, который рассчитал стор при смене режима.
 const generateDays = () => {
   const proj = mainStore.projection;
+  // Если проекция не готова, не рисуем ничего
   if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
 
   const start = new Date(proj.rangeStartDate);
   const end = new Date(proj.rangeEndDate);
   
-  // Рассчитываем количество дней между датами
-  // Добавляем 1, т.к. разница дат 13-13 = 0, но это 1 день
-  const totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+  // Вычисляем количество дней в диапазоне (включительно)
+  const diffTime = end.getTime() - start.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const totalDays = diffDays + 1; // +1 чтобы включить конечную дату
   
   const days = [];
   const todayReal = new Date();
@@ -41,33 +43,44 @@ const generateDays = () => {
     days.push({
       id: i,
       date: new Date(d),
-      isToday: sameDay(d, todayReal), // Подсветка реального "сегодня"
+      isToday: sameDay(d, todayReal),
       dateKey: _getDateKey(d)
     });
   }
   
   visibleDays.value = days;
-  
-  // 🟢 ВАЖНО: Убран индивидуальный fetch. Данные загружаются оптом в ActionPanel.
 };
 
+// Центрирование скролла на "сегодня" или на середину диапазона
 const scrollToCenter = () => {
     if (scrollContainer.value) {
         const el = scrollContainer.value;
-        const totalWidthVW = visibleDays.value.length * 25; // 25vw ширина колонки
-        const centerVW = totalWidthVW / 2;
-        const scrollPos = (centerVW * window.innerWidth / 100) - (window.innerWidth / 2);
-        el.scrollLeft = scrollPos > 0 ? scrollPos : 0;
+        // Ширина одной колонки = 25vw
+        const colWidthVW = 25; 
+        const windowW = window.innerWidth;
+        const colWidthPx = (windowW * colWidthVW) / 100;
+        
+        // Находим индекс сегодняшнего дня, если он есть в списке
+        const todayIndex = visibleDays.value.findIndex(d => d.isToday);
+        
+        let targetScroll = 0;
+        if (todayIndex !== -1) {
+            // Центрируем на сегодня: позиция дня - половина экрана + половина ширины дня
+            targetScroll = (todayIndex * colWidthPx) - (windowW / 2) + (colWidthPx / 2);
+        } else {
+            // Иначе просто на середину всего списка
+            const totalWidthPx = visibleDays.value.length * colWidthPx;
+            targetScroll = (totalWidthPx / 2) - (windowW / 2);
+        }
+        
+        el.scrollLeft = targetScroll > 0 ? targetScroll : 0;
     }
 };
 
-// Реактивно обновляем сетку при любом изменении проекции (даты или режима)
+// Следим за изменениями проекции (это происходит при переключении режима в ActionPanel)
 watch(() => mainStore.projection, () => {
   generateDays();
-  // Скроллим к центру только если изменился режим (длина массива сильно изменилась)
-  // Для плавности при навигации можно добавить условия, но для старта это надежно.
   nextTick(() => {
-      // Центрируем, если это смена режима
       scrollToCenter();
   });
 }, { deep: true, immediate: true });
@@ -77,6 +90,7 @@ onMounted(() => {
   setTimeout(scrollToCenter, 100);
 });
 
+// Динамический стиль сетки
 const gridStyle = computed(() => {
   return {
     gridTemplateColumns: `repeat(${visibleDays.value.length}, 25vw)`

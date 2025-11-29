@@ -5,7 +5,7 @@ import { useMainStore } from '@/stores/mainStore';
 const emit = defineEmits(['action', 'open-graph']);
 const mainStore = useMainStore();
 
-// Режимы
+// Список режимов (идентичен десктопному NavigationPanel)
 const viewModes = [
   { key: '12d', num: '12', unit: 'ДНЕЙ' },
   { key: '1m',  num: '1',  unit: 'МЕСЯЦ' },
@@ -14,15 +14,19 @@ const viewModes = [
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
 
+// Текущий режим из стора
 const viewModeKey = computed(() => mainStore.projection?.mode || '12d');
 
+// Индекс текущего режима
 const currentViewIndex = computed(() => {
     const idx = viewModes.findIndex(v => v.key === viewModeKey.value);
     return idx !== -1 ? idx : 0;
 });
 
+// Объект текущего режима для отображения
 const currentDisplay = computed(() => viewModes[currentViewIndex.value]);
 
+// Хелпер для получения текущей опорной даты (сегодня)
 const getCurrentDate = () => {
     const year = new Date().getFullYear();
     const currentDay = mainStore.todayDayOfYear || 1;
@@ -31,62 +35,38 @@ const getCurrentDate = () => {
     return date;
 };
 
-// 🟢 ПЕРЕКЛЮЧЕНИЕ РЕЖИМА (КЛИК ПО ЦЕНТРУ)
-const switchViewMode = async () => {
-    let nextIndex = currentViewIndex.value + 1;
+// 🟢 ЛОГИКА ДЕСКТОПА: ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
+// direction: -1 (Влево/Меньше) или 1 (Вправо/Больше)
+const switchViewMode = async (direction) => {
+    let nextIndex = currentViewIndex.value + direction;
+    
+    // Цикличное переключение (как карусель)
     if (nextIndex >= viewModes.length) nextIndex = 0;
+    if (nextIndex < 0) nextIndex = viewModes.length - 1;
     
     const newMode = viewModes[nextIndex].key;
     const currentDate = getCurrentDate();
 
-    // 1. Обновляем режим
+    // 1. Обновляем проекцию в сторе (это пересчитает даты rangeStartDate/EndDate)
     mainStore.updateFutureProjectionByMode(newMode, currentDate);
-    // 2. Грузим данные
+    
+    // 2. Загружаем данные для нового периода
     await mainStore.loadCalculationData(newMode, currentDate);
-};
-
-// 🟢 СДВИГ ПЕРИОДА (СТРЕЛКИ)
-const shiftPeriod = async (direction) => {
-    const date = getCurrentDate();
-    const mode = viewModeKey.value;
-
-    // Сдвигаем дату на шаг, равный режиму
-    if (mode === '12d') {
-        // Для 12 дней сдвиг на 1 день (как в десктопе обычно) или на 12?
-        // Обычно в календарях "вправо" = +1 шаг сетки. Если сетка 12 дней, логично сдвинуть на 1 день или на 12.
-        // В десктопе у вас стрелки меняют VIEW (режим), а не дату?
-        // Вы писали: "нажимаю стрелку в право на 1 мес а значение 12 дней не меняется" - это значит, вы хотите сдвинуть ДАТУ.
-        date.setDate(date.getDate() + (direction * 1)); 
-    } else {
-        const step = mode.includes('m') ? parseInt(mode) : 1;
-        if (mode === '1y') {
-             date.setMonth(date.getMonth() + (direction * 12));
-        } else {
-             date.setMonth(date.getMonth() + (direction * step));
-        }
-    }
-
-    // Сохраняем новую дату
-    const startOfYear = new Date(date.getFullYear(), 0, 0);
-    const diff = date - startOfYear;
-    const oneDay = 1000 * 60 * 60 * 24;
-    const newDayOfYear = Math.floor(diff / oneDay);
-    
-    mainStore.setToday(newDayOfYear);
-    
-    // Обновляем данные для НОВОЙ даты, но ТОГО ЖЕ режима
-    mainStore.updateFutureProjectionByMode(mode, date);
-    await mainStore.loadCalculationData(mode, date);
 };
 
 const openGraph = () => emit('open-graph');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
 onMounted(async () => {
-    // Старт с 12 дней
-    if (viewModeKey.value !== '12d') {
+    // Инициализация при старте, если режим еще не задан в сторе
+    if (!mainStore.projection?.mode) {
         const today = new Date();
-        const todayDay = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
+        // Вычисляем день года
+        const start = new Date(today.getFullYear(), 0, 0);
+        const diff = (today - start) + ((start.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
+        const oneDay = 1000 * 60 * 60 * 24;
+        const todayDay = Math.floor(diff / oneDay);
+        
         mainStore.setToday(todayDay);
         mainStore.updateFutureProjectionByMode('12d', today);
         await mainStore.loadCalculationData('12d', today);
@@ -97,31 +77,31 @@ onMounted(async () => {
 <template>
   <div class="mobile-action-panel-wrapper">
     <div class="chart-controls-row">
-      <!-- График -->
+      <!-- Левая кнопка: График -->
       <button class="icon-circle clickable" @click="openGraph">
          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
       </button>
       
-      <!-- Навигация -->
+      <!-- Центр: Переключатель режимов -->
       <div class="nav-center">
-        <!-- Сдвиг назад -->
-        <button class="arrow-btn" @click="shiftPeriod(-1)">
+        <!-- Стрелка Влево: Предыдущий режим (например, с 1мес на 12д) -->
+        <button class="arrow-btn" @click="switchViewMode(-1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
-        <!-- Переключение режима (Центр) -->
-        <div class="period-label" @click="switchViewMode">
+        <!-- Текст текущего режима -->
+        <div class="period-label" @click="switchViewMode(1)">
           <span class="days-num">{{ currentDisplay.num }}</span>
           <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
         </div>
         
-        <!-- Сдвиг вперед -->
-        <button class="arrow-btn" @click="shiftPeriod(1)">
+        <!-- Стрелка Вправо: Следующий режим (например, с 12д на 1мес) -->
+        <button class="arrow-btn" @click="switchViewMode(1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
 
-      <!-- Виджеты -->
+      <!-- Правая кнопка: Виджеты -->
       <button 
         class="header-expand-btn" 
         :class="{ 'active': mainStore.isHeaderExpanded }"

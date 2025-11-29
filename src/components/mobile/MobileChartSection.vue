@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import GraphRenderer from '@/components/GraphRenderer.vue';
 
@@ -16,55 +16,59 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-const viewMode = computed(() => mainStore.projection?.mode || '12d');
-const currentToday = computed(() => {
-    const year = new Date().getFullYear();
-    const date = new Date(year, 0);
-    // 🟢 Используем сегодняшнюю дату, если store не готов, но это редко, так как MobileHomeView устанавливает его.
-    // Важно: если 0, то будет Январь.
-    const day = mainStore.todayDayOfYear || getDayOfYear(new Date());
-    date.setDate(day);
-    return date;
-});
-
+// 🟢 ГЕНЕРАЦИЯ ДНЕЙ ДЛЯ ГРАФИКА
+// Полностью дублирует логику MobileTimeline для идеальной синхронизации.
+// График строится на тех же данных projection, что и таймлайн.
 const generateDays = () => {
-  const t = currentToday.value;
-  let startDate = new Date(t);
-  startDate.setDate(startDate.getDate() - 5);
+  const proj = mainStore.projection;
+  if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
 
+  const start = new Date(proj.rangeStartDate);
+  const end = new Date(proj.rangeEndDate);
+  
+  const diffTime = end.getTime() - start.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const totalDays = diffDays + 1;
+  
   const days = [];
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(startDate);
-    d.setDate(startDate.getDate() + i);
+  const todayReal = new Date();
+
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    
     days.push({
       id: i,
-      date: d,
-      isToday: sameDay(d, new Date()),
+      date: new Date(d),
+      isToday: sameDay(d, todayReal),
       dateKey: _getDateKey(d)
     });
   }
   visibleDays.value = days;
 };
 
-// 🟢 Re-generate when data changes
-watch(() => mainStore.todayDayOfYear, generateDays, { immediate: true });
-watch(viewMode, generateDays);
-
-onMounted(() => {
-  generateDays();
-});
+// Следим за изменениями в сторе
+watch(() => mainStore.projection, generateDays, { deep: true, immediate: true });
 
 // Скролл
 const scrollContainer = ref(null);
 const onScroll = (e) => { emit('scroll', e.target.scrollLeft); };
 const setScroll = (left) => { if (scrollContainer.value) scrollContainer.value.scrollLeft = left; };
 defineExpose({ setScroll });
+
+// Динамическая ширина: 25vw на 1 день (как в MobileTimeline)
+// Это гарантирует, что столбцы графика будут точно под колонками дней.
+const chartWidthStyle = computed(() => ({
+  width: `${visibleDays.value.length * 25}vw`,
+  height: '100%'
+}));
 </script>
 
 <template>
   <div class="mobile-chart-section">
     <div class="chart-scroll-area" ref="scrollContainer" @scroll="onScroll">
-      <div class="chart-wide-wrapper">
+      <div class="chart-wide-wrapper" :style="chartWidthStyle">
+        <!-- Передаем visibleDays в рендерер, он сам построит график -->
         <GraphRenderer 
           v-if="visibleDays.length"
           :visibleDays="visibleDays"
@@ -95,8 +99,5 @@ defineExpose({ setScroll });
 }
 .chart-scroll-area::-webkit-scrollbar { display: none; }
 
-.chart-wide-wrapper {
-  height: 100%;
-  width: 300vw; 
-}
+/* .chart-wide-wrapper ширина задается инлайново через :style */
 </style>

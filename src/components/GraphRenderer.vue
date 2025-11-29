@@ -25,15 +25,12 @@ const emit = defineEmits(['update:yLabels']);
 const mainStore = useMainStore();
 
 // --- ВНЕШНИЙ ТУЛТИП (HTML) ---
-// Позволяет отображать тултип поверх скролл-контейнеров на мобильных
 const externalTooltipHandler = (context) => {
-  // 1. Ищем или создаем элемент тултипа
   let tooltipEl = document.getElementById('chartjs-custom-tooltip');
 
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
     tooltipEl.id = 'chartjs-custom-tooltip';
-    // Базовые стили
     Object.assign(tooltipEl.style, {
         background: 'rgba(26, 26, 26, 0.95)',
         border: '1px solid #444',
@@ -41,7 +38,7 @@ const externalTooltipHandler = (context) => {
         color: 'white',
         opacity: 0,
         pointerEvents: 'none',
-        position: 'fixed', // ВАЖНО: Fixed позиционирование
+        position: 'fixed',
         zIndex: 9999,
         fontSize: '12px',
         padding: '12px',
@@ -49,23 +46,20 @@ const externalTooltipHandler = (context) => {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
         transition: 'opacity .15s ease',
-        // 🟢 ИЗМЕНЕНО: Адаптивная ширина
-        width: 'max-content', // По умолчанию под контент (десктоп)
-        maxWidth: '100vw',    // Ограничение по ширине экрана (мобилка)
-        boxSizing: 'border-box' // Чтобы padding не вылезал за 100vw
+        width: 'max-content',
+        maxWidth: '100vw',
+        boxSizing: 'border-box'
     });
     document.body.appendChild(tooltipEl);
   }
 
   const tooltipModel = context.tooltip;
 
-  // 2. Скрываем, если тултип неактивен
   if (tooltipModel.opacity === 0) {
     tooltipEl.style.opacity = 0;
     return;
   }
 
-  // 3. Формируем контент (используя данные из callbacks)
   if (tooltipModel.body) {
     const bodyLines = tooltipModel.body.map(b => b.lines).flat();
     
@@ -77,12 +71,10 @@ const externalTooltipHandler = (context) => {
        }
        if (!line) return;
 
-       // Стилизация строк
-       // 🟢 ИЗМЕНЕНО: white-space: nowrap для предотвращения переноса
        let style = 'color: #ddd; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'; 
        
-       if (i === 0) style = 'color: #888; margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;'; // Дата
-       else if (i === 1) style = 'font-weight: 700; font-size: 15px; margin-bottom: 8px; color: #fff; white-space: nowrap;'; // Итоговая сумма
+       if (i === 0) style = 'color: #888; margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;';
+       else if (i === 1) style = 'font-weight: 700; font-size: 15px; margin-bottom: 8px; color: #fff; white-space: nowrap;';
 
        innerHtml += `<div style="${style}">${line}</div>`;
     });
@@ -90,7 +82,6 @@ const externalTooltipHandler = (context) => {
     tooltipEl.innerHTML = innerHtml;
   }
 
-  // 4. Позиционирование (С учетом границ экрана)
   const position = context.chart.canvas.getBoundingClientRect();
   const viewportX = position.left + tooltipModel.caretX;
   const viewportY = position.top + tooltipModel.caretY;
@@ -98,38 +89,27 @@ const externalTooltipHandler = (context) => {
   const tooltipWidth = tooltipEl.offsetWidth;
   const tooltipHeight = tooltipEl.offsetHeight;
   const screenWidth = window.innerWidth;
-  const screenHeight = window.innerHeight;
 
   let left = viewportX;
   let top = viewportY;
-  
-  // Горизонтальное выравнивание (Clamp)
   let transformX = '-50%';
   
-  // Если упирается влево
   if (left < tooltipWidth / 2 + 10) {
       left = 10;
       transformX = '0%';
   } 
-  // Если упирается вправо
   else if (left + tooltipWidth / 2 > screenWidth - 10) {
       left = screenWidth - 10;
       transformX = '-100%';
-      
-      // 🟢 FIX: Если ширина тултипа больше, чем доступное место слева при выравнивании по правому краю, сдвигаем его так, чтобы влез
       if (left - tooltipWidth < 0) {
-          // Крайний случай для очень узких экранов: принудительно ставим слева 0
           left = 0;
           transformX = '0%';
       }
   }
 
-  // Вертикальное выравнивание
-  // По умолчанию сверху
   top = top - 10; 
   let transformY = '-100%'; 
 
-  // Если упирается в верх экрана - переносим вниз
   if (top - tooltipHeight < 10) {
       top = viewportY + 20; 
       transformY = '0%';
@@ -141,7 +121,6 @@ const externalTooltipHandler = (context) => {
   tooltipEl.style.opacity = 1;
 };
 
-// Очистка при размонтировании
 onUnmounted(() => {
     const el = document.getElementById('chartjs-custom-tooltip');
     if (el) el.remove();
@@ -250,7 +229,6 @@ const getTooltipOperationList = (ops) => {
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
-    
     const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
     
     let catName = op.categoryId?.name || 'Без категории';
@@ -275,7 +253,6 @@ const chartData = computed(() => {
   const prepaymentData = [];
   const expenseData = [];
   const withdrawalData = [];
-  
   const incomeDetails = []; 
   const prepaymentDetails = [];
   const expenseDetails = [];
@@ -378,11 +355,8 @@ const chartOptions = computed(() => {
     plugins: {
       legend: { display: false },
       tooltip: {
-        // 🟢 ОТКЛЮЧАЕМ стандартный канвас-тултип
         enabled: false,
-        // 🟢 ПОДКЛЮЧАЕМ внешний обработчик
         external: externalTooltipHandler,
-        
         callbacks: {
           title: () => null,
           label: (context) => {
@@ -433,10 +407,7 @@ const chartOptions = computed(() => {
       }
     },
     scales: {
-      x: { 
-        stacked: true, 
-        display: false, 
-      },
+      x: { stacked: true, display: false },
       y: { stacked: true, max: yMax, min: 0, display: false }
     }
   };
@@ -471,7 +442,10 @@ watch([chartData, chartOptions], async () => {
       <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
     </div>
 
-    <div v-if="showSummaries" class="summaries-wrapper">
+    <!-- 🟢 ГЛАВНЫЙ ФИКС: ДИНАМИЧЕСКИЕ КОЛОНКИ -->
+    <!-- На десктопе visibleDays.length = 12, получаем repeat(12, 1fr) -->
+    <!-- На мобильном visibleDays.length = 30, получаем repeat(30, 1fr) -->
+    <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${visibleDays.length}, 1fr)` }">
       <div
         v-for="(day, index) in summaries"
         :key="index"
@@ -515,7 +489,7 @@ watch([chartData, chartOptions], async () => {
   border-top: 1px solid var(--color-border);
   overflow: hidden;
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  /* 🟢 Grid-template-columns теперь задается инлайново в шаблоне для универсальности */
   width: 100%;
 }
 
