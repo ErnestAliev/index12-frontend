@@ -66,8 +66,15 @@ const handleWidgetClick = (key) => {
   flex-direction: column;
   flex-shrink: 0;
   transition: all 0.3s ease;
-  overflow: hidden;
+  
+  /* 🟢 FIX: Разрешаем скролл (было overflow: hidden) */
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; /* Для плавности на iOS */
+  
+  /* Скрываем скроллбар, но оставляем функционал */
+  scrollbar-width: none; 
 }
+.mobile-widgets-wrapper::-webkit-scrollbar { display: none; }
 
 .widgets-grid {
   display: grid;

@@ -17,8 +17,6 @@ const getDayOfYear = (date) => {
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
 // 🟢 ГЕНЕРАЦИЯ ДНЕЙ ДЛЯ ГРАФИКА
-// Полностью дублирует логику MobileTimeline для идеальной синхронизации.
-// График строится на тех же данных projection, что и таймлайн.
 const generateDays = () => {
   const proj = mainStore.projection;
   if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
@@ -56,8 +54,7 @@ const onScroll = (e) => { emit('scroll', e.target.scrollLeft); };
 const setScroll = (left) => { if (scrollContainer.value) scrollContainer.value.scrollLeft = left; };
 defineExpose({ setScroll });
 
-// Динамическая ширина: 25vw на 1 день (как в MobileTimeline)
-// Это гарантирует, что столбцы графика будут точно под колонками дней.
+// Динамическая ширина
 const chartWidthStyle = computed(() => ({
   width: `${visibleDays.value.length * 25}vw`,
   height: '100%'
@@ -68,7 +65,6 @@ const chartWidthStyle = computed(() => ({
   <div class="mobile-chart-section">
     <div class="chart-scroll-area" ref="scrollContainer" @scroll="onScroll">
       <div class="chart-wide-wrapper" :style="chartWidthStyle">
-        <!-- Передаем visibleDays в рендерер, он сам построит график -->
         <GraphRenderer 
           v-if="visibleDays.length"
           :visibleDays="visibleDays"
@@ -96,6 +92,9 @@ const chartWidthStyle = computed(() => ({
   overflow-y: hidden;
   scrollbar-width: none;
   position: relative;
+  
+  /* 🟢 УБРАНО: scroll-behavior: smooth; */
+  /* Чтобы график двигался синхронно с таймлайном без задержек */
 }
 .chart-scroll-area::-webkit-scrollbar { display: none; }
 
