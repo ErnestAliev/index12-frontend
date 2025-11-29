@@ -9,20 +9,44 @@ const mainStore = useMainStore();
 
 const gridWidgets = computed({
   get: () => {
-    let layout = mainStore.dashboardLayout || [];
-    // Фильтруем технические виджеты (тоталы и плейсхолдеры)
+    // 🟢 FIX: Используем allWidgets, чтобы показать ВСЕ доступные виджеты,
+    // а не только те, что добавлены на дашборд (dashboardLayout).
+    // Если нужно сохранить пользовательский порядок, то логика должна быть сложнее (merge layout + rest),
+    // но для "увидеть все" берем исходный список.
+    
+    // Однако, если мы хотим использовать draggable для сортировки, нам всё же нужен dashboardLayout.
+    // Если проблема была в том, что в layout не все виджеты, то это вопрос к store.
+    
+    // Но давайте сделаем гибрид: берем layout, и если там чего-то нет из allWidgets, добавляем в конец.
+    
+    let layout = [...mainStore.dashboardLayout];
+    const allKeys = mainStore.allWidgets.map(w => w.key);
+    
+    // Добавляем недостающие виджеты (которых нет в layout)
+    allKeys.forEach(key => {
+        if (!layout.includes(key)) {
+            layout.push(key);
+        }
+    });
+
+    // Фильтруем системные
     layout = layout.filter(key => key !== 'currentTotal' && key !== 'futureTotal' && !key.startsWith('placeholder_'));
     
-    // Если хедер свернут, показываем только первые 4
+    // В свернутом виде — пусто (только шапка)
     if (!mainStore.isHeaderExpanded) {
-      return layout.slice(0, 4); 
+      return []; 
     }
-    // Если развернут — показываем всё
+    
     return layout;
   },
   set: (newOrder) => {
-    // При изменении порядка сохраняем скрытые элементы на своих местах (в конце списка или как было задумано логикой)
-    const hidden = mainStore.dashboardLayout.filter(key => key === 'currentTotal' || key === 'futureTotal' || key.startsWith('placeholder_') || !newOrder.includes(key));
+    // При изменении порядка обновляем dashboardLayout
+    // Сохраняем системные виджеты, которые могли быть отфильтрованы
+    const currentLayout = mainStore.dashboardLayout;
+    const hidden = currentLayout.filter(key => key === 'currentTotal' || key === 'futureTotal' || key.startsWith('placeholder_'));
+    
+    // Если в newOrder есть виджеты, которых не было в dashboardLayout (мы их добавили в get),
+    // то теперь они сохранятся в layout.
     mainStore.dashboardLayout = [...newOrder, ...hidden];
   }
 });
@@ -33,14 +57,7 @@ const handleWidgetClick = (key) => {
 </script>
 
 <template>
-  <div class="mobile-widgets-wrapper" :class="{ expanded: mainStore.isHeaderExpanded }">
-    <!-- 
-      🟢 FIX: Настройки для Drag-and-Drop на мобильных 
-      delay="300" — задержка 300мс (долгое нажатие) для начала перетаскивания.
-      delay-on-touch-only="true" — задержка работает только на тач-экранах.
-      touch-start-threshold="5" — допуск смещения пальца (чтобы не срывалось при дрожи).
-      Убран проп handle=".widget-title", теперь можно тянуть за весь виджет.
-    -->
+  <div class="mobile-widgets-wrapper scroll-touch" :class="{ expanded: mainStore.isHeaderExpanded }">
     <draggable 
       v-model="gridWidgets" 
       item-key="toString"
@@ -50,6 +67,7 @@ const handleWidgetClick = (key) => {
       :delay="300" 
       :delay-on-touch-only="true"
       :touch-start-threshold="5"
+      :fallback-tolerance="5" 
       :animation="200"
       :force-fallback="false"
     >
@@ -75,27 +93,26 @@ const handleWidgetClick = (key) => {
   display: block; 
   flex-shrink: 0;
   
-  /* 🟢 FIX: Включаем нативную инерционную прокрутку для iOS */
   overflow-y: auto; 
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch; 
   overscroll-behavior: contain; 
   
-  /* Исправление для Safari Flexbox bug */
   min-height: 0;
   
-  transition: all 0.3s ease;
   scrollbar-width: none; 
 }
 .mobile-widgets-wrapper::-webkit-scrollbar { display: none; }
 
 .widgets-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr; /* Две колонки */
+  grid-template-columns: 1fr 1fr;
   gap: 1px;
   background-color: var(--color-border, #444);
   padding: 1px 0;
-  /* Растягиваем контент, чтобы скролл понимал размеры */
-  min-height: min-content; 
+  
+  height: auto;
+  min-height: 100%;
   padding-bottom: 1px; 
 }
 
@@ -103,9 +120,9 @@ const handleWidgetClick = (key) => {
   background-color: var(--color-background-soft, #282828);
   min-width: 0;
   height: 90px;
-  /* 🟢 FIX: Запрет выделения текста при долгом нажатии для драга */
   user-select: none;
   -webkit-user-select: none;
+  touch-action: pan-y;
 }
 
 .ghost {
