@@ -1,29 +1,24 @@
-import { NextResponse } from 'next/server';
+export const config = {
+  matcher: ['/', '/mobile'],
+};
 
-export function middleware(request) {
+export default function middleware(request) {
+  const url = new URL(request.url);
   const userAgent = request.headers.get('user-agent') || '';
   
   // Простая проверка на мобильное устройство
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
   
-  const url = request.nextUrl.clone();
-  
   // Если пользователь на главной (/) и это мобильное устройство -> редирект на /mobile
   if (isMobile && url.pathname === '/') {
-    url.pathname = '/mobile';
-    return NextResponse.redirect(url);
+    return Response.redirect(new URL('/mobile', request.url));
   }
   
-  // (Опционально) Если пользователь НЕ на мобильном, но идет на /mobile -> редирект на /
-  // const isDesktop = !isMobile;
-  // if (isDesktop && url.pathname === '/mobile') {
-  //   url.pathname = '/';
-  //   return NextResponse.redirect(url);
+  // (Опционально) Обратный редирект для десктопа можно раскомментировать при необходимости
+  // if (!isMobile && url.pathname === '/mobile') {
+  //   return Response.redirect(new URL('/', request.url));
   // }
 
-  return NextResponse.next();
+  // Продолжаем выполнение запроса
+  return;
 }
-
-export const config = {
-  matcher: ['/', '/mobile'], // Применять только к этим путям
-};

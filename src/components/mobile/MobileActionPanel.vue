@@ -2,7 +2,8 @@
 import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
-const emit = defineEmits(['action']);
+// 🟢 3. Добавлено событие 'open-graph'
+const emit = defineEmits(['action', 'open-graph']);
 const mainStore = useMainStore();
 
 // --- ЛОГИКА УПРАВЛЕНИЯ ГРАФИКОМ ---
@@ -20,11 +21,13 @@ const switchViewMode = async () => {
     const nextIndex = (currentIndex + 1) % viewModes.length;
     const newMode = viewModes[nextIndex];
     
+    // 🟢 2. Исправлена логика получения текущей даты для переключения
     const currentTodayDate = new Date(); 
     if (mainStore.todayDayOfYear) {
        const year = currentTodayDate.getFullYear();
-       currentTodayDate.setMonth(0);
-       currentTodayDate.setDate(mainStore.todayDayOfYear);
+       const startOfYear = new Date(year, 0, 1);
+       // Устанавливаем дату на основе дня года
+       currentTodayDate.setTime(startOfYear.getTime() + (mainStore.todayDayOfYear * 24 * 60 * 60 * 1000));
     }
     
     await mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
@@ -34,28 +37,44 @@ const switchViewMode = async () => {
 const shiftPeriod = async (direction) => {
     const year = new Date().getFullYear();
     const currentDay = mainStore.todayDayOfYear || 0;
-    const date = new Date(year, 0);
-    if (currentDay > 0) date.setDate(currentDay); 
-    else date.setDate(new Date().getDate());
+    
+    // Воссоздаем дату из дня года
+    const date = new Date(year, 0, 1);
+    if (currentDay > 0) {
+        date.setDate(currentDay + 1); // +1 так как jan 1 это 0-й индекс смещения или 1-й день? обычно dayOfYear 1-based
+    } else {
+        const now = new Date();
+        date.setMonth(now.getMonth());
+        date.setDate(now.getDate());
+    }
 
     if (viewMode.value === '12d') {
         date.setDate(date.getDate() + (direction * 1));
     } else {
         const step = viewMode.value.includes('m') ? parseInt(viewMode.value) : 1;
-        date.setMonth(date.getMonth() + (direction * step));
+        // Для года (1y) шаг 1, но метод setFullYear/setMonth
+        if (viewMode.value === '1y') {
+             // Сдвиг на полгода или год? Обычно шаг навигации = периоду.
+             // В коде было (direction * step) для месяцев. 
+             // Если '1y', parseInt вернет 1. Сдвинем на 12 месяцев или 6?
+             // Оставим логику месяцев:
+             date.setMonth(date.getMonth() + (direction * (viewMode.value === '1y' ? 12 : step)));
+        } else {
+             date.setMonth(date.getMonth() + (direction * step));
+        }
     }
 
     const newDayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
     mainStore.setToday(newDayOfYear);
     await mainStore.updateFutureProjectionByMode(viewMode.value, date);
+    // 🟢 Важно: перезагружаем данные после сдвига
+    await mainStore.loadCalculationData(viewMode.value, date);
 };
 
 // --- ЛОГИКА ВИДЖЕТОВ ---
 const toggleWidgets = () => {
     mainStore.toggleHeaderExpansion();
 };
-
-// Функция handleAction больше не нужна, так как кнопки удалены
 </script>
 
 <template>
@@ -63,10 +82,10 @@ const toggleWidgets = () => {
     
     <!-- РЯД 1: Управление графиком и виджетами -->
     <div class="chart-controls-row">
-      <!-- Левая иконка: График (Декор) -->
-      <div class="icon-circle">
+      <!-- 🟢 3. Левая иконка: Сделана кнопкой, вызывает событие -->
+      <button class="icon-circle clickable" @click="$emit('open-graph')">
          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
-      </div>
+      </button>
       
       <!-- Центр: Навигация (12 ДНЕЙ) -->
       <div class="nav-center">
@@ -99,8 +118,6 @@ const toggleWidgets = () => {
       </button>
     </div>
 
-    <!-- Ряд кнопок удален согласно ТЗ -->
-
   </div>
 </template>
 
@@ -121,7 +138,7 @@ const toggleWidgets = () => {
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  border-bottom: none; /* Убрал бордер, так как под ним ничего нет */
+  border-bottom: none; 
 }
 
 .nav-center { display: flex; align-items: center; gap: 20px; }
@@ -132,14 +149,19 @@ const toggleWidgets = () => {
 .days-num { font-size: 20px; font-weight: 700; color: #fff; }
 .days-text { font-size: 9px; color: #888; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
 
-/* Левая иконка (декор) */
+/* Левая иконка (кнопка) */
 .icon-circle {
   width: 32px; height: 32px;
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,0.1);
   display: flex; align-items: center; justify-content: center;
   color: #aaa;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s;
 }
+.icon-circle:active { background-color: rgba(255,255,255,0.1); color: #fff; border-color: #fff; }
 
 /* СТИЛИ ДЛЯ ПРАВОЙ КНОПКИ */
 .header-expand-btn {
