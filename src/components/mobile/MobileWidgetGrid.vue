@@ -4,9 +4,7 @@ import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 import MobileWidgetCard from './MobileWidgetCard.vue';
 
-// 🟢 Добавлены события widget-add, widget-edit
 const emit = defineEmits(['widget-click', 'widget-add', 'widget-edit']);
-
 const mainStore = useMainStore();
 
 const gridWidgets = computed({
@@ -45,7 +43,6 @@ const handleWidgetClick = (key) => {
     >
       <template #item="{ element }">
         <div class="grid-item">
-          <!-- 🟢 Пробрасываем события Add/Edit -->
           <MobileWidgetCard 
              :widget-key="element" 
              @click="handleWidgetClick"
@@ -63,29 +60,31 @@ const handleWidgetClick = (key) => {
   background-color: var(--color-background, #1a1a1a);
   border-bottom: 1px solid var(--color-border, #444);
   
-  /* 🟢 FIX: Safari Scroll */
-  display: block; /* Убираем flex, чтобы избежать багов скролла в Safari */
+  display: block; 
   flex-shrink: 0;
-  transition: all 0.3s ease;
   
-  /* Настройки скролла */
+  /* 🟢 FIX: Разрешаем скролл и включаем инерцию */
   overflow-y: auto; 
-  -webkit-overflow-scrolling: touch; /* Инерция для iOS */
-  touch-action: pan-y; /* Явное указание браузеру на вертикальный скролл */
+  -webkit-overflow-scrolling: touch; /* Критично для iOS */
+  overscroll-behavior: contain; /* Чтобы скролл не дергал всю страницу */
   
-  /* Скрываем скроллбар */
+  /* Исправление для Safari Flexbox bug */
+  min-height: 0;
+  
+  transition: all 0.3s ease;
   scrollbar-width: none; 
 }
 .mobile-widgets-wrapper::-webkit-scrollbar { display: none; }
 
 .widgets-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr; /* 2 колонки */
+  grid-template-columns: 1fr 1fr;
   gap: 1px;
   background-color: var(--color-border, #444);
   padding: 1px 0;
-  /* Гарантируем, что контент внутри растягивается корректно */
+  /* Растягиваем контент, чтобы скролл понимал размеры */
   min-height: min-content; 
+  padding-bottom: 1px; /* Фикс для обрезания границ */
 }
 
 .grid-item {
