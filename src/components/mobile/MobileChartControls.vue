@@ -20,41 +20,39 @@ const switchViewMode = async () => {
     const nextIndex = (currentIndex + 1) % viewModes.length;
     const newMode = viewModes[nextIndex];
     
-    // Обновляем режим. Для этого используем текущую дату из стора или сегодня
-    const currentTodayDate = new Date(); // Упростим: отталкиваемся от сегодня, или нужно брать mainStore.todayDayOfYear
+    const currentTodayDate = new Date(); 
     
-    // Важно: вызываем обновление проекции
-    await mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
-    // И обновляем данные
-    await mainStore.loadCalculationData(newMode, currentTodayDate);
+    // 🟢 1. Мгновенно обновляем структуру (сетку)
+    mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
+    
+    // 🟢 2. Запускаем загрузку данных в фоне (без await!),
+    // чтобы UI не блокировался. 
+    // Данные будут появляться по мере загрузки чанков.
+    mainStore.loadCalculationData(newMode, currentTodayDate);
 };
 
 // Сдвиг периода (Стрелки)
 const shiftPeriod = async (direction) => {
-    // Получаем текущую базовую дату (сегодня)
-    // В идеале store должен хранить "currentViewDate", но пока используем todayDayOfYear
     const year = new Date().getFullYear();
     const currentDay = mainStore.todayDayOfYear || 0;
-    const date = new Date(year, 0); // 1 янв
-    date.setDate(currentDay > 0 ? currentDay : new Date().getDate()); // Устанавливаем день
+    const date = new Date(year, 0); 
+    date.setDate(currentDay > 0 ? currentDay : new Date().getDate());
 
-    // Логика сдвига
     if (viewMode.value === '12d') {
-        date.setDate(date.getDate() + (direction * 1)); // Сдвиг на 1 день
+        date.setDate(date.getDate() + (direction * 1)); 
     } else {
         const step = viewMode.value.includes('m') ? parseInt(viewMode.value) : 1;
         date.setMonth(date.getMonth() + (direction * step));
     }
 
-    // Сохраняем в стор
     const newDayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
     mainStore.setToday(newDayOfYear);
     
-    // Обновляем проекцию
-    await mainStore.updateFutureProjectionByMode(viewMode.value, date);
+    // Аналогично: обновляем UI мгновенно, данные грузим фоном
+    mainStore.updateFutureProjectionByMode(viewMode.value, date);
+    mainStore.loadCalculationData(viewMode.value, date);
 };
 
-// 🟢 ЛОГИКА РАСШИРЕНИЯ ВИДЖЕТОВ (Правая кнопка)
 const toggleWidgets = () => {
     mainStore.toggleHeaderExpansion();
 };
@@ -62,12 +60,10 @@ const toggleWidgets = () => {
 
 <template>
   <div class="chart-controls-panel">
-    <!-- Левая иконка: График (Декор или переключение типа графика) -->
     <div class="icon-circle">
        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
     </div>
     
-    <!-- Центр: Навигация -->
     <div class="nav-center">
       <button class="arrow-btn" @click="shiftPeriod(-1)">
          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -83,8 +79,6 @@ const toggleWidgets = () => {
       </button>
     </div>
 
-    <!-- Правая иконка: Сетка (Expand Widgets) -->
-    <!-- 🟢 Теперь эта кнопка управляет виджетами -->
     <button class="icon-circle clickable" @click="toggleWidgets" :class="{ active: mainStore.isHeaderExpanded }">
        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect>
@@ -103,7 +97,6 @@ const toggleWidgets = () => {
   padding: 0 24px;
   background-color: var(--color-background-soft, #282828);
   border-top: 1px solid var(--color-border, #444);
-  /* Этот компонент будет в фиксированном футере */
 }
 
 .nav-center {

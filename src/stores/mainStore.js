@@ -1,12 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.26 - SYNC OPTIMISTIC UPDATE ---
- * * ВЕРСИЯ: 26.11.26 - Исправление двойного расчета при перемещении
- * * ДАТА: 2025-11-27
+ * * --- МЕТКА ВЕРСИИ: v28.11.02 - PERF FIX ---
+ * * ВЕРСИЯ: 28.11.02 - Ускорение работы с кэшем (Object.assign)
+ * * ДАТА: 2025-11-29
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В moveOperation расчет wasInSnapshot/isInSnapshot и вызов _applyOptimisticSnapshotUpdate
- * перенесены ДО await Promise.all. Это устраняет лаг виджетов "Мои счета" и "Всего".
- * * * --- ОБНОВЛЕНИЕ ТЕКСТОВ (29.11.2025) ---
- * Обновлены названия виджетов 'currentTotal' и 'futureTotal' с переносом строк.
+ * 1. (PERF) В `fetchOperationsRange`, `refreshDay`, `moveOperation`, `_syncCaches` заменено 
+ * копирование всего объекта кэша (`{...cache}`) на мутацию (`Object.assign` или прямое присваивание).
+ * Это устраняет фризы при обновлении данных, когда кэш становится большим.
  */
 
 import { defineStore } from 'pinia';
@@ -29,7 +28,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v26.11.26 (Sync Optimistic + Text Updates) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v28.11.02 (Perf Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -62,12 +61,12 @@ export const useMainStore = defineStore('mainStore', () => {
   function toggleHeaderExpansion() { isHeaderExpanded.value = !isHeaderExpanded.value; }
 
   const staticWidgets = ref([
-    { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, // 🟢 Обновлено с переносом
+    { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
     { key: 'accounts',     name: 'Мои счета' },
     { key: 'companies',    name: 'Мои компании' },
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
-    { key: 'futureTotal',  name: 'Всего на счетах\nс учетом будущих' }, // 🟢 Обновлено с переносом
+    { key: 'futureTotal',  name: 'Всего на счетах\nс учетом будущих' }, 
     { key: 'liabilities',  name: 'Мои предоплаты' },
     { key: 'incomeList',   name: 'Мои доходы' },
     { key: 'expenseList',  name: 'Мои расходы' },
@@ -406,9 +405,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🟢 ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ (Helper)
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
-      // sign: 1 (добавить в snapshot), -1 (убрать из snapshot)
       const s = snapshot.value;
       const absAmt = Math.abs(op.amount || 0);
 
@@ -427,7 +424,7 @@ export const useMainStore = defineStore('mainStore', () => {
           updateMap(s.individualBalances, op.fromIndividualId, -absAmt * sign);
           updateMap(s.individualBalances, op.toIndividualId, absAmt * sign);
       } else {
-          if (_isRetailWriteOff(op)) return; // Списания не влияют на балансы
+          if (_isRetailWriteOff(op)) return; 
 
           const isIncome = op.type === 'income';
           const signedAmt = (isIncome ? absAmt : -absAmt);
@@ -547,7 +544,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return mapped;
   });
 
-  // 🟢 Категории (Расчет ДЕЛЬТЫ для виджета прогноза)
   const futureCategoryBreakdowns = computed(() => {
     const map = {}; 
     for (const op of futureOps.value) {
@@ -570,7 +566,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return categories.value.map(c => ({ ...c, balance: (breakdown[`cat_${c._id}`]?.total || 0) }));
   });
   
-  // 🟢 Геттеры для Дельты (Изменения) в будущем для Сущностей
   const _calculateFutureEntityChange = (entityIdField) => {
       const futureMap = {}; 
       for (const op of futureOps.value) {
@@ -723,33 +718,54 @@ export const useMainStore = defineStore('mainStore', () => {
     projection.value = { mode, totalDays: computeTotalDaysForMode(mode, base), rangeStartDate: startDate, rangeEndDate: endDate, futureIncomeSum, futureExpenseSum };
   }
 
+  // 🟢 ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ ЗАГРУЗКИ (Chunked Loading + Mutation)
   async function fetchOperationsRange(startDate, endDate) {
     try {
-      const promises = []; const dateKeysToFetch = [];
+      const dateKeysToFetch = [];
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateKey = _getDateKey(d);
         if (!displayCache.value[dateKey]) {
           dateKeysToFetch.push(dateKey);
-          promises.push(axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`));
         }
       }
-      if (promises.length === 0) return;
-      const responses = await Promise.all(promises);
-      const tempCache = {};
-      for (let i = 0; i < responses.length; i++) {
-        const dateKey = dateKeysToFetch[i];
-        const raw = Array.isArray(responses[i].data) ? responses[i].data.slice() : [];
-        const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-        tempCache[dateKey] = processedOps;
+      
+      if (dateKeysToFetch.length === 0) return;
+
+      const CHUNK_SIZE = 10;
+      for (let i = 0; i < dateKeysToFetch.length; i += CHUNK_SIZE) {
+          const chunk = dateKeysToFetch.slice(i, i + CHUNK_SIZE);
+          
+          const promises = chunk.map(dateKey => 
+              axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`)
+                   .then(res => ({ dateKey, data: res.data }))
+                   .catch(() => ({ dateKey, data: [] }))
+          );
+
+          const results = await Promise.all(promises);
+          
+          // 🟢 ПЕРФОРМАНС: Мутация объекта вместо спреда
+          for (const { dateKey, data } of results) {
+              const raw = Array.isArray(data) ? data.slice() : [];
+              const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey, date: op.date || _parseDateKey(dateKey) }));
+              
+              // Записываем сразу в state (Pinia реактивна к мутациям)
+              displayCache.value[dateKey] = processedOps;
+              calculationCache.value[dateKey] = processedOps;
+          }
+          
+          // 🟢 Даем браузеру передохнуть (10мс)
+          await new Promise(r => setTimeout(r, 10));
       }
-      displayCache.value = { ...displayCache.value, ...tempCache };
-      calculationCache.value = { ...calculationCache.value, ...tempCache }; 
-    } catch (error) { if (error.response && error.response.status === 401) user.value = null; }
+
+    } catch (error) { 
+        if (error.response && error.response.status === 401) user.value = null; 
+    }
   }
 
   const _syncCaches = (key, ops) => {
-      displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops];
-      displayCache.value = { ...displayCache.value }; calculationCache.value = { ...calculationCache.value };
+      // 🟢 ПЕРФОРМАНС: Прямое присваивание
+      displayCache.value[key] = [...ops]; 
+      calculationCache.value[key] = [...ops];
   };
 
   async function updateFutureProjectionWithData(mode, today = new Date()) {
@@ -762,7 +778,15 @@ export const useMainStore = defineStore('mainStore', () => {
   function updateFutureProjectionByMode(mode, today = new Date()){
     const base = new Date(today); base.setHours(0,0,0,0);
     const info = getViewModeInfo(mode);
-    updateFutureProjection({ mode: mode, totalDays: info.total, today: base });
+    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
+    projection.value = { 
+        mode: mode, 
+        totalDays: info.total, 
+        rangeStartDate: startDate,
+        rangeEndDate: endDate,
+        futureIncomeSum: 0, 
+        futureExpenseSum: 0 
+    };
   }
   function setProjectionRange(startDate, endDate){
     const t0 = new Date(); t0.setHours(0,0,0,0);
@@ -818,7 +842,9 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
+      // 🟢 ПЕРФОРМАНС: Обновляем только ключ
       displayCache.value[dateKey] = processedOps;
+      calculationCache.value[dateKey] = processedOps;
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
@@ -931,7 +957,6 @@ export const useMainStore = defineStore('mainStore', () => {
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       // 🟢 ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ (ПЕРЕНЕСЕНО ДО ЗАПРОСА)
        const now = new Date();
        const oldDate = _parseDateKey(oldDateKey);
        const newDate = _parseDateKey(newDateKey);
@@ -948,7 +973,6 @@ export const useMainStore = defineStore('mainStore', () => {
            }
        }
        
-       // Обновляем прогноз немедленно, чтобы futureOps пересчитался
        updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
 
        const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date };
@@ -962,14 +986,13 @@ export const useMainStore = defineStore('mainStore', () => {
        await Promise.all(promises)
             .then(() => {
                 if (needsSnapshotUpdate) {
-                    // Фоновая синхронизация для гарантии консистентности
                     fetchSnapshot().catch(e => console.error("Background snapshot sync failed", e));
                 }
             })
             .catch(() => { 
                 refreshDay(oldDateKey); 
                 refreshDay(newDateKey); 
-                fetchSnapshot(); // Revert snapshot on error
+                fetchSnapshot();
             });
     }
   }

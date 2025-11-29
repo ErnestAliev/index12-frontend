@@ -5,7 +5,6 @@ import { useMainStore } from '@/stores/mainStore';
 const emit = defineEmits(['action', 'open-graph']);
 const mainStore = useMainStore();
 
-// Список режимов (идентичен десктопному NavigationPanel)
 const viewModes = [
   { key: '12d', num: '12', unit: 'ДНЕЙ' },
   { key: '1m',  num: '1',  unit: 'МЕСЯЦ' },
@@ -14,19 +13,15 @@ const viewModes = [
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
 
-// Текущий режим из стора
 const viewModeKey = computed(() => mainStore.projection?.mode || '12d');
 
-// Индекс текущего режима
 const currentViewIndex = computed(() => {
     const idx = viewModes.findIndex(v => v.key === viewModeKey.value);
     return idx !== -1 ? idx : 0;
 });
 
-// Объект текущего режима для отображения
 const currentDisplay = computed(() => viewModes[currentViewIndex.value]);
 
-// Хелпер для получения текущей опорной даты (сегодня)
 const getCurrentDate = () => {
     const year = new Date().getFullYear();
     const currentDay = mainStore.todayDayOfYear || 1;
@@ -36,32 +31,29 @@ const getCurrentDate = () => {
 };
 
 // 🟢 ЛОГИКА ДЕСКТОПА: ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
-// direction: -1 (Влево/Меньше) или 1 (Вправо/Больше)
 const switchViewMode = async (direction) => {
     let nextIndex = currentViewIndex.value + direction;
     
-    // Цикличное переключение (как карусель)
     if (nextIndex >= viewModes.length) nextIndex = 0;
     if (nextIndex < 0) nextIndex = viewModes.length - 1;
     
     const newMode = viewModes[nextIndex].key;
     const currentDate = getCurrentDate();
 
-    // 1. Обновляем проекцию в сторе (это пересчитает даты rangeStartDate/EndDate)
+    // 1. Обновляем проекцию мгновенно
     mainStore.updateFutureProjectionByMode(newMode, currentDate);
     
-    // 2. Загружаем данные для нового периода
-    await mainStore.loadCalculationData(newMode, currentDate);
+    // 2. Запускаем фоновую загрузку (без await)
+    // Интерфейс не блокируется, данные подгружаются чанками
+    mainStore.loadCalculationData(newMode, currentDate);
 };
 
 const openGraph = () => emit('open-graph');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
 onMounted(async () => {
-    // Инициализация при старте, если режим еще не задан в сторе
     if (!mainStore.projection?.mode) {
         const today = new Date();
-        // Вычисляем день года
         const start = new Date(today.getFullYear(), 0, 0);
         const diff = (today - start) + ((start.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
         const oneDay = 1000 * 60 * 60 * 24;
@@ -69,7 +61,7 @@ onMounted(async () => {
         
         mainStore.setToday(todayDay);
         mainStore.updateFutureProjectionByMode('12d', today);
-        await mainStore.loadCalculationData('12d', today);
+        mainStore.loadCalculationData('12d', today);
     }
 });
 </script>
@@ -84,18 +76,15 @@ onMounted(async () => {
       
       <!-- Центр: Переключатель режимов -->
       <div class="nav-center">
-        <!-- Стрелка Влево: Предыдущий режим (например, с 1мес на 12д) -->
         <button class="arrow-btn" @click="switchViewMode(-1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
-        <!-- Текст текущего режима -->
         <div class="period-label" @click="switchViewMode(1)">
           <span class="days-num">{{ currentDisplay.num }}</span>
           <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
         </div>
         
-        <!-- Стрелка Вправо: Следующий режим (например, с 12д на 1мес) -->
         <button class="arrow-btn" @click="switchViewMode(1)">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>

@@ -19,7 +19,7 @@ import TransferPopup from '@/components/TransferPopup.vue';
 import WithdrawalPopup from '@/components/WithdrawalPopup.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
 import RefundPopup from '@/components/RefundPopup.vue';
-import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue'; // 🟢 1. ИМПОРТ MOBILE MODAL
+import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 
 const mainStore = useMainStore();
 const timelineRef = ref(null);
@@ -32,7 +32,6 @@ const isDataLoaded = ref(false);
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
-// 🟢 БЛОКИРОВКА СКРОЛЛА ПРИ ОТКРЫТИИ ПОЛНОЭКРАННОГО ВИДЖЕТА
 watch(isWidgetFullscreen, (isOpen) => {
     if (isOpen) {
         document.body.style.overflow = 'hidden';
@@ -54,7 +53,7 @@ const activeWidgetTitle = computed(() => {
   return w ? w.name : 'Виджет';
 });
 
-// --- Filter Logic (Teleported) ---
+// --- Filter Logic ---
 const isFilterOpen = ref(false);
 const filterBtnRef = ref(null); 
 const filterPos = ref({ top: '0px', right: '16px' }); 
@@ -111,32 +110,22 @@ const activeWidgetItems = computed(() => {
   
   let items = [];
   
-  if (k === 'accounts') {
-      items = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
-  } 
-  else if (k === 'companies') {
-      items = mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false);
-  } 
+  if (k === 'accounts') items = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
+  else if (k === 'companies') items = mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false);
   else if (k === 'contractors') {
       items = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
       const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
       items = items.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
   }
-  else if (k === 'projects') {
-      items = mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true);
-  }
-  else if (k === 'individuals') {
-      items = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
-  }
+  else if (k === 'projects') items = mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true);
+  else if (k === 'individuals') items = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
   else if (k === 'categories') {
       items = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryChanges, true);
       const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
       items = items.filter(c => visibleIds.has(c._id));
   }
   else if (['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k)) {
-      let listCurr = [];
-      let listFut = [];
-      
+      let listCurr = [], listFut = [];
       if (k === 'incomeList') { listCurr = mainStore.currentIncomes; listFut = mainStore.futureIncomes; }
       else if (k === 'expenseList') { listCurr = mainStore.currentExpenses; listFut = mainStore.futureExpenses; }
       else if (k === 'withdrawalList') { listCurr = mainStore.currentWithdrawals; listFut = mainStore.futureWithdrawals; }
@@ -144,7 +133,6 @@ const activeWidgetItems = computed(() => {
       
       const sumCurr = (listCurr || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
       const sumFut = (listFut || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      
       items = [{ _id: 'total', name: 'Всего', balance: sumCurr, futureBalance: sumCurr + sumFut }];
   }
 
@@ -162,10 +150,7 @@ const activeWidgetItems = computed(() => {
   return filtered;
 });
 
-const handleWidgetBack = () => { 
-    activeWidgetKey.value = null; 
-    isFilterOpen.value = false; 
-};
+const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; };
 const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 
 const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
@@ -177,6 +162,7 @@ const formatDelta = (val) => {
 };
 const isExpense = (val) => Number(val) < 0;
 
+// Popup States
 const isEntityPopupVisible = ref(false);
 const isListEditorVisible = ref(false);
 const popupTitle = ref('');
@@ -196,12 +182,11 @@ const isRefundPopupVisible = ref(false);
 const operationToEdit = ref(null);
 const selectedDate = ref(new Date());
 const selectedCellIndex = ref(0);
+
 const handleAction = (type) => { console.log('Action:', type); };
-const handleOpClick = (op) => {};
-const handleOpAdd = () => {};
 let isSyncing = false;
 const onTimelineScroll = (event) => { if (isSyncing) return; isSyncing = true; if (chartRef.value) chartRef.value.setScroll(event.target.scrollLeft); requestAnimationFrame(() => isSyncing = false); };
-const onChartScroll = (left) => { if (isSyncing) return; isSyncing = true; const el = timelineRef.value?.$el.querySelector('.timeline-grid'); if (el) el.scrollLeft = left; requestAnimationFrame(() => isSyncing = false); };
+const onChartScroll = (left) => { if (isSyncing) return; isSyncing = true; const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); if (el) el.scrollLeft = left; requestAnimationFrame(() => isSyncing = false); };
 
 const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
@@ -219,13 +204,30 @@ onMounted(async () => {
   const todayDay = getDayOfYear(today);
   mainStore.setToday(todayDay);
 
-  const currentMode = mainStore.projection?.mode || '12d';
-  await mainStore.loadCalculationData(currentMode, today);
-  
-  isDataLoaded.value = true;
+  // 🟢 ИСПРАВЛЕНИЕ ЗАГРУЗКИ (Ошибка 2)
+  // 1. Принудительно и мгновенно загружаем '12d', чтобы UI появился быстро
+  await mainStore.loadCalculationData('12d', today);
+  isDataLoaded.value = true; // Показываем контент
+
+  // 2. Проверяем сохраненный режим в LocalStorage
+  const savedProj = localStorage.getItem('projection');
+  if (savedProj) {
+      try {
+          const parsed = JSON.parse(savedProj);
+          // Если сохраненный режим НЕ 12d (например '1y'), загружаем его в фоне
+          if (parsed.mode && parsed.mode !== '12d') {
+              console.log(`[MobileHome] Background loading saved mode: ${parsed.mode}`);
+              // Небольшая задержка, чтобы UI успел отрисоваться
+              setTimeout(async () => {
+                  await mainStore.updateFutureProjectionByMode(parsed.mode, today);
+                  await mainStore.loadCalculationData(parsed.mode, today);
+              }, 300);
+          }
+      } catch (e) { console.error("Error parsing saved projection", e); }
+  }
 
   nextTick(() => {
-      const el = timelineRef.value?.$el.querySelector('.timeline-grid');
+      const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
       if (el) { 
           el.addEventListener('scroll', onTimelineScroll); 
           const w = window.innerWidth * 0.25; 
@@ -290,11 +292,9 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
             <div v-else class="fs-list">
                 <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item">
                     <span class="fs-name">{{ item.name }}</span>
-                    
                     <span v-if="!showFutureBalance" class="fs-val" :class="{ 'red-text': isExpense(item.balance) }">
                         {{ formatVal(item.balance) }}
                     </span>
-
                     <div v-else class="fs-val-forecast">
                         <span class="fs-curr" :class="{ 'red-text': isExpense(item.balance) }">
                             {{ formatVal(item.balance) }}
@@ -324,9 +324,10 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
              v-show="mainStore.isHeaderExpanded" 
              class="section-widgets" 
              @widget-click="onWidgetClick" 
-             @widget-add="(w) => { /* TODO: Add logic */ }"
-             @widget-edit="(w) => { /* TODO: Edit logic */ }"
+             @widget-add="(w) => { /* Add logic */ }"
+             @widget-edit="(w) => { /* Edit logic */ }"
           />
+          <!-- 🟢 MobileTimeline теперь поддерживает виртуализацию -->
           <div class="section-timeline">
             <MobileTimeline v-if="isDataLoaded" ref="timelineRef" />
           </div>
@@ -342,10 +343,8 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
         </div>
     </template>
 
-    <!-- 🟢 2. ИСПОЛЬЗУЕМ MobileGraphModal -->
     <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     
-    <!-- (Other modals) -->
     <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" @close="isEntityPopupVisible = false" @save="(val) => popupSaveAction(val)" />
     <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="(items) => { /* save logic */ }" />
     <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" @close="isOperationListEditorVisible = false" />
@@ -391,18 +390,14 @@ onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 
-/* 🟢 СТИЛИ ДЛЯ СКРОЛЛА */
 .fs-body { 
     flex-grow: 1; 
     overflow-y: auto; 
     padding: 16px; 
-    /* Скрываем скроллбар */
     scrollbar-width: none; 
     -ms-overflow-style: none;
 }
-.fs-body::-webkit-scrollbar { 
-    display: none; 
-}
+.fs-body::-webkit-scrollbar { display: none; }
 
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
 .fs-item {
