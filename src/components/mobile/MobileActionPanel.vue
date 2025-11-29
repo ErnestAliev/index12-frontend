@@ -22,50 +22,13 @@ const currentViewIndex = computed(() => {
 
 const currentDisplay = computed(() => viewModes[currentViewIndex.value]);
 
-// 🟢 SMART DATE CALCULATION
-// Определяет правильный год для сохраненного дня года (DOY)
-// на основе текущего отображаемого диапазона.
-const getCurrentDate = () => {
-    const currentDay = mainStore.todayDayOfYear || 1;
-    
-    // Берем "опорный" год из текущей проекции (где пользователь находится сейчас)
-    // Если проекции нет, берем текущий календарный год.
-    let refYear = new Date().getFullYear();
-    if (mainStore.projection && mainStore.projection.rangeStartDate) {
-        refYear = new Date(mainStore.projection.rangeStartDate).getFullYear();
-    }
-
-    // Создаем варианты дат для этого DOY в разных годах (текущий, пред, след)
-    const candidates = [
-        createDateFromDOY(refYear, currentDay),
-        createDateFromDOY(refYear + 1, currentDay),
-        createDateFromDOY(refYear - 1, currentDay)
-    ];
-
-    // Ищем тот вариант, который ближе всего к центру текущего диапазона
-    // Это решает проблему "прыжка в 2025", когда мы уже в 2026.
-    let rangeCenter = new Date();
-    if (mainStore.projection && mainStore.projection.rangeStartDate && mainStore.projection.rangeEndDate) {
-        const start = new Date(mainStore.projection.rangeStartDate).getTime();
-        const end = new Date(mainStore.projection.rangeEndDate).getTime();
-        rangeCenter = new Date((start + end) / 2);
-    }
-
-    // Находим кандидата с минимальной разницей во времени
-    const closest = candidates.reduce((prev, curr) => {
-        return (Math.abs(curr - rangeCenter) < Math.abs(prev - rangeCenter) ? curr : prev);
-    });
-
-    return closest;
+const getDayOfYear = (date) => {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
+  return Math.floor(diff / 86400000);
 };
 
-// Хелпер: создать дату из года и дня года
-const createDateFromDOY = (year, dayOfYear) => {
-    const date = new Date(year, 0); // 1 января
-    date.setDate(dayOfYear);
-    return date;
-};
-
+// 🟢 Переключение режима
 const switchViewMode = async (direction) => {
     let nextIndex = currentViewIndex.value + direction;
     
@@ -74,14 +37,19 @@ const switchViewMode = async (direction) => {
     
     const newMode = viewModes[nextIndex].key;
     
-    // 🟢 Используем умный расчет даты
-    const currentDate = getCurrentDate();
+    // Берем текущую дату из стора (где сейчас стоит скролл)
+    // Если её нет, берем "сегодня"
+    const targetDate = mainStore.currentViewDate ? new Date(mainStore.currentViewDate) : new Date();
 
-    // 1. Обновляем проекцию мгновенно
-    mainStore.updateFutureProjectionByMode(newMode, currentDate);
+    // 1. Устанавливаем новый ЯКОРЬ (todayDayOfYear)
+    // Это единственный момент, когда диапазон может сдвинуться
+    mainStore.setToday(getDayOfYear(targetDate));
+
+    // 2. Обновляем проекцию
+    mainStore.updateFutureProjectionByMode(newMode, targetDate);
     
-    // 2. Запускаем фоновую загрузку
-    mainStore.loadCalculationData(newMode, currentDate);
+    // 3. Грузим данные
+    mainStore.loadCalculationData(newMode, targetDate);
 };
 
 const openGraph = () => emit('open-graph');
@@ -90,12 +58,7 @@ const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 onMounted(async () => {
     if (!mainStore.projection?.mode) {
         const today = new Date();
-        const start = new Date(today.getFullYear(), 0, 0);
-        const diff = (today - start) + ((start.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
-        const oneDay = 1000 * 60 * 60 * 24;
-        const todayDay = Math.floor(diff / oneDay);
-        
-        mainStore.setToday(todayDay);
+        mainStore.setToday(getDayOfYear(today));
         mainStore.updateFutureProjectionByMode('12d', today);
         mainStore.loadCalculationData('12d', today);
     }

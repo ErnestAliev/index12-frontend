@@ -62,16 +62,18 @@ const handleWidgetClick = (key) => {
 .mobile-widgets-wrapper {
   background-color: var(--color-background, #1a1a1a);
   border-bottom: 1px solid var(--color-border, #444);
-  display: flex;
-  flex-direction: column;
+  
+  /* 🟢 FIX: Safari Scroll */
+  display: block; /* Убираем flex, чтобы избежать багов скролла в Safari */
   flex-shrink: 0;
   transition: all 0.3s ease;
   
-  /* 🟢 FIX: Разрешаем скролл (было overflow: hidden) */
+  /* Настройки скролла */
   overflow-y: auto; 
-  -webkit-overflow-scrolling: touch; /* Для плавности на iOS */
+  -webkit-overflow-scrolling: touch; /* Инерция для iOS */
+  touch-action: pan-y; /* Явное указание браузеру на вертикальный скролл */
   
-  /* Скрываем скроллбар, но оставляем функционал */
+  /* Скрываем скроллбар */
   scrollbar-width: none; 
 }
 .mobile-widgets-wrapper::-webkit-scrollbar { display: none; }
@@ -82,6 +84,8 @@ const handleWidgetClick = (key) => {
   gap: 1px;
   background-color: var(--color-border, #444);
   padding: 1px 0;
+  /* Гарантируем, что контент внутри растягивается корректно */
+  min-height: min-content; 
 }
 
 .grid-item {

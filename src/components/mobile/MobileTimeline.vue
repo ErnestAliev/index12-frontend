@@ -8,34 +8,32 @@ const mainStore = useMainStore();
 
 const allDays = ref([]);
 const visibleDays = ref([]);
-
 const scrollContainer = ref(null);
 const windowWidth = ref(window.innerWidth);
 
-const currentCenterDate = ref(new Date());
-const ignoreScrollEvents = ref(false);
-
+// Константы
 const COL_WIDTH_VW = 25; 
 const BUFFER_COLS = 4;
 
-const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
   const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
+// 1. Генерация дней (Строго по проекции)
 const generateAllDays = () => {
   const proj = mainStore.projection;
   if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
 
   const start = new Date(proj.rangeStartDate);
-  const end = new Date(proj.rangeEndDate);
+  // const end = new Date(proj.rangeEndDate); // Не используется, берем totalDays из diff
   
-  const diffTime = end.getTime() - start.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-  const totalDays = diffDays + 1;
+  // Рассчитываем точное количество дней
+  const diffTime = new Date(proj.rangeEndDate).getTime() - start.getTime();
+  const totalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
   
   const days = [];
   const todayReal = new Date();
@@ -57,18 +55,22 @@ const generateAllDays = () => {
   updateVisibleDays();
 };
 
+// 2. Виртуализация (Ограничена массивом allDays)
+const currentPaddingLeft = ref(0);
+
 const updateVisibleDays = () => {
   if (!scrollContainer.value) return;
   
   const scrollLeft = scrollContainer.value.scrollLeft;
   const containerW = scrollContainer.value.clientWidth || windowWidth.value;
-  
   const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
+  
   if (!colWidthPx) return;
 
   const startIndex = Math.floor(scrollLeft / colWidthPx);
   const endIndex = Math.ceil((scrollLeft + containerW) / colWidthPx);
 
+  // Жесткое ограничение индексов: не выходить за пределы массива
   const renderStart = Math.max(0, startIndex - BUFFER_COLS);
   const renderEnd = Math.min(allDays.value.length, endIndex + BUFFER_COLS);
 
@@ -76,120 +78,79 @@ const updateVisibleDays = () => {
   currentPaddingLeft.value = renderStart * COL_WIDTH_VW;
 };
 
-const fetchVisibleData = () => {
-    visibleDays.value.forEach(day => {
-        mainStore.fetchOperations(day.dateKey);
-    });
+// 3. Отслеживание позиции (Просто пишем в стор, где мы)
+const onScroll = () => {
+  window.requestAnimationFrame(() => {
+      updateVisibleDays();
+      updateStorePosition();
+  });
 };
 
-const currentPaddingLeft = ref(0);
-
-const debounce = (fn, delay) => {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
+const updateStorePosition = () => {
+   if (!scrollContainer.value || allDays.value.length === 0) return;
+   
+   const el = scrollContainer.value;
+   const containerW = el.clientWidth;
+   const centerPx = el.scrollLeft + (containerW / 2);
+   const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
+   
+   const centerIndex = Math.floor(centerPx / colWidthPx);
+   
+   if (centerIndex >= 0 && centerIndex < allDays.value.length) {
+       const day = allDays.value[centerIndex];
+       if (day) {
+           // Пишем только текущую дату просмотра. 
+           // Это НЕ сдвигает график, так как setToday не вызывается.
+           mainStore.setCurrentViewDate(day.date);
+       }
+   }
 };
 
-const updateCenterDate = debounce(() => {
+// 4. Центрирование (Вызывается только при загрузке или смене режима)
+const scrollToDate = (targetDate) => {
     if (!scrollContainer.value || allDays.value.length === 0) return;
     
+    // Ищем индекс дня
+    let idx = allDays.value.findIndex(d => sameDay(d.date, targetDate));
+    
+    // Если не нашли (сменился год или диапазон), пытаемся найти "Сегодня" или середину
+    if (idx === -1) idx = allDays.value.findIndex(d => d.isToday);
+    if (idx === -1) idx = Math.floor(allDays.value.length / 2);
+    
     const el = scrollContainer.value;
-    const containerW = el.clientWidth;
-    const centerPx = el.scrollLeft + (containerW / 2);
-    const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
+    const colWidthPx = (el.clientWidth / 100) * COL_WIDTH_VW;
     
-    if (!colWidthPx) return;
-
-    const centerIndex = Math.floor(centerPx / colWidthPx);
+    // Центрируем: (позиция элемента) - (половина экрана) + (половина элемента)
+    let scrollPos = (idx * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
     
-    if (centerIndex >= 0 && centerIndex < allDays.value.length) {
-        const centerDay = allDays.value[centerIndex];
-        if (centerDay) {
-            currentCenterDate.value = new Date(centerDay.date);
-            mainStore.setCurrentViewDate(centerDay.date);
-        }
-    }
-}, 150);
-
-const onScroll = () => {
-  if (ignoreScrollEvents.value) return; 
-  window.requestAnimationFrame(updateVisibleDays);
-  updateCenterDate();
+    // Мгновенный скролл без анимации для жесткой фиксации при смене режима
+    el.scrollLeft = Math.max(0, scrollPos);
+    updateVisibleDays();
 };
 
-const scrollToCenter = () => {
-    if (scrollContainer.value && allDays.value.length > 0) {
-        const el = scrollContainer.value;
-        ignoreScrollEvents.value = true; 
-
-        const colWidthPx = (el.clientWidth / 100) * COL_WIDTH_VW;
-        
-        let targetIndex = allDays.value.findIndex(d => sameDay(d.date, currentCenterDate.value));
-        
-        if (targetIndex === -1) {
-             targetIndex = allDays.value.findIndex(d => d.dayOfYear === mainStore.todayDayOfYear);
-        }
-        if (targetIndex === -1) {
-            targetIndex = allDays.value.findIndex(d => d.isToday);
-        }
-        if (targetIndex === -1) {
-            targetIndex = Math.floor(allDays.value.length / 2);
-        }
-        
-        let targetScroll = 0;
-        if (targetIndex !== -1) {
-            targetScroll = (targetIndex * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
-        }
-        
-        // 🟢 ИСПОЛЬЗУЕМ JS ДЛЯ ПЛАВНОСТИ (ТОЛЬКО ЗДЕСЬ)
-        // Вместо CSS свойства, которое ломает синхронизацию
-        el.scrollTo({
-            left: targetScroll > 0 ? targetScroll : 0,
-            behavior: 'smooth'
-        });
-        
-        updateVisibleDays();
-
-        // Разблокируем чуть позже, когда анимация закончится (примерно)
-        setTimeout(() => {
-            ignoreScrollEvents.value = false;
-        }, 500);
-    }
-};
-
+// Реакция на изменение данных (Переключение режима)
 watch(() => mainStore.projection, async () => {
   generateAllDays();
   await nextTick();
-  requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-          scrollToCenter();
-      });
-  });
+  // При смене режима восстанавливаем позицию на основе того, куда смотрел юзер
+  if (mainStore.currentViewDate) {
+      scrollToDate(new Date(mainStore.currentViewDate));
+  } else {
+      scrollToDate(new Date());
+  }
 }, { deep: true });
 
+// Подгрузка данных при скролле (Только данные, не структура)
 watch(visibleDays, () => {
-    fetchVisibleData();
+    visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey));
 }, { deep: true });
 
 onMounted(() => {
   windowWidth.value = window.innerWidth;
-  
-  if (mainStore.currentViewDate) {
-      currentCenterDate.value = new Date(mainStore.currentViewDate);
-  } else if (mainStore.todayDayOfYear) {
-      const projStart = mainStore.projection?.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : new Date();
-      const year = projStart.getFullYear();
-      const d = new Date(year, 0); 
-      d.setDate(mainStore.todayDayOfYear);
-      currentCenterDate.value = d;
-  } else {
-      currentCenterDate.value = new Date();
-  }
-
   generateAllDays();
-  setTimeout(scrollToCenter, 100);
+  // При первой загрузке скроллим к "Сегодня" или сохраненной дате
+  const initialDate = mainStore.currentViewDate ? new Date(mainStore.currentViewDate) : new Date();
+  setTimeout(() => scrollToDate(initialDate), 50);
 });
 
 const gridStyle = computed(() => ({
@@ -203,6 +164,7 @@ const gridStyle = computed(() => ({
 <template>
   <div class="timeline-container">
     <div class="timeline-scroll-area" ref="scrollContainer" @scroll="onScroll">
+      <!-- Жесткая ширина контейнера = кол-во дней * ширина колонки -->
       <div class="timeline-wrapper" :style="{ width: `${allDays.length * COL_WIDTH_VW}vw` }">
         <div class="timeline-grid" :style="gridStyle">
           <MobileDayColumn 
@@ -233,13 +195,8 @@ const gridStyle = computed(() => ({
   height: 100%;
   overflow-x: auto; 
   overflow-y: hidden;
-  
-  /* 🟢 УБРАНО: scroll-behavior: smooth; */
-  /* Это позволяет JS управлять позицией мгновенно при синхронизации */
-  
+  -webkit-overflow-scrolling: touch; /* Инерция iOS */
   scrollbar-width: none; 
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch; 
 }
 .timeline-scroll-area::-webkit-scrollbar { display: none; }
 
