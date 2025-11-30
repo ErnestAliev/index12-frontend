@@ -8,7 +8,7 @@ import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
-import HeaderCreditCard from './HeaderCreditCard.vue'; // 🟢 Импорт виджета кредитов
+import HeaderCreditCard from './HeaderCreditCard.vue'; 
 
 import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
@@ -17,23 +17,13 @@ import TransferListEditor from './TransferListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
-import CreditListEditor from './CreditListEditor.vue'; // 🟢 Импорт редактора кредитов
-import CreditWizardPopup from './CreditWizardPopup.vue'; // 🟢 Импорт Визарда для прямого вызова
+import CreditListEditor from './CreditListEditor.vue'; 
+import CreditWizardPopup from './CreditWizardPopup.vue'; 
 import PrepaymentModal from './PrepaymentModal.vue';
 import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue';
-
-/**
- * * --- МЕТКА ВЕРСИИ: v50.4 - CREDIT SAVE LOGIC FIX ---
- * * ВЕРСИЯ: 50.4 - Исправление логики сохранения Обязательства
- * * ДАТА: 2025-11-30
- * * ЧТО ИЗМЕНЕНО:
- * 1. handleWizardSave: Удалено создание операции Income.
- * 2. handleWizardSave: Добавлен вызов mainStore.addCredit.
- * 3. handleWizardSave: График создается с категорией "Погашение займов".
- */
-
-console.log('--- TheHeader.vue v50.4 (Credit Save Fix) ЗАГРУЖЕН ---');
+import PrepaymentListEditor from './PrepaymentListEditor.vue';
+import WithdrawalListEditor from './WithdrawalListEditor.vue'; // 🟢 Импорт
 
 const mainStore = useMainStore();
 
@@ -103,8 +93,10 @@ const operationListEditorFilterMode = ref('default');
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
 const isWithdrawalPopupVisible = ref(false);
-const isCreditEditorVisible = ref(false); // 🟢 Редактор (список)
-const isCreditWizardVisible = ref(false); // 🟢 Визард (создание)
+const isCreditEditorVisible = ref(false); 
+const isCreditWizardVisible = ref(false); 
+const isPrepaymentEditorVisible = ref(false);
+const isWithdrawalListEditorVisible = ref(false); // 🟢
 const isEntityPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
@@ -175,7 +167,6 @@ const mergedIndividualBalances = computed(() => {
     }));
 });
 
-// Слияние для Кредитов
 const mergedCreditBalances = computed(() => {
     return mainStore.futureCreditBalances.sort((a, b) => (b.balance || 0) - (a.balance || 0));
 });
@@ -239,7 +230,12 @@ const onCategoryEdit = (widgetKey) => {
     
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationListEditorTitle.value = 'Редактировать расходы'; operationListEditorType.value = 'expense'; isOperationListEditorVisible.value = true; return; }
-    if (widgetKey === 'withdrawalList') { operationListEditorTitle.value = 'Редактировать выводы'; operationListEditorType.value = 'withdrawal'; isOperationListEditorVisible.value = true; return; }
+    
+    // 🟢 Выводы: Открываем новый редактор
+    if (widgetKey === 'withdrawalList') { 
+        isWithdrawalListEditorVisible.value = true; 
+        return; 
+    }
     
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
@@ -249,67 +245,36 @@ const onCategoryEdit = (widgetKey) => {
         else openRenamePopup(`Категория: ${category.name}`, category, null, true, 'categories');
     }
 };
-const onLiabilitiesEdit = () => { operationListEditorTitle.value = 'Редактировать операции (Предоплаты)'; operationListEditorType.value = 'income'; operationListEditorFilterMode.value = 'prepayment_only'; isOperationListEditorVisible.value = true; };
 
-// 🟢 Хендлеры для Кредитов
-const onCreditsEdit = () => {
-    // Карандаш: Открывает список
-    isCreditEditorVisible.value = true;
-};
-const onCreditsAdd = () => {
-    // Плюс: Открывает визард создания
-    isCreditWizardVisible.value = true;
+const onLiabilitiesEdit = () => { 
+    isPrepaymentEditorVisible.value = true;
 };
 
-// 🟢 ИСПРАВЛЕНО: Сохранение из Визарда (Сценарий: "Новое обязательство")
+// Кредиты
+const onCreditsEdit = () => { isCreditEditorVisible.value = true; };
+const onCreditsAdd = () => { isCreditWizardVisible.value = true; };
+
 const handleWizardSave = async (payload) => {
     isCreditWizardVisible.value = false;
     try {
-        // 1. Обеспечиваем наличие системных категорий (нам нужна "Погашение займов")
         const systemEntities = await mainStore.ensureSystemEntities();
         const repaymentCatId = systemEntities.repaymentCat._id;
-
-        // 2. Создаем сущность Кредита в справочнике
-        // Это зафиксирует долг в виджете "Мои кредиты"
         const creditPayload = {
-            name: payload.name,
-            totalDebt: payload.totalDebt,
-            monthlyPayment: payload.monthlyPayment,
-            paymentDay: payload.paymentDay,
-            contractorId: payload.contractorId,
-            individualId: payload.individualId
+            name: payload.name, totalDebt: payload.totalDebt, monthlyPayment: payload.monthlyPayment,
+            paymentDay: payload.paymentDay, contractorId: payload.contractorId, individualId: payload.individualId
         };
         await mainStore.addCredit(creditPayload);
-
-        // 3. Генерируем график погашения (Будущие расходы)
-        // ВАЖНО: Мы НЕ создаем операцию "Доход". 
-        // Это сценарий ввода начальных данных, деньги на счете не меняются.
-        
         const operationsPromises = payload.schedule.map(item => {
             return mainStore.createEvent({
-                date: item.date,
-                amount: -item.amount, // Расход
-                type: 'expense',
-                categoryId: repaymentCatId, // Категория "Погашение займов"
-                contractorId: payload.contractorId, // Привязываем к кредитору
-                individualId: payload.individualId, // Или к физлицу
-                description: `Погашение обязательства: ${payload.name}`,
-                accountId: null // Планируемый расход (пока без счета)
+                date: item.date, amount: -item.amount, type: 'expense', categoryId: repaymentCatId,
+                contractorId: payload.contractorId, individualId: payload.individualId,
+                description: `Погашение обязательства: ${payload.name}`, accountId: null
             });
         });
-
         await Promise.all(operationsPromises);
-        
-        // 4. Обновляем данные интерфейса
         await mainStore.fetchAllEntities();
-        if (mainStore.projection.mode) {
-             await mainStore.loadCalculationData(mainStore.projection.mode, mainStore.currentViewDate);
-        }
-
-    } catch (e) {
-        console.error("Ошибка сохранения обязательства:", e);
-        alert("Не удалось создать обязательство: " + e.message);
-    }
+        if (mainStore.projection.mode) { await mainStore.loadCalculationData(mainStore.projection.mode, mainStore.currentViewDate); }
+    } catch (e) { console.error("Ошибка сохранения обязательства:", e); alert("Не удалось создать обязательство: " + e.message); }
 };
 
 const handleTransferComplete = async (eventData) => { if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey); isTransferPopupVisible.value = false; };
@@ -369,7 +334,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ВИДЖЕТ КРЕДИТОВ -->
         <HeaderCreditCard
           v-else-if="widgetKey === 'credits'"
           title="Мои кредиты"
@@ -480,11 +444,12 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <OperationPopup v-if="isOperationPopupVisible" :type="operationPopupType" :date="new Date()" :cellIndex="0" @close="isOperationPopupVisible = false" @operation-added="handleOperationAdded" />
   <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" @save="handleWithdrawalSaved" />
   
-  <!-- 🟢 РЕДАКТОР КРЕДИТОВ -->
   <CreditListEditor v-if="isCreditEditorVisible" @close="isCreditEditorVisible = false" />
-  
-  <!-- 🟢 ВИЗАРД КРЕДИТОВ (Вызывается по кнопке +) -->
   <CreditWizardPopup v-if="isCreditWizardVisible" @close="isCreditWizardVisible = false" @save="handleWizardSave" />
+  <PrepaymentListEditor v-if="isPrepaymentEditorVisible" @close="isPrepaymentEditorVisible = false" />
+  
+  <!-- 🟢 Новый редактор выводов -->
+  <WithdrawalListEditor v-if="isWithdrawalListEditorVisible" @close="isWithdrawalListEditorVisible = false" />
 </template>
 
 <style scoped>
