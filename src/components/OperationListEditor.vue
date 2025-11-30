@@ -10,13 +10,13 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.3 - OWNER DROPDOWN FIX ---
- * * ВЕРСИЯ: 27.3 - Добавлены физлица в выпадающий список владельцев
- * * ДАТА: 2025-11-28
+ * * --- МЕТКА ВЕРСИИ: v53.0 - PARTIAL CLOSE UI ---
+ * * ВЕРСИЯ: 53.0 - Интерфейс частичного закрытия актов
+ * * ДАТА: 2025-11-30
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (TEMPLATE) В col-owner (фильтр и строка) добавлен <optgroup label="Физлица">.
- * Теперь владельцы-физлица отображаются корректно, а не как пустое поле.
+ * 1. (UI) Добавлено поле ввода суммы в диалог закрытия сделки.
+ * 2. (LOGIC) confirmClosePrepayment передает введенную сумму в стор.
  */
 
 const props = defineProps({
@@ -33,8 +33,13 @@ const activeTab = ref('clients');
 
 const localItems = ref([]);
 const isSaving = ref(false);
+
+// 🟢 Состояния для закрытия сделки
 const showCloseConfirm = ref(false);
 const itemToClose = ref(null);
+const closingAmountInput = ref(''); // Поле ввода суммы закрытия
+const maxClosingAmount = ref(0);
+
 const processingItems = ref(new Set());
 const showRetailPopup = ref(false);
 const showRefundPopup = ref(false); 
@@ -324,21 +329,54 @@ const historySummary = computed(() => retailSummary.value);
 // ACTIONS
 const initiateClosePrepayment = (item) => {
     if (item.isClosed) { alert('Эта операция уже закрыта.'); return; }
+    
     itemToClose.value = item;
+    // Определяем максимальную сумму для закрытия (остаток или полную сумму, если нет данных о сделке)
+    maxClosingAmount.value = item.amount; // Default to prepayment amount
+    if (item.totalDealAmount > 0) {
+        // Если известна общая сумма сделки, логика может быть сложнее, но для старта берем сумму аванса
+        // как базу для акта.
+    }
+    closingAmountInput.value = formatNumber(maxClosingAmount.value);
     showCloseConfirm.value = true;
 };
+
+const onClosingAmountInput = (e) => {
+    const raw = e.target.value.replace(/[^0-9]/g, '');
+    closingAmountInput.value = formatNumber(raw);
+};
+
 const confirmClosePrepayment = async () => {
     if (!itemToClose.value) return;
     const item = itemToClose.value;
+    const amountVal = parseFloat(closingAmountInput.value.replace(/\s/g, ''));
+    
+    if (!amountVal || amountVal <= 0) {
+        alert("Введите сумму акта");
+        return;
+    }
+
     showCloseConfirm.value = false;
     processingItems.value.add(item._id);
+    
     try {
-        await mainStore.closePrepaymentDeal(item.originalOp);
-        item.isClosed = true;
+        // 🟢 Передаем сумму в стор
+        await mainStore.closePrepaymentDeal(item.originalOp, amountVal);
+        
+        // Если сумма закрытия равна или больше номинала, помечаем локально как закрыто для UI
+        // (Реальное состояние обновится после fetchAllEntities)
+        if (amountVal >= Math.abs(item.amount)) {
+            item.isClosed = true;
+        }
+        
         await mainStore.fetchAllEntities();
         loadOperations();
-    } catch (e) { alert('Ошибка закрытия: ' + e.message); } 
-    finally { processingItems.value.delete(item._id); itemToClose.value = null; }
+    } catch (e) { 
+        alert('Ошибка закрытия: ' + e.message); 
+    } finally { 
+        processingItems.value.delete(item._id); 
+        itemToClose.value = null; 
+    }
 };
 
 const handleRetailClosure = async ({ amount, projectIds, date }) => {
@@ -624,7 +662,36 @@ const handleSave = async () => {
     <RetailClosurePopup v-if="showRetailPopup" @close="showRetailPopup = false" @confirm="handleRetailClosure" />
     <RefundPopup v-if="showRefundPopup" :initial-data="{ contractorValue: `ind_${mainStore.retailIndividualId}` }" @close="showRefundPopup = false" @save="handleRefundSave" />
     
-    <ConfirmationPopup v-if="showCloseConfirm" title="Закрытие сделки" message="Закрыть сделку? Будет создан акт выполненных работ." confirmText="Закрыть" @close="showCloseConfirm = false" @confirm="confirmClosePrepayment" />
+    <!-- 🟢 НОВОЕ ОКНО: Закрытие сделки (с вводом суммы) -->
+    <div v-if="showCloseConfirm" class="inner-overlay" @click.self="showCloseConfirm = false">
+      <div class="delete-confirm-box">
+        <h4>Закрытие сделки</h4>
+        <p class="confirm-text">
+          Формирование Акта выполненных работ.<br>
+          На какую сумму подписан акт?
+        </p>
+        
+        <div class="input-wrapper">
+           <input 
+             type="text" 
+             v-model="closingAmountInput" 
+             class="amount-input-large"
+             @input="onClosingAmountInput"
+             placeholder="Сумма"
+           />
+        </div>
+        
+        <p class="hint-text" v-if="itemToClose">
+           Максимально: {{ itemToClose.amountFormatted }} ₸
+        </p>
+
+        <div class="delete-actions">
+           <button class="btn-cancel" @click="showCloseConfirm = false">Отмена</button>
+           <button class="btn-save-confirm" @click="confirmClosePrepayment">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
     <ConfirmationPopup v-if="showDeleteWriteOffConfirm" title="Отмена списания" message="Вы уверены? Это вернет сумму долга перед розницей." confirmText="Удалить" @close="showDeleteWriteOffConfirm = false" @confirm="confirmDeleteWriteOff" />
     
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="showDeleteConfirm = false"><div class="delete-confirm-box"><h4>Удалить операцию?</h4><p class="confirm-text">Вы действительно хотите удалить эту операцию? Это действие необратимо.</p><div class="delete-actions"><button class="btn-delete-confirm" @click="confirmDelete">Да, удалить</button><button class="btn-cancel" @click="showDeleteConfirm = false">Отмена</button></div></div></div>
@@ -751,4 +818,19 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
 .progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
+
+/* 🟢 СТИЛИ ДЛЯ ИНПУТА СУММЫ */
+.input-wrapper { margin-bottom: 10px; }
+.amount-input-large {
+    width: 100%; font-size: 24px; font-weight: 700; padding: 10px;
+    border: 1px solid #ddd; border-radius: 8px; outline: none;
+    text-align: center; color: #ffffff; box-sizing: border-box;
+}
+.amount-input-large:focus { border-color: #10b981; }
+.hint-text { font-size: 13px; color: #888; margin-bottom: 20px; }
+.btn-save-confirm {
+    background: #10b981; color: #fff; border: none; 
+    padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600;
+}
+.btn-save-confirm:hover { background: #059669; }
 </style>

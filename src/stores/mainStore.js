@@ -1,11 +1,11 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v52.0 - CREDIT FORECAST FIX ---
- * * ВЕРСИЯ: 52.0 - Исправление расчета прогноза по кредитам
+ * * --- МЕТКА ВЕРСИИ: v53.0 - INSTANT TOTAL FIX ---
+ * * ВЕРСИЯ: 53.0 - Мгновенное обновление виджетов "Всего"
  * * ДАТА: 2025-11-30
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) futureCreditBalances теперь рассчитывает прогноз
- * (Текущий баланс - Будущие погашения).
+ * 1. (LOGIC) `currentTotalBalance` теперь считается как сумма `currentAccountBalances` (включает локальный ввод).
+ * 2. (LOGIC) Снапшот с сервера теперь считается "чистым" (без нач. балансов), добавление баланса происходит на фронте.
  */
 
 import { defineStore } from 'pinia';
@@ -28,7 +28,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v52.0 (Credit Forecast Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v53.0 (Instant Total Fix) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -353,7 +353,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return result;
   });
 
-  // ... (dailyChartData, etc. omitted for brevity, assumed same) ...
   const dailyChartData = computed(() => {
     const byDateKey = {};
     const prepayIdsSet = prepaymentCategoryIdsSet.value;
@@ -430,7 +429,7 @@ export const useMainStore = defineStore('mainStore', () => {
       console.error('Failed to fetch snapshot', e);
     }
   }
-  // ... (_applyOptimisticSnapshotUpdate omitted) ...
+
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
       const s = snapshot.value;
       const absAmt = Math.abs(op.amount || 0);
@@ -453,7 +452,8 @@ export const useMainStore = defineStore('mainStore', () => {
           const signedAmt = (isIncome ? absAmt : -absAmt);
           const netChange = signedAmt * sign;
           if (op.accountId) {
-              s.totalBalance += netChange;
+              // 🟢 FIX: Больше не обновляем totalBalance, так как он вычисляется локально
+              // s.totalBalance += netChange; 
               updateMap(s.accountBalances, op.accountId, netChange);
           }
           updateMap(s.companyBalances, op.companyId, netChange);
@@ -476,7 +476,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   };
 
-  // ... (liabilities logic omitted) ...
   const liabilitiesWeOwe = computed(() => {
     const prepayIds = getPrepaymentCategoryIds.value;
     const actIds = getActCategoryIds.value;
@@ -654,6 +653,9 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
       ...a, 
+      // 🟢 FIX: Снапшот теперь возвращает ТОЛЬКО операционные изменения.
+      // Мы добавляем initialBalance (который реактивен) здесь.
+      // Это делает обновление мгновенным при редактировании начального баланса.
       balance: (snapshot.value.accountBalances[a._id] || 0) + (a.initialBalance || 0) 
   })));
 
@@ -730,42 +732,25 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
   
-  // 🟢 3. РЕАЛИЗАЦИЯ ПРОГНОЗА КРЕДИТОВ (ОШИБКА 4)
   const futureCreditBalances = computed(() => {
       const repaymentCatId = loanRepaymentCategoryId.value;
       const futureOpsList = futureOps.value; 
-      
-      // База - текущие балансы
       return currentCreditBalances.value.map(credit => {
           let projectedRepayment = 0;
-
-          // Проходим по будущим операциям
           futureOpsList.forEach(op => {
               if (op.type !== 'expense') return;
-              
-              // Проверка категории "Погашение займов"
               const opCatId = op.categoryId?._id || op.categoryId;
               if (String(opCatId) !== String(repaymentCatId)) return;
-
-              // Проверка привязки к этому кредиту
               const opContractorId = op.contractorId?._id || op.contractorId;
               const opIndId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-
               const isContractorMatch = credit.contractorId && opContractorId && String(opContractorId) === String(credit.contractorId._id || credit.contractorId);
               const isIndividualMatch = credit.individualId && opIndId && String(opIndId) === String(credit.individualId._id || credit.individualId);
-              
               if (isContractorMatch || isIndividualMatch) {
                   projectedRepayment += Math.abs(op.amount || 0);
               }
           });
-          
-          // Будущий баланс = Текущий баланс - Запланированные выплаты
           const futureDebt = Math.max(0, credit.balance - projectedRepayment);
-          
-          return {
-              ...credit,
-              futureBalance: futureDebt
-          };
+          return { ...credit, futureBalance: futureDebt };
       });
   });
 
@@ -794,7 +779,13 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  const currentTotalBalance = computed(() => snapshot.value.totalBalance || 0);
+  // 🟢 FIX: Считаем Total локально как сумму счетов. 
+  // Это обеспечивает мгновенную реактивность при изменении initialBalance в списке счетов.
+  const currentTotalBalance = computed(() => {
+      return currentAccountBalances.value.reduce((acc, a) => acc + (a.balance || 0), 0);
+  });
+
+  // 🟢 FIX: Будущий Total также опирается на исправленный currentTotalBalance
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
     for (const op of futureOps.value) {
