@@ -4,15 +4,17 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
+import { knownBanks } from '@/data/knownBanks.js'; 
+import { accountSuggestions } from '@/data/accountSuggestions.js'; 
+import { categorySuggestions } from '@/data/categorySuggestions.js'; // 🟢 Импорт базы категорий
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.5 - CATEGORY FILTER FIX ---
- * * ВЕРСИЯ: 27.5 - Фильтрация нелогичных категорий
- * * ДАТА: 2025-11-30
+ * * --- МЕТКА ВЕРСИИ: v31.0 - CATEGORY AUTOCOMPLETE ---
+ * * ВЕРСИЯ: 31.0 - Автоподстановка названий категорий
+ * * ДАТА: 2025-12-01
  * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В categoryOptions добавлена фильтрация по типу операции.
- * - Income: Скрываем "Погашение займов".
- * - Expense: Скрываем "Кредиты".
+ * 1. (FEAT) Добавлена автоподстановка для создания категорий (Продукты, Транспорт, Зарплата и т.д.).
+ * 2. (UI) Поле создания категории обернуто в wrapper.
  */
 
 const mainStore = useMainStore();
@@ -61,10 +63,127 @@ const newContractorInputRef = ref(null);
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-watch(() => props.type, (newType, oldType) => {
-  if (newType !== oldType) {
-    selectedCategoryId.value = null;
-  }
+const isIncome = computed(() => props.type === 'income');
+
+/* --- АВТОПОДСТАНОВКА БАНКОВ (КОНТРАГЕНТЫ) --- */
+const showBankSuggestions = ref(false);
+const bankSuggestions = computed(() => {
+    if (contractorTypeToCreate.value !== 'contractor') return [];
+    const query = newContractorNameInput.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    return knownBanks.filter(bank => {
+        if (bank.name.toLowerCase().includes(query)) return true;
+        if (bank.keywords.some(k => k.startsWith(query))) return true;
+        return false;
+    }).slice(0, 4);
+});
+const selectBankSuggestion = (bank) => {
+    newContractorNameInput.value = bank.name;
+    showBankSuggestions.value = false;
+    nextTick(() => newContractorInputRef.value?.focus());
+};
+const handleInputBlur = () => { setTimeout(() => { showBankSuggestions.value = false; }, 200); };
+const handleInputFocus = () => { if (newContractorNameInput.value.length >= 2) showBankSuggestions.value = true; };
+watch(newContractorNameInput, (val) => { showBankSuggestions.value = val.length >= 2; });
+
+
+/* --- АВТОПОДСТАНОВКА СЧЕТОВ --- */
+const showAccountSuggestions = ref(false);
+const accountSuggestionsList = computed(() => {
+    const query = newAccountName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    return accountSuggestions.filter(acc => {
+        if (acc.name.toLowerCase().includes(query)) return true;
+        if (acc.keywords.some(k => k.startsWith(query))) return true;
+        return false;
+    }).slice(0, 4);
+});
+const selectAccountSuggestion = (acc) => {
+    newAccountName.value = acc.name;
+    showAccountSuggestions.value = false;
+    nextTick(() => newAccountInput.value?.focus());
+};
+const handleAccountInputBlur = () => { setTimeout(() => { showAccountSuggestions.value = false; }, 200); };
+const handleAccountInputFocus = () => { if (newAccountName.value.length >= 2) showAccountSuggestions.value = true; };
+watch(newAccountName, (val) => { showAccountSuggestions.value = val.length >= 2; });
+
+
+/* --- 🟢 АВТОПОДСТАНОВКА КАТЕГОРИЙ --- */
+const showCategorySuggestions = ref(false);
+const categorySuggestionsList = computed(() => {
+    const query = newCategoryName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+
+    return categorySuggestions.filter(cat => {
+        if (cat.name.toLowerCase().includes(query)) return true;
+        if (cat.keywords.some(k => k.startsWith(query))) return true;
+        return false;
+    }).slice(0, 4);
+});
+const selectCategorySuggestion = (cat) => {
+    newCategoryName.value = cat.name;
+    showCategorySuggestions.value = false;
+    nextTick(() => newCategoryInput.value?.focus());
+};
+const handleCategoryInputBlur = () => { setTimeout(() => { showCategorySuggestions.value = false; }, 200); };
+const handleCategoryInputFocus = () => { if (newCategoryName.value.length >= 2) showCategorySuggestions.value = true; };
+watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 2; });
+
+
+// 🟢 COMPUTED: ID проекта "Мои кредиты"
+const myCreditsProjectId = computed(() => {
+    const p = mainStore.projects.find(x => x.name.trim().toLowerCase() === 'мои кредиты');
+    return p ? p._id : null;
+});
+
+// 🟢 WATCH: Логика авто-подстановки, очистки и УМНЫХ СВЯЗЕЙ
+watch([selectedContractorValue, selectedProjectId, () => props.type], ([newContr, newProj, newType]) => {
+    if (isInitialLoad.value) return;
+
+    // 1. ПРОВЕРКА НА БАНК -> АВТО-ВЫБОР ПРОЕКТА "МОИ КРЕДИТЫ"
+    if (newType === 'income' && newContr) {
+        const [prefix, id] = newContr.split('_');
+        if (prefix === 'contr') {
+            const contrObj = mainStore.contractors.find(c => c._id === id);
+            if (contrObj) {
+                const nameLower = contrObj.name.toLowerCase().trim();
+                const isBank = knownBanks.some(b => b.name.toLowerCase() === nameLower);
+                if (isBank && myCreditsProjectId.value) {
+                    if (selectedProjectId.value !== myCreditsProjectId.value) {
+                        selectedProjectId.value = myCreditsProjectId.value;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Если выбрали проект "Мои кредиты" (и это Доход) -> ставим Категорию "Кредиты"
+    if (newType === 'income' && newProj && myCreditsProjectId.value) {
+        if (newProj === myCreditsProjectId.value) {
+            if (mainStore.creditCategoryId) {
+                selectedCategoryId.value = mainStore.creditCategoryId;
+                return;
+            }
+        }
+    }
+
+    // 3. Если выбрали "Розничные клиенты" (и это Доход) -> ставим Категорию "Реализация"
+    if (newType === 'income' && newContr && mainStore.retailIndividualId) {
+        if (newContr === `ind_${mainStore.retailIndividualId}`) {
+            if (mainStore.realizationCategoryId) {
+                selectedCategoryId.value = mainStore.realizationCategoryId;
+                return;
+            }
+        }
+    }
+});
+
+// 🟢 WATCH: Очистка категории при открытии создания
+watch([showCreateContractorModal, showCreateOwnerModal], ([creatingContr, creatingOwner]) => {
+    if (creatingContr || creatingOwner) {
+        selectedCategoryId.value = null;
+    }
 });
 
 // --- FORMATTERS ---
@@ -92,8 +211,6 @@ const minDateString = computed(() => toInputDateString(props.minAllowedDate));
 const maxDateString = computed(() => toInputDateString(props.maxAllowedDate));
 
 // 🟢 ТЕКСТЫ
-const isIncome = computed(() => props.type === 'income');
-
 const txtAmount = computed(() => ({ 
   ph: isIncome.value ? 'Вношу сумму ₸' : 'Трачу сумму ₸', 
   lbl: 'Сумма, ₸' 
@@ -184,6 +301,14 @@ const contractorOptions = computed(() => {
       opts.push({ value: `ind_${i._id}`, label: i.name });
   });
 
+  if (mainStore.retailIndividualId) {
+      const sysInd = mainStore.individuals.find(i => i._id === mainStore.retailIndividualId);
+      if (sysInd) {
+          opts.push({ label: 'Системные', isHeader: true });
+          opts.push({ value: `ind_${sysInd._id}`, label: sysInd.name });
+      }
+  }
+
   opts.push({ isActionRow: true });
   return opts;
 });
@@ -195,25 +320,39 @@ const projectOptions = computed(() => {
   return opts;
 });
 
-// 🟢 ФИЛЬТРАЦИЯ КАТЕГОРИЙ (ОШИБКА 3)
+// 🟢 FILTERED CATEGORIES
 const categoryOptions = computed(() => {
   const prepayIds = mainStore.getPrepaymentCategoryIds;
   const currentOpCatId = props.operationToEdit ? (props.operationToEdit.categoryId?._id || props.operationToEdit.categoryId || props.operationToEdit.prepaymentId?._id || props.operationToEdit.prepaymentId) : null;
 
+  const isCreating = showCreateContractorModal.value || showCreateOwnerModal.value;
+
+  const isRetailSelected = !isCreating && mainStore.retailIndividualId && selectedContractorValue.value === `ind_${mainStore.retailIndividualId}`;
+  const isCreditProjectSelected = !isCreating && isIncome.value && myCreditsProjectId.value && selectedProjectId.value === myCreditsProjectId.value;
+
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
     
-    // Общие фильтры
+    if (isIncome.value && isRetailSelected) {
+        return c._id === mainStore.realizationCategoryId;
+    }
+
+    if (isCreditProjectSelected) {
+        return c._id === mainStore.creditCategoryId;
+    }
+
     if (name === 'перевод' || name === 'transfer') return false;
     if (c.isPrepayment || prepayIds.includes(c._id)) return false;
     if (['меж.комп', 'межкомпаний', 'inter-comp'].includes(name)) return false;
 
-    // 🟢 Логика фильтрации по типу операции
+    if (c._id === mainStore.realizationCategoryId) {
+        if (props.operationToEdit && c._id === currentOpCatId) return true;
+        return false;
+    }
+
     if (isIncome.value) {
-        // Если ДОХОД -> скрываем "Погашение займов"
-        if (name === 'погашение займов' || name === 'loan repayment' || name === 'выплата кредита') return false;
+        if (name === 'погашение займов' || name === 'loan repayment') return false;
     } else {
-        // Если РАСХОД -> скрываем "Кредиты" (получение)
         if (name === 'кредиты' || name === 'credit' || name === 'credits') return false;
     }
     
@@ -227,19 +366,6 @@ const categoryOptions = computed(() => {
   opts.unshift({ value: null, label: txtCategory.value.ph });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
   return opts;
-});
-
-// ... (Rest of logic remains unchanged) ...
-watch(selectedContractorValue, (newValue) => {
-    if (!newValue) return;
-    if (mainStore.retailIndividualId) {
-        const retailVal = `ind_${mainStore.retailIndividualId}`;
-        if (newValue === retailVal) {
-            if (mainStore.realizationCategoryId && !selectedCategoryId.value) {
-                selectedCategoryId.value = mainStore.realizationCategoryId;
-            }
-        }
-    }
 });
 
 const handleAccountChange = (val) => { if (val === '--CREATE_NEW--') { selectedAccountId.value = null; showAccountInput(); } else { onAccountSelected(val); } };
@@ -532,7 +658,7 @@ const saveNewContractorModal = async () => {
             selectedContractorValue.value = `ind_${newItem._id}`;
         }
         showCreateContractorModal.value = false; newContractorNameInput.value = '';
-    } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
+    } catch (e) { console.error(e); } finally { isInlineSaving.value = false; } 
 };
 
 const closePopup = () => { if (!isInlineSaving.value) emit('close'); };
@@ -612,10 +738,28 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           class="input-spacing"
           @change="handleAccountChange"
         />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" />
-          <button @click="saveNewAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+        
+        <!-- 🟢 ИЗМЕНЕНО: Инлайн-создание счета теперь обернуто в wrapper для автоподстановки -->
+        <div v-else class="inline-create-form input-spacing input-wrapper relative">
+           <input 
+             type="text" 
+             v-model="newAccountName" 
+             placeholder="Название счета" 
+             ref="newAccountInput" 
+             @keyup.enter="saveNewAccount" 
+             @keyup.esc="cancelCreateAccount" 
+             @blur="handleAccountInputBlur"
+             @focus="handleAccountInputFocus"
+           />
+           <button @click="saveNewAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+           <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+
+           <!-- 🟢 СПИСОК ПОДСКАЗОК СЧЕТОВ -->
+           <ul v-if="showAccountSuggestions && accountSuggestionsList.length > 0" class="bank-suggestions-list">
+               <li v-for="(acc, idx) in accountSuggestionsList" :key="idx" @mousedown.prevent="selectAccountSuggestion(acc)">
+                   {{ acc.name }}
+               </li>
+           </ul>
         </div>
       
         <BaseSelect
@@ -674,10 +818,27 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           class="input-spacing"
           @change="handleCategoryChange"
         />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
-          <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+        <!-- 🟢 ИЗМЕНЕНО: Инлайн-создание категории теперь обернуто в wrapper для автоподстановки -->
+        <div v-else class="inline-create-form input-spacing input-wrapper relative">
+           <input 
+             type="text" 
+             v-model="newCategoryName" 
+             placeholder="Название категории" 
+             ref="newCategoryInput" 
+             @keyup.enter="saveNewCategory" 
+             @keyup.esc="cancelCreateCategory" 
+             @blur="handleCategoryInputBlur"
+             @focus="handleCategoryInputFocus"
+           />
+           <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+           <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+
+           <!-- 🟢 СПИСОК ПОДСКАЗОК КАТЕГОРИЙ -->
+           <ul v-if="showCategorySuggestions && categorySuggestionsList.length > 0" class="bank-suggestions-list">
+               <li v-for="(cat, idx) in categorySuggestionsList" :key="idx" @mousedown.prevent="selectCategorySuggestion(cat)">
+                   {{ cat.name }}
+               </li>
+           </ul>
         </div>
       </template>
 
@@ -686,8 +847,8 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           <h4 class="smart-create-title">Создать: {{ ownerTypeToCreate === 'company' ? 'Компанию' : 'Физлицо' }}</h4>
           <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
           <div class="smart-create-actions">
-            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">Отмена</button>
-            <button @click="saveNewOwner" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">Создать</button>
+            <button @click="saveNewOwner" class="btn-submit btn-create-green" :disabled="isInlineSaving">Создать</button>
+            <button @click="cancelCreateOwner" class="btn-submit btn-cancel-white" :disabled="isInlineSaving">Отмена</button>
           </div>
         </div>
       </template>
@@ -695,10 +856,32 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
       <template v-if="showCreateContractorModal">
         <div class="smart-create-owner">
           <h4 class="smart-create-title">Создать: {{ contractorTypeToCreate === 'contractor' ? 'Контрагента' : 'Физлицо' }}</h4>
-          <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название контрагента' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" />
+          
+          <!-- 🟢 ВЕРСИЯ v29.1: АВТОПОДСТАНОВКА + АВТО-ПРОЕКТ "МОИ КРЕДИТЫ" -->
+          <div class="input-wrapper relative">
+             <input 
+                type="text" 
+                v-model="newContractorNameInput" 
+                :placeholder="contractorTypeToCreate === 'contractor' ? 'Название контрагента' : 'Имя Физлица'" 
+                ref="newContractorInputRef" 
+                class="form-input input-spacing" 
+                @keyup.enter="saveNewContractorModal" 
+                @keyup.esc="cancelCreateContractorModal"
+                @blur="handleInputBlur"
+                @focus="handleInputFocus"
+             />
+             
+             <!-- Suggestions List -->
+             <ul v-if="showBankSuggestions && bankSuggestions.length > 0" class="bank-suggestions-list">
+                 <li v-for="(bank, idx) in bankSuggestions" :key="idx" @mousedown.prevent="selectBankSuggestion(bank)">
+                     {{ bank.name }}
+                 </li>
+             </ul>
+          </div>
+
           <div class="smart-create-actions">
-            <button @click="cancelCreateContractorModal" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">Отмена</button>
-            <button @click="saveNewContractorModal" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">Создать</button>
+            <button @click="saveNewContractorModal" class="btn-submit btn-create-green" :disabled="isInlineSaving">Создать</button>
+            <button @click="cancelCreateContractorModal" class="btn-submit btn-cancel-white" :disabled="isInlineSaving">Отмена</button>
           </div>
         </div>
       </template>
@@ -812,10 +995,53 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
   color: #007AFF;
   cursor: pointer;
   transition: background-color 0.2s;
-  white-space: nowrap; /* <--- Added this */
+  white-space: nowrap; 
 }
 .btn-dual-action:hover { background-color: #f0f8ff; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 @media (max-width: 400px) { .btn-dual-action { font-size: 12px; padding: 0 5px; } }
+
+/* 🟢 НОВЫЕ СТИЛИ КНОПОК СОЗДАНИЯ */
+.btn-create-green {
+  background-color: #34c759 !important;
+  color: white !important;
+}
+.btn-create-green:hover:not(:disabled) {
+  background-color: #2da84e !important;
+}
+
+.btn-cancel-white {
+  background-color: #ffffff !important;
+  color: #333333 !important;
+  border: 1px solid #dddddd !important;
+}
+.btn-cancel-white:hover:not(:disabled) {
+  background-color: #f5f5f5 !important;
+}
+
+/* 🟢 СТИЛИ АВТОПОДСТАНОВКИ */
+.relative { position: relative; }
+.bank-suggestions-list {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    background: #fff;
+    border: 1px solid #E0E0E0;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    z-index: 2000;
+    list-style: none;
+    padding: 0; margin: 0;
+    max-height: 160px; overflow-y: auto;
+}
+.bank-suggestions-list li {
+    padding: 10px 14px;
+    font-size: 14px; color: #333;
+    cursor: pointer;
+    border-bottom: 1px solid #f5f5f5;
+}
+.bank-suggestions-list li:last-child { border-bottom: none; }
+.bank-suggestions-list li:hover { background-color: #f9f9f9; }
 </style>
