@@ -3,13 +3,18 @@ import { computed } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v51.1 - CREDIT INCOME STYLE (MOBILE) ---
+ * * ВЕРСИЯ: 51.1 - Стилизация доходов по кредитам для мобильных
+ * * ДАТА: 2025-11-30
+ */
+
 const props = defineProps({
   operation: { type: Object, default: null },
   dateKey: { type: String, required: true },
   cellIndex: { type: Number, required: true }
 });
 
-// Событие show-menu удалено, так как взаимодействия отключены
 const mainStore = useMainStore();
 
 /* Логика определения типов операций */
@@ -44,6 +49,9 @@ const isPrepaymentOp = computed(() => {
 const isWithdrawalOp = computed(() => props.operation && props.operation.isWithdrawal);
 const isRetailWriteOffOp = computed(() => mainStore._isRetailWriteOff(props.operation));
 
+// 🟢 Детектор Кредита (Доход)
+const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
+
 const toOwnerName = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -51,23 +59,21 @@ const toOwnerName = computed(() => {
   if (op.toIndividualId) return typeof op.toIndividualId === 'object' ? op.toIndividualId.name : 'Физлицо...';
   return op.toAccountId?.name || 'Счет...';
 });
-
-// Обработчик клика удален
 </script>
 
 <template>
-  <!-- Удален @click.stop="handleClick" и класс cursor-pointer из стилей -->
   <div class="mobile-cell">
     <div
       v-if="operation"
       class="op-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp, 
+         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp, 
          expense: operation.type==='expense' && !isWithdrawalOp,
          prepayment: isPrepaymentOp,
          withdrawal: isWithdrawalOp,
-         writeoff: isRetailWriteOffOp 
+         writeoff: isRetailWriteOffOp,
+         'credit-income': isCreditIncomeOp /* 🟢 Новый класс */
       }"
     >
       <!-- Содержимое чипа -->
@@ -84,6 +90,12 @@ const toOwnerName = computed(() => {
       <template v-else-if="isRetailWriteOffOp">
         <span class="amt">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
         <span class="desc">Списание</span>
+      </template>
+
+      <!-- 🟢 КРЕДИТ -->
+      <template v-else-if="isCreditIncomeOp">
+        <span class="amt">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="desc">Кредит</span>
       </template>
 
       <template v-else>
@@ -108,9 +120,7 @@ const toOwnerName = computed(() => {
   border-bottom: 1px solid rgba(255,255,255,0.05);
   padding: 2px 4px;
   box-sizing: border-box;
-  /* cursor: pointer; — УДАЛЕНО */
 }
-/* Эффект нажатия удален */
 
 .empty-slot {
   width: 100%;
@@ -145,6 +155,11 @@ const toOwnerName = computed(() => {
 .withdrawal .desc { color: #B085D0; }
 
 .writeoff .amt { color: #ef4444; }
+
+/* 🟢 СТИЛИ КРЕДИТА */
+.credit-income { background: #2F3340; }
+.credit-income .amt { color: #8FD4FF; }
+.credit-income .desc { color: #8FD4FF; opacity: 0.8; }
 
 .transfer { background: #2F3340; }
 .transfer .amt { color: #d4d8e3; }

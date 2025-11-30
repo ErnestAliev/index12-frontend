@@ -1,10 +1,7 @@
 /**
- * * --- МЕТКА ВЕРСИИ: v29.11.05 - GLOBAL SORT STATE ---
- * * ВЕРСИЯ: 29.11.05 - Добавлено глобальное состояние сортировки/фильтрации виджетов
- * * ДАТА: 2025-11-29
- * * ЧТО ИЗМЕНЕНО:
- * 1. (NEW) widgetSortMode, widgetFilterMode добавлены в state.
- * 2. (NEW) Actions: setWidgetSortMode, setWidgetFilterMode.
+ * * --- МЕТКА ВЕРСИИ: v50.3 - MAIN STORE UPDATE ---
+ * * ВЕРСИЯ: 50.3 - Полная интеграция кредитов (Store)
+ * * ДАТА: 2025-11-30
  */
 
 import { defineStore } from 'pinia';
@@ -27,7 +24,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v29.11.05 (Global Sort) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v50.3 (Credits Full) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -59,6 +56,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const projects    = ref([]);
   const individuals = ref([]); 
   const categories  = ref([]);
+  const credits     = ref([]); // 🟢 Новое состояние (Кредиты)
   
   const todayDayOfYear = ref(0);
   const currentViewDate = ref(new Date());
@@ -71,6 +69,7 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
     { key: 'accounts',     name: 'Мои счета' },
     { key: 'companies',    name: 'Мои компании' },
+    { key: 'credits',      name: 'Мои кредиты' }, // 🟢 Виджет кредитов
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
     { key: 'futureTotal',  name: 'Всего на счетах\nс учетом будущих' }, 
@@ -153,6 +152,33 @@ export const useMainStore = defineStore('mainStore', () => {
       const cat = categories.value.find(c => c.name.trim().toLowerCase() === 'реализация');
       return cat ? cat._id : null;
   });
+  
+  // 🟢 ID категории "Кредиты" для виджета
+  const creditCategoryId = computed(() => {
+      const cat = categories.value.find(c => {
+          const n = c.name.trim().toLowerCase();
+          return n === 'кредиты' || n === 'credit' || n === 'credits';
+      });
+      return cat ? cat._id : null;
+  });
+
+  // 🟢 ID категории "Погашение займов"
+  const loanRepaymentCategoryId = computed(() => {
+      const cat = categories.value.find(c => {
+          const n = c.name.trim().toLowerCase();
+          return n === 'погашение займов' || n === 'loan repayment';
+      });
+      return cat ? cat._id : null;
+  });
+
+  // 🟢 Хелпер для определения "Дохода по кредиту" (Получение кредитных средств)
+  const _isCreditIncome = (op) => {
+      if (!op) return false;
+      if (op.type !== 'income') return false;
+      
+      const catId = op.categoryId?._id || op.categoryId;
+      return catId && catId === creditCategoryId.value;
+  };
   
   const remainingDebtCategoryId = computed(() => {
       const cat = categories.value.find(c => c.name.trim().toLowerCase() === 'остаток долга');
@@ -238,7 +264,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'contractors', 'projects', 'futureTotal', 
+    'currentTotal', 'accounts', 'companies', 'credits', 'contractors', 'projects', 'futureTotal', // 🟢 Добавлен credits
     'transfers'
   ]);
   watch(dashboardLayout, (n) => localStorage.setItem('dashboardLayout', JSON.stringify(n)), { deep: true });
@@ -664,13 +690,11 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
-  // 🟢 FIX: Добавлен initialBalance к snapshot
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
       ...a, 
       balance: (snapshot.value.accountBalances[a._id] || 0) + (a.initialBalance || 0) 
   })));
 
-  // 🟢 FIX: Добавлен initialBalance к future
   const futureAccountBalances = computed(() => {
     const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
     return accounts.value.map(a => ({ 
@@ -713,7 +737,56 @@ export const useMainStore = defineStore('mainStore', () => {
     return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
   });
 
-  // 🟢 FIX: Учет начальных балансов связанных счетов для физлиц
+  // 🟢 КРЕДИТЫ: ТЕКУЩИЕ БАЛАНСЫ (Расчет остатка долга)
+  // Берем сущности из credits и вычитаем погашения
+  const currentCreditBalances = computed(() => {
+      const repaymentCatId = loanRepaymentCategoryId.value;
+      
+      // Если категории погашения нет, возвращаем просто долг
+      if (!repaymentCatId) {
+          return credits.value.map(c => ({ ...c, balance: c.totalDebt, futureBalance: c.totalDebt }));
+      }
+
+      return credits.value.map(credit => {
+          const initialDebt = credit.totalDebt || 0;
+          let repaidTotal = 0;
+
+          // Ищем расходы (погашения) в операциях
+          currentOps.value.forEach(op => {
+              if (op.type !== 'expense') return;
+              const opCatId = op.categoryId?._id || op.categoryId;
+              
+              // Проверяем категорию "Погашение займов"
+              if (opCatId !== repaymentCatId) return;
+
+              const opContractorId = op.contractorId?._id || op.contractorId;
+              const opIndId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+
+              // Связываем кредит с операцией через Контрагента или Физлицо
+              const isMatch = (credit.contractorId && opContractorId === credit.contractorId) ||
+                              (credit.individualId && opIndId === credit.individualId);
+              
+              if (isMatch) {
+                  repaidTotal += Math.abs(op.amount || 0);
+              }
+          });
+
+          const currentDebt = Math.max(0, initialDebt - repaidTotal);
+          
+          // Для прогноза пока используем текущий долг (если нет запланированных операций)
+          // Можно расширить логику, проверяя futureOps
+          return {
+              ...credit,
+              balance: currentDebt,
+              futureBalance: currentDebt // Пока ставим равным текущему
+          };
+      });
+  });
+  
+  // Прогноз кредитов (пока дублирует текущий, можно расширить)
+  const futureCreditBalances = computed(() => currentCreditBalances.value);
+
+
   const currentIndividualBalances = computed(() => {
       return individuals.value.map(i => {
           const opsBalance = snapshot.value.individualBalances[i._id] || 0;
@@ -791,7 +864,7 @@ export const useMainStore = defineStore('mainStore', () => {
           
           for (const { dateKey, data } of results) {
               const raw = Array.isArray(data) ? data.slice() : [];
-              const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey, date: op.date || _parseDateKey(dateKey) }));
+              const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
               
               displayCache.value[dateKey] = processedOps;
               calculationCache.value[dateKey] = processedOps;
@@ -841,17 +914,18 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function fetchAllEntities(){
-    // 🟢 GUARD: Не загружать данные, если пользователь не авторизован
     if (!user.value) {
         return; 
     }
 
     try{
-      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes] = await Promise.all([
+      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
         axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
         axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
         axios.get(`${API_BASE_URL}/prepayments`),
+        // 🟢 Загрузка кредитов
+        axios.get(`${API_BASE_URL}/credits`),
       ]);
       
       accounts.value    = _sortByOrder(accRes.data); 
@@ -859,6 +933,8 @@ export const useMainStore = defineStore('mainStore', () => {
       contractors.value = _sortByOrder(contrRes.data); 
       projects.value    = _sortByOrder(projRes.data);
       individuals.value = _sortByOrder(indRes.data); 
+      // 🟢 Сохраняем кредиты
+      credits.value     = _sortByOrder(credRes.data);
       
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
@@ -1184,6 +1260,7 @@ export const useMainStore = defineStore('mainStore', () => {
           if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
           if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
+          if (path === 'credits') credits.value = credits.value.filter(i => i._id !== id); // 🟢
           if (deleteOperations) await forceRefreshAll(); else await forceRefreshAll();
       } catch (error) { throw error; }
   }
@@ -1194,6 +1271,13 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); contractors.value.push(res.data); return res.data; }
   async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); projects.value.push(res.data); return res.data; }
   async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); individuals.value.push(res.data); return res.data; }
+
+  // 🟢 Создание кредита
+  async function addCredit(data) {
+      const res = await axios.post(`${API_BASE_URL}/credits`, data);
+      credits.value.push(res.data);
+      return res.data;
+  }
 
   async function batchUpdateEntities(path, items){ 
     try { 
@@ -1218,6 +1302,7 @@ export const useMainStore = defineStore('mainStore', () => {
       else if (path==='contractors') contractors.value = sortedData; 
       else if (path==='projects') projects.value = sortedData; 
       else if (path==='individuals') individuals.value = sortedData; 
+      // Кредиты можно тоже апдейтить батчем, если нужно
     } catch(e) { await fetchAllEntities(); } 
   }
 
@@ -1336,8 +1421,19 @@ export const useMainStore = defineStore('mainStore', () => {
                }
           }
       }
+
+      // 🟢 Гарантируем "Мои кредиты" (Проект) и "Погашение займов" (Категория)
+      let creditProject = projects.value.find(p => p.name.trim().toLowerCase() === 'мои кредиты');
+      if (!creditProject) creditProject = await addProject('Мои кредиты');
+
+      let repaymentCat = categories.value.find(c => c.name.trim().toLowerCase() === 'погашение займов');
+      if (!repaymentCat) repaymentCat = await addCategory('Погашение займов');
+
+      // 🟢 Гарантируем категорию "Кредиты" (для Доходов)
+      let creditIncomeCat = categories.value.find(c => c.name.trim().toLowerCase() === 'кредиты');
+      if (!creditIncomeCat) creditIncomeCat = await addCategory('Кредиты');
       
-      return { retailInd, realizationCat, debtCat, refundCat };
+      return { retailInd, realizationCat, debtCat, refundCat, creditProject, repaymentCat, creditIncomeCat };
   }
 
   async function closeRetailDaily(amount, date, projectId = null) {
@@ -1397,12 +1493,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   return {
     accounts, companies, contractors, projects, categories, individuals, 
+    credits, // 🟢
     visibleCategories, visibleContractors, 
     operationsCache: displayCache, displayCache, calculationCache,
     allWidgets, dashboardLayout, projection, dashboardForecastState,
     user, isAuthLoading,
 
-    // 🟢 Экспортируем новое состояние сортировки
+    // 🟢 Экспорт состояния
     widgetSortMode, widgetFilterMode, setWidgetSortMode, setWidgetFilterMode,
 
     isHeaderExpanded, toggleHeaderExpansion,
@@ -1412,6 +1509,9 @@ export const useMainStore = defineStore('mainStore', () => {
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     futureIndividualBalances, 
     
+    // 🟢 Экспорт кредитов
+    currentCreditBalances, futureCreditBalances, creditCategoryId,
+
     liabilitiesWeOwe, liabilitiesTheyOwe, liabilitiesWeOweFuture, liabilitiesTheyOweFuture,
     
     getPrepaymentCategoryIds, getActCategoryIds,
@@ -1439,6 +1539,7 @@ export const useMainStore = defineStore('mainStore', () => {
     addOperation, deleteOperation, moveOperation,
     addAccount, addCompany, addContractor, addProject, addCategory,
     addIndividual, deleteEntity, batchUpdateEntities,
+    addCredit, // 🟢
 
     computeTotalDaysForMode, updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
     loadCalculationData, updateProjectionFromCalculationData,
@@ -1462,6 +1563,6 @@ export const useMainStore = defineStore('mainStore', () => {
     getRetailWriteOffs,
     
     retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId, 
-    _isRetailWriteOff, _isRetailRefund
+    _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId // 🟢
   };
 });

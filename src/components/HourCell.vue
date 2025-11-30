@@ -4,13 +4,14 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.3 - WRITE-OFF LABEL FIX ---
- * * ВЕРСИЯ: 4.3 - Исправлено название чипа для списаний ("Списание" вместо "Реализация")
- * * ДАТА: 2025-11-26
+ * * --- МЕТКА ВЕРСИИ: v51.1 - CREDIT INCOME STYLE ---
+ * * ВЕРСИЯ: 51.1 - Стилизация доходов по кредитам
+ * * ДАТА: 2025-11-30
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлен computed `isRetailWriteOffOp` (использует _isRetailWriteOff из стора).
- * 2. (TEMPLATE) В блоке `op-meta` для списаний выводится "Списание".
+ * 1. (LOGIC) Добавлен computed `isCreditIncomeOp` через mainStore._isCreditIncome.
+ * 2. (TEMPLATE) Добавлен класс `credit-income` и блок отрисовки для кредитов.
+ * 3. (STYLE) Добавлены стили для .credit-income (фон #2F3340, текст #8FD4FF).
  */
 
 const props = defineProps({
@@ -42,8 +43,6 @@ const isPrepaymentOp = computed(() => {
     if (!op || isTransferOp.value || op.isWithdrawal) return false;
     if (op.type !== 'income') return false;
     
-    // 🟢 FIX: Доход от Розницы без суммы сделки — НЕ предоплата (это обычный доход)
-    // Но если есть сумма сделки — это предоплата.
     const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
     if (indId && indId === mainStore.retailIndividualId) {
         return (op.totalDealAmount || 0) > 0;
@@ -56,14 +55,19 @@ const isPrepaymentOp = computed(() => {
     return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
 });
 
-// 🟢 UI-детектор вывода
+// UI-детектор вывода
 const isWithdrawalOp = computed(() => {
     return props.operation && props.operation.isWithdrawal;
 });
 
-// 🟢 UI-детектор списания (Розница)
+// UI-детектор списания (Розница)
 const isRetailWriteOffOp = computed(() => {
     return mainStore._isRetailWriteOff(props.operation);
+});
+
+// 🟢 UI-детектор Дохода по Кредиту
+const isCreditIncomeOp = computed(() => {
+    return mainStore._isCreditIncome(props.operation);
 });
 
 
@@ -71,26 +75,21 @@ const fromAccountName = computed(() =>
   props.operation?.fromAccountId?.name || props.operation?.fromAccountId || ''
 );
 
-// 🟢 Новое свойство: Имя Владельца-Получателя
+// Имя Владельца-Получателя
 const toOwnerName = computed(() => {
   const op = props.operation;
   if (!op) return '';
   
-  // Проверяем компанию
   if (op.toCompanyId) {
-      // Если объект
       if (typeof op.toCompanyId === 'object') return op.toCompanyId.name;
-      // Если ID - ищем в сторе (опционально, если данные не полные)
       return 'Компания...'; 
   }
   
-  // Проверяем физлицо
   if (op.toIndividualId) {
       if (typeof op.toIndividualId === 'object') return op.toIndividualId.name;
       return 'Физлицо...';
   }
   
-  // Фолбэк на счет, если владельца нет
   return op.toAccountId?.name || 'Счет...';
 });
 
@@ -135,17 +134,18 @@ const onDrop = (event) => {
       class="operation-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp, 
+         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp, 
          expense: operation.type==='expense' && !isWithdrawalOp,
          prepayment: isPrepaymentOp,
          withdrawal: isWithdrawalOp,
-         writeoff: isRetailWriteOffOp /* 🟢 Спец класс для списания */
+         writeoff: isRetailWriteOffOp,
+         'credit-income': isCreditIncomeOp /* 🟢 Новый класс */
       }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
-      <!-- 🟢 ПЕРЕВОД: СУММА -> ПОЛУЧАТЕЛЬ (Владелец) -->
+      <!-- ПЕРЕВОД: СУММА -> ПОЛУЧАТЕЛЬ (Владелец) -->
       <template v-if="isTransferOp">
         <span class="op-amount">
           {{ formatNumber(Math.abs(operation.amount)) }}
@@ -155,7 +155,7 @@ const onDrop = (event) => {
         </span>
       </template>
 
-      <!-- 🟢 ВЫВОД -->
+      <!-- ВЫВОД -->
       <template v-else-if="isWithdrawalOp">
         <span class="op-amount">
           - {{ formatNumber(Math.abs(operation.amount)) }}
@@ -165,13 +165,23 @@ const onDrop = (event) => {
         </span>
       </template>
 
-      <!-- 🟢 СПИСАНИЕ (РОЗНИЦА) -->
+      <!-- СПИСАНИЕ (РОЗНИЦА) -->
       <template v-else-if="isRetailWriteOffOp">
         <span class="op-amount">
           - {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
         <span class="op-meta">
            Списание
+        </span>
+      </template>
+
+      <!-- 🟢 КРЕДИТ (ДОХОД) -->
+      <template v-else-if="isCreditIncomeOp">
+        <span class="op-amount">
+          + {{ formatNumber(Math.abs(operation.amount)) }}
+        </span>
+        <span class="op-meta">
+           Кредит
         </span>
       </template>
 
@@ -218,23 +228,37 @@ const onDrop = (event) => {
 .income .op-amount { color: var(--color-primary); }
 .expense .op-amount { color: var(--color-danger); }
 
-/* 🟢 ПРЕДОПЛАТА (Оранжевый текст суммы) */
+/* ПРЕДОПЛАТА */
 .prepayment .op-amount { color: #FF9D00 !important; }
 
-/* 🟢 ВЫВОД */
+/* ВЫВОД */
 .withdrawal { background: #2F3340; }
 .withdrawal:hover { background: #3a3f50; }
 .withdrawal .op-amount { color: #DE8FFF; }
 .withdrawal .op-meta { color: #B085D0; }
 
-/* 🟢 СПИСАНИЕ (Визуально как расход, но чуть бледнее или так же) */
-.writeoff .op-amount { color: #ef4444; } /* Красный как расход */
+/* СПИСАНИЕ */
+.writeoff .op-amount { color: #ef4444; }
 .writeoff .op-meta { font-style: normal; }
 
-/* 🟢 ПЕРЕВОД (Сумма светлая) */
+/* 🟢 КРЕДИТ ДОХОД */
+.credit-income {
+  background-color: #2F3340; /* Темный фон */
+}
+.credit-income:hover {
+  background-color: #3a3f50;
+}
+.credit-income .op-amount {
+  color: #8FD4FF; /* Голубой текст */
+}
+.credit-income .op-meta {
+  color: #8FD4FF;
+  opacity: 0.8;
+}
+
+/* ПЕРЕВОД */
 .transfer { background:#2F3340; }
 .transfer:hover { background:#3a3f50; }
-/* Используем тот же цвет, что был у заголовка "Перевод", для суммы */
 .transfer .op-amount { color:#d4d8e3; } 
 .transfer .op-meta { color:#98a2b3; }
 

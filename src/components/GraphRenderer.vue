@@ -15,6 +15,17 @@ import {
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v51.1 - CREDIT GRAPH COLOR ---
+ * * ВЕРСИЯ: 51.1 - Отдельный цвет для доходов по кредитам
+ * * ДАТА: 2025-11-30
+ *
+ * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) В chartData добавлен массив `creditIncomeData`.
+ * 2. (LOGIC) В цикле обработки операций проверяется `isCredit` и данные пушатся в `creditOps` / `dayCreditSum`.
+ * 3. (CONFIG) Добавлен отдельный dataset 'Кредит' с цветом #8FD4FF.
+ */
+
 const props = defineProps({
   visibleDays: { type: Array, required: true, default: () => [] }, 
   animate: { type: Boolean, default: false },
@@ -231,8 +242,12 @@ const getTooltipOperationList = (ops) => {
     const prepId = op.prepaymentId?._id || op.prepaymentId;
     const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
     
+    // 🟢 Дополнительная проверка для Кредита в тултипе
+    const isCredit = mainStore._isCreditIncome(op);
+
     let catName = op.categoryId?.name || 'Без категории';
     if (isPrepay) catName = 'Предоплата';
+    if (isCredit) catName = 'Кредит';
     if (op.isWithdrawal) catName = 'Вывод средств';
 
     return {
@@ -250,50 +265,76 @@ const getTooltipOperationList = (ops) => {
 const chartData = computed(() => {
   const labels = [];
   const incomeData = [];
+  const creditIncomeData = []; // 🟢 Новый массив для Кредитов
   const prepaymentData = [];
   const expenseData = [];
   const withdrawalData = [];
+  
   const incomeDetails = []; 
+  const creditIncomeDetails = []; // 🟢 Детали для тултипа
   const prepaymentDetails = [];
   const expenseDetails = [];
   const withdrawalDetails = [];
 
   const safeDays = Array.isArray(props.visibleDays) ? props.visibleDays : [];
   const prepayIds = mainStore.getPrepaymentCategoryIds;
+  
+  // Получаем ID категории кредитов один раз
+  const creditCatId = mainStore.creditCategoryId;
 
   for (const day of safeDays) {
     if (!day || !day.date) continue; 
 
     const dateKey = _getDateKey(day.date);
-    const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0 };
-    
-    // 🟢 OPTIMIZATION FIX: v29.11
-    // Вместо .filter() по огромному массиву allOperationsFlat (O(N^2)),
-    // используем прямой доступ к кешу через стор (O(1)).
     const dayOps = mainStore.getOperationsForDay(dateKey) || [];
     
     const incomeOps = [];
+    const creditOps = []; // 🟢
     const prepayOps = [];
     const expenseOps = [];
     const withdrawalOps = [];
 
+    let dayIncomeSum = 0;
+    let dayCreditSum = 0;
+    let dayPrepaySum = 0;
+    let dayExpenseSum = 0;
+    let dayWithdrawalSum = 0;
+
     dayOps.forEach(op => {
+        const amt = op.amount || 0;
+        const absAmt = Math.abs(amt);
+
         if (op.isWithdrawal) {
             withdrawalOps.push(op);
+            dayWithdrawalSum += absAmt;
         } else if (op.type === 'expense') {
             if (mainStore._isRetailWriteOff(op)) return;
             expenseOps.push(op);
+            dayExpenseSum += absAmt;
         } else if (op.type === 'income') {
             const catId = op.categoryId?._id || op.categoryId;
             const prepId = op.prepaymentId?._id || op.prepaymentId;
+            
+            // Проверка на Кредит
+            const isCredit = creditCatId && catId === creditCatId;
+
             const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
             
-            if (isPrepay) prepayOps.push(op);
-            else incomeOps.push(op);
+            if (isCredit) {
+                creditOps.push(op);
+                dayCreditSum += amt;
+            } else if (isPrepay) {
+                prepayOps.push(op);
+                dayPrepaySum += amt;
+            } else {
+                incomeOps.push(op);
+                dayIncomeSum += amt;
+            }
         }
     });
 
     incomeDetails.push(getTooltipOperationList(incomeOps));
+    creditIncomeDetails.push(getTooltipOperationList(creditOps)); // 🟢
     prepaymentDetails.push(getTooltipOperationList(prepayOps)); 
     expenseDetails.push(getTooltipOperationList(expenseOps));
     withdrawalDetails.push(getTooltipOperationList(withdrawalOps));
@@ -303,10 +344,11 @@ const chartData = computed(() => {
     });
     labels.push(labelDate);
     
-    incomeData.push(data.income);
-    prepaymentData.push(data.prepayment || 0); 
-    expenseData.push(Math.abs(data.expense));
-    withdrawalData.push(Math.abs(data.withdrawal || 0));
+    incomeData.push(dayIncomeSum);
+    creditIncomeData.push(dayCreditSum); // 🟢
+    prepaymentData.push(dayPrepaySum); 
+    expenseData.push(dayExpenseSum);
+    withdrawalData.push(dayWithdrawalSum);
   }
 
   return {
@@ -321,12 +363,20 @@ const chartData = computed(() => {
         order: 1
       },
       { 
+        label: 'Кредит', // 🟢 Новый датасет
+        backgroundColor: '#8FD4FF', // 🟢 Цвет 8FD4FF
+        data: creditIncomeData,  
+        stack: 'stack1',
+        details: creditIncomeDetails,
+        order: 2 
+      },
+      { 
         label: 'Доход',
         backgroundColor: '#34c759', 
         data: incomeData,  
         stack: 'stack1',
         details: incomeDetails,
-        order: 2
+        order: 3
       },
       { 
         label: 'Расход', 
@@ -334,7 +384,7 @@ const chartData = computed(() => {
         data: expenseData, 
         stack: 'stack1',
         details: expenseDetails,
-        order: 3
+        order: 4
       },
       { 
         label: 'Вывод', 
@@ -342,7 +392,7 @@ const chartData = computed(() => {
         data: withdrawalData, 
         stack: 'stack1',
         details: withdrawalDetails,
-        order: 4
+        order: 5
       }
     ]
   };
@@ -444,7 +494,7 @@ watch([chartData, chartOptions], async () => {
       <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
     </div>
 
-    <!-- 🟢 ГЛАВНЫЙ ФИКС: ДИНАМИЧЕСКИЕ КОЛОНКИ -->
+    <!-- СВОДКИ ДНЯ -->
     <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${visibleDays.length}, 1fr)` }">
       <div
         v-for="(day, index) in summaries"
@@ -489,7 +539,6 @@ watch([chartData, chartOptions], async () => {
   border-top: 1px solid var(--color-border);
   overflow: hidden;
   display: grid;
-  /* 🟢 Grid-template-columns теперь задается инлайново в шаблоне для универсальности */
   width: 100%;
 }
 

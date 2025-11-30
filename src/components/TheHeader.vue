@@ -8,6 +8,8 @@ import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
+import HeaderCreditCard from './HeaderCreditCard.vue'; // 🟢 Импорт виджета кредитов
+
 import TransferPopup from './TransferPopup.vue';
 import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
@@ -15,20 +17,24 @@ import TransferListEditor from './TransferListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
 import OperationPopup from './OperationPopup.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
+import CreditListEditor from './CreditListEditor.vue'; // 🟢 Импорт редактора кредитов
+import CreditWizardPopup from './CreditWizardPopup.vue'; // 🟢 Импорт Визарда для прямого вызова
+import PrepaymentModal from './PrepaymentModal.vue';
+import RetailClosurePopup from './RetailClosurePopup.vue';
+import RefundPopup from './RefundPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v49.0 - SHOW LINKED INDIVIDUALS ---
- * * ВЕРСИЯ: 49.0 - Возврат владельцев счетов в виджет "Мои физлица"
- * * ДАТА: 2025-11-28
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) В `mergedIndividualBalances` убрана фильтрация, скрывающая владельцев счетов.
- * 2. (LOGIC) Добавлено поле `linkedAccountName`, если физлицо привязано к счету.
- * * * --- ОБНОВЛЕНИЕ ТЕКСТОВ (29.11.2025) ---
- * Обновлены props title для HeaderTotalCard с переносом строк (\n).
+ * * --- МЕТКА ВЕРСИИ: v50.2 - CREDITS ACTION FIX ---
+ * * ВЕРСИЯ: 50.2 - Исправление действий кнопок Кредитов
+ * * ДАТА: 2025-11-30
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. Добавлен ref isCreditWizardVisible.
+ * 2. onCreditsAdd теперь открывает isCreditWizardVisible = true (сразу визард).
+ * 3. onCreditsEdit открывает isCreditEditorVisible = true (список).
+ * 4. Добавлен обработчик handleWizardSave для сохранения из хедера.
  */
 
-console.log('--- TheHeader.vue v49.0 (Show Linked Individuals + Text Updates) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v50.2 (Credits Action Fix) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -98,7 +104,11 @@ const operationListEditorFilterMode = ref('default');
 const isOperationPopupVisible = ref(false);
 const operationPopupType = ref('income');
 const isWithdrawalPopupVisible = ref(false);
+const isCreditEditorVisible = ref(false); // 🟢 Редактор (список)
+const isCreditWizardVisible = ref(false); // 🟢 Визард (создание)
 const isEntityPopupVisible = ref(false);
+const isRetailPopupVisible = ref(false);
+const isRefundPopupVisible = ref(false);
 const popupTitle = ref('');
 const popupInitialValue = ref(''); 
 const saveHandler = ref(null);
@@ -108,6 +118,7 @@ const isListEditorVisible = ref(false);
 const editorTitle = ref('');
 const editorItems = ref([]);
 const editorSavePath = ref(null);
+const operationToEdit = ref(null);
 
 // ... adaptive utils ...
 const windowWidth = ref(window.innerWidth);
@@ -127,17 +138,11 @@ const futureUntilStr = computed(() => {
 const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
 const loggedFutureTotal = computed(() => mainStore.futureTotalBalance);
 
-// 🟢 ИСПРАВЛЕННАЯ ФУНКЦИЯ СЛИЯНИЯ
-// Добавлен флаг isDelta. Если он true, default значения = 0.
 const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   let result = currentBalances || [];
   if (futureData) {
       const futureMap = new Map(futureData.map(item => [item._id, item.balance]));
       result = currentBalances.map(item => {
-          // Если прогноз для элемента есть в futureMap - берем его.
-          // Если нет:
-          //   - в режиме Дельты (isDelta=true) считаем, что изменений нет (0).
-          //   - в режиме Накопления (isDelta=false) считаем, что баланс не изменился (item.balance).
           const fallback = isDelta ? 0 : item.balance;
           return { ...item, futureBalance: futureMap.get(item._id) ?? fallback };
       });
@@ -145,11 +150,9 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 
-// 1. Накопительные (Счета, Компании) -> isDelta = false
 const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false));
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false));
 
-// 2. Дельта (Контрагенты, Проекты, Физлица, Категории) -> isDelta = true
 const mergedContractorBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
     const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
@@ -160,8 +163,6 @@ const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProj
 
 const mergedIndividualBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
-    
-    // 🟢 1. Собираем карту связей с аккаунтами
     const accountMap = new Map();
     mainStore.accounts.forEach(acc => {
         if (acc.individualId) {
@@ -169,13 +170,15 @@ const mergedIndividualBalances = computed(() => {
             if (iId) accountMap.set(iId, acc.name);
         }
     });
-
-    // 🟢 2. Возвращаем всех, проставляя имя счета (если есть)
-    // Раньше тут была фильтрация .filter(ind => !ownerIds.has(ind._id)), теперь мы её убрали.
     return allMerged.map(ind => ({
         ...ind,
         linkedAccountName: accountMap.get(ind._id) || null
     }));
+});
+
+// Слияние для Кредитов
+const mergedCreditBalances = computed(() => {
+    return mainStore.futureCreditBalances.sort((a, b) => (b.balance || 0) - (a.balance || 0));
 });
 
 const mergedCategoryBalances = computed(() => {
@@ -248,6 +251,64 @@ const onCategoryEdit = (widgetKey) => {
     }
 };
 const onLiabilitiesEdit = () => { operationListEditorTitle.value = 'Редактировать операции (Предоплаты)'; operationListEditorType.value = 'income'; operationListEditorFilterMode.value = 'prepayment_only'; isOperationListEditorVisible.value = true; };
+
+// 🟢 Хендлеры для Кредитов (ИСПРАВЛЕНО)
+const onCreditsEdit = () => {
+    // Карандаш: Открывает список
+    isCreditEditorVisible.value = true;
+};
+const onCreditsAdd = () => {
+    // Плюс: Открывает визард создания
+    isCreditWizardVisible.value = true;
+};
+
+// 🟢 Сохранение из Визарда (Копия логики из CreditListEditor, вынесенная на уровень выше)
+const handleWizardSave = async (payload) => {
+    isCreditWizardVisible.value = false;
+    try {
+        let creditCat = mainStore.categories.find(c => c.name.toLowerCase() === 'кредиты');
+        if (!creditCat) creditCat = await mainStore.addCategory('Кредиты');
+
+        let bankContractor = mainStore.contractors.find(c => c.name.toLowerCase() === payload.name.toLowerCase());
+        if (!bankContractor) bankContractor = await mainStore.addContractor(payload.name);
+
+        const operationsPromises = payload.schedule.map(item => {
+            return mainStore.createEvent({
+                date: item.date,
+                amount: -item.amount, 
+                type: 'expense',
+                categoryId: creditCat._id,
+                contractorId: bankContractor._id,
+                description: `Погашение кредита: ${payload.name}`,
+                accountId: null 
+            });
+        });
+
+        if (payload.totalDebt > 0) {
+             operationsPromises.push(mainStore.createEvent({
+                date: new Date(),
+                amount: payload.totalDebt,
+                type: 'income',
+                categoryId: creditCat._id,
+                contractorId: bankContractor._id,
+                description: `Получение кредита: ${payload.name}`,
+                accountId: null 
+            }));
+        }
+
+        await Promise.all(operationsPromises);
+        await mainStore.fetchAllEntities();
+        // Обновляем график (если нужно)
+        if (mainStore.projection.mode) {
+             await mainStore.loadCalculationData(mainStore.projection.mode, mainStore.currentViewDate);
+        }
+
+    } catch (e) {
+        console.error("Ошибка:", e);
+        alert("Не удалось создать кредит: " + e.message);
+    }
+};
+
 const handleTransferComplete = async (eventData) => { if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey); isTransferPopupVisible.value = false; };
 const handleOperationAdded = async (newOp) => { if (newOp?.dateKey) await mainStore.addOperation(newOp); isOperationPopupVisible.value = false; };
 const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupVisible.value = false; try { if (mode === 'create') await mainStore.createEvent(data); } catch (e) { console.error(e); alert('Ошибка сохранения вывода'); } };
@@ -280,7 +341,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       <div class="dashboard-card-wrapper">
         <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
-        <!-- 🟢 ИЗМЕНЕНО: Добавлены \n в title для переноса строк -->
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
           :title="'Всего на счетах\nна текущий момент'"
@@ -303,6 +363,19 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :widgetIndex="index"
           @add="onLiabilitiesAdd"
           @edit="onLiabilitiesEdit"
+          @open-menu="handleOpenMenu"
+        />
+
+        <!-- 🟢 ВИДЖЕТ КРЕДИТОВ -->
+        <HeaderCreditCard
+          v-else-if="widgetKey === 'credits'"
+          title="Мои кредиты"
+          :items="mergedCreditBalances"
+          emptyText="...кредитов нет..."
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="onCreditsAdd"
+          @edit="onCreditsEdit"
           @open-menu="handleOpenMenu"
         />
 
@@ -372,7 +445,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ИЗМЕНЕНО: Добавлены \n в title для переноса строк -->
         <HeaderTotalCard
           v-else-if="widgetKey === 'futureTotal'"
           :title="'Всего на счетах\nс учетом будущих'"
@@ -404,6 +476,12 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" :filter-mode="operationListEditorFilterMode" @close="isOperationListEditorVisible = false" />
   <OperationPopup v-if="isOperationPopupVisible" :type="operationPopupType" :date="new Date()" :cellIndex="0" @close="isOperationPopupVisible = false" @operation-added="handleOperationAdded" />
   <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" @save="handleWithdrawalSaved" />
+  
+  <!-- 🟢 РЕДАКТОР КРЕДИТОВ -->
+  <CreditListEditor v-if="isCreditEditorVisible" @close="isCreditEditorVisible = false" />
+  
+  <!-- 🟢 ВИЗАРД КРЕДИТОВ (Вызывается по кнопке +) -->
+  <CreditWizardPopup v-if="isCreditWizardVisible" @close="isCreditWizardVisible = false" @save="handleWizardSave" />
 </template>
 
 <style scoped>
