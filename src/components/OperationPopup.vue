@@ -6,11 +6,13 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.4 - CSS FIX ---
- * * ВЕРСИЯ: 27.4 - Запрет переноса строк в кнопках
- * * ДАТА: 2025-11-28
+ * * --- МЕТКА ВЕРСИИ: v27.5 - CATEGORY FILTER FIX ---
+ * * ВЕРСИЯ: 27.5 - Фильтрация нелогичных категорий
+ * * ДАТА: 2025-11-30
  * * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) .btn-dual-action: добавлено white-space: nowrap.
+ * 1. (LOGIC) В categoryOptions добавлена фильтрация по типу операции.
+ * - Income: Скрываем "Погашение займов".
+ * - Expense: Скрываем "Кредиты".
  */
 
 const mainStore = useMainStore();
@@ -32,7 +34,7 @@ const emit = defineEmits([
 const amount = ref('');
 const selectedAccountId = ref(null);
 const selectedOwner = ref(null);
-const selectedContractorValue = ref(null); // ID контрагента или физлица (prefix)
+const selectedContractorValue = ref(null); 
 const selectedCategoryId = ref(null);
 const selectedProjectId = ref(null);
 
@@ -52,14 +54,13 @@ const newOwnerName = ref('');
 const newOwnerInputRef = ref(null);
 
 const showCreateContractorModal = ref(false);
-const contractorTypeToCreate = ref('contractor'); // 'contractor' | 'individual'
+const contractorTypeToCreate = ref('contractor'); 
 const newContractorNameInput = ref('');
 const newContractorInputRef = ref(null);
 
 const isDeleteConfirmVisible = ref(false);
 const isCloneMode = ref(false);
 
-// Наблюдатель за типом операции
 watch(() => props.type, (newType, oldType) => {
   if (newType !== oldType) {
     selectedCategoryId.value = null;
@@ -90,7 +91,7 @@ const editableDate = ref(toInputDate(props.date));
 const minDateString = computed(() => toInputDateString(props.minAllowedDate));
 const maxDateString = computed(() => toInputDateString(props.maxAllowedDate));
 
-// 🟢 ТЕКСТЫ ДЛЯ ИНТЕРФЕЙСА
+// 🟢 ТЕКСТЫ
 const isIncome = computed(() => props.type === 'income');
 
 const txtAmount = computed(() => ({ 
@@ -143,39 +144,28 @@ const accountOptions = computed(() => {
   return opts;
 });
 
-// Владельцы (Разделены)
 const ownerOptions = computed(() => {
   const opts = [];
-  
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
       mainStore.currentCompanyBalances.forEach(c => { 
           opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸` }); 
       });
   }
-  
   if (mainStore.currentIndividualBalances.length) {
       opts.push({ label: 'Физлица', isHeader: true });
       mainStore.currentIndividualBalances.forEach(i => { 
-          // ФИЛЬТР: Скрываем системную сущность "Розничные клиенты"
           const nameLower = i.name.trim().toLowerCase();
-          if (nameLower === 'розничные клиенты' || nameLower === 'розница') {
-              return;
-          }
-
+          if (nameLower === 'розничные клиенты' || nameLower === 'розница') return;
           opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸` }); 
       });
   }
-
   opts.push({ isActionRow: true }); 
   return opts;
 });
 
-// 🟢 ИСПРАВЛЕНО: ФИЛЬТРАЦИЯ СПИСКА КОНТРАГЕНТОВ И ФИЗЛИЦ
 const contractorOptions = computed(() => {
   const opts = [];
-  
-  // 1. Юрлица
   const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
   const filteredContractors = mainStore.contractors.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
 
@@ -184,10 +174,8 @@ const contractorOptions = computed(() => {
       opts.push({ value: `contr_${c._id}`, label: c.name });
   });
   
-  // 2. Физлица (Убрана фильтрация владельцев счетов!)
   const filteredIndividuals = mainStore.individuals.filter(i => {
       const name = i.name.trim().toLowerCase();
-      // Скрываем только системные сущности розницы, всех остальных показываем
       return name !== 'розничные клиенты' && name !== 'розница';
   });
 
@@ -207,20 +195,32 @@ const projectOptions = computed(() => {
   return opts;
 });
 
+// 🟢 ФИЛЬТРАЦИЯ КАТЕГОРИЙ (ОШИБКА 3)
 const categoryOptions = computed(() => {
   const prepayIds = mainStore.getPrepaymentCategoryIds;
   const currentOpCatId = props.operationToEdit ? (props.operationToEdit.categoryId?._id || props.operationToEdit.categoryId || props.operationToEdit.prepaymentId?._id || props.operationToEdit.prepaymentId) : null;
 
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
-    const isTransfer = name === 'перевод' || name === 'transfer';
+    
+    // Общие фильтры
+    if (name === 'перевод' || name === 'transfer') return false;
+    if (c.isPrepayment || prepayIds.includes(c._id)) return false;
+    if (['меж.комп', 'межкомпаний', 'inter-comp'].includes(name)) return false;
+
+    // 🟢 Логика фильтрации по типу операции
+    if (isIncome.value) {
+        // Если ДОХОД -> скрываем "Погашение займов"
+        if (name === 'погашение займов' || name === 'loan repayment' || name === 'выплата кредита') return false;
+    } else {
+        // Если РАСХОД -> скрываем "Кредиты" (получение)
+        if (name === 'кредиты' || name === 'credit' || name === 'credits') return false;
+    }
+    
     if (name === 'остаток долга') return true;
-
-    const isPrepay = prepayIds.includes(c._id) || c.isPrepayment;
-    const isInterComp = ['меж.комп', 'межкомпаний', 'inter-comp'].includes(name);
-
     if (props.operationToEdit && c._id === currentOpCatId) return true;
-    return !isTransfer && !isPrepay && !isInterComp;
+    
+    return true;
   });
   
   const opts = validCats.map(c => ({ value: c._id, label: c.name }));
@@ -229,7 +229,7 @@ const categoryOptions = computed(() => {
   return opts;
 });
 
-// 🟢 AUTOFILL WATCHER (РОЗНИЦА -> РЕАЛИЗАЦИЯ)
+// ... (Rest of logic remains unchanged) ...
 watch(selectedContractorValue, (newValue) => {
     if (!newValue) return;
     if (mainStore.retailIndividualId) {
@@ -242,7 +242,6 @@ watch(selectedContractorValue, (newValue) => {
     }
 });
 
-// 🟢 HANDLERS
 const handleAccountChange = (val) => { if (val === '--CREATE_NEW--') { selectedAccountId.value = null; showAccountInput(); } else { onAccountSelected(val); } };
 const handleOwnerChange = (val) => { /* Logic handled by v-model */ };
 const handleContractorChange = (val) => { onContractorSelected(val, true, true); };
@@ -344,7 +343,6 @@ onMounted(async () => {
         const iId = op.individualId?._id || op.individualId; selectedOwner.value = `individual-${iId}`; 
     }
     
-    // ВОССТАНОВЛЕНИЕ КОНТРАГЕНТА
     if (op.contractorId) { 
         const cId = op.contractorId._id || op.contractorId;
         selectedContractorValue.value = `contr_${cId}`;
@@ -352,7 +350,6 @@ onMounted(async () => {
         const iId = op.counterpartyIndividualId._id || op.counterpartyIndividualId;
         selectedContractorValue.value = `ind_${iId}`;
     } else if (op.individualId && op.companyId) {
-        // Fallback for some legacy records
         const iId = op.individualId._id || op.individualId;
         selectedContractorValue.value = `ind_${iId}`;
     }
@@ -470,7 +467,6 @@ const handleSave = () => {
 // INLINE CREATE HANDLERS
 const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
-
 const saveNewAccount = async () => {
   if (isInlineSaving.value) return; const name = newAccountName.value.trim(); if (!name) return; isInlineSaving.value = true; 
   try { 

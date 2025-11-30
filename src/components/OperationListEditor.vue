@@ -657,7 +657,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .btn-refund:hover { background-color: #be70df !important; }
 
 /* 🟢 GRID LAYOUTS */
-.filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; }
+.filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; margin-top: 15px;}
 
 /* Withdrawal Mode Grid: 1fr для ноды */
 .filters-row.withdrawal-mode, .grid-row.withdrawal-mode { grid-template-columns: 130px 1fr 1fr 120px 2fr 50px; }
@@ -667,7 +667,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .filters-row.history-mode { grid-template-columns: 50px 150px 150px 1fr 50px !important; }
 
 /* With checkbox */
-.filters-row.with-checkbox, .grid-row.with-checkbox { grid-template-columns: 50px 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; }
+.filters-row.with-checkbox, .grid-row.with-checkbox { grid-template-columns: 50px 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; margin-top: 15px; }
 
 .status-dot { width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; }
 .col-status { display: flex; justify-content: center; align-items: center; }
