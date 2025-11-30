@@ -24,17 +24,16 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v50.2 - CREDITS ACTION FIX ---
- * * ВЕРСИЯ: 50.2 - Исправление действий кнопок Кредитов
+ * * --- МЕТКА ВЕРСИИ: v50.4 - CREDIT SAVE LOGIC FIX ---
+ * * ВЕРСИЯ: 50.4 - Исправление логики сохранения Обязательства
  * * ДАТА: 2025-11-30
  * * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен ref isCreditWizardVisible.
- * 2. onCreditsAdd теперь открывает isCreditWizardVisible = true (сразу визард).
- * 3. onCreditsEdit открывает isCreditEditorVisible = true (список).
- * 4. Добавлен обработчик handleWizardSave для сохранения из хедера.
+ * 1. handleWizardSave: Удалено создание операции Income.
+ * 2. handleWizardSave: Добавлен вызов mainStore.addCredit.
+ * 3. handleWizardSave: График создается с категорией "Погашение займов".
  */
 
-console.log('--- TheHeader.vue v50.2 (Credits Action Fix) ЗАГРУЖЕН ---');
+console.log('--- TheHeader.vue v50.4 (Credit Save Fix) ЗАГРУЖЕН ---');
 
 const mainStore = useMainStore();
 
@@ -252,7 +251,7 @@ const onCategoryEdit = (widgetKey) => {
 };
 const onLiabilitiesEdit = () => { operationListEditorTitle.value = 'Редактировать операции (Предоплаты)'; operationListEditorType.value = 'income'; operationListEditorFilterMode.value = 'prepayment_only'; isOperationListEditorVisible.value = true; };
 
-// 🟢 Хендлеры для Кредитов (ИСПРАВЛЕНО)
+// 🟢 Хендлеры для Кредитов
 const onCreditsEdit = () => {
     // Карандаш: Открывает список
     isCreditEditorVisible.value = true;
@@ -262,50 +261,54 @@ const onCreditsAdd = () => {
     isCreditWizardVisible.value = true;
 };
 
-// 🟢 Сохранение из Визарда (Копия логики из CreditListEditor, вынесенная на уровень выше)
+// 🟢 ИСПРАВЛЕНО: Сохранение из Визарда (Сценарий: "Новое обязательство")
 const handleWizardSave = async (payload) => {
     isCreditWizardVisible.value = false;
     try {
-        let creditCat = mainStore.categories.find(c => c.name.toLowerCase() === 'кредиты');
-        if (!creditCat) creditCat = await mainStore.addCategory('Кредиты');
+        // 1. Обеспечиваем наличие системных категорий (нам нужна "Погашение займов")
+        const systemEntities = await mainStore.ensureSystemEntities();
+        const repaymentCatId = systemEntities.repaymentCat._id;
 
-        let bankContractor = mainStore.contractors.find(c => c.name.toLowerCase() === payload.name.toLowerCase());
-        if (!bankContractor) bankContractor = await mainStore.addContractor(payload.name);
+        // 2. Создаем сущность Кредита в справочнике
+        // Это зафиксирует долг в виджете "Мои кредиты"
+        const creditPayload = {
+            name: payload.name,
+            totalDebt: payload.totalDebt,
+            monthlyPayment: payload.monthlyPayment,
+            paymentDay: payload.paymentDay,
+            contractorId: payload.contractorId,
+            individualId: payload.individualId
+        };
+        await mainStore.addCredit(creditPayload);
 
+        // 3. Генерируем график погашения (Будущие расходы)
+        // ВАЖНО: Мы НЕ создаем операцию "Доход". 
+        // Это сценарий ввода начальных данных, деньги на счете не меняются.
+        
         const operationsPromises = payload.schedule.map(item => {
             return mainStore.createEvent({
                 date: item.date,
-                amount: -item.amount, 
+                amount: -item.amount, // Расход
                 type: 'expense',
-                categoryId: creditCat._id,
-                contractorId: bankContractor._id,
-                description: `Погашение кредита: ${payload.name}`,
-                accountId: null 
+                categoryId: repaymentCatId, // Категория "Погашение займов"
+                contractorId: payload.contractorId, // Привязываем к кредитору
+                individualId: payload.individualId, // Или к физлицу
+                description: `Погашение обязательства: ${payload.name}`,
+                accountId: null // Планируемый расход (пока без счета)
             });
         });
 
-        if (payload.totalDebt > 0) {
-             operationsPromises.push(mainStore.createEvent({
-                date: new Date(),
-                amount: payload.totalDebt,
-                type: 'income',
-                categoryId: creditCat._id,
-                contractorId: bankContractor._id,
-                description: `Получение кредита: ${payload.name}`,
-                accountId: null 
-            }));
-        }
-
         await Promise.all(operationsPromises);
+        
+        // 4. Обновляем данные интерфейса
         await mainStore.fetchAllEntities();
-        // Обновляем график (если нужно)
         if (mainStore.projection.mode) {
              await mainStore.loadCalculationData(mainStore.projection.mode, mainStore.currentViewDate);
         }
 
     } catch (e) {
-        console.error("Ошибка:", e);
-        alert("Не удалось создать кредит: " + e.message);
+        console.error("Ошибка сохранения обязательства:", e);
+        alert("Не удалось создать обязательство: " + e.message);
     }
 };
 

@@ -4,10 +4,15 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 import BaseSelect from './BaseSelect.vue';
 
-const emit = defineEmits(['close', 'save']);
+// 🟢 Принимаем prop editingCredit
+const props = defineProps({
+    editingCredit: { type: Object, default: null }
+});
+
+const emit = defineEmits(['close', 'save', 'update']);
 const mainStore = useMainStore();
 
-// --- Вкладки (как в редакторе предоплат) ---
+// --- Вкладки ---
 const activeTab = ref('params'); // 'params' | 'schedule'
 
 // --- Данные формы ---
@@ -17,6 +22,9 @@ const selectedAccountId = ref(null); // Счет
 const selectedOwnerValue = ref(null); // Владелец
 const monthlyPayment = ref(''); // Платеж
 const paymentDay = ref(''); // День
+// 🟢 Новые поля
+const selectedProjectId = ref(null);
+const selectedCategoryId = ref(null);
 
 // --- Состояния создания (Inline) ---
 const isCreatingCreditor = ref(false); const newCreditorName = ref(''); const newCreditorType = ref('contractor'); const newCreditorInputRef = ref(null);
@@ -26,6 +34,9 @@ const isSavingInline = ref(false);
 
 // --- Состояние графика ---
 const schedule = ref([]);
+
+// 🟢 Режим редактирования
+const isEditMode = computed(() => !!props.editingCredit);
 
 // --- Форматтеры ---
 const formatMoney = (val) => {
@@ -58,7 +69,7 @@ const onDayInput = (e) => {
     calculateSchedule();
 };
 
-// --- Опции СЕЛЕКТОВ (Копия логики из OperationPopup) ---
+// --- Опции СЕЛЕКТОВ ---
 const creditorOptions = computed(() => {
     const opts = [];
     const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
@@ -76,7 +87,9 @@ const creditorOptions = computed(() => {
         opts.push({ label: 'Частные лица', isHeader: true });
         filteredIndividuals.forEach(i => opts.push({ value: `ind_${i._id}`, label: i.name }));
     }
-    opts.push({ value: '--CREATE_NEW--', label: '+ Создать нового кредитора', isSpecial: true });
+    if (!isEditMode.value) { // Скрываем создание в режиме редактирования
+        opts.push({ value: '--CREATE_NEW--', label: '+ Создать нового кредитора', isSpecial: true });
+    }
     return opts;
 });
 
@@ -86,7 +99,9 @@ const accountOptions = computed(() => {
     label: acc.name,
     rightText: `${formatNumber(Math.abs(acc.balance))} ₸`
   }));
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', isSpecial: true });
+  if (!isEditMode.value) {
+    opts.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', isSpecial: true });
+  }
   return opts;
 });
 
@@ -103,8 +118,70 @@ const ownerOptions = computed(() => {
            opts.push({ value: `individual-${i._id}`, label: i.name });
       });
   }
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать владельца', isSpecial: true });
+  if (!isEditMode.value) {
+    opts.push({ value: '--CREATE_NEW--', label: '+ Создать владельца', isSpecial: true });
+  }
   return opts;
+});
+
+// 🟢 Новые опции
+const projectOptions = computed(() => {
+    return mainStore.projects.map(p => ({ value: p._id, label: p.name }));
+});
+const categoryOptions = computed(() => {
+    return mainStore.categories.map(c => ({ value: c._id, label: c.name }));
+});
+
+// --- INIT ---
+onMounted(() => {
+    // 🟢 Если передан кредит для редактирования - заполняем поля
+    if (props.editingCredit) {
+        const c = props.editingCredit;
+        
+        // 1. Сумма
+        const debt = c.totalDebt || 0; 
+        balance.value = formatNumber(debt);
+
+        // 2. Кредитор
+        if (c.contractorId) {
+             const cId = c.contractorId._id || c.contractorId;
+             selectedCreditorValue.value = `contr_${cId}`;
+        } else if (c.individualId) {
+             const iId = c.individualId._id || c.individualId;
+             selectedCreditorValue.value = `ind_${iId}`;
+        }
+
+        // 3. Счет (targetAccountId)
+        if (c.targetAccountId) {
+            selectedAccountId.value = c.targetAccountId;
+        } else if (c.accountId) { 
+            selectedAccountId.value = c.accountId;
+        }
+
+        // 4. Владелец
+        if (selectedAccountId.value) {
+            const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+            if (acc) {
+                if (acc.companyId) selectedOwnerValue.value = `company-${typeof acc.companyId === 'object' ? acc.companyId._id : acc.companyId}`;
+                else if (acc.individualId) selectedOwnerValue.value = `individual-${typeof acc.individualId === 'object' ? acc.individualId._id : acc.individualId}`;
+            }
+        }
+        
+        // 5. Проект и Категория
+        if (c.projectId) selectedProjectId.value = c.projectId._id || c.projectId;
+        if (c.categoryId) selectedCategoryId.value = c.categoryId._id || c.categoryId;
+
+        // Платеж и день
+        if (c.monthlyPayment) monthlyPayment.value = formatNumber(c.monthlyPayment);
+        if (c.paymentDay) paymentDay.value = c.paymentDay;
+        
+        calculateSchedule();
+    } else {
+        // При создании по умолчанию ставим категорию "Кредиты", если она есть
+        if (mainStore.creditIncomeCat) {
+            selectedCategoryId.value = mainStore.creditIncomeCat._id;
+        }
+    }
 });
 
 // --- Handlers Селектов ---
@@ -194,7 +271,12 @@ const totalPaymentsSum = computed(() => schedule.value.reduce((acc, p) => acc + 
 const handleSave = () => {
     const debt = parseMoney(balance.value);
     if (!selectedCreditorValue.value || debt <= 0 || !selectedAccountId.value || !selectedOwnerValue.value) {
-        alert('Заполните все обязательные поля (Кредитор, Сумма, Счет, Владелец)');
+        alert('Заполните все обязательные поля');
+        return;
+    }
+    // Проверка категории, если это "обязательно" по сценарию
+    if (!selectedCategoryId.value) {
+        alert('Выберите категорию (например, "Кредиты")');
         return;
     }
 
@@ -204,10 +286,6 @@ const handleSave = () => {
     if (prefix === 'contr') { contractorId = id; const c = mainStore.contractors.find(x => x._id === id); name = c ? c.name : 'Кредит'; } 
     else { individualId = id; const i = mainStore.individuals.find(x => x._id === id); name = i ? i.name : 'Займ'; }
 
-    // Парсинг владельца для привязки счета (если нужно обновить)
-    // В данном случае мы просто сохраняем факт. 
-    // Но если счет был создан без владельца, можно обновить. (Опустим для упрощения).
-
     const payload = {
         name: name,
         totalDebt: debt,
@@ -215,10 +293,18 @@ const handleSave = () => {
         paymentDay: parseInt(paymentDay.value) || 25,
         contractorId, individualId,
         schedule: schedule.value,
-        // Доп данные для создания операции "Приход"
-        targetAccountId: selectedAccountId.value 
+        targetAccountId: selectedAccountId.value,
+        projectId: selectedProjectId.value, // 🟢
+        categoryId: selectedCategoryId.value // 🟢
     };
-    emit('save', payload);
+    
+    // 🟢 Разделение логики: Создание vs Обновление
+    if (isEditMode.value) {
+        // Добавляем ID для обновления
+        emit('update', { ...payload, _id: props.editingCredit._id });
+    } else {
+        emit('save', payload);
+    }
 };
 </script>
 
@@ -227,8 +313,11 @@ const handleSave = () => {
     <div class="popup-content wizard-content">
       
       <div class="popup-header">
-        <h3>Добавление кредита</h3>
+        <h3>{{ isEditMode ? 'Настройка графика платежей' : 'Новое обязательство' }}</h3>
       </div>
+      
+      <p class="editor-hint" v-if="!isEditMode">У меня есть кредит, долг, займ. Хочу внести его в систему.</p>
+      <p class="editor-hint" v-else>Укажите сумму ежемесячного платежа и дату списания.</p>
 
       <!-- TABS -->
       <div class="tabs-header">
@@ -241,71 +330,75 @@ const handleSave = () => {
         <!-- Вкладка 1: Параметры -->
         <div v-if="activeTab === 'params'" class="params-tab">
             
-            <!-- 1. КРЕДИТОР -->
-            <div v-if="!isCreatingCreditor" class="input-spacing">
-                <BaseSelect 
-                    v-model="selectedCreditorValue" :options="creditorOptions"
-                    label="Кредитор" placeholder="Выберите кредитора"
-                    @change="handleCreditorChange"
-                />
-            </div>
-            <div v-else class="inline-create-form input-spacing">
-                <div class="create-type-switcher">
-                    <span :class="{active: newCreditorType==='contractor'}" @click="newCreditorType='contractor'">Банк</span>
-                    <span :class="{active: newCreditorType==='individual'}" @click="newCreditorType='individual'">Физлицо</span>
+            <!-- 🟢 Блокируем этот блок в режиме редактирования через pointer-events/opacity -->
+            <div :class="{ 'locked-section': isEditMode }">
+                <!-- 1. КРЕДИТОР -->
+                <div v-if="!isCreatingCreditor" class="input-spacing">
+                    <BaseSelect 
+                        v-model="selectedCreditorValue" :options="creditorOptions"
+                        label="Кто выдал вам кредит, займ?" 
+                        placeholder="Кто выдал вам кредит, займ?"
+                        @change="handleCreditorChange"
+                    />
                 </div>
-                <div class="create-row">
-                    <input type="text" v-model="newCreditorName" ref="newCreditorInputRef" placeholder="Название кредитора" class="create-input" @keyup.enter="saveNewCreditor" @keyup.esc="isCreatingCreditor=false"/>
-                    <button class="btn-icon-save" @click="saveNewCreditor">✓</button>
-                    <button class="btn-icon-cancel" @click="isCreatingCreditor=false">✕</button>
+                <div v-else class="inline-create-form input-spacing">
+                    <div class="create-type-switcher">
+                        <span :class="{active: newCreditorType==='contractor'}" @click="newCreditorType='contractor'">Банк</span>
+                        <span :class="{active: newCreditorType==='individual'}" @click="newCreditorType='individual'">Физлицо</span>
+                    </div>
+                    <div class="create-row">
+                        <input type="text" v-model="newCreditorName" ref="newCreditorInputRef" placeholder="Название кредитора" class="create-input" @keyup.enter="saveNewCreditor" @keyup.esc="isCreatingCreditor=false"/>
+                        <button class="btn-icon-save" @click="saveNewCreditor">✓</button>
+                        <button class="btn-icon-cancel" @click="isCreatingCreditor=false">✕</button>
+                    </div>
                 </div>
-            </div>
 
-            <!-- 2. СУММА -->
-            <div class="custom-input-box input-spacing" :class="{ 'has-value': !!balance }">
-                <div class="input-inner-content">
-                   <span v-if="balance" class="floating-label">Сумма кредита, ₸</span>
-                   <input type="text" v-model="balance" @input="onBalanceInput" class="real-input" placeholder="Сумма кредита ₸" />
+                <!-- 2. СУММА -->
+                <div class="custom-input-box input-spacing" :class="{ 'has-value': !!balance }">
+                    <div class="input-inner-content">
+                    <span v-if="balance" class="floating-label">Сумма долга на текущий момент?</span>
+                    <input type="text" v-model="balance" @input="onBalanceInput" class="real-input" placeholder="Сумма долга на текущий момент?" />
+                    </div>
                 </div>
-            </div>
 
-            <!-- 3. СЧЕТ -->
-            <div v-if="!isCreatingAccount" class="input-spacing">
-                <BaseSelect 
-                    v-model="selectedAccountId" :options="accountOptions"
-                    label="На счет" placeholder="Выберите счет зачисления"
-                    @change="handleAccountChange"
-                />
-            </div>
-            <div v-else class="inline-create-form input-spacing">
-                <div class="create-row">
-                    <input type="text" v-model="newAccountName" ref="newAccountInputRef" placeholder="Название счета" class="create-input" @keyup.enter="saveNewAccount" @keyup.esc="isCreatingAccount=false"/>
-                    <button class="btn-icon-save" @click="saveNewAccount">✓</button>
-                    <button class="btn-icon-cancel" @click="isCreatingAccount=false">✕</button>
+                <!-- 3. СЧЕТ -->
+                <div v-if="!isCreatingAccount" class="input-spacing">
+                    <BaseSelect 
+                        v-model="selectedAccountId" :options="accountOptions"
+                        label="На какой счет получили деньги?" 
+                        placeholder="На какой счет получили деньги?"
+                        @change="handleAccountChange"
+                    />
                 </div>
-            </div>
+                <!-- 4. ВЛАДЕЛЕЦ -->
+                <div v-if="!isCreatingOwner" class="input-spacing">
+                    <BaseSelect 
+                        v-model="selectedOwnerValue" :options="ownerOptions"
+                        label="Кто владелец счета?" 
+                        placeholder="Кто владелец счета?"
+                        @change="handleOwnerChange"
+                    />
+                </div>
+                
+                <!-- 🟢 НОВЫЕ ПОЛЯ: ПРОЕКТ и КАТЕГОРИЯ -->
+                <div class="input-spacing">
+                    <BaseSelect 
+                        v-model="selectedProjectId" :options="projectOptions"
+                        label="Проект (необязательно)" 
+                        placeholder="Проект (необязательно)"
+                    />
+                </div>
+                <div class="input-spacing">
+                    <BaseSelect 
+                        v-model="selectedCategoryId" :options="categoryOptions"
+                        label="Категория (обязательно)" 
+                        placeholder="Выберите категорию (например, Кредиты)"
+                    />
+                </div>
 
-            <!-- 4. ВЛАДЕЛЕЦ -->
-            <div v-if="!isCreatingOwner" class="input-spacing">
-                <BaseSelect 
-                    v-model="selectedOwnerValue" :options="ownerOptions"
-                    label="Владелец счета" placeholder="Выберите владельца"
-                    @change="handleOwnerChange"
-                />
-            </div>
-            <div v-else class="inline-create-form input-spacing">
-                <div class="create-type-switcher">
-                    <span :class="{active: newOwnerType==='company'}" @click="newOwnerType='company'">Компания</span>
-                    <span :class="{active: newOwnerType==='individual'}" @click="newOwnerType='individual'">Физлицо</span>
-                </div>
-                <div class="create-row">
-                    <input type="text" v-model="newOwnerName" ref="newOwnerInputRef" placeholder="Имя владельца" class="create-input" @keyup.enter="saveNewOwner" @keyup.esc="isCreatingOwner=false"/>
-                    <button class="btn-icon-save" @click="saveNewOwner">✓</button>
-                    <button class="btn-icon-cancel" @click="isCreatingOwner=false">✕</button>
-                </div>
-            </div>
+            </div> <!-- End Locked Section -->
 
-            <!-- 5. ПЛАТЕЖ -->
+            <!-- 5. ПЛАТЕЖ (Всегда активно) -->
             <div class="custom-input-box input-spacing" :class="{ 'has-value': !!monthlyPayment }">
                 <div class="input-inner-content">
                    <span v-if="monthlyPayment" class="floating-label">Ежемесячный платеж, ₸</span>
@@ -313,7 +406,7 @@ const handleSave = () => {
                 </div>
             </div>
 
-            <!-- 6. ДЕНЬ -->
+            <!-- 6. ДЕНЬ (Всегда активно) -->
             <div class="custom-input-box input-spacing" :class="{ 'has-value': !!paymentDay }">
                 <div class="input-inner-content">
                    <span v-if="paymentDay" class="floating-label">День платежа</span>
@@ -322,7 +415,7 @@ const handleSave = () => {
             </div>
         </div>
 
-        <!-- Вкладка 2: График (Копия стиля из редактора) -->
+        <!-- Вкладка 2: График -->
         <div v-if="activeTab === 'schedule'" class="schedule-tab">
             <div class="summary-bar" v-if="schedule.length > 0">
                 <div class="sum-item"><span class="sum-label">Всего выплат:</span><span class="sum-val expense">{{ formatMoney(totalPaymentsSum) }} ₸</span></div>
@@ -330,7 +423,6 @@ const handleSave = () => {
                 <div class="sum-item"><span class="sum-label">Срок:</span><span class="sum-val">{{ schedule.length }} мес.</span></div>
             </div>
             
-            <!-- Заголовки таблицы -->
             <div class="filters-row schedule-header" v-if="schedule.length > 0">
                  <div class="col-date">Дата</div>
                  <div class="col-amount">Сумма</div>
@@ -355,7 +447,7 @@ const handleSave = () => {
       <div class="popup-footer">
         <!-- Кнопка создания СЛЕВА -->
         <button class="btn-add-new-footer btn-credit" @click="handleSave">
-            + Создать обязательство
+            {{ isEditMode ? 'Сохранить график' : '+ Создать обязательство' }}
         </button>
         <div class="footer-actions">
             <button class="btn-close" @click="$emit('close')">Отмена</button>
@@ -371,6 +463,14 @@ const handleSave = () => {
 
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
+
+.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-top: 0; margin-bottom: 1rem; }
+
+/* 🟢 Стили блокировки полей */
+.locked-section {
+    pointer-events: none;
+    opacity: 0.7;
+}
 
 /* Tabs */
 .tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 0.5rem; border-bottom: 1px solid #e5e7eb; }
