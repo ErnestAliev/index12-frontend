@@ -519,7 +519,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 
 /* 🟢 FIX: 10 колонок с фиксированными размерами для ровного выравнивания */
 .active-grid { 
-  grid-template-columns: 130px minmax(150px, 1.5fr) 100px 100px minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) 50px 40px; 
+  grid-template-columns: 130px minmax(10px, 1fr) 100px 99px minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) 100px 40px
 }
 .history-grid { grid-template-columns: 130px 1fr 150px 150px; }
 .schedule-grid { grid-template-columns: 130px 1fr 150px 150px; }

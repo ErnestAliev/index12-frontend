@@ -770,7 +770,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .calendar-icon { font-size: 16px; color: #999; }
 .input-spacing { margin-bottom: 12px; }
-.btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; background-color: var(--btn-bg); }
+.btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; background-color: #333; }
 .btn-submit:hover:not(:disabled) { background-color: var(--btn-hover); }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-submit-prepayment { background-color: #FF9D00; color: white; margin-left: 10px; }
