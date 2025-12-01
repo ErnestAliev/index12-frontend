@@ -3,17 +3,6 @@ import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v51.1 - CREDIT INCOME STYLE ---
- * * ВЕРСИЯ: 51.1 - Стилизация доходов по кредитам
- * * ДАТА: 2025-11-30
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлен computed `isCreditIncomeOp` через mainStore._isCreditIncome.
- * 2. (TEMPLATE) Добавлен класс `credit-income` и блок отрисовки для кредитов.
- * 3. (STYLE) Добавлены стили для .credit-income (фон #2F3340, текст #8FD4FF).
- */
-
 const props = defineProps({
   operation: { type: Object, default: null },
   dateKey: { type: String, required: true },
@@ -37,17 +26,20 @@ const isTransferOp = computed(() => {
   return cat === 'перевод' || cat === 'transfer';
 });
 
-// UI-детектор предоплаты
+// UI-детектор предоплаты (Сценарий 1)
 const isPrepaymentOp = computed(() => {
     const op = props.operation;
     if (!op || isTransferOp.value || op.isWithdrawal) return false;
     if (op.type !== 'income') return false;
     
+    // Если указана общая сумма сделки -> это Предоплата по сделке
+    if ((op.totalDealAmount || 0) > 0) return true;
+    
+    // Если контрагент - Розничные клиенты
     const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-    if (indId && indId === mainStore.retailIndividualId) {
-        return (op.totalDealAmount || 0) > 0;
-    }
+    if (indId && indId === mainStore.retailIndividualId) return true;
 
+    // Проверка по категориям
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
@@ -55,27 +47,22 @@ const isPrepaymentOp = computed(() => {
     return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
 });
 
-// UI-детектор вывода
+// UI-детектор технической операции (Сценарий 3: Отработали)
+// Расход без счета = Техническое списание обязательств
+const isTechnicalOp = computed(() => {
+    const op = props.operation;
+    // Расход, без счета списания и не являющийся выводом средств
+    return op && op.type === 'expense' && !op.accountId && !op.isWithdrawal; 
+});
+
 const isWithdrawalOp = computed(() => {
     return props.operation && props.operation.isWithdrawal;
 });
 
-// UI-детектор списания (Розница)
-const isRetailWriteOffOp = computed(() => {
-    return mainStore._isRetailWriteOff(props.operation);
-});
-
-// 🟢 UI-детектор Дохода по Кредиту
 const isCreditIncomeOp = computed(() => {
     return mainStore._isCreditIncome(props.operation);
 });
 
-
-const fromAccountName = computed(() =>
-  props.operation?.fromAccountId?.name || props.operation?.fromAccountId || ''
-);
-
-// Имя Владельца-Получателя
 const toOwnerName = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -91,6 +78,17 @@ const toOwnerName = computed(() => {
   }
   
   return op.toAccountId?.name || 'Счет...';
+});
+
+const chipLabel = computed(() => {
+  const op = props.operation;
+  if (!op) return '';
+  
+  if (isPrepaymentOp.value) return 'Предоплата';
+  // Для технических операций показываем описание или "Отработали"
+  if (isTechnicalOp.value) return op.description || 'Отработали';
+  
+  return op.categoryId?.name || 'Без категории';
 });
 
 /* Клики */
@@ -135,65 +133,46 @@ const onDrop = (event) => {
       :class="{ 
          transfer: isTransferOp, 
          income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp, 
-         expense: operation.type==='expense' && !isWithdrawalOp,
+         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
          prepayment: isPrepaymentOp,
          withdrawal: isWithdrawalOp,
-         writeoff: isRetailWriteOffOp,
-         'credit-income': isCreditIncomeOp /* 🟢 Новый класс */
+         technical: isTechnicalOp, /* 🟢 Класс для технических операций */
+         'credit-income': isCreditIncomeOp 
       }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
-      <!-- ПЕРЕВОД: СУММА -> ПОЛУЧАТЕЛЬ (Владелец) -->
+      <!-- ПЕРЕВОД -->
       <template v-if="isTransferOp">
-        <span class="op-amount">
-          {{ formatNumber(Math.abs(operation.amount)) }}
-        </span>
-        <span class="op-meta">
-          {{ toOwnerName }}
-        </span>
+        <span class="op-amount">{{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="op-meta">{{ toOwnerName }}</span>
       </template>
 
       <!-- ВЫВОД -->
       <template v-else-if="isWithdrawalOp">
-        <span class="op-amount">
-          - {{ formatNumber(Math.abs(operation.amount)) }}
-        </span>
-        <span class="op-meta">
-           {{ operation.destination || 'Вывод' }}
-        </span>
+        <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="op-meta">{{ operation.destination || 'Вывод' }}</span>
       </template>
 
-      <!-- СПИСАНИЕ (РОЗНИЦА) -->
-      <template v-else-if="isRetailWriteOffOp">
-        <span class="op-amount">
-          - {{ formatNumber(Math.abs(operation.amount)) }}
-        </span>
-        <span class="op-meta">
-           Списание
-        </span>
+      <!-- 🟢 ТЕХНИЧЕСКАЯ ОПЕРАЦИЯ (Отработка) -->
+      <template v-else-if="isTechnicalOp">
+        <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="op-meta">{{ chipLabel }}</span>
       </template>
 
-      <!-- 🟢 КРЕДИТ (ДОХОД) -->
+      <!-- КРЕДИТ -->
       <template v-else-if="isCreditIncomeOp">
-        <span class="op-amount">
-          + {{ formatNumber(Math.abs(operation.amount)) }}
-        </span>
-        <span class="op-meta">
-           Кредит
-        </span>
+        <span class="op-amount">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="op-meta">Кредит</span>
       </template>
 
-      <!-- ОБЫЧНЫЕ ОПЕРАЦИИ -->
+      <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА -->
       <template v-else>
         <span class="op-amount">
           {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
-        
-        <span class="op-meta">
-          {{ isPrepaymentOp ? 'Предоплата' : (operation.categoryId?.name || 'Без категории') }}
-        </span>
+        <span class="op-meta">{{ chipLabel }}</span>
       </template>
     </div>
 
@@ -224,12 +203,17 @@ const onDrop = (event) => {
 .op-amount { font-weight:bold; margin-right:6px; white-space:nowrap; }
 .op-meta { color:#aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* Цвета для обычных операций */
+/* Цвета */
 .income .op-amount { color: var(--color-primary); }
 .expense .op-amount { color: var(--color-danger); }
 
-/* ПРЕДОПЛАТА */
+/* 🟢 ПРЕДОПЛАТА: Оранжевый текст суммы */
 .prepayment .op-amount { color: #FF9D00 !important; }
+
+/* 🟢 ТЕХНИЧЕСКАЯ: Серый фон, Золотистый текст */
+.technical { background: #383838; border: 1px solid #444; }
+.technical .op-amount { color: #E6C845; } /* Золотистый */
+.technical .op-meta { color: #B0B090; }
 
 /* ВЫВОД */
 .withdrawal { background: #2F3340; }
@@ -237,24 +221,11 @@ const onDrop = (event) => {
 .withdrawal .op-amount { color: #DE8FFF; }
 .withdrawal .op-meta { color: #B085D0; }
 
-/* СПИСАНИЕ */
-.writeoff .op-amount { color: #ef4444; }
-.writeoff .op-meta { font-style: normal; }
-
-/* 🟢 КРЕДИТ ДОХОД */
-.credit-income {
-  background-color: #2F3340; /* Темный фон */
-}
-.credit-income:hover {
-  background-color: #3a3f50;
-}
-.credit-income .op-amount {
-  color: #8FD4FF; /* Голубой текст */
-}
-.credit-income .op-meta {
-  color: #8FD4FF;
-  opacity: 0.8;
-}
+/* КРЕДИТ */
+.credit-income { background-color: #2F3340; }
+.credit-income:hover { background-color: #3a3f50; }
+.credit-income .op-amount { color: #8FD4FF; }
+.credit-income .op-meta { color: #8FD4FF; opacity: 0.8; }
 
 /* ПЕРЕВОД */
 .transfer { background:#2F3340; }
@@ -263,26 +234,12 @@ const onDrop = (event) => {
 .transfer .op-meta { color:#98a2b3; }
 
 @media (max-height: 900px) {
-  .hour-cell {
-    padding: 2px 4px; 
-    height: 28px; 
-  }
-  .operation-chip {
-    font-size: 0.7em; 
-    padding: 3px 6px; 
-  }
-  .op-amount {
-    margin-right: 4px; 
-  }
+  .hour-cell { padding: 2px 4px; height: 28px; }
+  .operation-chip { font-size: 0.7em; padding: 3px 6px; }
+  .op-amount { margin-right: 4px; }
 }
-
 @media (max-width: 1200px) {
-  .hour-cell {
-    padding: 4px 6px;
-  }
-  .operation-chip {
-    font-size: 0.7em; 
-    padding: 3px 6px; 
-  }
+  .hour-cell { padding: 4px 6px; }
+  .operation-chip { font-size: 0.7em; padding: 3px 6px; }
 }
 </style>

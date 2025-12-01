@@ -23,7 +23,7 @@ import PrepaymentModal from './PrepaymentModal.vue';
 import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue';
 import PrepaymentListEditor from './PrepaymentListEditor.vue';
-import WithdrawalListEditor from './WithdrawalListEditor.vue'; // 🟢 Импорт
+import WithdrawalListEditor from './WithdrawalListEditor.vue';
 
 const mainStore = useMainStore();
 
@@ -96,7 +96,8 @@ const isWithdrawalPopupVisible = ref(false);
 const isCreditEditorVisible = ref(false); 
 const isCreditWizardVisible = ref(false); 
 const isPrepaymentEditorVisible = ref(false);
-const isWithdrawalListEditorVisible = ref(false); // 🟢
+const prepaymentEditorInitialTab = ref('clients'); // 🟢
+const isWithdrawalListEditorVisible = ref(false);
 const isEntityPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
@@ -220,6 +221,7 @@ const onCategoryAdd = (widgetKey, index) => {
 };
 
 const onLiabilitiesAdd = () => {
+    // Открываем окно дохода, там можно выбрать "Предоплата"
     operationPopupType.value = 'income';
     isOperationPopupVisible.value = true;
 };
@@ -230,12 +232,7 @@ const onCategoryEdit = (widgetKey) => {
     
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationListEditorTitle.value = 'Редактировать расходы'; operationListEditorType.value = 'expense'; isOperationListEditorVisible.value = true; return; }
-    
-    // 🟢 Выводы: Открываем новый редактор
-    if (widgetKey === 'withdrawalList') { 
-        isWithdrawalListEditorVisible.value = true; 
-        return; 
-    }
+    if (widgetKey === 'withdrawalList') { isWithdrawalListEditorVisible.value = true; return; }
     
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
@@ -247,6 +244,13 @@ const onCategoryEdit = (widgetKey) => {
 };
 
 const onLiabilitiesEdit = () => { 
+    prepaymentEditorInitialTab.value = 'clients'; // Default
+    isPrepaymentEditorVisible.value = true;
+};
+
+// 🟢 Переход на конкретную вкладку предоплат (из кликабельной строки виджета)
+const onLiabilitiesTab = (tabName) => {
+    prepaymentEditorInitialTab.value = tabName; // 'retail' or 'clients'
     isPrepaymentEditorVisible.value = true;
 };
 
@@ -331,6 +335,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :widgetIndex="index"
           @add="onLiabilitiesAdd"
           @edit="onLiabilitiesEdit"
+          @open-tab="onLiabilitiesTab"
           @open-menu="handleOpenMenu"
         />
 
@@ -446,86 +451,32 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   
   <CreditListEditor v-if="isCreditEditorVisible" @close="isCreditEditorVisible = false" />
   <CreditWizardPopup v-if="isCreditWizardVisible" @close="isCreditWizardVisible = false" @save="handleWizardSave" />
-  <PrepaymentListEditor v-if="isPrepaymentEditorVisible" @close="isPrepaymentEditorVisible = false" />
   
-  <!-- 🟢 Новый редактор выводов -->
+  <!-- 🟢 ПЕРЕДАЧА НАЧАЛЬНОЙ ВКЛАДКИ -->
+  <PrepaymentListEditor v-if="isPrepaymentEditorVisible" :initial-tab="prepaymentEditorInitialTab" @close="isPrepaymentEditorVisible = false" />
+  
   <WithdrawalListEditor v-if="isWithdrawalListEditorVisible" @close="isWithdrawalListEditorVisible = false" />
 </template>
 
 <style scoped>
-.header-dashboard {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 1px; 
-  padding: 1px; 
-  background-color: var(--color-border); 
-  border-radius: 8px;
-  border: 1px solid var(--color-border); 
-  margin-bottom: 0.4rem;
-  height: 100%;
-  box-sizing: border-box;
-  min-height: 0; 
-  width: 100%;
-  overflow: hidden; 
-  grid-template-rows: 1fr; 
-}
-
-.dashboard-card-wrapper {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--color-background-soft);
-  min-width: 0;
-  min-height: 0; 
-  border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-  cursor: grab;
-}
+/* (Стили без изменений) */
+.header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; padding: 1px; background-color: var(--color-border); border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
+.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--color-background-soft); min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: grab; }
 .dashboard-card-wrapper:active { cursor: grabbing; }
-
-:deep(.dashboard-card) {
-  flex: 1; display: flex; flex-direction: column;
-  background-color: transparent; padding: 8px 12px !important; 
-  border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important;
-  min-height: 0; 
-}
-
+:deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
 .dashboard-card-wrapper:nth-child(6n) { border-right: none !important; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) { display: none; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
-
-.header-dashboard.expanded { 
-  grid-template-rows: none; 
-  grid-auto-rows: minmax(130px, 1fr); 
-  overflow: hidden; 
-}
+.header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }
 .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
-
 .sortable-ghost { opacity: 0.4; background-color: #333; }
 .sortable-drag { background-color: var(--color-background-soft); box-shadow: 0 5px 15px rgba(0,0,0,0.3); opacity: 1; z-index: 2000; }
-
 .header-dashboard.expanded :deep(.card-title span) { display: none !important; }
 .header-dashboard.expanded :deep(.card-title) { cursor: default; pointer-events: none; }
-
-@media (max-height: 900px) {
-  :deep(.dashboard-card) { padding: 8px 10px !important; }
-}
-
-/* Глобальное меню стили */
-.global-menu-overlay {
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-  z-index: 5000; background: transparent;
-}
-.global-widget-dropdown {
-  position: fixed; background-color: #f4f4f4; border-radius: 8px;
-  box-shadow: 0 5px 25px rgba(0,0,0,0.3); padding: 8px; box-sizing: border-box;
-  max-height: 400px; display: flex; flex-direction: column; color: #333;
-}
-.widget-search-input {
-  flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd;
-  border-radius: 6px; margin-bottom: 8px; font-size: 0.85em;
-  box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333;
-}
+@media (max-height: 900px) { :deep(.dashboard-card) { padding: 8px 10px !important; } }
+.global-menu-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 5000; background: transparent; }
+.global-widget-dropdown { position: fixed; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 25px rgba(0,0,0,0.3); padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; color: #333; }
+.widget-search-input { flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.85em; box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333; }
 .widget-search-input:focus { outline: none; border-color: #007AFF; }
 .global-widget-dropdown ul { list-style: none; margin: 0; padding: 0; flex-grow: 1; overflow-y: auto; }
 .global-widget-dropdown li { padding: 10px 12px; border-radius: 6px; font-size: 0.85em; color: #333; cursor: pointer; font-weight: 500; }

@@ -3,18 +3,8 @@ import { ref, computed, onMounted, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v1.2 - DOUBLE CLICK PROTECTION ---
- * * ВЕРСИЯ: 1.2 - Защита от двойного нажатия
- * * ДАТА: 2025-11-21
- * * ЧТО ИЗМЕНЕНО:
- * 1. Добавлен ref `isSaving` для блокировки кнопки.
- * 2. handleSave теперь блокирует повторные нажатия.
- * 3. Добавлен тайм-аут сброса блокировки (safety fallback).
- */
-
 const props = defineProps({
-  initialData: { type: Object, required: true }, // Данные из OperationPopup (сумма, контрагент и т.д.)
+  initialData: { type: Object, required: true },
   dateKey: { type: String, required: true }
 });
 
@@ -27,7 +17,6 @@ const formattedAmount = ref('');
 const totalDealAmount = ref(0);
 const formattedTotalDeal = ref('');
 
-// 🟢 Состояние сохранения для защиты от дабл-клика
 const isSaving = ref(false);
 
 // Ввод суммы (Аванс)
@@ -44,53 +33,29 @@ const onTotalDealInput = (e) => {
   formattedTotalDeal.value = formatNumber(Number(raw));
 };
 
-// Получение имени контрагента для отображения
+// Получение имени контрагента
 const contractorName = computed(() => {
   const cId = props.initialData.contractorId;
-  if (!cId) return 'Не выбран';
-  // Если передан объект
-  if (typeof cId === 'object' && cId.name) return cId.name;
-  // Если ID - ищем в сторе
-  const c = mainStore.contractors.find(i => i._id === cId);
-  return c ? c.name : 'Неизвестный контрагент';
+  const indId = props.initialData.counterpartyIndividualId;
+  
+  if (cId) {
+      if (typeof cId === 'object' && cId.name) return cId.name;
+      const c = mainStore.contractors.find(i => i._id === cId);
+      return c ? c.name : 'Неизвестный контрагент';
+  }
+  if (indId) {
+      if (typeof indId === 'object' && indId.name) return indId.name;
+      const i = mainStore.individuals.find(x => x._id === indId);
+      return i ? i.name : 'Неизвестное физлицо';
+  }
+  return 'Не выбран';
 });
 
-// Умные подсказки
-const smartHint = computed(() => {
-  const current = amount.value;
-  const total = totalDealAmount.value;
-
-  if (total <= 0 && current > 0) {
-    return {
-      text: 'Введите общую сумму сделки, чтобы система рассчитала обязательства.',
-      type: 'neutral'
-    };
-  }
-
-  if (current > total) {
-    return {
-      text: 'Ошибка: Вносимая сумма не может быть больше общей суммы сделки!',
-      type: 'error'
-    };
-  }
-
-  if (total > 0 && current === total) {
-    return {
-      text: `Это полная оплата. Операция будет считаться полностью закрытой. Мы должны клиенту услуги на ${formatNumber(total)} ₸.`,
-      type: 'success'
-    };
-  }
-
-  if (total > 0 && current < total) {
-    const percent = Math.round((current / total) * 100);
-    const debt = total - current;
-    return {
-      text: `Вы получили часть суммы (${percent}%). Остаток долга клиента по этой сделке составит ${formatNumber(debt)} ₸. Эта сумма отобразится в виджете "Нам должны".`,
-      type: 'info'
-    };
-  }
-  
-  return null;
+// Расчет долга клиента
+const clientDebt = computed(() => {
+    const total = totalDealAmount.value;
+    const paid = amount.value;
+    return total > paid ? total - paid : 0;
 });
 
 const isSaveDisabled = computed(() => {
@@ -98,38 +63,24 @@ const isSaveDisabled = computed(() => {
 });
 
 const handleSave = () => {
-  // 🟢 Защита: Если валидация не прошла или уже идет сохранение - выходим
   if (isSaveDisabled.value || isSaving.value) return;
-
-  // Блокируем кнопку
   isSaving.value = true;
 
-  // Формируем финальный объект для сохранения
   const finalOperation = {
     ...props.initialData,
     amount: amount.value,
     totalDealAmount: totalDealAmount.value,
-    type: 'income', // Предоплата - это доход
-    dateKey: props.dateKey,
-    // isPrepayment: true // Можно добавить флаг, но пока определяем по категории
+    type: 'income',
+    dateKey: props.dateKey
   };
 
   emit('save', finalOperation);
-  
-  // 🟢 Safety Fallback: Сбрасываем блокировку через 3 сек, 
-  // на случай если родительский компонент не закроет окно (например, ошибка сети)
-  setTimeout(() => {
-    if (isSaving.value) isSaving.value = false;
-  }, 3000);
+  setTimeout(() => { if (isSaving.value) isSaving.value = false; }, 3000);
 };
 
 onMounted(() => {
-  // Инициализируем форматированные значения
   formattedAmount.value = formatNumber(amount.value);
-  // Фокус на поле общей суммы
-  nextTick(() => {
-     document.querySelector('.smart-focus')?.focus();
-  });
+  nextTick(() => { document.querySelector('.smart-focus')?.focus(); });
 });
 </script>
 
@@ -138,11 +89,13 @@ onMounted(() => {
     <div class="modal-content">
       <h3>Оформление предоплаты</h3>
       
+      <!-- Контрагент (Только чтение) -->
       <div class="info-block">
         <span class="label">Контрагент:</span>
         <span class="value">{{ contractorName }}</span>
       </div>
 
+      <!-- Вносимая сумма -->
       <div class="form-group">
         <label>Вносимая сумма (Аванс)</label>
         <input 
@@ -154,6 +107,7 @@ onMounted(() => {
         />
       </div>
 
+      <!-- Общая сумма сделки -->
       <div class="form-group">
         <label>Общая сумма сделки</label>
         <input 
@@ -165,29 +119,15 @@ onMounted(() => {
         />
       </div>
 
-      <transition name="fade">
-        <div v-if="smartHint" class="hint-box" :class="smartHint.type">
-          {{ smartHint.text }}
-        </div>
-      </transition>
+      <!-- Расчет долга (Инфо) -->
+      <div class="debt-info" v-if="totalDealAmount > 0">
+          <span class="debt-label">Остаток долга клиента:</span>
+          <span class="debt-value">{{ formatNumber(clientDebt) }} ₸</span>
+      </div>
 
       <div class="actions">
-        <!-- Кнопка Отмена -->
-        <button 
-          class="btn-cancel" 
-          @click="$emit('close')" 
-          :disabled="isSaving"
-        >
-          Отмена
-        </button>
-        
-        <!-- 🟢 Кнопка Подтвердить с состоянием загрузки -->
-        <button 
-          class="btn-save" 
-          @click="handleSave" 
-          :disabled="isSaveDisabled || isSaving"
-          :class="{ 'btn-loading': isSaving }"
-        >
+        <button class="btn-cancel" @click="$emit('close')" :disabled="isSaving">Отмена</button>
+        <button class="btn-save" @click="handleSave" :disabled="isSaveDisabled || isSaving" :class="{ 'btn-loading': isSaving }">
           {{ isSaving ? 'Сохранение...' : 'Подтвердить' }}
         </button>
       </div>
@@ -196,72 +136,28 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.modal-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.6); z-index: 2000; /* Поверх всего */
-  display: flex; justify-content: center; align-items: center;
-  backdrop-filter: blur(3px);
-}
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(3px); }
+.modal-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; width: 90%; max-width: 420px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); color: #1a1a1a; animation: slideUp 0.2s ease-out; }
+h3 { margin: 0 0 1.5rem 0; font-size: 1.4rem; font-weight: 600; text-align: center; }
 
-.modal-content {
-  background: #F4F4F4; padding: 2rem; border-radius: 12px;
-  width: 90%; max-width: 420px;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-  color: #1a1a1a;
-  animation: slideUp 0.2s ease-out;
-}
+.info-block { margin-bottom: 1.5rem; font-size: 0.95rem; color: #666; background: #e9e9e9; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; }
+.info-block .value { font-weight: 700; color: #1a1a1a; }
 
-h3 { margin: 0 0 1.5rem 0; font-size: 1.4rem; font-weight: 600; }
-
-.info-block { 
-  margin-bottom: 1.5rem; font-size: 0.95rem; color: #666; 
-  background: #e9e9e9; padding: 10px; border-radius: 6px;
-}
-.info-block .value { font-weight: 700; color: #1a1a1a; margin-left: 5px; }
-
-.form-group { margin-bottom: 1rem; }
+.form-group { margin-bottom: 1.2rem; }
 label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #333; }
+.form-input { width: 100%; height: 50px; padding: 0 14px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; font-size: 1.1rem; font-weight: 600; color: #1a1a1a; box-sizing: border-box; transition: border-color 0.2s, box-shadow 0.2s; text-align: right; }
+.form-input:focus { outline: none; border-color: #FF9D00; box-shadow: 0 0 0 3px rgba(255, 157, 0, 0.2); }
 
-.form-input {
-  width: 100%; height: 50px; padding: 0 14px;
-  background: #fff; border: 1px solid #E0E0E0; border-radius: 8px;
-  font-size: 1.1rem; font-weight: 600; color: #1a1a1a;
-  box-sizing: border-box; transition: border-color 0.2s, box-shadow 0.2s;
-}
-.form-input:focus { outline: none; border-color: #34c759; box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.15); }
+.debt-info { margin-bottom: 2rem; padding: 12px; background-color: #FFF3E0; border: 1px solid #FFE0B2; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+.debt-label { font-size: 0.9rem; color: #E65100; font-weight: 500; }
+.debt-value { font-size: 1.1rem; font-weight: 700; color: #E65100; }
 
-.hint-box {
-  margin-top: 1.5rem; padding: 1rem; border-radius: 8px;
-  font-size: 0.9rem; line-height: 1.4;
-  transition: all 0.3s;
-}
-.hint-box.success { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
-.hint-box.info { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-.hint-box.error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-.hint-box.neutral { background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb; }
-
-.actions { margin-top: 2rem; display: flex; gap: 10px; }
-.btn-save {
-  flex: 1; height: 50px; background: #34c759; color: #fff;
-  border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
-  cursor: pointer; transition: background 0.2s, opacity 0.2s;
-}
-.btn-save:hover:not(:disabled) { background: #2da84e; }
+.actions { display: flex; gap: 10px; }
+.btn-save { flex: 1; height: 50px; background: #FF9D00; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+.btn-save:hover:not(:disabled) { background: #fb8c00; }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; background: #ccc; }
-.btn-loading { cursor: wait; opacity: 0.8; }
-
-.btn-cancel {
-  padding: 0 20px; height: 50px; background: #e0e0e0; color: #333;
-  border: none; border-radius: 8px; font-size: 1rem; font-weight: 500;
-  cursor: pointer; transition: background 0.2s;
-}
+.btn-cancel { padding: 0 20px; height: 50px; background: #e0e0e0; color: #333; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: background 0.2s; }
 .btn-cancel:hover:not(:disabled) { background: #d1d1d1; }
-.btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
