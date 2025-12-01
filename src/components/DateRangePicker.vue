@@ -181,20 +181,21 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 </template>
 
 <style scoped>
-/* 🟢 FIX: Добавлен flex и align-items, чтобы компонент не проваливался вниз */
+/* 🟢 FIX: Убраны display: flex и align-items, добавлены margin/padding: 0 */
 .date-range-picker { 
   position: relative; 
   width: 100%; 
   font-family: inherit;
-  display: flex;          /* ВАЖНО */
-  align-items: center;    /* ВАЖНО: Центрирует внутренний триггер по вертикали */
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-/* 🟢 ИСПРАВЛЕНО: Высота 28px, Шрифт 13px, Border #E0E0E0 */
+/* 🟢 PADDING уменьшен до 6px (как у обычных input) */
 .picker-trigger {
   width: 100%; height: 28px; 
   background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; 
-  padding: 0 8px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 6px; display: flex; align-items: center; justify-content: space-between;
   cursor: pointer; transition: border-color 0.2s; box-sizing: border-box;
 }
 .date-range-picker.is-open .picker-trigger { border-color: #222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.1); }

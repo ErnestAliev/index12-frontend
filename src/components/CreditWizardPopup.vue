@@ -496,7 +496,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .create-type-switcher span { font-size: 12px; color: #666; cursor: pointer; padding: 4px 8px; border-radius: 4px; background: #eee; }
 .create-type-switcher span.active { background: #222; color: #fff; }
 .create-row { display: flex; gap: 8px; align-items: center; }
-.create-input { flex-grow: 1; height: 36px; border: 1px solid #ddd; border-radius: 6px; padding: 0 8px; font-size: 14px; }
+.create-input { flex-grow: 1; height: 36px; border: 1px solid #ddd; border-radius: 6px; padding: 0 8px; font-size: 14px; background: #ffffff; color: #1a1a1a; margin-top: 15px; }
 .btn-icon-save, .btn-icon-cancel { width: 36px; height: 36px; border: none; border-radius: 6px; cursor: pointer; color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; }
 .btn-icon-save { background-color: #34C759; }
 .btn-icon-cancel { background-color: #FF3B30; }

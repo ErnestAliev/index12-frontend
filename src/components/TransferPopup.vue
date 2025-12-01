@@ -4,15 +4,14 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
+import { knownBanks } from '@/data/knownBanks.js'; // 🟢 1. Импорт банков
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11.27 - COPY LOGIC FIX ---
- * * ВЕРСИЯ: 26.11.27 - Обновление логики копирования и иконки удаления
- * * ДАТА: 2025-11-27
+ * * --- МЕТКА ВЕРСИИ: v27.0 - AUTOCOMPLETE BANKS ---
+ * * ВЕРСИЯ: 27.0 - Автоподстановка банков при создании счета
+ * * ДАТА: 2025-12-01
  * * ЧТО ИЗМЕНЕНО:
- * 1. (UX) Текст кнопки при копировании: "Создать копию перевода".
- * 2. (STYLE) Иконка удаления заменена на stroke-svg.
- * 3. (UX) Скрытие кнопок действий при копировании.
+ * 1. Добавлена автоподстановка из knownBanks.js для полей "Со счета" и "На счет" (при создании нового).
  */
 
 const mainStore = useMainStore();
@@ -35,7 +34,7 @@ const selectedToOwner = ref(null);
 const isInlineSaving = ref(false);
 
 // --- ЛОГИКА СЦЕНАРИЕВ ---
-const transferPurpose = ref('internal'); // 'internal' | 'inter_company' | 'personal'
+const transferPurpose = ref('internal'); 
 
 const purposeOptions = [
   { value: 'internal', label: 'Между счетами одной компании' },
@@ -43,7 +42,6 @@ const purposeOptions = [
   { value: 'personal', label: 'Перевод на личную карту' }
 ];
 
-// --- ТЕКСТЫ ПОДСКАЗОК ---
 const smartHint = computed(() => {
   if (transferPurpose.value === 'internal') {
     return 'Сценарий А: Внутренний перевод. Деньги перемещаются внутри одного баланса.';
@@ -136,21 +134,60 @@ watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
   const [fromType, fromId] = newFrom.split('-');
   const [toType, toId] = newTo.split('-');
 
-  // Сценарий А: Внутренний (тот же владелец)
   if (fromId === toId && fromType === toType) {
       transferPurpose.value = 'internal';
   }
   else {
-      // Если получатель - Физлицо (из списка Мои Физлица) -> Сценарий В
       if (toType === 'individual') {
           transferPurpose.value = 'personal';
       } 
-      // Иначе -> Сценарий Б (Меж.комп)
       else {
           transferPurpose.value = 'inter_company';
       }
   }
 });
+
+/* 🟢 --- АВТОПОДСТАНОВКА БАНКОВ ДЛЯ СЧЕТОВ --- */
+// 1. ДЛЯ СЧЕТА ОТПРАВИТЕЛЯ
+const showFromAccountSuggestions = ref(false);
+const fromAccountSuggestionsList = computed(() => {
+    const query = newFromAccountName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    return knownBanks.filter(bank => {
+        if (bank.name.toLowerCase().includes(query)) return true;
+        if (bank.keywords.some(k => k.startsWith(query))) return true;
+        return false;
+    }).slice(0, 4);
+});
+const selectFromAccountSuggestion = (bank) => {
+    newFromAccountName.value = bank.name;
+    showFromAccountSuggestions.value = false;
+    nextTick(() => newFromAccountInput.value?.focus());
+};
+const handleFromAccountBlur = () => { setTimeout(() => { showFromAccountSuggestions.value = false; }, 200); };
+const handleFromAccountFocus = () => { if (newFromAccountName.value.length >= 2) showFromAccountSuggestions.value = true; };
+watch(newFromAccountName, (val) => { showFromAccountSuggestions.value = val.length >= 2; });
+
+// 2. ДЛЯ СЧЕТА ПОЛУЧАТЕЛЯ
+const showToAccountSuggestions = ref(false);
+const toAccountSuggestionsList = computed(() => {
+    const query = newToAccountName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    return knownBanks.filter(bank => {
+        if (bank.name.toLowerCase().includes(query)) return true;
+        if (bank.keywords.some(k => k.startsWith(query))) return true;
+        return false;
+    }).slice(0, 4);
+});
+const selectToAccountSuggestion = (bank) => {
+    newToAccountName.value = bank.name;
+    showToAccountSuggestions.value = false;
+    nextTick(() => newToAccountInput.value?.focus());
+};
+const handleToAccountBlur = () => { setTimeout(() => { showToAccountSuggestions.value = false; }, 200); };
+const handleToAccountFocus = () => { if (newToAccountName.value.length >= 2) showToAccountSuggestions.value = true; };
+watch(newToAccountName, (val) => { showToAccountSuggestions.value = val.length >= 2; });
+/* ------------------------------------------- */
 
 const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
 const handleToAccountChange = (val) => { if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } else { onToAccountSelected(val); } };
@@ -201,7 +238,6 @@ onMounted(async () => {
 
 const title = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Редактировать перевод'; return 'Новый перевод'; });
 
-// 🟢 1. Обновленный текст кнопки
 const buttonText = computed(() => { 
     if (isCloneMode.value) return 'Создать копию перевода';
     if (props.transferToEdit) return 'Сохранить'; 
@@ -335,7 +371,6 @@ const handleSave = async () => {
       toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, 
       transferPurpose: transferPurpose.value,
-      // Причина больше не используется
       transferReason: null 
   };
   
@@ -362,20 +397,52 @@ const closePopup = () => { emit('close'); };
         
         <!-- ОТПРАВИТЕЛЬ -->
         <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newFromAccountName" placeholder="Название счета" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" />
+        <div v-else class="inline-create-form input-spacing relative">
+          <input 
+            type="text" 
+            v-model="newFromAccountName" 
+            placeholder="Название счета" 
+            ref="newFromAccountInput" 
+            @keyup.enter="saveNewFromAccount" 
+            @keyup.esc="cancelCreateFromAccount" 
+            @blur="handleFromAccountBlur"
+            @focus="handleFromAccountFocus"
+          />
           <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
           <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+
+          <!-- 🟢 Suggestions List -->
+          <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
+              <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">
+                  {{ bank.name }}
+              </li>
+          </ul>
         </div>
 
         <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange" />
 
         <!-- ПОЛУЧАТЕЛЬ -->
         <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
-        <div v-else class="inline-create-form input-spacing">
-          <input type="text" v-model="newToAccountName" placeholder="Название счета" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" />
+        <div v-else class="inline-create-form input-spacing relative">
+          <input 
+             type="text" 
+             v-model="newToAccountName" 
+             placeholder="Название счета" 
+             ref="newToAccountInput" 
+             @keyup.enter="saveNewToAccount" 
+             @keyup.esc="cancelCreateToAccount" 
+             @blur="handleToAccountBlur"
+             @focus="handleToAccountFocus"
+          />
           <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
           <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+          
+          <!-- 🟢 Suggestions List -->
+          <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
+              <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">
+                  {{ bank.name }}
+              </li>
+          </ul>
         </div>
 
         <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" class="input-spacing" @change="handleToOwnerChange" />
@@ -409,12 +476,10 @@ const closePopup = () => { emit('close'); };
             {{ buttonText }}
           </button>
 
-          <!-- 🟢 3. Скрытие кнопок в режиме копирования -->
           <div v-if="props.transferToEdit && !isCloneMode" class="icon-actions">
             <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
             </button>
-            <!-- 🟢 2. Новая иконка удаления -->
             <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
               <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
@@ -500,4 +565,29 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .btn-inline-save { background-color: #34C759; }
 .btn-inline-cancel { background-color: #FF3B30; }
+
+/* 🟢 НОВЫЕ СТИЛИ ДЛЯ АВТОПОДСТАНОВКИ */
+.relative { position: relative; }
+.bank-suggestions-list {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    background: #fff;
+    border: 1px solid #E0E0E0;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    z-index: 2000;
+    list-style: none;
+    padding: 0; margin: 0;
+    max-height: 160px; overflow-y: auto;
+}
+.bank-suggestions-list li {
+    padding: 10px 14px;
+    font-size: 14px; color: #333;
+    cursor: pointer;
+    border-bottom: 1px solid #f5f5f5;
+}
+.bank-suggestions-list li:last-child { border-bottom: none; }
+.bank-suggestions-list li:hover { background-color: #f9f9f9; }
 </style>

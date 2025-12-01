@@ -99,12 +99,12 @@ select {
   width: 100%;
   padding: 10px;
   margin-top: 5px;
-  margin-bottom: 15px;
+  margin-bottom: 5px;
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
   border-radius: 4px;
   color: var(--color-text);
-  font-size: 15px;
+  font-size: 12px;
 }
 
 input:focus,

@@ -6,8 +6,8 @@ import OperationPopup from './OperationPopup.vue';
 import DateRangePicker from './DateRangePicker.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v55.0 - CLEANUP WITHDRAWALS ---
- * * ВЕРСИЯ: 55.0 - Удалена логика выводов (перенесена в WithdrawalListEditor)
+ * * --- МЕТКА ВЕРСИИ: v55.1 - READ ONLY LIST ---
+ * * ВЕРСИЯ: 55.1 - Инпуты и селекты в списке заменены на текстовые значения.
  * * ДАТА: 2025-12-01
  */
 
@@ -20,7 +20,6 @@ const emit = defineEmits(['close']);
 const mainStore = useMainStore();
 
 const localItems = ref([]);
-const isSaving = ref(false);
 
 // Состояния попапов
 const isCreatePopupVisible = ref(false);
@@ -45,6 +44,7 @@ const categories = computed(() => mainStore.categories.filter(c => !['перев
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
 
+// Опции для фильтра (оставляем для верхнего бара)
 const contractorOptions = computed(() => {
   const opts = [];
   const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
@@ -69,6 +69,64 @@ const contractorOptions = computed(() => {
   return opts;
 });
 
+// --- ХЕЛПЕРЫ ДЛЯ ОТОБРАЖЕНИЯ ТЕКСТА ---
+
+// Форматирование даты для вывода (DD.MM.YYYY)
+const formatDateDisplay = (isoDateString) => {
+  if (!isoDateString) return '-';
+  const [year, month, day] = isoDateString.split('-'); // item.date хранится как YYYY-MM-DD
+  return `${day}.${month}.${year}`;
+};
+
+// Получение имени владельца
+const getOwnerName = (ownerId) => {
+    if (!ownerId) return '-';
+    const [type, id] = ownerId.split('-');
+    if (type === 'company') {
+        const c = companies.value.find(x => x._id === id);
+        return c ? c.name : '-';
+    } else if (type === 'individual') {
+        const i = individuals.value.find(x => x._id === id);
+        return i ? i.name : '-';
+    }
+    return '-';
+};
+
+// Получение имени счета
+const getAccountName = (accId) => {
+    const acc = accounts.value.find(a => a._id === accId);
+    return acc ? acc.name : '-';
+};
+
+// Получение имени контрагента
+const getContractorName = (contrValue) => {
+    if (!contrValue) return '-';
+    const [prefix, id] = contrValue.split('_');
+    if (prefix === 'contr') {
+        const c = mainStore.contractors.find(x => x._id === id);
+        return c ? c.name : '-';
+    } else if (prefix === 'ind') {
+        const i = mainStore.individuals.find(x => x._id === id);
+        return i ? i.name : '-';
+    }
+    return '-';
+};
+
+// Получение имени категории
+const getCategoryName = (catId) => {
+    const c = categories.value.find(x => x._id === catId);
+    return c ? c.name : '-';
+};
+
+// Получение имени проекта
+const getProjectName = (projId) => {
+    const p = projects.value.find(x => x._id === projId);
+    return p ? p.name : '-';
+};
+
+
+// --- ЛОГИКА ЗАГРУЗКИ ---
+
 const toInputDate = (dateVal) => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
@@ -88,9 +146,9 @@ const loadOperations = () => {
   
   const targetOps = allOps.filter(op => {
     if (op.type !== props.type) return false; 
-    if (op.isTransfer || op.isWithdrawal) return false; // Выводы и переводы — нет
+    if (op.isTransfer || op.isWithdrawal) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
-    if (mainStore._isRetailWriteOff(op)) return false; // Списания — нет
+    if (mainStore._isRetailWriteOff(op)) return false;
     
     return true;
   });
@@ -161,51 +219,9 @@ const filteredItems = computed(() => {
 // ACTIONS
 const openCreatePopup = () => { isCreatePopupVisible.value = true; };
 const handleOperationAdded = async (newOp) => { isCreatePopupVisible.value = false; await mainStore.fetchAllEntities(); loadOperations(); };
-const onAmountInput = (item) => { const raw = item.amountFormatted.replace(/[^0-9]/g, ''); item.amountFormatted = formatNumber(raw); item.amount = Number(raw); };
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.value = true; try { await mainStore.deleteOperation(itemToDelete.value.originalOp); itemToDelete.value.isDeleted = true; showDeleteConfirm.value = false; } catch (e) { alert(e.message); } finally { isDeleting.value = false; } };
 
-const handleSave = async () => {
-  isSaving.value = true;
-  try {
-    const updates = [];
-    for (const item of localItems.value) {
-      if (item.isDeleted) continue;
-      const original = item.originalOp;
-      
-      let companyId = null; let individualId = null;
-      if (item.ownerId) { const [type, id] = item.ownerId.split('-'); if (type === 'company') companyId = id; else individualId = id; }
-
-      let contractorId = null; let counterpartyIndividualId = null;
-      if (item.contractorValue) { const [prefix, id] = item.contractorValue.split('_'); if (prefix === 'contr') contractorId = id; else if (prefix === 'ind') counterpartyIndividualId = id; }
-
-      const [year, month, day] = item.date.split('-').map(Number);
-      const newDateObj = new Date(year, month - 1, day, 12, 0, 0);
-
-      const isChanged = 
-        toInputDate(original.date) !== item.date || Math.abs(original.amount) !== item.amount ||
-        (original.accountId?._id || original.accountId) !== item.accountId ||
-        (original.companyId?._id || original.companyId) !== companyId || (original.individualId?._id || original.individualId) !== individualId ||
-        (original.contractorId?._id || original.contractorId) !== contractorId || (original.counterpartyIndividualId?._id || original.counterpartyIndividualId) !== counterpartyIndividualId ||
-        (original.categoryId?._id || original.categoryId) !== item.categoryId || (original.projectId?._id || original.projectId) !== item.projectId;
-
-      if (isChanged) {
-        updates.push(mainStore.updateOperation(item._id, {
-          date: newDateObj,
-          amount: props.type === 'income' ? item.amount : -item.amount,
-          accountId: item.accountId,
-          companyId, individualId,
-          contractorId, counterpartyIndividualId,
-          categoryId: item.categoryId,
-          projectId: item.projectId,
-          isWithdrawal: false // Гарантируем, что это не вывод
-        }));
-      }
-    }
-    if (updates.length > 0) await Promise.all(updates);
-    emit('close');
-  } catch (e) { console.error(e); } finally { isSaving.value = false; }
-};
 </script>
 
 <template>
@@ -213,7 +229,7 @@ const handleSave = async () => {
     <div class="popup-content wide-editor">
       <div class="popup-header"><h3>{{ title }}</h3></div>
 
-      <!-- FILTERS -->
+      <!-- FILTERS (Остаются инпутами для поиска) -->
       <div class="filters-row">
         <div class="filter-col col-date"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
         
@@ -237,35 +253,50 @@ const handleSave = async () => {
         <div class="filter-col col-trash"></div>
       </div>
       
+      <!-- LIST (Теперь только текст) -->
       <div class="list-scroll">
         <div v-if="filteredItems.length === 0" class="empty-state">Операций не найдено.</div>
         
         <div v-for="item in filteredItems" :key="item._id" class="grid-row">
-            <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" /></div>
+            <!-- Дата -->
+            <div class="col-date">
+                <span class="text-cell">{{ formatDateDisplay(item.date) }}</span>
+            </div>
             
+            <!-- Владелец -->
             <div class="col-owner">
-                <select v-model="item.ownerId" class="edit-input select-input">
-                    <option :value="null">-</option>
-                    <optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
-                    <optgroup label="Физлица"><option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
-                </select>
+                <span class="text-cell" :title="getOwnerName(item.ownerId)">{{ getOwnerName(item.ownerId) }}</span>
             </div>
 
-            <div class="col-acc"><select v-model="item.accountId" class="edit-input select-input"><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
+            <!-- Счет -->
+            <div class="col-acc">
+                <span class="text-cell" :title="getAccountName(item.accountId)">{{ getAccountName(item.accountId) }}</span>
+            </div>
+
+            <!-- Сумма -->
             <div class="col-amount">
-                <input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" />
+                <span class="text-cell amount-text">{{ item.amountFormatted }}</span>
             </div>
             
+            <!-- Контрагент -->
             <div class="col-contr">
-                <select v-model="item.contractorValue" class="edit-input select-input"><option :value="null">-</option><optgroup v-for="g in contractorOptions" :key="g.label" :label="g.label"><option v-for="o in g.options" :key="o.value" :value="o.value">{{ o.label }}</option></optgroup></select>
+                <span class="text-cell" :title="getContractorName(item.contractorValue)">{{ getContractorName(item.contractorValue) }}</span>
             </div>
-            <div class="col-cat"><select v-model="item.categoryId" class="edit-input select-input"><option :value="null">-</option><option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option></select></div>
-            <div class="col-proj"><select v-model="item.projectId" class="edit-input select-input"><option :value="null">-</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
+
+            <!-- Категория -->
+            <div class="col-cat">
+                <span class="text-cell" :title="getCategoryName(item.categoryId)">{{ getCategoryName(item.categoryId) }}</span>
+            </div>
+
+            <!-- Проект -->
+            <div class="col-proj">
+                <span class="text-cell" :title="getProjectName(item.projectId)">{{ getProjectName(item.projectId) }}</span>
+            </div>
 
             <div class="col-trash">
-            <button class="delete-btn" @click="askDelete(item)" title="Удалить">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>
+                <button class="delete-btn" @click="askDelete(item)" title="Удалить">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
             </div>
         </div>
       </div>
@@ -276,7 +307,7 @@ const handleSave = async () => {
         </div>
         <div class="footer-actions">
             <button class="btn-close" @click="$emit('close')">Закрыть</button>
-            <button class="btn-save" @click="handleSave" :disabled="isSaving">Сохранить изменения</button>
+            <!-- Кнопка сохранения удалена, так как список теперь не редактируемый inline -->
         </div>
       </div>
     </div>
@@ -289,7 +320,7 @@ const handleSave = async () => {
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid #ddd; }
+.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid #ddd; }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacing: -0.02em; }
 
@@ -297,7 +328,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; margin-top: 15px;}
 
 .filters-row { margin-bottom: 10px; }
-.grid-row { padding: 4px 1.5rem; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; margin-bottom: 6px; transition: box-shadow 0.2s; }
+.grid-row { padding: 8px 1.5rem; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; margin-bottom: 6px; transition: box-shadow 0.2s; min-height: 40px; }
 .grid-row:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-color: #ccc; }
 
 .text-red { color: #ff3b30 !important; }
@@ -307,13 +338,26 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; max-height: 55vh; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-.edit-input { width: 100%; height: 28px; background: #FFFFFF; border: 1px solid #ccc; border-radius: 6px; padding: 0 10px; font-size: 13px; color: #333; box-sizing: border-box; margin: 0; display: block; }
-.edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
+/* Text Display Styles */
+.text-cell { 
+    display: block; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    font-size: 13px; 
+    color: #333; 
+    line-height: 28px;
+}
+.amount-text {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Filter Input Styles */
 .filter-input { width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 13px; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
-.filter-select, .select-input { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .filter-input:focus { outline: none; border-color: var(--color-primary); }
-.amount-input { text-align: right; font-weight: 700; color: #333; }
-.date-input { color: #555; }
 
 .delete-btn { width: 28px; height: 28px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: #999; }
@@ -326,8 +370,6 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .btn-income { background: #10b981; }
 .btn-income:hover { background: #059669; }
 .footer-actions { display: flex; gap: 10px; }
-.btn-save { padding: 0 16px; height: 28px; background: #111827; color: white; border: none; border-radius: 6px; font-weight: 600; border: none; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; }
-.btn-save:hover { background: #374151; }
 .btn-close { padding: 0 16px; height: 28px; background: white; border: 1px solid #d1d5db; color: #374151; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; }
 .btn-close:hover { background: #f3f4f6; }
 .empty-state { text-align: center; padding: 4rem; color: #9ca3af; font-style: italic; }

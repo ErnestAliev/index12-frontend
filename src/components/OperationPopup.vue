@@ -6,15 +6,17 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 import { knownBanks } from '@/data/knownBanks.js'; 
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
-import { categorySuggestions } from '@/data/categorySuggestions.js'; // 🟢 Импорт базы категорий
+import { categorySuggestions } from '@/data/categorySuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v31.0 - CATEGORY AUTOCOMPLETE ---
- * * ВЕРСИЯ: 31.0 - Автоподстановка названий категорий
+ * * --- МЕТКА ВЕРСИИ: v33.0 - HIDE CREDIT PROJECT IF NOT BANK ---
+ * * ВЕРСИЯ: 33.0
  * * ДАТА: 2025-12-01
- * * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлена автоподстановка для создания категорий (Продукты, Транспорт, Зарплата и т.д.).
- * 2. (UI) Поле создания категории обернуто в wrapper.
+ * * ИЗМЕНЕНИЯ:
+ * 1. (LOGIC) В `projectOptions` добавлена фильтрация: 
+ * Если выбранный контрагент НЕ входит в список "knownBanks.js",
+ * проект "Мои кредиты" скрывается из списка выбора.
+ * (Работает для Доходов и Расходов).
  */
 
 const mainStore = useMainStore();
@@ -108,7 +110,7 @@ const handleAccountInputFocus = () => { if (newAccountName.value.length >= 2) sh
 watch(newAccountName, (val) => { showAccountSuggestions.value = val.length >= 2; });
 
 
-/* --- 🟢 АВТОПОДСТАНОВКА КАТЕГОРИЙ --- */
+/* --- АВТОПОДСТАНОВКА КАТЕГОРИЙ --- */
 const showCategorySuggestions = ref(false);
 const categorySuggestionsList = computed(() => {
     const query = newCategoryName.value.trim().toLowerCase();
@@ -168,7 +170,17 @@ watch([selectedContractorValue, selectedProjectId, () => props.type], ([newContr
         }
     }
 
-    // 3. Если выбрали "Розничные клиенты" (и это Доход) -> ставим Категорию "Реализация"
+    // 3. Если выбрали проект "Мои кредиты" (и это РАСХОД) -> ставим Категорию "Погашение займов"
+    if (newType === 'expense' && newProj && myCreditsProjectId.value) {
+        if (newProj === myCreditsProjectId.value) {
+            if (mainStore.loanRepaymentCategoryId) {
+                selectedCategoryId.value = mainStore.loanRepaymentCategoryId;
+                return;
+            }
+        }
+    }
+
+    // 4. Если выбрали "Розничные клиенты" (и это Доход) -> ставим Категорию "Реализация"
     if (newType === 'income' && newContr && mainStore.retailIndividualId) {
         if (newContr === `ind_${mainStore.retailIndividualId}`) {
             if (mainStore.realizationCategoryId) {
@@ -313,8 +325,45 @@ const contractorOptions = computed(() => {
   return opts;
 });
 
+// 🟢 MODIFIED v33.0: Фильтрация проектов ("Мои кредиты" только для банков)
 const projectOptions = computed(() => {
-  const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
+  // 1. Ищем ID проекта "Мои кредиты"
+  const creditProjId = myCreditsProjectId.value;
+
+  // 2. Проверяем, является ли выбранный контрагент банком
+  let isBankSelected = false;
+  if (selectedContractorValue.value) {
+      const [prefix, id] = selectedContractorValue.value.split('_');
+      let nameToCheck = '';
+
+      if (prefix === 'contr') {
+          const c = mainStore.contractors.find(x => x._id === id);
+          if (c) nameToCheck = c.name;
+      } else if (prefix === 'ind') {
+          const i = mainStore.individuals.find(x => x._id === id);
+          if (i) nameToCheck = i.name;
+      }
+
+      if (nameToCheck) {
+          const lowerName = nameToCheck.trim().toLowerCase();
+          isBankSelected = knownBanks.some(b => {
+             if (b.name.toLowerCase() === lowerName) return true;
+             if (b.keywords.some(k => k.startsWith(lowerName))) return true;
+             return false;
+          });
+      }
+  }
+
+  // 3. Фильтруем проекты
+  const filteredProjects = mainStore.projects.filter(p => {
+      // Если это "Мои кредиты", показываем ТОЛЬКО если выбран банк
+      if (creditProjId && p._id === creditProjId) {
+          return isBankSelected;
+      }
+      return true;
+  });
+
+  const opts = filteredProjects.map(p => ({ value: p._id, label: p.name }));
   opts.unshift({ value: null, label: txtProject.value.ph });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
@@ -328,7 +377,11 @@ const categoryOptions = computed(() => {
   const isCreating = showCreateContractorModal.value || showCreateOwnerModal.value;
 
   const isRetailSelected = !isCreating && mainStore.retailIndividualId && selectedContractorValue.value === `ind_${mainStore.retailIndividualId}`;
-  const isCreditProjectSelected = !isCreating && isIncome.value && myCreditsProjectId.value && selectedProjectId.value === myCreditsProjectId.value;
+  
+  const isCreditIncomeProjectSelected = !isCreating && isIncome.value && myCreditsProjectId.value && selectedProjectId.value === myCreditsProjectId.value;
+  
+  // 🟢 Новое условие: Расход + "Мои кредиты"
+  const isCreditExpenseProjectSelected = !isCreating && !isIncome.value && myCreditsProjectId.value && selectedProjectId.value === myCreditsProjectId.value;
 
   const validCats = mainStore.categories.filter(c => {
     const name = c.name.toLowerCase().trim();
@@ -337,8 +390,13 @@ const categoryOptions = computed(() => {
         return c._id === mainStore.realizationCategoryId;
     }
 
-    if (isCreditProjectSelected) {
+    if (isCreditIncomeProjectSelected) {
         return c._id === mainStore.creditCategoryId;
+    }
+    
+    // 🟢 Если Расход + "Мои кредиты", показываем только "Погашение займов"
+    if (isCreditExpenseProjectSelected) {
+        return c._id === mainStore.loanRepaymentCategoryId;
     }
 
     if (name === 'перевод' || name === 'transfer') return false;
@@ -739,7 +797,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           @change="handleAccountChange"
         />
         
-        <!-- 🟢 ИЗМЕНЕНО: Инлайн-создание счета теперь обернуто в wrapper для автоподстановки -->
         <div v-else class="inline-create-form input-spacing input-wrapper relative">
            <input 
              type="text" 
@@ -754,7 +811,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
            <button @click="saveNewAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
            <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
 
-           <!-- 🟢 СПИСОК ПОДСКАЗОК СЧЕТОВ -->
            <ul v-if="showAccountSuggestions && accountSuggestionsList.length > 0" class="bank-suggestions-list">
                <li v-for="(acc, idx) in accountSuggestionsList" :key="idx" @mousedown.prevent="selectAccountSuggestion(acc)">
                    {{ acc.name }}
@@ -818,7 +874,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
           class="input-spacing"
           @change="handleCategoryChange"
         />
-        <!-- 🟢 ИЗМЕНЕНО: Инлайн-создание категории теперь обернуто в wrapper для автоподстановки -->
         <div v-else class="inline-create-form input-spacing input-wrapper relative">
            <input 
              type="text" 
@@ -833,7 +888,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
            <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
            <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
 
-           <!-- 🟢 СПИСОК ПОДСКАЗОК КАТЕГОРИЙ -->
            <ul v-if="showCategorySuggestions && categorySuggestionsList.length > 0" class="bank-suggestions-list">
                <li v-for="(cat, idx) in categorySuggestionsList" :key="idx" @mousedown.prevent="selectCategorySuggestion(cat)">
                    {{ cat.name }}
@@ -857,7 +911,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
         <div class="smart-create-owner">
           <h4 class="smart-create-title">Создать: {{ contractorTypeToCreate === 'contractor' ? 'Контрагента' : 'Физлицо' }}</h4>
           
-          <!-- 🟢 ВЕРСИЯ v29.1: АВТОПОДСТАНОВКА + АВТО-ПРОЕКТ "МОИ КРЕДИТЫ" -->
           <div class="input-wrapper relative">
              <input 
                 type="text" 
@@ -871,7 +924,6 @@ const buttonClass = computed(() => { if (isEditMode.value) return 'btn-submit-ed
                 @focus="handleInputFocus"
              />
              
-             <!-- Suggestions List -->
              <ul v-if="showBankSuggestions && bankSuggestions.length > 0" class="bank-suggestions-list">
                  <li v-for="(bank, idx) in bankSuggestions" :key="idx" @mousedown.prevent="selectBankSuggestion(bank)">
                      {{ bank.name }}
@@ -1002,7 +1054,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 @media (max-width: 400px) { .btn-dual-action { font-size: 12px; padding: 0 5px; } }
 
-/* 🟢 НОВЫЕ СТИЛИ КНОПОК СОЗДАНИЯ */
 .btn-create-green {
   background-color: #34c759 !important;
   color: white !important;
@@ -1020,7 +1071,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
   background-color: #f5f5f5 !important;
 }
 
-/* 🟢 СТИЛИ АВТОПОДСТАНОВКИ */
 .relative { position: relative; }
 .bank-suggestions-list {
     position: absolute;

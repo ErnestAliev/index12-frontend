@@ -8,13 +8,15 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import DateRangePicker from './DateRangePicker.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v28.5 - GRID ALIGNMENT FIX ---
- * * ВЕРСИЯ: 28.5 - Исправление сетки (Fixed Widths)
- * * ДАТА: 2025-11-30
+ * * --- МЕТКА ВЕРСИИ: v28.7 - SELECT FILTERS FOR HISTORY & SCHEDULE ---
+ * * ВЕРСИЯ: 28.7
+ * * ДАТА: 2025-12-01
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) .active-grid: Заменены 'auto' на 'fr' и 'px' для жесткого выравнивания.
- * 2. (CSS) Первая колонка (Дата) теперь 130px, чтобы пикер не сжимался.
+ * 1. (Template) Вкладка "История": Фильтр "Кредитор" заменен на select (выбор из контрагентов/физлиц).
+ * 2. (Template) Вкладка "График": Фильтр "Кредит" заменен на select (выбор из списка активных кредитов).
+ * 3. (Logic) loadData: Добавлены поля creditorId (в историю) и creditId (в график) для точной фильтрации.
+ * 4. (Logic) filteredList: Обновлена логика фильтрации для select-полей (точное совпадение ID).
  */
 
 const props = defineProps({
@@ -47,10 +49,25 @@ const filters = ref({
     category: '',
 });
 
+// Сброс фильтров при переключении вкладок
+watch(activeTab, () => {
+    filters.value = {
+        dateRange: { from: null, to: null }, 
+        creditor: '',   
+        amount: '',     
+        balance: '',    
+        account: '',    
+        owner: '',      
+        project: '',
+        category: '',
+    };
+});
+
 const accounts = computed(() => mainStore.accounts);
 const projects = computed(() => mainStore.projects);
 const categories = computed(() => mainStore.categories);
 
+// Опции для выбора владельца (Компании/Физлица)
 const ownersOptions = computed(() => {
     const opts = [];
     opts.push({ label: 'Компании', options: mainStore.companies.map(c => ({ value: `company-${c._id}`, label: c.name })) });
@@ -58,11 +75,17 @@ const ownersOptions = computed(() => {
     return opts;
 });
 
+// Опции для выбора кредитора (Контрагенты/Физлица)
 const creditorsOptions = computed(() => {
     const opts = [];
     opts.push({ label: 'Контрагенты', options: mainStore.contractors.map(c => ({ value: c._id, label: c.name })) });
     opts.push({ label: 'Физлица', options: mainStore.individuals.map(i => ({ value: i._id, label: i.name })) });
     return opts;
+});
+
+// Опции для выбора Кредита (для вкладки График)
+const activeCreditsOptions = computed(() => {
+    return localCredits.value.map(c => ({ value: c._id, label: c.name }));
 });
 
 const toInputDate = (dateVal) => {
@@ -121,7 +144,6 @@ const loadData = () => {
 
         const isConfigured = c.monthlyPayment > 0 && c.paymentDay > 0;
 
-        // Получаем имена проекта и категории
         let projectName = '-';
         const pId = c.projectId ? (c.projectId._id || c.projectId) : null;
         if (pId) {
@@ -151,8 +173,8 @@ const loadData = () => {
             accountId,
             ownerName, 
             ownerVal, 
-            projectName, // Текст
-            categoryName, // Текст
+            projectName, 
+            categoryName, 
             
             projectId: pId,
             categoryId: catId,
@@ -177,6 +199,8 @@ const loadData = () => {
             rawDate: new Date(op.date),
             amount: formatNumber(Math.abs(op.amount)),
             creditor: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
+            // Сохраняем ID кредитора для фильтрации (Select)
+            creditorId: (op.contractorId?._id || op.contractorId) || (op.counterpartyIndividualId?._id || op.counterpartyIndividualId),
             account: op.accountId?.name || '---'
         })).sort((a, b) => b.rawDate - a.rawDate);
     } else {
@@ -207,6 +231,7 @@ const loadData = () => {
                     date: currentDt.toLocaleDateString(),
                     rawDate: new Date(currentDt),
                     creditName: credit.name,
+                    creditId: credit._id, // ID кредита для фильтрации
                     amount: formatNumber(payAmount),
                     remaining: formatNumber(remAfter)
                 });
@@ -221,22 +246,30 @@ const loadData = () => {
 
 const filteredList = computed(() => {
     const { from, to } = filters.value.dateRange;
+    const fDate = (itemDate) => {
+        if (from && itemDate < new Date(from)) return false;
+        if (to && itemDate > new Date(to)) return false;
+        return true;
+    };
+    
+    // Вспомогательная функция для текстового поиска
+    const matchText = (val, filter) => {
+        if (!filter) return true;
+        if (!val) return false;
+        const cleanVal = String(val).toLowerCase().replace(/\s/g, '');
+        const cleanFilter = filter.toLowerCase().replace(/\s/g, '');
+        return cleanVal.includes(cleanFilter);
+    };
 
+    // --- 1. АКТИВНЫЕ КРЕДИТЫ ---
     if (activeTab.value === 'active') {
         return localCredits.value.filter(item => {
             if (from && item.dateFormatted < from) return false;
             if (to && item.dateFormatted > to) return false;
 
             if (filters.value.creditor && item.creditorId !== filters.value.creditor) return false;
-            if (filters.value.amount) {
-                const q = filters.value.amount.trim();
-                if (!item.totalDebtFormatted.includes(q)) return false;
-            }
-            // 🟢 Фильтр по остатку (Input)
-            if (filters.value.balance) {
-                const q = filters.value.balance.trim();
-                if (!item.balanceFormatted.includes(q)) return false;
-            }
+            if (filters.value.amount && !item.totalDebtFormatted.includes(filters.value.amount)) return false;
+            if (filters.value.balance && !item.balanceFormatted.includes(filters.value.balance)) return false;
 
             if (filters.value.account && item.accountId !== filters.value.account) return false;
             if (filters.value.project && item.projectId !== filters.value.project) return false;
@@ -244,15 +277,34 @@ const filteredList = computed(() => {
             return true;
         });
     }
+    
+    // --- 2. ИСТОРИЯ ---
     if (activeTab.value === 'history') {
         return historyItems.value.filter(item => {
-            if (from && item.rawDate < new Date(from)) return false;
-            if (to && item.rawDate > new Date(to)) return false;
+            if (!fDate(item.rawDate)) return false;
+            
+            // Фильтр по Кредитору теперь через Select (ID)
+            if (filters.value.creditor && item.creditorId !== filters.value.creditor) return false;
+            
+            if (!matchText(item.amount, filters.value.amount)) return false;
+            if (!matchText(item.account, filters.value.account)) return false;
             return true;
         });
     }
+    
+    // --- 3. ГРАФИК ---
     if (activeTab.value === 'schedule') {
-        return scheduleItems.value;
+        return scheduleItems.value.filter(item => {
+            if (!fDate(item.rawDate)) return false;
+            
+            // Фильтр по Кредиту теперь через Select (Credit ID)
+            // Используем filters.creditor как переменную для хранения ID кредита в этой вкладке
+            if (filters.value.creditor && item.creditId !== filters.value.creditor) return false;
+            
+            if (!matchText(item.amount, filters.value.amount)) return false;
+            if (!matchText(item.remaining, filters.value.balance)) return false;
+            return true;
+        });
     }
     return [];
 });
@@ -339,7 +391,6 @@ const confirmDelete = async () => {
       </div>
 
       <template v-if="activeTab === 'active'">
-          <!-- 🟢 ОБНОВЛЕННАЯ СЕТКА: Фиксированные размеры, чтобы шапка не плыла -->
           <div class="filters-row active-grid">
             <div class="filter-col col-date">
                <DateRangePicker v-model="filters.dateRange" placeholder="Период" />
@@ -397,31 +448,22 @@ const confirmDelete = async () => {
              <draggable v-model="localCredits" item-key="_id" handle=".drag-handle" ghost-class="ghost">
                 <template #item="{ element: item }">
                    <div class="grid-row active-grid">
-                      <!-- 1. Дата (Текст) -->
                       <div class="col text-display">{{ item.displayDate }}</div>
 
-                      <!-- 2. Имя (Текст) -->
                       <div class="col text-display">{{ item.creditorName }}</div>
                       
-                      <!-- 3. Сумма (Текст) -->
                       <div class="col text-display">{{ item.totalDebtFormatted }} ₸</div>
                       
-                      <!-- 4. Остаток (Текст жирный) -->
                       <div class="col text-display highlight-text">{{ item.balanceFormatted }} ₸</div>
                       
-                      <!-- 5. Счет (Текст) -->
                       <div class="col text-display">{{ item.accountName }}</div>
                       
-                      <!-- 6. Владелец (Текст) -->
                       <div class="col text-display">{{ item.ownerName }}</div>
 
-                      <!-- 7. Проект (Текст) -->
                       <div class="col text-display">{{ item.projectName }}</div>
 
-                      <!-- 8. Категория (Текст) -->
                       <div class="col text-display">{{ item.categoryName }}</div>
                       
-                      <!-- 9. График (Button) -->
                       <div class="col center-content">
                           <button v-if="!item.isConfigured" class="btn-icon-blue-square" @click="openScheduleWizard(item)" title="Создать график платежей">
                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
@@ -431,7 +473,6 @@ const confirmDelete = async () => {
                           </div>
                       </div>
                       
-                      <!-- 10. Удалить -->
                       <div class="col-trash">
                         <button class="delete-btn" @click="askDelete(item)"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                       </div>
@@ -441,13 +482,20 @@ const confirmDelete = async () => {
           </div>
       </template>
 
-      <!-- Вкладка 2: ИСТОРИЯ -->
       <template v-else-if="activeTab === 'history'">
           <div class="filters-row history-grid">
              <div class="filter-col"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
-             <div class="filter-col header-label">КРЕДИТОР</div>
-             <div class="filter-col header-label">СУММА</div>
-             <div class="filter-col header-label">СЧЕТ</div>
+             <div class="filter-col">
+                <!-- Замена input на select -->
+                <select v-model="filters.creditor" class="filter-input filter-select">
+                  <option value="">Кредитор</option>
+                  <optgroup v-for="grp in creditorsOptions" :key="grp.label" :label="grp.label">
+                      <option v-for="opt in grp.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </optgroup>
+               </select>
+             </div>
+             <div class="filter-col"><input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма" /></div>
+             <div class="filter-col"><input type="text" v-model="filters.account" class="filter-input" placeholder="Счет" /></div>
           </div>
           <div class="list-scroll">
               <div v-if="filteredList.length === 0" class="empty-state">Истории нет.</div>
@@ -463,9 +511,15 @@ const confirmDelete = async () => {
       <template v-else-if="activeTab === 'schedule'">
           <div class="filters-row schedule-grid">
              <div class="filter-col"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
-             <div class="filter-col header-label">КРЕДИТ</div>
-             <div class="filter-col header-label">ПЛАТЕЖ</div>
-             <div class="filter-col header-label">ОСТАТОК</div>
+             <div class="filter-col">
+                <!-- Замена input на select -->
+                <select v-model="filters.creditor" class="filter-input filter-select">
+                  <option value="">Кредит</option>
+                  <option v-for="c in activeCreditsOptions" :key="c.value" :value="c.value">{{ c.label }}</option>
+               </select>
+             </div>
+             <div class="filter-col"><input type="text" v-model="filters.amount" class="filter-input" placeholder="Платеж" /></div>
+             <div class="filter-col"><input type="text" v-model="filters.balance" class="filter-input" placeholder="Остаток" /></div>
           </div>
           <div class="list-scroll">
               <div v-if="filteredList.length === 0" class="empty-state">График пуст.</div>
@@ -495,7 +549,7 @@ const confirmDelete = async () => {
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1400px; border: 1px solid #ddd; }
+.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1400px; border: 1px solid #ddd; }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 
@@ -514,15 +568,15 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 
 /* GRIDS */
 .filters-row, .grid-row { display: grid; gap: 10px; align-items: center; padding: 0 1.5rem; }
-.filters-row { margin: 10px 0; }
+.filters-row { margin: 0px; }
 .grid-row { padding: 8px 1.5rem; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; margin-bottom: 6px; }
 
 /* 🟢 FIX: 10 колонок с фиксированными размерами для ровного выравнивания */
 .active-grid { 
   grid-template-columns: 130px minmax(10px, 1fr) 100px 99px minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) 100px 40px
 }
-.history-grid { grid-template-columns: 130px 1fr 150px 150px; }
-.schedule-grid { grid-template-columns: 130px 1fr 150px 150px; }
+.history-grid { grid-template-columns: 130px minmax(10px, 1fr) 100px 99px minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) 100px 40px }
+.schedule-grid { grid-template-columns: 130px minmax(10px, 1fr) 100px 99px minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) 100px 40px }
 
 .header-label { font-size: 11px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 .center-text { text-align: center; }
@@ -536,7 +590,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 /* Inputs 28px */
 .filter-input, .edit-input { 
   width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; 
-  padding: 0 6px; font-size: 13px; background: #fff; box-sizing: border-box; color: #333; margin-top: 15px;
+  padding: 0 6px; font-size: 13px; background: #fff; box-sizing: border-box; color: #333; 
 }
 .filter-input:focus, .edit-input:focus { outline: none; border-color: #222; }
 .filter-select { 

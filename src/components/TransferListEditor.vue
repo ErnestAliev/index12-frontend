@@ -6,13 +6,9 @@ import TransferPopup from './TransferPopup.vue';
 import DateRangePicker from './DateRangePicker.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v26.11 - REFACTORING STAGE 2 ---
- * * ВЕРСИЯ: 26.11 - Унификация UI (28px)
- * * ДАТА: 2025-11-26
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (STYLE) Высота всех строк, инпутов и кнопок приведена к 28px.
- * 2. (STYLE) Шрифты уменьшены до 13px.
+ * * --- МЕТКА ВЕРСИИ: v26.12 - READ ONLY TRANSFERS ---
+ * * ВЕРСИЯ: 26.12 - Инпуты и селекты в списке заменены на текстовые значения.
+ * * ДАТА: 2025-12-01
  */
 
 const props = defineProps({
@@ -23,11 +19,11 @@ const emit = defineEmits(['close']);
 const mainStore = useMainStore();
 
 const localItems = ref([]);
-const isSaving = ref(false);
 const isCreatePopupVisible = ref(false);
 const isDeleting = ref(false);
 const showDeleteConfirm = ref(false);
 const itemToDelete = ref(null);
+
 const accounts = computed(() => mainStore.accounts);
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
@@ -42,6 +38,44 @@ const filters = ref({
   toOwner: ''
 });
 
+// --- ХЕЛПЕРЫ ДЛЯ ОТОБРАЖЕНИЯ ТЕКСТА ---
+
+// Форматирование даты для вывода (DD.MM.YYYY)
+const formatDateDisplay = (isoDateString) => {
+  if (!isoDateString) return '-';
+  const [year, month, day] = isoDateString.split('-'); 
+  return `${day}.${month}.${year}`;
+};
+
+// Форматирование даты для диалога удаления
+const formatDateReadable = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  return d.toLocaleDateString('ru-RU');
+};
+
+// Получение имени владельца
+const getOwnerName = (ownerId) => {
+    if (!ownerId) return '-';
+    const [type, id] = ownerId.split('-');
+    if (type === 'company') {
+        const c = companies.value.find(x => x._id === id);
+        return c ? c.name : '-';
+    } else if (type === 'individual') {
+        const i = individuals.value.find(x => x._id === id);
+        return i ? i.name : '-';
+    }
+    return '-';
+};
+
+// Получение имени счета
+const getAccountName = (accId) => {
+    const acc = accounts.value.find(a => a._id === accId);
+    return acc ? acc.name : '-';
+};
+
+// --- ЛОГИКА ЗАГРУЗКИ ---
+
 const toInputDate = (dateVal) => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
@@ -49,12 +83,6 @@ const toInputDate = (dateVal) => {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-};
-
-const formatDateReadable = (dateVal) => {
-  if (!dateVal) return '';
-  const d = new Date(dateVal);
-  return d.toLocaleDateString('ru-RU');
 };
 
 const getOwnerId = (compId, indId) => {
@@ -80,7 +108,7 @@ const loadTransfers = () => {
       return {
         _id: t._id,
         originalOp: t,
-        date: toInputDate(t.date),
+        date: toInputDate(t.date), // YYYY-MM-DD для сортировки и фильтров
         amount: Math.abs(t.amount),
         amountFormatted: formatNumber(Math.abs(t.amount)),
         fromAccountId: t.fromAccountId?._id || t.fromAccountId,
@@ -146,84 +174,6 @@ const handleTransferComplete = async (eventData) => {
   loadTransfers();
 };
 
-const onAmountInput = (item) => {
-  const raw = item.amountFormatted.replace(/[^0-9]/g, '');
-  item.amountFormatted = formatNumber(raw);
-  item.amount = Number(raw);
-};
-
-const onAccountChange = (item, direction) => {
-  const accId = direction === 'from' ? item.fromAccountId : item.toAccountId;
-  const account = accounts.value.find(a => a._id === accId);
-  
-  if (account) {
-    let newOwnerId = null;
-    if (account.companyId) {
-      const cId = typeof account.companyId === 'object' ? account.companyId._id : account.companyId;
-      newOwnerId = `company-${cId}`;
-    } else if (account.individualId) {
-      const iId = typeof account.individualId === 'object' ? account.individualId._id : account.individualId;
-      newOwnerId = `individual-${iId}`;
-    }
-    if (newOwnerId) {
-      if (direction === 'from') item.fromOwnerId = newOwnerId;
-      else item.toOwnerId = newOwnerId;
-    }
-  }
-};
-
-const handleSave = async () => {
-  isSaving.value = true;
-  try {
-    const updates = [];
-    for (const item of localItems.value) {
-      if (item.isDeleted) continue;
-
-      const original = item.originalOp;
-      let fromComp = null, fromInd = null;
-      if (item.fromOwnerId) {
-        const [type, id] = item.fromOwnerId.split('-');
-        if (type === 'company') fromComp = id; else fromInd = id;
-      }
-      let toComp = null, toInd = null;
-      if (item.toOwnerId) {
-        const [type, id] = item.toOwnerId.split('-');
-        if (type === 'company') toComp = id; else toInd = id;
-      }
-      const [year, month, day] = item.date.split('-').map(Number);
-      const newDateObj = new Date(year, month - 1, day, 12, 0, 0);
-
-      const isChanged = 
-        toInputDate(original.date) !== item.date ||
-        Math.abs(original.amount) !== item.amount ||
-        (original.fromAccountId?._id || original.fromAccountId) !== item.fromAccountId ||
-        (original.toAccountId?._id || original.toAccountId) !== item.toAccountId ||
-        getOwnerId(original.fromCompanyId, original.fromIndividualId) !== item.fromOwnerId ||
-        getOwnerId(original.toCompanyId, original.toIndividualId) !== item.toOwnerId;
-
-      if (isChanged) {
-        updates.push(mainStore.updateTransfer(item._id, {
-          date: newDateObj,
-          amount: item.amount,
-          fromAccountId: item.fromAccountId,
-          toAccountId: item.toAccountId,
-          fromCompanyId: fromComp,
-          fromIndividualId: fromInd,
-          toCompanyId: toComp,
-          toIndividualId: toInd
-        }));
-      }
-    }
-    if (updates.length > 0) await Promise.all(updates);
-    emit('close');
-  } catch (e) {
-    console.error("Ошибка сохранения:", e);
-    alert("Ошибка при сохранении изменений");
-  } finally {
-    isSaving.value = false;
-  }
-};
-
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => {
   if (!itemToDelete.value) return;
@@ -249,7 +199,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       <div class="popup-header">
         <h3>{{ title }}</h3>
       </div>
-      <p class="editor-hint">Редактируйте параметры переводов. Нажмите на корзину для удаления.</p>
+      <p class="editor-hint">Просмотр истории переводов. Для удаления используйте иконку корзины.</p>
       
       <!-- ИТОГИ ПО ФИЛЬТРУ -->
       <div class="totals-bar" v-if="isFilterActive">
@@ -259,7 +209,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
           </div>
       </div>
 
-      <!-- 🟢 ПАНЕЛЬ ФИЛЬТРОВ (Выполняет роль заголовков) -->
+      <!-- 🟢 ПАНЕЛЬ ФИЛЬТРОВ (Остаются инпутами для поиска) -->
       <div class="filters-row">
         <!-- Дата -->
         <div class="filter-col col-date">
@@ -311,37 +261,42 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <div class="filter-col col-trash"></div>
       </div>
       
+      <!-- СПИСОК (ТЕПЕРЬ ТОЛЬКО ТЕКСТ) -->
       <div class="list-scroll">
         <div v-if="localItems.length === 0" class="empty-state">Нет переводов.</div>
         <div v-else-if="filteredItems.length === 0" class="empty-state">Нет переводов по фильтру.</div>
 
         <div v-for="item in filteredItems" :key="item._id" class="grid-row">
-          <div class="col-date"><input type="date" v-model="item.date" class="edit-input date-input" /></div>
+          <!-- Дата -->
+          <div class="col-date">
+              <span class="text-cell">{{ formatDateDisplay(item.date) }}</span>
+          </div>
+
+          <!-- Отправитель -->
           <div class="col-owner">
-             <select v-model="item.fromOwnerId" class="edit-input select-input">
-                <option :value="null">-</option>
-                <optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
-                <optgroup label="Физлица"><option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
-             </select>
+             <span class="text-cell" :title="getOwnerName(item.fromOwnerId)">{{ getOwnerName(item.fromOwnerId) }}</span>
           </div>
+
+          <!-- Счет От -->
           <div class="col-acc">
-            <select v-model="item.fromAccountId" @change="onAccountChange(item, 'from')" class="edit-input select-input">
-               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
-            </select>
+            <span class="text-cell" :title="getAccountName(item.fromAccountId)">{{ getAccountName(item.fromAccountId) }}</span>
           </div>
-          <div class="col-amount"><input type="text" v-model="item.amountFormatted" @input="onAmountInput(item)" class="edit-input amount-input" /></div>
+
+          <!-- Сумма -->
+          <div class="col-amount">
+              <span class="text-cell amount-text">{{ item.amountFormatted }}</span>
+          </div>
+
+          <!-- Счет Куда -->
           <div class="col-acc">
-            <select v-model="item.toAccountId" @change="onAccountChange(item, 'to')" class="edit-input select-input">
-               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
-            </select>
+            <span class="text-cell" :title="getAccountName(item.toAccountId)">{{ getAccountName(item.toAccountId) }}</span>
           </div>
+
+          <!-- Получатель -->
           <div class="col-owner">
-             <select v-model="item.toOwnerId" class="edit-input select-input">
-                <option :value="null">-</option>
-                <optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
-                <optgroup label="Физлица"><option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
-             </select>
+             <span class="text-cell" :title="getOwnerName(item.toOwnerId)">{{ getOwnerName(item.toOwnerId) }}</span>
           </div>
+
           <div class="col-trash">
             <button class="delete-btn" @click="askDelete(item)" title="Удалить">
                <svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -352,15 +307,13 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
       <!-- Footer -->
       <div class="popup-footer">
-        <!-- 🟢 УНИФИКАЦИЯ UI: Высота 28px -->
         <button class="btn-add-new-footer btn-transfer" @click="openCreatePopup">
           + Создать перевод
         </button>
         
-        <!-- RIGHT: Actions -->
         <div class="footer-actions">
-            <button class="btn-close" @click="$emit('close')">Отмена</button>
-            <button class="btn-save" @click="handleSave" :disabled="isSaving">{{ isSaving ? 'Сохранение...' : 'Сохранить изменения' }}</button>
+            <button class="btn-close" @click="$emit('close')">Закрыть</button>
+            <!-- Кнопка "Сохранить" удалена -->
         </div>
       </div>
     </div>
@@ -382,7 +335,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1200px; border: 1px solid #ddd; }
+.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1200px; border: 1px solid #ddd; }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
@@ -404,12 +357,13 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .filters-row { margin-bottom: 10px; }
 
 .grid-row { 
-  padding: 4px 1.5rem; 
+  padding: 8px 1.5rem; 
   background: #fff; 
   border: 1px solid #E0E0E0; 
   border-radius: 8px;
   margin-bottom: 6px;
   transition: box-shadow 0.2s;
+  min-height: 40px;
 }
 .grid-row:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -419,14 +373,21 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-/* Inputs (28px) */
-.edit-input { 
-  width: 100%; height: 28px; 
-  background: #FFFFFF; border: 1px solid #ccc; border-radius: 6px; 
-  padding: 0 10px; font-size: 13px; color: #333; 
-  box-sizing: border-box; margin: 0; display: block; 
+/* Text Display Styles */
+.text-cell { 
+    display: block; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    font-size: 13px; 
+    color: #333; 
+    line-height: 28px;
 }
-.edit-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.1); }
+.amount-text {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
 
 /* Filter Inputs (28px) */
 .filter-input { width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 13px; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
@@ -437,9 +398,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
   padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; 
 }
 .filter-input:focus { outline: none; border-color: var(--color-primary); }
-
-.amount-input { text-align: right; font-weight: 700; color: #333; }
-.date-input { color: #555; }
 
 .delete-btn { 
   width: 28px; height: 28px; 
@@ -481,9 +439,6 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 
 .btn-close { padding: 0 16px; height: 28px; border: 1px solid #ccc; background: transparent; border-radius: 6px; cursor: pointer; font-weight: 500; color: #555; font-size: 13px; display: flex; align-items: center; justify-content: center; }
 .btn-close:hover { background: #eee; }
-.btn-save { padding: 0 16px; height: 28px; border: none; background: #222; border-radius: 6px; cursor: pointer; font-weight: 600; color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; }
-.btn-save:hover:not(:disabled) { background: #444; }
-.btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .empty-state { text-align: center; padding: 3rem; color: #888; font-style: italic; }
 
