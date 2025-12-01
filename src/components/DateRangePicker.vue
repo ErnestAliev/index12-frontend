@@ -201,7 +201,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .date-range-picker.is-open .picker-trigger { border-color: #222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.1); }
 
 .trigger-content { flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #1a1a1a; }
-.placeholder { color: #aaa; font-size: 13px; }
+.placeholder { color: #aaa; font-size: 10px; }
 .value-text { font-weight: 500; font-size: 13px; }
 
 .calendar-icon { display: flex; align-items: center; color: #999; }

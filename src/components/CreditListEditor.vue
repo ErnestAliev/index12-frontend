@@ -590,7 +590,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 /* Inputs 28px */
 .filter-input, .edit-input { 
   width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; 
-  padding: 0 6px; font-size: 13px; background: #fff; box-sizing: border-box; color: #333; 
+  padding: 0 6px; font-size: 10px; background: #fff; box-sizing: border-box; color: #333; 
 }
 .filter-input:focus, .edit-input:focus { outline: none; border-color: #222; }
 .filter-select { 
