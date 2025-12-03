@@ -92,7 +92,7 @@ const sign = computed(() => props.totalBalance < 0 ? '-' : '');
 
 /* 🟢 UNIFIED BALANCE SIZE */
 .card-total-balance { 
-  font-size: 42px; /* Было 1.8em (~28px), чуть уменьшил для аккуратности */
+  font-size: 2.5em; /* Было 1.8em (~28px), чуть уменьшил для аккуратности */
   font-weight: 700; 
   color: var(--color-heading); 
   margin-bottom: 0.25rem; 
