@@ -1056,7 +1056,7 @@ const importGridTemplate = computed(() => {
 <style scoped>
 /* 🟢 МОДАЛЬНОЕ ОКНО - ШИРОКОЕ */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal-content { width: 95vw; max-width: 1400px; height: 90vh; max-height: 900px; background: var(--color-background); border-radius: 8px; border: 1px solid var(--color-border); box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; flex-direction: column; position: relative; }
+.modal-content { width: 95vw; max-width: 1400px; height: 90vh; max-height: 700px; background: var(--color-background); border-radius: 8px; border: 1px solid var(--color-border); box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; flex-direction: column; position: relative; }
 
 /* 🟢 Grid Container: СКРЫТЫЙ СКРОЛЛБАР, НО РАБОЧИЙ СКРОЛЛ */
 .grid-table-container { 
