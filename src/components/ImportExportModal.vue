@@ -1137,7 +1137,7 @@ const importGridTemplate = computed(() => {
 .header-controls { display: flex; gap: 12px; align-items: center; }
 .debug-toggle { font-size: 12px; color: var(--color-text-soft); cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .count-label { font-size: 12px; color: var(--color-text-soft); }
-.header-label { display: flex; align-items: center; height: 28px; width: 100%; padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--color-text); box-sizing: border-box; margin-top: 8px;; }
+.header-label { display: flex; align-items: center; height: 28px; width: 100%; padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--color-text); box-sizing: border-box; margin-top: 11px;; }
 .close-btn { position: absolute; top: 10px; right: 15px; font-size: 32px; color: var(--color-text-soft); background: none; border: none; cursor: pointer; z-index: 1001; }
 h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
 .modal-tabs { display: flex; padding: 0 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
