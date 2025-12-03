@@ -60,8 +60,8 @@ const sign = computed(() => props.totalBalance < 0 ? '-' : '');
 
 /* Унификация заголовка */
 .card-title { 
-  font-size: var(--font-sm); 
-  font-weight: var(--fw-semi);
+  font-size: 0.8em; 
+  
   color: var(--text-mute); /* Чуть приглушенный для заголовка "Всего..." */
   white-space: pre-line; 
   line-height: 1.3;
