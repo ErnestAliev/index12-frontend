@@ -2,9 +2,11 @@
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
+import { formatNumber } from '@/utils/formatters.js';
 
 // Компоненты
-import OperationPopup from '@/components/OperationPopup.vue';
+import IncomePopup from '@/components/IncomePopup.vue'; 
+import ExpensePopup from '@/components/ExpensePopup.vue'; 
 import TransferPopup from '@/components/TransferPopup.vue';
 import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; 
 import TheHeader from '@/components/TheHeader.vue';
@@ -18,56 +20,45 @@ import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
-import RefundPopup from '@/components/RefundPopup.vue'; // 🟢 Импортируем RefundPopup
+import RefundPopup from '@/components/RefundPopup.vue'; 
+import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
 
-/**
- * * --- МЕТКА ВЕРСИИ: v39.0 - REFUND CLICK HANDLER ---
- * * ВЕРСИЯ: 39.0 - Обработка клика по чипу "Возврат"
- * * ДАТА: 2025-11-26
- * * ЧТО ИЗМЕНЕНО:
- * 1. (IMPORT) Добавлен RefundPopup.
- * 2. (LOGIC) handleEditOperation теперь проверяет категорию "Возврат" (refundCategoryId).
- * 3. (LOGIC) Добавлены хендлеры handleRefundSave и handleRefundDelete.
- */
-
-console.log('--- HomeView.vue v39.0 (Refund Handler) ЗАГРУЖЕН ---'); 
+console.log('--- HomeView.vue v50.2 (Project ID Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
 
-// Проверка на localhost
-const isLocalhost = computed(() => {
-    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-});
-
-// Ссылки авторизации
-const googleAuthUrl = computed(() => {
-  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
-  return `${baseUrl}/auth/google`;
-});
-const devAuthUrl = computed(() => {
-  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
-  return `${baseUrl}/auth/dev-login`;
-});
+// --- CONSTANTS ---
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const baseUrlCalculated = API_BASE_URL.replace(/\/api$/, '');
+const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
+const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 
 // Состояния модальных окон
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
 
-// Состояние для Prepayment Modal
+// Состояние для Prepayment Modal (Сценарий 1)
 const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
 const prepaymentDateKey = ref('');
 
-// Состояние для Withdrawal Popup
+// Состояния основных попапов
+const isIncomePopupVisible = ref(false);
+const isExpensePopupVisible = ref(false);
+const isTransferPopupVisible = ref(false);
 const isWithdrawalPopupVisible = ref(false);
-
-// Состояние для Retail Popup (Закрытие смены / Редактор списаний)
 const isRetailPopupVisible = ref(false);
-
-// 🟢 Состояние для Refund Popup (Редактирование возврата)
 const isRefundPopupVisible = ref(false);
+
+// Состояния для Smart Deal (Сценарий 2 - Второй транш)
+const isSmartDealPopupVisible = ref(false);
+const smartDealPayload = ref(null); 
+const smartDealStatus = ref({ "debt": 0, "totalDeal": 0, "paidTotal": 0 });
+
+// Временное хранение данных для возврата (при отмене)
+const tempIncomeData = ref(null);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -115,52 +106,154 @@ const debounce = (func, delay) => {
   };
 };
 
-// ОБРАБОТЧИК: Переключение на окно предоплаты (Только создание)
+// --- HANDLERS ---
+
+// 1. ОБРАБОТЧИК: Переключение на окно предоплаты
 const handleSwitchToPrepayment = (data) => {
     const rawDate = data.date || new Date();
     const d = new Date(rawDate);
     prepaymentDateKey.value = mainStore._getDateKey(d);
-    const safeAmount = data.amount ? Math.abs(data.amount) : 0;
     
     prepaymentData.value = { 
       ...data,
-      amount: safeAmount,
+      amount: Math.abs(data.amount || 0),
+      contractorId: data.contractorId,
+      counterpartyIndividualId: data.counterpartyIndividualId,
       operationToEdit: null 
     };
+    
+    isIncomePopupVisible.value = false;
     isPrepaymentModalVisible.value = true;
 };
 
-// ОБРАБОТЧИК: Сохранение предоплаты
+// 2. ОБРАБОТЧИК: Сохранение предоплаты
 const handlePrepaymentSave = async (finalData) => {
     isPrepaymentModalVisible.value = false;
-    isPopupVisible.value = false; 
-    operationToEdit.value = null;
-
+    
     try {
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
         }
 
         const prepayIds = mainStore.getPrepaymentCategoryIds;
-        if (prepayIds.length > 0) {
-            if (!finalData.prepaymentId) {
-                finalData.prepaymentId = prepayIds[0];
-            }
+        if (prepayIds.length > 0 && !finalData.prepaymentId) {
+            finalData.prepaymentId = prepayIds[0];
         }
 
-        const response = await axios.post(`${API_BASE_URL}/events`, finalData);
-        await mainStore.addOperation(response.data);
+        finalData.description = `Предоплата`;
+
+        await mainStore.createEvent(finalData);
+        await mainStore.fetchAllEntities();
         await mainStore.loadCalculationData(viewMode.value, today.value);
 
     } catch (e) {
-        console.error('Background Save Error (Prepayment):', e);
-        alert('Не удалось сохранить предоплату.');
+        console.error('Prepayment Save Error:', e);
+        alert('Не удалось сохранить предоплату: ' + e.message);
     }
 };
 
-// Мгновенное сохранение Операции
+// 3. ОБРАБОТЧИК: Умная сделка
+const handleSwitchToSmartDeal = async (payload) => {
+    tempIncomeData.value = { ...payload };
+    isIncomePopupVisible.value = false;
+    smartDealPayload.value = payload;
+    
+    let status = payload.dealStatus;
+    if (!status && payload.projectId) {
+         try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } 
+         catch(e) { console.error('Error fetching status:', e); }
+    }
+    smartDealStatus.value = status || { debt: 0, totalDeal: 0 };
+    isSmartDealPopupVisible.value = true;
+};
+
+const handleSmartDealCancel = () => {
+    isSmartDealPopupVisible.value = false;
+};
+
+const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => {
+    isSmartDealPopupVisible.value = false;
+    const data = smartDealPayload.value;
+    if (!data) return;
+
+    try {
+        if (closePrevious === true && !isFinal) {
+             await mainStore.closePreviousTranches(
+                 data.projectId, 
+                 data.categoryId, 
+                 data.contractorId, 
+                 data.counterpartyIndividualId
+             );
+        }
+
+        const trancheNum = nextTrancheNum || 2;
+        const formattedAmount = formatNumber(data.amount);
+        const description = `${formattedAmount} ${trancheNum}-й транш`;
+
+        const incomeData = {
+            type: 'income',
+            amount: data.amount,
+            date: new Date(data.date),
+            accountId: data.accountId,
+            projectId: data.projectId,
+            contractorId: data.contractorId,
+            counterpartyIndividualId: data.counterpartyIndividualId,
+            categoryId: data.categoryId,
+            companyId: data.companyId,
+            individualId: data.individualId,
+            totalDealAmount: 0, 
+            isDealTranche: true, 
+            isClosed: isFinal,
+            description: description,
+            cellIndex: data.cellIndex 
+        };
+        
+        if (incomeData.cellIndex === undefined) {
+             const dateKey = mainStore._getDateKey(new Date(data.date));
+             incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+        }
+
+        const newOp = await mainStore.createEvent(incomeData);
+
+        if (isFinal) {
+             await mainStore.closePreviousTranches(
+                 data.projectId, 
+                 data.categoryId, 
+                 data.contractorId, 
+                 data.counterpartyIndividualId
+             );
+             
+             await mainStore.createWorkAct(
+                 data.projectId,
+                 data.categoryId,
+                 data.contractorId,
+                 data.counterpartyIndividualId,
+                 data.amount,
+                 new Date(),
+                 newOp._id, 
+                 true, 
+                 data.companyId,
+                 data.individualId
+             );
+        }
+        
+        setTimeout(async () => {
+            await mainStore.fetchAllEntities(); 
+            await mainStore.loadCalculationData(viewMode.value, today.value);
+        }, 100);
+
+    } catch (e) {
+        console.error('Smart Deal Error:', e);
+        alert('Ошибка при проведении транша: ' + e.message);
+    }
+};
+
 const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
-    handleClosePopup();
+    if (data.type === 'income') isIncomePopupVisible.value = false;
+    else isExpensePopupVisible.value = false;
+    
+    operationToEdit.value = null;
+
     try {
         if (mode === 'create') {
              if (data.cellIndex === undefined) {
@@ -182,130 +275,6 @@ const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
     }
 };
 
-// Мгновенное сохранение Перевода
-const handleTransferSave = async ({ mode, id, data, originalTransfer }) => {
-    handleCloseTransferPopup();
-    try {
-        if (mode === 'create') {
-             if (data.cellIndex === undefined) {
-                 const dateKey = mainStore._getDateKey(new Date(data.date));
-                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
-             }
-             await mainStore.createTransfer(data); 
-        } else if (mode === 'edit') {
-            const oldDateKey = originalTransfer?.dateKey;
-            await mainStore.updateTransfer(id, data);
-            if (oldDateKey) { 
-                 const newDateKey = mainStore._getDateKey(new Date(data.date));
-                 if (oldDateKey !== newDateKey) {
-                     await mainStore.refreshDay(oldDateKey);
-                 }
-            }
-        }
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (error) {
-        console.error('Background Save Error (Transfer):', error);
-        alert('Ошибка сохранения перевода.');
-    }
-};
-
-// Мгновенное сохранение Вывода
-const handleWithdrawalSave = async ({ mode, id, data, originalOperation }) => {
-    isWithdrawalPopupVisible.value = false;
-    operationToEdit.value = null;
-    try {
-        if (mode === 'create') {
-             if (data.cellIndex === undefined) {
-                 const dateKey = mainStore._getDateKey(new Date(data.date));
-                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
-             }
-             await mainStore.createEvent(data);
-        } else if (mode === 'edit') {
-            const updatedData = { ...data, isWithdrawal: true };
-            const oldDateKey = originalOperation?.dateKey;
-            
-            await mainStore.updateOperation(id, updatedData);
-            
-            if (oldDateKey && oldDateKey !== updatedData.dateKey) {
-                await mainStore.refreshDay(oldDateKey);
-            }
-        }
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (error) {
-        console.error('Background Save Error (Withdrawal):', error);
-        alert('Ошибка сохранения вывода.');
-    }
-};
-
-// СОХРАНЕНИЕ СПИСАНИЯ (ОБНОВЛЕНИЕ)
-const handleRetailSave = async ({ id, data }) => {
-    isRetailPopupVisible.value = false;
-    operationToEdit.value = null;
-    try {
-        const updatedData = {
-            amount: -Math.abs(data.amount),
-            projectId: data.projectIds[0] || null, 
-            date: new Date(data.date)
-        };
-        
-        await mainStore.updateOperation(id, updatedData);
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (error) {
-        console.error('Error saving retail write-off:', error);
-        alert('Ошибка сохранения списания.');
-    }
-};
-
-// УДАЛЕНИЕ СПИСАНИЯ
-const handleRetailDelete = async (operation) => {
-    isRetailPopupVisible.value = false;
-    operationToEdit.value = null;
-    try {
-        await mainStore.deleteOperation(operation);
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (error) {
-        console.error('Error deleting retail write-off:', error);
-        alert('Ошибка удаления списания.');
-    }
-};
-
-// 🟢 СОХРАНЕНИЕ ВОЗВРАТА
-const handleRefundSave = async ({ mode, id, data }) => {
-    isRefundPopupVisible.value = false;
-    operationToEdit.value = null;
-    try {
-        if (mode === 'create') {
-             if (data.cellIndex === undefined) {
-                 const dateKey = mainStore._getDateKey(new Date(data.date));
-                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
-             }
-             await mainStore.createEvent(data);
-        } else {
-             // Редактирование
-             await mainStore.updateOperation(id, data);
-        }
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (error) {
-        console.error('Error saving refund:', error);
-        alert('Ошибка сохранения возврата.');
-    }
-};
-
-// 🟢 УДАЛЕНИЕ ВОЗВРАТА
-const handleRefundDelete = async (operation) => {
-    isRefundPopupVisible.value = false;
-    operationToEdit.value = null;
-    try {
-        await mainStore.deleteOperation(operation);
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-    } catch (error) {
-        console.error('Error deleting refund:', error);
-        alert('Ошибка удаления возврата.');
-    }
-};
-
-
-/* ===================== ДАТЫ / ВИРТУАЛКА ===================== */
 const initializeToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }
 const today = ref(initializeToday());
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -337,11 +306,7 @@ const dateFromGlobalIndex = (globalIndex) => {
   const d = new Date(t); d.setDate(t.getDate() + delta); return d;
 };
 
-/* ===================== UI STATE ===================== */
 const visibleDays = ref([]);
-const isPopupVisible = ref(false);
-const isTransferPopupVisible = ref(false);
-const operationType = ref('income');
 const isContextMenuVisible = ref(false);
 const contextMenuPosition = ref({ top: '0px', left: '0px' });
 const selectedDay = ref(null);
@@ -351,7 +316,6 @@ const operationToEdit = ref(null);
 const minDateFromProjection = computed(() => mainStore.projection.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null);
 const maxDateFromProjection = computed(() => mainStore.projection.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null);
 
-/* ===================== REFS LAYOUT ===================== */
 const mainContentRef = ref(null);
 const timelineGridRef = ref(null);
 const timelineGridContentRef = ref(null);
@@ -365,7 +329,6 @@ const graphAreaRef = ref(null);
 const homeHeaderRef = ref(null);
 const headerResizerRef = ref(null);
 
-/* ===================== КОНСТАНТЫ / РАЗМЕРЫ ===================== */
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
 const DIVIDER_H    = 15;
@@ -374,7 +337,6 @@ const HEADER_MAX_H_RATIO = 0.8;
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
 
-// WATCHER: Увеличенная высота для избежания обрезания
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
         const totalWidgets = mainStore.allWidgets.length;
@@ -383,15 +345,10 @@ watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     } else {
         headerHeightPx.value = 135;
     }
-    
     applyHeaderHeight(headerHeightPx.value);
-    
-    nextTick(() => {
-       onWindowResize(); 
-    });
+    nextTick(() => { onWindowResize(); });
 });
 
-/* ===================== КОНТЕКСТНОЕ МЕНЮ / ПОПАПЫ ===================== */
 const openContextMenu = (day, event, cellIndex) => {
   event.stopPropagation();
   selectedDay.value = day; selectedCellIndex.value = cellIndex;
@@ -407,49 +364,61 @@ const openContextMenu = (day, event, cellIndex) => {
 const handleContextMenuSelect = (type) => {
   isContextMenuVisible.value = false;
   if (!selectedDay.value) return;
-  if (type === 'transfer') { operationToEdit.value = null; isTransferPopupVisible.value = true; } 
-  else { operationToEdit.value = null; openPopup(type); }
+  operationToEdit.value = null;
+
+  if (type === 'transfer') { 
+      isTransferPopupVisible.value = true; 
+  } else { 
+      openPopup(type); 
+  }
 };
 
-const openPopup = (type) => { operationType.value = type; isPopupVisible.value = true; };
+const openPopup = (type) => {
+    if (type === 'income') {
+        isIncomePopupVisible.value = true;
+    } else if (type === 'expense') {
+        isExpensePopupVisible.value = true;
+    }
+};
 
-// 🟢 ГЛАВНАЯ ЛОГИКА ОТКРЫТИЯ РЕДАКТОРОВ
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
 
-  // 1. Проверка на Списание (Розница)
   if (mainStore._isRetailWriteOff(operation)) {
       isRetailPopupVisible.value = true;
       return;
   }
-
-  // 🟢 2. Проверка на ВОЗВРАТ (Refund)
   const catId = operation.categoryId?._id || operation.categoryId;
   if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) {
       isRefundPopupVisible.value = true;
       return;
   }
-
-  // 3. Остальное
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
+    return;
   } 
-  else if (operation.isWithdrawal) {
+  if (operation.isWithdrawal) {
     isWithdrawalPopupVisible.value = true;
+    return;
   }
-  else {
-    openPopup(operation.type);
+  if (operation.type === 'income') {
+    isIncomePopupVisible.value = true;
+    return;
   }
+  isExpensePopupVisible.value = true; 
 };
 
-const handleClosePopup = () => { isPopupVisible.value = false; operationToEdit.value = null; };
+const handleClosePopup = () => { 
+    isIncomePopupVisible.value = false; 
+    isExpensePopupVisible.value = false;
+    operationToEdit.value = null; 
+};
 const handleCloseTransferPopup = () => { isTransferPopupVisible.value = false; operationToEdit.value = null; };
 const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
 
-/* ===================== ДАННЫЕ ===================== */
 const debouncedFetchVisibleDays = debounce(() => { visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey)); }, 300); 
 const recalcProjectionForCurrentView = async () => { await mainStore.loadCalculationData(viewMode.value, today.value); };
 const handleOperationDelete = async (operation) => { 
@@ -462,7 +431,6 @@ const handleOperationDelete = async (operation) => {
     handleCloseWithdrawalPopup();
 };
 
-/* ===================== SCROLL / RESIZE ===================== */
 const scrollInterval = ref(null);
 const isAutoScrolling = ref(false);
 const stopAutoScroll = () => { if (scrollInterval.value) { clearInterval(scrollInterval.value); scrollInterval.value = null; } isAutoScrolling.value = false; };
@@ -514,6 +482,44 @@ let dayChangeCheckerInterval = null;
 let resizeObserver = null;
 onMounted(async () => { checkDayChange(); dayChangeCheckerInterval = setInterval(checkDayChange, 60000); await mainStore.checkAuth(); if (mainStore.isAuthLoading || !mainStore.user) return; mainStore.startAutoRefresh(); await nextTick(); await mainStore.fetchAllEntities(); const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); generateVisibleDays(); await nextTick(); centerToday(); await nextTick(); applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; applyHeights(clampTimelineHeight(initialTop)); if (resizerRef.value) { resizerRef.value.addEventListener('mousedown', initResize); resizerRef.value.addEventListener('touchstart', initResize, { passive: false }); } if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } if (timelineGridRef.value) { timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); } resizeObserver = new ResizeObserver(() => { applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); }); if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); window.addEventListener('resize', onWindowResize); updateScrollbarMetrics(); await recalcProjectionForCurrentView(); });
 onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); } window.removeEventListener('resize', onWindowResize); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
+
+// --- Transfer, Retail, Refund Handlers ---
+const handleTransferSave = async ({ mode, id, data }) => { handleCloseTransferPopup(); try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else if (mode === 'edit') { await mainStore.updateTransfer(id, data); } await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка сохранения перевода'); } };
+const handleWithdrawalSave = async ({ mode, id, data }) => { isWithdrawalPopupVisible.value = false; try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка сохранения вывода'); } };
+
+// 🟢 ИСПРАВЛЕНИЕ: Получаем projectId корректно
+const handleRetailSave = async ({ id, data }) => { 
+    isRetailPopupVisible.value = false; 
+    try { 
+        // Если пришел массив (projectIds) - берем первый элемент, иначе берем projectId
+        const pId = data.projectId || (data.projectIds && data.projectIds.length > 0 ? data.projectIds[0] : null);
+        
+        await mainStore.updateOperation(id, { 
+            amount: -Math.abs(data.amount), 
+            projectId: pId,
+            date: new Date(data.date) 
+        }); 
+        await mainStore.loadCalculationData(viewMode.value, today.value); 
+    } catch (e) { 
+        alert('Ошибка сохранения списания: ' + e.message); 
+    } 
+};
+
+const handleRetailClosure = async (payload) => {
+    try {
+        // 🟢 FIX: Гарантированно извлекаем projectId для группировки
+        const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null);
+        
+        await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId);
+        showRetailPopup.value = false; 
+        
+        setTimeout(() => { mainStore.loadCalculationData(viewMode.value, today.value); }, 100);
+    } catch (e) { alert('Ошибка: ' + e.message); }
+};
+
+const handleRetailDelete = async (op) => { isRetailPopupVisible.value = false; try { await mainStore.deleteOperation(op); await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка удаления'); } };
+const handleRefundSave = async ({ mode, id, data }) => { isRefundPopupVisible.value = false; try { if (mode === 'create') await mainStore.createEvent(data); else await mainStore.updateOperation(id, data); await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка сохранения возврата'); } };
+const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; try { await mainStore.deleteOperation(op); await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка удаления'); } };
 </script>
 
 <template>
@@ -530,54 +536,64 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
         <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
       <aside class="home-right-panel">
-        <!-- 🟢 КНОПКА РАСШИРЕНИЯ ХЕДЕРА (ПЕРВАЯ ПО ПОРЯДКУ) -->
-        <button 
-          class="icon-btn header-expand-btn" 
-          :class="{ 'active': mainStore.isHeaderExpanded }"
-          @click="mainStore.toggleHeaderExpansion" 
-          :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7"></rect>
-            <rect x="14" y="3" width="7" height="7"></rect>
-            <rect x="14" y="14" width="7" height="7"></rect>
-            <rect x="3" y="14" width="7" height="7"></rect>
-          </svg>
-        </button>
-
+        <button class="icon-btn header-expand-btn" :class="{ 'active': mainStore.isHeaderExpanded }" @click="mainStore.toggleHeaderExpansion" :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></button>
         <button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button><button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></button><button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button><div class="user-profile-widget"><button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu"><img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" /><div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div><span class="user-name">{{ mainStore.user.name }}</span></button></div></aside>
     </div>
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
     <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
-    <OperationPopup v-if="isPopupVisible" :type="operationType" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :operation-to-edit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleClosePopup" @operation-deleted="handleOperationDelete(operationToEdit)" @operation-moved="handleOperationMoved" @trigger-prepayment="handleSwitchToPrepayment" @save="handleOperationSave" />
-    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
-    <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
     
-    <WithdrawalPopup 
-       v-if="isWithdrawalPopupVisible" 
-       :initial-data="{ amount: 0 }" 
-       :operation-to-edit="operationToEdit"
-       @close="handleCloseWithdrawalPopup" 
-       @save="handleWithdrawalSave"
+    <!-- 🟢 НОВЫЕ ПОПАПЫ ДЛЯ ОПЕРАЦИЙ -->
+    <IncomePopup 
+        v-if="isIncomePopupVisible" 
+        :date="selectedDay ? selectedDay.date : new Date()" 
+        :cellIndex="selectedDay ? selectedCellIndex : 0" 
+        :operation-to-edit="operationToEdit" 
+        :min-allowed-date="minDateFromProjection" 
+        :max-allowed-date="maxDateFromProjection" 
+        @close="handleClosePopup" 
+        @save="handleOperationSave"
+        @operation-deleted="handleOperationDelete(operationToEdit)"
+        @trigger-prepayment="handleSwitchToPrepayment"
+        @trigger-smart-deal="handleSwitchToSmartDeal"
     />
 
-    <!-- НОВЫЙ ПОПАП СПИСАНИЯ -->
-    <RetailClosurePopup 
-       v-if="isRetailPopupVisible" 
-       :operation-to-edit="operationToEdit"
-       @close="isRetailPopupVisible = false" 
-       @save="handleRetailSave"
-       @delete="handleRetailDelete"
+    <ExpensePopup 
+        v-if="isExpensePopupVisible" 
+        :date="selectedDay ? selectedDay.date : new Date()" 
+        :cellIndex="selectedDay ? selectedCellIndex : 0" 
+        :operation-to-edit="operationToEdit" 
+        :min-allowed-date="minDateFromProjection" 
+        :max-allowed-date="maxDateFromProjection"
+        @close="handleClosePopup" 
+        @save="handleOperationSave"
+        @operation-deleted="handleOperationDelete(operationToEdit)"
     />
 
-    <!-- 🟢 ПОПАП ВОЗВРАТА -->
-    <RefundPopup 
-       v-if="isRefundPopupVisible" 
-       :operation-to-edit="operationToEdit"
-       @close="isRefundPopupVisible = false" 
-       @save="handleRefundSave"
-       @delete="handleRefundDelete"
+    <!-- 🟢 PREPAYMENT MODAL -->
+    <PrepaymentModal 
+       v-if="isPrepaymentModalVisible" 
+       :initialData="prepaymentData" 
+       :dateKey="prepaymentDateKey" 
+       @close="isPrepaymentModalVisible = false" 
+       @save="handlePrepaymentSave" 
     />
+
+    <!-- 🟢 SMART DEAL CONFIRM -->
+    <SmartDealPopup 
+       v-if="isSmartDealPopupVisible"
+       :deal-status="smartDealStatus"
+       :current-amount="smartDealPayload?.amount || 0"
+       :project-name="smartDealPayload?.projectName || 'Проект'"
+       :contractor-name="smartDealPayload?.contractorName || 'Контрагент'"
+       :category-name="smartDealPayload?.categoryName || 'Категория'"
+       @close="handleSmartDealCancel"
+       @confirm="handleSmartDealConfirm"
+    />
+
+    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
+    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" :operation-to-edit="operationToEdit" @close="handleCloseWithdrawalPopup" @save="handleWithdrawalSave" />
+    <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
+    <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
 
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
@@ -586,7 +602,7 @@ onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeC
 </template>
 
 <style scoped>
-/* (Стили остаются прежними, их не трогаем) */
+/* (Стили без изменений) */
 .loading-screen { width: 100vw; height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center; flex-direction: column; background-color: var(--color-background); color: var(--color-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 .spinner { width: 40px; height: 40px; border: 4px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
 @keyframes spin { to { transform: rotate(360deg); } }

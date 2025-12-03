@@ -2,14 +2,13 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
- * * --- КОМПОНЕНТ: BaseSelect v4.0 - GROUPING & ACTIONS ---
- * * ВЕРСИЯ: 4.0 - Поддержка заголовков групп и кастомных действий
- * * ДАТА: 2025-11-26
+ * * --- КОМПОНЕНТ: BaseSelect v4.2 - EVENT FIX & FULL CONTENT ---
+ * * ВЕРСИЯ: 4.2 - Исправление зависания при выборе (Stop Propagation)
+ * * ДАТА: 2025-12-03
  *
  * ЧТО ИЗМЕНЕНО:
- * 1. (TEMPLATE) Добавлена обработка `option.isHeader` для разделителей.
- * 2. (TEMPLATE) Добавлен слот `action-item` для кастомного содержимого (кнопки).
- * 3. (STYLE) Стили для заголовков и слотов.
+ * 1. (FIX) Добавлен модификатор @click.stop на элементы списка.
+ * 2. (CONTENT) Полный код файла сохранен.
  */
 
 const props = defineProps({
@@ -87,7 +86,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
              'is-action-row': option.isActionRow,
              'is-selected': option.value === modelValue
           }"
-          @click="selectOption(option)"
+          @click.stop="selectOption(option)"
         >
           <!-- 1. Заголовок группы -->
           <div v-if="option.isHeader" class="group-header">

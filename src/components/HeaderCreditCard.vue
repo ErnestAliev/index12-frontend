@@ -124,10 +124,11 @@ const formatMoney = (val) => formatNumber(Math.abs(val || 0));
 </template>
 
 <style scoped>
+
 .dashboard-card { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
-.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
-.card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
+.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px;  flex-shrink: 0; }
+.card-title { font-size: 0.85em; color: #ffffff; position: relative; z-index: 101; }
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 .action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
@@ -135,8 +136,8 @@ const formatMoney = (val) => formatNumber(Math.abs(val || 0));
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 .card-items-list { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; min-height: 0; display: flex; flex-direction: column; }
 .card-items-list::-webkit-scrollbar { display: none; }
-.card-item { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 0.25rem; flex-shrink: 0; }
-.card-items-list.forecast-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto 16px auto; column-gap: 6px; row-gap: 4px; align-items: center; align-content: start; }
+.card-item { display: flex; justify-content: space-between; font-size: 12px;  }
+.card-items-list.forecast-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px auto; column-gap: 6px;  align-items: center; align-content: start; }
 .card-items-list.forecast-mode .card-item { display: contents; }
 .card-items-list.forecast-mode .forecast-display { display: contents; }
 .name-cell { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

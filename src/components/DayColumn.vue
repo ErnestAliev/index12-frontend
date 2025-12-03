@@ -5,23 +5,20 @@ import { formatNumber } from '@/utils/formatters.js';
 import HourCell from './HourCell.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.2-YEAR-AWARE-FIX ---
- * * ВЕРСИЯ: 1.2 - Исправление "слепоты к году" (dayOfYear -> dateKey)
- * * ДАТА: 2025-11-10
+ * * --- МЕТКА ВЕРСИИ: v1.4-DROP-NOON-FIX ---
+ * * ВЕРСИЯ: 1.4 - Фикс прыжков времени
+ * * ДАТА: 2025-12-03
  *
  * ЧТО ИСПРАВЛЕНО:
- * 1. (ARCH) Компонент теперь принимает `dateKey` ("YYYY-DOY") вместо `dayOfYear`.
- * 2. (API) `operations` computed теперь использует `mainStore.getOperationsForDay(props.dateKey)`.
- * 3. (API) `onDrop` теперь перехватывает событие и добавляет `toDateKey: props.dateKey`,
- * как того ожидает HomeView (v4.6+).
- * 4. (ARCH) Передает `dateKey` вниз в `HourCell.vue`.
+ * 1. onDrop: Теперь `targetDate` устанавливается строго на 12:00 (Полдень).
+ * Это гарантирует, что дата останется в пределах того же дня при любых конвертациях UTC.
+ * Позиционирование по вертикали теперь полностью зависит от `toCellIndex`.
  */
 
 const props = defineProps({
   date: { type: Date, required: true },
   isToday: { type: Boolean, default: false },
-  // dayOfYear: { type: Number, required: true } // 🔴 УДАЛЕНО
-  dateKey: { type: String, required: true } // 🟢 ДОБАВЛЕНО
+  dateKey: { type: String, required: true }
 });
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
@@ -29,7 +26,6 @@ const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 const mainStore = useMainStore();
 
 const operations = computed(() => {
-  // 🔴 ИЗМЕНЕНО: Используем dateKey
   return mainStore.getOperationsForDay(props.dateKey);
 });
 
@@ -65,13 +61,19 @@ const onAdd = (event, cellIndex) => {
 // =================================================================
 const onDrop = (dropDataFromHourCell) => {
   // dropDataFromHourCell = { operation, toCellIndex }
-  // HomeView (v4.6) ожидает { operation, toCellIndex, toDateKey }
   
-  console.log(`[DayColumn] 💧 onDrop в ${props.dateKey}.`);
+  // 🟢 FIX: Устанавливаем целевую дату на 12:00:00 того же дня.
+  // Это предотвращает смещение на предыдущий день из-за часовых поясов (UTC+5/6),
+  // так как 00:00 локального времени может стать 18:00 прошлого дня в UTC.
+  const targetDate = new Date(props.date);
+  targetDate.setHours(12, 0, 0, 0);
+
+  // console.log(`[DayColumn] 💧 onDrop Safe. DateKey: ${props.dateKey}, Cell: ${dropDataFromHourCell.toCellIndex}, TargetDate(Noon): ${targetDate}`);
 
   emit('drop-operation', {
     ...dropDataFromHourCell,
-    toDateKey: props.dateKey // 🟢 ДОБАВЛЯЕМ КЛЮЧ ДАТЫ
+    toDateKey: props.dateKey,
+    targetDate: targetDate // Дата фиксирует День, CellIndex фиксирует Позицию
   });
 };
 </script>
@@ -100,7 +102,6 @@ const onDrop = (dropDataFromHourCell) => {
 /* (Стили я не менял, они идентичны твоим из v1.1) */
 .day-column {
   flex: 1;
-  /* min-width: 150px; (🟢 УДАЛЕНО: Это исправляет "сломанные 12 колонок") */
   background-color: var(--color-background-soft);
   border-left: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
@@ -125,19 +126,16 @@ const onDrop = (dropDataFromHourCell) => {
   /* (Стили не менялись) */
 }
 
-/* === 🟢 НАЧАЛО ИЗМЕНЕНИЙ (ШРИФТЫ ДЛЯ ПЛАНШЕТА v1.5) === */
 @media (max-height: 900px) {
   .column-header {
-    font-size: 0.7em; /* Агрессивное уменьшение */
-    padding: 3px 4px; /* Уменьшаем отступы */
+    font-size: 0.7em; 
+    padding: 3px 4px; 
   }
 }
 
-/* 🔴 ИЗМЕНЕНИЕ (v1.5): Адаптация под ширину (960px - 1200px) */
 @media (max-width: 1200px) {
   .column-header {
-    font-size: 0.7em; /* 🔴 Уменьшаем шрифт */
+    font-size: 0.7em; 
   }
 }
-/* === 🟢 КОНЕЦ ИЗМЕНЕНИЙ === */
 </style>

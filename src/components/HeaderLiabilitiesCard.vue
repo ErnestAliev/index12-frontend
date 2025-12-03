@@ -70,15 +70,15 @@ const openClientsTab = () => {
     </div>
 
     <div class="card-items-list">
-      <!-- 🟢 Кликабельная строка "Мы должны" -> Вкладка Розница -->
+      <!-- 🟢 Кликабельная строка "Должны отработать" -> Вкладка Розница -->
       <div class="card-item clickable-row" @click.stop="openRetailTab">
-        <span title="Полученные авансы, по которым работа не сдана">Мы должны</span>
+        <span title="Полученные авансы, по которым работа не сдана">Должны отработать</span>
         <span class="value-expense">{{ displayWeOwe }}</span>
       </div>
       
-      <!-- 🟢 Кликабельная строка "Нам должны" -> Вкладка Сделки -->
+      <!-- 🟢 Кликабельная строка "Должны получить" -> Вкладка Сделки -->
       <div class="card-item clickable-row" @click.stop="openClientsTab">
-        <span title="Остатки по сделкам, где внесена только часть суммы">Нам должны</span>
+        <span title="Остатки по сделкам, где внесена только часть суммы">Должны получить</span>
         <span class="value-orange">{{ displayTheyOwe }}</span>
       </div>
     </div>
@@ -86,17 +86,19 @@ const openClientsTab = () => {
 </template>
 
 <style scoped>
+
+
 .dashboard-card { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
-.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; cursor: grab; }
-.card-title-container:active { cursor: grabbing; }
-.card-title { font-size: 0.85em; color: #aaa; position: relative; z-index: 101; }
+.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px;  flex-shrink: 0; cursor: grab; }
+.card-title-container:active { cursor: grabbing; font-size: 13px; }
+.card-title { font-size: 13px; color: #ffffff; position: relative; z-index: 101; }
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 .action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
-.card-items-list { flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.card-items-list { font-size: 13px; flex-grow: 1; overflow-y: auto; padding-right: 5px; scrollbar-width: none; display: flex; flex-direction: column; min-height: 0; }
 .card-items-list::-webkit-scrollbar { display: none; }
 .card-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; margin-bottom: 0.25rem; flex-shrink: 0; border-radius: 4px; padding: 2px 4px; margin-left: -4px; margin-right: -4px;}
 .card-item span:first-child { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }

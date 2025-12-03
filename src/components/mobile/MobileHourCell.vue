@@ -4,9 +4,9 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v51.1 - CREDIT INCOME STYLE (MOBILE) ---
- * * ВЕРСИЯ: 51.1 - Стилизация доходов по кредитам для мобильных
- * * ДАТА: 2025-11-30
+ * * --- МЕТКА ВЕРСИИ: v52.0 - MOBILE RETAIL COLORS ---
+ * * ВЕРСИЯ: 52.0 - Синхронизация цветов для мобильной версии
+ * * ДАТА: 2025-12-03
  */
 
 const props = defineProps({
@@ -29,27 +29,45 @@ const isTransferOp = computed(() => {
   return cat === 'перевод' || cat === 'transfer';
 });
 
+const isRetailClient = computed(() => {
+    const op = props.operation;
+    if (!op) return false;
+    const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+    return indId && indId === mainStore.retailIndividualId;
+});
+
+// 🟢 ЗАКРЫТАЯ / ФАКТ (Зеленый)
+const isClosedDealOp = computed(() => {
+    const op = props.operation;
+    if (!op) return false;
+    if (op.type === 'income' && op.isClosed === true) return true;
+    return false;
+});
+
+// 🟢 ПРЕДОПЛАТА / ТРАНШ (Оранжевый)
 const isPrepaymentOp = computed(() => {
     const op = props.operation;
     if (!op || isTransferOp.value || op.isWithdrawal) return false;
     if (op.type !== 'income') return false;
     
-    const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-    if (indId && indId === mainStore.retailIndividualId) {
-        return (op.totalDealAmount || 0) > 0;
-    }
+    if (isClosedDealOp.value) return false;
+
+    if ((op.totalDealAmount || 0) > 0) return true;
+    if (op.isDealTranche === true) return true;
 
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
     
-    return (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
+    if ((catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment)) return true;
+    
+    if (isRetailClient.value && op.isClosed !== true) return true;
+
+    return false;
 });
 
 const isWithdrawalOp = computed(() => props.operation && props.operation.isWithdrawal);
 const isRetailWriteOffOp = computed(() => mainStore._isRetailWriteOff(props.operation));
-
-// 🟢 Детектор Кредита (Доход)
 const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
 
 const toOwnerName = computed(() => {
@@ -58,6 +76,13 @@ const toOwnerName = computed(() => {
   if (op.toCompanyId) return typeof op.toCompanyId === 'object' ? op.toCompanyId.name : 'Компания...';
   if (op.toIndividualId) return typeof op.toIndividualId === 'object' ? op.toIndividualId.name : 'Физлицо...';
   return op.toAccountId?.name || 'Счет...';
+});
+
+// 🟢 Галочка только для B2B закрытых
+const showCheckmark = computed(() => {
+    if (!isClosedDealOp.value) return false;
+    if (isRetailClient.value) return false; 
+    return true;
 });
 </script>
 
@@ -68,12 +93,15 @@ const toOwnerName = computed(() => {
       class="op-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp, 
+         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
          expense: operation.type==='expense' && !isWithdrawalOp,
+         
          prepayment: isPrepaymentOp,
+         'closed-deal': isClosedDealOp,
+         
          withdrawal: isWithdrawalOp,
          writeoff: isRetailWriteOffOp,
-         'credit-income': isCreditIncomeOp /* 🟢 Новый класс */
+         'credit-income': isCreditIncomeOp 
       }"
     >
       <!-- Содержимое чипа -->
@@ -92,7 +120,6 @@ const toOwnerName = computed(() => {
         <span class="desc">Списание</span>
       </template>
 
-      <!-- 🟢 КРЕДИТ -->
       <template v-else-if="isCreditIncomeOp">
         <span class="amt">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
         <span class="desc">Кредит</span>
@@ -100,10 +127,10 @@ const toOwnerName = computed(() => {
 
       <template v-else>
         <span class="amt">
-          {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
+          {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
         <span class="desc">
-          {{ isPrepaymentOp ? 'Предоплата' : (operation.categoryId?.name || 'Без категории') }}
+          {{ isPrepaymentOp ? (isRetailClient ? 'Предоплата' : 'Транш/Аванс') : (operation.categoryId?.name || 'Без категории') }}
         </span>
       </template>
     </div>
@@ -148,7 +175,14 @@ const toOwnerName = computed(() => {
 /* Цвета */
 .income .amt { color: var(--color-primary, #34c759); }
 .expense .amt { color: var(--color-danger, #ff3b30); }
+
+/* 🟢 Оранжевый */
+.prepayment { background: rgba(255, 157, 0, 0.1); }
 .prepayment .amt { color: #FF9D00; }
+
+/* 🟢 Зеленый (Закрытые) */
+.closed-deal { background: rgba(52, 199, 89, 0.1); }
+.closed-deal .amt { color: #34c759; }
 
 .withdrawal { background: #2F3340; }
 .withdrawal .amt { color: #DE8FFF; }
@@ -156,7 +190,6 @@ const toOwnerName = computed(() => {
 
 .writeoff .amt { color: #ef4444; }
 
-/* 🟢 СТИЛИ КРЕДИТА */
 .credit-income { background: #2F3340; }
 .credit-income .amt { color: #8FD4FF; }
 .credit-income .desc { color: #8FD4FF; opacity: 0.8; }

@@ -2,13 +2,15 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
-import OperationPopup from './OperationPopup.vue';
+// 🟢 1. ЗАМЕНА ИМПОРТОВ: Удален OperationPopup, добавлены Income/Expense
+import IncomePopup from './IncomePopup.vue';
+import ExpensePopup from './ExpensePopup.vue';
 import DateRangePicker from './DateRangePicker.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v55.1 - READ ONLY LIST ---
- * * ВЕРСИЯ: 55.1 - Инпуты и селекты в списке заменены на текстовые значения.
- * * ДАТА: 2025-12-01
+ * * --- МЕТКА ВЕРСИИ: v56.0 - POPUP FIX ---
+ * * ВЕРСИЯ: 56.0 - Замена удаленного OperationPopup на Income/Expense
+ * * ДАТА: 2025-12-03
  */
 
 const props = defineProps({
@@ -218,7 +220,27 @@ const filteredItems = computed(() => {
 
 // ACTIONS
 const openCreatePopup = () => { isCreatePopupVisible.value = true; };
-const handleOperationAdded = async (newOp) => { isCreatePopupVisible.value = false; await mainStore.fetchAllEntities(); loadOperations(); };
+
+// 🟢 2. НОВЫЙ ОБРАБОТЧИК СОХРАНЕНИЯ
+const handleSave = async ({ mode, data }) => {
+    isCreatePopupVisible.value = false;
+    try {
+        // Этот редактор используется только для создания новых
+        if (mode === 'create') {
+             if (data.cellIndex === undefined) {
+                 // Если cellIndex не задан, вычисляем первый свободный
+                 const dateKey = mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+             }
+             await mainStore.createEvent(data);
+        }
+        // Перезагрузка списка произойдет автоматически через watcher allOperationsFlat
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка при сохранении: ' + e.message);
+    }
+};
+
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.value = true; try { await mainStore.deleteOperation(itemToDelete.value.originalOp); itemToDelete.value.isDeleted = true; showDeleteConfirm.value = false; } catch (e) { alert(e.message); } finally { isDeleting.value = false; } };
 
@@ -307,12 +329,26 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
         </div>
         <div class="footer-actions">
             <button class="btn-close" @click="$emit('close')">Закрыть</button>
-            <!-- Кнопка сохранения удалена, так как список теперь не редактируемый inline -->
         </div>
       </div>
     </div>
 
-    <OperationPopup v-if="isCreatePopupVisible" :type="type" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @operation-added="handleOperationAdded" />
+    <!-- 🟢 3. УСЛОВНЫЙ РЕНДЕРИНГ ПОПАПОВ -->
+    <IncomePopup 
+        v-if="isCreatePopupVisible && props.type === 'income'"
+        :date="new Date()" 
+        :cellIndex="0" 
+        @close="isCreatePopupVisible = false" 
+        @save="handleSave" 
+    />
+
+    <ExpensePopup 
+        v-if="isCreatePopupVisible && props.type === 'expense'"
+        :date="new Date()" 
+        :cellIndex="0" 
+        @close="isCreatePopupVisible = false" 
+        @save="handleSave" 
+    />
     
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="showDeleteConfirm = false"><div class="delete-confirm-box"><h4>Удалить операцию?</h4><p class="confirm-text">Вы действительно хотите удалить эту операцию? Это действие необратимо.</p><div class="delete-actions"><button class="btn-delete-confirm" @click="confirmDelete">Да, удалить</button><button class="btn-cancel" @click="showDeleteConfirm = false">Отмена</button></div></div></div>
   </div>

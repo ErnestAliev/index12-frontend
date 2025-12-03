@@ -1,13 +1,3 @@
-/**
- * * --- МЕТКА ВЕРСИИ: v53.0 - INSTANT TOTAL FIX ---
- * * ВЕРСИЯ: 53.0 - Мгновенное обновление виджетов "Всего"
- * * ДАТА: 2025-11-30
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) `currentTotalBalance` теперь считается как сумма `currentAccountBalances` (включает локальный ввод).
- * 2. (LOGIC) Снапшот с сервера теперь считается "чистым" (без нач. балансов), добавление баланса происходит на фронте.
- */
-
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
@@ -28,7 +18,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v53.0 (Instant Total Fix) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v77.0 (SNAPSHOT SYNC FIX) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -61,6 +51,8 @@ export const useMainStore = defineStore('mainStore', () => {
   const categories  = ref([]);
   const credits     = ref([]); 
   
+  const dealOperations = ref([]);
+  
   const todayDayOfYear = ref(0);
   const currentViewDate = ref(new Date());
   const currentYear = ref(new Date().getFullYear());
@@ -84,6 +76,15 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'individuals',  name: 'Мои Физлица' },
     { key: 'categories',   name: 'Категории' },
   ]);
+
+  // --- Helpers ---
+  const _toStr = (val) => {
+      if (!val) return '';
+      if (typeof val === 'object') {
+          return val._id ? String(val._id) : ''; 
+      }
+      return String(val);
+  };
 
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
@@ -131,6 +132,20 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
       return ['меж.комп', 'межкомпаний', 'inter-comp'].includes(name);
+  };
+
+  const _isPrepaymentOp = (op) => {
+      if (!op) return false;
+      // 🟢 FIX: Не скрываем сделки из доходов, если у них нормальная категория (не "Предоплата")
+      // if ((op.totalDealAmount || 0) > 0) return true;
+      // if (op.isDealTranche === true) return true;
+      
+      const prepayIds = prepaymentCategoryIdsSet.value; 
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      if ((catId && prepayIds.has(catId)) || (prepId && prepayIds.has(prepId))) return true;
+      if (op.categoryId && op.categoryId.isPrepayment) return true;
+      return false;
   };
 
   const _sortByOrder = (arr) => {
@@ -207,6 +222,106 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       return false;
   };
+
+  function _updateDealCache(op, mode = 'add') {
+      const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
+      if (!isDealRelated) return;
+
+      if (mode === 'add') {
+          const idx = dealOperations.value.findIndex(d => d._id === op._id);
+          if (idx === -1) dealOperations.value.push(op);
+      } else if (mode === 'update') {
+          const idx = dealOperations.value.findIndex(d => d._id === op._id);
+          if (idx !== -1) dealOperations.value[idx] = op;
+          else dealOperations.value.push(op);
+      } else if (mode === 'delete') {
+          dealOperations.value = dealOperations.value.filter(d => d._id !== op._id);
+      }
+  }
+
+  const getMergedDealOps = computed(() => {
+      const map = new Map();
+      if (dealOperations.value) {
+          dealOperations.value.forEach(op => { if (op && op._id) map.set(op._id, op); });
+      }
+      if (allOperationsFlat.value) {
+          allOperationsFlat.value.forEach(op => {
+              if (!op || !op._id) return;
+              const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
+              if (isDealRelated) map.set(op._id, op);
+          });
+      }
+      return Array.from(map.values());
+  });
+
+  function getProjectDealStatus(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
+      if (!projectId) return { debt: 0, activeTranche: null, totalDeal: 0, paidTotal: 0, tranchesCount: 0 };
+
+      let maxTotalDeal = 0;
+      let paidTotal = 0;
+      let activeTranche = null;
+      let tranchesCount = 0;
+
+      const targetPId = _toStr(projectId);
+      const targetCId = categoryId ? _toStr(categoryId) : null;
+      const targetContrId = contractorId ? _toStr(contractorId) : null;
+      const targetIndId = counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null;
+
+      const sourceOps = getMergedDealOps.value;
+      const projectOps = sourceOps.filter(op => {
+          if (op.type !== 'income') return false;
+          if (_toStr(op.projectId) !== targetPId) return false;
+          if (targetCId && _toStr(op.categoryId) !== targetCId) return false;
+          if (targetContrId && _toStr(op.contractorId) !== targetContrId) return false;
+          if (targetIndId && _toStr(op.counterpartyIndividualId) !== targetIndId) return false;
+          return true;
+      });
+      
+      projectOps.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      projectOps.forEach(op => {
+          tranchesCount++;
+          if ((op.totalDealAmount || 0) > maxTotalDeal) maxTotalDeal = op.totalDealAmount;
+          paidTotal += (op.amount || 0);
+          if (!op.isClosed) activeTranche = op;
+      });
+
+      let debt = Math.max(0, maxTotalDeal - paidTotal);
+      return { debt, activeTranche, totalDeal: maxTotalDeal, paidTotal, tranchesCount };
+  }
+
+  async function closePreviousTranches(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
+      if (!projectId) return;
+      const targetPId = _toStr(projectId);
+      const targetCId = categoryId ? _toStr(categoryId) : null;
+      const targetContrId = contractorId ? _toStr(contractorId) : null;
+      const targetIndId = counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null;
+      const sourceOps = getMergedDealOps.value;
+
+      const openOps = sourceOps.filter(op => {
+          if (op.type !== 'income' || op.isClosed) return false;
+          if (_toStr(op.projectId) !== targetPId) return false;
+          if (targetCId && _toStr(op.categoryId) !== targetCId) return false;
+          if (targetContrId && _toStr(op.contractorId) !== targetContrId) return false;
+          if (targetIndId && _toStr(op.counterpartyIndividualId) !== targetIndId) return false;
+          return true;
+      });
+
+      for (const op of openOps) {
+           await createWorkAct(
+               op.projectId?._id || op.projectId,
+               op.categoryId?._id || op.categoryId,
+               op.contractorId?._id || op.contractorId,
+               op.counterpartyIndividualId?._id || op.counterpartyIndividualId,
+               op.amount, 
+               new Date(), 
+               op._id, 
+               true, 
+               op.companyId?._id || op.companyId,
+               op.individualId?._id || op.individualId
+           );
+      }
+  }
 
   const prepaymentCategoryIdsSet = computed(() => {
     const ids = new Set();
@@ -362,9 +477,14 @@ export const useMainStore = defineStore('mainStore', () => {
        if (Array.isArray(ops)) {
            for (const op of ops) {
                if (isTransfer(op)) continue;
+               
+               if (op.isWorkAct) continue;
+
                if (!op.accountId) continue; 
+               
                const amt = op.amount || 0;
                const absAmt = Math.abs(amt);
+               
                if (op.isWithdrawal) {
                    dayRec.withdrawal += absAmt;
                    dayRec.dayTotal -= absAmt;
@@ -426,12 +546,19 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/snapshot`);
       snapshot.value = res.data;
     } catch (e) {
-      console.error('Failed to fetch snapshot', e);
+      // Enhanced logging for diagnostics
+      console.error('Failed to fetch snapshot. Full error object:', e);
+      if (e.response) {
+          console.error('Server response status:', e.response.status);
+          console.error('Server response data:', JSON.stringify(e.response.data, null, 2));
+      }
     }
   }
 
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
       const s = snapshot.value;
+      if (op.isWorkAct) return; 
+
       const absAmt = Math.abs(op.amount || 0);
       const updateMap = (map, id, delta) => {
           if (!id) return;
@@ -439,6 +566,7 @@ export const useMainStore = defineStore('mainStore', () => {
           if (map[key] === undefined) map[key] = 0;
           map[key] += delta;
       };
+      
       if (isTransfer(op)) {
           updateMap(s.accountBalances, op.fromAccountId, -absAmt * sign);
           updateMap(s.accountBalances, op.toAccountId, absAmt * sign);
@@ -452,8 +580,6 @@ export const useMainStore = defineStore('mainStore', () => {
           const signedAmt = (isIncome ? absAmt : -absAmt);
           const netChange = signedAmt * sign;
           if (op.accountId) {
-              // 🟢 FIX: Больше не обновляем totalBalance, так как он вычисляется локально
-              // s.totalBalance += netChange; 
               updateMap(s.accountBalances, op.accountId, netChange);
           }
           updateMap(s.companyBalances, op.companyId, netChange);
@@ -461,6 +587,7 @@ export const useMainStore = defineStore('mainStore', () => {
           updateMap(s.individualBalances, op.counterpartyIndividualId, netChange);
           updateMap(s.contractorBalances, op.contractorId, netChange);
           updateMap(s.projectBalances, op.projectId, netChange);
+          
           const catId = op.categoryId ? (typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId).toString() : null;
           if (catId) {
               if (!s.categoryTotals[catId]) s.categoryTotals[catId] = { income: 0, expense: 0, total: 0 };
@@ -477,68 +604,181 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   const liabilitiesWeOwe = computed(() => {
-    const prepayIds = getPrepaymentCategoryIds.value;
-    const actIds = getActCategoryIds.value;
-    const refundCatId = refundCategoryId.value; 
-    let totalPrepaymentReceived = 0;
-    let totalActsSum = 0;
-    for (const op of currentOps.value) {
-      if (isTransfer(op)) continue;
-      if (op.isClosed) continue; 
-      const catId = op.categoryId?._id || op.categoryId;
-      const prepId = op.prepaymentId?._id || op.prepaymentId;
-      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      const isAct = (catId && actIds.includes(catId));
-      const isRefund = refundCatId && catId === refundCatId; 
-      if (isPrepay && op.type === 'income') {
-          totalPrepaymentReceived += (op.amount || 0);
-      }
-      if (isRefund && op.type === 'expense') {
-          totalPrepaymentReceived -= Math.abs(op.amount || 0);
-      }
-      if (isAct && op.type === 'expense') {
-          totalActsSum += Math.abs(op.amount || 0);
-      }
+    const liabilitiesMap = new Map();
+
+    const getContextKey = (op) => {
+        const pIdRaw = op.projectId?._id || op.projectId;
+        const pId = _toStr(pIdRaw) || 'no_proj';
+
+        const cIdRaw = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
+        const cId = _toStr(cIdRaw) || 'no_contr';
+
+        const myIdRaw = op.companyId ? (op.companyId._id || op.companyId) : (op.individualId?._id || op.individualId);
+        const myId = _toStr(myIdRaw) || 'no_my';
+        
+        return `${pId}_${cId}_${myId}`;
+    };
+
+    const allSources = getMergedDealOps.value;
+    const actCatIds = new Set(getActCategoryIds.value);
+
+    // 1. СБОР АКТИВНЫХ B2B СДЕЛОК
+    const activeDealGroups = new Set();
+    for (const op of allSources) {
+        if (!op || isTransfer(op)) continue;
+        if (op.type === 'income' && Number(op.totalDealAmount || 0) > 0) {
+            activeDealGroups.add(getContextKey(op));
+        }
     }
-    const result = totalPrepaymentReceived - totalActsSum;
-    return result > 0 ? result : 0;
+
+    // 2. РАСЧЕТ ДОЛГА ПО B2B
+    for (const op of allSources) {
+        if (!op || isTransfer(op)) continue;
+        const key = getContextKey(op);
+        
+        if (!activeDealGroups.has(key)) continue;
+
+        if (!liabilitiesMap.has(key)) liabilitiesMap.set(key, { received: 0, acts: 0 });
+        const entry = liabilitiesMap.get(key);
+        const amt = Math.abs(op.amount || 0);
+
+        if (op.type === 'income') {
+            entry.received += amt;
+        }
+        else if (op.type === 'expense') {
+            const isExplicitAct = op.isWorkAct === true;
+            const isTechnicalProjectExpense = !op.accountId && op.projectId; 
+            let isActCategory = false;
+            const catId = op.categoryId?._id || op.categoryId;
+            if (catId && actCatIds.has(catId)) isActCategory = true;
+
+            if (isExplicitAct || isTechnicalProjectExpense || isActCategory) {
+                entry.acts += amt;
+            }
+        }
+    }
+    
+    let totalWeOwe = 0;
+    for (const entry of liabilitiesMap.values()) {
+        const diff = entry.received - entry.acts;
+        if (diff > 0) {
+            totalWeOwe += diff;
+        }
+    }
+
+    // 3. ДОБАВЛЕНИЕ ДОЛГА ПО РОЗНИЦЕ (МЫ ДОЛЖНЫ)
+    const retailIndId = retailIndividualId.value;
+    if (retailIndId) {
+        const retailGroups = new Map();
+        
+        allOperationsFlat.value.forEach(op => {
+            const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+            if (String(indId) !== String(retailIndId)) return;
+            
+            const pId = _toStr(op.projectId?._id || op.projectId) || 'no_project';
+            if (!retailGroups.has(pId)) retailGroups.set(pId, { income: 0, expense: 0 });
+            const g = retailGroups.get(pId);
+            
+            if (op.type === 'income') {
+                if (op.isClosed !== true) {
+                    g.income += (op.amount || 0);
+                }
+            } else if (op.type === 'expense' && !op.accountId) {
+                g.expense += Math.abs(op.amount || 0);
+            }
+        });
+        
+        retailGroups.forEach(g => {
+            const retailDebt = Math.max(0, g.income - g.expense);
+            totalWeOwe += retailDebt;
+        });
+    }
+
+    return totalWeOwe;
   });
 
   const liabilitiesTheyOwe = computed(() => {
-    let totalDealSum = 0;
-    let receivedSum = 0;
-    const prepayIds = getPrepaymentCategoryIds.value;
-    const debtCatId = remainingDebtCategoryId.value;
-    for (const op of currentOps.value) {
+    const dealsMap = new Map(); 
+    const ops = getMergedDealOps.value;
+    
+    // 1. РАСЧЕТ ДОЛГА B2B
+    for (const op of ops) {
       if (isTransfer(op)) continue;
-      if (op.isClosed) continue;
-      const catId = op.categoryId?._id || op.categoryId;
-      const prepId = op.prepaymentId?._id || op.prepaymentId;
-      const isPrepay = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId));
-      const isDebtPayment = debtCatId && catId === debtCatId;
-      if ((isPrepay || isDebtPayment) && op.type === 'income') {
-          const dealTotal = op.totalDealAmount || 0;
-          if (dealTotal > 0) {
-              totalDealSum += dealTotal;
+      if (op.type === 'income') {
+          const pId = op.projectId?._id || op.projectId;
+          const cId = op.categoryId?._id || op.categoryId;
+          const contrId = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
+          if (pId) {
+              const key = `${pId}_${cId}_${contrId}`;
+              if (!dealsMap.has(key)) dealsMap.set(key, { maxTotalDeal: 0, receivedSum: 0 });
+              const deal = dealsMap.get(key);
+              if ((op.totalDealAmount || 0) > deal.maxTotalDeal) deal.maxTotalDeal = op.totalDealAmount;
+              deal.receivedSum += (op.amount || 0);
           }
-          receivedSum += (op.amount || 0);
       }
     }
-    const result = totalDealSum - receivedSum;
-    return result > 0 ? result : 0;
+    let totalDebt = 0;
+    dealsMap.forEach(deal => {
+        const debt = Math.max(0, deal.maxTotalDeal - deal.receivedSum);
+        totalDebt += debt;
+    });
+
+    // 2. ДОБАВЛЕНИЕ ДОЛГА ПО РОЗНИЦЕ (НАМ ДОЛЖНЫ)
+    const retailIndId = retailIndividualId.value;
+    if (retailIndId) {
+        const retailGroups = new Map();
+        
+        allOperationsFlat.value.forEach(op => {
+            const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+            if (String(indId) !== String(retailIndId)) return;
+            
+            const pId = _toStr(op.projectId?._id || op.projectId) || 'no_project';
+            if (!retailGroups.has(pId)) retailGroups.set(pId, { allIncome: 0, expense: 0 });
+            const g = retailGroups.get(pId);
+            
+            if (op.type === 'income') {
+                g.allIncome += (op.amount || 0);
+            } else if (op.type === 'expense' && !op.accountId) {
+                g.expense += Math.abs(op.amount || 0);
+            }
+        });
+        
+        retailGroups.forEach(g => {
+            const retailReceivable = Math.max(0, g.expense - g.allIncome);
+            totalDebt += retailReceivable;
+        });
+    }
+
+    return totalDebt;
   });
 
   const liabilitiesWeOweFuture = computed(() => liabilitiesWeOwe.value);
   const liabilitiesTheyOweFuture = computed(() => liabilitiesTheyOwe.value);
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-  const currentIncomes = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  
+  const currentIncomes = computed(() => currentOps.value.filter(op => 
+      !isTransfer(op) && 
+      op.type === 'income' && 
+      !op.isWithdrawal && 
+      !_isInterCompanyOp(op) &&
+      !_isPrepaymentOp(op) 
+  ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+
+  const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   const currentWithdrawals = computed(() => currentOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-  const futureIncomes = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'income' && !op.isWithdrawal && !_isInterCompanyOp(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+  
+  const futureIncomes = computed(() => futureOps.value.filter(op => 
+      !isTransfer(op) && 
+      op.type === 'income' && 
+      !op.isWithdrawal && 
+      !_isInterCompanyOp(op) &&
+      !_isPrepaymentOp(op) 
+  ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+
+  const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureWithdrawals = computed(() => futureOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
   const getCategoryById = (id) => categories.value.find(c => c._id === id);
@@ -559,7 +799,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!map[cId]) map[cId] = { income: 0, expense: 0, total: 0 };
       const amt = Math.abs(op.amount || 0);
       if (op.type === 'income') { map[cId].income += (op.amount || 0); map[cId].total += (op.amount || 0); } 
-      else if (op.type === 'expense') { map[cId].expense += amt; map[cId].total -= amt; }
+      else if (op.type === 'expense' && !op.isWorkAct) { map[cId].expense += amt; map[cId].total -= amt; }
     }
     const widgetMap = {};
     Object.keys(map).forEach(id => { widgetMap[`cat_${id}`] = map[id]; });
@@ -575,7 +815,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const _calculateFutureEntityChange = (entityIdField) => {
       const futureMap = {}; 
       for (const op of futureOps.value) {
-          if (_isRetailWriteOff(op)) continue;
+          if (_isRetailWriteOff(op) || op.isWorkAct) continue;
           const amt = Math.abs(op.amount || 0);
           if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
           if (isTransfer(op)) {
@@ -623,7 +863,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
       const futureMap = { ...snapshotMap }; 
       for (const op of futureOps.value) {
-          if (_isRetailWriteOff(op)) continue;
+          if (_isRetailWriteOff(op) || op.isWorkAct) continue;
           const amt = Math.abs(op.amount || 0);
           if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
           if (isTransfer(op)) {
@@ -653,9 +893,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
       ...a, 
-      // 🟢 FIX: Снапшот теперь возвращает ТОЛЬКО операционные изменения.
-      // Мы добавляем initialBalance (который реактивен) здесь.
-      // Это делает обновление мгновенным при редактировании начального баланса.
       balance: (snapshot.value.accountBalances[a._id] || 0) + (a.initialBalance || 0) 
   })));
 
@@ -779,25 +1016,278 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 FIX: Считаем Total локально как сумму счетов. 
-  // Это обеспечивает мгновенную реактивность при изменении initialBalance в списке счетов.
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => acc + (a.balance || 0), 0);
   });
 
-  // 🟢 FIX: Будущий Total также опирается на исправленный currentTotalBalance
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
     for (const op of futureOps.value) {
         if (isTransfer(op)) continue; 
         if (!op.accountId) continue;
+        if (op.isWorkAct) continue;
+        
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
     }
     return total;
   });
 
-  // ... (rest of store methods same as before) ...
+  // --- OPTIMISTIC OPERATIONS ---
+
+  function _populateOp(op) {
+      const populated = { ...op };
+      
+      if (!populated.accountId || typeof populated.accountId === 'string') {
+          populated.accountId = accounts.value.find(a => a._id === (populated.accountId || op.accountId)) || null;
+      }
+      if (!populated.projectId || typeof populated.projectId === 'string') {
+          populated.projectId = projects.value.find(p => p._id === (populated.projectId || op.projectId)) || null;
+      }
+      if (!populated.categoryId || typeof populated.categoryId === 'string') {
+          populated.categoryId = categories.value.find(c => c._id === (populated.categoryId || op.categoryId)) || null;
+      }
+      if (!populated.companyId || typeof populated.companyId === 'string') {
+          populated.companyId = companies.value.find(c => c._id === (populated.companyId || op.companyId)) || null;
+      }
+      if (!populated.contractorId || typeof populated.contractorId === 'string') {
+          populated.contractorId = contractors.value.find(c => c._id === (populated.contractorId || op.contractorId)) || null;
+      }
+      if (!populated.individualId || typeof populated.individualId === 'string') {
+          populated.individualId = individuals.value.find(i => i._id === (populated.individualId || op.individualId)) || null;
+      }
+      if (!populated.counterpartyIndividualId || typeof populated.counterpartyIndividualId === 'string') {
+          populated.counterpartyIndividualId = individuals.value.find(i => i._id === (populated.counterpartyIndividualId || op.counterpartyIndividualId)) || null;
+      }
+      
+      if (populated.isTransfer) {
+          if (!populated.fromAccountId || typeof populated.fromAccountId === 'string')
+              populated.fromAccountId = accounts.value.find(a => a._id === (populated.fromAccountId || op.fromAccountId)) || null;
+          if (!populated.toAccountId || typeof populated.toAccountId === 'string')
+              populated.toAccountId = accounts.value.find(a => a._id === (populated.toAccountId || op.toAccountId)) || null;
+      }
+      
+      return populated;
+  }
+
+  // 🟢 1. Create Event (Optimistic + Force Sync)
+  async function createEvent(eventData) {
+    try {
+      if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
+      if (eventData.cellIndex === undefined) {
+          eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
+      }
+      
+      const tempId = `temp_${Date.now()}`;
+      const tempOp = { 
+          ...eventData, 
+          _id: tempId, 
+          date: new Date(eventData.date),
+          isOptimistic: true 
+      };
+      
+      const richOp = _populateOp(tempOp);
+
+      const dk = richOp.dateKey;
+      if (!displayCache.value[dk]) displayCache.value[dk] = [];
+      displayCache.value[dk].push(richOp);
+      calculationCache.value[dk] = [...displayCache.value[dk]];
+      
+      const now = new Date();
+      if (new Date(richOp.date) <= now) {
+          _applyOptimisticSnapshotUpdate(richOp, 1);
+      }
+      
+      _updateDealCache(richOp, 'add');
+      
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+
+      const response = await axios.post(`${API_BASE_URL}/events`, eventData);
+      const serverOp = response.data;
+      
+      const idx = displayCache.value[dk].findIndex(o => o._id === tempId);
+      if (idx !== -1) {
+          displayCache.value[dk][idx] = serverOp; 
+          calculationCache.value[dk] = [...displayCache.value[dk]];
+      }
+      const dealIdx = dealOperations.value.findIndex(d => d._id === tempId);
+      if (dealIdx !== -1) dealOperations.value[dealIdx] = serverOp;
+
+      // 🟢 Force Snapshot Sync
+      await fetchSnapshot();
+
+      return serverOp;
+    } catch (error) { 
+        console.error("Create Event Error (Optimistic):", error);
+        if (eventData.dateKey) refreshDay(eventData.dateKey);
+        fetchSnapshot();
+        throw error; 
+    }
+  }
+  
+  // 🟢 2. Update Operation (Optimistic + Force Sync)
+  async function updateOperation(opId, opData) {
+    let oldOp = null;
+    let oldDateKey = null;
+    
+    for (const dk in displayCache.value) {
+        const found = displayCache.value[dk].find(o => o._id === opId);
+        if (found) { oldOp = found; oldDateKey = dk; break; }
+    }
+    
+    if (!oldOp) oldOp = allOperationsFlat.value.find(o => o._id === opId);
+    
+    if (!oldOp) {
+        const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
+        await refreshDay(res.data.dateKey);
+        await fetchSnapshot();
+        return res.data;
+    }
+
+    try {
+        const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldOp.dateKey);
+        const isDateChanged = oldDateKey !== newDateKey;
+        
+        const now = new Date();
+        if (new Date(oldOp.date) <= now) {
+            _applyOptimisticSnapshotUpdate(oldOp, -1);
+        }
+        
+        const mergedOp = { ...oldOp, ...opData };
+        if (opData.date) mergedOp.date = new Date(opData.date);
+        
+        const richOp = _populateOp(mergedOp);
+        
+        if (isDateChanged) {
+            if (displayCache.value[oldDateKey]) {
+                displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== opId);
+                calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
+            }
+            if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
+            displayCache.value[newDateKey].push(richOp);
+            calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
+        } else {
+            const list = displayCache.value[oldDateKey];
+            const idx = list.findIndex(o => o._id === opId);
+            if (idx !== -1) list[idx] = richOp;
+            calculationCache.value[oldDateKey] = [...list];
+        }
+
+        if (new Date(richOp.date) <= now) {
+            _applyOptimisticSnapshotUpdate(richOp, 1);
+        }
+        
+        _updateDealCache(richOp, 'update');
+        
+        updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+
+        const updatePayload = { ...opData, dateKey: newDateKey };
+        
+        const response = await axios.put(`${API_BASE_URL}/events/${opId}`, updatePayload);
+        
+        const serverOp = response.data;
+        const targetList = displayCache.value[newDateKey];
+        if (targetList) {
+            const i = targetList.findIndex(o => o._id === opId);
+            if (i !== -1) targetList[i] = serverOp;
+        }
+
+        // 🟢 Force Snapshot Sync
+        await fetchSnapshot();
+
+        return serverOp;
+    } catch (e) {
+        console.error("Optimistic Update Failed:", e);
+        refreshDay(oldDateKey);
+        fetchSnapshot();
+        throw e;
+    }
+  }
+
+  // 🟢 3. Delete Operation (Optimistic + Force Sync)
+  async function deleteOperation(operation){
+    const dateKey = operation.dateKey;
+    if (!dateKey) return;
+    
+    try {
+      if (displayCache.value[dateKey]) {
+          displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => o._id !== operation._id);
+          calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
+      }
+      
+      const now = new Date();
+      if (new Date(operation.date) <= now) {
+          _applyOptimisticSnapshotUpdate(operation, -1);
+      }
+      
+      _updateDealCache(operation, 'delete');
+      
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+
+      // 🟢 OPTIMISTIC ROLLBACK: Если удаляем транш, нужно "открыть" предыдущий
+      if (operation.isDealTranche && operation.type === 'income') {
+          const related = dealOperations.value.filter(op => 
+              op._id !== operation._id && 
+              op.type === 'income' &&
+              (op.projectId?._id || op.projectId) === (operation.projectId?._id || operation.projectId) &&
+              (op.categoryId?._id || op.categoryId) === (operation.categoryId?._id || operation.categoryId) &&
+              (
+                  (op.contractorId && (op.contractorId._id || op.contractorId) === (operation.contractorId?._id || operation.contractorId)) ||
+                  (op.counterpartyIndividualId && (op.counterpartyIndividualId._id || op.counterpartyIndividualId) === (operation.counterpartyIndividualId?._id || operation.counterpartyIndividualId))
+              )
+          );
+          
+          related.sort((a, b) => new Date(b.date) - new Date(a.date));
+          
+          const prevOp = related[0]; 
+          if (prevOp && prevOp.isClosed) {
+              const prevDateKey = prevOp.dateKey;
+              prevOp.isClosed = false;
+              
+              if (displayCache.value[prevDateKey]) {
+                  const idx = displayCache.value[prevDateKey].findIndex(o => o._id === prevOp._id);
+                  if (idx !== -1) {
+                      displayCache.value[prevDateKey][idx] = { ...prevOp }; 
+                      calculationCache.value[prevDateKey] = [...displayCache.value[prevDateKey]];
+                  }
+              }
+              _updateDealCache(prevOp, 'update');
+          }
+      }
+      
+      // 🟢 OPTIMISTIC RE-OPEN: Если удаляем Акт, нужно открыть связанный транш
+      if (operation.isWorkAct && operation.relatedEventId) {
+          const tranche = dealOperations.value.find(d => d._id === operation.relatedEventId);
+          if (tranche) {
+              tranche.isClosed = false;
+              const tDateKey = tranche.dateKey;
+              if (displayCache.value[tDateKey]) {
+                  const idx = displayCache.value[tDateKey].findIndex(o => o._id === tranche._id);
+                  if (idx !== -1) {
+                      displayCache.value[tDateKey][idx] = { ...tranche };
+                      calculationCache.value[tDateKey] = [...displayCache.value[tDateKey]];
+                  }
+              }
+              _updateDealCache(tranche, 'update');
+          }
+      }
+
+      if (isTransfer(operation) && operation._id2) {
+          await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
+      } else {
+          await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
+      }
+
+      // 🟢 Force Snapshot Sync (Fixes "Minus" balance issues)
+      await fetchSnapshot();
+      
+    } catch(e) { 
+        console.error("Optimistic Delete Failed:", e);
+        refreshDay(dateKey); 
+        fetchSnapshot();
+    }
+  }
+
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
@@ -859,12 +1349,13 @@ export const useMainStore = defineStore('mainStore', () => {
   async function fetchAllEntities(){
     if (!user.value) return; 
     try{
-      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes] = await Promise.all([
+      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes, dealsRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
         axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
         axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
         axios.get(`${API_BASE_URL}/prepayments`),
         axios.get(`${API_BASE_URL}/credits`),
+        axios.get(`${API_BASE_URL}/deals/all`)
       ]);
       
       accounts.value    = _sortByOrder(accRes.data); 
@@ -873,6 +1364,7 @@ export const useMainStore = defineStore('mainStore', () => {
       projects.value    = _sortByOrder(projRes.data);
       individuals.value = _sortByOrder(indRes.data); 
       credits.value     = _sortByOrder(credRes.data);
+      dealOperations.value = dealsRes.data; 
       
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
@@ -902,7 +1394,10 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  function getOperationsForDay(dateKey) { return displayCache.value[dateKey] || []; }
+  function getOperationsForDay(dateKey) { 
+      const ops = displayCache.value[dateKey] || [];
+      return ops.filter(op => !op.isWorkAct);
+  }
 
   function _mergeTransfers(list) {
     const normalOps = list.filter(o => !o?.isTransfer && !o?.transferGroupId);
@@ -1077,27 +1572,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return data;
     } catch (error) { throw error; }
   }
-
-  async function createEvent(eventData) {
-    try {
-      if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
-      if (eventData.cellIndex === undefined) {
-          eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
-      }
-      const response = await axios.post(`${API_BASE_URL}/events`, eventData);
-      const newOp = response.data;
-      await refreshDay(newOp.dateKey);
-      const now = new Date();
-      if (new Date(newOp.date) <= now) {
-          await fetchSnapshot();
-      }
-      if (_isCreditIncome(newOp)) {
-          await fetchAllEntities(); 
-      }
-      if (projection.value.mode) await updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      return newOp;
-    } catch (error) { throw error; }
-  }
   
   async function updateTransfer(transferId, transferData) {
     try {
@@ -1114,35 +1588,6 @@ export const useMainStore = defineStore('mainStore', () => {
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
     } catch (error) { throw error; }
-  }
-
-  async function updateOperation(opId, opData) {
-    try {
-      const finalDate = new Date(opData.date);
-      const newDateKey = _getDateKey(finalDate);
-      const oldOp = allOperationsFlat.value.find(o => o._id === opId);
-      let newCellIndex;
-      if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
-      else newCellIndex = await getFirstFreeCellIndex(newDateKey);
-      const updatePayload = { ...opData, dateKey: newDateKey, cellIndex: newCellIndex };
-      const response = await axios.put(`${API_BASE_URL}/events/${opId}`, updatePayload);
-      if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-      await refreshDay(newDateKey);
-      await fetchSnapshot();
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      return response.data;
-    } catch (error) { throw error; }
-  }
-
-  async function deleteOperation(operation){
-    const dateKey = operation.dateKey;
-    if (!dateKey) return;
-    try {
-      if (isTransfer(operation) && operation._id2) await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
-      else await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
-      await refreshDay(dateKey); await fetchSnapshot();
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-    } catch(e) { refreshDay(dateKey); }
   }
 
   async function addOperation(op){
@@ -1302,16 +1747,40 @@ export const useMainStore = defineStore('mainStore', () => {
       return { retailInd, realizationCat, debtCat, refundCat, creditProject, repaymentCat, creditIncomeCat };
   }
 
+  // 🟢 UPDATED: Автоматическое определение компании для списания
   async function closeRetailDaily(amount, date, projectId = null) {
       try {
           const { retailInd, realizationCat } = await ensureSystemEntities();
+          
+          // 1. Пытаемся найти компанию, связанную с этим проектом (через прошлые доходы)
+          let inferredCompanyId = null;
+          if (projectId) {
+             const pIdStr = _toStr(projectId);
+             // Ищем любой доход по этому проекту от розницы
+             const relatedOp = allOperationsFlat.value.find(op => 
+                op.type === 'income' && 
+                _toStr(op.projectId) === pIdStr &&
+                _toStr(op.counterpartyIndividualId) === retailInd._id &&
+                op.companyId
+             );
+             if (relatedOp) {
+                 inferredCompanyId = _toStr(relatedOp.companyId);
+             }
+          }
+          
+          // Если не нашли по проекту, берем первую попавшуюся компанию пользователя (fallback)
+          if (!inferredCompanyId && companies.value.length > 0) {
+              inferredCompanyId = companies.value[0]._id;
+          }
+
           const opData = {
               type: 'expense', 
               amount: -Math.abs(amount),
-              accountId: null, 
+              accountId: null, // У списания нет счета
               counterpartyIndividualId: retailInd._id, 
               categoryId: realizationCat._id, 
               projectId: projectId, 
+              companyId: inferredCompanyId, // 🟢 Теперь компания будет записана
               date: date,
               description: 'Закрытие смены (Розница)'
           };
@@ -1339,6 +1808,74 @@ export const useMainStore = defineStore('mainStore', () => {
           await updateOperation(originalOp._id, { ...originalOp, isClosed: true });
       } catch (e) { throw e; }
   }
+  
+  async function createWorkAct(projectId, categoryId, contractorId, counterpartyIndividualId, amount, date, opIdToClose, skipFetch = false, companyId = null, individualId = null) {
+      try {
+          const opData = {
+              type: 'expense',
+              amount: -Math.abs(amount),
+              accountId: null,
+              projectId: projectId,
+              categoryId: categoryId,
+              contractorId: contractorId,
+              counterpartyIndividualId: counterpartyIndividualId,
+              companyId: companyId,
+              individualId: individualId,
+              date: date,
+              description: 'Акт выполненных работ / Отработали',
+              isWorkAct: true,
+              relatedEventId: opIdToClose 
+          };
+          
+          const newOp = await createEvent(opData);
+          
+          if (opIdToClose) {
+              const op = dealOperations.value.find(o => o._id === opIdToClose) || allOperationsFlat.value.find(o => o._id === opIdToClose);
+              if (op) {
+                  await updateOperation(opIdToClose, { ...op, isClosed: true });
+              }
+          }
+          
+          return newOp;
+      } catch (e) {
+          throw e;
+      }
+  }
+
+  // 🟢 3. ДОБАВЛЕНИЕ: Список проектов с долгами розницы (для RetailClosurePopup)
+  const projectsWithRetailDebts = computed(() => {
+      const retailId = retailIndividualId.value;
+      if (!retailId) return [];
+      
+      const balances = new Map();
+      
+      allOperationsFlat.value.forEach(op => {
+          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+          if (String(indId) !== String(retailId)) return;
+          
+          const pId = _toStr(op.projectId?._id || op.projectId);
+          if (!pId) return;
+          
+          if (!balances.has(pId)) balances.set(pId, 0);
+          
+          if (op.type === 'income') {
+              // Учитываем только открытые авансы (НЕ ФАКТ)
+              if (op.isClosed !== true) {
+                  balances.set(pId, balances.get(pId) + (op.amount || 0));
+              }
+          } else if (op.type === 'expense' && !op.accountId) {
+              // Списание работ
+              balances.set(pId, balances.get(pId) - Math.abs(op.amount || 0));
+          }
+      });
+      
+      const ids = [];
+      balances.forEach((bal, key) => {
+          // Показываем проект, только если есть положительный долг (аванс > списаний)
+          if (bal > 0) ids.push(key);
+      });
+      return ids;
+  });
 
   const getRetailWriteOffs = computed(() => {
       const retail = individuals.value.find(i => {
@@ -1406,6 +1943,8 @@ export const useMainStore = defineStore('mainStore', () => {
     loadCalculationData, updateProjectionFromCalculationData,
 
     createTransfer, updateTransfer, updateOperation, createEvent,
+    createWorkAct,
+    closePreviousTranches,
 
     fetchOperationsRange, updateFutureProjectionWithData,
 
@@ -1424,6 +1963,10 @@ export const useMainStore = defineStore('mainStore', () => {
     getRetailWriteOffs,
     
     retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId, 
-    _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId 
+    _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
+    getProjectDealStatus,
+    
+    dealOperations,
+    projectsWithRetailDebts 
   };
 });
