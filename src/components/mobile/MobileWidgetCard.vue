@@ -37,8 +37,9 @@ const items = computed(() => {
       const rawFutureVal = futureMap ? (futureMap.get(item._id) || 0) : 0;
       let delta = 0;
       
-      // For Accounts & Companies, store has TOTAL forecast. Calculate Delta.
-      if (['accounts', 'companies'].includes(k)) {
+      // For Accounts & Companies & Credits, store has TOTAL forecast. Calculate Delta.
+      // 🟢 ADDED 'credits'
+      if (['accounts', 'companies', 'credits'].includes(k)) {
           if (futureMap) {
              delta = rawFutureVal - currentVal;
           }
@@ -110,6 +111,16 @@ const items = computed(() => {
       let list = current.map(item => mapItem(item, futureMap));
       const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
       list = list.filter(c => visibleIds.has(c._id));
+      return filterAndSort(list);
+  }
+
+  // 🟢 6.1. CREDITS (ADDED)
+  if (k === 'credits') {
+      const current = mainStore.currentCreditBalances || [];
+      const future = mainStore.futureCreditBalances || [];
+      // Note: futureCreditBalances items have .futureBalance prop for future value
+      const futureMap = new Map(future.map(c => [c._id, c.futureBalance]));
+      const list = current.map(item => mapItem(item, futureMap));
       return filterAndSort(list);
   }
 
@@ -194,7 +205,7 @@ function filterAndSort(originalList) {
     else if (filterMode.value === 'negative') list = list.filter(i => getFilterValue(i) < 0);
     else if (filterMode.value === 'nonZero') list = list.filter(i => getFilterValue(i) !== 0);
 
-    const getSortVal = (i) => getFilterValue(i);
+    const getSortVal = (i) => getFilterVal(i);
     if (sortMode.value === 'desc') list.sort((a, b) => getSortVal(b) - getSortVal(a));
     else if (sortMode.value === 'asc') list.sort((a, b) => getSortVal(a) - getSortVal(b));
 

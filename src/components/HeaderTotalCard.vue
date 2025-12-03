@@ -3,12 +3,6 @@ import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v4.4 - UNIFIED STYLES ---
- * * ВЕРСИЯ: 4.4 - Унификация шрифтов и заголовков
- * * ДАТА: 2025-12-03
- */
-
 const props = defineProps({
   title: { type: String, required: true },
   totalBalance: { type: Number, required: true },
@@ -64,20 +58,20 @@ const sign = computed(() => props.totalBalance < 0 ? '-' : '');
   text-align: right;     
 }
 
-/* 🟢 UNIFIED TITLE */
+/* Унификация заголовка */
 .card-title { 
-  font-size: 13px; 
-  font-weight: 600;
-  color: #666666; 
+  font-size: var(--font-sm); 
+  font-weight: var(--fw-semi);
+  color: var(--text-mute); /* Чуть приглушенный для заголовка "Всего..." */
   white-space: pre-line; 
   line-height: 1.3;
   letter-spacing: 0.01em;
 }
 
 .card-title-container { 
-  min-height: 32px; 
+  min-height: var(--h-header-card); 
   height: auto;
-  margin-bottom: 0.5rem; 
+  margin-bottom: var(--gap-sm); 
   flex-shrink: 0; 
   cursor: grab; 
   position: relative; 
@@ -90,29 +84,30 @@ const sign = computed(() => props.totalBalance < 0 ? '-' : '');
 .dashboard-card.is-mirrored .card-title-container { justify-content: flex-end; }
 .card-title-container:active { cursor: grabbing; }
 
-/* 🟢 UNIFIED BALANCE SIZE */
+/* Крупная сумма */
 .card-total-balance { 
-  font-size: 2.2em; /* Было 1.8em (~28px), чуть уменьшил для аккуратности */
-  font-weight: 700; 
-  color: var(--color-heading); 
-  margin-bottom: 0.25rem; 
+  font-size: var(--font-3xl); /* 32px */
+  font-weight: var(--fw-bold); 
+  color: var(--text-main); 
+  margin-bottom: 4px; 
   white-space: nowrap; 
-  line-height: 1.2;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 .card-total-balance.expense { color: var(--color-danger); }
 
 .currency-symbol {
-  font-weight: 400;
+  font-weight: var(--fw-regular);
   opacity: 0.7;
   font-size: 0.8em;
 }
 
 .card-sub-balance { 
-  font-size: 11px; /* Было 0.8em */
-  color: #777777; 
+  font-size: var(--font-xs);
+  color: var(--text-mute); 
 }
 .card-sub-balance .subtitle-date { 
   color: var(--color-primary); 
-  font-weight: 500; 
+  font-weight: var(--fw-medium); 
 }
 </style>

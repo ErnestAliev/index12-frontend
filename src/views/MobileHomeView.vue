@@ -3,7 +3,7 @@ import { onMounted, ref, nextTick, computed, watch, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
-// UI
+// UI Components
 import MobileHeaderTotals from '@/components/mobile/MobileHeaderTotals.vue';
 import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
@@ -14,10 +14,8 @@ import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
 import EntityPopup from '@/components/EntityPopup.vue';
 import EntityListEditor from '@/components/EntityListEditor.vue';
 import OperationListEditor from '@/components/OperationListEditor.vue';
-// import OperationPopup from '@/components/OperationPopup.vue'; // Deprecated
-import IncomePopup from '@/components/IncomePopup.vue'; // 🟢
-import ExpensePopup from '@/components/ExpensePopup.vue'; // 🟢
-
+import IncomePopup from '@/components/IncomePopup.vue';
+import ExpensePopup from '@/components/ExpensePopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
 import WithdrawalPopup from '@/components/WithdrawalPopup.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
@@ -25,9 +23,9 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v43.0 - MOBILE SPLIT POPUPS ---
- * * ВЕРСИЯ: 43.0 - Мобильная версия переведена на раздельные попапы
- * * ДАТА: 2025-12-01
+ * * --- МЕТКА ВЕРСИИ: v43.2 - MOBILE CREDITS WIDGET ---
+ * * ВЕРСИЯ: 43.2 - Добавлена поддержка виджета "Мои кредиты"
+ * * ДАТА: 2025-12-03
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -69,6 +67,7 @@ const onChartScroll = (left) => {
     requestAnimationFrame(() => isSyncing = false); 
 };
 
+// Форматтеры
 const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
 const formatDelta = (val) => {
   const num = Number(val) || 0;
@@ -76,8 +75,11 @@ const formatDelta = (val) => {
   const formatted = formatNumber(Math.abs(num));
   return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
 };
-const isExpense = (val) => Number(val) < 0;
-const formatDate = (date) => date ? new Date(date).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'}) : '';
+const formatDateShort = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+};
 
 // Ссылки авторизации
 const googleAuthUrl = computed(() => {
@@ -151,10 +153,16 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
       result = currentBalances.map(item => {
           const fallback = isDelta ? 0 : item.balance;
           const futureVal = futureMap.get(item._id) ?? fallback;
-          return { ...item, futureBalance: futureVal };
+          return { 
+              ...item, 
+              // Для сущностей: futureBalance - это конечное значение или дельта
+              futureBalance: futureVal,
+              // Вычисляем реальное изменение для отображения дельты
+              futureChange: isDelta ? futureVal : (futureVal - item.balance) 
+          };
       });
   } else {
-      result = currentBalances.map(item => ({ ...item, futureBalance: isDelta ? 0 : item.balance }));
+      result = currentBalances.map(item => ({ ...item, futureBalance: isDelta ? 0 : item.balance, futureChange: 0 }));
   }
   return result;
 };
@@ -169,14 +177,25 @@ const isWidgetDeltaMode = computed(() => {
     return ['contractors', 'projects', 'individuals', 'categories'].includes(k);
 });
 
+// 🟢 ГЛАВНАЯ ЛОГИКА ФОРМИРОВАНИЯ СПИСКА
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value;
   if (!k) return [];
   
   let items = [];
   
+  // 1. СУЩНОСТИ (Счета, Компании и т.д.)
   if (k === 'accounts') items = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
   else if (k === 'companies') items = mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false);
+  // 🟢 ДОБАВЛЕНО: КРЕДИТЫ
+  else if (k === 'credits') {
+      // Credits already contain merged data in futureCreditBalances (current balance + futureBalance)
+      items = mainStore.futureCreditBalances.map(c => ({
+          ...c,
+          // Вычисляем дельту
+          futureChange: (c.futureBalance || 0) - (c.balance || 0)
+      }));
+  }
   else if (k === 'contractors') {
       items = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
       const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
@@ -190,13 +209,19 @@ const activeWidgetItems = computed(() => {
       items = items.filter(c => visibleIds.has(c._id));
   }
   else if (k === 'liabilities') {
+      // Для обязательств логика чуть другая, ручная сборка
+      const weOweDelta = mainStore.liabilitiesWeOweFuture - mainStore.liabilitiesWeOwe;
+      const theyOweDelta = mainStore.liabilitiesTheyOweFuture - mainStore.liabilitiesTheyOwe;
       items = [
-          { _id: 'we', name: 'Мы должны', balance: mainStore.liabilitiesWeOwe, futureBalance: mainStore.liabilitiesWeOweFuture },
-          { _id: 'they', name: 'Нам должны', balance: mainStore.liabilitiesTheyOwe, futureBalance: mainStore.liabilitiesTheyOweFuture, isIncome: true }
+          { _id: 'we', name: 'Мы должны', balance: mainStore.liabilitiesWeOwe, futureBalance: mainStore.liabilitiesWeOweFuture, futureChange: weOweDelta },
+          { _id: 'they', name: 'Нам должны', balance: mainStore.liabilitiesTheyOwe, futureBalance: mainStore.liabilitiesTheyOweFuture, futureChange: theyOweDelta, isIncome: true }
       ];
   }
+  // 2. СПИСКИ ОПЕРАЦИЙ (Доходы, Расходы и т.д.)
   else if (isListWidget.value) {
       let list = [];
+      // Берем либо будущие, либо текущие списки в зависимости от режима прогноза
+      // В мобильной версии Fullscreen показывает список операций
       if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes;
       else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses;
       else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals;
@@ -204,23 +229,44 @@ const activeWidgetItems = computed(() => {
       
       return list.map(op => {
           let name = op.categoryId?.name || 'Без категории';
+          let subName = '';
+
+          // Логика формирования заголовка и подзаголовка
           if (op.type === 'transfer' || op.isTransfer) {
-              const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId._id || op.toAccountId));
-              name = toAcc ? `-> ${toAcc.name}` : 'Перевод';
+              const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId));
+              const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId));
+              name = 'Перевод';
+              subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`;
+          } else if (op.isWithdrawal) {
+              name = 'Вывод средств';
+              subName = op.destination || op.description || '';
+          } else {
+              // Для доходов/расходов:
+              // Name = Категория
+              // Sub = Контрагент / Проект / Описание
+              const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name;
+              const project = op.projectId?.name;
+              const desc = op.description;
+              
+              if (contractor) subName = contractor;
+              else if (project) subName = project;
+              else if (desc) subName = desc;
           }
-          if (op.isWithdrawal) name = 'Вывод средств';
           
           return { 
               _id: op._id, 
-              name: name, 
+              name: name,
+              subName: subName,
               balance: op.amount,
               date: op.date,
               isList: true,
-              isIncome: op.type === 'income' 
+              isIncome: op.type === 'income',
+              originalOp: op // Сохраняем ссылку на операцию для редактирования
           };
       });
   }
 
+  // Фильтрация и сортировка для СУЩНОСТЕЙ
   let filtered = [...items];
   
   if (!isListWidget.value) {
@@ -228,9 +274,9 @@ const activeWidgetItems = computed(() => {
       const targetBalanceKey = showFutureBalance.value ? 'futureBalance' : 'balance'; 
 
       const getFilterVal = (i) => {
-          if (showFutureBalance.value && isDeltaWidget) {
-              return (i.balance || 0) + (i.futureBalance || 0);
-          }
+          // Если дельта-режим (как проекты), то при прогнозе смотрим на ИТОГОВЫЙ баланс (баланс + дельта) или просто дельту?
+          // В HeaderBalanceCard логика: balance + futureBalance (где futureBalance - это дельта).
+          // В activeWidgetItems выше мы уже нормализовали это в поле futureBalance (полное значение) или оставили как есть.
           return i[targetBalanceKey] || 0;
       };
 
@@ -243,6 +289,7 @@ const activeWidgetItems = computed(() => {
       if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
       else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
   } else {
+      // Для списков сортировка по дате
       filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
@@ -311,9 +358,8 @@ onMounted(async () => {
 });
 
 // --- POPUP STATES & LOGIC (UPDATED) ---
-const isIncomePopupVisible = ref(false); // 🟢
-const isExpensePopupVisible = ref(false); // 🟢
-// const isOperationPopupVisible = ref(false); // Removed
+const isIncomePopupVisible = ref(false); 
+const isExpensePopupVisible = ref(false); 
 
 const isTransferPopupVisible = ref(false);
 const isListEditorVisible = ref(false);
@@ -335,38 +381,16 @@ const operationListEditorType = ref('income');
 
 // --- CONTEXT MENU & ACTIONS ---
 const handleShowMenu = (payload) => {
-    // payload contains: { date, dateKey, cellIndex } (from MobileDayColumn/Cell)
-    // For mobile, we can open an Action Sheet.
-    // For simplicity now, let's assume a simple selection logic or direct open for Income (as primary)
-    // Or we can implement a mobile-specific menu later.
-    // Let's use a simple approach: if empty -> Income Popup (user can switch context via tabs if we had them, but we separated them).
-    // We need a way to choose Income vs Expense.
-    
-    // Let's trigger a simple native confirm/prompt or a custom menu.
-    // Since we don't have a MobileContextMenu component yet, let's default to Income for empty slots,
-    // or add buttons to the ActionPanel.
-    
-    // Actually, MobileActionPanel usually handles global actions. 
-    // Tapping a cell might be for editing existing ops.
-    // If payload has 'operation', it's edit mode.
-    
     if (payload.operation) {
         handleEditOperation(payload.operation);
     } else {
-        // Empty slot tap. 
-        // Set context
         selectedDate.value = payload.date || new Date();
         selectedCellIndex.value = payload.cellIndex || 0;
-        // Open Income by default or show a menu?
-        // Let's open Income Popup for now as it's most common for "deals".
         isIncomePopupVisible.value = true;
     }
 };
 
-const handleAction = (actionType) => {
-    // Action from MobileActionPanel (if buttons exist there)
-    // Current MobileActionPanel only has Graph/ViewMode/Widgets toggle.
-};
+const handleAction = (actionType) => {};
 
 const handleEditOperation = (operation) => {
     operationToEdit.value = operation;
@@ -384,15 +408,13 @@ const handleEditOperation = (operation) => {
     } else if (operation.isWithdrawal) {
         isWithdrawalPopupVisible.value = true;
     } else if (operation.type === 'income') {
-        isIncomePopupVisible.value = true; // 🟢
+        isIncomePopupVisible.value = true; 
     } else if (operation.type === 'expense') {
-        isExpensePopupVisible.value = true; // 🟢
+        isExpensePopupVisible.value = true; 
     }
 };
 
-// --- SAVE HANDLERS ---
 const handleOperationSave = async ({ mode, id, data }) => {
-    // Universal handler for Income/Expense
     try {
         if (mode === 'create') {
             if (data.cellIndex === undefined) {
@@ -402,7 +424,6 @@ const handleOperationSave = async ({ mode, id, data }) => {
             await mainStore.createEvent(data);
         } else {
             await mainStore.updateOperation(id, data);
-            // Refresh day if needed (handled by store mostly, but good to ensure)
         }
         await mainStore.loadCalculationData(mainStore.projection.mode, new Date());
         isIncomePopupVisible.value = false;
@@ -414,14 +435,11 @@ const handleOperationSave = async ({ mode, id, data }) => {
     }
 };
 
-// ... (Other handlers similar to HomeView) ...
 const handleTransferSave = async ({ mode, id, data }) => {
-    // ... implementation ...
     isTransferPopupVisible.value = false;
-    // Simplified for brevity, reuse logic
 };
 
-const popupSaveAction = (val) => { /* ... */ };
+const popupSaveAction = (val) => {};
 </script>
 
 <template>
@@ -442,9 +460,8 @@ const popupSaveAction = (val) => { /* ... */ };
     </div>
 
     <template v-else>
+        <!-- 🟢 ПОЛНОЭКРАННЫЙ РЕЖИМ ВИДЖЕТА -->
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
-             <!-- ... (Fullscreen Widget Code remains same) ... -->
-             <!-- Copied from previous version for brevity, assuming no changes there -->
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
@@ -456,10 +473,79 @@ const popupSaveAction = (val) => { /* ... */ };
                     </button>
                 </div>
             </div>
-            <!-- ... fs-body ... fs-footer ... -->
+            
+            <div class="fs-body">
+                <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
+                <div class="fs-list">
+                    <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="item.originalOp ? handleEditOperation(item.originalOp) : null">
+                       
+                       <!-- 🟢 СПИСКИ ОПЕРАЦИЙ (Доходы, Расходы и т.д.) -->
+                       <template v-if="item.isList">
+                           <div class="fs-item-left">
+                               <!-- Дата -->
+                               <div class="fs-date">{{ formatDateShort(item.date) }}</div>
+                               <!-- Описание/Категория -->
+                               <div class="fs-info-col">
+                                   <div class="fs-name-text">{{ item.name }}</div>
+                                   <div class="fs-sub-text" v-if="item.subName">{{ item.subName }}</div>
+                               </div>
+                           </div>
+                           <div class="fs-val" :class="item.isIncome ? 'green-text' : 'red-text'">
+                               {{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸
+                           </div>
+                       </template>
+
+                       <!-- 🟢 СУЩНОСТИ (Счета, Проекты) -->
+                       <template v-else>
+                           <div class="fs-name">{{ item.name }}</div>
+                           <div class="fs-val-block">
+                               <!-- Если прогноз выключен, показываем просто баланс -->
+                               <div v-if="!showFutureBalance" class="fs-val" :class="Number(item.balance) < 0 ? 'red-text' : ''">
+                                   {{ formatVal(item.balance) }}
+                               </div>
+                               <!-- Если прогноз включен -->
+                               <div v-else class="fs-val-forecast">
+                                   <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
+                                   <span class="fs-arrow">></span>
+                                   <!-- Для дельта-виджетов (проекты) показываем +change, для остальных total -->
+                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">
+                                       {{ formatDelta(item.futureChange) }}
+                                   </span>
+                                   <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">
+                                       {{ formatVal(item.futureBalance) }}
+                                   </span>
+                               </div>
+                           </div>
+                       </template>
+
+                    </div>
+                </div>
+            </div>
+
             <div class="fs-footer">
                 <button class="btn-back" @click="handleWidgetBack">Назад</button>
             </div>
+            
+            <Teleport to="body">
+              <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @click.stop>
+                <div class="filter-group">
+                  <div class="filter-group-title">Сортировка</div>
+                  <ul>
+                    <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li>
+                    <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li>
+                  </ul>
+                </div>
+                <div class="filter-group">
+                  <div class="filter-group-title">Фильтр</div>
+                  <ul>
+                    <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li>
+                    <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li>
+                    <li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li>
+                    <li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li>
+                  </ul>
+                </div>
+              </div>
+            </Teleport>
         </div>
 
         <template v-else>
@@ -519,10 +605,6 @@ const popupSaveAction = (val) => { /* ... */ };
 </template>
 
 <style scoped>
-/* (Стили без изменений) */
-/* ... all styles from previous MobileHomeView ... */
-.fs-item-left { display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 60%; }
-.fs-date { color: #666; font-size: 11px; min-width: 32px; }
 .mobile-layout { height: 100vh; height: 100dvh; width: 100vw; background-color: var(--color-background, #1a1a1a); display: flex; flex-direction: column; overflow: hidden; }
 .loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
 .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
@@ -533,6 +615,8 @@ const popupSaveAction = (val) => { /* ... */ };
 .login-box p { color: #888; font-size: 14px; margin-bottom: 30px; }
 .google-login-button { display: block; width: 100%; padding: 12px; background: #fff; color: #333; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
 .dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
+
+/* Fullscreen Widget */
 .fullscreen-widget-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-background, #1a1a1a); z-index: 2000; display: flex; flex-direction: column; }
 .fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--color-border, #444); background-color: var(--color-background-soft, #282828); }
 .fs-title { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
@@ -540,21 +624,35 @@ const popupSaveAction = (val) => { /* ... */ };
 .action-square-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
+
 .fs-body { flex-grow: 1; overflow-y: auto; padding: 16px; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }
 .fs-body::-webkit-scrollbar { display: none; }
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
-.fs-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; }
+.fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; min-height: 44px;}
+
+/* Entity Item Styles */
 .fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fs-val { font-size: 14px; color: #fff; font-weight: 700; }
+.fs-val-block { display: flex; flex-direction: column; align-items: flex-end; }
+.fs-val { font-size: 14px; color: #fff; font-weight: 700; white-space: nowrap; }
 .fs-val-forecast { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .fs-curr { color: #ccc; font-weight: 500; }
 .fs-arrow { color: #666; font-size: 12px; }
 .fs-fut { font-weight: 700; color: #fff; }
+
+/* List Item Styles */
+.fs-item-left { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; }
+.fs-date { color: #666; font-size: 11px; min-width: 32px; flex-shrink: 0; text-align: center; line-height: 1.2; }
+.fs-info-col { display: flex; flex-direction: column; overflow: hidden; }
+.fs-name-text { font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-sub-text { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
 .red-text { color: #ff3b30 !important; }
 .green-text { color: #34c759 !important; }
 .fs-empty { text-align: center; color: #666; margin-top: 50px; }
 .fs-footer { padding: 15px 20px; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
 .btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+
+/* Main Layout Sections */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }

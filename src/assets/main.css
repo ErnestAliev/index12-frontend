@@ -1,24 +1,13 @@
+@import './styles/variables.css';
 @import './base.css';
 
 #app {
-  /*
-  max-width: 1280px; (УДАЛЕНО)
-  margin: 0 auto; (УДАЛЕНО)
-  padding: 2rem; (УДАЛЕНО)
-  */
-  
-  /* Мы говорим приложению (#app) занимать
-    100% высоты экрана. Это нужно, чтобы
-    наш HomeView.vue (у которого height: 100vh)
-    работал корректно.
-  */
   height: 100vh;
   font-weight: normal;
+  background-color: var(--bg-main);
+  color: var(--text-soft);
 }
 
-/* Стили для ссылок (a, .green) 
-  оставляем, они не мешают.
-*/
 a,
 .green {
   text-decoration: none;
@@ -33,11 +22,66 @@ a,
   }
 }
 
-/* Блок @media (min-width: 1024px)
-  полностью очищен, так как он
-  содержал старые, ненужные стили 
-  для body и #app.
-*/
-@media (min-width: 1024px) {
-  /* (Здесь было `display: grid`, которое все ломало) */
+/* --- ГЛОБАЛЬНЫЕ СТИЛИ ДЛЯ ВЫПАДАЮЩЕГО МЕНЮ ФИЛЬТРОВ (WIDGETS) --- */
+/* Используется через Teleport, поэтому должно быть глобальным */
+
+.filter-dropdown-fixed {
+  position: fixed; 
+  width: 160px;    
+  background-color: #282828; /* var(--bg-soft) */
+  border: 1px solid #444;    /* var(--color-border) */
+  border-radius: 8px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+  z-index: 9999;   
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  padding: 4px 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.filter-dropdown-fixed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.filter-dropdown-fixed li {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #ddd; /* var(--color-text) */
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-dropdown-fixed li:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.filter-dropdown-fixed li.active {
+  color: #34c759; /* var(--color-primary) */
+  background-color: rgba(52, 199, 89, 0.1);
+  font-weight: 500;
+}
+
+.filter-dropdown-fixed li .symbol {
+  font-size: 10px;
+  color: #666;
 }

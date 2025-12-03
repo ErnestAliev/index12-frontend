@@ -4,12 +4,6 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
-/**
- * * --- МЕТКА ВЕРСИИ: v49.3 - UNIFIED STYLES ---
- * * ВЕРСИЯ: 49.3 - Унификация шрифтов
- * * ДАТА: 2025-12-03
- */
-
 const props = defineProps({
   title: { type: String, required: true },
   items: { type: Array, required: true },
@@ -27,7 +21,7 @@ const showFutureBalance = computed({
   set: (val) => mainStore.setForecastState(props.widgetKey, val)
 });
 
-/* ======================= ФИЛЬТРЫ ======================= */
+/* --- FILTERS --- */
 const isFilterOpen = ref(false);
 const filterBtnRef = ref(null);
 const filterDropdownRef = ref(null);
@@ -96,9 +90,7 @@ const formatDelta = (val) => {
   <div class="dashboard-card" @click.stop="isFilterOpen = false">
     
     <div class="card-title-container">
-      <div class="card-title">
-        {{ props.title }}
-      </div>
+      <div class="card-title">{{ props.title }}</div>
 
       <div class="card-actions">
         <button class="action-square-btn" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
@@ -122,8 +114,8 @@ const formatDelta = (val) => {
           <div class="filter-group-title">Сортировка</div>
           <ul>
             <li :class="{ active: sortMode === 'default' }" @click="setSortMode('default')"><span>По умолчанию</span></li>
-            <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span> <span class="symbol">▼</span></li>
-            <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span> <span class="symbol">▲</span></li>
+            <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li>
+            <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li>
           </ul>
         </div>
         <div class="filter-group">
@@ -174,26 +166,41 @@ const formatDelta = (val) => {
   display: flex; flex-direction: column; 
   height: 100%; 
   overflow: hidden; 
-  padding-right: 1.5rem; border-right: 1px solid var(--color-border); position: relative; 
+  padding-right: 1.5rem; 
+  border-right: 1px solid var(--color-border); 
+  position: relative; 
 }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
 
-.card-title-container { display: flex; justify-content: space-between; align-items: center; height: 32px; margin-bottom: 0.5rem; flex-shrink: 0; }
+.card-title-container { 
+  display: flex; justify-content: space-between; align-items: center; 
+  height: var(--h-header-card); 
+  margin-bottom: var(--gap-sm); 
+  flex-shrink: 0; 
+}
 
-/* 🟢 UNIFIED TITLE */
 .card-title { 
-  font-size: 13px; 
-  font-weight: 600; 
-  color: #ffffff; 
+  font-size: var(--font-sm); 
+  font-weight: var(--fw-semi); 
+  color: var(--text-main); 
   position: relative; z-index: 101; 
   letter-spacing: 0.01em;
-
 }
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
-.action-square-btn { width: 18px; height: 18px; border: 1px solid transparent; border-radius: 4px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
+
+/* 🟢 1. ФОН КНОПОК */
+.action-square-btn { 
+  width: 18px; height: 18px; 
+  border: 1px solid transparent; border-radius: 4px; 
+  background-color: #3D3B3B; 
+  display: flex; align-items: center; justify-content: center; 
+  cursor: pointer; padding: 0; 
+  color: var(--text-mute); 
+  transition: all var(--trans-fast); 
+}
 .action-square-btn:hover { background-color: #555; color: #ccc; }
-.action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
+.action-square-btn.active { background-color: var(--color-primary); color: #fff; border-color: transparent; }
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
 .card-items-list { 
@@ -201,62 +208,67 @@ const formatDelta = (val) => {
 }
 .card-items-list::-webkit-scrollbar { display: none; }
 
-/* 🟢 UNIFIED ROW STYLE */
+/* 🟢 2. ШРИФТЫ */
 .card-item { 
   display: flex; 
   justify-content: space-between; 
-  font-size: 13px;  /* Было 12px */
+  font-size: var(--font-sm);
   flex-shrink: 0; 
- 
+  margin-bottom: 2px;
 }
 
-/* Grid for Forecast */
 .card-items-list.forecast-mode {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto 12px auto; 
   column-gap: 6px;
   align-items: center;
   align-content: start;
-  font-size: 25px;  /* Было 12px */
+  font-size: var(--font-sm);
+  
+  /* 🟢 3. КОМПЕНСАЦИЯ ВЫСОТЫ */
+  row-gap: 2px; 
 }
-.card-items-list.forecast-mode .card-item { 
-    display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 12px auto; 
-  column-gap: 6px;
-  align-items: center;
-  align-content: start;display: contents;
- font-size: 13px;  /* Было 12px */ }
-.card-items-list.forecast-mode .forecast-display { 
-    display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 12px auto; 
-  column-gap: 6px;
-  align-items: center;
-  align-content: start;display: contents; 
- font-size: 13px;  /* Было 12px */}
+
+.card-items-list.forecast-mode .card-item { display: contents; }
+.card-items-list.forecast-mode .forecast-display { display: contents; }
 
 .name-cell {
-  color: #ccc; 
+  color: var(--text-soft); 
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   display: flex; align-items: center; gap: 6px;
 }
 
-.link-icon { color: #34c759; display: inline-flex; align-items: center; opacity: 0.6; cursor: help; }
+.link-icon { color: var(--color-primary); display: inline-flex; align-items: center; opacity: 0.6; cursor: help; }
 .link-icon:hover { opacity: 1; }
 
-.current-cell { color: var(--color-text); font-weight: 500; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 0.95em; }
-.arrow-cell { color: #777; font-size: 0.9em; text-align: center; user-select: none; }
-.future-cell { font-weight: 500; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 0.95em; }
+.current-cell { 
+  color: var(--color-text); 
+  font-weight: var(--fw-medium); 
+  text-align: right; 
+  white-space: nowrap; 
+  font-variant-numeric: tabular-nums;
+}
 
-.currency { font-size: 0.85em; color: #777; margin-right: 2px; font-weight: 400; }
-.card-item-empty { font-size: 12px; color: #666; grid-column: 1 / -1;  }
+.arrow-cell { color: var(--text-mute); text-align: center; user-select: none; }
+
+.future-cell { 
+  font-weight: var(--fw-medium); 
+  text-align: right; 
+  white-space: nowrap; 
+  font-variant-numeric: tabular-nums;
+}
+
+.currency { font-size: 0.85em; color: var(--text-mute); margin-right: 2px; font-weight: 400; }
+.card-item-empty { font-size: var(--font-xs); color: #666; grid-column: 1 / -1; margin-top: 10px; font-style: italic; }
 
 .expense { color: var(--color-danger) !important; }
 .income { color: var(--color-primary) !important; }
-.single-balance { color: var(--color-text);  white-space: nowrap; }
-.single-balance.expense { font-size: 12px; color: var(--color-danger) !important; font-weight: 500; }
+.single-balance { color: var(--color-text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.single-balance.expense { color: var(--color-danger) !important; font-weight: var(--fw-medium); }
 
 @media (max-height: 900px) {
   .dashboard-card { padding-right: 1rem; }
-  .card-item { font-size: 12px;  }
+  .card-item { font-size: var(--font-xs); }
+  .card-items-list.forecast-mode { font-size: var(--font-xs); }
 }
 </style>
