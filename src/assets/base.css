@@ -1,6 +1,10 @@
+/* 1. ИМПОРТ ШРИФТА (Обязательно в самом верху) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 /* base.css - Основные стили */
 
 :root {
+  /* Цветовая палитра */
   --color-background: #1a1a1a;
   --color-background-soft: #282828;
   --color-border: #444;
@@ -9,6 +13,9 @@
   --color-primary: #34c759;
   --color-danger: #ff3b30;
   --color-warning: #ffcc00;
+
+  /* Настройка шрифта: Inter главный, системные - запасные */
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 *, *::before, *::after {
@@ -24,7 +31,6 @@ html {
   width: 100%;
   /* На iOS важно не запрещать скролл глобально, если мы хотим нативный опыт,
      но для SPA приложений часто блокируют, чтобы не скроллилась "подложка".
-     Оставляем hidden, но разрешаем внутри контейнеров.
   */
   overflow: hidden; 
   overscroll-behavior: none;
@@ -42,10 +48,15 @@ body {
   color: var(--color-text);
   background: var(--color-background);
   line-height: 1.6;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Применяем наш шрифт */
+  font-family: var(--font-family-base);
   font-size: 15px;
+  
+  /* Сглаживание для "дорогого" вида на Mac/iOS */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -68,6 +79,19 @@ body {
     overscroll-behavior: contain; /* Предотвращает "резиновый" эффект на всю страницу */
 }
 
+/* 🟢 УЛУЧШЕНИЕ: Табличные цифры (чтобы суммы стояли ровно друг под другом) */
+.card-total-balance, 
+.sum-val, 
+.amount-text,
+.grid-cell,
+.card-value,
+.current-cell,
+.future-cell,
+.single-val-cell {
+  font-feature-settings: "tnum" on, "cv05" on; 
+  font-variant-numeric: tabular-nums;
+}
+
 /* Стили для кнопок */
 button {
   background-color: var(--color-primary);
@@ -77,6 +101,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  font-family: var(--font-family-base); /* Чтобы кнопки тоже были в Inter */
   transition: background-color 0.2s;
 }
 
@@ -105,6 +130,7 @@ select {
   border-radius: 4px;
   color: var(--color-text);
   font-size: 12px;
+  font-family: var(--font-family-base);
 }
 
 input:focus,

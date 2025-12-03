@@ -5,14 +5,12 @@ import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v10.46 - AUTO SCROLL & BODY LOCK ---
- * * ВЕРСИЯ: 10.46 - Скрытый скролл, авто-прокрутка при наведении, блокировка фона
- * * ДАТА: 2025-11-29
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) Добавлена блокировка скролла body при открытии модала.
- * 2. (LOGIC) Реализован авто-скролл при подведении мыши к краям таблицы.
- * 3. (CSS) Полностью скрыты скроллбары, но функциональность сохранена.
+ * * --- МЕТКА ВЕРСИИ: v11.3 - STYLE FIX & HEADER WIDTH ---
+ * * ВЕРСИЯ: 11.3
+ * * ДАТА: 2025-12-03
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. (CSS) Усилены стили сетки (!important) для предотвращения "ступенек" из-за глобальных стилей.
+ * 2. (LOGIC) calculateColumnWidths теперь учитывает длину заголовка, чтобы шапка не ломалась.
  */
 
 const emit = defineEmits(['close', 'import-complete']);
@@ -39,7 +37,9 @@ const colorSettings = ref({
   expense: true,
   prepayment: true,
   transfer: true,
-  withdrawal: true
+  withdrawal: true,
+  act: true,   // 🟢 Новый тип: Акт
+  shift: true  // 🟢 Новый тип: Смена
 });
 
 watch(isColorized, (newVal) => {
@@ -49,7 +49,9 @@ watch(isColorized, (newVal) => {
       expense: true,
       prepayment: true,
       transfer: true,
-      withdrawal: true
+      withdrawal: true,
+      act: true,
+      shift: true
     };
   }
 });
@@ -580,6 +582,8 @@ const getRowColorClass = (row) => {
     if (type === 'Предоплата' && colorSettings.value.prepayment) return 'row-prepayment';
     if (type === 'Вывод средств' && colorSettings.value.withdrawal) return 'row-withdrawal';
     if ((type === 'Перевод (Исх)' || type === 'Перевод (Вх)') && colorSettings.value.transfer) return 'row-transfer';
+    if (type === 'Акт выполненных работ' && colorSettings.value.act) return 'row-act'; // 🟢 NEW
+    if (type === 'Закрытие смены' && colorSettings.value.shift) return 'row-shift'; // 🟢 NEW
     
     return '';
 };
@@ -645,6 +649,10 @@ async function prepareExportData() {
       const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0; const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return createdA - createdB;
     });
+
+    // 🟢 1. Индексируем операции для быстрого поиска
+    const opsMap = new Map();
+    operations.forEach(op => opsMap.set(op._id, op));
     
     for (const op of operations) {
       if (!op.date) continue; 
@@ -655,10 +663,41 @@ async function prepareExportData() {
       let catName = resolveEntityName(op.categoryId, mainStore.categories); let projName = resolveEntityName(op.projectId, mainStore.projects);
       let contrName = resolveEntityName(op.contractorId, mainStore.contractors) || resolveEntityName(op.counterpartyIndividualId, mainStore.individuals);
       let ownerName = resolveEntityName(op.companyId, mainStore.companies) || resolveEntityName(op.individualId, mainStore.individuals);
+      
       if (!ownerName && op.accountId) { const accIdRaw = resolveEntityId(op.accountId, mainStore.accounts); const accObj = mainStore.accounts.find(a => a._id === accIdRaw); if (accObj) { ownerName = resolveEntityName(accObj.companyId, mainStore.companies) || resolveEntityName(accObj.individualId, mainStore.individuals); } }
 
       let catId = resolveEntityId(op.categoryId, mainStore.categories); let projId = resolveEntityId(op.projectId, mainStore.projects); let accountId = resolveEntityId(op.accountId, mainStore.accounts);
       if (!projName || projName.trim() === '') projName = 'Без проекта';
+
+      // 🟢 2. SMART ACCOUNT RESOLUTION (Fix for Acts/Shifts)
+      if (!accountId) {
+           // Case A: Work Act -> Find Tranche -> Take Account
+           if (op.isWorkAct && op.relatedEventId) {
+               const relatedId = typeof op.relatedEventId === 'object' ? op.relatedEventId._id : op.relatedEventId;
+               const parentOp = opsMap.get(relatedId);
+               if (parentOp && parentOp.accountId) {
+                   accountId = resolveEntityId(parentOp.accountId, mainStore.accounts);
+               }
+           }
+           // Case B: Retail Shift -> Find Income for Project+Client -> Take Account
+           else if (mainStore._isRetailWriteOff(op)) {
+               const pId = resolveEntityId(op.projectId, mainStore.projects);
+               const cIndId = resolveEntityId(op.counterpartyIndividualId, mainStore.individuals);
+               
+               if (pId && cIndId) {
+                   // Search for any income with this Project and Retail Client
+                   const match = operations.find(candidate => 
+                       candidate.type === 'income' &&
+                       resolveEntityId(candidate.projectId, mainStore.projects) === pId &&
+                       resolveEntityId(candidate.counterpartyIndividualId, mainStore.individuals) === cIndId &&
+                       candidate.accountId
+                   );
+                   if (match) {
+                       accountId = resolveEntityId(match.accountId, mainStore.accounts);
+                   }
+               }
+           }
+      }
 
       const addRow = (accId, amountChange, typeLabel, desc, overrides = {}) => {
          let currentBalance = 0; let accName = '';
@@ -694,11 +733,38 @@ async function prepareExportData() {
           addRow(accountId, opAmount, 'Вывод средств', desc, { contractor: withdrawalContr, category: withdrawalCategory });
       } else {
          let typeLabel = 'Расход'; let finalDesc = op.description || '';
+         let displayAmount = opAmount; // 🟢 Переменная для отображаемой суммы
+
          const isRealPrepayment = op.type === 'prepayment' || (op.type === 'income' && (op.totalDealAmount > 0 || op.prepaymentId));
-         if (isRealPrepayment) { typeLabel = 'Предоплата'; if (!finalDesc) finalDesc = `Предоплата: ${projName !== 'Без проекта' ? projName : catName}`; }
-         else if (op.type === 'income') { typeLabel = 'Доход'; if (!finalDesc) finalDesc = `Доход: ${catName}`; }
-         else { if (!finalDesc) finalDesc = `Расход: ${catName}`; }
-         addRow(accountId, opAmount, typeLabel, finalDesc, {} );
+         const isWorkAct = op.isWorkAct === true;
+         const isRetailShift = mainStore._isRetailWriteOff(op);
+
+         // 🟢 Иерархия проверок
+         if (isWorkAct) {
+             typeLabel = 'Акт выполненных работ';
+             if (!finalDesc) finalDesc = `Акт по проекту: ${projName}`;
+             displayAmount = Math.abs(opAmount); // 🟢 Убираем минус
+         }
+         else if (isRetailShift) {
+             typeLabel = 'Закрытие смены';
+             if (!finalDesc) finalDesc = 'Списание выручки (Розница)';
+             displayAmount = Math.abs(opAmount); // 🟢 Убираем минус
+         }
+         else if (isRealPrepayment) { 
+             typeLabel = 'Предоплата'; 
+             if (!finalDesc) finalDesc = `Предоплата: ${projName !== 'Без проекта' ? projName : catName}`; 
+         }
+         else if (op.type === 'income') { 
+             typeLabel = 'Доход'; 
+             if (!finalDesc) finalDesc = `Доход: ${catName}`; 
+         }
+         else { 
+             typeLabel = 'Расход'; 
+             if (!finalDesc) finalDesc = `Расход: ${catName}`; 
+         }
+         
+         // 🟢 Используем displayAmount вместо opAmount
+         addRow(accountId, displayAmount, typeLabel, finalDesc, {} );
       }
     }
     processedAllData.value = { data: allRows, columns: UNIFIED_COLUMNS }; isDataReady.value = true;
@@ -716,13 +782,9 @@ const filteredExportData = computed(() => { let data = processedAllData.value.da
 const calculateColumnWidths = (headers, data) => {
   const checkboxWidth = '48px'; 
   const widths = [];
-  // Add checkbox column width if relevant (Import only)
-  
   headers.forEach(header => {
-     // 1. Find max length in first 20 rows
-     // 🟢 FIX: Начинаем с 0, чтобы длинные заголовки фильтров не влияли на ширину, 
-     // если контент короткий. (Или можно начать с min-width, например 5).
-     let maxLen = 0; 
+     // 🟢 FIX: Start with header length to ensure header text fits
+     let maxLen = header.length; 
      
      const sample = data.slice(0, 20);
      sample.forEach(row => {
@@ -730,25 +792,16 @@ const calculateColumnWidths = (headers, data) => {
         if (val > maxLen) maxLen = val;
      });
      
-     // 🔴 REMOVED: Убрано принудительное расширение для Описания
-     // if (['Описание', 'description', 'Description', 'description'].includes(header)) {
-     //    maxLen = Math.max(maxLen, 60);
-     // }
-     
-     // 2. Smart Weight Calculation (Updated)
      let fr = 1;
-     if (maxLen <= 10) fr = 0.5;      // Очень короткие (ID, мелкие суммы)
-     else if (maxLen <= 20) fr = 1;   // Даты, Типы, средние суммы
-     else if (maxLen <= 40) fr = 2;   // Категории, Имена
-     else fr = 3;                     // Длинные описания
-     
-     // 3. Use minmax(max-content, Xfr)
+     if (maxLen <= 10) fr = 0.5;      
+     else if (maxLen <= 20) fr = 1;   
+     else if (maxLen <= 40) fr = 2;   
+     else fr = 3;                     
      widths.push(`minmax(max-content, ${fr}fr)`);
   });
   return widths;
 };
 
-// 🟢 2. EXPORT GRID TEMPLATE (Uses dynamic calculation)
 const gridTemplate = computed(() => { 
    const widths = calculateColumnWidths(visibleColumns.value, filteredExportData.value);
    return widths.join(' ');
@@ -757,13 +810,13 @@ const gridTemplate = computed(() => {
 const visibleColumns = computed(() => { const cols = [...UNIFIED_COLUMNS]; if (!showDebugIds.value) { return cols.filter(c => !c.includes('_id')); } return cols; });
 const visibleCsvHeaders = computed(() => { if (showDebugIds.value) return csvHeaders.value; return csvHeaders.value.filter(h => { const lower = h.trim().toLowerCase(); return !lower.endsWith('_id') && lower !== 'id' && lower !== '_id'; }); });
 
-// 🟢 3. IMPORT GRID TEMPLATE (Uses dynamic calculation)
 const importGridTemplate = computed(() => { 
   const checkboxWidth = '48px'; 
   const cols = calculateColumnWidths(visibleCsvHeaders.value, csvData.value);
   return [checkboxWidth, ...cols].join(' '); 
 });
 </script>
+
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
@@ -941,6 +994,10 @@ const importGridTemplate = computed(() => {
                            <label class="sub-toggle prepayment" title="Предоплата"><input type="checkbox" v-model="colorSettings.prepayment">Предоплата</label>
                            <label class="sub-toggle transfer" title="Перевод"><input type="checkbox" v-model="colorSettings.transfer">Перевод</label>
                            <label class="sub-toggle withdrawal" title="Вывод"><input type="checkbox" v-model="colorSettings.withdrawal">Вывод</label>
+                           
+                           <!-- 🟢 НОВЫЕ ТИПЫ -->
+                           <label class="sub-toggle act" title="Акт"><input type="checkbox" v-model="colorSettings.act">Акт</label>
+                           <label class="sub-toggle shift" title="Смена"><input type="checkbox" v-model="colorSettings.shift">Смена</label>
                         </div>
                     </div>
                     <label class="debug-toggle"><input type="checkbox" v-model="showDebugIds"> Показать ID</label>
@@ -949,6 +1006,7 @@ const importGridTemplate = computed(() => {
                 </div>
             </div>
             <div class="grid-table-container" ref="scrollContainerRef" @mousemove="startAutoScrollCheck" @mouseleave="stopAutoScroll">
+                <!-- 🟢 FIX: Добавлены !important классы для сетки -->
                 <div class="unified-grid" :class="{ 'fit-mode': isFitContent, 'colorized': isColorized }" :style="{ gridTemplateColumns: gridTemplate }">
                     <div class="header-group contents-display">
                         <div v-for="col in visibleColumns" :key="col" class="grid-header-cell sticky">
@@ -1014,12 +1072,50 @@ const importGridTemplate = computed(() => {
 .grid-table-container::-webkit-scrollbar { display: none; /* Chrome/Safari */ }
 
 
-/* 🟢 Unified Grid: min-width: 100% растягивает на весь контейнер, width: max-content позволяет расти при включении ID */
-.unified-grid { display: grid; align-items: center; width: max-content; min-width: 100%; }
-.contents-display { display: contents; }
-.grid-header-cell { background: var(--color-background-soft); border-bottom: 1px solid var(--color-border); border-right: 1px solid var(--color-border-hover); padding: 4px; height: 50px; display: flex; align-items: center; overflow: visible; box-sizing: border-box; }
+/* 🟢 Unified Grid: принудительная сетка */
+.unified-grid { 
+  display: grid !important; 
+  align-items: center; 
+  width: max-content; 
+  min-width: 100%; 
+}
+
+/* 🟢 Группировка содержимого (строки и заголовки) - принудительно unwrap */
+.contents-display { 
+  display: contents !important; 
+}
+
+.grid-header-cell { 
+  background: var(--color-background-soft); 
+  border-bottom: 1px solid var(--color-border); 
+  border-right: 1px solid var(--color-border-hover); 
+  padding: 4px; 
+  height: 50px; 
+  display: flex; 
+  align-items: center; 
+  overflow: visible; 
+  box-sizing: border-box; 
+  margin: 0 !important; /* 🟢 FIX: Сброс маржинов */
+}
+
 .grid-header-cell.sticky { position: sticky; top: 0; z-index: 20; }
-.grid-cell { padding: 0 8px; font-size: 13px; border-bottom: 1px solid var(--color-border); border-right: 1px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--color-background); height: 40px; display: flex; align-items: center; box-sizing: border-box; }
+
+.grid-cell { 
+  padding: 0 8px; 
+  font-size: 13px; 
+  border-bottom: 1px solid var(--color-border); 
+  border-right: 1px solid transparent; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  background: var(--color-background); 
+  height: 40px; 
+  display: flex; 
+  align-items: center; 
+  box-sizing: border-box; 
+  margin: 0 !important; /* 🟢 FIX: Сброс маржинов */
+}
+
 .unified-grid.fit-mode .grid-cell { overflow: visible; text-overflow: clip; }
 .grid-header-cell.import-grid-header { flex-direction: column; justify-content: center; align-items: flex-start; padding-top: 0; padding: 4px 8px; }
 .csv-header-name { font-size: 11px; font-weight: 600; color: var(--color-text-soft); margin-bottom: 4px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
@@ -1041,7 +1137,7 @@ const importGridTemplate = computed(() => {
 .header-controls { display: flex; gap: 12px; align-items: center; }
 .debug-toggle { font-size: 12px; color: var(--color-text-soft); cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .count-label { font-size: 12px; color: var(--color-text-soft); }
-.header-label { display: flex; align-items: center; height: 28px; width: 100%; padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--color-text); box-sizing: border-box; margin-top: 0 px;; }
+.header-label { display: flex; align-items: center; height: 28px; width: 100%; padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--color-text); box-sizing: border-box; margin-top: 8px;; }
 .close-btn { position: absolute; top: 10px; right: 15px; font-size: 32px; color: var(--color-text-soft); background: none; border: none; cursor: pointer; z-index: 1001; }
 h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
 .modal-tabs { display: flex; padding: 0 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
@@ -1077,18 +1173,23 @@ h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border)
 .file-input { display: none; }
 .file-input-label { background: var(--color-accent); color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: inline-block; margin: 10px 0; }
 /* 🟢 3. СТИЛИ ДЛЯ ЦВЕТНЫХ СТРОК (В КОНЦЕ ФАЙЛА) */
-/* 🟢 3. СТИЛИ ДЛЯ ЦВЕТНЫХ СТРОК (В КОНЦЕ ФАЙЛА) */
 .unified-grid.colorized .row-income { background-color: rgba(16, 185, 129, 1); color:#000000; }
 .unified-grid.colorized .row-expense { background-color: rgba(239, 68, 68, 1); }
 .unified-grid.colorized .row-prepayment { background-color: rgba(245, 158, 11, 1); color:#000000;}
 .unified-grid.colorized .row-transfer { background-color: rgba(55, 65, 81, 1); color:#ffffff;}
 .unified-grid.colorized .row-withdrawal { background-color: rgba(216, 180, 254, 1); color:#000000; }
+
+/* 🟢 НОВЫЕ ЦВЕТА */
+.unified-grid.colorized .row-act { background-color: #E2E8F0; color: #1e293b; } /* Нейтральный серо-синий */
+.unified-grid.colorized .row-shift { background-color: #E9D5FF; color: #581c87; } /* Светло-фиолетовый */
+
 .unified-grid.colorized .grid-cell { border-bottom-color: #fff; border-right-color: #fff; }
 .color-controls-wrapper { display: flex; align-items: center; gap: 12px; margin-right: 12px; padding-right: 12px; border-right: 1px solid var(--color-border); }
 .sub-color-toggles { display: flex; gap: 8px; align-items: center; }
 .sub-toggle { font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer; color: var(--color-text-soft); user-select: none; }
 .sub-toggle input { margin: 0; width: 14px; height: 14px; }
 .sub-toggle.income { color: #10b981; } .sub-toggle.expense { color: #ef4444; } .sub-toggle.prepayment { color: #f59e0b; } .sub-toggle.transfer { color: #6b7280; } .sub-toggle.withdrawal { color: #a855f7; }
+.sub-toggle.act { color: #64748b; } .sub-toggle.shift { color: #a855f7; } /* Цвета тогглов */
 
 /* REVIEW DASHBOARD STYLES */
 .review-dashboard { width: 100%; padding-bottom: 30px; }

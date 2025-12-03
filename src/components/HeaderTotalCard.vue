@@ -68,7 +68,7 @@ const sign = computed(() => props.totalBalance < 0 ? '-' : '');
 .card-title { 
   font-size: 13px; 
   font-weight: 600;
-  color: #ffffff; 
+  color: #666666; 
   white-space: pre-line; 
   line-height: 1.3;
   letter-spacing: 0.01em;
@@ -109,7 +109,7 @@ const sign = computed(() => props.totalBalance < 0 ? '-' : '');
 
 .card-sub-balance { 
   font-size: 11px; /* Было 0.8em */
-  color: #777; 
+  color: #777777; 
 }
 .card-sub-balance .subtitle-date { 
   color: var(--color-primary); 
