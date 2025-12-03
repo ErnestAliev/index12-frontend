@@ -1174,7 +1174,7 @@ h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border)
 .file-input-label { background: var(--color-accent); color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: inline-block; margin: 10px 0; }
 /* 🟢 3. СТИЛИ ДЛЯ ЦВЕТНЫХ СТРОК (В КОНЦЕ ФАЙЛА) */
 .unified-grid.colorized .row-income { background-color: rgba(16, 185, 129, 1); color:#000000; }
-.unified-grid.colorized .row-expense { background-color: rgba(239, 68, 68, 1); }
+.unified-grid.colorized .row-expense { background-color: rgba(239, 68, 68, 1); color:#ffffff;}
 .unified-grid.colorized .row-prepayment { background-color: rgba(245, 158, 11, 1); color:#000000;}
 .unified-grid.colorized .row-transfer { background-color: rgba(55, 65, 81, 1); color:#ffffff;}
 .unified-grid.colorized .row-withdrawal { background-color: rgba(216, 180, 254, 1); color:#000000; }
