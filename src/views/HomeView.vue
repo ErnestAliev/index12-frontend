@@ -524,7 +524,7 @@ const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; t
 
 <template>
   <div v-if="mainStore.isAuthLoading" class="loading-screen"><div class="spinner"></div><p>Проверка сессии...</p></div>
-  <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Добро пожаловать в систему управления финансами и активами index12</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
+  <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
   <div v-else class="home-layout" @click="closeAllMenus">
     <header class="home-header" ref="homeHeaderRef"><TheHeader /></header>
     <div class="header-resizer" ref="headerResizerRef"></div>
