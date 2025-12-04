@@ -9,12 +9,13 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v4.0 - CREDIT THEME & EXPENSE CLEANUP ---
- * * ВЕРСИЯ: 4.0
- * * ДАТА: 2025-12-03
+ * * --- МЕТКА ВЕРСИИ: v5.0 - FULL CODE & AUTOCOMPLETE ---
+ * * ВЕРСИЯ: 5.0
+ * * ДАТА: 2025-12-04
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) Добавлена тема 'theme-credit' (фиолетовая) для операций получения кредита.
- * 2. (UI) Заголовок меняется на "Редактор кредита" если это кредит.
+ * 1. (FEAT) Автоподстановка для Счетов, Категорий, Контрагентов, Владельцев.
+ * 2. (FIX) Флаг isProgrammaticUpdate для корректного закрытия списка.
+ * 3. (FULL) Полный код без сокращений.
  */
 
 const mainStore = useMainStore();
@@ -36,6 +37,7 @@ const selectedOwner = ref(null);
 const selectedContractorValue = ref(null); 
 const selectedProjectId = ref(null);
 const selectedCategoryId = ref(null);
+const description = ref('');
 
 // СТАТУС ОПЕРАЦИИ (По умолчанию Факт)
 const operationStatus = ref('fact'); 
@@ -64,10 +66,8 @@ const statusOptions = computed(() => {
 // Сброс статуса при переключении на розницу/обратно
 watch(isRetailClientSelected, (isRetail) => {
     if (isRetail) {
-        // Если переключились на розницу, дефолт - Факт
         operationStatus.value = 'fact';
     } else {
-        // Если ушли с розницы - тоже Факт (безопасно)
         operationStatus.value = 'fact';
     }
 });
@@ -78,7 +78,8 @@ const isCloneMode = ref(false);
 const editableDate = ref('');
 const isInlineSaving = ref(false);
 const isInitialLoad = ref(true);
-const isDateChanged = ref(false);
+const isDateChanged = ref(false); 
+const isDeleteConfirmVisible = ref(false);
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInput = ref(null);
@@ -98,7 +99,15 @@ const contractorTypeToCreate = ref('contractor');
 const newContractorNameInput = ref('');
 const newContractorInputRef = ref(null);
 
-// 🟢 АВТОПОДСТАНОВКА БАНКОВ (НОВЫЙ КОНТРАГЕНТ)
+// 🟢 FIX: Флаги программного обновления (чтобы список не открывался после выбора)
+const isProgrammaticAccount = ref(false);
+const isProgrammaticCategory = ref(false);
+const isProgrammaticContractor = ref(false);
+const isProgrammaticOwner = ref(false);
+
+// --- AUTOCOMPLETE LOGIC ---
+
+// 1. Контрагенты (Банки/Орг)
 const showContractorBankSuggestions = ref(false);
 const contractorBankSuggestionsList = computed(() => {
     if (contractorTypeToCreate.value !== 'contractor') return [];
@@ -112,16 +121,23 @@ const contractorBankSuggestionsList = computed(() => {
 });
 
 const selectContractorBankSuggestion = (bank) => {
+    isProgrammaticContractor.value = true;
     newContractorNameInput.value = bank.name;
     showContractorBankSuggestions.value = false;
-    nextTick(() => newContractorInputRef.value?.focus());
+    nextTick(() => { 
+        newContractorInputRef.value?.focus(); 
+        isProgrammaticContractor.value = false; 
+    });
 };
 
 const handleContractorInputBlur = () => { setTimeout(() => { showContractorBankSuggestions.value = false; }, 200); };
 const handleContractorInputFocus = () => { if (newContractorNameInput.value.length >= 2) showContractorBankSuggestions.value = true; };
-watch(newContractorNameInput, (val) => { showContractorBankSuggestions.value = val.length >= 2; });
+watch(newContractorNameInput, (val) => { 
+    if (isProgrammaticContractor.value) return; 
+    showContractorBankSuggestions.value = val.length >= 2; 
+});
 
-// 🟢 АВТОПОДСТАНОВКА БАНКОВ (НОВЫЙ ВЛАДЕЛЕЦ)
+// 2. Владельцы (Банки/Орг)
 const showOwnerBankSuggestions = ref(false);
 const ownerBankSuggestionsList = computed(() => {
     if (ownerTypeToCreate.value !== 'company') return [];
@@ -135,15 +151,65 @@ const ownerBankSuggestionsList = computed(() => {
 });
 
 const selectOwnerBankSuggestion = (bank) => {
+    isProgrammaticOwner.value = true;
     newOwnerName.value = bank.name;
     showOwnerBankSuggestions.value = false;
-    nextTick(() => newOwnerInputRef.value?.focus());
+    nextTick(() => { 
+        newOwnerInputRef.value?.focus(); 
+        isProgrammaticOwner.value = false; 
+    });
 };
 
 const handleOwnerInputBlur = () => { setTimeout(() => { showOwnerBankSuggestions.value = false; }, 200); };
 const handleOwnerInputFocus = () => { if (newOwnerName.value.length >= 2) showOwnerBankSuggestions.value = true; };
-watch(newOwnerName, (val) => { showOwnerBankSuggestions.value = val.length >= 2; });
+watch(newOwnerName, (val) => { 
+    if (isProgrammaticOwner.value) return; 
+    showOwnerBankSuggestions.value = val.length >= 2; 
+});
 
+// 3. Счета
+const accountSuggestionsList = computed(() => {
+    const q = newAccountName.value.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return accountSuggestions.filter(acc => acc.name.toLowerCase().includes(q)).slice(0, 4);
+});
+const selectAccountSuggestion = (acc) => {
+    isProgrammaticAccount.value = true;
+    newAccountName.value = acc.name;
+    showAccountSuggestions.value = false;
+    nextTick(() => { 
+        newAccountInput.value?.focus(); 
+        isProgrammaticAccount.value = false; 
+    });
+};
+const handleAccountInputBlur = () => { setTimeout(() => { showAccountSuggestions.value = false; }, 200); };
+const handleAccountInputFocus = () => { if (newAccountName.value.length >= 2) showAccountSuggestions.value = true; };
+watch(newAccountName, (val) => { 
+    if (isProgrammaticAccount.value) return; 
+    showAccountSuggestions.value = val.length >= 2; 
+});
+
+// 4. Категории
+const categorySuggestionsList = computed(() => {
+    const q = newCategoryName.value.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return categorySuggestions.filter(c => c.name.toLowerCase().includes(q)).slice(0, 4);
+});
+const selectCategorySuggestion = (c) => {
+    isProgrammaticCategory.value = true;
+    newCategoryName.value = c.name;
+    showCategorySuggestions.value = false;
+    nextTick(() => { 
+        newCategoryInput.value?.focus(); 
+        isProgrammaticCategory.value = false; 
+    });
+};
+const handleCategoryInputBlur = () => { setTimeout(() => { showCategorySuggestions.value = false; }, 200); };
+const handleCategoryInputFocus = () => { if (newCategoryName.value.length >= 2) showCategorySuggestions.value = true; };
+watch(newCategoryName, (val) => { 
+    if (isProgrammaticCategory.value) return; 
+    showCategorySuggestions.value = val.length >= 2; 
+});
 
 const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
 const isProtectedMode = computed(() => {
@@ -159,12 +225,7 @@ const isProtectedMode = computed(() => {
 const title = computed(() => {
     if (isCloneMode.value) return 'Копия: Доход';
     if (isProtectedMode.value) return 'Редактировать сделку';
-    
-    // 🟢 Если это кредит, меняем заголовок
-    if (operationStatus.value === 'credit_receipt') {
-        return isEditMode.value ? 'Редактировать Кредит' : 'Новый Кредит';
-    }
-    
+    if (operationStatus.value === 'credit_receipt') return isEditMode.value ? 'Редактировать Кредит' : 'Новый Кредит';
     return isEditMode.value ? 'Редактировать Доход' : 'Новый Доход';
 });
 
@@ -194,7 +255,6 @@ const mainButtonText = computed(() => {
     if (isEditMode.value) return 'Сохранить изменения';
     if (isDealDetected.value) return `Внести ${nextTrancheNumber.value}-й транш...`;
     
-    // Если розница
     if (isRetailClientSelected.value) {
         if (operationStatus.value === 'retail_prepayment') {
             return 'Предоплата от розницы';
@@ -250,7 +310,6 @@ const ownerOptions = computed(() => {
       opts.push({ label: 'Физлица', isHeader: true });
       mainStore.currentIndividualBalances.forEach(i => { 
           const nameLower = i.name.trim().toLowerCase();
-          // Из списка ВЛАДЕЛЬЦЕВ розницу убираем (они не владеют нашими счетами)
           if (nameLower === 'розничные клиенты' || nameLower === 'розница') return;
           opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatNumber(Math.abs(i.balance || 0))} ₸` }); 
       });
@@ -269,7 +328,6 @@ const contractorOptions = computed(() => {
       opts.push({ value: `contr_${c._id}`, label: c.name });
   });
   
-  // Показываем всех физлиц, включая "Розничных клиентов"
   const allIndividuals = mainStore.individuals;
 
   opts.push({ label: 'Физлица (Кому платим)', isHeader: true });
@@ -288,7 +346,6 @@ const projectOptions = computed(() => {
   return opts;
 });
 
-// Проверка: Является ли контрагент банком
 const isSelectedContractorBank = computed(() => {
     if (!selectedContractorValue.value) return false;
     const [prefix, id] = selectedContractorValue.value.split('_');
@@ -302,11 +359,9 @@ const isSelectedContractorBank = computed(() => {
     return false;
 });
 
-// Строгая фильтрация категорий
 const categoryOptions = computed(() => { 
     const prepayIds = mainStore.getPrepaymentCategoryIds; 
     
-    // Если выбран банк (проект "Мои кредиты") - показываем ТОЛЬКО "Кредиты"
     if (isSelectedContractorBank.value) {
         if (mainStore.creditCategoryId) {
              const creditCat = mainStore.categories.find(c => c._id === mainStore.creditCategoryId);
@@ -317,12 +372,11 @@ const categoryOptions = computed(() => {
         return [];
     }
 
-    // Если НЕ банк - Скрываем служебные и "Кредиты". Оставляем "Получение займов".
     const excludedNames = [
         'перевод', 'transfer', 
         'остаток долга', 'возврат', 
         'погашение займов', 'выплата кредита', 'погашение кредита',
-        'кредиты', 'credit' // Скрываем категорию "Кредиты" для не-банков
+        'кредиты', 'credit'
     ];
     
     const valid = mainStore.visibleCategories.filter(c => {
@@ -340,7 +394,6 @@ const categoryOptions = computed(() => {
 
 // --- LOGIC WATCHERS ---
 
-// 1. Авто-выбор владельца по счету
 const onAccountSelected = (accId) => {
     const acc = mainStore.accounts.find(a => a._id === accId);
     if (acc) {
@@ -354,18 +407,15 @@ watch(selectedAccountId, (newVal) => {
     onAccountSelected(newVal);
 });
 
-// 2. Умная связь: Контрагент -> Проект/Категория (особенно для Кредитов)
 watch(selectedContractorValue, (newVal) => {
     if (isInitialLoad.value || !newVal) return;
 
-    // 🟢 1. Проверка на "Розничные клиенты"
     if (mainStore.retailIndividualId && newVal === `ind_${mainStore.retailIndividualId}`) {
         if (mainStore.realizationCategoryId) {
             selectedCategoryId.value = mainStore.realizationCategoryId;
         }
     }
 
-    // Проверка на Банк
     const [prefix, id] = newVal.split('_');
     let isBank = false;
     if (prefix === 'contr') {
@@ -377,14 +427,12 @@ watch(selectedContractorValue, (newVal) => {
     }
 
     if (isBank) {
-        // Если Банк -> Проект "Мои кредиты", Категория "Кредиты", Статус "Получение кредита"
         if (myCreditsProjectId.value) selectedProjectId.value = myCreditsProjectId.value;
         if (mainStore.creditCategoryId) selectedCategoryId.value = mainStore.creditCategoryId;
         operationStatus.value = 'credit_receipt';
         return;
     }
 
-    // Если обычный контрагент - можно подтянуть defaults (если есть в базе)
     let entity = null;
     if (prefix === 'contr') entity = mainStore.contractors.find(c => c._id === id);
     else entity = mainStore.individuals.find(i => i._id === id);
@@ -395,7 +443,6 @@ watch(selectedContractorValue, (newVal) => {
     }
 });
 
-// 3. Умная связь: Проект "Мои кредиты" -> Категория "Погашение займов"
 watch(selectedProjectId, (newProj) => {
     if (isInitialLoad.value) return;
     if (newProj && myCreditsProjectId.value && newProj === myCreditsProjectId.value) {
@@ -435,17 +482,12 @@ const showAccountInput = () => { isCreatingAccount.value = true; nextTick(() => 
 const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; };
 
 const saveNewAccount = async () => {
-  if (isInlineSaving.value) return; 
-  const name = newAccountName.value.trim(); 
-  if (!name) return; 
+  if (isInlineSaving.value) return; const name = newAccountName.value.trim(); if (!name) return;
   isInlineSaving.value = true; 
   try { 
     const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase()); 
     let cId = null, iId = null; 
-    if (selectedOwner.value) { 
-        const [type, id] = selectedOwner.value.split('-'); 
-        if (type === 'company') cId = id; else iId = id; 
-    } 
+    if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; } 
     if (existing) { 
         selectedAccountId.value = existing._id; 
         onAccountSelected(existing._id); 
@@ -726,6 +768,7 @@ onMounted(() => {
         selectedAccountId.value = op.accountId?._id || op.accountId;
         selectedProjectId.value = op.projectId?._id || op.projectId;
         selectedCategoryId.value = op.categoryId?._id || op.categoryId;
+        description.value = op.description || '';
         
         if (op.companyId) selectedOwner.value = `company-${op.companyId._id || op.companyId}`;
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
@@ -753,17 +796,6 @@ onMounted(() => {
 });
 
 const closePopup = () => emit('close');
-
-const accountSuggestionsList = computed(() => { const q = newAccountName.value.trim().toLowerCase(); if (q.length<2) return []; return accountSuggestions.filter(acc => acc.name.toLowerCase().includes(q)).slice(0,4); });
-const selectAccountSuggestion = (acc) => { newAccountName.value = acc.name; showAccountSuggestions.value = false; nextTick(() => newAccountInput.value?.focus()); };
-const handleAccountInputBlur = () => { setTimeout(() => { showAccountSuggestions.value = false; }, 200); };
-const handleAccountInputFocus = () => { if (newAccountName.value.length >= 2) showAccountSuggestions.value = true; };
-watch(newAccountName, (val) => { showAccountSuggestions.value = val.length >= 2; });
-const categorySuggestionsList = computed(() => { const q = newCategoryName.value.trim().toLowerCase(); if (q.length<2) return []; return categorySuggestions.filter(c => c.name.toLowerCase().includes(q)).slice(0,4); });
-const selectCategorySuggestion = (c) => { newCategoryName.value = c.name; showCategorySuggestions.value = false; nextTick(() => newCategoryInput.value?.focus()); };
-const handleCategoryInputBlur = () => { setTimeout(() => { showCategorySuggestions.value = false; }, 200); };
-const handleCategoryInputFocus = () => { if (newCategoryName.value.length >= 2) showCategorySuggestions.value = true; };
-watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 2; });
 </script>
 
 <template>
@@ -783,8 +815,17 @@ watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 
         <div v-if="!isCreatingAccount" class="input-spacing">
             <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="На счет" label="На счет" @change="handleAccountChange" :disabled="isProtectedMode" />
         </div>
-        <div v-else class="inline-create-form input-spacing input-wrapper relative">
-            <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" />
+        <div v-else class="inline-create-form input-spacing relative">
+            <input 
+                type="text" 
+                v-model="newAccountName" 
+                placeholder="Название счета" 
+                ref="newAccountInput" 
+                @keyup.enter="saveNewAccount" 
+                @keyup.esc="cancelCreateAccount" 
+                @blur="handleAccountInputBlur" 
+                @focus="handleAccountInputFocus" 
+            />
             <button @click="saveNewAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
             <button @click="cancelCreateAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
             <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
@@ -827,7 +868,16 @@ watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 
             <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="По категории" label="Категория" @change="handleCategoryChange" :disabled="isProtectedMode" />
         </div>
         <div v-else class="inline-create-form input-spacing input-wrapper relative">
-            <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
+            <input 
+                type="text" 
+                v-model="newCategoryName" 
+                placeholder="Название категории" 
+                ref="newCategoryInput" 
+                @keyup.enter="saveNewCategory" 
+                @keyup.esc="cancelCreateCategory" 
+                @blur="handleCategoryInputBlur" 
+                @focus="handleCategoryInputFocus"
+            />
             <button @click="saveNewCategory" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
             <button @click="cancelCreateCategory" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
             <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
@@ -876,14 +926,24 @@ watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 
             <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="ownerTypeToCreate = 'individual'">Физлицо</button>
           </div>
           <div class="input-wrapper relative">
-              <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus"/>
+              <input 
+                  type="text" 
+                  v-model="newOwnerName" 
+                  :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" 
+                  ref="newOwnerInputRef" 
+                  class="form-input input-spacing" 
+                  @keyup.enter="saveNewOwner" 
+                  @keyup.esc="cancelCreateOwner" 
+                  @blur="handleOwnerInputBlur" 
+                  @focus="handleOwnerInputFocus" 
+              />
               <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length > 0" class="bank-suggestions-list">
                   <li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li>
               </ul>
           </div>
           <div class="smart-create-actions">
-            <button @click="cancelCreateOwner" class="btn-cancel-white" :disabled="isInlineSaving">Отмена</button>
-            <button @click="saveNewOwner" class="btn-create-green" :disabled="isInlineSaving">Создать</button>
+            <button @click="cancelCreateOwner" class="btn-cancel-white">Отмена</button>
+            <button @click="saveNewOwner" class="btn-create-green">Создать</button>
           </div>
         </div>
       </template>
@@ -896,14 +956,24 @@ watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 
             <button :class="{ active: contractorTypeToCreate === 'individual' }" @click="contractorTypeToCreate = 'individual'">Физлицо</button>
           </div>
           <div class="input-wrapper relative">
-              <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" @blur="handleContractorInputBlur" @focus="handleContractorInputFocus"/>
+              <input 
+                  type="text" 
+                  v-model="newContractorNameInput" 
+                  :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" 
+                  ref="newContractorInputRef" 
+                  class="form-input input-spacing" 
+                  @keyup.enter="saveNewContractorModal" 
+                  @keyup.esc="cancelCreateContractorModal" 
+                  @blur="handleContractorInputBlur" 
+                  @focus="handleContractorInputFocus" 
+              />
               <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length > 0" class="bank-suggestions-list">
                   <li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li>
               </ul>
           </div>
           <div class="smart-create-actions">
-            <button @click="cancelCreateContractorModal" class="btn-cancel-white" :disabled="isInlineSaving">Отмена</button>
-            <button @click="saveNewContractorModal" class="btn-create-green" :disabled="isInlineSaving">Создать</button>
+            <button @click="cancelCreateContractorModal" class="btn-cancel-white">Отмена</button>
+            <button @click="saveNewContractorModal" class="btn-create-green">Создать</button>
           </div>
         </div>
       </template>
@@ -972,7 +1042,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .smart-create-title { font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center; margin-top: 0; margin-bottom: 1.5rem; }
 .smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem; }
 .smart-create-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: 500; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #333; cursor: pointer; transition: all 0.2s; }
-.smart-create-tabs button.active { background: #222222; color: #FFFFFF; border-color: #222222; }
+.smart-create-tabs button.active { background: #34C759; color: #FFFFFF;  }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
 
@@ -981,10 +1051,11 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
 .btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #007AFF; cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
 .btn-dual-action:hover { background-color: #f0f8ff; }
-.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
-.btn-dual-action.right { border-bottom-right-radius: 8px; }
-.btn-create-green { background-color: #34c759; color: white; }
+.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; width: 50%; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; width: 50%; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; width: 50%; }
+.btn-create-green { background-color: #34c759; color: white; width: 50%; }
 .btn-create-green:hover:not(:disabled) { background-color: #2da84e; }
-.btn-cancel-white { background-color: #ffffff; color: #333333; border: 1px solid #dddddd !important; }
-.btn-cancel-white:hover:not(:disabled) { background-color: #f5f5f5; }
+.btn-cancel-white { background-color: #ffffff; color: #333333; border: 1px solid #dddddd !important; width: 50%;}
+.btn-cancel-white:hover:not(:disabled) { background-color: #f5f5f5; width: 50%;}
 </style>

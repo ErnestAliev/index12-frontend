@@ -9,14 +9,13 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v2.6 - EXPENSE UI CLEANUP ---
- * * ВЕРСИЯ: 2.6 - Кнопка "Отмена" удалена, стили кнопок действий унифицированы с IncomePopup
- * * ДАТА: 2025-12-03
- * * ЧТО ИЗМЕНЕНО:
- * 1. (UI) Удалена кнопка "Отмена" из шаблона.
- * 2. (CSS) Кнопка сохранения теперь использует класс .save-wide (54px), как в IncomePopup.
- * 3. (CSS) Иконки действий выровнены через margin-left: auto, как в IncomePopup.
- * 4. (CSS) Удален неиспользуемый класс .right-actions.
+ * * --- МЕТКА ВЕРСИИ: v3.0 - FULL CODE & AUTOCOMPLETE ---
+ * * ВЕРСИЯ: 3.0
+ * * ДАТА: 2025-12-04
+ * * ИЗМЕНЕНИЯ:
+ * 1. Внедрена автоподстановка для Счетов, Категорий, Контрагентов, Владельцев.
+ * 2. Добавлен фикс isProgrammaticUpdate (список сворачивается при выборе).
+ * 3. КОД ПОЛНЫЙ, БЕЗ СОКРАЩЕНИЙ.
  */
 
 const mainStore = useMainStore();
@@ -66,8 +65,15 @@ const contractorTypeToCreate = ref('contractor');
 const newContractorNameInput = ref('');
 const newContractorInputRef = ref(null);
 
-// --- АВТОПОДСТАНОВКИ ДЛЯ НОВЫХ СУЩНОСТЕЙ ---
-// 1. Контрагенты (Банки)
+// 🟢 FIX: Флаги программного обновления (чтобы список не открывался после выбора)
+const isProgrammaticAccount = ref(false);
+const isProgrammaticCategory = ref(false);
+const isProgrammaticContractor = ref(false);
+const isProgrammaticOwner = ref(false);
+
+// --- АВТОПОДСТАНОВКИ ---
+
+// 1. Контрагенты (Банки/Орг)
 const showContractorBankSuggestions = ref(false);
 const contractorBankSuggestionsList = computed(() => {
     if (contractorTypeToCreate.value !== 'contractor') return [];
@@ -80,37 +86,88 @@ const contractorBankSuggestionsList = computed(() => {
     }).slice(0, 5);
 });
 const selectContractorBankSuggestion = (bank) => {
+    isProgrammaticContractor.value = true;
     newContractorNameInput.value = bank.name;
     showContractorBankSuggestions.value = false;
-    nextTick(() => newContractorInputRef.value?.focus());
+    nextTick(() => {
+        newContractorInputRef.value?.focus();
+        isProgrammaticContractor.value = false;
+    });
 };
-watch(newContractorNameInput, (val) => { showContractorBankSuggestions.value = val.length >= 2; });
+watch(newContractorNameInput, (val) => {
+    if (isProgrammaticContractor.value) return;
+    showContractorBankSuggestions.value = val.length >= 2;
+});
 
-// 2. Счета
+// 2. Владельцы (Банки/Орг)
+const showOwnerBankSuggestions = ref(false);
+const ownerBankSuggestionsList = computed(() => {
+    if (ownerTypeToCreate.value !== 'company') return [];
+    const query = newOwnerName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    return knownBanks.filter(bank => {
+        const nameMatch = bank.name.toLowerCase().includes(query);
+        const keywordMatch = bank.keywords && bank.keywords.some(k => k.toLowerCase().includes(query));
+        return nameMatch || keywordMatch;
+    }).slice(0, 5);
+});
+const selectOwnerBankSuggestion = (bank) => {
+    isProgrammaticOwner.value = true;
+    newOwnerName.value = bank.name;
+    showOwnerBankSuggestions.value = false;
+    nextTick(() => {
+        newOwnerInputRef.value?.focus();
+        isProgrammaticOwner.value = false;
+    });
+};
+watch(newOwnerName, (val) => {
+    if (isProgrammaticOwner.value) return;
+    showOwnerBankSuggestions.value = val.length >= 2;
+});
+
+// 3. Счета
 const accountSuggestionsList = computed(() => {
     const query = newAccountName.value.trim().toLowerCase();
     if (query.length < 2) return [];
     return accountSuggestions.filter(acc => acc.name.toLowerCase().includes(query)).slice(0, 4);
 });
 const selectAccountSuggestion = (acc) => {
+    isProgrammaticAccount.value = true;
     newAccountName.value = acc.name;
     showAccountSuggestions.value = false;
-    nextTick(() => newAccountInput.value?.focus());
+    nextTick(() => {
+        newAccountInput.value?.focus();
+        isProgrammaticAccount.value = false;
+    });
 };
-watch(newAccountName, (val) => { showAccountSuggestions.value = val.length >= 2; });
+const handleAccountInputBlur = () => { setTimeout(() => { showAccountSuggestions.value = false; }, 200); };
+const handleAccountInputFocus = () => { if (newAccountName.value.length >= 2) showAccountSuggestions.value = true; };
+watch(newAccountName, (val) => { 
+    if (isProgrammaticAccount.value) return;
+    showAccountSuggestions.value = val.length >= 2; 
+});
 
-// 3. Категории
+// 4. Категории
 const categorySuggestionsList = computed(() => {
     const query = newCategoryName.value.trim().toLowerCase();
     if (query.length < 2) return [];
     return categorySuggestions.filter(c => c.name.toLowerCase().includes(query)).slice(0, 4);
 });
 const selectCategorySuggestion = (c) => {
+    isProgrammaticCategory.value = true;
     newCategoryName.value = c.name;
     showCategorySuggestions.value = false;
-    nextTick(() => newCategoryInput.value?.focus());
+    nextTick(() => {
+        newCategoryInput.value?.focus();
+        isProgrammaticCategory.value = false;
+    });
 };
-watch(newCategoryName, (val) => { showCategorySuggestions.value = val.length >= 2; });
+const handleCategoryInputBlur = () => { setTimeout(() => { showCategorySuggestions.value = false; }, 200); };
+const handleCategoryInputFocus = () => { if (newCategoryName.value.length >= 2) showCategorySuggestions.value = true; };
+watch(newCategoryName, (val) => {
+    if (isProgrammaticCategory.value) return;
+    showCategorySuggestions.value = val.length >= 2;
+});
 
 
 // --- COMPUTED: OPTIONS ---
@@ -461,7 +518,16 @@ onMounted(async () => {
               <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Счет списания" label="Счет списания" @change="handleAccountChange" />
           </div>
           <div v-else class="inline-create-form input-spacing relative">
-              <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" />
+              <input 
+                  type="text" 
+                  v-model="newAccountName" 
+                  placeholder="Название счета" 
+                  ref="newAccountInput" 
+                  @keyup.enter="saveNewAccount" 
+                  @keyup.esc="cancelCreateAccount" 
+                  @blur="handleAccountInputBlur"
+                  @focus="handleAccountInputFocus"
+              />
               <button @click="saveNewAccount" class="btn-inline-save">✓</button>
               <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
               <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
@@ -506,7 +572,16 @@ onMounted(async () => {
               <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" />
           </div>
           <div v-else class="inline-create-form input-spacing relative">
-              <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" />
+              <input 
+                  type="text" 
+                  v-model="newCategoryName" 
+                  placeholder="Название категории" 
+                  ref="newCategoryInput" 
+                  @keyup.enter="saveNewCategory" 
+                  @keyup.esc="cancelCreateCategory" 
+                  @blur="handleCategoryInputBlur"
+                  @focus="handleCategoryInputFocus"
+              />
               <button @click="saveNewCategory" class="btn-inline-save">✓</button>
               <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
               <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
@@ -535,8 +610,6 @@ onMounted(async () => {
                   {{ buttonText }}
               </button>
               
-              <!-- КНОПКА ОТМЕНЫ УДАЛЕНА ПОЛНОСТЬЮ -->
-              
               <!-- СПРАВА: Иконки Копировать/Удалить (только в режиме редактирования) -->
               <div v-if="isEditMode" class="icon-actions">
                   <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving">
@@ -557,7 +630,12 @@ onMounted(async () => {
             <button :class="{ active: ownerTypeToCreate === 'company' }" @click="ownerTypeToCreate = 'company'">Компания</button>
             <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="ownerTypeToCreate = 'individual'">Физлицо</button>
           </div>
-          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner"/>
+          <div class="input-wrapper relative">
+              <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" />
+              <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length > 0" class="bank-suggestions-list">
+                  <li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li>
+              </ul>
+          </div>
           <div class="smart-create-actions">
             <button @click="cancelCreateOwner" class="btn-cancel-white">Отмена</button>
             <button @click="saveNewOwner" class="btn-create-green">Создать</button>
@@ -572,16 +650,15 @@ onMounted(async () => {
             <button :class="{ active: contractorTypeToCreate === 'contractor' }" @click="contractorTypeToCreate = 'contractor'">ТОО / ИП / БАНК</button>
             <button :class="{ active: contractorTypeToCreate === 'individual' }" @click="contractorTypeToCreate = 'individual'">Физлицо</button>
           </div>
-          <div class="relative">
-              <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal"/>
+          <div class="input-wrapper relative">
+              <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" @blur="handleContractorInputBlur" @focus="handleContractorInputFocus" />
               <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length > 0" class="bank-suggestions-list">
                   <li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li>
               </ul>
           </div>
           <div class="smart-create-actions">
-            <button @click="saveNewContractorModal" class="btn-create-green">Создать</button>
             <button @click="cancelCreateContractorModal" class="btn-cancel-white">Отмена</button>
-            
+            <button @click="saveNewContractorModal" class="btn-create-green">Создать</button>
           </div>
         </div>
       </template>
@@ -612,7 +689,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 
 .input-spacing { margin-bottom: 12px; }
 .date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
-.date-value-text { font-size: 15px; font-weight: 600; color: #111; }
+.date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .calendar-icon { font-size: 16px; color: #555; }
 
@@ -659,8 +736,8 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .delete-btn svg { stroke: #555; }
 .delete-btn:hover svg { stroke: #ff3b30; }
 .icon-stroke { width: 20px; height: 20px; stroke: #333; fill: none; transition: stroke 0.2s; }
-.icon { width: 20px; height: 20px; fill: currentColor; }
-
+.icon { width: 20px; height: 20px; fill: currentColor; display: block; }
+.error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: #222; }
@@ -671,23 +748,23 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .smart-create-owner { border-top: 1px solid #E0E0E0; margin-top: 1.5rem; padding-top: 1.5rem; }
 .smart-create-title { font-size: 18px; font-weight: 600; text-align: center; margin-bottom: 1.5rem; }
 .smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem; }
-.smart-create-tabs button { flex: 1; padding: 12px; border: 1px solid #E0E0E0; border-radius: 8px; color: #000; background: #fff; cursor: pointer; font-weight: 500; }
-.smart-create-tabs button.active { background: #34c759; color: #fff;  }
+.smart-create-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: 500; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #333; cursor: pointer; transition: all 0.2s; }
+.smart-create-tabs button.active { background: #34C759; color: #FFFFFF;  }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
 
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.form-input:focus { outline: none; border-color: #222; box-shadow: 0 0 0 2px rgba(34,34,34,0.2); }
+.form-input:focus { outline: none; border-color: #2da84e;  }
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
 .btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #007AFF; cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
 .btn-dual-action:hover { background-color: #f0f8ff; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
-.btn-create-green { background-color: #34c759; color: white; }
-.btn-create-green:hover:not(:disabled) { background-color: #2da84e; }
-.btn-cancel-white { background-color: #ffffff; color: #333333; border: 1px solid #dddddd !important; }
+.btn-create-green { background-color: #34c759; color: white; width: 50%;}
+.btn-create-green:hover:not(:disabled) { background-color: #2da84e; width: 50%;}
+.btn-cancel-white { background-color: #ffffff; color: #333333; border: 1px solid #dddddd !important; width: 50%;}
 .btn-cancel-white:hover:not(:disabled) { background-color: #f5f5f5; }
-.bank-suggestions-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E0E0E0; z-index: 2000; list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 0 0 8px 8px; }
+.bank-suggestions-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E0E0E0; border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); z-index: 2000; list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; }
 .bank-suggestions-list li { padding: 10px 14px; font-size: 14px; color: #333; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
 .bank-suggestions-list li:last-child { border-bottom: none; }
 .bank-suggestions-list li:hover { background-color: #f9f9f9; }

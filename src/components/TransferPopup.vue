@@ -4,14 +4,16 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
-import { knownBanks } from '@/data/knownBanks.js'; // 🟢 1. Импорт банков
+import { accountSuggestions } from '@/data/accountSuggestions.js'; // 🟢 1. Импорт
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.0 - AUTOCOMPLETE BANKS ---
- * * ВЕРСИЯ: 27.0 - Автоподстановка банков при создании счета
- * * ДАТА: 2025-12-01
- * * ЧТО ИЗМЕНЕНО:
- * 1. Добавлена автоподстановка из knownBanks.js для полей "Со счета" и "На счет" (при создании нового).
+ * * --- МЕТКА ВЕРСИИ: v27.1 - AUTOCOMPLETE FIX ---
+ * * ВЕРСИЯ: 27.1
+ * * ДАТА: 2025-12-04
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FEAT) Автоподстановка названий счетов (accountSuggestions).
+ * 2. (FIX) Добавлен флаг isProgrammaticUpdate для списков.
+ * 3. КОД ПОЛНЫЙ, БЕЗ СОКРАЩЕНИЙ.
  */
 
 const mainStore = useMainStore();
@@ -44,13 +46,13 @@ const purposeOptions = [
 
 const smartHint = computed(() => {
   if (transferPurpose.value === 'internal') {
-    return 'Сценарий А: Внутренний перевод. Деньги перемещаются внутри одного баланса.';
+    return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
   }
   if (transferPurpose.value === 'inter_company') {
-    return 'Сценарий Б: Меж.комп. Расход у отправителя, Доход у получателя. Категория "Меж.комп".';
+    return 'Вы переводите деньги между своими компаниями. Деньги бизнеса -> Деньги другого бизнеса.';
   }
   if (transferPurpose.value === 'personal') {
-      return 'Сценарий В: Перевод на личную карту. Деньги бизнеса -> Личные деньги (но остаются в системе).';
+      return 'Вы переводите деньги на личный счет или карту. Деньги бизнеса -> Личные деньги.';
   }
   return '';
 });
@@ -147,46 +149,64 @@ watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
   }
 });
 
-/* 🟢 --- АВТОПОДСТАНОВКА БАНКОВ ДЛЯ СЧЕТОВ --- */
+/* 🟢 --- АВТОПОДСТАНОВКА --- */
+// Флаги блокировки
+const isProgrammaticFrom = ref(false);
+const isProgrammaticTo = ref(false);
+
 // 1. ДЛЯ СЧЕТА ОТПРАВИТЕЛЯ
 const showFromAccountSuggestions = ref(false);
 const fromAccountSuggestionsList = computed(() => {
     const query = newFromAccountName.value.trim().toLowerCase();
     if (query.length < 2) return [];
-    return knownBanks.filter(bank => {
+    return accountSuggestions.filter(bank => {
         if (bank.name.toLowerCase().includes(query)) return true;
-        if (bank.keywords.some(k => k.startsWith(query))) return true;
+        if (bank.keywords && bank.keywords.some(k => k.startsWith(query))) return true;
         return false;
     }).slice(0, 4);
 });
 const selectFromAccountSuggestion = (bank) => {
+    isProgrammaticFrom.value = true;
     newFromAccountName.value = bank.name;
     showFromAccountSuggestions.value = false;
-    nextTick(() => newFromAccountInput.value?.focus());
+    nextTick(() => { 
+        newFromAccountInput.value?.focus(); 
+        isProgrammaticFrom.value = false; 
+    });
 };
 const handleFromAccountBlur = () => { setTimeout(() => { showFromAccountSuggestions.value = false; }, 200); };
 const handleFromAccountFocus = () => { if (newFromAccountName.value.length >= 2) showFromAccountSuggestions.value = true; };
-watch(newFromAccountName, (val) => { showFromAccountSuggestions.value = val.length >= 2; });
+watch(newFromAccountName, (val) => { 
+    if (isProgrammaticFrom.value) return; 
+    showFromAccountSuggestions.value = val.length >= 2; 
+});
 
 // 2. ДЛЯ СЧЕТА ПОЛУЧАТЕЛЯ
 const showToAccountSuggestions = ref(false);
 const toAccountSuggestionsList = computed(() => {
     const query = newToAccountName.value.trim().toLowerCase();
     if (query.length < 2) return [];
-    return knownBanks.filter(bank => {
+    return accountSuggestions.filter(bank => {
         if (bank.name.toLowerCase().includes(query)) return true;
-        if (bank.keywords.some(k => k.startsWith(query))) return true;
+        if (bank.keywords && bank.keywords.some(k => k.startsWith(query))) return true;
         return false;
     }).slice(0, 4);
 });
 const selectToAccountSuggestion = (bank) => {
+    isProgrammaticTo.value = true;
     newToAccountName.value = bank.name;
     showToAccountSuggestions.value = false;
-    nextTick(() => newToAccountInput.value?.focus());
+    nextTick(() => { 
+        newToAccountInput.value?.focus(); 
+        isProgrammaticTo.value = false; 
+    });
 };
 const handleToAccountBlur = () => { setTimeout(() => { showToAccountSuggestions.value = false; }, 200); };
 const handleToAccountFocus = () => { if (newToAccountName.value.length >= 2) showToAccountSuggestions.value = true; };
-watch(newToAccountName, (val) => { showToAccountSuggestions.value = val.length >= 2; });
+watch(newToAccountName, (val) => { 
+    if (isProgrammaticTo.value) return; 
+    showToAccountSuggestions.value = val.length >= 2; 
+});
 /* ------------------------------------------- */
 
 const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
@@ -532,7 +552,7 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .calendar-icon { font-size: 16px; color: #999; }
 .input-spacing { margin-bottom: 12px; }
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.form-input:focus { outline: none; border-color: var(--focus-color, #222); box-shadow: 0 0 0 2px var(--focus-shadow, rgba(34,34,34,0.2)); }
+.form-input:focus { outline: none; border-color: #34C759; }
 .error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
@@ -547,15 +567,15 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-submit-transfer { background-color: #2f3340; }
 .btn-submit-transfer:hover:not(:disabled) { background-color: #2f3d6bff; }
-.btn-submit-edit { background-color: #222222; }
+.btn-submit-edit {  }
 .btn-submit-edit:hover:not(:disabled) { background-color: #444444; }
 .btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
 .btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
 .smart-create-owner { border-top: 1px solid #E0E0E0; margin-top: 1.5rem; padding-top: 1.5rem; }
 .smart-create-title { font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center; margin-top: 0; margin-bottom: 1.5rem; }
-.smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem; }
-.smart-create-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: 500; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #333; cursor: pointer; transition: all 0.2s; }
-.smart-create-tabs button.active { background: #222222; color: #FFFFFF; border-color: #222222; }
+.smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem;  }
+.smart-create-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: 500; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #030303; cursor: pointer; transition: all 0.2s; }
+.smart-create-tabs button.active { background: #34C759; color: #FFFFFF;  }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
 .smart-create-actions .btn-submit { flex: 1; }
 

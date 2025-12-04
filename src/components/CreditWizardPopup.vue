@@ -3,6 +3,15 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 import BaseSelect from './BaseSelect.vue';
+import { knownBanks } from '@/data/knownBanks.js'; // 🟢 1. Импорт банков
+
+/**
+ * * --- МЕТКА ВЕРСИИ: v3.0 - BANK AUTOCOMPLETE ---
+ * * ВЕРСИЯ: 3.0
+ * * ДАТА: 2025-12-04
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FEAT) Добавлена автоподстановка банков при создании нового кредитора.
+ */
 
 // 🟢 Принимаем prop editingCredit
 const props = defineProps({
@@ -31,6 +40,35 @@ const isCreatingCreditor = ref(false); const newCreditorName = ref(''); const ne
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInputRef = ref(null);
 const isCreatingOwner = ref(false); const newOwnerName = ref(''); const newOwnerType = ref('company'); const newOwnerInputRef = ref(null);
 const isSavingInline = ref(false);
+
+// --- 🟢 ЛОГИКА АВТОПОДСТАНОВКИ БАНКОВ ---
+const showBankSuggestions = ref(false);
+
+const bankSuggestionsList = computed(() => {
+    // Подсказки только если выбран тип "Банк" (contractor)
+    if (newCreditorType.value !== 'contractor') return [];
+    
+    const query = newCreditorName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    
+    return knownBanks.filter(bank => {
+        const nameMatch = bank.name.toLowerCase().includes(query);
+        const keywordMatch = bank.keywords && bank.keywords.some(k => k.toLowerCase().includes(query));
+        return nameMatch || keywordMatch;
+    }).slice(0, 4); // Топ-4
+});
+
+const selectBankSuggestion = (bank) => {
+    newCreditorName.value = bank.name;
+    showBankSuggestions.value = false;
+    nextTick(() => newCreditorInputRef.value?.focus());
+};
+
+// Скрытие/показ подсказок
+const handleCreditorBlur = () => { setTimeout(() => { showBankSuggestions.value = false; }, 200); };
+const handleCreditorFocus = () => { if (newCreditorName.value.length >= 2) showBankSuggestions.value = true; };
+watch(newCreditorName, (val) => { showBankSuggestions.value = val.length >= 2; });
+
 
 // --- Состояние графика ---
 const schedule = ref([]);
@@ -341,15 +379,32 @@ const handleSave = () => {
                         @change="handleCreditorChange"
                     />
                 </div>
-                <div v-else class="inline-create-form input-spacing">
+                <div v-else class="inline-create-form input-spacing relative">
                     <div class="create-type-switcher">
                         <span :class="{active: newCreditorType==='contractor'}" @click="newCreditorType='contractor'">Банк</span>
                         <span :class="{active: newCreditorType==='individual'}" @click="newCreditorType='individual'">Физлицо</span>
                     </div>
                     <div class="create-row">
-                        <input type="text" v-model="newCreditorName" ref="newCreditorInputRef" placeholder="Название кредитора" class="create-input" @keyup.enter="saveNewCreditor" @keyup.esc="isCreatingCreditor=false"/>
+                        <input 
+                            type="text" 
+                            v-model="newCreditorName" 
+                            ref="newCreditorInputRef" 
+                            placeholder="Название кредитора" 
+                            class="create-input" 
+                            @keyup.enter="saveNewCreditor" 
+                            @keyup.esc="isCreatingCreditor=false"
+                            @blur="handleCreditorBlur"
+                            @focus="handleCreditorFocus"
+                        />
                         <button class="btn-icon-save" @click="saveNewCreditor">✓</button>
                         <button class="btn-icon-cancel" @click="isCreatingCreditor=false">✕</button>
+                        
+                        <!-- 🟢 СПИСОК ПОДСКАЗОК -->
+                        <ul v-if="showBankSuggestions && bankSuggestionsList.length > 0" class="bank-suggestions-list">
+                            <li v-for="(bank, idx) in bankSuggestionsList" :key="idx" @mousedown.prevent="selectBankSuggestion(bank)">
+                                {{ bank.name }}
+                            </li>
+                        </ul>
                     </div>
                 </div>
 
@@ -521,4 +576,29 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .btn-credit:hover { background-color: #6A1B9A; }
 .btn-close { padding: 0 16px; height: 36px; background: white; border: 1px solid #d1d5db; color: #374151; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px; }
 .btn-close:hover { background: #f3f4f6; }
+
+/* 🟢 СТИЛИ ДЛЯ СПИСКА ПОДСКАЗОК */
+.relative { position: relative; }
+.bank-suggestions-list {
+    position: absolute;
+    top: 100%; left: 0; right: 88px; /* Учитываем кнопки справа (36+36+gap) */
+    background: #fff;
+    border: 1px solid #E0E0E0;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    z-index: 2000;
+    list-style: none;
+    padding: 0; margin: 0;
+    max-height: 160px; overflow-y: auto;
+}
+.bank-suggestions-list li {
+    padding: 10px 14px;
+    font-size: 14px; color: #333;
+    cursor: pointer;
+    border-bottom: 1px solid #f5f5f5;
+}
+.bank-suggestions-list li:last-child { border-bottom: none; }
+.bank-suggestions-list li:hover { background-color: #f9f9f9; }
 </style>

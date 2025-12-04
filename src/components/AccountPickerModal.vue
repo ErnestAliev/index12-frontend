@@ -1,16 +1,14 @@
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { accountSuggestions } from '@/data/accountSuggestions.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.0 - INLINE CREATE ---
- * * ВЕРСИЯ: 3.0 - Добавлено создание счета внутри пикера
- * * ДАТА: 2025-11-19
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (FEAT) Добавлена кнопка "+ Создать новый счет".
- * 2. (LOGIC) Реализовано inline-создание через mainStore.addAccount.
- * 3. (UX) Новый счет сразу выбирается (чекится).
+ * * --- МЕТКА ВЕРСИИ: v3.2 - AUTOCOMPLETE FIX ---
+ * * ВЕРСИЯ: 3.2
+ * * ДАТА: 2025-12-04
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FIX) Добавлен флаг isProgrammaticUpdate для предотвращения повторного открытия списка.
  */
 
 const props = defineProps({
@@ -55,6 +53,45 @@ const isCreating = ref(false);
 const newAccountName = ref('');
 const newAccountInputRef = ref(null);
 const isSavingNew = ref(false);
+
+// 🟢 АВТОПОДСТАНОВКА
+const showSuggestions = ref(false);
+const isProgrammaticUpdate = ref(false); // Флаг программного обновления
+
+const suggestionsList = computed(() => {
+    const query = newAccountName.value.trim().toLowerCase();
+    if (query.length < 2) return [];
+    
+    return accountSuggestions.filter(item => {
+        const nameMatch = item.name.toLowerCase().includes(query);
+        const keywordMatch = item.keywords && item.keywords.some(k => k.toLowerCase().includes(query));
+        return nameMatch || keywordMatch;
+    }).slice(0, 4); // Показываем топ-4
+});
+
+const selectSuggestion = (item) => {
+    isProgrammaticUpdate.value = true; // Блокируем watch
+    newAccountName.value = item.name;
+    showSuggestions.value = false;
+    nextTick(() => {
+        if (newAccountInputRef.value) newAccountInputRef.value.focus();
+        isProgrammaticUpdate.value = false; // Снимаем блокировку
+    });
+};
+
+const handleBlur = () => {
+    // Небольшая задержка, чтобы успел сработать клик по списку
+    setTimeout(() => { showSuggestions.value = false; }, 200);
+};
+
+const handleFocus = () => {
+    if (newAccountName.value.length >= 2) showSuggestions.value = true;
+};
+
+watch(newAccountName, (val) => {
+    if (isProgrammaticUpdate.value) return; // Игнорируем, если выбрано из списка
+    showSuggestions.value = val.length >= 2;
+});
 
 const startCreation = () => {
   isCreating.value = true;
@@ -106,7 +143,7 @@ const createAccount = async () => {
           + Создать новый счет
         </button>
         
-        <div v-else class="inline-create-row">
+        <div v-else class="inline-create-row relative">
            <input 
              type="text" 
              v-model="newAccountName" 
@@ -114,10 +151,19 @@ const createAccount = async () => {
              ref="newAccountInputRef" 
              class="create-input" 
              @keyup.enter="createAccount" 
-             @keyup.esc="cancelCreation" 
+             @keyup.esc="cancelCreation"
+             @blur="handleBlur"
+             @focus="handleFocus"
            />
            <button class="btn-icon-save" @click="createAccount" :disabled="isSavingNew">✓</button>
            <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
+
+           <!-- 🟢 Список подсказок -->
+           <ul v-if="showSuggestions && suggestionsList.length > 0" class="suggestions-list">
+              <li v-for="(item, idx) in suggestionsList" :key="idx" @mousedown.prevent="selectSuggestion(item)">
+                  {{ item.name }}
+              </li>
+           </ul>
         </div>
       </div>
       
@@ -329,4 +375,29 @@ h4 {
 .btn-primary:hover {
   background-color: #444444;
 }
+
+/* 🟢 Стили для списка подсказок */
+.relative { position: relative; }
+.suggestions-list {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    background: #fff;
+    border: 1px solid #E0E0E0;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    z-index: 2000;
+    list-style: none;
+    padding: 0; margin: 0;
+    max-height: 160px; overflow-y: auto;
+}
+.suggestions-list li {
+    padding: 10px 14px;
+    font-size: 14px; color: #333;
+    cursor: pointer;
+    border-bottom: 1px solid #f5f5f5;
+}
+.suggestions-list li:last-child { border-bottom: none; }
+.suggestions-list li:hover { background-color: #f9f9f9; }
 </style>

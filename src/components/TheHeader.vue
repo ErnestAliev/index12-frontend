@@ -31,9 +31,12 @@ import ExpensePopup from './ExpensePopup.vue';
 // import OperationPopup from './OperationPopup.vue'; // Больше не используется в хедере
 
 /**
- * * --- МЕТКА ВЕРСИИ: v42.0 - HEADER SPLIT ---
- * * ВЕРСИЯ: 42.0 - Хедер использует новые Income/Expense попапы
- * * ДАТА: 2025-12-01
+ * * --- МЕТКА ВЕРСИИ: v43.0 - POPUP TYPE PASSING ---
+ * * ВЕРСИЯ: 43.0 - Передача типа сущности в EntityPopup для автоподстановки
+ * * ДАТА: 2025-12-04
+ * * ЧТО ИЗМЕНЕНО:
+ * 1. (LOGIC) openAddPopup теперь принимает третий аргумент `entityType`.
+ * 2. (TEMPLATE) Вызовы openAddPopup обновлены для передачи типов ('account', 'contractor', 'category').
  */
 
 const mainStore = useMainStore();
@@ -119,6 +122,7 @@ const isRefundPopupVisible = ref(false);
 
 const popupTitle = ref('');
 const popupInitialValue = ref(''); 
+const popupEntityType = ref(''); // 🟢 Новый ref для типа сущности
 const saveHandler = ref(null);
 const deleteHandler = ref(null); 
 const showDeleteInPopup = ref(false); 
@@ -195,10 +199,21 @@ const mergedCategoryBalances = computed(() => {
 });
 
 // ... popup handlers ...
-const openAddPopup = (title, storeAction) => { popupTitle.value = title; popupInitialValue.value = ''; showDeleteInPopup.value = false; saveHandler.value = storeAction; deleteHandler.value = null; isEntityPopupVisible.value = true; };
+// 🟢 ОБНОВЛЕНО: Добавлен аргумент entityType
+const openAddPopup = (title, storeAction, entityType = '') => { 
+    popupTitle.value = title; 
+    popupInitialValue.value = ''; 
+    showDeleteInPopup.value = false; 
+    saveHandler.value = storeAction; 
+    deleteHandler.value = null; 
+    popupEntityType.value = entityType; // Сохраняем тип для передачи в Popup
+    isEntityPopupVisible.value = true; 
+};
+
 const openEditPopup = (title, items, path) => { editorTitle.value = title; editorItems.value = JSON.parse(JSON.stringify(items)); editorSavePath.value = path; isListEditorVisible.value = true; };
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title; popupInitialValue.value = entity.name; showDeleteInPopup.value = canDelete; 
+  popupEntityType.value = ''; // Для редактирования автоподстановка обычно не нужна/мешает
   saveHandler.value = async (newName) => { if (entityType) { const updatedItem = { ...entity, name: newName }; await mainStore.batchUpdateEntities(entityType, [updatedItem]); } };
   if (canDelete && entityType) { deleteHandler.value = async ({ deleteOperations, done }) => { try { await mainStore.deleteEntity(entityType, entity._id, deleteOperations); isEntityPopupVisible.value = false; } catch (e) { alert('Ошибка удаления: ' + e.message); if(done) done(); } }; } else { deleteHandler.value = null; }
   isEntityPopupVisible.value = true;
@@ -389,13 +404,14 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
+        <!-- 🟢 ОБНОВЛЕНО: Передаем 'account' -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
           title="Мои счета"
           :items="loggedAccountBalances" emptyText="...счетов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="false"
-          @add="openAddPopup('Новый счет', mainStore.addAccount)"
+          @add="openAddPopup('Новый счет', mainStore.addAccount, 'account')"
           @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
           @open-menu="handleOpenMenu"
         />
@@ -406,18 +422,19 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :items="mergedCompanyBalances" emptyText="...компаний нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="false"
-          @add="openAddPopup('Новая компания', mainStore.addCompany)"
+          @add="openAddPopup('Новая компания', mainStore.addCompany, 'company')"
           @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
           @open-menu="handleOpenMenu"
         />
 
+        <!-- 🟢 ОБНОВЛЕНО: Передаем 'contractor' -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'contractors'"
           title="Мои контрагенты"
           :items="mergedContractorBalances" emptyText="...контрагентов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="true"
-          @add="openAddPopup('Новый контрагент', mainStore.addContractor)"
+          @add="openAddPopup('Новый контрагент', mainStore.addContractor, 'contractor')"
           @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
           @open-menu="handleOpenMenu"
         />
@@ -428,7 +445,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :items="mergedProjectBalances" emptyText="...проектов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="true"
-          @add="openAddPopup('Новый проект', mainStore.addProject)"
+          @add="openAddPopup('Новый проект', mainStore.addProject, 'project')"
           @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
           @open-menu="handleOpenMenu"
         />
@@ -439,18 +456,19 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :items="mergedIndividualBalances" emptyText="...физлиц нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="true"
-          @add="openAddPopup('Новое Физлицо', mainStore.addIndividual)"
+          @add="openAddPopup('Новое Физлицо', mainStore.addIndividual, 'individual')"
           @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
           @open-menu="handleOpenMenu"
         />
 
+        <!-- 🟢 ОБНОВЛЕНО: Передаем 'category' -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'categories'"
           title="Категории"
           :items="mergedCategoryBalances" emptyText="...категорий нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="true"
-          @add="openAddPopup('Новая категория', mainStore.addCategory)"
+          @add="openAddPopup('Новая категория', mainStore.addCategory, 'category')"
           @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
           @open-menu="handleOpenMenu"
         />
@@ -479,13 +497,23 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     </template>
   </draggable>
 
-  <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" :initial-value="popupInitialValue" :show-delete="showDeleteInPopup" @close="isEntityPopupVisible = false" @save="onEntitySave" @delete="onEntityDelete" />
+  <!-- 🟢 Передаем entityType в EntityPopup -->
+  <EntityPopup 
+      v-if="isEntityPopupVisible" 
+      :title="popupTitle" 
+      :initial-value="popupInitialValue" 
+      :show-delete="showDeleteInPopup" 
+      :entity-type="popupEntityType"
+      @close="isEntityPopupVisible = false" 
+      @save="onEntitySave" 
+      @delete="onEntityDelete" 
+  />
+  
   <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="onEntityListSave" />
   <TransferPopup v-if="isTransferPopupVisible" :date="new Date()" :cellIndex="0" @close="isTransferPopupVisible = false" @transfer-complete="handleTransferComplete" />
   <TransferListEditor v-if="isTransferEditorVisible" @close="isTransferEditorVisible = false" />
   <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" :filter-mode="operationListEditorFilterMode" @close="isOperationListEditorVisible = false" />
   
-  <!-- 🟢 POPUPS REPLACEMENT -->
   <IncomePopup 
      v-if="isIncomePopupVisible" 
      :date="new Date()" 
