@@ -110,7 +110,7 @@ onUnmounted(() => {
     if (el) el.removeEventListener('scroll', onTimelineScroll);
 });
 
-// --- Widget Fullscreen Logic (Overlay) ---
+// --- Widget Fullscreen Logic ---
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
@@ -204,7 +204,7 @@ const handleItemClick = (item) => {
                     <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     </button>
-                    <!-- 🟢 Кнопка "Прогноз" возвращена по требованию -->
+                    <!-- 🟢 Кнопка "Прогноз" -->
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
                     </button>
@@ -268,32 +268,25 @@ const handleItemClick = (item) => {
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
-              <!-- WIDGETS GRID (Expanded Mode) -->
-              <MobileWidgetGrid 
-                  v-show="mainStore.isHeaderExpanded" 
-                  class="section-widgets expanded-mode" 
-                  @widget-click="onWidgetClick" 
-              />
+              <MobileWidgetGrid v-show="mainStore.isHeaderExpanded" class="section-widgets" @widget-click="onWidgetClick" />
               
-              <!-- TIMELINE & CHART (Standard Mode) -->
-              <!-- Скрываем их, если открыт режим "Все виджеты" (Expanded) -->
-              <template v-if="!mainStore.isHeaderExpanded">
-                  <div class="section-timeline">
-                    <MobileTimeline 
-                        v-if="isDataLoaded" 
-                        ref="timelineRef" 
-                        @show-menu="handleShowMenu" 
-                    />
-                  </div>
-                  
-                  <div class="section-chart">
-                    <MobileChartSection 
-                        v-if="isDataLoaded" 
-                        ref="chartRef" 
-                        @scroll="onChartScroll" 
-                    />
-                  </div>
-              </template>
+              <!-- Timeline Section -->
+              <div class="section-timeline">
+                <MobileTimeline 
+                    v-if="isDataLoaded" 
+                    ref="timelineRef" 
+                    @show-menu="handleShowMenu" 
+                />
+              </div>
+              
+              <!-- Chart Section -->
+              <div class="section-chart">
+                <MobileChartSection 
+                    v-if="isDataLoaded" 
+                    ref="chartRef" 
+                    @scroll="onChartScroll" 
+                />
+              </div>
             </div>
             
             <div class="fixed-footer">
@@ -380,17 +373,8 @@ const handleItemClick = (item) => {
 
 /* Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
-.layout-body { flex-grow: 1;  flex-direction: column; overflow: hidden; min-height: 0; }
-.section-widgets { flex-shrink: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-
-/* 🟢 ОБНОВЛЕНО: Сетка на весь экран в развернутом виде */
-.section-widgets.expanded-mode {
-    height: vh; /* Убираем ограничение */
-    flex-grow: 1;     /* Занимаем все место */
-    gap: 0 !important; /* Убираем отступы между виджетами */
-    padding: 0 !important; /* Убираем внутренние отступы */
-}
-
+.layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .section-widgets::-webkit-scrollbar { display: none; }
 .section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
 .section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
