@@ -102,7 +102,7 @@ const handleWidgetClick = (key) => {
 .grid-item {
   background-color: transparent;
   min-width: 0;
-  height: 200px;
+  height: 240px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
