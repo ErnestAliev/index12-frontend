@@ -88,7 +88,8 @@ const handleWidgetClick = (key) => {
 
 .widgets-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 🟢 ИЗМЕНЕНО: 1 колонка вместо 2 */
+  grid-template-columns: 1fr; 
   gap: 1px;
   background-color: var(--color-border, #444);
   padding: 1px 0;
@@ -101,18 +102,21 @@ const handleWidgetClick = (key) => {
 .grid-item {
   background-color: var(--color-background-soft, #282828);
   min-width: 0;
-  /* По умолчанию (портретная ориентация) */
-  height: 90px;
+  /* 🟢 ИЗМЕНЕНО: Высота увеличена до 150px */
+  height: 150px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
 }
 
-/* 🟢 LANDSCAPE MODE: Высота 130px при повороте экрана */
+/* 🟢 LANDSCAPE MODE: Оставляем или корректируем */
 @media (orientation: landscape) {
   .grid-item {
-    height: 130px;
+    height: 150px; /* Фиксируем и здесь */
   }
+  /* Опционально можно вернуть 2 колонки в ландшафте, если нужно:
+  .widgets-grid { grid-template-columns: 1fr 1fr; } 
+  */
 }
 
 .ghost {

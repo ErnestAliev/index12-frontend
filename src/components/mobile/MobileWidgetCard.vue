@@ -26,17 +26,21 @@ const isListWidget = computed(() => {
 });
 
 // 🟢 ЛОГИКА РАЗДЕЛЕНИЯ (ОБНОВЛЕНА)
-// Счета и Компании — это "Балансовые" (показываем Итог).
-// Все остальные (Доходы, Расходы, Контрагенты, Проекты, Кредиты и т.д.) — это "Потоковые" (показываем Дельту).
 const isBalanceWidget = computed(() => {
     return ['accounts', 'companies'].includes(props.widgetKey);
 });
 
+// 🟢 Детектор виджета предоплат
+const isLiabilitiesWidget = computed(() => props.widgetKey === 'liabilities');
+
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
-// 🟢 Реактивность данных
+// 🟢 Реактивность данных (для обычных виджетов)
 const items = computed(() => {
+  // Если это предоплаты, нам не нужен список items из useWidgetData
+  if (isLiabilitiesWidget.value) return [];
+
   // Триггеры реактивности
   if (mainStore.transactions) {};
   if (mainStore.categories) {};
@@ -44,6 +48,16 @@ const items = computed(() => {
 
   const rawList = getWidgetItems(props.widgetKey, isForecastActive.value);
   return filterAndSort(rawList);
+});
+
+// 🟢 Данные для предоплат (напрямую из стора, как в Desktop)
+const liabilitiesData = computed(() => {
+    return {
+        weOwe: mainStore.liabilitiesWeOwe || 0,
+        theyOwe: mainStore.liabilitiesTheyOwe || 0,
+        weOweFuture: mainStore.liabilitiesWeOweFuture || 0,
+        theyOweFuture: mainStore.liabilitiesTheyOweFuture || 0
+    };
 });
 
 function filterAndSort(originalList) {
@@ -65,7 +79,11 @@ function filterAndSort(originalList) {
     return list;
 }
 
-const isEmpty = computed(() => { if (isListWidget.value) return false; return items.value.length === 0; });
+const isEmpty = computed(() => { 
+    if (isLiabilitiesWidget.value) return false; // Предоплаты всегда показываем
+    if (isListWidget.value) return false; 
+    return items.value.length === 0; 
+});
 
 // Форматирование обычного числа (без знака)
 const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
@@ -87,7 +105,6 @@ const getDeltaClass = (val) => {
 // Цвет для баланса
 const getValueClass = (val) => {
     const num = Number(val) || 0;
-    if (props.widgetKey === 'liabilities') return num < 0 ? 'red-text' : 'white-text'; 
     
     // Для списков расходов всегда красный, если не 0
     if (isListWidget.value) { 
@@ -114,10 +131,42 @@ const handleClick = () => { emit('click', props.widgetKey); };
     </div>
 
     <div class="widget-body scrollable-list">
-      <div v-if="isEmpty" class="empty-text">Нет данных</div>
+      
+      <!-- 🟢 ВАРИАНТ 1: ПРЕДОПЛАТЫ (Как в Desktop) -->
+      <div v-if="isLiabilitiesWidget" class="items-list" :class="{ 'forecast-mode': isForecastActive }">
+          
+          <!-- Строка 1: Должны отработать (Красный) -->
+          <div class="list-item">
+              <div class="name-cell">Должны отработать</div>
+              <template v-if="isForecastActive">
+                  <div class="current-cell red-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
+                  <div class="arrow-cell">&gt;</div>
+                  <div class="future-cell red-text">{{ formatVal(liabilitiesData.weOweFuture) }}</div>
+              </template>
+              <template v-else>
+                  <div class="single-val-cell red-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
+              </template>
+          </div>
+
+          <!-- Строка 2: Должны получить (Оранжевый) -->
+          <div class="list-item">
+              <div class="name-cell">Должны получить</div>
+              <template v-if="isForecastActive">
+                  <div class="current-cell orange-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
+                  <div class="arrow-cell">&gt;</div>
+                  <div class="future-cell orange-text">{{ formatVal(liabilitiesData.theyOweFuture) }}</div>
+              </template>
+              <template v-else>
+                  <div class="single-val-cell orange-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
+              </template>
+          </div>
+      </div>
+
+      <!-- 🟢 ВАРИАНТ 2: ОБЫЧНЫЕ СПИСКИ ИЛИ ПУСТО -->
+      <div v-else-if="isEmpty" class="empty-text">Нет данных</div>
       
       <div v-else class="items-list" :class="{ 'forecast-mode': isForecastActive }">
-        <div v-for="item in items.slice(0, 5)" :key="item._id" class="list-item">
+        <div v-for="item in items.slice(0, 8)" :key="item._id" class="list-item">
           
           <!-- Название -->
           <div class="name-cell">
@@ -135,31 +184,27 @@ const handleClick = () => { emit('click', props.widgetKey); };
           </div>
           
           <template v-if="isForecastActive">
-              <!-- Текущее значение (всегда показываем слева) -->
+              <!-- Текущее значение -->
               <div class="current-cell" :class="getValueClass(item.currentBalance)">{{ formatVal(item.currentBalance) }}</div>
               <div class="arrow-cell">&gt;</div>
               
-              <!-- 🟢 ВАЖНО: Разделение логики отображения будущего -->
-              
-              <!-- 1. Для Счетов/Компаний (Баланс): Показываем ИТОГ (Текущее + Изменение) -->
+              <!-- Будущее: Итог или Дельта -->
               <div v-if="isBalanceWidget" class="future-cell" :class="getValueClass(item.currentBalance + (item.futureChange || 0))">
                   {{ formatVal(item.currentBalance + (item.futureChange || 0)) }}
               </div>
-
-              <!-- 2. Для Доходов/Расходов/Контрагентов/Проектов (Списки): Показываем ДЕЛЬТУ (+/- Изменение) -->
               <div v-else class="future-cell" :class="getDeltaClass(item.futureChange)">
                   {{ formatDelta(item.futureChange) }}
               </div>
           </template>
 
           <template v-else>
-              <!-- Обычный режим (без прогноза) -->
+              <!-- Обычный режим -->
               <div class="single-val-cell" :class="getValueClass(item.balance || item.currentBalance)">{{ formatVal(item.balance || item.currentBalance) }}</div>
           </template>
           
         </div>
         
-        <div v-if="items.length > 5" class="more-text">Еще {{ items.length - 5 }}...</div>
+        <div v-if="items.length > 8" class="more-text">Еще {{ items.length - 8 }}...</div>
       </div>
     </div>
   </div>
@@ -188,12 +233,12 @@ const handleClick = () => { emit('click', props.widgetKey); };
   padding: 8px 12px 4px 12px; 
   border-bottom: 1px solid rgba(255,255,255,0.05); 
   flex-shrink: 0; 
-  height: 22px; 
+  height: 26px; /* Увеличено с 22px для шрифта */
   box-sizing: content-box; 
 }
 .widget-title-row { display: flex; align-items: center; gap: 6px; overflow: hidden; }
-.widget-title { font-size: 10px; color: #aaa; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.forecast-badge { font-size: 9px; background-color: rgba(52, 199, 89, 0.15); color: var(--color-primary, #34c759); padding: 1px 4px; border-radius: 3px; font-weight: 500; }
+.widget-title { font-size: 13px; color: #aaa; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.forecast-badge { font-size: 10px; background-color: rgba(52, 199, 89, 0.15); color: var(--color-primary, #34c759); padding: 1px 4px; border-radius: 3px; font-weight: 500; }
 
 .widget-body { 
   flex-grow: 1; 
@@ -201,7 +246,7 @@ const handleClick = () => { emit('click', props.widgetKey); };
   display: flex; 
   flex-direction: column; 
   justify-content: flex-start; 
-  padding: 0 12px 8px 12px; 
+  padding: 4px 12px 8px 12px; 
 }
 
 @media (orientation: landscape) {
@@ -211,24 +256,24 @@ const handleClick = () => { emit('click', props.widgetKey); };
   }
 }
 
-.items-list { display: flex; flex-direction: column; gap: 3px; }
-.list-item { display: flex; justify-content: space-between; align-items: center; font-size: 10px; line-height: 1.4; }
-.items-list.forecast-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px auto; column-gap: 4px; row-gap: 3px; align-items: center; align-content: center; }
+.items-list { display: flex; flex-direction: column; gap: 4px; }
+.list-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; line-height: 1.4; }
+.items-list.forecast-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px auto; column-gap: 4px; row-gap: 4px; align-items: center; align-content: center; }
 .items-list.forecast-mode .list-item { display: contents; }
 
-.name-cell { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; display: flex; align-items: center; gap: 4px; }
+.name-cell { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; display: flex; align-items: center; gap: 6px; }
 
-.color-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.link-icon { color: var(--color-primary, #34c759); display: inline-flex; align-items: center; opacity: 0.7; }
+.color-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.link-icon { color: var(--color-primary, #34c759); display: inline-flex; align-items: center; opacity: 0.7; transform: scale(1.1); }
 
-.single-val-cell { text-align: right; white-space: nowrap; }
-.current-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.arrow-cell { text-align: center; color: #666; font-size: 9px; }
+.single-val-cell { text-align: right; white-space: nowrap; font-weight: 500; }
+.current-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; }
+.arrow-cell { text-align: center; color: #666; font-size: 11px; }
 .future-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
 .red-text { color: #ff3b30; }
 .green-text { color: #34c759; }
 .orange-text { color: #FF9D00; }
 .white-text { color: #fff; }
-.empty-text { font-size: 10px; color: #555; text-align: center; margin-top: 0; }
-.more-text { font-size: 10px; color: #666; text-align: right; margin-top: 2px; grid-column: 1 / -1; }
+.empty-text { font-size: 13px; color: #555; text-align: center; margin-top: 10px; }
+.more-text { font-size: 11px; color: #666; text-align: right; margin-top: 4px; grid-column: 1 / -1; }
 </style>
