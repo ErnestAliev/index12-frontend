@@ -13,7 +13,6 @@ const scrollContainer = ref(null);
 const windowWidth = ref(window.innerWidth);
 
 // 🟢 ФИКСИРОВАННАЯ ШИРИНА КОЛОНКИ: 25vw
-// Это гарантирует совпадение с графиком
 const COL_WIDTH_VW = 25; 
 const BUFFER_COLS = 4;
 
@@ -50,7 +49,7 @@ const generateAllDays = () => {
   }
   
   allDays.value = days;
-  updateVisibleDays();
+  // Не вызываем updateVisibleDays здесь напрямую, чтобы не конфликтовать со scrollToDate
 };
 
 const currentPaddingLeft = ref(0);
@@ -60,6 +59,7 @@ const updateVisibleDays = () => {
   
   const scrollLeft = scrollContainer.value.scrollLeft;
   const containerW = scrollContainer.value.clientWidth || windowWidth.value;
+  // Рассчитываем ширину колонки в пикселях на основе ширины окна
   const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
   
   if (!colWidthPx) return;
@@ -74,7 +74,6 @@ const updateVisibleDays = () => {
   currentPaddingLeft.value = renderStart * COL_WIDTH_VW;
 };
 
-// 🟢 Оптимизированный скролл: вызов rAF только для логики, не для UI
 const onScroll = () => {
   window.requestAnimationFrame(() => {
       updateVisibleDays();
@@ -97,27 +96,41 @@ const updateStorePosition = () => {
 
 const scrollToDate = (targetDate) => {
     if (!scrollContainer.value || allDays.value.length === 0) return;
+    
     let idx = allDays.value.findIndex(d => sameDay(d.date, targetDate));
+    
+    // Если точной даты нет, ищем "Сегодня" или середину
     if (idx === -1) idx = allDays.value.findIndex(d => d.isToday);
     if (idx === -1) idx = Math.floor(allDays.value.length / 2);
     
     const el = scrollContainer.value;
     const colWidthPx = (el.clientWidth / 100) * COL_WIDTH_VW;
+    
+    // Центрируем: (индекс * ширина) - (половина экрана) + (половина колонки)
     let scrollPos = (idx * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
     
     el.scrollLeft = Math.max(0, scrollPos);
+    
+    // Принудительно обновляем видимые дни после скролла
     updateVisibleDays();
 };
 
+// 🟢 ГЛАВНЫЙ ФИКС: При изменении проекции (переключении режима)
 watch(() => mainStore.projection, async () => {
   generateAllDays();
-  await nextTick();
-  if (mainStore.currentViewDate) { scrollToDate(new Date(mainStore.currentViewDate)); } 
-  else { scrollToDate(new Date()); }
+  
+  await nextTick(); // Ждем рендера DOM
+  
+  // Принудительно скроллим к текущей дате из стора (которую мы установили в ChartControls)
+  // или к "Сегодня", если дата потерялась
+  if (mainStore.currentViewDate) { 
+      scrollToDate(new Date(mainStore.currentViewDate)); 
+  } else { 
+      scrollToDate(new Date()); 
+  }
 }, { deep: true });
 
 watch(visibleDays, () => {
-    // Подгрузка данных при скролле
     visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey));
 }, { deep: true });
 
@@ -125,10 +138,9 @@ onMounted(() => {
   windowWidth.value = window.innerWidth;
   generateAllDays();
   const initialDate = mainStore.currentViewDate ? new Date(mainStore.currentViewDate) : new Date();
-  setTimeout(() => scrollToDate(initialDate), 50);
+  setTimeout(() => scrollToDate(initialDate), 100);
 });
 
-// Grid style
 const gridStyle = computed(() => ({
   display: 'grid',
   gridTemplateColumns: `repeat(${visibleDays.value.length}, ${COL_WIDTH_VW}vw)`,

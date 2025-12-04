@@ -20,14 +20,24 @@ const switchViewMode = async () => {
     const nextIndex = (currentIndex + 1) % viewModes.length;
     const newMode = viewModes[nextIndex];
     
+    // 🟢 Всегда сбрасываем на СЕГОДНЯ при переключении режима,
+    // чтобы не потеряться в датах (например, при переходе с Года на 12 дней)
     const currentTodayDate = new Date(); 
     
-    // 🟢 1. Мгновенно обновляем структуру (сетку)
+    // 1. Обновляем якорь "Сегодня" в сторе
+    const year = currentTodayDate.getFullYear();
+    const start = new Date(year, 0, 0);
+    const diff = (currentTodayDate - start) + ((start.getTimezoneOffset() - currentTodayDate.getTimezoneOffset()) * 60 * 1000);
+    const todayDayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    mainStore.setToday(todayDayOfYear);
+    mainStore.setCurrentViewDate(currentTodayDate); // Явно говорим стору, где мы
+
+    // 2. Мгновенно обновляем структуру проекции (UI перестроится сразу)
     mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
     
-    // 🟢 2. Запускаем загрузку данных в фоне (без await!),
-    // чтобы UI не блокировался. 
-    // Данные будут появляться по мере загрузки чанков.
+    // 3. Запускаем загрузку данных В ФОНЕ (без await)
+    // Это уберет "фриз" интерфейса при нажатии
     mainStore.loadCalculationData(newMode, currentTodayDate);
 };
 
@@ -47,8 +57,9 @@ const shiftPeriod = async (direction) => {
 
     const newDayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
     mainStore.setToday(newDayOfYear);
+    mainStore.setCurrentViewDate(date);
     
-    // Аналогично: обновляем UI мгновенно, данные грузим фоном
+    // Аналогично: UI обновляем сразу, данные грузим фоном
     mainStore.updateFutureProjectionByMode(viewMode.value, date);
     mainStore.loadCalculationData(viewMode.value, date);
 };
