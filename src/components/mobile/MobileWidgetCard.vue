@@ -100,15 +100,15 @@ const items = computed(() => {
 
       // 1. ACCOUNTS
       if (k === 'accounts') {
+          // 🟢 FIX: Цвет зависит от баланса СЧЕТА, а не владельца
+          color = getStatusColor(currentVal, maxBalance);
+
           const cId = getId(item.companyId);
           const iId = getId(item.individualId);
           const ownerId = cId || iId;
           
           if (ownerId) {
               hasLink = true;
-              // Color depends on Owner's total weight
-              const totalOwnerBalance = balances.get(ownerId) || 0;
-              color = getStatusColor(totalOwnerBalance, maxBalance);
           }
       }
       

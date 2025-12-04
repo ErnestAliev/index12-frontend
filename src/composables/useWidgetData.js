@@ -59,12 +59,21 @@ export function useWidgetData() {
         // Internal mapping function
         const mapItem = (item, futureMap) => {
             const currentVal = item.balance || 0;
-            const rawFutureVal = futureMap ? (futureMap.get(item._id) || 0) : 0;
+            const itemIdStr = String(item._id);
+            
+            // Получаем будущее значение из Map или берем текущее как fallback
+            let rawFutureVal = currentVal;
+            if (futureMap && futureMap.has(itemIdStr)) {
+                rawFutureVal = futureMap.get(itemIdStr);
+            }
+
             let delta = 0;
             
+            // Для сущностей с балансом (счета, компании) считаем дельту
             if (['accounts', 'companies', 'credits'].includes(k)) {
                 if (futureMap) delta = rawFutureVal - currentVal;
             } else {
+                // Для категорий/проектов (обороты) будущее значение и есть дельта (изменение)
                 delta = rawFutureVal;
             }
 
@@ -80,9 +89,10 @@ export function useWidgetData() {
                 const iId = getId(item.individualId);
                 const ownerId = cId || iId;
                 
+                color = getStatusColor(currentVal, maxBalance);
+
                 if (ownerId) {
                     hasLink = true;
-                    // Owner Name
                     let ownerName = 'Владелец';
                     if (cId) {
                         const c = mainStore.companies.find(x => x._id === cId);
@@ -92,10 +102,6 @@ export function useWidgetData() {
                         if (i) ownerName = i.name;
                     }
                     tooltipText = `Владелец: ${ownerName}`;
-
-                    // Color from Owner's weight
-                    const totalOwnerBalance = balances.get(ownerId) || 0;
-                    color = getStatusColor(totalOwnerBalance, maxBalance);
                 }
             }
             
@@ -136,6 +142,8 @@ export function useWidgetData() {
                 currentBalance: currentVal,
                 futureChange: delta,
                 totalForecast: currentVal + delta,
+                // 🟢 ВАЖНО: Это поле используется в полноэкранном режиме для второй колонки
+                futureBalance: rawFutureVal, 
                 linkMarkerColor: color,
                 isLinked: hasLink,
                 linkTooltip: tooltipText
@@ -146,28 +154,28 @@ export function useWidgetData() {
         if (k === 'accounts') {
             const current = mainStore.currentAccountBalances || [];
             const future = mainStore.futureAccountBalances || []; 
-            const futureMap = new Map(future.map(i => [i._id, i.balance]));
+            const futureMap = new Map(future.map(i => [String(i._id), i.balance]));
             return current.map(item => mapItem(item, futureMap));
         }
 
         if (k === 'companies') {
             const current = mainStore.currentCompanyBalances || [];
             const future = mainStore.futureCompanyBalances || []; 
-            const futureMap = new Map(future.map(i => [i._id, i.balance]));
+            const futureMap = new Map(future.map(i => [String(i._id), i.balance]));
             return current.map(item => mapItem(item, futureMap));
         }
         
         if (k === 'individuals') {
             const current = mainStore.currentIndividualBalances || [];
             const future = mainStore.futureIndividualChanges || []; 
-            const futureMap = new Map(future.map(i => [i._id, i.balance]));
+            const futureMap = new Map(future.map(i => [String(i._id), i.balance]));
             return current.map(item => mapItem(item, futureMap));
         }
 
         if (k === 'contractors') {
             const current = mainStore.currentContractorBalances || [];
             const future = mainStore.futureContractorChanges || []; 
-            const futureMap = new Map(future.map(c => [c._id, c.balance]));
+            const futureMap = new Map(future.map(c => [String(c._id), c.balance]));
             let list = current.map(item => mapItem(item, futureMap));
             const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
             return list.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
@@ -176,14 +184,14 @@ export function useWidgetData() {
         if (k === 'projects') {
             const current = mainStore.currentProjectBalances || [];
             const future = mainStore.futureProjectChanges || []; 
-            const futureMap = new Map(future.map(p => [p._id, p.balance]));
+            const futureMap = new Map(future.map(p => [String(p._id), p.balance]));
             return current.map(item => mapItem(item, futureMap));
         }
         
         if (k === 'categories') {
             const current = mainStore.currentCategoryBalances || [];
             const future = mainStore.futureCategoryBalances || []; 
-            const futureMap = new Map(future.map(c => [c._id, c.balance]));
+            const futureMap = new Map(future.map(c => [String(c._id), c.balance]));
             let list = current.map(item => mapItem(item, futureMap));
             const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
             return list.filter(c => visibleIds.has(c._id));
@@ -192,7 +200,7 @@ export function useWidgetData() {
         if (k === 'credits') {
             const current = mainStore.currentCreditBalances || [];
             const future = mainStore.futureCreditBalances || [];
-            const futureMap = new Map(future.map(c => [c._id, c.futureBalance]));
+            const futureMap = new Map(future.map(c => [String(c._id), c.futureBalance]));
             return current.map(item => mapItem(item, futureMap));
         }
 
@@ -202,8 +210,21 @@ export function useWidgetData() {
             const theyOweCurrent = mainStore.liabilitiesTheyOwe || 0;
             const theyOweFuture = mainStore.liabilitiesTheyOweFuture || 0;
             return [
-                { _id: 'we', name: 'Мы должны', currentBalance: weOweCurrent, futureChange: weOweFuture - weOweCurrent, totalForecast: weOweFuture },
-                { _id: 'they', name: 'Нам должны', currentBalance: theyOweCurrent, futureChange: theyOweFuture - theyOweCurrent, totalForecast: theyOweFuture, isIncome: true }
+                { 
+                    _id: 'we', name: 'Мы должны', 
+                    currentBalance: weOweCurrent, 
+                    futureChange: weOweFuture - weOweCurrent, 
+                    totalForecast: weOweFuture,
+                    futureBalance: weOweFuture // 🟢 Для полноэкранного
+                },
+                { 
+                    _id: 'they', name: 'Нам должны', 
+                    currentBalance: theyOweCurrent, 
+                    futureChange: theyOweFuture - theyOweCurrent, 
+                    totalForecast: theyOweFuture, 
+                    futureBalance: theyOweFuture, // 🟢 Для полноэкранного
+                    isIncome: true 
+                }
             ];
         }
         
@@ -229,6 +250,7 @@ export function useWidgetData() {
                 _id: 'total', name: 'Всего',
                 currentBalance: currentSum, futureChange: futureSum, totalForecast: currentSum + futureSum,
                 balance: isForecastActive ? (currentSum + futureSum) : currentSum,
+                futureBalance: currentSum + futureSum, // 🟢 Для полноэкранного
                 isList: true, isIncome: k === 'incomeList'
             }];
         }

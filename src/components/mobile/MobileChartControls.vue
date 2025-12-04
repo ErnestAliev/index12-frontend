@@ -4,7 +4,13 @@ import { useMainStore } from '@/stores/mainStore';
 
 const mainStore = useMainStore();
 
-// --- Навигация ---
+const props = defineProps({
+  showWidgetsToggle: { type: Boolean, default: true },
+  showChartIcon: { type: Boolean, default: true } // 🟢 Настройка скрытия левой иконки
+});
+
+const emit = defineEmits(['range-change']);
+
 const viewModes = ['12d', '1m', '3m', '6m', '1y'];
 const displayModes = { '12d': '12 ДНЕЙ', '1m': '1 МЕС', '3m': '3 МЕС', '6m': '6 МЕС', '1y': '1 ГОД' };
 
@@ -20,26 +26,23 @@ const switchViewMode = async () => {
     const nextIndex = (currentIndex + 1) % viewModes.length;
     const newMode = viewModes[nextIndex];
     
-    // 🟢 ВАЖНО: Принудительно сбрасываем дату на СЕГОДНЯ.
-    // Это гарантирует, что таймлайн вернется в исходное состояние,
-    // а не попытается найти дату из прошлого режима (которая может быть далеко).
     const currentTodayDate = new Date(); 
     
-    // 1. Явно обновляем якорь даты в сторе
     mainStore.setCurrentViewDate(currentTodayDate);
     
-    // Также обновляем todayDayOfYear, чтобы расчеты диапазонов шли от сегодня
     const start = new Date(currentTodayDate.getFullYear(), 0, 0);
     const diff = (currentTodayDate - start) + ((start.getTimezoneOffset() - currentTodayDate.getTimezoneOffset()) * 60 * 1000);
     const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
     mainStore.setToday(dayOfYear);
 
-    // 2. Мгновенно обновляем структуру (сетку)
-    mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
+    // Обновляем UI (текст на кнопке)
+    await mainStore.updateFutureProjectionByMode(newMode, currentTodayDate);
     
-    // 3. Запускаем загрузку данных в фоне (без await!),
-    // чтобы UI не блокировался и переключение было мгновенным.
+    // Грузим данные
     mainStore.loadCalculationData(newMode, currentTodayDate);
+    
+    // Сообщаем родителю
+    emit('range-change');
 };
 
 // Сдвиг периода (Стрелки)
@@ -58,13 +61,13 @@ const shiftPeriod = async (direction) => {
 
     const newDayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
     
-    // 🟢 Обновляем текущую дату и якорь при сдвиге
     mainStore.setToday(newDayOfYear);
     mainStore.setCurrentViewDate(date);
     
-    // Обновляем UI мгновенно, данные грузим фоном
-    mainStore.updateFutureProjectionByMode(viewMode.value, date);
+    await mainStore.updateFutureProjectionByMode(viewMode.value, date);
     mainStore.loadCalculationData(viewMode.value, date);
+    
+    emit('range-change');
 };
 
 const toggleWidgets = () => {
@@ -74,10 +77,15 @@ const toggleWidgets = () => {
 
 <template>
   <div class="chart-controls-panel">
-    <div class="icon-circle">
+    
+    <!-- 🟢 Левая иконка: показываем только если разрешено -->
+    <div v-if="showChartIcon" class="icon-circle">
        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
     </div>
+    <!-- Плейсхолдер, чтобы центровка не сбивалась -->
+    <div v-else class="icon-circle spacer"></div>
     
+    <!-- Центр -->
     <div class="nav-center">
       <button class="arrow-btn" @click="shiftPeriod(-1)">
          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -93,12 +101,14 @@ const toggleWidgets = () => {
       </button>
     </div>
 
-    <button class="icon-circle clickable" @click="toggleWidgets" :class="{ active: mainStore.isHeaderExpanded }">
+    <!-- Правая кнопка -->
+    <button v-if="showWidgetsToggle" class="icon-circle clickable" @click="toggleWidgets" :class="{ active: mainStore.isHeaderExpanded }">
        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect>
           <rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
        </svg>
     </button>
+    <div v-else class="icon-circle spacer"></div>
   </div>
 </template>
 
@@ -152,5 +162,9 @@ const toggleWidgets = () => {
   background-color: rgba(255,255,255,0.1); 
   border-color: #fff; 
   color: #fff; 
+}
+.icon-circle.spacer {
+    border-color: transparent;
+    pointer-events: none;
 }
 </style>

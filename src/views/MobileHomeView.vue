@@ -10,6 +10,7 @@ import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
 import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
 import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
+import MobileChartControls from '@/components/mobile/MobileChartControls.vue'; // 🟢 Остался только для нижнего бара, если используется там
 
 // Modals
 import EntityPopup from '@/components/EntityPopup.vue';
@@ -24,15 +25,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import SmartDealPopup from '@/components/SmartDealPopup.vue';
-
-/**
- * * --- МЕТКА ВЕРСИИ: v54.0 - SMOOTH SCROLL SYNC ---
- * * ВЕРСИЯ: 54.0
- * * ДАТА: 2025-12-04
- * * ИЗМЕНЕНИЯ:
- * 1. (PERF) Внедрен Mutex для синхронизации скролла без задержек (onTimelineScroll/onChartScroll).
- * 2. (FIX) Убраны requestAnimationFrame в скролле для мгновенного отклика.
- */
+import InfoModal from '@/components/InfoModal.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -44,82 +37,64 @@ const chartRef = ref(null);
 const showGraphModal = ref(false);
 const isDataLoaded = ref(false); 
 
-// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (MUTEX PATTERN) ---
+// --- СОСТОЯНИЕ ДЛЯ ИНФО-МОДАЛКИ ---
+const showInfoModal = ref(false);
+const infoModalTitle = ref('');
+const infoModalMessage = ref('');
+
+// --- СИНХРОНИЗАЦИЯ СКРОЛЛА ---
 const isTimelineScrolling = ref(false);
 const isChartScrolling = ref(false);
 let tTimeout = null;
 let cTimeout = null;
 
 const onTimelineScroll = (event) => { 
-    // Если скролл инициирован графиком, игнорируем, чтобы избежать цикла
     if (isChartScrolling.value) return; 
-    
     isTimelineScrolling.value = true; 
     const left = event.target.scrollLeft;
-
-    // Мгновенная передача позиции в график
-    if (chartRef.value) {
-        chartRef.value.setScroll(left);
-    } 
-    
-    // Сброс флага через небольшой таймаут (debounce окончания скролла)
-    clearTimeout(tTimeout);
-    tTimeout = setTimeout(() => { isTimelineScrolling.value = false; }, 60); 
+    if (chartRef.value) { chartRef.value.setScroll(left); } 
+    clearTimeout(tTimeout); tTimeout = setTimeout(() => { isTimelineScrolling.value = false; }, 60); 
 };
 
 const onChartScroll = (left) => { 
-    // Если скролл инициирован таймлайном, игнорируем
     if (isTimelineScrolling.value) return; 
-    
     isChartScrolling.value = true; 
-    
-    // Прямой доступ к DOM таймлайна для скорости
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); 
-    if (el) {
-        el.scrollLeft = left; 
-    }
-    
-    clearTimeout(cTimeout);
-    cTimeout = setTimeout(() => { isChartScrolling.value = false; }, 60); 
+    if (el) { el.scrollLeft = left; }
+    clearTimeout(cTimeout); cTimeout = setTimeout(() => { isChartScrolling.value = false; }, 60); 
 };
 
-// --- Инициализация начальной позиции ---
 const initScrollSync = () => {
     if (!timelineRef.value) return;
     const el = timelineRef.value.$el.querySelector('.timeline-scroll-area');
     if (el) { 
-        // Удаляем старые слушатели, чтобы не дублировать
         el.removeEventListener('scroll', onTimelineScroll);
-        // Добавляем пассивный слушатель для производительности
         el.addEventListener('scroll', onTimelineScroll, { passive: true }); 
-        
-        // Установка начальной позиции (центр или сегодня)
-        // Логика установки позиции должна быть в MobileTimeline через scrollToDate, 
-        // но здесь мы можем подстраховать
     }
 };
 
-// --- Lifecycle ---
 onMounted(async () => {
+  const meta = document.createElement('meta');
+  meta.name = "format-detection";
+  meta.content = "telephone=no, date=no, email=no, address=no";
+  document.getElementsByTagName('head')[0].appendChild(meta);
+
   try {
       await mainStore.checkAuth();
       if (!mainStore.user) return;
       await mainStore.fetchAllEntities();
       
       const today = new Date();
-      // Устанавливаем текущий день
       mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
 
       await mainStore.loadCalculationData('12d', today);
       isDataLoaded.value = true; 
 
-      // Восстановление проекции
       const savedProj = localStorage.getItem('projection');
       if (savedProj) {
           try {
               const parsed = JSON.parse(savedProj);
               if (parsed.mode && parsed.mode !== '12d') {
-                  // Фоновая загрузка, чтобы не блочить UI
                   setTimeout(async () => {
                       await mainStore.updateFutureProjectionByMode(parsed.mode, today);
                       await mainStore.loadCalculationData(parsed.mode, today);
@@ -127,14 +102,8 @@ onMounted(async () => {
               }
           } catch (e) { console.error("Error parsing saved projection", e); }
       }
-
-      // Инициализация слушателей после рендера DOM
-      nextTick(() => {
-          initScrollSync();
-      });
-  } catch (error) {
-      console.error("Critical error in MobileHomeView mount:", error);
-  }
+      nextTick(() => { initScrollSync(); });
+  } catch (error) { console.error("Critical error in MobileHomeView mount:", error); }
 });
 
 onUnmounted(() => {
@@ -142,14 +111,23 @@ onUnmounted(() => {
     if (el) el.removeEventListener('scroll', onTimelineScroll);
 });
 
-
-// --- Остальная логика попапов и виджетов (без изменений) ---
+// --- Widget Fullscreen Logic ---
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
+
 watch(isWidgetFullscreen, (isOpen) => {
-    if (isOpen) { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; } 
-    else { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); }
+    if (isOpen) { 
+        document.body.style.overflow = 'hidden'; 
+        document.documentElement.style.overflow = 'hidden'; 
+        // 🟢 ИСПРАВЛЕНО: Убрано автоматическое включение прогноза
+    } 
+    else { 
+        document.body.style.overflow = ''; 
+        document.documentElement.style.overflow = ''; 
+        nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); 
+    }
 });
+
 const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
 const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
 const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
@@ -158,11 +136,10 @@ const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories'].includes(k); });
-const { getWidgetItems: getItems } = useWidgetData(); 
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
   if (!isListWidget.value) {
-      const items = getItems(k, showFutureBalance.value);
+      const items = getWidgetItems(k, showFutureBalance.value);
       let filtered = [...items];
       const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
       if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
@@ -189,6 +166,27 @@ const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Da
 const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
 const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
+const popupSaveAction = (val) => {};
+
+// 🟢 ОБРАБОТЧИК: Если меняют диапазон -> включаем Прогноз
+const onRangeChange = () => {
+    if (!showFutureBalance.value) {
+        showFutureBalance.value = true;
+    }
+};
+
+// 🟢 НОВЫЙ ОБРАБОТЧИК КЛИКА: Показывает подсказку или открывает редактор
+const handleItemClick = (item) => {
+    if (item.isList && item.originalOp) {
+        // Если это операция (из списка доходов/расходов) - редактируем
+        handleEditOperation(item.originalOp);
+    } else if (!item.isList && item.isLinked && item.linkTooltip) {
+        // Если это сущность (счет/физлицо) со связью - показываем подсказку в InfoModal
+        infoModalTitle.value = 'Связь';
+        infoModalMessage.value = item.linkTooltip;
+        showInfoModal.value = true;
+    }
+};
 </script>
 
 <template>
@@ -217,16 +215,27 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
                     <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     </button>
+                    <!-- 🟢 Кнопка "Прогноз" возвращена по требованию -->
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
                     </button>
                 </div>
             </div>
             
+            <!-- 🟢 ВСТАВЛЯЕМ КОНТРОЛЫ ДИАПАЗОНА (Скрывая левую иконку) -->
+            <MobileChartControls 
+                :show-widgets-toggle="false" 
+                :show-chart-icon="false"
+                class="fs-chart-controls" 
+                @range-change="onRangeChange" 
+            />
+            
+            <!-- 🔴 ГРАФИК УДАЛЕН ИЗ FS -->
+
             <div class="fs-body">
                 <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
                 <div class="fs-list">
-                    <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="item.originalOp ? handleEditOperation(item.originalOp) : null">
+                    <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="handleItemClick(item)">
                        <template v-if="item.isList">
                            <div class="fs-item-left">
                                <div class="fs-date">{{ formatDateShort(item.date) }}</div>
@@ -254,6 +263,7 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
                                <div v-else class="fs-val-forecast">
                                    <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
                                    <span class="fs-arrow">></span>
+                                   <!-- 🟢 ИСПОЛЬЗУЕМ futureBalance из обновленного useWidgetData -->
                                    <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">{{ formatDelta(item.futureChange) }}</span>
                                    <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">{{ formatVal(item.futureBalance) }}</span>
                                </div>
@@ -304,6 +314,14 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
         </template>
 
         <!-- Popups -->
+        <!-- 🟢 Info Modal -->
+        <InfoModal 
+           v-if="showInfoModal"
+           :title="infoModalTitle"
+           :message="infoModalMessage"
+           @close="showInfoModal = false"
+        />
+
         <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
         <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
         <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" />
@@ -334,6 +352,16 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
 .fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--color-border, #444); background-color: var(--color-background-soft, #282828); }
 .fs-title { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
 .fs-controls { display: flex; gap: 8px; }
+
+/* 🟢 Стили для встроенных контролов */
+.fs-chart-controls { 
+    border-top: none; 
+    border-bottom: 1px solid var(--color-border, #444); 
+    background-color: #282828; 
+    flex-shrink: 0; /* Чтобы не сжималась при нехватке места */
+    z-index: 10;
+}
+
 .action-square-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
