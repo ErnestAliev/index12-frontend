@@ -9,30 +9,17 @@ const mainStore = useMainStore();
 
 const gridWidgets = computed({
   get: () => {
-    // 🟢 FIX: Используем allWidgets, чтобы показать ВСЕ доступные виджеты,
-    // а не только те, что добавлены на дашборд (dashboardLayout).
-    // Если нужно сохранить пользовательский порядок, то логика должна быть сложнее (merge layout + rest),
-    // но для "увидеть все" берем исходный список.
-    
-    // Однако, если мы хотим использовать draggable для сортировки, нам всё же нужен dashboardLayout.
-    // Если проблема была в том, что в layout не все виджеты, то это вопрос к store.
-    
-    // Но давайте сделаем гибрид: берем layout, и если там чего-то нет из allWidgets, добавляем в конец.
-    
     let layout = [...mainStore.dashboardLayout];
     const allKeys = mainStore.allWidgets.map(w => w.key);
     
-    // Добавляем недостающие виджеты (которых нет в layout)
     allKeys.forEach(key => {
         if (!layout.includes(key)) {
             layout.push(key);
         }
     });
 
-    // Фильтруем системные
     layout = layout.filter(key => key !== 'currentTotal' && key !== 'futureTotal' && !key.startsWith('placeholder_'));
     
-    // В свернутом виде — пусто (только шапка)
     if (!mainStore.isHeaderExpanded) {
       return []; 
     }
@@ -40,13 +27,8 @@ const gridWidgets = computed({
     return layout;
   },
   set: (newOrder) => {
-    // При изменении порядка обновляем dashboardLayout
-    // Сохраняем системные виджеты, которые могли быть отфильтрованы
     const currentLayout = mainStore.dashboardLayout;
     const hidden = currentLayout.filter(key => key === 'currentTotal' || key === 'futureTotal' || key.startsWith('placeholder_'));
-    
-    // Если в newOrder есть виджеты, которых не было в dashboardLayout (мы их добавили в get),
-    // то теперь они сохранятся в layout.
     mainStore.dashboardLayout = [...newOrder, ...hidden];
   }
 });
@@ -119,10 +101,18 @@ const handleWidgetClick = (key) => {
 .grid-item {
   background-color: var(--color-background-soft, #282828);
   min-width: 0;
+  /* По умолчанию (портретная ориентация) */
   height: 90px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
+}
+
+/* 🟢 LANDSCAPE MODE: Высота 130px при повороте экрана */
+@media (orientation: landscape) {
+  .grid-item {
+    height: 130px;
+  }
 }
 
 .ghost {
