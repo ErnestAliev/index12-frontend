@@ -36,8 +36,68 @@ const updateFilterPosition = () => {
   }
 };
 
+// --- Хелпер для безопасного извлечения ID ---
+const getId = (field) => {
+    if (!field) return null;
+    if (typeof field === 'object' && field._id) return field._id;
+    return field; // Если это строка
+};
+
+// 🟢 1. ВЫЧИСЛЕНИЕ ОБЩЕГО БАЛАНСА СИСТЕМЫ И БАЛАНСОВ ВЛАДЕЛЬЦЕВ
+const financialStats = computed(() => {
+    const balances = new Map(); // Map<OwnerID, TotalBalance>
+    let systemTotalBalance = 0; // Общая сумма денег во всей системе (Эталон)
+
+    // 🟢 FIX: Берем currentAccountBalances, так как в mainStore.accounts баланса может не быть
+    const sourceAccounts = mainStore.currentAccountBalances || [];
+
+    sourceAccounts.forEach(acc => {
+        // Принудительно конвертируем в число
+        const rawBalance = Number(acc.balance);
+        const balance = isNaN(rawBalance) ? 0 : rawBalance; 
+        
+        // Суммируем общий капитал системы
+        systemTotalBalance += balance;
+
+        // Определяем владельца
+        const cId = getId(acc.companyId);
+        const iId = getId(acc.individualId);
+        const ownerId = cId || iId;
+
+        if (ownerId) {
+            const current = balances.get(ownerId) || 0;
+            const newTotal = current + balance; 
+            balances.set(ownerId, newTotal);
+        }
+    });
+
+    // Если общий баланс <= 0, ставим 1 для безопасности деления
+    const maxBalance = systemTotalBalance > 0 ? systemTotalBalance : 1;
+
+    return { balances, maxBalance };
+});
+
+// 🟢 2. ЛОГИКА ЦВЕТА (СВЕТОФОР)
+// Сравниваем баланс с ОБЩИМ БАЛАНСОМ СИСТЕМЫ
+const getStatusColor = (currentBalance, totalSystemBalance) => {
+    const safeBalance = Number(currentBalance) || 0;
+    
+    // Если баланс <= 0 -> Красный (нет вклада в общую сумму)
+    if (safeBalance <= 0) return '#FF3B30'; 
+
+    const ratio = safeBalance / totalSystemBalance;
+    
+    // >= 50% от всей системы -> Зеленый
+    if (ratio >= 0.5) return '#34C759'; 
+    // От 10% до 50% -> Желтый
+    if (ratio > 0.1) return '#FFCC00';  
+    // <= 10% -> Красный
+    return '#FF3B30';                   
+};
+
 const processedItems = computed(() => {
   let items = [...props.items];
+  
   if (filterMode.value === 'positive') items = items.filter(item => (item.balance || 0) > 0);
   else if (filterMode.value === 'negative') items = items.filter(item => (item.balance || 0) < 0);
   else if (filterMode.value === 'nonZero') items = items.filter(item => (item.balance || 0) !== 0);
@@ -45,7 +105,86 @@ const processedItems = computed(() => {
   if (sortMode.value === 'desc') items.sort((a, b) => (b.balance || 0) - (a.balance || 0));
   else if (sortMode.value === 'asc') items.sort((a, b) => (a.balance || 0) - (b.balance || 0));
   else items.sort((a, b) => (a.order || 0) - (b.order || 0));
-  return items;
+
+  const { balances, maxBalance } = financialStats.value;
+
+  return items.map(item => {
+      let color = null;
+      let hasLink = false;
+      let tooltipText = ''; 
+
+      const itemId = getId(item); // ID самой строки
+
+      // --- ЛОГИКА ДЛЯ СЧЕТОВ ---
+      if (props.widgetKey === 'accounts') {
+          // 1. Цвет определяется ЛИЧНЫМ балансом счета относительно ОБЩЕГО
+          color = getStatusColor(item.balance, maxBalance);
+
+          // 2. Связи и подсказки
+          const cId = getId(item.companyId);
+          const iId = getId(item.individualId);
+          const ownerId = cId || iId;
+          
+          if (ownerId) {
+              hasLink = true;
+              
+              let ownerName = 'Владелец';
+              if (cId) {
+                  const c = mainStore.companies.find(x => x._id === cId);
+                  if (c) ownerName = c.name;
+              } else if (iId) {
+                  const i = mainStore.individuals.find(x => x._id === iId);
+                  if (i) ownerName = i.name;
+              }
+              tooltipText = `Владелец: ${ownerName}`;
+          }
+      }
+      
+      // --- ЛОГИКА ДЛЯ КОМПАНИЙ ---
+      else if (props.widgetKey === 'companies') {
+          // Цвет зависит от СУММАРНОГО баланса компании
+          const totalBalance = balances.get(itemId) || 0;
+          color = getStatusColor(totalBalance, maxBalance);
+
+          // Ищем связанные счета
+          const companyAccounts = mainStore.accounts.filter(acc => getId(acc.companyId) === itemId);
+
+          if (companyAccounts.length > 0) {
+              hasLink = true;
+              const accNames = companyAccounts.map(a => a.name).join(', ');
+              tooltipText = `Счета: ${accNames}`;
+          } else {
+              hasLink = false;
+              tooltipText = 'Нет связанных счетов';
+          }
+      }
+
+      // --- ЛОГИКА ДЛЯ ФИЗЛИЦ ---
+      else if (props.widgetKey === 'individuals') {
+          const linkedAccounts = mainStore.accounts.filter(acc => getId(acc.individualId) === itemId);
+
+          if (linkedAccounts.length > 0) {
+              hasLink = true;
+              const accNames = linkedAccounts.map(a => a.name).join(', ');
+              tooltipText = `Связан со счетом: ${accNames}`;
+              
+              // Цвет зависит от суммарного баланса физлица
+              const totalBalance = balances.get(itemId) || 0;
+              color = getStatusColor(totalBalance, maxBalance);
+          } else {
+              // Если нет счетов — кружок не показываем
+              hasLink = false;
+              color = null; 
+          }
+      }
+
+      return {
+          ...item,
+          linkMarkerColor: color,
+          isLinked: hasLink,
+          linkTooltip: tooltipText
+      };
+  });
 });
 
 const setSortMode = (mode) => { sortMode.value = mode; };
@@ -133,8 +272,23 @@ const formatDelta = (val) => {
     <div class="card-items-list" :class="{ 'forecast-mode': showFutureBalance }">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
         <span class="name-cell">
+          
+          <!-- 🟢 ЦВЕТНОЙ КРУЖОЧЕК -->
+          <span 
+            v-if="item.linkMarkerColor" 
+            class="color-dot" 
+            :style="{ backgroundColor: item.linkMarkerColor }"
+            :title="item.linkTooltip"
+          ></span>
+
           {{ item.name }}
-          <span v-if="item.linkedAccountName" class="link-icon" :title="`Связан со счетом: ${item.linkedAccountName}`">
+          
+          <!-- 🟢 ЗНАЧОК СВЯЗИ -->
+          <span 
+            v-if="item.isLinked" 
+            class="link-icon" 
+            :title="item.linkTooltip"
+          >
              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
           </span>
         </span>
@@ -189,7 +343,6 @@ const formatDelta = (val) => {
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 
-/* 🟢 1. ФОН КНОПОК */
 .action-square-btn { 
   width: 18px; height: 18px; 
   border: 1px solid transparent; border-radius: 4px; 
@@ -208,7 +361,6 @@ const formatDelta = (val) => {
 }
 .card-items-list::-webkit-scrollbar { display: none; }
 
-/* 🟢 2. ШРИФТЫ */
 .card-item { 
   display: flex; 
   justify-content: space-between; 
@@ -224,8 +376,6 @@ const formatDelta = (val) => {
   align-items: center;
   align-content: start;
   font-size: var(--font-sm);
-  
-  /* 🟢 3. КОМПЕНСАЦИЯ ВЫСОТЫ */
   row-gap: 2px; 
 }
 
@@ -236,6 +386,16 @@ const formatDelta = (val) => {
   color: var(--text-soft); 
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   display: flex; align-items: center; gap: 6px;
+}
+
+/* 🟢 СТИЛЬ ДЛЯ ЦВЕТНОГО КРУЖОЧКА */
+.color-dot {
+  width: 8px; 
+  height: 8px; 
+  border-radius: 50%; 
+  display: inline-block;
+  flex-shrink: 0;
+  /* Убираем бордер, чтобы цвет был чище */
 }
 
 .link-icon { color: var(--color-primary); display: inline-flex; align-items: center; opacity: 0.6; cursor: help; }

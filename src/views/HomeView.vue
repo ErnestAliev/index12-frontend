@@ -23,7 +23,7 @@ import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
 import RefundPopup from '@/components/RefundPopup.vue'; 
 import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
 
-console.log('--- HomeView.vue v50.2 (Project ID Fix) Loaded ---'); 
+console.log('--- HomeView.vue v51.0 (Reactive Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -129,7 +129,6 @@ const handleSwitchToPrepayment = (data) => {
 // 2. ОБРАБОТЧИК: Сохранение предоплаты
 const handlePrepaymentSave = async (finalData) => {
     isPrepaymentModalVisible.value = false;
-    
     try {
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
@@ -143,9 +142,7 @@ const handlePrepaymentSave = async (finalData) => {
         finalData.description = `Предоплата`;
 
         await mainStore.createEvent(finalData);
-        await mainStore.fetchAllEntities();
-        await mainStore.loadCalculationData(viewMode.value, today.value);
-
+        // 🟢 FIX: Убраны fetchAllEntities и loadCalculationData
     } catch (e) {
         console.error('Prepayment Save Error:', e);
         alert('Не удалось сохранить предоплату: ' + e.message);
@@ -237,11 +234,7 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
              );
         }
         
-        setTimeout(async () => {
-            await mainStore.fetchAllEntities(); 
-            await mainStore.loadCalculationData(viewMode.value, today.value);
-        }, 100);
-
+        // 🟢 FIX: Убраны лишние перезагрузки данных
     } catch (e) {
         console.error('Smart Deal Error:', e);
         alert('Ошибка при проведении транша: ' + e.message);
@@ -262,15 +255,11 @@ const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
              }
              await mainStore.createEvent(data);
         } else if (mode === 'edit') {
-            const oldDateKey = originalOperation?.dateKey;
             await mainStore.updateOperation(id, data);
-            if (oldDateKey && oldDateKey !== data.dateKey) {
-                await mainStore.refreshDay(oldDateKey);
-            }
         }
-        await mainStore.loadCalculationData(viewMode.value, today.value);
+        // 🟢 FIX: Убрана loadCalculationData, store сам обновляет проекцию
     } catch (error) {
-        console.error('Background Save Error (Operation):', error);
+        console.error('Save Error (Operation):', error);
         alert('Ошибка сохранения операции.');
     }
 };
@@ -424,7 +413,7 @@ const recalcProjectionForCurrentView = async () => { await mainStore.loadCalcula
 const handleOperationDelete = async (operation) => { 
     if (!operation) return; 
     await mainStore.deleteOperation(operation); 
-    await recalcProjectionForCurrentView(); 
+    // 🟢 FIX: Убрана явная перезагрузка проекции
     visibleDays.value = [...visibleDays.value]; 
     handleClosePopup(); 
     handleCloseTransferPopup();
@@ -484,22 +473,48 @@ onMounted(async () => { checkDayChange(); dayChangeCheckerInterval = setInterval
 onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); } window.removeEventListener('resize', onWindowResize); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
 
 // --- Transfer, Retail, Refund Handlers ---
-const handleTransferSave = async ({ mode, id, data }) => { handleCloseTransferPopup(); try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else if (mode === 'edit') { await mainStore.updateTransfer(id, data); } await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка сохранения перевода'); } };
-const handleWithdrawalSave = async ({ mode, id, data }) => { isWithdrawalPopupVisible.value = false; try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка сохранения вывода'); } };
+const handleTransferSave = async ({ mode, id, data }) => { 
+    handleCloseTransferPopup(); 
+    try { 
+        if (mode === 'create') { 
+            if (data.cellIndex === undefined) { 
+                const dateKey = mainStore._getDateKey(new Date(data.date)); 
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); 
+            } 
+            await mainStore.createTransfer(data); 
+        } else if (mode === 'edit') { 
+            await mainStore.updateTransfer(id, data); 
+        } 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка сохранения перевода'); } 
+};
 
-// 🟢 ИСПРАВЛЕНИЕ: Получаем projectId корректно
+const handleWithdrawalSave = async ({ mode, id, data }) => { 
+    isWithdrawalPopupVisible.value = false; 
+    try { 
+        if (mode === 'create') { 
+            if (data.cellIndex === undefined) { 
+                const dateKey = mainStore._getDateKey(new Date(data.date)); 
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); 
+            } 
+            await mainStore.createEvent(data); 
+        } else { 
+            await mainStore.updateOperation(id, data); 
+        } 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка сохранения вывода'); } 
+};
+
 const handleRetailSave = async ({ id, data }) => { 
     isRetailPopupVisible.value = false; 
     try { 
-        // Если пришел массив (projectIds) - берем первый элемент, иначе берем projectId
         const pId = data.projectId || (data.projectIds && data.projectIds.length > 0 ? data.projectIds[0] : null);
-        
         await mainStore.updateOperation(id, { 
             amount: -Math.abs(data.amount), 
             projectId: pId,
             date: new Date(data.date) 
         }); 
-        await mainStore.loadCalculationData(viewMode.value, today.value); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { 
         alert('Ошибка сохранения списания: ' + e.message); 
     } 
@@ -507,19 +522,37 @@ const handleRetailSave = async ({ id, data }) => {
 
 const handleRetailClosure = async (payload) => {
     try {
-        // 🟢 FIX: Гарантированно извлекаем projectId для группировки
         const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null);
-        
         await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId);
         showRetailPopup.value = false; 
-        
-        setTimeout(() => { mainStore.loadCalculationData(viewMode.value, today.value); }, 100);
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка: ' + e.message); }
 };
 
-const handleRetailDelete = async (op) => { isRetailPopupVisible.value = false; try { await mainStore.deleteOperation(op); await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка удаления'); } };
-const handleRefundSave = async ({ mode, id, data }) => { isRefundPopupVisible.value = false; try { if (mode === 'create') await mainStore.createEvent(data); else await mainStore.updateOperation(id, data); await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка сохранения возврата'); } };
-const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; try { await mainStore.deleteOperation(op); await mainStore.loadCalculationData(viewMode.value, today.value); } catch (e) { alert('Ошибка удаления'); } };
+const handleRetailDelete = async (op) => { 
+    isRetailPopupVisible.value = false; 
+    try { 
+        await mainStore.deleteOperation(op); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка удаления'); } 
+};
+
+const handleRefundSave = async ({ mode, id, data }) => { 
+    isRefundPopupVisible.value = false; 
+    try { 
+        if (mode === 'create') await mainStore.createEvent(data); 
+        else await mainStore.updateOperation(id, data); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка сохранения возврата'); } 
+};
+
+const handleRefundDelete = async (op) => { 
+    isRefundPopupVisible.value = false; 
+    try { 
+        await mainStore.deleteOperation(op); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка удаления'); } 
+};
 </script>
 
 <template>

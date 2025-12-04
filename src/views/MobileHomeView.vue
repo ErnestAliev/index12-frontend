@@ -23,9 +23,12 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v43.2 - MOBILE CREDITS WIDGET ---
- * * ВЕРСИЯ: 43.2 - Добавлена поддержка виджета "Мои кредиты"
- * * ДАТА: 2025-12-03
+ * * --- МЕТКА ВЕРСИИ: v52.0 - OPTIMIZED REFRESH ---
+ * * ВЕРСИЯ: 52.0
+ * * ДАТА: 2025-12-04
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FIX) Убрана перезагрузка loadCalculationData из handleOperationSave.
+ * 2. (FIX) Реализован корректный вызов создания перевода в handleTransferSave.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -425,7 +428,7 @@ const handleOperationSave = async ({ mode, id, data }) => {
         } else {
             await mainStore.updateOperation(id, data);
         }
-        await mainStore.loadCalculationData(mainStore.projection.mode, new Date());
+        // 🟢 FIX: Убрана лишняя перезагрузка
         isIncomePopupVisible.value = false;
         isExpensePopupVisible.value = false;
         operationToEdit.value = null;
@@ -436,7 +439,21 @@ const handleOperationSave = async ({ mode, id, data }) => {
 };
 
 const handleTransferSave = async ({ mode, id, data }) => {
-    isTransferPopupVisible.value = false;
+    try {
+        if (mode === 'create') {
+            if (data.cellIndex === undefined) {
+                 const dateKey = mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+            }
+            await mainStore.createTransfer(data);
+        } else {
+            await mainStore.updateTransfer(id, data);
+        }
+        isTransferPopupVisible.value = false;
+    } catch (e) {
+        console.error("Mobile Transfer Save Error", e);
+        alert("Ошибка перевода");
+    }
 };
 
 const popupSaveAction = (val) => {};
@@ -596,7 +613,7 @@ const popupSaveAction = (val) => {};
            @save="handleOperationSave" 
         />
 
-        <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" />
+        <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
         <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
         <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
         <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />

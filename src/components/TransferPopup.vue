@@ -4,16 +4,14 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
-import { accountSuggestions } from '@/data/accountSuggestions.js'; // 🟢 1. Импорт
+import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.1 - AUTOCOMPLETE FIX ---
- * * ВЕРСИЯ: 27.1
+ * * --- МЕТКА ВЕРСИИ: v27.2 - TRANSFER HINT FIX ---
+ * * ВЕРСИЯ: 27.2
  * * ДАТА: 2025-12-04
  * * ИЗМЕНЕНИЯ:
- * 1. (FEAT) Автоподстановка названий счетов (accountSuggestions).
- * 2. (FIX) Добавлен флаг isProgrammaticUpdate для списков.
- * 3. КОД ПОЛНЫЙ, БЕЗ СОКРАЩЕНИЙ.
+ * 1. (FIX) smartHint: Исправлен текст для перевода от Физлица (Вложение средств).
  */
 
 const mainStore = useMainStore();
@@ -49,6 +47,10 @@ const smartHint = computed(() => {
     return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
   }
   if (transferPurpose.value === 'inter_company') {
+    // 🟢 FIX: Проверка отправителя-физлица
+    if (selectedFromOwner.value && selectedFromOwner.value.startsWith('individual-')) {
+        return 'Перевод с личной карты/счета на нужды компании (Вложение средств).';
+    }
     return 'Вы переводите деньги между своими компаниями. Деньги бизнеса -> Деньги другого бизнеса.';
   }
   if (transferPurpose.value === 'personal') {

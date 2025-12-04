@@ -18,7 +18,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v77.0 (SNAPSHOT SYNC FIX) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v81.0 (INSTANT REACTIVITY FIX) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -136,10 +136,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const _isPrepaymentOp = (op) => {
       if (!op) return false;
-      // 🟢 FIX: Не скрываем сделки из доходов, если у них нормальная категория (не "Предоплата")
-      // if ((op.totalDealAmount || 0) > 0) return true;
-      // if (op.isDealTranche === true) return true;
-      
       const prepayIds = prepaymentCategoryIdsSet.value; 
       const catId = op.categoryId?._id || op.categoryId;
       const prepId = op.prepaymentId?._id || op.prepaymentId;
@@ -546,12 +542,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/snapshot`);
       snapshot.value = res.data;
     } catch (e) {
-      // Enhanced logging for diagnostics
-      console.error('Failed to fetch snapshot. Full error object:', e);
-      if (e.response) {
-          console.error('Server response status:', e.response.status);
-          console.error('Server response data:', JSON.stringify(e.response.data, null, 2));
-      }
+      console.error('Failed to fetch snapshot:', e);
     }
   }
 
@@ -1113,8 +1104,8 @@ export const useMainStore = defineStore('mainStore', () => {
       const dealIdx = dealOperations.value.findIndex(d => d._id === tempId);
       if (dealIdx !== -1) dealOperations.value[dealIdx] = serverOp;
 
-      // 🟢 Force Snapshot Sync
-      await fetchSnapshot();
+      // 🟢 Force Snapshot Sync -> REMOVED to prevent race condition
+      // await fetchSnapshot(); 
 
       return serverOp;
     } catch (error) { 
@@ -1140,7 +1131,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!oldOp) {
         const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
         await refreshDay(res.data.dateKey);
-        await fetchSnapshot();
+        // await fetchSnapshot();
         return res.data;
     }
 
@@ -1192,8 +1183,8 @@ export const useMainStore = defineStore('mainStore', () => {
             if (i !== -1) targetList[i] = serverOp;
         }
 
-        // 🟢 Force Snapshot Sync
-        await fetchSnapshot();
+        // 🟢 Force Snapshot Sync -> REMOVED
+        // await fetchSnapshot();
 
         return serverOp;
     } catch (e) {
@@ -1224,7 +1215,7 @@ export const useMainStore = defineStore('mainStore', () => {
       
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
 
-      // 🟢 OPTIMISTIC ROLLBACK: Если удаляем транш, нужно "открыть" предыдущий
+      // 🟢 OPTIMISTIC ROLLBACK
       if (operation.isDealTranche && operation.type === 'income') {
           const related = dealOperations.value.filter(op => 
               op._id !== operation._id && 
@@ -1255,7 +1246,7 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
       
-      // 🟢 OPTIMISTIC RE-OPEN: Если удаляем Акт, нужно открыть связанный транш
+      // 🟢 OPTIMISTIC RE-OPEN
       if (operation.isWorkAct && operation.relatedEventId) {
           const tranche = dealOperations.value.find(d => d._id === operation.relatedEventId);
           if (tranche) {
@@ -1278,8 +1269,8 @@ export const useMainStore = defineStore('mainStore', () => {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
 
-      // 🟢 Force Snapshot Sync (Fixes "Minus" balance issues)
-      await fetchSnapshot();
+      // 🟢 Force Snapshot Sync -> REMOVED
+      // await fetchSnapshot();
       
     } catch(e) { 
         console.error("Optimistic Delete Failed:", e);
@@ -1537,6 +1528,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
+  // 🟢 4. Create Transfer (Optimistic + Force Sync)
+  // v80.0 FIX: Удален await fetchSnapshot() для предотвращения race-condition
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
@@ -1544,6 +1537,60 @@ export const useMainStore = defineStore('mainStore', () => {
       const transferCategory = await _getOrCreateTransferCategory();
       let expenseContractorId = null;
       let incomeContractorId = null;
+      
+      const now = new Date();
+      const isPastOrToday = finalDate <= now;
+      const tempId = `temp_tr_${Date.now()}`;
+      
+      // --- OPTIMISTIC LOGIC ---
+      let optimisticOps = [];
+      
+      if (transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use') {
+          optimisticOps.push({
+              _id: tempId,
+              type: 'expense',
+              isWithdrawal: true,
+              amount: -Math.abs(transferData.amount),
+              accountId: transferData.fromAccountId,
+              companyId: transferData.fromCompanyId, 
+              individualId: transferData.fromIndividualId,
+              dateKey: dateKey,
+              date: finalDate,
+              isOptimistic: true
+          });
+      } 
+      else {
+          optimisticOps.push({
+              _id: tempId,
+              type: 'transfer',
+              isTransfer: true,
+              amount: Math.abs(transferData.amount),
+              fromAccountId: transferData.fromAccountId, 
+              toAccountId: transferData.toAccountId,
+              fromCompanyId: transferData.fromCompanyId, 
+              toCompanyId: transferData.toCompanyId,
+              fromIndividualId: transferData.fromIndividualId, 
+              toIndividualId: transferData.toIndividualId,
+              dateKey: dateKey,
+              date: finalDate,
+              isOptimistic: true
+          });
+      }
+
+      // Apply Snapshot Update
+      if (isPastOrToday) {
+          optimisticOps.forEach(op => _applyOptimisticSnapshotUpdate(op, 1));
+      }
+
+      // Update Display Cache
+      if (!displayCache.value[dateKey]) displayCache.value[dateKey] = [];
+      optimisticOps.forEach(op => displayCache.value[dateKey].push(_populateOp(op)));
+      calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
+      
+      // Update Projection
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      
+      // --- API CALL ---
       if (transferData.transferPurpose === 'inter_company') {
           const fromCompObj = companies.value.find(c => c._id === transferData.fromCompanyId);
           const toCompObj = companies.value.find(c => c._id === transferData.toCompanyId);
@@ -1558,6 +1605,7 @@ export const useMainStore = defineStore('mainStore', () => {
               incomeContractorId = c._id;
           }
       }
+      
       const payload = {
           ...transferData,
           dateKey,
@@ -1565,12 +1613,21 @@ export const useMainStore = defineStore('mainStore', () => {
           expenseContractorId, 
           incomeContractorId
       };
+      
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
-      await refreshDay(dateKey); await fetchSnapshot(); await fetchAllEntities(); 
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      
+      // --- SYNC ---
+      await refreshDay(dateKey); 
+      // 🟢 FIX: Only refresh day, do NOT fetch snapshot to avoid race condition
+      // await fetchSnapshot(); 
+      
       return data;
-    } catch (error) { throw error; }
+    } catch (error) { 
+        console.error("Create Transfer Error (Optimistic):", error);
+        // Rollback would go here (refreshDay handles it basically)
+        throw error; 
+    }
   }
   
   async function updateTransfer(transferId, transferData) {
@@ -1584,7 +1641,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
-      await fetchSnapshot();
+      // await fetchSnapshot(); // REMOVED
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
     } catch (error) { throw error; }
@@ -1592,7 +1649,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function addOperation(op){
     if (!op.dateKey) return;
-    await refreshDay(op.dateKey); await fetchSnapshot(); 
+    await refreshDay(op.dateKey); 
+    // await fetchSnapshot(); // REMOVED
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
