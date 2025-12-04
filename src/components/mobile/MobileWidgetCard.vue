@@ -152,4 +152,8 @@ const handleClick = () => { emit('click', props.widgetKey); };
 .white-text { color: #fff; }
 .empty-text { font-size: 10px; color: #555; text-align: center; margin-top: 0; }
 .more-text { font-size: 10px; color: #666; text-align: right; margin-top: 2px; grid-column: 1 / -1; }
+
+
+@media (max-width: 400px) { :deep(.dashboard-card) { padding: 8px 10px !important; } }
+.mobile-widget-card { background-color: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); height: 90px; display: flex; flex-direction: column; padding: 8px 12px; box-sizing: border-box; overflow: hidden; cursor: pointer; border-radius: 8px; }
 </style>
