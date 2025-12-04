@@ -381,11 +381,11 @@ const handleItemClick = (item) => {
 /* Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1;  flex-direction: column; overflow: hidden; min-height: 0; }
-.section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.section-widgets { flex-shrink: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 
 /* 🟢 ОБНОВЛЕНО: Сетка на весь экран в развернутом виде */
 .section-widgets.expanded-mode {
-    max-height: none; /* Убираем ограничение */
+    height: vh; /* Убираем ограничение */
     flex-grow: 1;     /* Занимаем все место */
     gap: 0 !important; /* Убираем отступы между виджетами */
     padding: 0 !important; /* Убираем внутренние отступы */
