@@ -211,6 +211,8 @@ const handleItemClick = (item) => {
                 </div>
             </div>
             
+            <!-- 🔴 УДАЛЕН ПЕРЕКЛЮЧАТЕЛЬ ДИАПАЗОНА ИЗ FULLSCREEN -->
+
             <div class="fs-body">
                 <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
                 <div class="fs-list">
@@ -266,16 +268,10 @@ const handleItemClick = (item) => {
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
-              <!-- 🟢 FIX: Скрываем таймлайн при развернутых виджетах, даем виджетам все место -->
-              <MobileWidgetGrid 
-                v-show="mainStore.isHeaderExpanded" 
-                class="section-widgets" 
-                :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" 
-                @widget-click="onWidgetClick" 
-              />
+              <MobileWidgetGrid v-show="mainStore.isHeaderExpanded" class="section-widgets" @widget-click="onWidgetClick" />
               
               <!-- Timeline Section -->
-              <div class="section-timeline" v-show="!mainStore.isHeaderExpanded">
+              <div class="section-timeline">
                 <MobileTimeline 
                     v-if="isDataLoaded" 
                     ref="timelineRef" 
@@ -284,7 +280,7 @@ const handleItemClick = (item) => {
               </div>
               
               <!-- Chart Section -->
-              <div class="section-chart" v-show="!mainStore.isHeaderExpanded">
+              <div class="section-chart">
                 <MobileChartSection 
                     v-if="isDataLoaded" 
                     ref="chartRef" 
@@ -379,13 +375,6 @@ const handleItemClick = (item) => {
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-
-/* 🟢 FIX: Позволяем виджетам занимать все пространство в развернутом виде */
-.section-widgets.expanded-widgets {
-    flex-grow: 1;
-    max-height: none;
-}
-
 .section-widgets::-webkit-scrollbar { display: none; }
 .section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
 .section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
