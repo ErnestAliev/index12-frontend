@@ -45,13 +45,11 @@ const infoModalMessage = ref('');
 let isSyncingTimeline = false;
 let isSyncingChart = false;
 
-// Используем setTimeout, чтобы разорвать цикл событий и снизить нагрузку
 const onTimelineScroll = (event) => {
   if (isSyncingChart) return;
   isSyncingTimeline = true;
   
   const left = event.target.scrollLeft;
-  // Небольшой троттлинг для производительности
   if (chartRef.value) {
     chartRef.value.setScroll(left);
   }
@@ -96,20 +94,30 @@ onMounted(async () => {
       await mainStore.fetchAllEntities();
       
       const today = new Date();
-      // Якорь "Сегодня" для правильной навигации
       mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
 
-      // Принудительная инициализация режима, если он потерялся
       if (!mainStore.projection?.mode) {
           await mainStore.updateFutureProjectionByMode('12d', today);
       }
 
-      // Загрузка данных под текущий режим
       const modeToLoad = mainStore.projection.mode || '12d';
       await mainStore.loadCalculationData(modeToLoad, today);
       
       isDataLoaded.value = true; 
 
+      const savedProj = localStorage.getItem('projection');
+      if (savedProj) {
+          try {
+              const parsed = JSON.parse(savedProj);
+              if (parsed.mode && parsed.mode !== mainStore.projection?.mode) {
+                  setTimeout(async () => {
+                      await mainStore.updateFutureProjectionByMode(parsed.mode, today);
+                      await mainStore.loadCalculationData(parsed.mode, today);
+                  }, 200);
+              }
+          } catch (e) { console.error("Error parsing saved projection", e); }
+      }
+      
       nextTick(() => { initScrollSync(); });
   } catch (error) { console.error("Mobile View Mount Error:", error); }
 });
@@ -117,6 +125,7 @@ onMounted(async () => {
 onUnmounted(() => {
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
     if (el) el.removeEventListener('scroll', onTimelineScroll);
+    document.removeEventListener('mousedown', handleFilterClickOutside);
 });
 
 // --- Widget Fullscreen Logic ---
@@ -134,22 +143,83 @@ watch(isWidgetFullscreen, (isOpen) => {
 });
 
 const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
-const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
+const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
 const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
-const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } isFilterOpen.value = true; } };
-const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
+
+// 🟢 ОБНОВЛЕННАЯ ЛОГИКА ФИЛЬТРА
+const updateFilterPosition = () => {
+  if (filterBtnRef.value) {
+    const rect = filterBtnRef.value.getBoundingClientRect();
+    filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` };
+  }
+};
+
+const toggleFilter = (event) => { 
+    if (isFilterOpen.value) { 
+        isFilterOpen.value = false; 
+    } else { 
+        // Сначала вычисляем позицию
+        if (event && event.currentTarget) { 
+             nextTick(() => updateFilterPosition());
+        } 
+        isFilterOpen.value = true; 
+    } 
+};
+
+// 🟢 Обработчик клика вне фильтра (ФИКС: корректное закрытие)
+const handleFilterClickOutside = (event) => {
+  const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target);
+  const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target);
+  if (!insideTrigger && !insideDropdown) {
+      isFilterOpen.value = false;
+  }
+};
+
+// 🟢 Следим за открытием фильтра
+watch(isFilterOpen, (isOpen) => {
+  if (isOpen) {
+    nextTick(() => {
+       updateFilterPosition();
+       document.addEventListener('mousedown', handleFilterClickOutside);
+       window.addEventListener('scroll', updateFilterPosition, true);
+    });
+  } else {
+    document.removeEventListener('mousedown', handleFilterClickOutside);
+    window.removeEventListener('scroll', updateFilterPosition, true);
+  }
+});
+
+const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; 
+const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
+
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories'].includes(k); });
+
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
   if (!isListWidget.value) {
       const items = getWidgetItems(k, showFutureBalance.value);
       let filtered = [...items];
       const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
-      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
+      
+      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); 
+      else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); 
+      else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
+      
+      // 🟢 FIX: Добавляем субтитры для Компаний (связанные счета)
+      if (k === 'companies') {
+          filtered = filtered.map(i => ({
+              ...i,
+              // Убираем префикс "Счета: ", оставляем только имена
+              subName: i.linkTooltip ? i.linkTooltip.replace('Счета: ', '') : ''
+          }));
+      }
+
       const getSortVal = (i) => getFilterVal(i);
-      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a)); else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
+      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a)); 
+      else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
+      
       return filtered;
   } else {
       let list = []; if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes; else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses; else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals; else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
@@ -233,12 +303,17 @@ const handleItemClick = (item) => {
                            </div>
                        </template>
                        <template v-else>
-                           <div class="fs-name-row">
-                                <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
-                                <span class="fs-name">{{ item.name }}</span>
-                                <span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                                </span>
+                           <!-- 🟢 FIX: Структура для отображения суб-текста (счетов) -->
+                           <div class="fs-name-col">
+                                <div class="fs-name-row">
+                                    <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
+                                    <span class="fs-name">{{ item.name }}</span>
+                                    <span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                    </span>
+                                </div>
+                                <!-- 🟢 FIX: Отображение связанных счетов -->
+                                <div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div>
                            </div>
                            <div class="fs-val-block">
                                <div v-if="!showFutureBalance" class="fs-val" :class="Number(item.balance) < 0 ? 'red-text' : ''">
@@ -259,7 +334,7 @@ const handleItemClick = (item) => {
                 <button class="btn-back" @click="handleWidgetBack">Назад</button>
             </div>
             <Teleport to="body">
-              <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @click.stop>
+              <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @mousedown.stop @click.stop>
                 <div class="filter-group"><div class="filter-group-title">Сортировка</div><ul><li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li><li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li></ul></div>
                 <div class="filter-group"><div class="filter-group-title">Фильтр</div><ul><li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li><li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li><li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li><li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li></ul></div>
               </div>
@@ -356,7 +431,11 @@ const handleItemClick = (item) => {
 .fs-body::-webkit-scrollbar { display: none; }
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
 .fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; min-height: 44px;}
-.fs-name-row { display: flex; align-items: center; flex: 1; overflow: hidden; }
+
+/* 🟢 FIX: Изменен стиль для поддержки колонки */
+.fs-name-row { display: flex; align-items: center; overflow: hidden; width: 100%; }
+.fs-name-col { display: flex; flex-direction: column; overflow: hidden; flex: 1; justify-content: center; }
+
 .fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-val-block { display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px; }
 .fs-val { font-size: 14px; color: #fff; font-weight: 700; white-space: nowrap; }
@@ -369,6 +448,7 @@ const handleItemClick = (item) => {
 .fs-info-col { display: flex; flex-direction: column; overflow: hidden; }
 .fs-name-text { font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fs-sub-text { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.fs-sub-text-small { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-right: 8px; }
 .link-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #34c759; }
 .red-text { color: #ff3b30 !important; }
@@ -389,28 +469,26 @@ const handleItemClick = (item) => {
 }
 
 .section-widgets { 
+    width: 100%;
     flex-shrink: 0; 
     max-height: 60vh; 
     overflow-y: auto; 
     scrollbar-width: none; 
     -webkit-overflow-scrolling: touch; 
     overscroll-behavior: contain; 
-    
-    /* 🟢 FIX: Добавляем ширину */
-    width: 100%;
 }
 
 .section-widgets.expanded-widgets {
     flex: 1;
-    /* 🟢 FIX: Убираем height: 0 и используем более надежный flex-basis */
-    flex-basis: auto;
-    max-height: 100%; /* Растягиваемся на всю доступную высоту */
-    min-height: 0; /* Важно для flex-контейнеров */
+    height: 0; 
+    min-height: 0;
+    max-height: none;
     padding-bottom: 80px; 
 }
 
 :deep(.widgets-grid) {
     align-content: start !important;
+    min-height: min-content; 
 }
 
 .section-widgets::-webkit-scrollbar { display: none; }
