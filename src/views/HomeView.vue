@@ -1,410 +1,704 @@
 <script setup>
-import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
+import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
-import { useWidgetData } from '@/composables/useWidgetData.js';
 
-// UI Components
-import MobileHeaderTotals from '@/components/mobile/MobileHeaderTotals.vue';
-import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
-import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
-import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
-import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
-
-// Modals
-import EntityPopup from '@/components/EntityPopup.vue';
-import EntityListEditor from '@/components/EntityListEditor.vue';
-import OperationListEditor from '@/components/OperationListEditor.vue';
-import IncomePopup from '@/components/IncomePopup.vue';
-import ExpensePopup from '@/components/ExpensePopup.vue';
+// Компоненты
+import IncomePopup from '@/components/IncomePopup.vue'; 
+import ExpensePopup from '@/components/ExpensePopup.vue'; 
 import TransferPopup from '@/components/TransferPopup.vue';
-import WithdrawalPopup from '@/components/WithdrawalPopup.vue';
-import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
-import RefundPopup from '@/components/RefundPopup.vue';
-import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
+import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; 
+import TheHeader from '@/components/TheHeader.vue';
+import CellContextMenu from '@/components/CellContextMenu.vue';
+import DayColumn from '@/components/DayColumn.vue';
+import NavigationPanel from '@/components/NavigationPanel.vue';
+import GraphRenderer from '@/components/GraphRenderer.vue';
+import YAxisPanel from '@/components/YAxisPanel.vue';
+import ImportExportModal from '@/components/ImportExportModal.vue';
+import GraphModal from '@/components/GraphModal.vue';
+import AboutModal from '@/components/AboutModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
-import SmartDealPopup from '@/components/SmartDealPopup.vue';
-import InfoModal from '@/components/InfoModal.vue';
+import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
+import RefundPopup from '@/components/RefundPopup.vue'; 
+import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
+
+console.log('--- HomeView.vue v51.0 (Reactive Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
-const { getWidgetItems } = useWidgetData();
 
-const timelineRef = ref(null);
-const chartRef = ref(null);
+// --- CONSTANTS ---
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const baseUrlCalculated = API_BASE_URL.replace(/\/api$/, '');
+const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
+const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 
+// Состояния модальных окон
+const showImportModal = ref(false); 
 const showGraphModal = ref(false);
-const isDataLoaded = ref(false); 
+const showAboutModal = ref(false);
 
-// --- СОСТОЯНИЕ ДЛЯ ИНФО-МОДАЛКИ ---
-const showInfoModal = ref(false);
-const infoModalTitle = ref('');
-const infoModalMessage = ref('');
+// Состояние для Prepayment Modal (Сценарий 1)
+const isPrepaymentModalVisible = ref(false);
+const prepaymentData = ref({});
+const prepaymentDateKey = ref('');
 
-// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (БЕЗ ТОРМОЗОВ) ---
-const isTimelineScrolling = ref(false);
-const isChartScrolling = ref(false);
-let tTimeout = null;
-let cTimeout = null;
+// Состояния основных попапов
+const isIncomePopupVisible = ref(false);
+const isExpensePopupVisible = ref(false);
+const isTransferPopupVisible = ref(false);
+const isWithdrawalPopupVisible = ref(false);
+const isRetailPopupVisible = ref(false);
+const isRefundPopupVisible = ref(false);
 
-// Используем setTimeout для разрыва цикла событий (Anti-Freeze)
-const onTimelineScroll = (event) => { 
-    if (isChartScrolling.value) return; 
-    isTimelineScrolling.value = true; 
-    
-    const left = event.target.scrollLeft;
-    if (chartRef.value) { chartRef.value.setScroll(left); } 
-    
-    clearTimeout(tTimeout); 
-    tTimeout = setTimeout(() => { isTimelineScrolling.value = false; }, 100); 
+// Состояния для Smart Deal (Сценарий 2 - Второй транш)
+const isSmartDealPopupVisible = ref(false);
+const smartDealPayload = ref(null); 
+const smartDealStatus = ref({ "debt": 0, "totalDeal": 0, "paidTotal": 0 });
+
+// Временное хранение данных для возврата (при отмене)
+const tempIncomeData = ref(null);
+
+// --- Меню пользователя ---
+const showUserMenu = ref(false);
+const userButtonRef = ref(null);
+const userMenuPosition = ref({ top: '0px', left: '0px' });
+
+const handleLogout = () => {
+  showUserMenu.value = false;
+  mainStore.logout();
 };
 
-const onChartScroll = (left) => { 
-    if (isTimelineScrolling.value) return; 
-    isChartScrolling.value = true; 
-    
-    const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); 
-    if (el) { el.scrollLeft = left; }
-    
-    clearTimeout(cTimeout); 
-    cTimeout = setTimeout(() => { isChartScrolling.value = false; }, 100); 
+const toggleUserMenu = (event) => {
+  event.stopPropagation();
+  if (!userButtonRef.value) return;
+  const menuWidth = 180;
+  const menuMargin = 8;
+  const menuHeight = 82; 
+  const rect = userButtonRef.value.getBoundingClientRect();
+  const left = rect.left - menuWidth - menuMargin;
+  const top = rect.bottom - menuHeight;
+  userMenuPosition.value = { top: `${top}px`, left: `${left}px` };
+  showUserMenu.value = !showUserMenu.value;
 };
 
-const initScrollSync = () => {
-    if (!timelineRef.value) return;
-    const el = timelineRef.value.$el.querySelector('.timeline-scroll-area');
-    if (el) { 
-        el.removeEventListener('scroll', onTimelineScroll);
-        el.addEventListener('scroll', onTimelineScroll, { passive: true }); 
-    }
+const closeAllMenus = () => {
+  if (isContextMenuVisible.value) isContextMenuVisible.value = false;
+  if (showUserMenu.value) showUserMenu.value = false;
 };
 
-onMounted(async () => {
-  const meta = document.createElement('meta');
-  meta.name = "format-detection";
-  meta.content = "telephone=no, date=no, email=no, address=no";
-  document.getElementsByTagName('head')[0].appendChild(meta);
-
+async function handleImportComplete() {
+  showImportModal.value = false;
   try {
-      await mainStore.checkAuth();
-      if (!mainStore.user) return;
-      await mainStore.fetchAllEntities();
-      
-      const today = new Date();
-      mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
-
-      // Инициализация режима 12d по умолчанию, если не задан
-      if (!mainStore.projection?.mode) {
-          await mainStore.updateFutureProjectionByMode('12d', today);
-      }
-
-      // Загружаем данные
-      const modeToLoad = mainStore.projection.mode || '12d';
-      await mainStore.loadCalculationData(modeToLoad, today);
-      
-      isDataLoaded.value = true; 
-
-      // Восстановление проекции из localStorage (опционально)
-      const savedProj = localStorage.getItem('projection');
-      if (savedProj) {
-          try {
-              const parsed = JSON.parse(savedProj);
-              if (parsed.mode && parsed.mode !== mainStore.projection?.mode) {
-                  setTimeout(async () => {
-                      await mainStore.updateFutureProjectionByMode(parsed.mode, today);
-                      await mainStore.loadCalculationData(parsed.mode, today);
-                  }, 200);
-              }
-          } catch (e) { console.error("Error parsing saved projection", e); }
-      }
-      
-      nextTick(() => { initScrollSync(); });
-  } catch (error) { console.error("Critical error in MobileHomeView mount:", error); }
-});
-
-onUnmounted(() => {
-    const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
-    if (el) el.removeEventListener('scroll', onTimelineScroll);
-});
-
-// --- Widget Fullscreen Logic ---
-const activeWidgetKey = ref(null);
-const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
-
-watch(isWidgetFullscreen, (isOpen) => {
-    if (isOpen) { 
-        document.body.style.overflow = 'hidden'; 
-        document.documentElement.style.overflow = 'hidden'; 
-    } 
-    else { 
-        document.body.style.overflow = ''; 
-        document.documentElement.style.overflow = ''; 
-        nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); 
-    }
-});
-
-const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
-const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
-const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
-const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } isFilterOpen.value = true; } };
-const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
-const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
-const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
-const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories'].includes(k); });
-const activeWidgetItems = computed(() => {
-  const k = activeWidgetKey.value; if (!k) return [];
-  if (!isListWidget.value) {
-      const items = getWidgetItems(k, showFutureBalance.value);
-      let filtered = [...items];
-      const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
-      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
-      const getSortVal = (i) => getFilterVal(i);
-      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a)); else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
-      return filtered;
-  } else {
-      let list = []; if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes; else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses; else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals; else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
-      const mappedList = list.map(op => { let name = op.categoryId?.name || 'Без категории'; let subName = ''; if (op.type === 'transfer' || op.isTransfer) { const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId)); const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId)); name = 'Перевод'; subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`; } else if (op.isWithdrawal) { name = 'Вывод средств'; subName = op.destination || op.description || ''; } else { const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name; const project = op.projectId?.name; const desc = op.description; if (contractor) subName = contractor; else if (project) subName = project; else if (desc) subName = desc; } return { _id: op._id, name: name, subName: subName, balance: op.amount, date: op.date, isList: true, isIncome: op.type === 'income', originalOp: op }; });
-      mappedList.sort((a, b) => new Date(b.date) - new Date(a.date)); return mappedList;
+    await mainStore.forceRefreshAll();
+    rebuildVisibleDays(); 
+  } catch (error) {
+    console.error(error);
   }
-});
-const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; }; const onWidgetClick = (key) => { activeWidgetKey.value = key; };
-const googleAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/google`; }); const devAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/dev-login`; }); const isLocalhost = computed(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`; const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; }; const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
-const isIncomePopupVisible = ref(false); const isExpensePopupVisible = ref(false); const isTransferPopupVisible = ref(false); const isListEditorVisible = ref(false); const isEntityPopupVisible = ref(false); const isOperationListEditorVisible = ref(false); const isWithdrawalPopupVisible = ref(false); const isRetailPopupVisible = ref(false); const isRefundPopupVisible = ref(false); const isPrepaymentModalVisible = ref(false); const isSmartDealPopupVisible = ref(false); const operationToEdit = ref(null); const selectedDate = ref(new Date()); const selectedCellIndex = ref(0); const popupTitle = ref(''); const editorTitle = ref(''); const editorItems = ref([]); const operationListEditorTitle = ref(''); const operationListEditorType = ref('income'); const prepaymentData = ref({}); const prepaymentDateKey = ref(''); const smartDealPayload = ref(null); const smartDealStatus = ref({ debt: 0, totalDeal: 0 });
-const _parseDateKey = (dateKey) => { if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); const [year, doy] = dateKey.split('-').map(Number); if (isNaN(year) || isNaN(doy)) return new Date(); const date = new Date(year, 0, 1); date.setDate(doy); return date; };
-const handleShowMenu = (payload) => { if (payload.operation) { handleEditOperation(payload.operation); } else { selectedDate.value = payload.date || new Date(); selectedCellIndex.value = payload.cellIndex || 0; isIncomePopupVisible.value = true; } };
-const handleAction = (actionType) => {};
-const handleEditOperation = (operation) => { operationToEdit.value = operation; const opDate = _parseDateKey(operation.dateKey); selectedDate.value = opDate; selectedCellIndex.value = operation.cellIndex; if (mainStore._isRetailWriteOff(operation)) { isRetailPopupVisible.value = true; return; } const catId = operation.categoryId?._id || operation.categoryId; if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) { isRefundPopupVisible.value = true; return; } if (operation.type === 'transfer' || operation.isTransfer) { isTransferPopupVisible.value = true; } else if (operation.isWithdrawal) { isWithdrawalPopupVisible.value = true; } else if (operation.type === 'income') { isIncomePopupVisible.value = true; } else if (operation.type === 'expense') { isExpensePopupVisible.value = true; } };
-const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
-const handleTransferSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else { await mainStore.updateTransfer(id, data); } isTransferPopupVisible.value = false; } catch (e) { console.error("Mobile Transfer Save Error", e); alert("Ошибка перевода"); } };
-const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Date(); const d = new Date(rawDate); prepaymentDateKey.value = mainStore._getDateKey(d); prepaymentData.value = { ...data, amount: Math.abs(data.amount || 0), contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, operationToEdit: null }; isIncomePopupVisible.value = false; isPrepaymentModalVisible.value = true; };
-const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
-const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
-const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
-const popupSaveAction = (val) => {};
+}
 
-const handleItemClick = (item) => {
-    if (item.isList && item.originalOp) {
-        handleEditOperation(item.originalOp);
-    } else if (!item.isList && item.isLinked && item.linkTooltip) {
-        infoModalTitle.value = 'Связь';
-        infoModalMessage.value = item.linkTooltip;
-        showInfoModal.value = true;
+const debounce = (func, delay) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), delay);
+  };
+};
+
+// --- HANDLERS ---
+
+// 1. ОБРАБОТЧИК: Переключение на окно предоплаты
+const handleSwitchToPrepayment = (data) => {
+    const rawDate = data.date || new Date();
+    const d = new Date(rawDate);
+    prepaymentDateKey.value = mainStore._getDateKey(d);
+    
+    prepaymentData.value = { 
+      ...data,
+      amount: Math.abs(data.amount || 0),
+      contractorId: data.contractorId,
+      counterpartyIndividualId: data.counterpartyIndividualId,
+      operationToEdit: null 
+    };
+    
+    isIncomePopupVisible.value = false;
+    isPrepaymentModalVisible.value = true;
+};
+
+// 2. ОБРАБОТЧИК: Сохранение предоплаты
+const handlePrepaymentSave = async (finalData) => {
+    isPrepaymentModalVisible.value = false;
+    try {
+        if (!finalData.cellIndex && finalData.cellIndex !== 0) {
+            finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
+        }
+
+        const prepayIds = mainStore.getPrepaymentCategoryIds;
+        if (prepayIds.length > 0 && !finalData.prepaymentId) {
+            finalData.prepaymentId = prepayIds[0];
+        }
+
+        finalData.description = `Предоплата`;
+
+        await mainStore.createEvent(finalData);
+        // 🟢 FIX: Убраны fetchAllEntities и loadCalculationData
+    } catch (e) {
+        console.error('Prepayment Save Error:', e);
+        alert('Не удалось сохранить предоплату: ' + e.message);
     }
+};
+
+// 3. ОБРАБОТЧИК: Умная сделка
+const handleSwitchToSmartDeal = async (payload) => {
+    tempIncomeData.value = { ...payload };
+    isIncomePopupVisible.value = false;
+    smartDealPayload.value = payload;
+    
+    let status = payload.dealStatus;
+    if (!status && payload.projectId) {
+         try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } 
+         catch(e) { console.error('Error fetching status:', e); }
+    }
+    smartDealStatus.value = status || { debt: 0, totalDeal: 0 };
+    isSmartDealPopupVisible.value = true;
+};
+
+const handleSmartDealCancel = () => {
+    isSmartDealPopupVisible.value = false;
+};
+
+const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => {
+    isSmartDealPopupVisible.value = false;
+    const data = smartDealPayload.value;
+    if (!data) return;
+
+    try {
+        if (closePrevious === true && !isFinal) {
+             await mainStore.closePreviousTranches(
+                 data.projectId, 
+                 data.categoryId, 
+                 data.contractorId, 
+                 data.counterpartyIndividualId
+             );
+        }
+
+        const trancheNum = nextTrancheNum || 2;
+        const formattedAmount = formatNumber(data.amount);
+        const description = `${formattedAmount} ${trancheNum}-й транш`;
+
+        const incomeData = {
+            type: 'income',
+            amount: data.amount,
+            date: new Date(data.date),
+            accountId: data.accountId,
+            projectId: data.projectId,
+            contractorId: data.contractorId,
+            counterpartyIndividualId: data.counterpartyIndividualId,
+            categoryId: data.categoryId,
+            companyId: data.companyId,
+            individualId: data.individualId,
+            totalDealAmount: 0, 
+            isDealTranche: true, 
+            isClosed: isFinal,
+            description: description,
+            cellIndex: data.cellIndex 
+        };
+        
+        if (incomeData.cellIndex === undefined) {
+             const dateKey = mainStore._getDateKey(new Date(data.date));
+             incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+        }
+
+        const newOp = await mainStore.createEvent(incomeData);
+
+        if (isFinal) {
+             await mainStore.closePreviousTranches(
+                 data.projectId, 
+                 data.categoryId, 
+                 data.contractorId, 
+                 data.counterpartyIndividualId
+             );
+             
+             await mainStore.createWorkAct(
+                 data.projectId,
+                 data.categoryId,
+                 data.contractorId,
+                 data.counterpartyIndividualId,
+                 data.amount,
+                 new Date(),
+                 newOp._id, 
+                 true, 
+                 data.companyId,
+                 data.individualId
+             );
+        }
+        
+        // 🟢 FIX: Убраны лишние перезагрузки данных
+    } catch (e) {
+        console.error('Smart Deal Error:', e);
+        alert('Ошибка при проведении транша: ' + e.message);
+    }
+};
+
+const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
+    if (data.type === 'income') isIncomePopupVisible.value = false;
+    else isExpensePopupVisible.value = false;
+    
+    operationToEdit.value = null;
+
+    try {
+        if (mode === 'create') {
+             if (data.cellIndex === undefined) {
+                 const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date));
+                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+             }
+             await mainStore.createEvent(data);
+        } else if (mode === 'edit') {
+            await mainStore.updateOperation(id, data);
+        }
+        // 🟢 FIX: Убрана loadCalculationData, store сам обновляет проекцию
+    } catch (error) {
+        console.error('Save Error (Operation):', error);
+        alert('Ошибка сохранения операции.');
+    }
+};
+
+const initializeToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }
+const today = ref(initializeToday());
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+const getDayOfYear = (date) => {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+};
+const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
+const _parseDateKey = (dateKey) => {
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); 
+    const [year, doy] = dateKey.split('-').map(Number);
+    if (isNaN(year) || isNaN(doy)) return new Date();
+    const date = new Date(year, 0, 1); date.setDate(doy); return date;
+};
+
+const VISIBLE_COLS = 12;
+const CENTER_INDEX = Math.floor((VISIBLE_COLS - 1) / 2);
+const viewMode = ref('12d');
+const isScrollActive = computed(() => viewMode.value !== '12d');
+const totalDays = computed(() => mainStore.computeTotalDaysForMode(viewMode.value, today.value));
+watch(totalDays, async () => { await nextTick(); updateScrollbarMetrics(); });
+const globalTodayIndex = computed(() => (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2));
+const virtualStartIndex = ref(0);
+const globalIndexFromLocal = (localIndex) => virtualStartIndex.value + localIndex;
+const dateFromGlobalIndex = (globalIndex) => {
+  const delta = globalIndex - globalTodayIndex.value;
+  const t = today.value;
+  const d = new Date(t); d.setDate(t.getDate() + delta); return d;
+};
+
+const visibleDays = ref([]);
+const isContextMenuVisible = ref(false);
+const contextMenuPosition = ref({ top: '0px', left: '0px' });
+const selectedDay = ref(null);
+const selectedCellIndex = ref(0);
+const operationToEdit = ref(null);
+
+const minDateFromProjection = computed(() => mainStore.projection.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null);
+const maxDateFromProjection = computed(() => mainStore.projection.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null);
+
+const mainContentRef = ref(null);
+const timelineGridRef = ref(null);
+const timelineGridContentRef = ref(null);
+const navPanelWrapperRef = ref(null);
+const yAxisLabels = ref([]); 
+const resizerRef = ref(null);
+const customScrollbarTrackRef = ref(null);
+const scrollbarThumbWidth = ref(0);
+const scrollbarThumbX = ref(0);
+const graphAreaRef = ref(null);
+const homeHeaderRef = ref(null);
+const headerResizerRef = ref(null);
+
+const TIMELINE_MIN = 100;
+const GRAPH_MIN    = 115;
+const DIVIDER_H    = 15;
+const HEADER_MIN_H = 132; 
+const HEADER_MAX_H_RATIO = 0.8; 
+const headerHeightPx = ref(HEADER_MIN_H); 
+const timelineHeightPx = ref(318);
+
+watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
+    if (isExpanded) {
+        const totalWidgets = mainStore.allWidgets.length;
+        const rows = Math.ceil(totalWidgets / 6);
+        headerHeightPx.value = rows * 135 + 15; 
+    } else {
+        headerHeightPx.value = 135;
+    }
+    applyHeaderHeight(headerHeightPx.value);
+    nextTick(() => { onWindowResize(); });
+});
+
+const openContextMenu = (day, event, cellIndex) => {
+  event.stopPropagation();
+  selectedDay.value = day; selectedCellIndex.value = cellIndex;
+  const menuWidth = 260; 
+  const clickX = event.clientX; const clickY = event.clientY;
+  const windowWidth = window.innerWidth;
+  const newPos = { top: `${clickY + 5}px`, left: 'auto', right: 'auto' };
+  if (clickX + menuWidth > windowWidth) { newPos.right = `${windowWidth - clickX + 5}px`; } else { newPos.left = `${clickX + 5}px`; }
+  contextMenuPosition.value = newPos;
+  isContextMenuVisible.value = true;
+};
+
+const handleContextMenuSelect = (type) => {
+  isContextMenuVisible.value = false;
+  if (!selectedDay.value) return;
+  operationToEdit.value = null;
+
+  if (type === 'transfer') { 
+      isTransferPopupVisible.value = true; 
+  } else { 
+      openPopup(type); 
+  }
+};
+
+const openPopup = (type) => {
+    if (type === 'income') {
+        isIncomePopupVisible.value = true;
+    } else if (type === 'expense') {
+        isExpensePopupVisible.value = true;
+    }
+};
+
+const handleEditOperation = (operation) => {
+  operationToEdit.value = operation;
+  const opDate = _parseDateKey(operation.dateKey); 
+  selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
+  selectedCellIndex.value = operation.cellIndex;
+
+  if (mainStore._isRetailWriteOff(operation)) {
+      isRetailPopupVisible.value = true;
+      return;
+  }
+  const catId = operation.categoryId?._id || operation.categoryId;
+  if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) {
+      isRefundPopupVisible.value = true;
+      return;
+  }
+  if (operation.type === 'transfer' || operation.isTransfer) {
+    isTransferPopupVisible.value = true;
+    return;
+  } 
+  if (operation.isWithdrawal) {
+    isWithdrawalPopupVisible.value = true;
+    return;
+  }
+  if (operation.type === 'income') {
+    isIncomePopupVisible.value = true;
+    return;
+  }
+  isExpensePopupVisible.value = true; 
+};
+
+const handleClosePopup = () => { 
+    isIncomePopupVisible.value = false; 
+    isExpensePopupVisible.value = false;
+    operationToEdit.value = null; 
+};
+const handleCloseTransferPopup = () => { isTransferPopupVisible.value = false; operationToEdit.value = null; };
+const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
+
+const debouncedFetchVisibleDays = debounce(() => { visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey)); }, 300); 
+const recalcProjectionForCurrentView = async () => { await mainStore.loadCalculationData(viewMode.value, today.value); };
+const handleOperationDelete = async (operation) => { 
+    if (!operation) return; 
+    await mainStore.deleteOperation(operation); 
+    // 🟢 FIX: Убрана явная перезагрузка проекции
+    visibleDays.value = [...visibleDays.value]; 
+    handleClosePopup(); 
+    handleCloseTransferPopup();
+    handleCloseWithdrawalPopup();
+};
+
+const scrollInterval = ref(null);
+const isAutoScrolling = ref(false);
+const stopAutoScroll = () => { if (scrollInterval.value) { clearInterval(scrollInterval.value); scrollInterval.value = null; } isAutoScrolling.value = false; };
+const onContainerDragOver = (e) => {
+  if (viewMode.value === '12d') return;
+  if (!timelineGridRef.value) return;
+  const rect = timelineGridRef.value.getBoundingClientRect();
+  const mouseX = e.clientX;
+  const threshold = 80;
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  let direction = 0; 
+  if (mouseX < rect.left + threshold) direction = -1; else if (mouseX > rect.right - threshold) direction = 1;
+  if (direction !== 0) { if (!isAutoScrolling.value) { isAutoScrolling.value = true; scrollInterval.value = setInterval(() => { const nextVal = virtualStartIndex.value + direction; if (nextVal >= 0 && nextVal <= maxVirtual) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } else { stopAutoScroll(); } }, 100); } } else { stopAutoScroll(); }
+};
+const onContainerDragLeave = (e) => { stopAutoScroll(); };
+const handleOperationDrop = async (dropData) => { stopAutoScroll(); const operation = dropData.operation; const oldDateKey = operation.dateKey; const newDateKey = dropData.toDateKey; const newCellIndex = dropData.toCellIndex; if (!oldDateKey || !newDateKey) return; if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return; await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex); };
+const rebuildVisibleDays = () => { const days = []; for (let i = 0; i < VISIBLE_COLS; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
+const generateVisibleDays = () => { rebuildVisibleDays(); };
+const clampHeaderHeight = (rawPx) => { const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO; return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight); };
+const applyHeaderHeight = (newPx) => { headerHeightPx.value = Math.round(newPx); if (homeHeaderRef.value) { homeHeaderRef.value.style.height = `${headerHeightPx.value}px`; } };
+const initHeaderResize = (e) => { e.preventDefault(); window.addEventListener('mousemove', doHeaderResize); window.addEventListener('touchmove', doHeaderResize, { passive: false }); window.addEventListener('mouseup', stopHeaderResize); window.addEventListener('touchend', stopHeaderResize); };
+const doHeaderResize = (e) => { const y = e.touches ? e.touches[0].clientY : e.clientY; applyHeaderHeight(clampHeaderHeight(y)); };
+const stopHeaderResize = () => { window.removeEventListener('mousemove', doHeaderResize); window.removeEventListener('touchmove', doHeaderResize); window.removeEventListener('mouseup', stopHeaderResize); window.removeEventListener('touchend', stopHeaderResize); };
+const clampTimelineHeight = (rawPx) => { const container = mainContentRef.value; if (!container) return timelineHeightPx.value; const headerTotalH = headerHeightPx.value + 15; const containerH = window.innerHeight - headerTotalH; const maxTop = Math.max(0, containerH - DIVIDER_H - GRAPH_MIN); const minTop = TIMELINE_MIN; return Math.min(Math.max(rawPx, minTop), maxTop); };
+const applyHeights = (timelinePx) => { timelineHeightPx.value = Math.round(timelinePx); if (timelineGridRef.value) { timelineGridRef.value.style.height = `${timelineHeightPx.value}px`; } if (navPanelWrapperRef.value) { navPanelWrapperRef.value.style.height = `${timelineHeightPx.value}px`; } };
+const initResize = (e) => { e.preventDefault(); window.addEventListener('mousemove', doResize); window.addEventListener('touchmove', doResize, { passive: false }); window.addEventListener('mouseup', stopResize); window.addEventListener('touchend', stopResize); };
+const doResize = (e) => { if (!mainContentRef.value) return; const y = e.touches ? e.touches[0].clientY : e.clientY; const mainTop = mainContentRef.value.getBoundingClientRect().top; applyHeights(clampTimelineHeight(y - mainTop)); };
+const stopResize = () => { window.removeEventListener('mousemove', doResize); window.removeEventListener('touchmove', doResize); window.removeEventListener('mouseup', stopResize); window.removeEventListener('touchend', stopResize); };
+const updateScrollbarMetrics = () => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth || 0; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (maxVirtual <= 0) { scrollbarThumbWidth.value = trackWidth; scrollbarThumbX.value = 0; return; } const ratio = VISIBLE_COLS / Math.max(VISIBLE_COLS, totalDays.value); let tWidth = trackWidth * ratio; tWidth = Math.max(50, tWidth); scrollbarThumbWidth.value = tWidth; const availableSpace = trackWidth - tWidth; const progress = virtualStartIndex.value / maxVirtual; scrollbarThumbX.value = progress * availableSpace; };
+const scrollState = { isDragging: false, startX: 0, startThumbX: 0 };
+const onScrollThumbMouseDown = (e) => { startDrag(e.clientX); };
+const onScrollThumbTouchStart = (e) => { startDrag(e.touches[0].clientX); };
+const startDrag = (clientX) => { scrollState.isDragging = true; scrollState.startX = clientX; scrollState.startThumbX = scrollbarThumbX.value; window.addEventListener('mousemove', onScrollThumbMove); window.addEventListener('mouseup', onScrollThumbEnd); window.addEventListener('touchmove', onScrollThumbTouchMove, { passive: false }); window.addEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = 'none'; document.body.style.cursor = 'grabbing'; };
+const calculateScrollFromDrag = (clientX) => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth; const availableSpace = trackWidth - scrollbarThumbWidth.value; if (availableSpace <= 0) return; const delta = clientX - scrollState.startX; let newThumbX = scrollState.startThumbX + delta; newThumbX = Math.max(0, Math.min(newThumbX, availableSpace)); scrollbarThumbX.value = newThumbX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); const ratio = newThumbX / availableSpace; const newIndex = Math.round(ratio * maxVirtual); if (newIndex !== virtualStartIndex.value) { virtualStartIndex.value = newIndex; rebuildVisibleDays(); } };
+const onScrollThumbMove = (e) => { if (!scrollState.isDragging) return; calculateScrollFromDrag(e.clientX); };
+const onScrollThumbTouchMove = (e) => { if (!scrollState.isDragging) return; e.preventDefault(); calculateScrollFromDrag(e.touches[0].clientX); };
+const onScrollThumbEnd = () => { scrollState.isDragging = false; window.removeEventListener('mousemove', onScrollThumbMove); window.removeEventListener('mouseup', onScrollThumbEnd); window.removeEventListener('touchmove', onScrollThumbTouchMove); window.removeEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
+const onTrackClick = (e) => { if (e.target.classList.contains('custom-scrollbar-thumb')) return; const trackRect = customScrollbarTrackRef.value.getBoundingClientRect(); const clickX = e.clientX - trackRect.left; const targetThumbX = clickX - (scrollbarThumbWidth.value / 2); const trackWidth = trackRect.width; const availableSpace = trackWidth - scrollbarThumbWidth.value; let newThumbX = Math.max(0, Math.min(targetThumbX, availableSpace)); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); const ratio = newThumbX / availableSpace; virtualStartIndex.value = Math.round(ratio * maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
+const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } } } };
+const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
+const onContentTouchStart = (e) => { if (!isScrollActive.value) return; contentTouchState.isDragging = true; contentTouchState.startX = e.touches[0].clientX; contentTouchState.startIndex = virtualStartIndex.value; };
+const onContentTouchMove = (e) => { if (!contentTouchState.isDragging) return; const deltaPx = contentTouchState.startX - e.touches[0].clientX; const pxPerDay = 50; const deltaDays = Math.round(deltaPx / pxPerDay); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); let nextVal = contentTouchState.startIndex + deltaDays; nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (e.cancelable) e.preventDefault(); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } };
+const onContentTouchEnd = () => { contentTouchState.isDragging = false; };
+const centerToday = () => { const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); virtualStartIndex.value = Math.min(Math.max(0, globalTodayIndex.value - CENTER_INDEX), maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
+const onChangeView = async (newView) => { const currentStartDate = visibleDays.value[0]?.date || new Date(today.value); viewMode.value = newView; await nextTick(); const msPerDay = 1000 * 60 * 60 * 24; const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay); const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2); let targetIndex = newGlobalTodayIndex + diffDays; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual)); virtualStartIndex.value = targetIndex; rebuildVisibleDays(); await nextTick(); setTimeout(() => { updateScrollbarMetrics(); recalcProjectionForCurrentView(); }, 50); };
+const onWindowResize = () => { applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); };
+const checkDayChange = () => { const currentToday = initializeToday(); if (!sameDay(currentToday, today.value)) { today.value = currentToday; const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); if (mainStore.user && !mainStore.isAuthLoading) { centerToday(); recalcProjectionForCurrentView(); } } };
+let dayChangeCheckerInterval = null;
+let resizeObserver = null;
+onMounted(async () => { checkDayChange(); dayChangeCheckerInterval = setInterval(checkDayChange, 60000); await mainStore.checkAuth(); if (mainStore.isAuthLoading || !mainStore.user) return; mainStore.startAutoRefresh(); await nextTick(); await mainStore.fetchAllEntities(); const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); generateVisibleDays(); await nextTick(); centerToday(); await nextTick(); applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; applyHeights(clampTimelineHeight(initialTop)); if (resizerRef.value) { resizerRef.value.addEventListener('mousedown', initResize); resizerRef.value.addEventListener('touchstart', initResize, { passive: false }); } if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } if (timelineGridRef.value) { timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); } resizeObserver = new ResizeObserver(() => { applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); }); if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); window.addEventListener('resize', onWindowResize); updateScrollbarMetrics(); await recalcProjectionForCurrentView(); });
+onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); } window.removeEventListener('resize', onWindowResize); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
+
+// --- Transfer, Retail, Refund Handlers ---
+const handleTransferSave = async ({ mode, id, data }) => { 
+    handleCloseTransferPopup(); 
+    try { 
+        if (mode === 'create') { 
+            if (data.cellIndex === undefined) { 
+                const dateKey = mainStore._getDateKey(new Date(data.date)); 
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); 
+            } 
+            await mainStore.createTransfer(data); 
+        } else if (mode === 'edit') { 
+            await mainStore.updateTransfer(id, data); 
+        } 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка сохранения перевода'); } 
+};
+
+const handleWithdrawalSave = async ({ mode, id, data }) => { 
+    isWithdrawalPopupVisible.value = false; 
+    try { 
+        if (mode === 'create') { 
+            if (data.cellIndex === undefined) { 
+                const dateKey = mainStore._getDateKey(new Date(data.date)); 
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); 
+            } 
+            await mainStore.createEvent(data); 
+        } else { 
+            await mainStore.updateOperation(id, data); 
+        } 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка сохранения вывода'); } 
+};
+
+const handleRetailSave = async ({ id, data }) => { 
+    isRetailPopupVisible.value = false; 
+    try { 
+        const pId = data.projectId || (data.projectIds && data.projectIds.length > 0 ? data.projectIds[0] : null);
+        await mainStore.updateOperation(id, { 
+            amount: -Math.abs(data.amount), 
+            projectId: pId,
+            date: new Date(data.date) 
+        }); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { 
+        alert('Ошибка сохранения списания: ' + e.message); 
+    } 
+};
+
+const handleRetailClosure = async (payload) => {
+    try {
+        const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null);
+        await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId);
+        showRetailPopup.value = false; 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка: ' + e.message); }
+};
+
+const handleRetailDelete = async (op) => { 
+    isRetailPopupVisible.value = false; 
+    try { 
+        await mainStore.deleteOperation(op); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка удаления'); } 
+};
+
+const handleRefundSave = async ({ mode, id, data }) => { 
+    isRefundPopupVisible.value = false; 
+    try { 
+        if (mode === 'create') await mainStore.createEvent(data); 
+        else await mainStore.updateOperation(id, data); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка сохранения возврата'); } 
+};
+
+const handleRefundDelete = async (op) => { 
+    isRefundPopupVisible.value = false; 
+    try { 
+        await mainStore.deleteOperation(op); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
+    } catch (e) { alert('Ошибка удаления'); } 
 };
 </script>
 
 <template>
-  <div class="mobile-layout">
+  <div v-if="mainStore.isAuthLoading" class="loading-screen"><div class="spinner"></div><p>Проверка сессии...</p></div>
+  <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко INDEX12.COM</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
+  <div v-else class="home-layout" @click="closeAllMenus">
+    <header class="home-header" ref="homeHeaderRef"><TheHeader /></header>
+    <div class="header-resizer" ref="headerResizerRef"></div>
+    <div class="home-body">
+      <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
+      <main class="home-main-content" ref="mainContentRef">
+        <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
+        <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div class="vertical-resizer" ref="resizerRef"></div></div>
+        <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
+      </main>
+      <aside class="home-right-panel">
+        <button class="icon-btn header-expand-btn" :class="{ 'active': mainStore.isHeaderExpanded }" @click="mainStore.toggleHeaderExpansion" :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></button>
+        <button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button><button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></button><button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button><div class="user-profile-widget"><button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu"><img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" /><div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div><span class="user-name">{{ mainStore.user.name }}</span></button></div></aside>
+    </div>
+    <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
+    <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
     
-    <div v-if="mainStore.isAuthLoading" class="loading-screen">
-      <div class="spinner"></div>
-      <p>Загрузка...</p>
-    </div>
+    <!-- 🟢 НОВЫЕ ПОПАПЫ ДЛЯ ОПЕРАЦИЙ -->
+    <IncomePopup 
+        v-if="isIncomePopupVisible" 
+        :date="selectedDay ? selectedDay.date : new Date()" 
+        :cellIndex="selectedDay ? selectedCellIndex : 0" 
+        :operation-to-edit="operationToEdit" 
+        :min-allowed-date="minDateFromProjection" 
+        :max-allowed-date="maxDateFromProjection" 
+        @close="handleClosePopup" 
+        @save="handleOperationSave"
+        @operation-deleted="handleOperationDelete(operationToEdit)"
+        @trigger-prepayment="handleSwitchToPrepayment"
+        @trigger-smart-deal="handleSwitchToSmartDeal"
+    />
 
-    <div v-else-if="!mainStore.user" class="login-screen">
-      <div class="login-box">
-        <h1>INDEX12</h1>
-        <p>Управляйте финансами легко</p>
-        <a :href="googleAuthUrl" class="google-login-button">Войти через Google</a>
-        <a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тест вход</a>
-      </div>
-    </div>
+    <ExpensePopup 
+        v-if="isExpensePopupVisible" 
+        :date="selectedDay ? selectedDay.date : new Date()" 
+        :cellIndex="selectedDay ? selectedCellIndex : 0" 
+        :operation-to-edit="operationToEdit" 
+        :min-allowed-date="minDateFromProjection" 
+        :max-allowed-date="maxDateFromProjection"
+        @close="handleClosePopup" 
+        @save="handleOperationSave"
+        @operation-deleted="handleOperationDelete(operationToEdit)"
+    />
 
-    <template v-else>
-        <!-- Fullscreen Widget Mode -->
-        <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
-             <div class="fs-header">
-                <div class="fs-title">{{ activeWidgetTitle }}</div>
-                <div class="fs-controls">
-                    <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                    </button>
-                    <!-- 🟢 Кнопка "Прогноз" -->
-                    <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-                    </button>
-                </div>
-            </div>
-            
-            <div class="fs-body">
-                <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
-                <div class="fs-list">
-                    <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="handleItemClick(item)">
-                       <template v-if="item.isList">
-                           <div class="fs-item-left">
-                               <div class="fs-date">{{ formatDateShort(item.date) }}</div>
-                               <div class="fs-info-col">
-                                   <div class="fs-name-text">{{ item.name }}</div>
-                                   <div class="fs-sub-text" v-if="item.subName">{{ item.subName }}</div>
-                               </div>
-                           </div>
-                           <div class="fs-val" :class="item.isIncome ? 'green-text' : 'red-text'">
-                               {{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸
-                           </div>
-                       </template>
-                       <template v-else>
-                           <div class="fs-name-row">
-                                <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
-                                <span class="fs-name">{{ item.name }}</span>
-                                <span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                                </span>
-                           </div>
-                           <div class="fs-val-block">
-                               <div v-if="!showFutureBalance" class="fs-val" :class="Number(item.balance) < 0 ? 'red-text' : ''">
-                                   {{ formatVal(item.balance) }}
-                               </div>
-                               <div v-else class="fs-val-forecast">
-                                   <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
-                                   <span class="fs-arrow">></span>
-                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">{{ formatDelta(item.futureChange) }}</span>
-                                   <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">{{ formatVal(item.futureBalance) }}</span>
-                               </div>
-                           </div>
-                       </template>
-                    </div>
-                </div>
-            </div>
-            <div class="fs-footer">
-                <button class="btn-back" @click="handleWidgetBack">Назад</button>
-            </div>
-            <Teleport to="body">
-              <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @click.stop>
-                <div class="filter-group"><div class="filter-group-title">Сортировка</div><ul><li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li><li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li></ul></div>
-                <div class="filter-group"><div class="filter-group-title">Фильтр</div><ul><li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li><li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li><li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li><li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li></ul></div>
-              </div>
-            </Teleport>
-        </div>
+    <!-- 🟢 PREPAYMENT MODAL -->
+    <PrepaymentModal 
+       v-if="isPrepaymentModalVisible" 
+       :initialData="prepaymentData" 
+       :dateKey="prepaymentDateKey" 
+       @close="isPrepaymentModalVisible = false" 
+       @save="handlePrepaymentSave" 
+    />
 
-        <template v-else>
-            <MobileHeaderTotals class="fixed-header" />
-            
-            <div class="layout-body">
-              <MobileWidgetGrid 
-                v-show="mainStore.isHeaderExpanded" 
-                class="section-widgets" 
-                :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" 
-                @widget-click="onWidgetClick" 
-              />
-              
-              <!-- Timeline Section -->
-              <div class="section-timeline" v-show="!mainStore.isHeaderExpanded">
-                <MobileTimeline 
-                    v-if="isDataLoaded" 
-                    ref="timelineRef" 
-                    @show-menu="handleShowMenu" 
-                />
-              </div>
-              
-              <!-- Chart Section -->
-              <div class="section-chart" v-show="!mainStore.isHeaderExpanded">
-                <MobileChartSection 
-                    v-if="isDataLoaded" 
-                    ref="chartRef" 
-                    @scroll="onChartScroll" 
-                />
-              </div>
-            </div>
-            
-            <div class="fixed-footer">
-              <MobileActionPanel @action="handleAction" @open-graph="showGraphModal = true" />
-            </div>
-        </template>
+    <!-- 🟢 SMART DEAL CONFIRM -->
+    <SmartDealPopup 
+       v-if="isSmartDealPopupVisible"
+       :deal-status="smartDealStatus"
+       :current-amount="smartDealPayload?.amount || 0"
+       :project-name="smartDealPayload?.projectName || 'Проект'"
+       :contractor-name="smartDealPayload?.contractorName || 'Контрагент'"
+       :category-name="smartDealPayload?.categoryName || 'Категория'"
+       @close="handleSmartDealCancel"
+       @confirm="handleSmartDealConfirm"
+    />
 
-        <!-- Popups -->
-        <InfoModal 
-           v-if="showInfoModal"
-           :title="infoModalTitle"
-           :message="infoModalMessage"
-           @close="showInfoModal = false"
-        />
+    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
+    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" :operation-to-edit="operationToEdit" @close="handleCloseWithdrawalPopup" @save="handleWithdrawalSave" />
+    <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
+    <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
 
-        <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-        <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
-        <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" />
-        <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
-        <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
-        <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
-        <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
-        <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
-        <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />
-    </template>
+    <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
+    <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
+    <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
   </div>
 </template>
 
 <style scoped>
-.mobile-layout { height: 100vh; height: 100dvh; width: 100vw; background-color: var(--color-background, #1a1a1a); display: flex; flex-direction: column; overflow: hidden; }
-.loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
-.spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
+/* (Стили без изменений) */
+.loading-screen { width: 100vw; height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center; flex-direction: column; background-color: var(--color-background); color: var(--color-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.spinner { width: 40px; height: 40px; border: 4px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.login-screen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #1a1a1a; padding: 20px; box-sizing: border-box; }
-.login-box { width: 100%; max-width: 320px; text-align: center; }
-.login-box h1 { color: #fff; font-size: 24px; margin-bottom: 10px; font-weight: 700; }
-.login-box p { color: #888; font-size: 14px; margin-bottom: 30px; }
-.google-login-button { display: block; width: 100%; padding: 12px; background: #fff; color: #333; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
-.dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
+.login-screen { width: 100vw; height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem; box-sizing: border-box; background-color: var(--color-background); }
+.login-box { width: 100%; max-width: 500px; padding: 2.5rem 2rem; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 12px; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
+.login-box h1 { color: var(--color-heading); font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin-bottom: 1rem; }
+.login-box p { color: var(--color-text); font-size: 1rem; line-height: 1.5; opacity: 0.8; margin-bottom: 2.5rem; }
+.google-login-button { display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; background-color: #ffffff; color: #333333; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: background-color 0.2s, box-shadow 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box; }
+.google-login-button:hover { background-color: #f9f9f9; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+.dev-login-button { display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; background-color: #333; color: #fff; border: 1px solid #555; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: background-color 0.2s; margin-top: 10px; width: 100%; box-sizing: border-box; }
+.dev-login-button:hover { background-color: #444; }
+.user-profile-widget { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px; }
+.user-profile-button { display: flex; align-items: center; width: 100%; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; color: var(--color-text); text-align: left; }
+.user-profile-button:hover { background-color: var(--color-background-mute); border-color: var(--color-border-hover); }
+.user-avatar { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; object-fit: cover; border: 1px solid var(--color-border); }
+.user-avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; background-color: var(--color-primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+.user-name { flex-grow: 1; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-menu { position: fixed; width: 180px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); z-index: 2000; overflow: hidden; }
+.user-menu-item { display: block; width: 100%; padding: 10px 12px; background: none; border: none; border-bottom: 1px solid var(--color-border); color: var(--color-text); cursor: pointer; text-align: left; font-size: 14px; }
+.user-menu-item:last-child { border-bottom: none; }
+.user-menu-item:hover { background-color: var(--color-background-mute); }
+.user-menu-item:disabled { color: var(--color-text-mute); cursor: not-allowed; background: none; }
+.home-layout { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; overflow: hidden; background-color: var(--color-background); }
+.home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; transition: height 0.3s ease; }
+.header-resizer { flex-shrink: 0; height: 15px; background: var(--color-background-soft); border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: row-resize; position: relative; z-index: 50; display: flex; align-items: center; justify-content: center; }
+.header-resizer:hover { border-top: 1px solid #777; }
+.header-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: #ffffff; border-radius: 50%; border: 1px solid var(--color-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+.header-resizer:hover::before { opacity: 1; transform: scale(1.2); }
+.home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
+.home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; }
+.home-right-panel { width: 60px; flex-shrink: 0; overflow-y: auto; background-color: var(--color-background-soft); border-left: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; position: relative; }
+.home-right-panel::-webkit-scrollbar { display: none; }
 
-/* Fullscreen Styles */
-.fullscreen-widget-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-background, #1a1a1a); z-index: 2000; display: flex; flex-direction: column; }
-.fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--color-border, #444); background-color: var(--color-background-soft, #282828); }
-.fs-title { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
-.fs-controls { display: flex; gap: 8px; }
+.header-expand-btn { position: absolute; top: 8px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
+.header-expand-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+.header-expand-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
+.header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-/* 🟢 Стили для встроенных контролов */
-.fs-chart-controls { 
-    border-top: none; 
-    border-bottom: 1px solid var(--color-border, #444); 
-    background-color: #282828; 
-    flex-shrink: 0;
-    z-index: 10;
-}
+.import-export-btn { position: absolute; top: 48px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
+.import-export-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+.import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-.action-square-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
-.action-square-btn:hover { background-color: #555; color: #ccc; }
-.action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
-.fs-body { flex-grow: 1; overflow-y: auto; padding: 16px; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }
-.fs-body::-webkit-scrollbar { display: none; }
-.fs-list { display: flex; flex-direction: column; gap: 8px; }
-.fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; min-height: 44px;}
-.fs-name-row { display: flex; align-items: center; flex: 1; overflow: hidden; }
-.fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fs-val-block { display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px; }
-.fs-val { font-size: 14px; color: #fff; font-weight: 700; white-space: nowrap; }
-.fs-val-forecast { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-.fs-curr { color: #ccc; font-weight: 500; }
-.fs-arrow { color: #666; font-size: 12px; }
-.fs-fut { font-weight: 700; color: #fff; }
-.fs-item-left { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; }
-.fs-date { color: #666; font-size: 11px; min-width: 32px; flex-shrink: 0; text-align: center; line-height: 1.2; }
-.fs-info-col { display: flex; flex-direction: column; overflow: hidden; }
-.fs-name-text { font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fs-sub-text { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-right: 8px; }
-.link-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #34c759; }
-.red-text { color: #ff3b30 !important; }
-.green-text { color: #34c759 !important; }
-.fs-empty { text-align: center; color: #666; margin-top: 50px; }
-.fs-footer { padding: 15px 20px; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
-.btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.graph-btn { position: absolute; top: 88px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
+.graph-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+.graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-/* Layout */
-.fixed-header, .fixed-footer { flex-shrink: 0; }
-.layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-
-.section-widgets.expanded-widgets {
-    flex-grow: 1;
-    max-height: none;
-    padding-bottom: 80px; 
-}
-
-:deep(.widgets-grid) {
-    align-content: start !important;
-}
-
-.section-widgets::-webkit-scrollbar { display: none; }
-.section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
-.section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
-.fixed-footer { flex-shrink: 0; z-index: 200; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
+.about-btn { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--color-primary); border: 1px solid var(--color-primary); color: #ffffff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.2s; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); }
+.about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
+.about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+.home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+.timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; }
+.timeline-grid-wrapper::-webkit-scrollbar { display: none; }
+.timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
+.divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); position: relative; display: flex; align-items: center; }
+.custom-scrollbar-track { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: #2a2a2a; cursor: pointer; z-index: 10; }
+.custom-scrollbar-thumb { position: absolute; top: 2px; bottom: 2px; background-color: #555; border-radius: 6px; cursor: grab; }
+.custom-scrollbar-thumb:active { background-color: #777; cursor: grabbing; }
+.vertical-resizer { position: absolute; top: -5px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: row-resize; z-index: 20; display: flex; align-items: center; justify-content: center; }
+.vertical-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: #ffffff; border-radius: 50%; border: 1px solid var(--color-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+.vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
+.graph-area-wrapper { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.graph-renderer-content { flex-grow: 1; }
+.summaries-container { flex-shrink: 0; }
+.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); }
 </style>

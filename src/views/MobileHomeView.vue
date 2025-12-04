@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, nextTick, computed, watch, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { useWidgetData } from '@/composables/useWidgetData.js';
@@ -41,26 +41,38 @@ const showInfoModal = ref(false);
 const infoModalTitle = ref('');
 const infoModalMessage = ref('');
 
-// --- СИНХРОНИЗАЦИЯ СКРОЛЛА ---
-const isTimelineScrolling = ref(false);
-const isChartScrolling = ref(false);
-let tTimeout = null;
-let cTimeout = null;
+// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (Anti-Lag) ---
+let isSyncingTimeline = false;
+let isSyncingChart = false;
 
-const onTimelineScroll = (event) => { 
-    if (isChartScrolling.value) return; 
-    isTimelineScrolling.value = true; 
-    const left = event.target.scrollLeft;
-    if (chartRef.value) { chartRef.value.setScroll(left); } 
-    clearTimeout(tTimeout); tTimeout = setTimeout(() => { isTimelineScrolling.value = false; }, 60); 
+// Используем setTimeout, чтобы разорвать цикл событий и снизить нагрузку
+const onTimelineScroll = (event) => {
+  if (isSyncingChart) return;
+  isSyncingTimeline = true;
+  
+  const left = event.target.scrollLeft;
+  // Небольшой троттлинг для производительности
+  if (chartRef.value) {
+    chartRef.value.setScroll(left);
+  }
+  
+  setTimeout(() => {
+    isSyncingTimeline = false;
+  }, 50);
 };
 
-const onChartScroll = (left) => { 
-    if (isTimelineScrolling.value) return; 
-    isChartScrolling.value = true; 
-    const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); 
-    if (el) { el.scrollLeft = left; }
-    clearTimeout(cTimeout); cTimeout = setTimeout(() => { isChartScrolling.value = false; }, 60); 
+const onChartScroll = (left) => {
+  if (isSyncingTimeline) return;
+  isSyncingChart = true;
+  
+  const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
+  if (el) {
+    el.scrollLeft = left;
+  }
+  
+  setTimeout(() => {
+    isSyncingChart = false;
+  }, 50);
 };
 
 const initScrollSync = () => {
@@ -84,25 +96,22 @@ onMounted(async () => {
       await mainStore.fetchAllEntities();
       
       const today = new Date();
+      // Якорь "Сегодня" для правильной навигации
       mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
 
-      await mainStore.loadCalculationData('12d', today);
+      // Принудительная инициализация режима, если он потерялся
+      if (!mainStore.projection?.mode) {
+          await mainStore.updateFutureProjectionByMode('12d', today);
+      }
+
+      // Загрузка данных под текущий режим
+      const modeToLoad = mainStore.projection.mode || '12d';
+      await mainStore.loadCalculationData(modeToLoad, today);
+      
       isDataLoaded.value = true; 
 
-      const savedProj = localStorage.getItem('projection');
-      if (savedProj) {
-          try {
-              const parsed = JSON.parse(savedProj);
-              if (parsed.mode && parsed.mode !== '12d') {
-                  setTimeout(async () => {
-                      await mainStore.updateFutureProjectionByMode(parsed.mode, today);
-                      await mainStore.loadCalculationData(parsed.mode, today);
-                  }, 100);
-              }
-          } catch (e) { console.error("Error parsing saved projection", e); }
-      }
       nextTick(() => { initScrollSync(); });
-  } catch (error) { console.error("Critical error in MobileHomeView mount:", error); }
+  } catch (error) { console.error("Mobile View Mount Error:", error); }
 });
 
 onUnmounted(() => {
@@ -117,11 +126,9 @@ const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 watch(isWidgetFullscreen, (isOpen) => {
     if (isOpen) { 
         document.body.style.overflow = 'hidden'; 
-        document.documentElement.style.overflow = 'hidden'; 
     } 
     else { 
         document.body.style.overflow = ''; 
-        document.documentElement.style.overflow = ''; 
         nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); 
     }
 });
@@ -166,7 +173,6 @@ const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value 
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
 const popupSaveAction = (val) => {};
 
-// 🟢 НОВЫЙ ОБРАБОТЧИК КЛИКА: Показывает подсказку или открывает редактор
 const handleItemClick = (item) => {
     if (item.isList && item.originalOp) {
         handleEditOperation(item.originalOp);
@@ -204,7 +210,6 @@ const handleItemClick = (item) => {
                     <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     </button>
-                    <!-- 🟢 Кнопка "Прогноз" -->
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
                     </button>
@@ -242,7 +247,6 @@ const handleItemClick = (item) => {
                                <div v-else class="fs-val-forecast">
                                    <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
                                    <span class="fs-arrow">></span>
-                                   <!-- 🟢 ИСПОЛЬЗУЕМ futureBalance из обновленного useWidgetData -->
                                    <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">{{ formatDelta(item.futureChange) }}</span>
                                    <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">{{ formatVal(item.futureBalance) }}</span>
                                </div>
@@ -266,7 +270,6 @@ const handleItemClick = (item) => {
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
-              <!-- 🟢 FIX: Скрываем таймлайн при развернутых виджетах, даем виджетам все место -->
               <MobileWidgetGrid 
                 v-show="mainStore.isHeaderExpanded" 
                 class="section-widgets" 
@@ -299,7 +302,6 @@ const handleItemClick = (item) => {
         </template>
 
         <!-- Popups -->
-        <!-- 🟢 Info Modal -->
         <InfoModal 
            v-if="showInfoModal"
            :title="infoModalTitle"
@@ -343,7 +345,7 @@ const handleItemClick = (item) => {
     border-top: none; 
     border-bottom: 1px solid var(--color-border, #444); 
     background-color: #282828; 
-    flex-shrink: 0; /* Чтобы не сжималась при нехватке места */
+    flex-shrink: 0;
     z-index: 10;
 }
 
@@ -377,18 +379,36 @@ const handleItemClick = (item) => {
 
 /* Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
-.layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.layout-body {
+    flex-grow: 1; 
+    display: flex; 
+    flex-direction: column; 
+    overflow: hidden; 
+    min-height: 0;
+    position: relative; 
+}
 
-/* 🟢 FIX: Позволяем виджетам занимать все пространство в развернутом виде */
-/* 🟢 ADD: Добавлен padding-bottom для компенсации нижней панели (чтобы последние виджеты не скрывались) */
+.section-widgets { 
+    flex-shrink: 0; 
+    max-height: 60vh; 
+    overflow-y: auto; 
+    scrollbar-width: none; 
+    -webkit-overflow-scrolling: touch; 
+    overscroll-behavior: contain; 
+    
+    /* 🟢 FIX: Добавляем ширину */
+    width: 100%;
+}
+
 .section-widgets.expanded-widgets {
-    flex-grow: 1;
-    max-height: none;
+    flex: 1;
+    /* 🟢 FIX: Убираем height: 0 и используем более надежный flex-basis */
+    flex-basis: auto;
+    max-height: 100%; /* Растягиваемся на всю доступную высоту */
+    min-height: 0; /* Важно для flex-контейнеров */
     padding-bottom: 80px; 
 }
 
-/* 🟢 FIX: Принудительно прижимаем содержимое виджетов к верху */
 :deep(.widgets-grid) {
     align-content: start !important;
 }
