@@ -59,6 +59,7 @@ const futureDateStr = computed(() => {
   background-color: var(--color-background-soft, #282828);
   border-bottom: 1px solid var(--color-border, #444);
   flex-shrink: 0;
+  
 }
 
 .total-card {

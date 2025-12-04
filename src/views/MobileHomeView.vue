@@ -455,6 +455,7 @@ const handleItemClick = (item) => {
     overflow: hidden; 
     min-height: 0;
     position: relative; 
+    
 }
 
 .section-widgets { 
