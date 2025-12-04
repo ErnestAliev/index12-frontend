@@ -31,11 +31,23 @@ const isBalanceWidget = computed(() => {
 
 const isLiabilitiesWidget = computed(() => props.widgetKey === 'liabilities');
 
+// 🟢 1. Определение "однострочных" виджетов для оптимальной высоты
+const isSingleLineWidget = computed(() => {
+    return [
+        'incomeList', 
+        'expenseList', 
+        'withdrawalList', 
+        'transfers',
+        'liabilities'
+    ].includes(props.widgetKey);
+});
+
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
 const items = computed(() => {
   if (isLiabilitiesWidget.value) return [];
+  // Триггеры реактивности
   if (mainStore.transactions) {};
   if (mainStore.categories) {};
   if (mainStore.allWidgets) {};
@@ -104,40 +116,33 @@ const getValueClass = (val) => {
 
 const handleClick = () => { emit('click', props.widgetKey); };
 
-// 🟢 ЦВЕТОВАЯ КОДИРОВКА И СТИЛИ (Neon Shadows)
+// ЦВЕТОВАЯ КОДИРОВКА И СТИЛИ (Neon Shadows)
 const cardStyleClass = computed(() => {
   const k = props.widgetKey;
   
-  // 1. Выводы (#7B1FA2 - Фиолетовый)
   if (k === 'withdrawalList') return 'style-purple'; 
-  
-  // 2. Переводы (#001969 - Темно-синий)
   if (k === 'transfers') return 'style-dark-blue'; 
-  
-  // 3. Физлица (#00BCD4 - Циан/Бирюзовый)
   if (k === 'individuals') return 'style-cyan'; 
-  
-  // 4. Счета (#607D8B - Сизый/Blue Grey)
   if (k === 'accounts') return 'style-blue-grey'; 
-  
-  // 5. Компании (#009688 - Тил/Морская волна)
   if (k === 'companies') return 'style-teal'; 
-  
-  // 6. Проекты (#E91E63 - Малиновый/Pink)
   if (k === 'projects') return 'style-pink'; 
 
-  // --- СТАНДАРТНЫЕ ГРУППЫ ---
-  if (k === 'incomeList') return 'style-green'; // Доходы
-  if (k === 'expenseList' || k === 'contractors') return 'style-red'; // Расходы / Контрагенты
-  if (k === 'liabilities') return 'style-orange'; // Обязательства
-  if (k === 'credits') return 'style-light-blue'; // Кредиты
+  if (k === 'incomeList') return 'style-green'; 
+  if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
+  if (k === 'liabilities') return 'style-orange'; 
+  if (k === 'credits') return 'style-light-blue'; 
 
   return 'style-gray';
 });
 </script>
 
 <template>
-  <div class="mobile-widget-card" :class="cardStyleClass" @click="handleClick">
+  <!-- 🟢 Все виджеты теперь auto-height, но с ограничением max-height для списков -->
+  <div 
+    class="mobile-widget-card auto-height" 
+    :class="[cardStyleClass, { 'limit-height': !isSingleLineWidget }]" 
+    @click="handleClick"
+  >
     <div class="widget-header">
       <div class="widget-title-row">
         <span class="widget-title">{{ widgetInfo }}</span>
@@ -179,7 +184,8 @@ const cardStyleClass = computed(() => {
       <div v-else-if="isEmpty" class="empty-text">Нет данных</div>
       
       <div v-else class="items-list" :class="{ 'forecast-mode': isForecastActive }">
-        <div v-for="item in items.slice(0, 8)" :key="item._id" class="list-item">
+        <!-- 🟢 2. slice увеличен, чтобы показать больше элементов при скролле -->
+        <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item">
           
           <div class="name-cell">
               <span 
@@ -213,7 +219,7 @@ const cardStyleClass = computed(() => {
           
         </div>
         
-        <div v-if="items.length > 8" class="more-text">Еще {{ items.length - 8 }}...</div>
+        <div v-if="items.length > 50" class="more-text">Еще {{ items.length - 50 }}...</div>
       </div>
     </div>
   </div>
@@ -224,9 +230,6 @@ const cardStyleClass = computed(() => {
   background-color: var(--color-background-soft, #282828); 
   border: 1px solid var(--color-border, #444); 
   
-  /* 🟢 FIX: height auto, чтобы margin работал внутри flex/grid контейнера и создавал отступ */
-  /* Если родитель задает фиксированную высоту ячейки, margin "съест" часть высоты самой карточки, создавая просвет */
-  height: calc(100% - 12px); 
   margin-top: 12px; 
 
   display: flex; 
@@ -236,64 +239,43 @@ const cardStyleClass = computed(() => {
   overflow: hidden; 
   cursor: pointer; 
   
-  /* 🟢 Скругление и базовые стили границы */
   border-radius: 12px; 
   border-top-width: 4px;
   border-top-style: solid;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+
+/* 🟢 АВТО-ВЫСОТА ДЛЯ ВСЕХ */
+.mobile-widget-card.auto-height {
+  height: auto;
+  min-height: 60px; /* Минимальная высота (заголовок + отступы) */
+}
+
+/* 🟢 ОГРАНИЧЕНИЕ ВЫСОТЫ ДЛЯ СПИСКОВ (примерно 10 элементов) */
+.mobile-widget-card.limit-height .widget-body {
+  /* Расчет: 10 элементов * ~26px (строка + gap) + отступы.
+     320px достаточно для заголовка и ~10 строк.
+  */
+  max-height: 320px; 
+  overflow-y: auto; /* Включаем скролл, если больше */
+  scrollbar-width: none;
+}
+.mobile-widget-card.limit-height .widget-body::-webkit-scrollbar { display: none; }
+
 .mobile-widget-card:active { background-color: rgba(255,255,255,0.05); transform: scale(0.98); }
 
-/* 🟢 ЦВЕТОВЫЕ СТИЛИ (Border + Neon Shadow) */
-/* Тень полупрозрачная, в цвет бордера, создает эффект свечения */
-
-.style-purple { 
-  border-top-color: #666666; 
-  
-}
-.style-dark-blue { 
-  border-top-color: #666666; 
-  
-}
-.style-cyan { 
-  border-top-color: #666666; 
- 
-}
-.style-blue-grey { 
-  border-top-color: #666666; 
-  
-}
-.style-teal { 
-  border-top-color: #666666; 
-  
-}
-.style-pink { 
-  border-top-color: #666666; 
-  
-}
-
-/* Стандартные цвета */
-.style-green { 
-  border-top-color: #666666; 
-  
-}
-.style-red { 
-  border-top-color: #666666; 
-  
-}
-.style-orange { 
-  border-top-color: #666666; 
-  
-}
-.style-light-blue { 
-  border-top-color: #666666; 
-  
-}
-.style-gray { 
-  border-top-color: #666666; 
-  
-}
-
+/* ЦВЕТОВЫЕ СТИЛИ */
+.style-purple { border-top-color: #666666; }
+.style-dark-blue { border-top-color: #666666; }
+.style-cyan { border-top-color: #666666; }
+.style-blue-grey { border-top-color: #666666; }
+.style-teal { border-top-color: #666666; }
+.style-pink { border-top-color: #666666; }
+.style-green { border-top-color: #666666; }
+.style-red { border-top-color: #666666; }
+.style-orange { border-top-color: #666666; }
+.style-light-blue { border-top-color: #666666; }
+.style-gray { border-top-color: #666666; }
 
 .widget-header { 
   display: flex; 

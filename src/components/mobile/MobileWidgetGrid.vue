@@ -89,29 +89,24 @@ const handleWidgetClick = (key) => {
 .widgets-grid {
   display: grid;
   grid-template-columns: 1fr; 
-  /* 🟢 Увеличенные отступы для разделения карточек */
   
-  background-color: transparent; /* Убраны линии сетки */
- 
+  background-color: transparent; 
   
   height: auto;
   min-height: 100%;
- 
 }
 
 .grid-item {
   background-color: transparent;
   min-width: 0;
-  height: 240px;
+  /* 🟢 ИЗМЕНЕНО: Убрана фиксированная высота 240px, теперь auto */
+  height: auto; 
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
 }
 
 @media (orientation: landscape) {
-  .grid-item {
-    height: 190px; 
-  }
   /* В ландшафте можно сделать 2 колонки, если экран широкий */
   .widgets-grid {
      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
