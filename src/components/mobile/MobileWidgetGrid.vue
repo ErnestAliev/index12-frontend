@@ -88,46 +88,47 @@ const handleWidgetClick = (key) => {
 
 .widgets-grid {
   display: grid;
-  /* 🟢 ИЗМЕНЕНО: 1 колонка вместо 2 */
   grid-template-columns: 1fr; 
-  gap: 1px;
-  background-color: var(--color-border, #444);
-  padding: 1px 0;
+  /* 🟢 Увеличенные отступы для разделения карточек */
+  
+  background-color: transparent; /* Убраны линии сетки */
+ 
   
   height: auto;
   min-height: 100%;
-  padding-bottom: 1px; 
+ 
 }
 
 .grid-item {
-  background-color: var(--color-background-soft, #282828);
+  background-color: transparent;
   min-width: 0;
-  /* 🟢 ИЗМЕНЕНО: Высота увеличена до 150px */
   height: 200px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
 }
 
-/* 🟢 LANDSCAPE MODE: Оставляем или корректируем */
 @media (orientation: landscape) {
   .grid-item {
-    height: 190px; /* Фиксируем и здесь */
+    height: 190px; 
   }
-  /* Опционально можно вернуть 2 колонки в ландшафте, если нужно:
-  .widgets-grid { grid-template-columns: 1fr 1fr; } 
-  */
+  /* В ландшафте можно сделать 2 колонки, если экран широкий */
+  .widgets-grid {
+     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
 }
 
 .ghost {
   opacity: 0.5;
   background: #333;
+  border-radius: 8px;
 }
 
 .drag-item {
   opacity: 1;
   background: #444;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   z-index: 9999;
+  border-radius: 8px;
 }
 </style>

@@ -25,23 +25,17 @@ const isListWidget = computed(() => {
     return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(props.widgetKey);
 });
 
-// 🟢 ЛОГИКА РАЗДЕЛЕНИЯ (ОБНОВЛЕНА)
 const isBalanceWidget = computed(() => {
     return ['accounts', 'companies'].includes(props.widgetKey);
 });
 
-// 🟢 Детектор виджета предоплат
 const isLiabilitiesWidget = computed(() => props.widgetKey === 'liabilities');
 
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
-// 🟢 Реактивность данных (для обычных виджетов)
 const items = computed(() => {
-  // Если это предоплаты, нам не нужен список items из useWidgetData
   if (isLiabilitiesWidget.value) return [];
-
-  // Триггеры реактивности
   if (mainStore.transactions) {};
   if (mainStore.categories) {};
   if (mainStore.allWidgets) {};
@@ -50,7 +44,6 @@ const items = computed(() => {
   return filterAndSort(rawList);
 });
 
-// 🟢 Данные для предоплат (напрямую из стора, как в Desktop)
 const liabilitiesData = computed(() => {
     return {
         weOwe: mainStore.liabilitiesWeOwe || 0,
@@ -80,15 +73,13 @@ function filterAndSort(originalList) {
 }
 
 const isEmpty = computed(() => { 
-    if (isLiabilitiesWidget.value) return false; // Предоплаты всегда показываем
+    if (isLiabilitiesWidget.value) return false; 
     if (isListWidget.value) return false; 
     return items.value.length === 0; 
 });
 
-// Форматирование обычного числа (без знака)
 const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
 
-// 🟢 Форматирование дельты (с явным знаком + или -)
 const formatDelta = (val) => { 
   const num = Number(val) || 0; 
   if (num === 0) return '0 ₸'; 
@@ -96,17 +87,13 @@ const formatDelta = (val) => {
   return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; 
 };
 
-// 🟢 Цвет для дельты (зависит от знака операции)
 const getDeltaClass = (val) => {
     const num = Number(val) || 0;
     return num > 0 ? 'green-text' : (num < 0 ? 'red-text' : 'white-text');
 };
 
-// Цвет для баланса
 const getValueClass = (val) => {
     const num = Number(val) || 0;
-    
-    // Для списков расходов всегда красный, если не 0
     if (isListWidget.value) { 
         if (props.widgetKey === 'incomeList') return 'green-text'; 
         if (props.widgetKey === 'transfers') return 'white-text'; 
@@ -116,10 +103,41 @@ const getValueClass = (val) => {
 };
 
 const handleClick = () => { emit('click', props.widgetKey); };
+
+// 🟢 ЦВЕТОВАЯ КОДИРОВКА И СТИЛИ (Neon Shadows)
+const cardStyleClass = computed(() => {
+  const k = props.widgetKey;
+  
+  // 1. Выводы (#7B1FA2 - Фиолетовый)
+  if (k === 'withdrawalList') return 'style-purple'; 
+  
+  // 2. Переводы (#001969 - Темно-синий)
+  if (k === 'transfers') return 'style-dark-blue'; 
+  
+  // 3. Физлица (#00BCD4 - Циан/Бирюзовый)
+  if (k === 'individuals') return 'style-cyan'; 
+  
+  // 4. Счета (#607D8B - Сизый/Blue Grey)
+  if (k === 'accounts') return 'style-blue-grey'; 
+  
+  // 5. Компании (#009688 - Тил/Морская волна)
+  if (k === 'companies') return 'style-teal'; 
+  
+  // 6. Проекты (#E91E63 - Малиновый/Pink)
+  if (k === 'projects') return 'style-pink'; 
+
+  // --- СТАНДАРТНЫЕ ГРУППЫ ---
+  if (k === 'incomeList') return 'style-green'; // Доходы
+  if (k === 'expenseList' || k === 'contractors') return 'style-red'; // Расходы / Контрагенты
+  if (k === 'liabilities') return 'style-orange'; // Обязательства
+  if (k === 'credits') return 'style-light-blue'; // Кредиты
+
+  return 'style-gray';
+});
 </script>
 
 <template>
-  <div class="mobile-widget-card" @click="handleClick">
+  <div class="mobile-widget-card" :class="cardStyleClass" @click="handleClick">
     <div class="widget-header">
       <div class="widget-title-row">
         <span class="widget-title">{{ widgetInfo }}</span>
@@ -132,10 +150,7 @@ const handleClick = () => { emit('click', props.widgetKey); };
 
     <div class="widget-body scrollable-list">
       
-      <!-- 🟢 ВАРИАНТ 1: ПРЕДОПЛАТЫ (Как в Desktop) -->
       <div v-if="isLiabilitiesWidget" class="items-list" :class="{ 'forecast-mode': isForecastActive }">
-          
-          <!-- Строка 1: Должны отработать (Красный) -->
           <div class="list-item">
               <div class="name-cell">Должны отработать</div>
               <template v-if="isForecastActive">
@@ -148,7 +163,6 @@ const handleClick = () => { emit('click', props.widgetKey); };
               </template>
           </div>
 
-          <!-- Строка 2: Должны получить (Оранжевый) -->
           <div class="list-item">
               <div class="name-cell">Должны получить</div>
               <template v-if="isForecastActive">
@@ -162,13 +176,11 @@ const handleClick = () => { emit('click', props.widgetKey); };
           </div>
       </div>
 
-      <!-- 🟢 ВАРИАНТ 2: ОБЫЧНЫЕ СПИСКИ ИЛИ ПУСТО -->
       <div v-else-if="isEmpty" class="empty-text">Нет данных</div>
       
       <div v-else class="items-list" :class="{ 'forecast-mode': isForecastActive }">
         <div v-for="item in items.slice(0, 8)" :key="item._id" class="list-item">
           
-          <!-- Название -->
           <div class="name-cell">
               <span 
                 v-if="item.linkMarkerColor" 
@@ -184,11 +196,9 @@ const handleClick = () => { emit('click', props.widgetKey); };
           </div>
           
           <template v-if="isForecastActive">
-              <!-- Текущее значение -->
               <div class="current-cell" :class="getValueClass(item.currentBalance)">{{ formatVal(item.currentBalance) }}</div>
               <div class="arrow-cell">&gt;</div>
               
-              <!-- Будущее: Итог или Дельта -->
               <div v-if="isBalanceWidget" class="future-cell" :class="getValueClass(item.currentBalance + (item.futureChange || 0))">
                   {{ formatVal(item.currentBalance + (item.futureChange || 0)) }}
               </div>
@@ -198,7 +208,6 @@ const handleClick = () => { emit('click', props.widgetKey); };
           </template>
 
           <template v-else>
-              <!-- Обычный режим -->
               <div class="single-val-cell" :class="getValueClass(item.balance || item.currentBalance)">{{ formatVal(item.balance || item.currentBalance) }}</div>
           </template>
           
@@ -214,16 +223,77 @@ const handleClick = () => { emit('click', props.widgetKey); };
 .mobile-widget-card { 
   background-color: var(--color-background-soft, #282828); 
   border: 1px solid var(--color-border, #444); 
-  height: 100%; 
+  
+  /* 🟢 FIX: height auto, чтобы margin работал внутри flex/grid контейнера и создавал отступ */
+  /* Если родитель задает фиксированную высоту ячейки, margin "съест" часть высоты самой карточки, создавая просвет */
+  height: calc(100% - 12px); 
+  margin-bottom: 12px; 
+
   display: flex; 
   flex-direction: column; 
   padding: 0; 
   box-sizing: border-box; 
   overflow: hidden; 
   cursor: pointer; 
-  border-radius: 8px; 
+  
+  /* 🟢 Скругление и базовые стили границы */
+  border-radius: 12px; 
+  border-top-width: 4px;
+  border-top-style: solid;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.mobile-widget-card:active { background-color: rgba(255,255,255,0.05); }
+.mobile-widget-card:active { background-color: rgba(255,255,255,0.05); transform: scale(0.98); }
+
+/* 🟢 ЦВЕТОВЫЕ СТИЛИ (Border + Neon Shadow) */
+/* Тень полупрозрачная, в цвет бордера, создает эффект свечения */
+
+.style-purple { 
+  border-top-color: #666666; 
+  
+}
+.style-dark-blue { 
+  border-top-color: #666666; 
+  
+}
+.style-cyan { 
+  border-top-color: #666666; 
+ 
+}
+.style-blue-grey { 
+  border-top-color: #666666; 
+  
+}
+.style-teal { 
+  border-top-color: #666666; 
+  
+}
+.style-pink { 
+  border-top-color: #666666; 
+  
+}
+
+/* Стандартные цвета */
+.style-green { 
+  border-top-color: #666666; 
+  
+}
+.style-red { 
+  border-top-color: #666666; 
+  
+}
+.style-orange { 
+  border-top-color: #666666; 
+  
+}
+.style-light-blue { 
+  border-top-color: #666666; 
+  
+}
+.style-gray { 
+  border-top-color: #666666; 
+  
+}
+
 
 .widget-header { 
   display: flex; 
@@ -233,7 +303,7 @@ const handleClick = () => { emit('click', props.widgetKey); };
   padding: 8px 12px 4px 12px; 
   border-bottom: 1px solid rgba(255,255,255,0.05); 
   flex-shrink: 0; 
-  height: 26px; /* Увеличено с 22px для шрифта */
+  height: 26px; 
   box-sizing: content-box; 
 }
 .widget-title-row { display: flex; align-items: center; gap: 6px; overflow: hidden; }
@@ -246,7 +316,7 @@ const handleClick = () => { emit('click', props.widgetKey); };
   display: flex; 
   flex-direction: column; 
   justify-content: flex-start; 
-  padding: 4px 12px 8px 12px; 
+  padding: 8px 12px 12px 12px; 
 }
 
 @media (orientation: landscape) {
@@ -256,7 +326,7 @@ const handleClick = () => { emit('click', props.widgetKey); };
   }
 }
 
-.items-list { display: flex; flex-direction: column; gap: 4px; }
+.items-list { display: flex; flex-direction: column; gap: 6px; } 
 .list-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; line-height: 1.4; }
 .items-list.forecast-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px auto; column-gap: 4px; row-gap: 4px; align-items: center; align-content: center; }
 .items-list.forecast-mode .list-item { display: contents; }
