@@ -41,36 +41,34 @@ const showInfoModal = ref(false);
 const infoModalTitle = ref('');
 const infoModalMessage = ref('');
 
-// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (Anti-Lag) ---
-let isSyncingTimeline = false;
-let isSyncingChart = false;
+// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (Чистая логика) ---
+let isTimelineScrolling = false;
+let isChartScrolling = false;
+let syncTimeout = null;
 
 const onTimelineScroll = (event) => {
-  if (isSyncingChart) return;
-  isSyncingTimeline = true;
+  if (isChartScrolling) return;
+  isTimelineScrolling = true;
   
-  const left = event.target.scrollLeft;
   if (chartRef.value) {
-    chartRef.value.setScroll(left);
+    chartRef.value.setScroll(event.target.scrollLeft);
   }
   
-  setTimeout(() => {
-    isSyncingTimeline = false;
-  }, 50);
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => { isTimelineScrolling = false; }, 150);
 };
 
 const onChartScroll = (left) => {
-  if (isSyncingTimeline) return;
-  isSyncingChart = true;
+  if (isTimelineScrolling) return;
+  isChartScrolling = true;
   
   const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
   if (el) {
     el.scrollLeft = left;
   }
   
-  setTimeout(() => {
-    isSyncingChart = false;
-  }, 50);
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => { isChartScrolling = false; }, 150);
 };
 
 const initScrollSync = () => {
@@ -83,6 +81,7 @@ const initScrollSync = () => {
 };
 
 onMounted(async () => {
+  // Отключаем зум и форматирование телефонов на iOS
   const meta = document.createElement('meta');
   meta.name = "format-detection";
   meta.content = "telephone=no, date=no, email=no, address=no";
@@ -96,28 +95,17 @@ onMounted(async () => {
       const today = new Date();
       mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
 
+      // Принудительно инициализируем режим 12d при старте
       if (!mainStore.projection?.mode) {
           await mainStore.updateFutureProjectionByMode('12d', today);
       }
 
+      // Загружаем данные для текущего режима
       const modeToLoad = mainStore.projection.mode || '12d';
       await mainStore.loadCalculationData(modeToLoad, today);
       
       isDataLoaded.value = true; 
 
-      const savedProj = localStorage.getItem('projection');
-      if (savedProj) {
-          try {
-              const parsed = JSON.parse(savedProj);
-              if (parsed.mode && parsed.mode !== mainStore.projection?.mode) {
-                  setTimeout(async () => {
-                      await mainStore.updateFutureProjectionByMode(parsed.mode, today);
-                      await mainStore.loadCalculationData(parsed.mode, today);
-                  }, 200);
-              }
-          } catch (e) { console.error("Error parsing saved projection", e); }
-      }
-      
       nextTick(() => { initScrollSync(); });
   } catch (error) { console.error("Mobile View Mount Error:", error); }
 });
@@ -146,7 +134,6 @@ const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''
 const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
 const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
 
-// 🟢 ОБНОВЛЕННАЯ ЛОГИКА ФИЛЬТРА
 const updateFilterPosition = () => {
   if (filterBtnRef.value) {
     const rect = filterBtnRef.value.getBoundingClientRect();
@@ -158,7 +145,6 @@ const toggleFilter = (event) => {
     if (isFilterOpen.value) { 
         isFilterOpen.value = false; 
     } else { 
-        // Сначала вычисляем позицию
         if (event && event.currentTarget) { 
              nextTick(() => updateFilterPosition());
         } 
@@ -166,7 +152,6 @@ const toggleFilter = (event) => {
     } 
 };
 
-// 🟢 Обработчик клика вне фильтра (ФИКС: корректное закрытие)
 const handleFilterClickOutside = (event) => {
   const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target);
   const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target);
@@ -175,7 +160,6 @@ const handleFilterClickOutside = (event) => {
   }
 };
 
-// 🟢 Следим за открытием фильтра
 watch(isFilterOpen, (isOpen) => {
   if (isOpen) {
     nextTick(() => {
@@ -207,11 +191,9 @@ const activeWidgetItems = computed(() => {
       else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); 
       else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
       
-      // 🟢 FIX: Добавляем субтитры для Компаний (связанные счета)
       if (k === 'companies') {
           filtered = filtered.map(i => ({
               ...i,
-              // Убираем префикс "Счета: ", оставляем только имена
               subName: i.linkTooltip ? i.linkTooltip.replace('Счета: ', '') : ''
           }));
       }
@@ -277,7 +259,15 @@ const handleItemClick = (item) => {
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
-                    <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' }" @click.stop="toggleFilter" title="Фильтр">
+                    <!-- 🟢 FIX: Подсвечиваем кнопку фильтра, если есть сортировка -->
+                    <button 
+                        v-if="!isListWidget" 
+                        ref="filterBtnRef" 
+                        class="action-square-btn" 
+                        :class="{ active: isFilterOpen || filterMode !== 'all' || sortMode !== 'default' }" 
+                        @click.stop="toggleFilter" 
+                        title="Фильтр"
+                    >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     </button>
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
@@ -303,7 +293,6 @@ const handleItemClick = (item) => {
                            </div>
                        </template>
                        <template v-else>
-                           <!-- 🟢 FIX: Структура для отображения суб-текста (счетов) -->
                            <div class="fs-name-col">
                                 <div class="fs-name-row">
                                     <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
@@ -345,8 +334,8 @@ const handleItemClick = (item) => {
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
+              <!-- 🟢 FIX: Убрали v-show, используем класс для скрытия, чтобы сохранить структуру -->
               <MobileWidgetGrid 
-                v-show="mainStore.isHeaderExpanded" 
                 class="section-widgets" 
                 :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" 
                 @widget-click="onWidgetClick" 
@@ -471,6 +460,8 @@ const handleItemClick = (item) => {
 .section-widgets { 
     width: 100%;
     flex-shrink: 0; 
+    /* 🟢 Свернутое состояние: фиксированная макс. высота */
+    flex-basis: auto;
     max-height: 60vh; 
     overflow-y: auto; 
     scrollbar-width: none; 
@@ -479,11 +470,12 @@ const handleItemClick = (item) => {
 }
 
 .section-widgets.expanded-widgets {
-    flex: 1;
-    height: 0; 
-    min-height: 0;
+    /* 🟢 Развернутое состояние: занимает всё пространство */
+    flex: 1 1 0px; /* flex-grow: 1, flex-shrink: 1, flex-basis: 0px (Важно для скролла!) */
+    min-height: 0; 
+    height: auto;
     max-height: none;
-    padding-bottom: 80px; 
+    padding-bottom: 80px;
 }
 
 :deep(.widgets-grid) {
