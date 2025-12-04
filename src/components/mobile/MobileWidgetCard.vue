@@ -200,7 +200,7 @@ const handleClick = () => { emit('click', props.widgetKey); };
   overflow: hidden; 
   display: flex; 
   flex-direction: column; 
-  justify-content: center; 
+  justify-content: flex-start; 
   padding: 0 12px 8px 12px; 
 }
 
