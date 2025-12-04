@@ -121,13 +121,17 @@ watch(() => mainStore.projection, async () => {
   
   await nextTick(); // Ждем рендера DOM
   
-  // Принудительно скроллим к текущей дате из стора (которую мы установили в ChartControls)
-  // или к "Сегодня", если дата потерялась
-  if (mainStore.currentViewDate) { 
-      scrollToDate(new Date(mainStore.currentViewDate)); 
-  } else { 
-      scrollToDate(new Date()); 
-  }
+  // Добавляем небольшой таймаут, чтобы дать браузеру пересчитать ширину контейнера
+  // Это помогает при резком изменении количества колонок (365 -> 12)
+  setTimeout(() => {
+      // Принудительно скроллим к текущей дате из стора (которую мы установили в ChartControls)
+      // или к "Сегодня", если дата потерялась
+      if (mainStore.currentViewDate) { 
+          scrollToDate(new Date(mainStore.currentViewDate)); 
+      } else { 
+          scrollToDate(new Date()); 
+      }
+  }, 50);
 }, { deep: true });
 
 watch(visibleDays, () => {
