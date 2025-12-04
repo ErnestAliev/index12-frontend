@@ -25,11 +25,19 @@ const isListWidget = computed(() => {
     return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(props.widgetKey);
 });
 
+// 🟢 ЛОГИКА РАЗДЕЛЕНИЯ (ОБНОВЛЕНА)
+// Счета и Компании — это "Балансовые" (показываем Итог).
+// Все остальные (Доходы, Расходы, Контрагенты, Проекты, Кредиты и т.д.) — это "Потоковые" (показываем Дельту).
+const isBalanceWidget = computed(() => {
+    return ['accounts', 'companies'].includes(props.widgetKey);
+});
+
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
-// 🟢 FIX (Сохраняем исправление): Триггеры реактивности для обновления данных при старте
+// 🟢 Реактивность данных
 const items = computed(() => {
+  // Триггеры реактивности
   if (mainStore.transactions) {};
   if (mainStore.categories) {};
   if (mainStore.allWidgets) {};
@@ -58,23 +66,39 @@ function filterAndSort(originalList) {
 }
 
 const isEmpty = computed(() => { if (isListWidget.value) return false; return items.value.length === 0; });
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
-const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0'; const formatted = formatNumber(Math.abs(num)); return num > 0 ? `+ ${formatted}` : `- ${formatted}`; };
 
+// Форматирование обычного числа (без знака)
+const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
+
+// 🟢 Форматирование дельты (с явным знаком + или -)
+const formatDelta = (val) => { 
+  const num = Number(val) || 0; 
+  if (num === 0) return '0 ₸'; 
+  const formatted = formatNumber(Math.abs(num)); 
+  return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; 
+};
+
+// 🟢 Цвет для дельты (зависит от знака операции)
+const getDeltaClass = (val) => {
+    const num = Number(val) || 0;
+    return num > 0 ? 'green-text' : (num < 0 ? 'red-text' : 'white-text');
+};
+
+// Цвет для баланса
 const getValueClass = (val) => {
     const num = Number(val) || 0;
     if (props.widgetKey === 'liabilities') return num < 0 ? 'red-text' : 'white-text'; 
-    if (isListWidget.value) { if (props.widgetKey === 'incomeList') return 'green-text'; if (props.widgetKey === 'transfers') return 'white-text'; return 'red-text'; }
+    
+    // Для списков расходов всегда красный, если не 0
+    if (isListWidget.value) { 
+        if (props.widgetKey === 'incomeList') return 'green-text'; 
+        if (props.widgetKey === 'transfers') return 'white-text'; 
+        return 'red-text'; 
+    }
     return num < 0 ? 'red-text' : 'white-text';
 };
 
-const getDeltaClass = (val) => { const num = Number(val) || 0; return num > 0 ? 'green-text' : (num < 0 ? 'red-text' : 'white-text'); };
 const handleClick = () => { emit('click', props.widgetKey); };
-
-const getSubText = (item) => {
-    if (!item.linkTooltip) return '';
-    return item.linkTooltip.replace('Счета: ', '').replace('Владелец: ', '').replace('Связан со счетом: ', '');
-};
 </script>
 
 <template>
@@ -93,9 +117,9 @@ const getSubText = (item) => {
       <div v-if="isEmpty" class="empty-text">Нет данных</div>
       
       <div v-else class="items-list" :class="{ 'forecast-mode': isForecastActive }">
-        <!-- 🟢 Увеличил лимит до 5 элементов для горизонтального режима -->
         <div v-for="item in items.slice(0, 5)" :key="item._id" class="list-item">
           
+          <!-- Название -->
           <div class="name-cell">
               <span 
                 v-if="item.linkMarkerColor" 
@@ -111,18 +135,30 @@ const getSubText = (item) => {
           </div>
           
           <template v-if="isForecastActive">
+              <!-- Текущее значение (всегда показываем слева) -->
               <div class="current-cell" :class="getValueClass(item.currentBalance)">{{ formatVal(item.currentBalance) }}</div>
               <div class="arrow-cell">&gt;</div>
-              <div class="future-cell" :class="getDeltaClass(item.futureChange)">{{ formatDelta(item.futureChange) }}</div>
+              
+              <!-- 🟢 ВАЖНО: Разделение логики отображения будущего -->
+              
+              <!-- 1. Для Счетов/Компаний (Баланс): Показываем ИТОГ (Текущее + Изменение) -->
+              <div v-if="isBalanceWidget" class="future-cell" :class="getValueClass(item.currentBalance + (item.futureChange || 0))">
+                  {{ formatVal(item.currentBalance + (item.futureChange || 0)) }}
+              </div>
+
+              <!-- 2. Для Доходов/Расходов/Контрагентов/Проектов (Списки): Показываем ДЕЛЬТУ (+/- Изменение) -->
+              <div v-else class="future-cell" :class="getDeltaClass(item.futureChange)">
+                  {{ formatDelta(item.futureChange) }}
+              </div>
           </template>
 
           <template v-else>
+              <!-- Обычный режим (без прогноза) -->
               <div class="single-val-cell" :class="getValueClass(item.balance || item.currentBalance)">{{ formatVal(item.balance || item.currentBalance) }}</div>
           </template>
           
         </div>
         
-        <!-- Логика показа "Еще..." адаптирована -->
         <div v-if="items.length > 5" class="more-text">Еще {{ items.length - 5 }}...</div>
       </div>
     </div>
@@ -133,7 +169,6 @@ const getSubText = (item) => {
 .mobile-widget-card { 
   background-color: var(--color-background-soft, #282828); 
   border: 1px solid var(--color-border, #444); 
-  /* 🟢 FIX: 100% высоты, чтобы следовать за Grid, и padding: 0 для "от края до края" */
   height: 100%; 
   display: flex; 
   flex-direction: column; 
@@ -145,7 +180,6 @@ const getSubText = (item) => {
 }
 .mobile-widget-card:active { background-color: rgba(255,255,255,0.05); }
 
-/* 🟢 FIX: Padding перенесен сюда для отступов контента от краев */
 .widget-header { 
   display: flex; 
   justify-content: space-between; 
@@ -155,26 +189,24 @@ const getSubText = (item) => {
   border-bottom: 1px solid rgba(255,255,255,0.05); 
   flex-shrink: 0; 
   height: 22px; 
-  box-sizing: content-box; /* Чтобы padding не сжимал высоту контента */
+  box-sizing: content-box; 
 }
 .widget-title-row { display: flex; align-items: center; gap: 6px; overflow: hidden; }
 .widget-title { font-size: 10px; color: #aaa; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .forecast-badge { font-size: 9px; background-color: rgba(52, 199, 89, 0.15); color: var(--color-primary, #34c759); padding: 1px 4px; border-radius: 3px; font-weight: 500; }
 
-/* 🟢 FIX: Padding перенесен в тело */
 .widget-body { 
   flex-grow: 1; 
   overflow: hidden; 
   display: flex; 
   flex-direction: column; 
-  justify-content: flex-start; /* Центрирование по вертикали, если мало элементов */
+  justify-content: center; 
   padding: 0 12px 8px 12px; 
 }
 
-/* При повороте экрана в landscape контента больше, можно убрать центрирование или оставить */
 @media (orientation: landscape) {
   .widget-body {
-    justify-content: flex-start; /* В большом режиме список идет сверху */
+    justify-content: flex-start;
     padding-top: 6px;
   }
 }
