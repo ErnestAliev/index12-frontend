@@ -103,7 +103,7 @@ const handleWidgetClick = (key) => {
   background-color: var(--color-background-soft, #282828);
   min-width: 0;
   /* 🟢 ИЗМЕНЕНО: Высота увеличена до 150px */
-  height: 150px;
+  height: 200px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
@@ -112,7 +112,7 @@ const handleWidgetClick = (key) => {
 /* 🟢 LANDSCAPE MODE: Оставляем или корректируем */
 @media (orientation: landscape) {
   .grid-item {
-    height: 150px; /* Фиксируем и здесь */
+    height: 190px; /* Фиксируем и здесь */
   }
   /* Опционально можно вернуть 2 колонки в ландшафте, если нужно:
   .widgets-grid { grid-template-columns: 1fr 1fr; } 

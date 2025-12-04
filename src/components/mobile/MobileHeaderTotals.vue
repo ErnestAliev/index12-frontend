@@ -55,7 +55,7 @@ const futureDateStr = computed(() => {
 .mobile-totals-wrapper {
   display: flex;
   width: 100%;
-  height: 90px;
+  height: 120px;
   background-color: var(--color-background-soft, #282828);
   border-bottom: 1px solid var(--color-border, #444);
   flex-shrink: 0;
@@ -83,10 +83,10 @@ const futureDateStr = computed(() => {
 }
 
 .card-value {
-  font-size: 18px;
+  font-size: 1.6em;
   font-weight: 700;
   color: #fff;
-  margin-bottom: 4px;
+  
   white-space: nowrap;
 }
 
