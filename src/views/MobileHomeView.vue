@@ -10,7 +10,6 @@ import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
 import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
 import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
-import MobileChartControls from '@/components/mobile/MobileChartControls.vue'; // 🟢 Остался только для нижнего бара, если используется там
 
 // Modals
 import EntityPopup from '@/components/EntityPopup.vue';
@@ -111,7 +110,7 @@ onUnmounted(() => {
     if (el) el.removeEventListener('scroll', onTimelineScroll);
 });
 
-// --- Widget Fullscreen Logic ---
+// --- Widget Fullscreen Logic (Overlay) ---
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
@@ -119,7 +118,6 @@ watch(isWidgetFullscreen, (isOpen) => {
     if (isOpen) { 
         document.body.style.overflow = 'hidden'; 
         document.documentElement.style.overflow = 'hidden'; 
-        // 🟢 ИСПРАВЛЕНО: Убрано автоматическое включение прогноза
     } 
     else { 
         document.body.style.overflow = ''; 
@@ -168,20 +166,11 @@ const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value 
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
 const popupSaveAction = (val) => {};
 
-// 🟢 ОБРАБОТЧИК: Если меняют диапазон -> включаем Прогноз
-const onRangeChange = () => {
-    if (!showFutureBalance.value) {
-        showFutureBalance.value = true;
-    }
-};
-
 // 🟢 НОВЫЙ ОБРАБОТЧИК КЛИКА: Показывает подсказку или открывает редактор
 const handleItemClick = (item) => {
     if (item.isList && item.originalOp) {
-        // Если это операция (из списка доходов/расходов) - редактируем
         handleEditOperation(item.originalOp);
     } else if (!item.isList && item.isLinked && item.linkTooltip) {
-        // Если это сущность (счет/физлицо) со связью - показываем подсказку в InfoModal
         infoModalTitle.value = 'Связь';
         infoModalMessage.value = item.linkTooltip;
         showInfoModal.value = true;
@@ -222,15 +211,7 @@ const handleItemClick = (item) => {
                 </div>
             </div>
             
-            <!-- 🟢 ВСТАВЛЯЕМ КОНТРОЛЫ ДИАПАЗОНА (Скрывая левую иконку) -->
-            <MobileChartControls 
-                :show-widgets-toggle="false" 
-                :show-chart-icon="false"
-                class="fs-chart-controls" 
-                @range-change="onRangeChange" 
-            />
-            
-            <!-- 🔴 ГРАФИК УДАЛЕН ИЗ FS -->
+            <!-- 🔴 УДАЛЕН ПЕРЕКЛЮЧАТЕЛЬ ДИАПАЗОНА ИЗ FULLSCREEN -->
 
             <div class="fs-body">
                 <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
@@ -287,25 +268,32 @@ const handleItemClick = (item) => {
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
-              <MobileWidgetGrid v-show="mainStore.isHeaderExpanded" class="section-widgets" @widget-click="onWidgetClick" />
+              <!-- WIDGETS GRID (Expanded Mode) -->
+              <MobileWidgetGrid 
+                  v-show="mainStore.isHeaderExpanded" 
+                  class="section-widgets expanded-mode" 
+                  @widget-click="onWidgetClick" 
+              />
               
-              <!-- Timeline Section -->
-              <div class="section-timeline">
-                <MobileTimeline 
-                    v-if="isDataLoaded" 
-                    ref="timelineRef" 
-                    @show-menu="handleShowMenu" 
-                />
-              </div>
-              
-              <!-- Chart Section -->
-              <div class="section-chart">
-                <MobileChartSection 
-                    v-if="isDataLoaded" 
-                    ref="chartRef" 
-                    @scroll="onChartScroll" 
-                />
-              </div>
+              <!-- TIMELINE & CHART (Standard Mode) -->
+              <!-- Скрываем их, если открыт режим "Все виджеты" (Expanded) -->
+              <template v-if="!mainStore.isHeaderExpanded">
+                  <div class="section-timeline">
+                    <MobileTimeline 
+                        v-if="isDataLoaded" 
+                        ref="timelineRef" 
+                        @show-menu="handleShowMenu" 
+                    />
+                  </div>
+                  
+                  <div class="section-chart">
+                    <MobileChartSection 
+                        v-if="isDataLoaded" 
+                        ref="chartRef" 
+                        @scroll="onChartScroll" 
+                    />
+                  </div>
+              </template>
             </div>
             
             <div class="fixed-footer">
@@ -392,8 +380,17 @@ const handleItemClick = (item) => {
 
 /* Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
-.layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.layout-body { flex-grow: 1;  flex-direction: column; overflow: hidden; min-height: 0; }
 .section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+
+/* 🟢 ОБНОВЛЕНО: Сетка на весь экран в развернутом виде */
+.section-widgets.expanded-mode {
+    max-height: none; /* Убираем ограничение */
+    flex-grow: 1;     /* Занимаем все место */
+    gap: 0 !important; /* Убираем отступы между виджетами */
+    padding: 0 !important; /* Убираем внутренние отступы */
+}
+
 .section-widgets::-webkit-scrollbar { display: none; }
 .section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
 .section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
