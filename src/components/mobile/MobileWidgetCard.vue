@@ -17,6 +17,7 @@ const widgetInfo = computed(() => {
   return w ? w.name : 'Виджет';
 });
 
+// 🟢 Реактивно читаем состояние прогноза из стора
 const isForecastActive = computed(() => {
   return mainStore.dashboardForecastState[props.widgetKey] ?? false;
 });
@@ -30,7 +31,7 @@ const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
 // --- Main Data ---
-// 🟢 Теперь используем getWidgetItems для получения данных, как и в полноэкранном режиме
+// 🟢 Теперь используем getWidgetItems для получения данных, передавая флаг прогноза
 const items = computed(() => {
   const rawList = getWidgetItems(props.widgetKey, isForecastActive.value);
   return filterAndSort(rawList);

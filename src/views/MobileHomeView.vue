@@ -381,9 +381,11 @@ const handleItemClick = (item) => {
 .section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 
 /* 🟢 FIX: Позволяем виджетам занимать все пространство в развернутом виде */
+/* 🟢 ADD: Добавлен padding-bottom для компенсации нижней панели (чтобы последние виджеты не скрывались) */
 .section-widgets.expanded-widgets {
     flex-grow: 1;
     max-height: none;
+    padding-bottom: 80px; 
 }
 
 /* 🟢 FIX: Принудительно прижимаем содержимое виджетов к верху */
