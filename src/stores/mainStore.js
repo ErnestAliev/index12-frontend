@@ -18,7 +18,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v81.0 (INSTANT REACTIVITY FIX) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v82.0 (BALANCE CALC FIX) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -850,7 +850,10 @@ export const useMainStore = defineStore('mainStore', () => {
   });
   
   const futureCategoryChanges = computed(() => futureCategoryBalances.value);
-  const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + (a.initialBalance||0), 0));
+  
+  // 🟢 FIX 1: Явное приведение к числу
+  const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + Number(a.initialBalance||0), 0));
+  
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
       const futureMap = { ...snapshotMap }; 
       for (const op of futureOps.value) {
@@ -882,35 +885,43 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
+  // 🟢 FIX 2: Явное приведение к числу
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
       ...a, 
-      balance: (snapshot.value.accountBalances[a._id] || 0) + (a.initialBalance || 0) 
+      balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0) 
   })));
 
+  // 🟢 FIX 3: Явное приведение к числу
   const futureAccountBalances = computed(() => {
     const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
     return accounts.value.map(a => ({ 
         ...a, 
-        balance: (futureMap[a._id] || 0) + (a.initialBalance || 0) 
+        balance: Number(futureMap[a._id] || 0) + Number(a.initialBalance || 0) 
     }));
   });
   
+  // 🟢 FIX 4: Надежное сравнение ID для компаний (Текущие)
   const currentCompanyBalances = computed(() => {
       return companies.value.map(comp => {
+          const targetId = _toStr(comp._id);
           const linked = currentAccountBalances.value.filter(a => {
-              const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
-              return cId === comp._id;
+              // const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
+              // return cId === comp._id;
+              return _toStr(a.companyId) === targetId;
           });
           const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
           return { ...comp, balance: total };
       });
   });
 
+  // 🟢 FIX 5: Надежное сравнение ID для компаний (Будущие)
   const futureCompanyBalances = computed(() => {
       return companies.value.map(comp => {
+          const targetId = _toStr(comp._id);
           const linked = futureAccountBalances.value.filter(a => {
-              const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
-              return cId === comp._id;
+              // const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
+              // return cId === comp._id;
+              return _toStr(a.companyId) === targetId;
           });
           const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
           return { ...comp, balance: total };
