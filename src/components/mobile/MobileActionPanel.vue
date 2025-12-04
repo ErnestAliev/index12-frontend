@@ -13,8 +13,10 @@ const viewModes = [
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
 
+// Текущий режим берем строго из стора
 const viewModeKey = computed(() => mainStore.projection?.mode || '12d');
 
+// Индекс текущего режима в массиве
 const currentViewIndex = computed(() => {
     const idx = viewModes.findIndex(v => v.key === viewModeKey.value);
     return idx !== -1 ? idx : 0;
@@ -22,45 +24,47 @@ const currentViewIndex = computed(() => {
 
 const currentDisplay = computed(() => viewModes[currentViewIndex.value]);
 
+// Хелпер для вычисления дня года
 const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
   return Math.floor(diff / 86400000);
 };
 
-// 🟢 Переключение режима
+// Логика переключения (Влево/Вправо)
 const switchViewMode = async (direction) => {
     let nextIndex = currentViewIndex.value + direction;
     
+    // Циклическое переключение
     if (nextIndex >= viewModes.length) nextIndex = 0;
     if (nextIndex < 0) nextIndex = viewModes.length - 1;
     
     const newMode = viewModes[nextIndex].key;
     
-    // Берем текущую дату из стора (где сейчас стоит скролл)
-    // Если её нет, берем "сегодня"
-    const targetDate = mainStore.currentViewDate ? new Date(mainStore.currentViewDate) : new Date();
+    // 🟢 ВАЖНО: При переключении режима ВСЕГДА возвращаемся к "Сегодня"
+    // Это предотвращает баги с датами и "прыжки" расчетов
+    const targetDate = new Date(); 
 
-    // 1. Устанавливаем новый ЯКОРЬ (todayDayOfYear)
-    // Это единственный момент, когда диапазон может сдвинуться
+    // 1. Сначала обновляем проекцию в сторе
+    await mainStore.updateFutureProjectionByMode(newMode, targetDate);
+    
+    // 2. Жестко устанавливаем "Сегодня" как якорь
     mainStore.setToday(getDayOfYear(targetDate));
 
-    // 2. Обновляем проекцию
-    mainStore.updateFutureProjectionByMode(newMode, targetDate);
-    
-    // 3. Грузим данные
-    mainStore.loadCalculationData(newMode, targetDate);
+    // 3. Загружаем данные для нового режима и даты "Сегодня"
+    await mainStore.loadCalculationData(newMode, targetDate);
 };
 
 const openGraph = () => emit('open-graph');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
 onMounted(async () => {
+    // Если при загрузке режим не определен — ставим дефолт '12d'
     if (!mainStore.projection?.mode) {
         const today = new Date();
         mainStore.setToday(getDayOfYear(today));
-        mainStore.updateFutureProjectionByMode('12d', today);
-        mainStore.loadCalculationData('12d', today);
+        await mainStore.updateFutureProjectionByMode('12d', today);
+        // Данные загрузит HomeView или watcher
     }
 });
 </script>
@@ -79,6 +83,7 @@ onMounted(async () => {
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
+        <!-- Клик по тексту тоже переключает вперед -->
         <div class="period-label" @click="switchViewMode(1)">
           <span class="days-num">{{ currentDisplay.num }}</span>
           <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
