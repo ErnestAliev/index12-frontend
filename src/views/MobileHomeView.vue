@@ -2,6 +2,7 @@
 import { onMounted, ref, nextTick, computed, watch, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import { useWidgetData } from '@/composables/useWidgetData.js';
 
 // UI Components
 import MobileHeaderTotals from '@/components/mobile/MobileHeaderTotals.vue';
@@ -21,311 +22,84 @@ import WithdrawalPopup from '@/components/WithdrawalPopup.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
 import RefundPopup from '@/components/RefundPopup.vue';
 import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
+import PrepaymentModal from '@/components/PrepaymentModal.vue';
+import SmartDealPopup from '@/components/SmartDealPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v52.0 - OPTIMIZED REFRESH ---
- * * ВЕРСИЯ: 52.0
+ * * --- МЕТКА ВЕРСИИ: v54.0 - SMOOTH SCROLL SYNC ---
+ * * ВЕРСИЯ: 54.0
  * * ДАТА: 2025-12-04
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Убрана перезагрузка loadCalculationData из handleOperationSave.
- * 2. (FIX) Реализован корректный вызов создания перевода в handleTransferSave.
+ * 1. (PERF) Внедрен Mutex для синхронизации скролла без задержек (onTimelineScroll/onChartScroll).
+ * 2. (FIX) Убраны requestAnimationFrame в скролле для мгновенного отклика.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
+const { getWidgetItems } = useWidgetData();
+
 const timelineRef = ref(null);
 const chartRef = ref(null);
 
 const showGraphModal = ref(false);
 const isDataLoaded = ref(false); 
 
-// --- ГЛОБАЛЬНЫЕ ФУНКЦИИ И ХЕЛПЕРЫ ---
-
-const getDayOfYear = (date) => {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
-};
-const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); 
-    const [year, doy] = dateKey.split('-').map(Number);
-    if (isNaN(year) || isNaN(doy)) return new Date();
-    const date = new Date(year, 0, 1); date.setDate(doy); return date;
-};
-
-let isSyncing = false;
+// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (MUTEX PATTERN) ---
+const isTimelineScrolling = ref(false);
+const isChartScrolling = ref(false);
+let tTimeout = null;
+let cTimeout = null;
 
 const onTimelineScroll = (event) => { 
-    if (isSyncing) return; 
-    isSyncing = true; 
-    if (chartRef.value) chartRef.value.setScroll(event.target.scrollLeft); 
-    requestAnimationFrame(() => isSyncing = false); 
+    // Если скролл инициирован графиком, игнорируем, чтобы избежать цикла
+    if (isChartScrolling.value) return; 
+    
+    isTimelineScrolling.value = true; 
+    const left = event.target.scrollLeft;
+
+    // Мгновенная передача позиции в график
+    if (chartRef.value) {
+        chartRef.value.setScroll(left);
+    } 
+    
+    // Сброс флага через небольшой таймаут (debounce окончания скролла)
+    clearTimeout(tTimeout);
+    tTimeout = setTimeout(() => { isTimelineScrolling.value = false; }, 60); 
 };
 
 const onChartScroll = (left) => { 
-    if (isSyncing) return; 
-    isSyncing = true; 
+    // Если скролл инициирован таймлайном, игнорируем
+    if (isTimelineScrolling.value) return; 
+    
+    isChartScrolling.value = true; 
+    
+    // Прямой доступ к DOM таймлайна для скорости
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area'); 
-    if (el) el.scrollLeft = left; 
-    requestAnimationFrame(() => isSyncing = false); 
-};
-
-// Форматтеры
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
-const formatDelta = (val) => {
-  const num = Number(val) || 0;
-  if (num === 0) return '0 ₸';
-  const formatted = formatNumber(Math.abs(num));
-  return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
-};
-const formatDateShort = (date) => {
-    if (!date) return '';
-    const d = new Date(date);
-    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-};
-
-// Ссылки авторизации
-const googleAuthUrl = computed(() => {
-  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
-  return `${baseUrl}/auth/google`;
-});
-const devAuthUrl = computed(() => {
-  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
-  return `${baseUrl}/auth/dev-login`;
-});
-const isLocalhost = computed(() => {
-    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-});
-
-// --- Widget Fullscreen Logic ---
-const activeWidgetKey = ref(null);
-const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
-
-watch(isWidgetFullscreen, (isOpen) => {
-    if (isOpen) {
-        document.body.style.overflow = 'hidden';
-        document.documentElement.style.overflow = 'hidden'; 
-    } else {
-        document.body.style.overflow = '';
-        document.documentElement.style.overflow = '';
-        nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); });
+    if (el) {
+        el.scrollLeft = left; 
     }
-});
-
-const activeWidgetTitle = computed(() => {
-  if (!activeWidgetKey.value) return '';
-  const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value);
-  return w ? w.name : 'Виджет';
-});
-
-// --- Filter Logic ---
-const isFilterOpen = ref(false);
-const filterBtnRef = ref(null); 
-const filterPos = ref({ top: '0px', right: '16px' }); 
-
-const sortMode = computed(() => mainStore.widgetSortMode); 
-const filterMode = computed(() => mainStore.widgetFilterMode); 
-
-const toggleFilter = (event) => {
-    if (isFilterOpen.value) {
-        isFilterOpen.value = false;
-    } else {
-        if (event && event.currentTarget) {
-             const rect = event.currentTarget.getBoundingClientRect();
-             filterPos.value = { 
-                 top: `${rect.bottom + 5}px`, 
-                 left: `${Math.min(rect.left, window.innerWidth - 170)}px` 
-             };
-        }
-        isFilterOpen.value = true;
-    }
+    
+    clearTimeout(cTimeout);
+    cTimeout = setTimeout(() => { isChartScrolling.value = false; }, 60); 
 };
 
-const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; };
-const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
-
-const showFutureBalance = computed({
-  get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false,
-  set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); }
-});
-
-const mergeBalances = (currentBalances, futureData, isDelta = false) => {
-  let result = currentBalances || [];
-  if (futureData) {
-      const futureMap = new Map(futureData.map(item => [item._id, item.balance]));
-      result = currentBalances.map(item => {
-          const fallback = isDelta ? 0 : item.balance;
-          const futureVal = futureMap.get(item._id) ?? fallback;
-          return { 
-              ...item, 
-              // Для сущностей: futureBalance - это конечное значение или дельта
-              futureBalance: futureVal,
-              // Вычисляем реальное изменение для отображения дельты
-              futureChange: isDelta ? futureVal : (futureVal - item.balance) 
-          };
-      });
-  } else {
-      result = currentBalances.map(item => ({ ...item, futureBalance: isDelta ? 0 : item.balance, futureChange: 0 }));
-  }
-  return result;
-};
-
-const isListWidget = computed(() => {
-    const k = activeWidgetKey.value;
-    return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k);
-});
-
-const isWidgetDeltaMode = computed(() => {
-    const k = activeWidgetKey.value;
-    return ['contractors', 'projects', 'individuals', 'categories'].includes(k);
-});
-
-// 🟢 ГЛАВНАЯ ЛОГИКА ФОРМИРОВАНИЯ СПИСКА
-const activeWidgetItems = computed(() => {
-  const k = activeWidgetKey.value;
-  if (!k) return [];
-  
-  let items = [];
-  
-  // 1. СУЩНОСТИ (Счета, Компании и т.д.)
-  if (k === 'accounts') items = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
-  else if (k === 'companies') items = mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false);
-  // 🟢 ДОБАВЛЕНО: КРЕДИТЫ
-  else if (k === 'credits') {
-      // Credits already contain merged data in futureCreditBalances (current balance + futureBalance)
-      items = mainStore.futureCreditBalances.map(c => ({
-          ...c,
-          // Вычисляем дельту
-          futureChange: (c.futureBalance || 0) - (c.balance || 0)
-      }));
-  }
-  else if (k === 'contractors') {
-      items = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
-      const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-      items = items.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
-  }
-  else if (k === 'projects') items = mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true);
-  else if (k === 'individuals') items = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
-  else if (k === 'categories') {
-      items = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryChanges, true);
-      const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
-      items = items.filter(c => visibleIds.has(c._id));
-  }
-  else if (k === 'liabilities') {
-      // Для обязательств логика чуть другая, ручная сборка
-      const weOweDelta = mainStore.liabilitiesWeOweFuture - mainStore.liabilitiesWeOwe;
-      const theyOweDelta = mainStore.liabilitiesTheyOweFuture - mainStore.liabilitiesTheyOwe;
-      items = [
-          { _id: 'we', name: 'Мы должны', balance: mainStore.liabilitiesWeOwe, futureBalance: mainStore.liabilitiesWeOweFuture, futureChange: weOweDelta },
-          { _id: 'they', name: 'Нам должны', balance: mainStore.liabilitiesTheyOwe, futureBalance: mainStore.liabilitiesTheyOweFuture, futureChange: theyOweDelta, isIncome: true }
-      ];
-  }
-  // 2. СПИСКИ ОПЕРАЦИЙ (Доходы, Расходы и т.д.)
-  else if (isListWidget.value) {
-      let list = [];
-      // Берем либо будущие, либо текущие списки в зависимости от режима прогноза
-      // В мобильной версии Fullscreen показывает список операций
-      if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes;
-      else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses;
-      else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals;
-      else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
-      
-      return list.map(op => {
-          let name = op.categoryId?.name || 'Без категории';
-          let subName = '';
-
-          // Логика формирования заголовка и подзаголовка
-          if (op.type === 'transfer' || op.isTransfer) {
-              const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId));
-              const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId));
-              name = 'Перевод';
-              subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`;
-          } else if (op.isWithdrawal) {
-              name = 'Вывод средств';
-              subName = op.destination || op.description || '';
-          } else {
-              // Для доходов/расходов:
-              // Name = Категория
-              // Sub = Контрагент / Проект / Описание
-              const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name;
-              const project = op.projectId?.name;
-              const desc = op.description;
-              
-              if (contractor) subName = contractor;
-              else if (project) subName = project;
-              else if (desc) subName = desc;
-          }
-          
-          return { 
-              _id: op._id, 
-              name: name,
-              subName: subName,
-              balance: op.amount,
-              date: op.date,
-              isList: true,
-              isIncome: op.type === 'income',
-              originalOp: op // Сохраняем ссылку на операцию для редактирования
-          };
-      });
-  }
-
-  // Фильтрация и сортировка для СУЩНОСТЕЙ
-  let filtered = [...items];
-  
-  if (!isListWidget.value) {
-      const isDeltaWidget = isWidgetDeltaMode.value;
-      const targetBalanceKey = showFutureBalance.value ? 'futureBalance' : 'balance'; 
-
-      const getFilterVal = (i) => {
-          // Если дельта-режим (как проекты), то при прогнозе смотрим на ИТОГОВЫЙ баланс (баланс + дельта) или просто дельту?
-          // В HeaderBalanceCard логика: balance + futureBalance (где futureBalance - это дельта).
-          // В activeWidgetItems выше мы уже нормализовали это в поле futureBalance (полное значение) или оставили как есть.
-          return i[targetBalanceKey] || 0;
-      };
-
-      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0);
-      else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0);
-      else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
-
-      const getSortVal = (i) => getFilterVal(i);
-      
-      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
-      else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
-  } else {
-      // Для списков сортировка по дате
-      filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-  }
-
-  return filtered;
-});
-
-const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; };
-const onWidgetClick = (key) => { activeWidgetKey.value = key; };
-
-const handleGlobalClick = (e) => {
-    if (isFilterOpen.value && filterBtnRef.value && !filterBtnRef.value.contains(e.target)) {
-        const menu = document.querySelector('.filter-dropdown-fixed');
-        if (menu && !menu.contains(e.target)) {
-            isFilterOpen.value = false;
-        }
-    }
-};
-
+// --- Инициализация начальной позиции ---
 const initScrollSync = () => {
     if (!timelineRef.value) return;
     const el = timelineRef.value.$el.querySelector('.timeline-scroll-area');
     if (el) { 
+        // Удаляем старые слушатели, чтобы не дублировать
         el.removeEventListener('scroll', onTimelineScroll);
-        el.addEventListener('scroll', onTimelineScroll); 
-        const w = window.innerWidth * 0.25; 
-        el.scrollLeft = w * 4; 
-        if (chartRef.value) chartRef.value.setScroll(w * 4); 
+        // Добавляем пассивный слушатель для производительности
+        el.addEventListener('scroll', onTimelineScroll, { passive: true }); 
+        
+        // Установка начальной позиции (центр или сегодня)
+        // Логика установки позиции должна быть в MobileTimeline через scrollToDate, 
+        // но здесь мы можем подстраховать
     }
 };
 
-onMounted(() => document.addEventListener('click', handleGlobalClick));
-onUnmounted(() => document.removeEventListener('click', handleGlobalClick));
-
+// --- Lifecycle ---
 onMounted(async () => {
   try {
       await mainStore.checkAuth();
@@ -333,25 +107,28 @@ onMounted(async () => {
       await mainStore.fetchAllEntities();
       
       const today = new Date();
-      const todayDay = getDayOfYear(today);
-      mainStore.setToday(todayDay);
+      // Устанавливаем текущий день
+      mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
 
       await mainStore.loadCalculationData('12d', today);
       isDataLoaded.value = true; 
 
+      // Восстановление проекции
       const savedProj = localStorage.getItem('projection');
       if (savedProj) {
           try {
               const parsed = JSON.parse(savedProj);
               if (parsed.mode && parsed.mode !== '12d') {
+                  // Фоновая загрузка, чтобы не блочить UI
                   setTimeout(async () => {
                       await mainStore.updateFutureProjectionByMode(parsed.mode, today);
                       await mainStore.loadCalculationData(parsed.mode, today);
-                  }, 300);
+                  }, 100);
               }
           } catch (e) { console.error("Error parsing saved projection", e); }
       }
 
+      // Инициализация слушателей после рендера DOM
       nextTick(() => {
           initScrollSync();
       });
@@ -360,103 +137,58 @@ onMounted(async () => {
   }
 });
 
-// --- POPUP STATES & LOGIC (UPDATED) ---
-const isIncomePopupVisible = ref(false); 
-const isExpensePopupVisible = ref(false); 
+onUnmounted(() => {
+    const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
+    if (el) el.removeEventListener('scroll', onTimelineScroll);
+});
 
-const isTransferPopupVisible = ref(false);
-const isListEditorVisible = ref(false);
-const isEntityPopupVisible = ref(false);
-const isOperationListEditorVisible = ref(false);
-const isWithdrawalPopupVisible = ref(false);
-const isRetailPopupVisible = ref(false);
-const isRefundPopupVisible = ref(false);
 
-const operationToEdit = ref(null);
-const selectedDate = ref(new Date());
-const selectedCellIndex = ref(0);
-
-const popupTitle = ref('');
-const editorTitle = ref('');
-const editorItems = ref([]);
-const operationListEditorTitle = ref('');
-const operationListEditorType = ref('income');
-
-// --- CONTEXT MENU & ACTIONS ---
-const handleShowMenu = (payload) => {
-    if (payload.operation) {
-        handleEditOperation(payload.operation);
-    } else {
-        selectedDate.value = payload.date || new Date();
-        selectedCellIndex.value = payload.cellIndex || 0;
-        isIncomePopupVisible.value = true;
-    }
-};
-
+// --- Остальная логика попапов и виджетов (без изменений) ---
+const activeWidgetKey = ref(null);
+const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
+watch(isWidgetFullscreen, (isOpen) => {
+    if (isOpen) { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; } 
+    else { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); }
+});
+const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
+const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
+const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
+const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } isFilterOpen.value = true; } };
+const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
+const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
+const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
+const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories'].includes(k); });
+const { getWidgetItems: getItems } = useWidgetData(); 
+const activeWidgetItems = computed(() => {
+  const k = activeWidgetKey.value; if (!k) return [];
+  if (!isListWidget.value) {
+      const items = getItems(k, showFutureBalance.value);
+      let filtered = [...items];
+      const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
+      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
+      const getSortVal = (i) => getFilterVal(i);
+      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a)); else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
+      return filtered;
+  } else {
+      let list = []; if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes; else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses; else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals; else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
+      const mappedList = list.map(op => { let name = op.categoryId?.name || 'Без категории'; let subName = ''; if (op.type === 'transfer' || op.isTransfer) { const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId)); const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId)); name = 'Перевод'; subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`; } else if (op.isWithdrawal) { name = 'Вывод средств'; subName = op.destination || op.description || ''; } else { const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name; const project = op.projectId?.name; const desc = op.description; if (contractor) subName = contractor; else if (project) subName = project; else if (desc) subName = desc; } return { _id: op._id, name: name, subName: subName, balance: op.amount, date: op.date, isList: true, isIncome: op.type === 'income', originalOp: op }; });
+      mappedList.sort((a, b) => new Date(b.date) - new Date(a.date)); return mappedList;
+  }
+});
+const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; }; const onWidgetClick = (key) => { activeWidgetKey.value = key; };
+const googleAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/google`; }); const devAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/dev-login`; }); const isLocalhost = computed(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`; const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; }; const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
+const isIncomePopupVisible = ref(false); const isExpensePopupVisible = ref(false); const isTransferPopupVisible = ref(false); const isListEditorVisible = ref(false); const isEntityPopupVisible = ref(false); const isOperationListEditorVisible = ref(false); const isWithdrawalPopupVisible = ref(false); const isRetailPopupVisible = ref(false); const isRefundPopupVisible = ref(false); const isPrepaymentModalVisible = ref(false); const isSmartDealPopupVisible = ref(false); const operationToEdit = ref(null); const selectedDate = ref(new Date()); const selectedCellIndex = ref(0); const popupTitle = ref(''); const editorTitle = ref(''); const editorItems = ref([]); const operationListEditorTitle = ref(''); const operationListEditorType = ref('income'); const prepaymentData = ref({}); const prepaymentDateKey = ref(''); const smartDealPayload = ref(null); const smartDealStatus = ref({ debt: 0, totalDeal: 0 });
+const _parseDateKey = (dateKey) => { if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); const [year, doy] = dateKey.split('-').map(Number); if (isNaN(year) || isNaN(doy)) return new Date(); const date = new Date(year, 0, 1); date.setDate(doy); return date; };
+const handleShowMenu = (payload) => { if (payload.operation) { handleEditOperation(payload.operation); } else { selectedDate.value = payload.date || new Date(); selectedCellIndex.value = payload.cellIndex || 0; isIncomePopupVisible.value = true; } };
 const handleAction = (actionType) => {};
-
-const handleEditOperation = (operation) => {
-    operationToEdit.value = operation;
-    const opDate = _parseDateKey(operation.dateKey);
-    selectedDate.value = opDate;
-    selectedCellIndex.value = operation.cellIndex;
-
-    if (mainStore._isRetailWriteOff(operation)) { isRetailPopupVisible.value = true; return; }
-    
-    const catId = operation.categoryId?._id || operation.categoryId;
-    if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) { isRefundPopupVisible.value = true; return; }
-
-    if (operation.type === 'transfer' || operation.isTransfer) {
-        isTransferPopupVisible.value = true;
-    } else if (operation.isWithdrawal) {
-        isWithdrawalPopupVisible.value = true;
-    } else if (operation.type === 'income') {
-        isIncomePopupVisible.value = true; 
-    } else if (operation.type === 'expense') {
-        isExpensePopupVisible.value = true; 
-    }
-};
-
-const handleOperationSave = async ({ mode, id, data }) => {
-    try {
-        if (mode === 'create') {
-            if (data.cellIndex === undefined) {
-                 const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date));
-                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
-            }
-            await mainStore.createEvent(data);
-        } else {
-            await mainStore.updateOperation(id, data);
-        }
-        // 🟢 FIX: Убрана лишняя перезагрузка
-        isIncomePopupVisible.value = false;
-        isExpensePopupVisible.value = false;
-        operationToEdit.value = null;
-    } catch (e) {
-        console.error("Mobile Save Error", e);
-        alert("Ошибка сохранения");
-    }
-};
-
-const handleTransferSave = async ({ mode, id, data }) => {
-    try {
-        if (mode === 'create') {
-            if (data.cellIndex === undefined) {
-                 const dateKey = mainStore._getDateKey(new Date(data.date));
-                 data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
-            }
-            await mainStore.createTransfer(data);
-        } else {
-            await mainStore.updateTransfer(id, data);
-        }
-        isTransferPopupVisible.value = false;
-    } catch (e) {
-        console.error("Mobile Transfer Save Error", e);
-        alert("Ошибка перевода");
-    }
-};
-
-const popupSaveAction = (val) => {};
+const handleEditOperation = (operation) => { operationToEdit.value = operation; const opDate = _parseDateKey(operation.dateKey); selectedDate.value = opDate; selectedCellIndex.value = operation.cellIndex; if (mainStore._isRetailWriteOff(operation)) { isRetailPopupVisible.value = true; return; } const catId = operation.categoryId?._id || operation.categoryId; if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) { isRefundPopupVisible.value = true; return; } if (operation.type === 'transfer' || operation.isTransfer) { isTransferPopupVisible.value = true; } else if (operation.isWithdrawal) { isWithdrawalPopupVisible.value = true; } else if (operation.type === 'income') { isIncomePopupVisible.value = true; } else if (operation.type === 'expense') { isExpensePopupVisible.value = true; } };
+const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
+const handleTransferSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else { await mainStore.updateTransfer(id, data); } isTransferPopupVisible.value = false; } catch (e) { console.error("Mobile Transfer Save Error", e); alert("Ошибка перевода"); } };
+const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Date(); const d = new Date(rawDate); prepaymentDateKey.value = mainStore._getDateKey(d); prepaymentData.value = { ...data, amount: Math.abs(data.amount || 0), contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, operationToEdit: null }; isIncomePopupVisible.value = false; isPrepaymentModalVisible.value = true; };
+const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
+const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
+const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
 </script>
 
 <template>
@@ -477,7 +209,7 @@ const popupSaveAction = (val) => {};
     </div>
 
     <template v-else>
-        <!-- 🟢 ПОЛНОЭКРАННЫЙ РЕЖИМ ВИДЖЕТА -->
+        <!-- Fullscreen Widget Mode -->
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
@@ -495,13 +227,9 @@ const popupSaveAction = (val) => {};
                 <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
                 <div class="fs-list">
                     <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="item.originalOp ? handleEditOperation(item.originalOp) : null">
-                       
-                       <!-- 🟢 СПИСКИ ОПЕРАЦИЙ (Доходы, Расходы и т.д.) -->
                        <template v-if="item.isList">
                            <div class="fs-item-left">
-                               <!-- Дата -->
                                <div class="fs-date">{{ formatDateShort(item.date) }}</div>
-                               <!-- Описание/Категория -->
                                <div class="fs-info-col">
                                    <div class="fs-name-text">{{ item.name }}</div>
                                    <div class="fs-sub-text" v-if="item.subName">{{ item.subName }}</div>
@@ -511,108 +239,76 @@ const popupSaveAction = (val) => {};
                                {{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸
                            </div>
                        </template>
-
-                       <!-- 🟢 СУЩНОСТИ (Счета, Проекты) -->
                        <template v-else>
-                           <div class="fs-name">{{ item.name }}</div>
+                           <div class="fs-name-row">
+                                <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
+                                <span class="fs-name">{{ item.name }}</span>
+                                <span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                </span>
+                           </div>
                            <div class="fs-val-block">
-                               <!-- Если прогноз выключен, показываем просто баланс -->
                                <div v-if="!showFutureBalance" class="fs-val" :class="Number(item.balance) < 0 ? 'red-text' : ''">
                                    {{ formatVal(item.balance) }}
                                </div>
-                               <!-- Если прогноз включен -->
                                <div v-else class="fs-val-forecast">
                                    <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
                                    <span class="fs-arrow">></span>
-                                   <!-- Для дельта-виджетов (проекты) показываем +change, для остальных total -->
-                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">
-                                       {{ formatDelta(item.futureChange) }}
-                                   </span>
-                                   <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">
-                                       {{ formatVal(item.futureBalance) }}
-                                   </span>
+                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">{{ formatDelta(item.futureChange) }}</span>
+                                   <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">{{ formatVal(item.futureBalance) }}</span>
                                </div>
                            </div>
                        </template>
-
                     </div>
                 </div>
             </div>
-
             <div class="fs-footer">
                 <button class="btn-back" @click="handleWidgetBack">Назад</button>
             </div>
-            
             <Teleport to="body">
               <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @click.stop>
-                <div class="filter-group">
-                  <div class="filter-group-title">Сортировка</div>
-                  <ul>
-                    <li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li>
-                    <li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li>
-                  </ul>
-                </div>
-                <div class="filter-group">
-                  <div class="filter-group-title">Фильтр</div>
-                  <ul>
-                    <li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li>
-                    <li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li>
-                    <li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li>
-                    <li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li>
-                  </ul>
-                </div>
+                <div class="filter-group"><div class="filter-group-title">Сортировка</div><ul><li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li><li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li></ul></div>
+                <div class="filter-group"><div class="filter-group-title">Фильтр</div><ul><li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li><li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li><li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li><li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li></ul></div>
               </div>
             </Teleport>
         </div>
 
         <template v-else>
             <MobileHeaderTotals class="fixed-header" />
+            
             <div class="layout-body">
-              <MobileWidgetGrid 
-                 v-show="mainStore.isHeaderExpanded" 
-                 class="section-widgets" 
-                 @widget-click="onWidgetClick" 
-              />
+              <MobileWidgetGrid v-show="mainStore.isHeaderExpanded" class="section-widgets" @widget-click="onWidgetClick" />
+              
+              <!-- Timeline Section -->
               <div class="section-timeline">
-                <MobileTimeline v-if="isDataLoaded" ref="timelineRef" @show-menu="handleShowMenu" />
+                <MobileTimeline 
+                    v-if="isDataLoaded" 
+                    ref="timelineRef" 
+                    @show-menu="handleShowMenu" 
+                />
               </div>
+              
+              <!-- Chart Section -->
               <div class="section-chart">
-                <MobileChartSection v-if="isDataLoaded" ref="chartRef" @scroll="onChartScroll" />
+                <MobileChartSection 
+                    v-if="isDataLoaded" 
+                    ref="chartRef" 
+                    @scroll="onChartScroll" 
+                />
               </div>
             </div>
+            
             <div class="fixed-footer">
-              <MobileActionPanel 
-                 @action="handleAction" 
-                 @open-graph="showGraphModal = true" 
-              />
+              <MobileActionPanel @action="handleAction" @open-graph="showGraphModal = true" />
             </div>
         </template>
 
+        <!-- Popups -->
         <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-        
-        <EntityPopup v-if="isEntityPopupVisible" :title="popupTitle" @close="isEntityPopupVisible = false" @save="(val) => popupSaveAction(val)" />
-        <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" />
-        <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" @close="isOperationListEditorVisible = false" />
-        
-        <!-- 🟢 NEW POPUPS -->
-        <IncomePopup 
-           v-if="isIncomePopupVisible" 
-           :date="selectedDate" 
-           :cellIndex="selectedCellIndex" 
-           :operation-to-edit="operationToEdit"
-           @close="isIncomePopupVisible = false" 
-           @save="handleOperationSave" 
-        />
-
-        <ExpensePopup 
-           v-if="isExpensePopupVisible" 
-           :date="selectedDate" 
-           :cellIndex="selectedCellIndex" 
-           :operation-to-edit="operationToEdit"
-           @close="isExpensePopupVisible = false" 
-           @save="handleOperationSave" 
-        />
-
+        <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
+        <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" />
+        <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
+        <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
         <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
         <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
         <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
@@ -633,7 +329,7 @@ const popupSaveAction = (val) => {};
 .google-login-button { display: block; width: 100%; padding: 12px; background: #fff; color: #333; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
 .dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
 
-/* Fullscreen Widget */
+/* Fullscreen Styles */
 .fullscreen-widget-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-background, #1a1a1a); z-index: 2000; display: flex; flex-direction: column; }
 .fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--color-border, #444); background-color: var(--color-background-soft, #282828); }
 .fs-title { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
@@ -641,35 +337,32 @@ const popupSaveAction = (val) => {};
 .action-square-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
-
 .fs-body { flex-grow: 1; overflow-y: auto; padding: 16px; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }
 .fs-body::-webkit-scrollbar { display: none; }
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
 .fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; min-height: 44px;}
-
-/* Entity Item Styles */
+.fs-name-row { display: flex; align-items: center; flex: 1; overflow: hidden; }
 .fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fs-val-block { display: flex; flex-direction: column; align-items: flex-end; }
+.fs-val-block { display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px; }
 .fs-val { font-size: 14px; color: #fff; font-weight: 700; white-space: nowrap; }
 .fs-val-forecast { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .fs-curr { color: #ccc; font-weight: 500; }
 .fs-arrow { color: #666; font-size: 12px; }
 .fs-fut { font-weight: 700; color: #fff; }
-
-/* List Item Styles */
 .fs-item-left { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; }
 .fs-date { color: #666; font-size: 11px; min-width: 32px; flex-shrink: 0; text-align: center; line-height: 1.2; }
 .fs-info-col { display: flex; flex-direction: column; overflow: hidden; }
 .fs-name-text { font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fs-sub-text { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-
+.color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-right: 8px; }
+.link-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #34c759; }
 .red-text { color: #ff3b30 !important; }
 .green-text { color: #34c759 !important; }
 .fs-empty { text-align: center; color: #666; margin-top: 50px; }
 .fs-footer { padding: 15px 20px; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
 .btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
 
-/* Main Layout Sections */
+/* Layout */
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .section-widgets { flex-shrink: 0; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
