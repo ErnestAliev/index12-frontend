@@ -206,7 +206,7 @@ onMounted(() => {
   z-index: 2000; backdrop-filter: blur(3px);
 }
 .modal-content {
-  width: 95vw; max-width: 1600px; height: 85vh; max-height: 900px;
+  width: 95vw; max-width: 1600px; height: 75vh; max-height: 900px;
   background: var(--color-background); border-radius: 12px;
   border: 1px solid var(--color-border); box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   display: flex; flex-direction: column; overflow: hidden;
@@ -299,4 +299,5 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
 </style>

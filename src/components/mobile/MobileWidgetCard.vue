@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import { useWidgetData } from '@/composables/useWidgetData.js'; // 🟢 Импортируем общую логику
 
 const props = defineProps({
   widgetKey: { type: String, required: true },
@@ -9,6 +10,7 @@ const props = defineProps({
 
 const emit = defineEmits(['click', 'add', 'edit']);
 const mainStore = useMainStore();
+const { getWidgetItems } = useWidgetData(); // 🟢 Используем композабл
 
 const widgetInfo = computed(() => {
   const w = mainStore.allWidgets.find(x => x.key === props.widgetKey);
@@ -27,241 +29,11 @@ const isListWidget = computed(() => {
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
-// --- Helpers for color logic ---
-const getId = (field) => {
-    if (!field) return null;
-    if (typeof field === 'object' && field._id) return field._id;
-    return field; 
-};
-
-// 🟢 1. Calculate Financial Weights (Benchmark)
-// Summarize total system capital and individual owner capitals
-const financialStats = computed(() => {
-    const balances = new Map();
-    let systemTotalBalance = 0;
-
-    // Use currentAccountBalances for actual figures
-    const sourceAccounts = mainStore.currentAccountBalances || [];
-
-    sourceAccounts.forEach(acc => {
-        const rawBalance = Number(acc.balance);
-        const balance = isNaN(rawBalance) ? 0 : rawBalance; 
-        
-        systemTotalBalance += balance;
-
-        const cId = getId(acc.companyId);
-        const iId = getId(acc.individualId);
-        const ownerId = cId || iId;
-
-        if (ownerId) {
-            const current = balances.get(ownerId) || 0;
-            balances.set(ownerId, current + balance);
-        }
-    });
-
-    const maxBalance = systemTotalBalance > 0 ? systemTotalBalance : 1;
-    return { balances, maxBalance };
-});
-
-// 🟢 2. Color Function (Traffic Light)
-const getStatusColor = (currentBalance, totalSystemBalance) => {
-    const safeBalance = Number(currentBalance) || 0;
-    
-    // If balance <= 0 -> Red
-    if (safeBalance <= 0) return '#FF3B30'; 
-
-    const ratio = safeBalance / totalSystemBalance;
-    
-    if (ratio >= 0.5) return '#34C759'; // Green (>= 50%)
-    if (ratio > 0.1) return '#FFCC00';  // Yellow (> 10%)
-    return '#FF3B30';                   // Red (<= 10%)
-};
-
 // --- Main Data ---
+// 🟢 Теперь используем getWidgetItems для получения данных, как и в полноэкранном режиме
 const items = computed(() => {
-  const k = props.widgetKey;
-  const { balances, maxBalance } = financialStats.value;
-  
-  const mapItem = (item, futureMap) => {
-      const currentVal = item.balance || 0;
-      const rawFutureVal = futureMap ? (futureMap.get(item._id) || 0) : 0;
-      let delta = 0;
-      
-      if (['accounts', 'companies', 'credits'].includes(k)) {
-          if (futureMap) delta = rawFutureVal - currentVal;
-      } else {
-          delta = rawFutureVal;
-      }
-
-      // --- COLOR & LINK LOGIC ---
-      let color = null;
-      let hasLink = false;
-      const itemId = getId(item);
-
-      // 1. ACCOUNTS
-      if (k === 'accounts') {
-          // 🟢 FIX: Цвет зависит от баланса СЧЕТА, а не владельца
-          color = getStatusColor(currentVal, maxBalance);
-
-          const cId = getId(item.companyId);
-          const iId = getId(item.individualId);
-          const ownerId = cId || iId;
-          
-          if (ownerId) {
-              hasLink = true;
-          }
-      }
-      
-      // 2. COMPANIES
-      else if (k === 'companies') {
-          // Check for linked accounts
-          const hasAccounts = mainStore.accounts.some(acc => getId(acc.companyId) === itemId);
-          
-          if (hasAccounts) {
-              hasLink = true;
-              // Color depends on Company's total weight
-              const totalBalance = balances.get(itemId) || 0;
-              color = getStatusColor(totalBalance, maxBalance);
-          } else {
-              hasLink = false;
-              color = null; 
-          }
-      }
-
-      // 3. INDIVIDUALS
-      else if (k === 'individuals') {
-          // Check for linked accounts
-          const hasAccounts = mainStore.accounts.some(acc => getId(acc.individualId) === itemId);
-          
-          if (hasAccounts) {
-              hasLink = true;
-              // Color depends on Individual's total weight
-              const totalBalance = balances.get(itemId) || 0;
-              color = getStatusColor(totalBalance, maxBalance);
-          } else {
-              hasLink = false;
-              color = null;
-          }
-      }
-
-      return {
-          ...item,
-          currentBalance: currentVal,
-          futureChange: delta,
-          totalForecast: currentVal + delta,
-          linkMarkerColor: color,
-          isLinked: hasLink
-      };
-  };
-
-  // 1. ACCOUNTS
-  if (k === 'accounts') {
-      const current = mainStore.currentAccountBalances || [];
-      const future = mainStore.futureAccountBalances || []; 
-      const futureMap = new Map(future.map(i => [i._id, i.balance]));
-      const list = current.map(item => mapItem(item, futureMap));
-      return filterAndSort(list);
-  }
-
-  // 2. COMPANIES
-  if (k === 'companies') {
-      const current = mainStore.currentCompanyBalances || [];
-      const future = mainStore.futureCompanyBalances || []; 
-      const futureMap = new Map(future.map(i => [i._id, i.balance]));
-      const list = current.map(item => mapItem(item, futureMap));
-      return filterAndSort(list);
-  }
-  
-  // 3. INDIVIDUALS
-  if (k === 'individuals') {
-      const current = mainStore.currentIndividualBalances || [];
-      const future = mainStore.futureIndividualChanges || []; 
-      const futureMap = new Map(future.map(i => [i._id, i.balance]));
-      const list = current.map(item => mapItem(item, futureMap));
-      return filterAndSort(list);
-  }
-
-  // 4. CONTRACTORS
-  if (k === 'contractors') {
-      const current = mainStore.currentContractorBalances || [];
-      const future = mainStore.futureContractorChanges || []; 
-      const futureMap = new Map(future.map(c => [c._id, c.balance]));
-      let list = current.map(item => mapItem(item, futureMap));
-      const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-      list = list.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
-      return filterAndSort(list);
-  }
-  
-  // 5. PROJECTS
-  if (k === 'projects') {
-      const current = mainStore.currentProjectBalances || [];
-      const future = mainStore.futureProjectChanges || []; 
-      const futureMap = new Map(future.map(p => [p._id, p.balance]));
-      const list = current.map(item => mapItem(item, futureMap));
-      return filterAndSort(list);
-  }
-  
-  // 6. CATEGORIES
-  if (k === 'categories') {
-      const current = mainStore.currentCategoryBalances || [];
-      const future = mainStore.futureCategoryBalances || []; 
-      const futureMap = new Map(future.map(c => [c._id, c.balance]));
-      let list = current.map(item => mapItem(item, futureMap));
-      const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
-      list = list.filter(c => visibleIds.has(c._id));
-      return filterAndSort(list);
-  }
-
-  // 7. CREDITS
-  if (k === 'credits') {
-      const current = mainStore.currentCreditBalances || [];
-      const future = mainStore.futureCreditBalances || [];
-      const futureMap = new Map(future.map(c => [c._id, c.futureBalance]));
-      const list = current.map(item => mapItem(item, futureMap));
-      return filterAndSort(list);
-  }
-
-  // 8. LIABILITIES
-  if (k === 'liabilities') {
-      const weOweCurrent = mainStore.liabilitiesWeOwe || 0;
-      const weOweFuture = mainStore.liabilitiesWeOweFuture || 0; 
-      const theyOweCurrent = mainStore.liabilitiesTheyOwe || 0;
-      const theyOweFuture = mainStore.liabilitiesTheyOweFuture || 0;
-
-      const rawList = [
-          { _id: 'we', name: 'Мы должны', currentBalance: weOweCurrent, futureChange: weOweFuture - weOweCurrent, totalForecast: weOweFuture },
-          { _id: 'they', name: 'Нам должны', currentBalance: theyOweCurrent, futureChange: theyOweFuture - theyOweCurrent, totalForecast: theyOweFuture, isIncome: true }
-      ];
-      return filterAndSort(rawList);
-  }
-  
-  // 9. LISTS
-  if (isListWidget.value) {
-      let currentList = [];
-      if (k === 'incomeList') currentList = mainStore.currentIncomes;
-      else if (k === 'expenseList') currentList = mainStore.currentExpenses;
-      else if (k === 'withdrawalList') currentList = mainStore.currentWithdrawals;
-      else if (k === 'transfers') currentList = mainStore.currentTransfers;
-      
-      const currentSum = currentList.reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-
-      let futureList = [];
-      if (k === 'incomeList') futureList = mainStore.futureIncomes;
-      else if (k === 'expenseList') futureList = mainStore.futureExpenses;
-      else if (k === 'withdrawalList') futureList = mainStore.futureWithdrawals;
-      else if (k === 'transfers') futureList = mainStore.futureTransfers;
-
-      const futureSum = futureList.reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-      
-      return [{
-          _id: 'total', name: 'Всего',
-          currentBalance: currentSum, futureChange: futureSum, totalForecast: currentSum + futureSum,
-          balance: isForecastActive.value ? (currentSum + futureSum) : currentSum,
-          isList: true, isIncome: k === 'incomeList'
-      }];
-  }
-  
-  return [];
+  const rawList = getWidgetItems(props.widgetKey, isForecastActive.value);
+  return filterAndSort(rawList);
 });
 
 function filterAndSort(originalList) {
