@@ -141,7 +141,7 @@ const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });
 
 // 🟢 1. ХЕЛПЕРЫ ДЛЯ ЦВЕТОВ В ПОЛНОЭКРАННОМ РЕЖИМЕ (ИДЕНТИЧНЫ МИНИАТЮРЕ)
-const getFSValueClass = (val, widgetKey) => {
+const getValueClass = (val, widgetKey) => {
     const num = Number(val) || 0;
     if (widgetKey === 'taxes') {
         return num < 0 ? 'red-text' : 'white-text';
@@ -150,7 +150,7 @@ const getFSValueClass = (val, widgetKey) => {
     return 'white-text'; 
 };
 
-const getFSDeltaClass = (val, widgetKey) => {
+const getDeltaClass = (val, widgetKey) => {
     const num = Number(val) || 0;
     if (num === 0) return 'white-text'; // Если 0 - нейтральный
     
@@ -204,7 +204,7 @@ const formatVal = (val) => {
 };
 
 // 🟢 NEW: Форматтер для дельты (+/-)
-const formatDeltaVal = (val) => {
+const formatDelta = (val) => {
     const num = Number(val) || 0;
     if (num === 0) return '0 ₸';
     const formatted = formatNumber(Math.abs(num));
@@ -415,7 +415,7 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
-    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
+    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" :operation-to-edit="operationToEdit" @close="handleCloseWithdrawalPopup" @save="handleWithdrawalSave" />
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
     <TaxPaymentDetailsPopup v-if="isTaxDetailsPopupVisible" :operation-to-edit="operationToEdit" @close="isTaxDetailsPopupVisible = false" @delete="handleTaxDelete" />
