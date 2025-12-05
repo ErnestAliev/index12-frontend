@@ -100,8 +100,17 @@ const formatVal = (val) => {
     return `₸ ${formatted}`;
 };
 
-const getFactValueClass = (val) => {
+// 🟢 ЛЕВАЯ КОЛОНКА (Факт)
+const getFactValueClass = (item) => {
+    const val = item.currentBalance || item.balance;
     const num = Number(val) || 0;
+    
+    // Для налогов, если долг есть (число отрицательное), красим в красный
+    if (props.widgetKey === 'taxes') {
+        if (num < 0) return 'red-text';
+        return 'white-text';
+    }
+
     if (num < 0) return 'red-text';
     return 'white-text';
 };
@@ -130,6 +139,7 @@ const getRightValueFormatted = (item) => {
     return `- ${formatted} ₸`;
 };
 
+// 🟢 ПРАВАЯ КОЛОНКА (План)
 const getRightValueClass = (item) => {
     const val = getRightValue(item);
     const num = Number(val) || 0;
@@ -138,12 +148,14 @@ const getRightValueClass = (item) => {
     if (isAlwaysNegativeWidget.value) return 'red-text';
     if (isTransferWidget.value) return 'white-text';
 
-    // 🟢 ИСПРАВЛЕНИЕ: Для налогов, если значение отрицательное (долг растет) -> Красный
-    // Если положительное (долг падает) -> Зеленый
+    // 🟢 ДЛЯ НАЛОГОВ:
+    // Если val (изменение) < 0 (долг растет) -> Красный
+    // Если val > 0 (долг уменьшается/платеж) -> Зеленый
     if (props.widgetKey === 'taxes') {
         return val < 0 ? 'red-text' : 'green-text';
     }
 
+    // Для остальных (доходы): + Зеленый, - Красный
     return val >= 0 ? 'green-text' : 'red-text';
 };
 
@@ -174,7 +186,6 @@ const cardStyleClass = computed(() => {
   if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
   if (k === 'liabilities') return 'style-orange'; 
   if (k === 'credits') return 'style-light-blue'; 
-  // 🟢 Стиль для налогов - Красный
   if (k === 'taxes') return 'style-red'; 
   return 'style-gray';
 });
@@ -220,7 +231,7 @@ const cardStyleClass = computed(() => {
         <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item-grid">
           
           <!-- КОЛОНКА 1: ФАКТ -->
-          <div class="col-left" :class="getFactValueClass(item.currentBalance || item.balance)">
+          <div class="col-left" :class="getFactValueClass(item)">
              {{ formatVal(item.currentBalance || item.balance) }}
           </div>
           
