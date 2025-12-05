@@ -291,7 +291,7 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
                                <div v-else class="fs-val-forecast">
                                    <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
                                    <span class="fs-arrow">></span>
-                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="item.futureChange > 0 ? 'green-text' : 'red-text'">{{ formatDelta(item.futureChange) }}</span>
+                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'green-text': item.futureChange > 0, 'red-text': item.futureChange < 0 }">{{ formatDelta(item.futureChange) }}</span>
                                    <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">{{ formatVal(item.futureBalance) }}</span>
                                </div>
                            </div>

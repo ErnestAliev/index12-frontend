@@ -204,8 +204,14 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap));
         }
 
-        // 🟢 TAXES LOGIC (UPDATED WITH REGIME & CORRECT DELTA)
+        // 🟢 TAXES LOGIC (ОБНОВЛЕНО ДЛЯ ДИАПАЗОНА)
         if (k === 'taxes') {
+            // 🟢 Получаем дату конца диапазона из стора
+            const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
+            if (rangeEndDate) {
+                rangeEndDate.setHours(23, 59, 59, 999);
+            }
+
             return mainStore.companies.map(comp => {
                 const now = new Date();
                 
@@ -223,37 +229,39 @@ export function useWidgetData() {
                 
                 const currentDebt = Math.max(0, currentData.tax - paidCurrent);
 
-                // 2. РАСЧЕТ ПОЛНЫЙ (Прогноз, включая будущие операции)
-                const forecastData = mainStore.calculateTaxForPeriod(comp._id, null, null);
-                // Оплачено всего (включая будущие платежи, если есть)
+                // 2. РАСЧЕТ ПРОГНОЗА (С учетом диапазона)
+                // 🟢 Используем rangeEndDate
+                const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
+                
+                // Оплачено всего (с учетом диапазона)
                 const paidTotal = mainStore.taxes
                     .filter(t => {
                         const tCompId = getId(t.companyId);
-                        return String(tCompId) === String(comp._id) && t.status === 'paid';
+                        const tDate = t.date ? new Date(t.date) : new Date(0);
+                        const isInRange = rangeEndDate ? tDate <= rangeEndDate : true;
+                        return String(tCompId) === String(comp._id) && t.status === 'paid' && isInRange;
                     })
                     .reduce((acc, t) => acc + (t.amount || 0), 0);
 
-                const totalForecastDebt = Math.max(0, forecastData.tax - paidTotal);
+                const totalForecastDebt = Math.max(0, totalCalc.tax - paidTotal);
 
                 // Значения отрицательные, т.к. это долг/расход
                 const currentVal = -currentDebt;
                 const futureVal = -totalForecastDebt;
                 
-                // Delta: Разница между будущим и текущим.
-                // Если futureVal = -30000 и currentVal = -30000 -> change = 0 (налогов не прибавилось)
-                // Если futureVal = -50000 и currentVal = -30000 -> change = -20000 (прибавился долг)
+                // Delta: Разница между долгом в будущем и текущим.
+                // Если доход 300к в будущем -> Долг вырастет -> futureVal будет меньше currentVal -> change отрицательный (красный)
                 const change = futureVal - currentVal;
 
                 return {
                     _id: comp._id,
                     name: comp.name,
-                    // 🟢 NEW: Данные о режиме
                     regime: currentData.regime === 'simplified' ? 'УПР' : 'ОУР',
                     percent: currentData.percent,
                     
                     // Для виджета
                     currentBalance: currentVal,
-                    futureChange: change, // Здесь теперь 0, если долг не меняется
+                    futureChange: change, // Теперь это чистая дельта
                     totalForecast: futureVal,
                     futureBalance: futureVal,
                     
@@ -277,14 +285,14 @@ export function useWidgetData() {
                     currentBalance: weOweCurrent, 
                     futureChange: weOweFuture - weOweCurrent, 
                     totalForecast: weOweFuture,
-                    futureBalance: weOweFuture // 🟢 Для полноэкранного
+                    futureBalance: weOweFuture 
                 },
                 { 
                     _id: 'they', name: 'Нам должны', 
                     currentBalance: theyOweCurrent, 
                     futureChange: theyOweFuture - theyOweCurrent, 
                     totalForecast: theyOweFuture, 
-                    futureBalance: theyOweFuture, // 🟢 Для полноэкранного
+                    futureBalance: theyOweFuture,
                     isIncome: true 
                 }
             ];
@@ -312,7 +320,7 @@ export function useWidgetData() {
                 _id: 'total', name: 'Всего',
                 currentBalance: currentSum, futureChange: futureSum, totalForecast: currentSum + futureSum,
                 balance: isForecastActive ? (currentSum + futureSum) : currentSum,
-                futureBalance: currentSum + futureSum, // 🟢 Для полноэкранного
+                futureBalance: currentSum + futureSum, 
                 isList: true, isIncome: k === 'incomeList'
             }];
         }

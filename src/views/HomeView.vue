@@ -25,7 +25,7 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 // 🟢 1. Импорт нового попапа
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
-console.log('--- HomeView.vue v52.0 (Tax Details) Loaded ---'); 
+console.log('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -600,7 +600,7 @@ const handleRefundDelete = async (op) => {
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
     <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
     
-    <!-- 🟢 НОВЫЕ ПОПАПЫ ДЛЯ ОПЕРАЦИЙ -->
+    <!-- 🟢 FIX: Передаем $event (объект операции) в обработчик удаления, так как переменная operationToEdit может быть уже очищена событием close -->
     <IncomePopup 
         v-if="isIncomePopupVisible" 
         :date="selectedDay ? selectedDay.date : new Date()" 
@@ -610,7 +610,7 @@ const handleRefundDelete = async (op) => {
         :max-allowed-date="maxDateFromProjection" 
         @close="handleClosePopup" 
         @save="handleOperationSave"
-        @operation-deleted="handleOperationDelete(operationToEdit)"
+        @operation-deleted="handleOperationDelete($event)"
         @trigger-prepayment="handleSwitchToPrepayment"
         @trigger-smart-deal="handleSwitchToSmartDeal"
     />
@@ -624,7 +624,7 @@ const handleRefundDelete = async (op) => {
         :max-allowed-date="maxDateFromProjection"
         @close="handleClosePopup" 
         @save="handleOperationSave"
-        @operation-deleted="handleOperationDelete(operationToEdit)"
+        @operation-deleted="handleOperationDelete($event)"
     />
 
     <!-- 🟢 PREPAYMENT MODAL -->
@@ -673,7 +673,7 @@ const handleRefundDelete = async (op) => {
 .spinner { width: 40px; height: 40px; border: 4px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .login-screen { width: 100vw; height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem; box-sizing: border-box; background-color: var(--color-background); }
-.login-box { width: 100%; max-width: 500px; padding: 2.5rem 2rem; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 12px; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
+.login-box { width: 100%; max-width: 500px; padding: 2.5rem 2rem; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 12px; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, 0. 3); }
 .login-box h1 { color: var(--color-heading); font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin-bottom: 1rem; }
 .login-box p { color: var(--color-text); font-size: 1rem; line-height: 1.5; opacity: 0.8; margin-bottom: 2.5rem; }
 .google-login-button { display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; background-color: #ffffff; color: #333333; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: background-color 0.2s, box-shadow 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box; }

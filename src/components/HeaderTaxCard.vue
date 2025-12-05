@@ -31,10 +31,24 @@ const getSafeId = (val) => {
 
 // Расчет налогов
 const taxItems = computed(() => {
+    // 🟢 1. Триггер реактивности:
+    // Обращаемся к массиву операций, чтобы пересчет срабатывал при подгрузке данных (при смене 12д -> 1мес)
+    const _opsTrigger = mainStore.allOperationsFlat.length; 
+    
+    // 🟢 2. Получаем актуальную дату конца диапазона
+    // Если projection.rangeEndDate меняется (переключение в навигации), это свойство пересчитается
+    const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
+    
+    // Устанавливаем конец дня для корректного сравнения
+    if (rangeEndDate) {
+        rangeEndDate.setHours(23, 59, 59, 999);
+    }
+
     const now = new Date();
 
     return companies.value.map(comp => {
-        // 1. РАСЧЕТ ТЕКУЩИЙ (Факт на сегодня)
+        // --- А. РАСЧЕТ ТЕКУЩИЙ (Факт на сегодня) ---
+        // Считаем начисления строго до текущего момента
         const currentCalc = mainStore.calculateTaxForPeriod(comp._id, null, now);
         
         // Оплачено (только операции с датой <= сейчас)
@@ -48,22 +62,29 @@ const taxItems = computed(() => {
 
         const currentDebt = Math.max(0, currentCalc.tax - paidCurrent);
 
-        // 2. РАСЧЕТ ПОЛНЫЙ (Все время)
-        const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, null);
+        // --- Б. РАСЧЕТ ПРОГНОЗА (С учетом диапазона) ---
+        // Передаем rangeEndDate. Если диапазон сузился (1мес -> 12д), rangeEndDate станет ближе,
+        // и calculateTaxForPeriod отсечет будущие операции.
+        const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
         
-        // Оплачено всего (включая будущие платежи)
+        // Оплачено всего (включая будущие платежи, если они попадают в выбранный диапазон)
         const paidTotal = mainStore.taxes
             .filter(t => {
                 const tCompId = getSafeId(t.companyId);
-                return tCompId === comp._id && t.status === 'paid';
+                const tDate = t.date ? new Date(t.date) : new Date(0);
+                // Учитываем платежи, которые попадают в выбранный диапазон
+                const isInRange = rangeEndDate ? tDate <= rangeEndDate : true;
+                return tCompId === comp._id && t.status === 'paid' && isInRange;
             })
             .reduce((acc, t) => acc + (t.amount || 0), 0);
 
+        // Долг на конец периода
         const totalDebt = Math.max(0, totalCalc.tax - paidTotal);
 
-        // 3. ПРОГНОЗ (Разница между Итого и Текущим)
-        // Если в будущем нет операций -> 0
-        // Если перенесли операцию в будущее -> Текущее=0, Итого=X -> Прогноз=X
+        // --- В. ДЕЛЬТА (Изменение за период) ---
+        // Разница между долгом на конец периода и текущим долгом.
+        // Если будущих доходов нет -> futureDiff = 0.
+        // Если есть доход 300к -> futureDiff = 9000.
         const futureDiff = totalDebt - currentDebt;
         
         return {
@@ -72,9 +93,10 @@ const taxItems = computed(() => {
             regime: comp.taxRegime === 'simplified' ? 'УПР' : 'ОУР',
             percent: comp.taxPercent,
             
-            // Данные для отображения
+            // Данные для отображения (положительные числа, знак добавим в шаблоне)
             currentDebt: currentDebt,
-            futureDebt: futureDiff, // 🟢 Теперь это дельта (изменение)
+            futureDebt: futureDiff, // Изменение (+ сколько добавится долга)
+            totalFutureDebt: totalDebt, // Итоговый долг в будущем (не используем в отображении, но храним)
             
             // Для совместимости
             income: currentCalc.income,
@@ -84,15 +106,29 @@ const taxItems = computed(() => {
 });
 
 // Форматирование
-const formatMoney = (val) => formatNumber(Math.floor(val || 0));
+const formatMoney = (val) => formatNumber(Math.floor(Math.abs(val || 0)));
 
-// 🟢 Форматирование дельты с плюсом/минусом
+// 🟢 NEW: Форматтер для дельты (плана)
+// Если > 0, значит долг растет (плохо, expense-text) -> "- 9 000"
+// Если < 0, значит долг уменьшается (платеж, good) -> "+ 1 000"
 const formatDelta = (val) => {
     const num = Math.floor(val || 0);
     if (num === 0) return '0';
-    const formatted = formatNumber(Math.abs(num));
-    return num > 0 ? `+ ${formatted}` : `- ${formatted}`;
+    
+    // Если число положительное (долг вырос), ставим минус
+    if (num > 0) return `- ${formatNumber(num)}`;
+    
+    // Если число отрицательное (долг уменьшился), ставим плюс
+    return `+ ${formatNumber(Math.abs(num))}`;
 };
+
+// 🟢 NEW: Класс цвета для дельты
+const getDeltaClass = (val) => {
+    if (val === 0) return 'zero-tax';
+    if (val > 0) return 'expense-text'; // Долг растет -> Красный
+    return 'income-text'; // Долг падает -> Зеленый
+};
+
 </script>
 
 <template>
@@ -101,7 +137,6 @@ const formatDelta = (val) => {
       <!-- Заголовок -->
       <div class="card-title">{{ title }}</div>
       
-      <!-- 🟢 FIX: Блокировка событий драга на контейнере кнопок -->
       <div class="card-actions" @mousedown.stop @touchstart.stop @pointerdown.stop>
         
         <!-- Кнопка Прогноз -->
@@ -141,19 +176,24 @@ const formatDelta = (val) => {
         <!-- Сумма налога (Логика отображения) -->
         <span class="amount-cell-wrapper">
             <!-- Режим ФАКТ -->
-            <span v-if="!showFutureBalance" class="amount-single" :class="{ 'zero-tax': item.currentDebt === 0 }">
-                <span class="currency">₸</span> {{ formatMoney(item.currentDebt) }}
+            <!-- 🟢 Всегда красный (расход), всегда с минусом -->
+            <span v-if="!showFutureBalance" class="amount-single expense-text" :class="{ 'zero-tax': item.currentDebt === 0 }">
+                <span class="currency">₸</span> - {{ formatMoney(item.currentDebt) }}
             </span>
 
             <!-- Режим ПРОГНОЗ -->
             <span v-else class="forecast-display">
-                <span class="current-val" :class="{ 'zero-tax': item.currentDebt === 0 }">
-                    {{ formatMoney(item.currentDebt) }}
+                <!-- Текущий долг -->
+                <span class="current-val expense-text" :class="{ 'zero-tax': item.currentDebt === 0 }">
+                    - {{ formatMoney(item.currentDebt) }}
                 </span>
+                
                 <span class="arrow">></span>
-                <!-- 🟢 FIX: Показываем дельту с плюсом/минусом или 0 -->
-                <span class="future-val" :class="{ 'zero-tax': item.futureDebt === 0, 'income-delta': item.futureDebt < 0 }">
-                    {{ item.futureDebt === 0 ? '0' : formatDelta(item.futureDebt) }}
+                
+                <!-- 🟢 Будущий долг (ДЕЛЬТА) -->
+                <!-- Отображаем только изменение за период -->
+                <span class="future-val" :class="getDeltaClass(item.futureDebt)">
+                    {{ formatDelta(item.futureDebt) }}
                 </span>
             </span>
         </span>
@@ -245,9 +285,9 @@ const formatDelta = (val) => {
     white-space: nowrap;
 }
 
+/* 🟢 Стили сумм */
 .amount-single { 
     font-weight: var(--fw-medium); 
-    color: var(--color-danger); 
     font-variant-numeric: tabular-nums;
 }
 
@@ -259,14 +299,17 @@ const formatDelta = (val) => {
     font-variant-numeric: tabular-nums;
 }
 
-.current-val { color: var(--text-soft); font-weight: 400; }
-.future-val { color: var(--color-danger); font-weight: 600; }
-.income-delta { color: #34c759; } /* Если долг уменьшается */
+.expense-text { color: var(--color-danger); } /* Красный цвет */
+.income-text { color: var(--color-primary); } /* Зеленый цвет */
+
+.current-val { font-weight: 400; opacity: 0.9; }
+.future-val { font-weight: 600; }
+
 .arrow { color: var(--text-mute); font-size: 0.9em; }
 
-.zero-tax { color: var(--text-mute); opacity: 0.5; }
+.zero-tax { color: var(--text-mute); opacity: 0.5; } /* Если долг 0 - серый цвет */
 
-.currency { font-size: 0.85em; color: var(--text-mute); font-weight: 400; margin-right: 2px; }
+.currency { font-size: 0.85em; color: inherit; opacity: 0.7; font-weight: 400; margin-right: 2px; }
 .card-item-empty { font-size: var(--font-xs); color: #666; margin-top: 5px; font-style: italic; }
 
 @media (max-height: 900px) {

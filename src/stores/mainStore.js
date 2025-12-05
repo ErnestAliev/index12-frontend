@@ -18,7 +18,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v93.0 (TAX FIX) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v95.0 (CREDIT LOGIC FIX) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -188,7 +188,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op) return false;
       if (op.type !== 'income') return false;
       const catId = op.categoryId?._id || op.categoryId;
-      return catId && catId === creditCategoryId.value;
+      // 🟢 FIX: Безопасное сравнение с creditCategoryId.value (может быть null)
+      return catId && creditCategoryId.value && String(catId) === String(creditCategoryId.value);
   };
   
   const remainingDebtCategoryId = computed(() => {
@@ -221,11 +222,9 @@ export const useMainStore = defineStore('mainStore', () => {
       return false;
   };
 
-  // 🟢 NEW: Проверка на Налоговый Платеж
   const _isTaxPayment = (op) => {
       if (!op) return false;
       if (op.type !== 'expense') return false;
-      // Проверяем, есть ли запись в taxes, ссылающаяся на эту операцию
       return taxes.value.some(t => {
           const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
           return String(relId) === String(op._id);
@@ -497,6 +496,10 @@ export const useMainStore = defineStore('mainStore', () => {
                if (op.isWithdrawal) {
                    dayRec.withdrawal += absAmt;
                    dayRec.dayTotal -= absAmt;
+               } else if (op.type === 'expense') {
+                   if (_isRetailWriteOff(op)) continue;
+                   dayRec.expense += absAmt;
+                   dayRec.dayTotal -= absAmt;
                } else if (op.type === 'income') {
                    const catId = op.categoryId?._id || op.categoryId;
                    const prepId = op.prepaymentId?._id || op.prepaymentId;
@@ -504,10 +507,6 @@ export const useMainStore = defineStore('mainStore', () => {
                    if (isPrepay) dayRec.prepayment += amt;
                    else dayRec.income += amt;
                    dayRec.dayTotal += amt;
-               } else if (op.type === 'expense') {
-                   if (_isRetailWriteOff(op)) continue;
-                   dayRec.expense += absAmt;
-                   dayRec.dayTotal -= absAmt;
                }
            }
        }
@@ -761,12 +760,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
+  // 🟢 FIX: Исключаем кредиты из списка доходов ("Мои доходы")
   const currentIncomes = computed(() => currentOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      !_isPrepaymentOp(op) 
+      !_isPrepaymentOp(op) &&
+      !_isCreditIncome(op) // 🟢 Исключить кредиты
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -774,12 +775,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
+  // 🟢 FIX: Исключаем кредиты из списка будущих доходов
   const futureIncomes = computed(() => futureOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      !_isPrepaymentOp(op) 
+      !_isPrepaymentOp(op) &&
+      !_isCreditIncome(op) // 🟢 Исключить кредиты
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
@@ -1282,6 +1285,11 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
     } catch(e) { 
+        // 🟢 FIX: Handle 404/200 gracefully. If backend says deleted, we are good.
+        if (e.response && (e.response.status === 404 || e.response.status === 200)) {
+            // Already deleted or handled. No need to refresh.
+            return;
+        }
         console.error("Optimistic Delete Failed:", e);
         refreshDay(dateKey); 
         fetchSnapshot();

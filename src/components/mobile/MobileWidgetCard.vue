@@ -110,6 +110,7 @@ const getRightValue = (item) => {
     if (isBalanceWidget.value) {
         return item.currentBalance + (item.futureChange || 0);
     } else {
+        // Для Налогов и Оборотных виджетов показываем дельту
         return item.futureChange || 0;
     }
 };
@@ -135,6 +136,11 @@ const getRightValueClass = (item) => {
     if (!isBalanceWidget.value && num === 0) return 'white-text';
     if (isAlwaysNegativeWidget.value) return 'red-text';
     if (isTransferWidget.value) return 'white-text';
+
+    // Для налогов, если долг растет (val < 0), красим в красный
+    if (props.widgetKey === 'taxes') {
+        return val < 0 ? 'red-text' : 'green-text';
+    }
 
     return val >= 0 ? 'green-text' : 'red-text';
 };
@@ -166,6 +172,8 @@ const cardStyleClass = computed(() => {
   if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
   if (k === 'liabilities') return 'style-orange'; 
   if (k === 'credits') return 'style-light-blue'; 
+  // 🟢 Добавляем стиль для налогов
+  if (k === 'taxes') return 'style-red'; 
   return 'style-gray';
 });
 </script>
@@ -215,7 +223,6 @@ const cardStyleClass = computed(() => {
           </div>
           
           <!-- КОЛОНКА 2: НАЗВАНИЕ (Центр) -->
-          <!-- 🟢 FIX: Убран бейдж режима, возвращен лаконичный стиль -->
           <div class="col-center">
               <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
               {{ item.name }}
@@ -289,7 +296,6 @@ const cardStyleClass = computed(() => {
 
 .col-left { text-align: left; white-space: nowrap; font-weight: 500; }
 
-/* 🟢 FIX: Вернул стили центральной колонки к "строчному" виду (ellipsis работает) */
 .col-center {
     text-align: center;
     color: #ccc;

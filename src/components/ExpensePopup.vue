@@ -4,16 +4,21 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
+// 🟢 1. Импортируем визард кредита для локального использования
+import CreditWizardPopup from './CreditWizardPopup.vue';
+
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 import { categorySuggestions } from '@/data/categorySuggestions.js'; 
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.1 - TOOLTIPS ---
- * * ВЕРСИЯ: 3.1
- * * ДАТА: 2025-12-05
+ * * --- МЕТКА ВЕРСИИ: v3.5 - SMART CREDIT FLOW ---
+ * * ВЕРСИЯ: 3.5
+ * * ДАТА: 2025-12-06
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) Добавлены тултипы для счетов (показывают владельца).
+ * 1. (UX) Добавлен сценарий "Создать кредит на лету", если при погашении он не найден.
+ * 2. (ARCH) CreditWizardPopup встроен внутрь ExpensePopup для бесшовного возврата.
+ * 3. (LOGIC) При создании кредита через этот флоу, он автоматически подхватывается валидацией.
  */
 
 const mainStore = useMainStore();
@@ -32,8 +37,8 @@ const amount = ref('');
 const amountInput = ref(null);
 
 const selectedAccountId = ref(null);
-const selectedOwner = ref(null); // Company or Individual (Payer)
-const selectedContractorValue = ref(null); // Contractor or Individual (Payee)
+const selectedOwner = ref(null); 
+const selectedContractorValue = ref(null); 
 const selectedProjectId = ref(null);
 const selectedCategoryId = ref(null);
 const description = ref('');
@@ -46,6 +51,12 @@ const isInlineSaving = ref(false);
 const isInitialLoad = ref(true);
 const isDateChanged = ref(false); 
 const isDeleteConfirmVisible = ref(false);
+
+// 🟢 Состояния для предупреждения о кредите
+const isCreditWarningVisible = ref(false);
+const creditWarningMessage = ref('');
+// 🟢 Состояние для локального визарда
+const isLocalWizardVisible = ref(false);
 
 // --- СОСТОЯНИЯ СОЗДАНИЯ ---
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInput = ref(null);
@@ -63,7 +74,6 @@ const contractorTypeToCreate = ref('contractor');
 const newContractorNameInput = ref('');
 const newContractorInputRef = ref(null);
 
-// 🟢 FIX: Флаги программного обновления (чтобы список не открывался после выбора)
 const isProgrammaticAccount = ref(false);
 const isProgrammaticCategory = ref(false);
 const isProgrammaticContractor = ref(false);
@@ -149,7 +159,7 @@ watch(newAccountName, (val) => {
 const categorySuggestionsList = computed(() => {
     const query = newCategoryName.value.trim().toLowerCase();
     if (query.length < 2) return [];
-    return categorySuggestions.filter(c => c.name.toLowerCase().includes(q)).slice(0, 4);
+    return categorySuggestions.filter(c => c.name.toLowerCase().includes(query)).slice(0, 4);
 });
 const selectCategorySuggestion = (c) => {
     isProgrammaticCategory.value = true;
@@ -167,7 +177,6 @@ watch(newCategoryName, (val) => {
     showCategorySuggestions.value = val.length >= 2;
 });
 
-// 🟢 Хелпер для названия владельца (для Tooltip)
 const getOwnerName = (acc) => {
     if (acc.companyId) {
         const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
@@ -188,7 +197,7 @@ const accountOptions = computed(() => {
     value: acc._id,
     label: acc.name,
     rightText: `${formatNumber(Math.abs(acc.balance))} ₸`, 
-    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
+    tooltip: getOwnerName(acc), 
     isSpecial: false
   }));
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', isSpecial: true });
@@ -273,7 +282,6 @@ const myCreditsProjectId = computed(() => {
 
 // --- LOGIC WATCHERS ---
 
-// 1. Авто-выбор владельца по счету
 watch(selectedAccountId, (newVal) => {
     if (!newVal || isInitialLoad.value) return;
     const acc = mainStore.accounts.find(a => a._id === newVal);
@@ -283,11 +291,9 @@ watch(selectedAccountId, (newVal) => {
     }
 });
 
-// 2. Умная связь: Контрагент -> Проект/Категория (особенно для Кредитов)
 watch(selectedContractorValue, (newVal) => {
     if (isInitialLoad.value || !newVal) return;
 
-    // Проверка на Банк
     const [prefix, id] = newVal.split('_');
     let isBank = false;
     if (prefix === 'contr') {
@@ -299,13 +305,11 @@ watch(selectedContractorValue, (newVal) => {
     }
 
     if (isBank) {
-        // Если Банк -> Проект "Мои кредиты", Категория "Погашение займов"
         if (myCreditsProjectId.value) selectedProjectId.value = myCreditsProjectId.value;
         if (mainStore.loanRepaymentCategoryId) selectedCategoryId.value = mainStore.loanRepaymentCategoryId;
         return;
     }
 
-    // Если обычный контрагент - можно подтянуть defaults (если есть в базе)
     let entity = null;
     if (prefix === 'contr') entity = mainStore.contractors.find(c => c._id === id);
     else entity = mainStore.individuals.find(i => i._id === id);
@@ -316,7 +320,6 @@ watch(selectedContractorValue, (newVal) => {
     }
 });
 
-// 3. Умная связь: Проект "Мои кредиты" -> Категория "Погашение займов"
 watch(selectedProjectId, (newProj) => {
     if (isInitialLoad.value) return;
     if (newProj && myCreditsProjectId.value && newProj === myCreditsProjectId.value) {
@@ -324,7 +327,6 @@ watch(selectedProjectId, (newProj) => {
     }
 });
 
-// 🟢 Следим за изменением даты вручную
 watch(editableDate, (newVal, oldVal) => {
     if (!isInitialLoad.value && oldVal && newVal !== oldVal) isDateChanged.value = true;
 });
@@ -335,7 +337,6 @@ const onAmountInput = (e) => {
     amount.value = formatNumber(raw);
 };
 
-// 🟢 ИСПОЛЬЗУЕМ ЛОКАЛЬНОЕ ВРЕМЯ
 const toInputDate = (dateObj) => { 
     if (!dateObj) return '';
     const d = new Date(dateObj);
@@ -347,16 +348,7 @@ const toInputDate = (dateObj) => {
 
 const toDisplayDate = (d) => { if (!d) return ''; const [y,m,d_] = d.split('-'); return `${d_}.${m}.${y}`; };
 
-const handleSave = async () => {
-    if (isSaving.value || isInlineSaving.value) return;
-    errorMessage.value = '';
-    
-    const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
-    if (!rawAmount || rawAmount <= 0) { errorMessage.value = 'Введите сумму'; return; }
-    if (!selectedAccountId.value) { errorMessage.value = 'Выберите счет'; return; }
-    
-    isSaving.value = true;
-    
+const processSave = () => {
     // Владелец
     let cId = null, iId = null;
     if (selectedOwner.value) {
@@ -364,14 +356,14 @@ const handleSave = async () => {
         if (type === 'company') cId = id; else iId = id;
     }
 
-    // Контрагент (Получатель)
+    // Контрагент
     let contrId = null, contrIndId = null;
     if (selectedContractorValue.value) {
         const [type, id] = selectedContractorValue.value.split('_');
         if (type === 'contr') contrId = id; else contrIndId = id;
     }
 
-    // Расход всегда с минусом
+    const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     const finalAmount = -Math.abs(rawAmount);
 
     let targetCellIndex = undefined;
@@ -380,7 +372,6 @@ const handleSave = async () => {
     }
 
     const [y, m, d] = editableDate.value.split('-').map(Number);
-    // Инициализируем дату
     let finalDate = new Date(y, m - 1, d, 12, 0, 0);
 
     if (!isDateChanged.value) {
@@ -410,7 +401,6 @@ const handleSave = async () => {
         prepaymentId: undefined
     };
     
-    // Сохраняем Defaults для контрагента (Обучение системы)
     if (contrId || contrIndId) {
          const type = contrId ? 'contractors' : 'individuals';
          const id = contrId || contrIndId;
@@ -427,6 +417,110 @@ const handleSave = async () => {
         data: payload,
         originalOperation: props.operationToEdit
     });
+    
+    isSaving.value = false;
+    isCreditWarningVisible.value = false;
+};
+
+const handleSave = async () => {
+    if (isSaving.value || isInlineSaving.value) return;
+    errorMessage.value = '';
+    
+    const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
+    if (!rawAmount || rawAmount <= 0) { errorMessage.value = 'Введите сумму'; return; }
+    if (!selectedAccountId.value) { errorMessage.value = 'Выберите счет'; return; }
+    
+    isSaving.value = true;
+
+    // 🟢 ПРОВЕРКА: Погашение кредита
+    if (mainStore.loanRepaymentCategoryId && selectedCategoryId.value === mainStore.loanRepaymentCategoryId) {
+        let contrObj = null;
+        let isContr = false;
+        
+        if (selectedContractorValue.value) {
+            const [type, id] = selectedContractorValue.value.split('_');
+            if (type === 'contr') {
+                contrObj = mainStore.contractors.find(c => c._id === id);
+                isContr = true;
+            } else {
+                contrObj = mainStore.individuals.find(i => i._id === id);
+            }
+        }
+
+        if (contrObj) {
+            const nameLower = contrObj.name.toLowerCase().trim();
+            
+            const isKnownBank = knownBanks.some(b => {
+                return nameLower.includes(b.name.toLowerCase()) || 
+                       (b.keywords && b.keywords.some(k => nameLower.includes(k)));
+            }) || accountSuggestions.some(a => {
+                 return nameLower.includes(a.name.toLowerCase()) || 
+                       (a.keywords && a.keywords.some(k => nameLower.includes(k)));
+            });
+
+            if (isKnownBank) {
+                const hasActiveCredit = mainStore.currentCreditBalances.some(c => {
+                    const cId = c.contractorId?._id || c.contractorId;
+                    const iId = c.individualId?._id || c.individualId;
+                    
+                    let isMatch = false;
+                    if (isContr && cId && String(cId) === String(contrObj._id)) isMatch = true;
+                    if (!isContr && iId && String(iId) === String(contrObj._id)) isMatch = true;
+                    
+                    return isMatch && c.balance > 0;
+                });
+
+                if (!hasActiveCredit) {
+                    // 🟢 Сценарий предупреждения с предложением создать кредит
+                    creditWarningMessage.value = `Вы собираетесь оплатить кредит "${contrObj.name}", которого нет в системе.`;
+                    isCreditWarningVisible.value = true;
+                    isSaving.value = false; 
+                    return;
+                }
+            }
+        }
+    }
+    
+    processSave();
+};
+
+const confirmCreditWarning = () => {
+    isSaving.value = true; 
+    processSave();
+};
+
+// 🟢 Запуск визарда из предупреждения
+const launchCreditWizard = () => {
+    isCreditWarningVisible.value = false;
+    isLocalWizardVisible.value = true;
+};
+
+// 🟢 Обработка сохранения кредита в локальном визарде
+const handleLocalWizardSave = async (payload) => {
+    try {
+        // 1. Создаем кредит в базе (но БЕЗ операций расхода, т.к. это "старый" кредит)
+        // Нам нужно изменить логику: обычно визард создает credit + expense (выдача).
+        // Но здесь пользователь просто хочет "зарегистрировать" существующий кредит.
+        // mainStore.addCredit делает только запись в модель Credit.
+        // mainStore.handleWizardSave (в Header) добавляет операции.
+        // Здесь мы просто создаем сущность Кредит.
+        
+        await mainStore.addCredit(payload);
+        
+        // 2. Обновляем данные в сторе, чтобы проверка passed
+        await mainStore.fetchAllEntities();
+        
+        // 3. Закрываем визард
+        isLocalWizardVisible.value = false;
+        
+        // 4. Возвращаемся к сохранению расхода
+        // Снова запускаем handleSave, теперь проверка кредита должна пройти успешно
+        handleSave();
+        
+    } catch (e) {
+        console.error(e);
+        alert("Не удалось создать кредит: " + e.message);
+    }
 };
 
 // --- INLINE CREATE HANDLERS ---
@@ -480,11 +574,10 @@ const saveNewContractorModal = async () => {
     } catch(e){ console.error(e); } finally { isInlineSaving.value = false; }
 };
 
-// --- UTILS ---
 const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(new Date()); nextTick(() => amountInput.value?.focus()); };
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 const onDeleteConfirmed = () => { 
-    isDeleteConfirmVisible.value = false; // Мгновенно скрываем
+    isDeleteConfirmVisible.value = false; 
     emit('close'); 
     emit('operation-deleted', props.operationToEdit);
     mainStore.deleteOperation(props.operationToEdit); 
@@ -621,7 +714,7 @@ onMounted(async () => {
           
           <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
 
-          <!-- 🟢 НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ (ОБЩИЙ СТИЛЬ С IncomePopup) -->
+          <!-- НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ -->
           <div class="popup-actions-row">
               <!-- СЛЕВА: Основное действие (Сохранить) -->
               <button class="btn-submit btn-expense save-wide" @click="handleSave" :disabled="isSaving || isInlineSaving">
@@ -683,7 +776,29 @@ onMounted(async () => {
 
     </div>
     
+    <!-- 🟢 ПОПАПЫ ПОДТВЕРЖДЕНИЯ -->
     <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
+    
+    <!-- 🟢 CUSTOM WARNING DIALOG -->
+    <div v-if="isCreditWarningVisible" class="inner-overlay" @click.self="isCreditWarningVisible = false">
+        <div class="warning-box">
+            <h4>Кредит не найден</h4>
+            <p class="warning-text">{{ creditWarningMessage }}</p>
+            <div class="warning-actions">
+                
+                <button class="btn-warning-create" @click="launchCreditWizard">Внести действующий кредит в систему</button>
+                <button class="btn-warning-continue" @click="confirmCreditWarning">Все равно оплатить</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 🟢 LOCAL CREDIT WIZARD -->
+    <!-- Запускается поверх ExpensePopup -->
+    <CreditWizardPopup 
+        v-if="isLocalWizardVisible" 
+        @close="isLocalWizardVisible = false" 
+        @save="handleLocalWizardSave"
+    />
   </div>
 </template>
 
@@ -696,13 +811,10 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
 .custom-input-box:focus-within { border-color: #F36F3F; box-shadow: 0 0 0 1px rgba(243, 111, 63, 0.2); }
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
-/* 🟢 Цвет шрифтов темнее */
 .floating-label { font-size: 11px; color: #555; margin-bottom: -2px; margin-top: 4px; font-weight: 500; }
 .real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px; color: #111; font-weight: 600; outline: none; }
-/* 🟢 Цвет шрифтов темнее */
 .main-input { width: 100%; height: 48px; padding: 0 14px; border: 1px solid #E0E0E0; border-radius: 8px; font-size: 15px; background: #fff; box-sizing: border-box; color: #111; font-weight: 500; }
 .main-input:focus { outline: none; border-color: #222; }
-/* 🟢 Плейсхолдер темнее */
 .real-input::placeholder, .main-input::placeholder { color: #777; font-weight: 400; }
 
 .input-spacing { margin-bottom: 12px; }
@@ -711,24 +823,20 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .calendar-icon { font-size: 16px; color: #555; }
 
-/* 🟢 Actions Row (ОБЩИЙ СТИЛЬ С IncomePopup) */
 .popup-actions-row { 
     display: flex; 
     align-items: center; 
-    /* justify-content: space-between - Убрано, чтобы flex-grow работало корректно */
     gap: 10px; 
     margin-top: 2rem; 
 }
 
-/* 🟢 Кнопка Сохранить (ОБЩИЙ СТИЛЬ) */
 .save-wide { 
     flex: 1 1 auto; 
-    height: 54px; /* Увеличено до 54px, как в IncomePopup */
+    height: 54px; 
 }
 
 .btn-submit { 
     width: 100%; 
-    /* height: 50px; - Переопределяется save-wide */
     border-radius: 8px; 
     border: none; 
     color: white; 
@@ -740,15 +848,13 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-expense { background-color: #F36F3F; }
 .btn-expense:hover { background-color: #d95a30; }
 
-/* 🟢 Иконки действий (ОБЩИЙ СТИЛЬ: margin-left: auto) */
 .icon-actions { 
     display: flex; 
     gap: 10px; 
-    margin-left: auto; /* Прижимает иконки вправо */
+    margin-left: auto; 
 }
 
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border-radius: 10px; cursor: pointer; background: #F4F4F4; border: 1px solid #E0E0E0; color: #333; transition: all 0.2s; padding: 0; }
-.copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { border-color: #ff3b30; background: #fff5f5; }
 .delete-btn svg { stroke: #555; }
@@ -788,4 +894,16 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .bank-suggestions-list li:hover { background-color: #f9f9f9; }
 .relative { position: relative; }
 .error { color: #FF3B30; text-align: center; margin-top: 10px; font-size: 13px; }
+
+/* 🟢 STYLES FOR CUSTOM WARNING DIALOG */
+.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
+.warning-box { background: #fff; padding: 24px; border-radius: 12px; width: 340px; text-align: center; box-shadow: 0 5px 30px rgba(0,0,0,0.3); }
+.warning-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
+.warning-text { font-size: 14px; margin-bottom: 24px; color: #555; line-height: 1.5; }
+.warning-actions { display: flex; flex-direction: column; gap: 10px; }
+.btn-warning-cancel { background: #e0e0e0; color: #333; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+.btn-warning-create { background: #8FD4FF; color: #004472; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 700; transition: background 0.2s; }
+.btn-warning-create:hover { background: #6EBAFF; }
+.btn-warning-continue { background: #34c759; color: #ffffff; border: 1px solid #dddddd; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.btn-warning-continue:hover { border-color: #aaa; color: #555; }
 </style>
