@@ -80,7 +80,7 @@ function filterAndSort(originalList) {
     else if (filterMode.value === 'negative') list = list.filter(i => getFilterValue(i) < 0);
     else if (filterMode.value === 'nonZero') list = list.filter(i => getFilterValue(i) !== 0);
 
-    const getSortVal = (i) => getFilterValue(i);
+    const getSortVal = (i) => getFilterVal(i);
     if (sortMode.value === 'desc') list.sort((a, b) => getSortVal(b) - getSortVal(a));
     else if (sortMode.value === 'asc') list.sort((a, b) => getSortVal(a) - getSortVal(b));
 
@@ -116,11 +116,13 @@ const getFactValueClass = (item) => {
 };
 
 const getRightValue = (item) => {
+    // 🟢 ВАЖНОЕ ИСПРАВЛЕНИЕ:
+    // Для счетов показываем ИТОГ (Баланс + Изменение)
     if (isBalanceWidget.value) {
-        // Для счетов показываем ИТОГОВЫЙ баланс
         return item.currentBalance + (item.futureChange || 0);
-    } else {
-        // Для Налогов и Оборотных виджетов показываем ДЕЛЬТУ
+    } 
+    // Для Налогов и остальных (Обороты) показываем ДЕЛЬТУ (Изменение)
+    else {
         return item.futureChange || 0;
     }
 };
@@ -231,8 +233,9 @@ const cardStyleClass = computed(() => {
         <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item-grid">
           
           <!-- КОЛОНКА 1: ФАКТ -->
+          <!-- Для налогов используем currentBalance, для остальных - balance/currentBalance -->
           <div class="col-left" :class="getFactValueClass(item)">
-             {{ formatVal(item.currentBalance || item.balance) }}
+             {{ formatVal(item.currentBalance !== undefined ? item.currentBalance : item.balance) }}
           </div>
           
           <!-- КОЛОНКА 2: НАЗВАНИЕ (Центр) -->
