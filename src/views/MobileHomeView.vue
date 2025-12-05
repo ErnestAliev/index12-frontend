@@ -140,6 +140,33 @@ const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['
 // 🟢 FIX: Добавлен 'taxes' в Delta Mode (показываем 0/изменение, а не сумму долга)
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });
 
+// 🟢 Хелпер для класса цвета
+const getValueClass = (val, widgetKey) => {
+    const num = Number(val) || 0;
+    // Для налогов отрицательное число (долг) - это красный цвет
+    if (widgetKey === 'taxes') {
+        return num < 0 ? 'red-text' : 'white-text';
+    }
+    // Для остальных отрицательное число - красный
+    if (num < 0) return 'red-text';
+    return 'white-text'; 
+};
+
+// 🟢 Хелпер для класса цвета ДЕЛЬТЫ (Плана)
+const getDeltaClass = (val, widgetKey) => {
+    const num = Number(val) || 0;
+    if (num === 0) return 'white-text';
+    
+    if (widgetKey === 'taxes') {
+        // Если дельта < 0 (долг вырос) -> красный
+        // Если дельта > 0 (долг уменьшился) -> зеленый
+        return num < 0 ? 'red-text' : 'green-text';
+    }
+    
+    // Для остальных: + это хорошо, - это плохо
+    return num > 0 ? 'green-text' : 'red-text';
+};
+
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
   if (!isListWidget.value) {
@@ -285,14 +312,28 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
                                 </div>
                            </div>
                            <div class="fs-val-block">
-                               <div v-if="!showFutureBalance" class="fs-val" :class="Number(item.balance) < 0 ? 'red-text' : ''">
+                               <!-- 🟢 ЛЕВАЯ КОЛОНКА -->
+                               <div v-if="!showFutureBalance" class="fs-val" :class="getValueClass(item.balance, activeWidgetKey)">
                                    {{ formatVal(item.balance) }}
                                </div>
+                               <!-- 🟢 ПРАВАЯ КОЛОНКА (ПРОГНОЗ) -->
                                <div v-else class="fs-val-forecast">
-                                   <span class="fs-curr" :class="Number(item.balance) < 0 ? 'red-text' : ''">{{ formatVal(item.balance) }}</span>
+                                   <!-- Текущее -->
+                                   <span class="fs-curr" :class="getValueClass(item.balance, activeWidgetKey)">
+                                       {{ formatVal(item.balance) }}
+                                   </span>
+                                   
                                    <span class="fs-arrow">></span>
-                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="{ 'green-text': item.futureChange > 0, 'red-text': item.futureChange < 0 }">{{ formatDelta(item.futureChange) }}</span>
-                                   <span v-else class="fs-fut" :class="item.futureBalance < 0 ? 'red-text' : ''">{{ formatVal(item.futureBalance) }}</span>
+                                   
+                                   <!-- Дельта -->
+                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="getDeltaClass(item.futureChange, activeWidgetKey)">
+                                       {{ formatDelta(item.futureChange) }}
+                                   </span>
+                                   
+                                   <!-- Итог -->
+                                   <span v-else class="fs-fut" :class="Number(item.futureBalance) < 0 ? 'red-text' : 'white-text'">
+                                       {{ formatVal(item.futureBalance) }}
+                                   </span>
                                </div>
                            </div>
                        </template>
@@ -355,8 +396,8 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
     />
 
     <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
-    <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" />
+    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete($event)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
+    <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete($event)" />
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
@@ -423,6 +464,7 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
 .link-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #34c759; }
 .red-text { color: #ff3b30 !important; }
 .green-text { color: #34c759 !important; }
+.white-text { color: #fff !important; }
 .fs-empty { text-align: center; color: #666; margin-top: 50px; }
 .fs-footer { padding: 15px 20px; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
 .btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
