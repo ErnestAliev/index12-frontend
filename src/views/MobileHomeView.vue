@@ -254,7 +254,7 @@ const handleItemClick = (item) => {
     </div>
 
     <template v-else>
-        <!-- Fullscreen Widget Mode -->
+        <!-- Fullscreen Widget Mode (Overlay) -->
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
@@ -330,11 +330,16 @@ const handleItemClick = (item) => {
             </Teleport>
         </div>
 
-        <template v-else>
+        <!-- 
+            🟢 FIX SCROLL RESET: 
+            Убрали v-else для основного контента. 
+            Теперь он остается в DOM и сохраняет позицию скролла, пока оверлей сверху.
+        -->
+        <div class="main-content-view">
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
-              <!-- 🟢 FIX: Убрали v-show, используем класс для скрытия, чтобы сохранить структуру -->
+              <!-- Виджеты -->
               <MobileWidgetGrid 
                 class="section-widgets" 
                 :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" 
@@ -363,26 +368,26 @@ const handleItemClick = (item) => {
             <div class="fixed-footer">
               <MobileActionPanel @action="handleAction" @open-graph="showGraphModal = true" />
             </div>
-        </template>
-
-        <!-- Popups -->
-        <InfoModal 
-           v-if="showInfoModal"
-           :title="infoModalTitle"
-           :message="infoModalMessage"
-           @close="showInfoModal = false"
-        />
-
-        <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-        <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
-        <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" />
-        <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
-        <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
-        <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
-        <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
-        <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
-        <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />
+        </div>
     </template>
+
+    <!-- Popups -->
+    <InfoModal 
+       v-if="showInfoModal"
+       :title="infoModalTitle"
+       :message="infoModalMessage"
+       @close="showInfoModal = false"
+    />
+
+    <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
+    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
+    <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete(operationToEdit)" />
+    <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
+    <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
+    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
+    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
+    <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
+    <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />
   </div>
 </template>
 
@@ -447,6 +452,15 @@ const handleItemClick = (item) => {
 .btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
 
 /* Layout */
+.main-content-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body {
     flex-grow: 1; 
