@@ -1,17 +1,18 @@
 <script setup>
+// ... (imports)
 import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { useWidgetData } from '@/composables/useWidgetData.js';
 
-// UI Components
+// ... (UI Components)
 import MobileHeaderTotals from '@/components/mobile/MobileHeaderTotals.vue';
 import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
 import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
 import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
 
-// Modals
+// ... (Modals)
 import EntityPopup from '@/components/EntityPopup.vue';
 import EntityListEditor from '@/components/EntityListEditor.vue';
 import OperationListEditor from '@/components/OperationListEditor.vue';
@@ -37,12 +38,12 @@ const chartRef = ref(null);
 const showGraphModal = ref(false);
 const isDataLoaded = ref(false); 
 
-// --- СОСТОЯНИЕ ДЛЯ ИНФО-МОДАЛКИ ---
+// ... (Info Modal State)
 const showInfoModal = ref(false);
 const infoModalTitle = ref('');
 const infoModalMessage = ref('');
 
-// --- СИНХРОНИЗАЦИЯ СКРОЛЛА (Чистая логика) ---
+// ... (Scroll Sync Logic - Unchanged)
 let isTimelineScrolling = false;
 let isChartScrolling = false;
 let syncTimeout = null;
@@ -50,39 +51,25 @@ let syncTimeout = null;
 const onTimelineScroll = (event) => {
   if (isChartScrolling) return;
   isTimelineScrolling = true;
-  
-  if (chartRef.value) {
-    chartRef.value.setScroll(event.target.scrollLeft);
-  }
-  
-  clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(() => { isTimelineScrolling = false; }, 150);
+  if (chartRef.value) { chartRef.value.setScroll(event.target.scrollLeft); }
+  clearTimeout(syncTimeout); syncTimeout = setTimeout(() => { isTimelineScrolling = false; }, 150);
 };
 
 const onChartScroll = (left) => {
   if (isTimelineScrolling) return;
   isChartScrolling = true;
-  
   const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
-  if (el) {
-    el.scrollLeft = left;
-  }
-  
-  clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(() => { isChartScrolling = false; }, 150);
+  if (el) { el.scrollLeft = left; }
+  clearTimeout(syncTimeout); syncTimeout = setTimeout(() => { isChartScrolling = false; }, 150);
 };
 
 const initScrollSync = () => {
     if (!timelineRef.value) return;
     const el = timelineRef.value.$el.querySelector('.timeline-scroll-area');
-    if (el) { 
-        el.removeEventListener('scroll', onTimelineScroll);
-        el.addEventListener('scroll', onTimelineScroll, { passive: true }); 
-    }
+    if (el) { el.removeEventListener('scroll', onTimelineScroll); el.addEventListener('scroll', onTimelineScroll, { passive: true }); }
 };
 
 onMounted(async () => {
-  // Отключаем зум и форматирование телефонов на iOS
   const meta = document.createElement('meta');
   meta.name = "format-detection";
   meta.content = "telephone=no, date=no, email=no, address=no";
@@ -96,17 +83,11 @@ onMounted(async () => {
       const today = new Date();
       mainStore.setToday(Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000));
 
-      // Принудительно инициализируем режим 12d при старте
-      if (!mainStore.projection?.mode) {
-          await mainStore.updateFutureProjectionByMode('12d', today);
-      }
-
-      // Загружаем данные для текущего режима
+      if (!mainStore.projection?.mode) { await mainStore.updateFutureProjectionByMode('12d', today); }
       const modeToLoad = mainStore.projection.mode || '12d';
       await mainStore.loadCalculationData(modeToLoad, today);
       
       isDataLoaded.value = true; 
-
       nextTick(() => { initScrollSync(); });
   } catch (error) { console.error("Mobile View Mount Error:", error); }
 });
@@ -122,13 +103,8 @@ const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
 watch(isWidgetFullscreen, (isOpen) => {
-    if (isOpen) { 
-        document.body.style.overflow = 'hidden'; 
-    } 
-    else { 
-        document.body.style.overflow = ''; 
-        nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); 
-    }
+    if (isOpen) { document.body.style.overflow = 'hidden'; } 
+    else { document.body.style.overflow = ''; nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); }
 });
 
 const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
@@ -142,36 +118,17 @@ const updateFilterPosition = () => {
   }
 };
 
-const toggleFilter = (event) => { 
-    if (isFilterOpen.value) { 
-        isFilterOpen.value = false; 
-    } else { 
-        if (event && event.currentTarget) { 
-             nextTick(() => updateFilterPosition());
-        } 
-        isFilterOpen.value = true; 
-    } 
-};
+const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { nextTick(() => updateFilterPosition()); } isFilterOpen.value = true; } };
 
 const handleFilterClickOutside = (event) => {
   const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target);
   const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target);
-  if (!insideTrigger && !insideDropdown) {
-      isFilterOpen.value = false;
-  }
+  if (!insideTrigger && !insideDropdown) { isFilterOpen.value = false; }
 };
 
 watch(isFilterOpen, (isOpen) => {
-  if (isOpen) {
-    nextTick(() => {
-       updateFilterPosition();
-       document.addEventListener('mousedown', handleFilterClickOutside);
-       window.addEventListener('scroll', updateFilterPosition, true);
-    });
-  } else {
-    document.removeEventListener('mousedown', handleFilterClickOutside);
-    window.removeEventListener('scroll', updateFilterPosition, true);
-  }
+  if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('mousedown', handleFilterClickOutside); window.addEventListener('scroll', updateFilterPosition, true); }); } 
+  else { document.removeEventListener('mousedown', handleFilterClickOutside); window.removeEventListener('scroll', updateFilterPosition, true); }
 });
 
 const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; 
@@ -179,7 +136,9 @@ const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterO
 
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
-const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories'].includes(k); });
+
+// 🟢 FIX: Добавлен 'taxes' в Delta Mode (показываем 0/изменение, а не сумму долга)
+const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });
 
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
@@ -319,7 +278,6 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
                                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                                     </span>
                                 </div>
-                                <!-- 🟢 FIX: Отображение связанных счетов -->
                                 <div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div>
                                 <!-- 🟢 NEW: Бейдж режима налогообложения в полноэкранном режиме -->
                                 <div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">

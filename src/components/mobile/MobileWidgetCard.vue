@@ -17,7 +17,6 @@ const widgetInfo = computed(() => {
   return w ? w.name : 'Виджет';
 });
 
-// 🟢 ИЗМЕНЕНИЕ: По умолчанию true (активен), если в сторе нет явного false
 const isForecastActive = computed(() => {
   const val = mainStore.dashboardForecastState[props.widgetKey];
   return val !== undefined ? val : true; 
@@ -43,7 +42,6 @@ const isSingleLineWidget = computed(() => {
     ].includes(props.widgetKey);
 });
 
-// 🟢 НОВЫЕ ГРУППЫ ВИДЖЕТОВ
 const isAlwaysNegativeWidget = computed(() => {
     return ['expenseList', 'withdrawalList', 'credits'].includes(props.widgetKey);
 });
@@ -57,11 +55,6 @@ const filterMode = computed(() => mainStore.widgetFilterMode);
 
 const items = computed(() => {
   if (isLiabilitiesWidget.value) return [];
-  // Триггеры реактивности
-  if (mainStore.transactions) {};
-  if (mainStore.categories) {};
-  if (mainStore.allWidgets) {};
-
   const rawList = getWidgetItems(props.widgetKey, isForecastActive.value);
   return filterAndSort(rawList);
 });
@@ -100,28 +93,19 @@ const isEmpty = computed(() => {
     return items.value.length === 0; 
 });
 
-// 🟢 ФОРМАТИРОВАНИЕ ДЛЯ ЛЕВОЙ КОЛОНКИ (ФАКТ)
 const formatVal = (val) => {
-    const num = Number(val) || 0; // Берем число как есть, чтобы проверить знак
+    const num = Number(val) || 0; 
     const formatted = formatNumber(Math.abs(num));
-
-    // Если значение отрицательное - ставим минус и формат
-    if (num < 0) {
-        return `- ${formatted} ₸`;
-    }
-    
-    // Если положительное - просто сумма
+    if (num < 0) return `- ${formatted} ₸`;
     return `₸ ${formatted}`;
 };
 
-// 🟢 ЦВЕТ ДЛЯ ЛЕВОЙ КОЛОНКИ (ФАКТ)
 const getFactValueClass = (val) => {
     const num = Number(val) || 0;
     if (num < 0) return 'red-text';
     return 'white-text';
 };
 
-// Хелпер для определения значения правой колонки
 const getRightValue = (item) => {
     if (isBalanceWidget.value) {
         return item.currentBalance + (item.futureChange || 0);
@@ -130,66 +114,38 @@ const getRightValue = (item) => {
     }
 };
 
-// 🟢 ФОРМАТИРОВАНИЕ ДЛЯ ПРАВОЙ КОЛОНКИ (ПЛАН)
 const getRightValueFormatted = (item) => {
     const val = getRightValue(item);
     const num = Math.abs(Number(val) || 0);
     const formatted = formatNumber(num);
 
-    // Счета, Компании -> Без знака (накопительные)
-    if (isBalanceWidget.value) {
-        return `${formatted} ₸`;
-    }
+    if (isBalanceWidget.value) return `${formatted} ₸`;
+    if (num === 0) return `${formatted} ₸`;
+    if (isAlwaysNegativeWidget.value) return `- ${formatted} ₸`;
+    if (isTransferWidget.value) return `${formatted} ₸`;
 
-    // 🟢 ЕСЛИ 0 -> Без знака (для всех кроме счетов/компаний)
-    if (num === 0) {
-        return `${formatted} ₸`;
-    }
-
-    // Расходы, Выводы, Кредиты -> Всегда с минусом (если не 0)
-    if (isAlwaysNegativeWidget.value) {
-        return `- ${formatted} ₸`;
-    }
-
-    // Переводы -> Без знака
-    if (isTransferWidget.value) {
-        return `${formatted} ₸`;
-    }
-
-    // Остальные (Доходы и пр.) -> Со знаком +/-
     if (val > 0) return `+ ${formatted} ₸`;
     return `- ${formatted} ₸`;
 };
 
-// 🟢 ЦВЕТ ДЛЯ ПРАВОЙ КОЛОНКИ
 const getRightValueClass = (item) => {
     const val = getRightValue(item);
     const num = Number(val) || 0;
 
-    // 🟢 ЕСЛИ 0 и не балансовый -> Белый (без цвета)
-    if (!isBalanceWidget.value && num === 0) {
-        return 'white-text';
-    }
-
-    // Расходы, Выводы, Кредиты -> Всегда красный
+    if (!isBalanceWidget.value && num === 0) return 'white-text';
     if (isAlwaysNegativeWidget.value) return 'red-text';
-    
-    // Переводы -> Белый
     if (isTransferWidget.value) return 'white-text';
 
     return val >= 0 ? 'green-text' : 'red-text';
 };
 
-// LIABILITIES SPECIAL FORMATTERS
 const formatLiabilitiesPlan = (val) => {
     const num = Number(val) || 0;
     const formatted = formatNumber(Math.abs(num));
-    // Если 0 -> просто значение
     if (num === 0) return `${formatted} ₸`;
     return val >= 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
 };
 
-// Хелпер для цвета обязательств
 const getLiabilitiesPlanClass = (val, defaultClass) => {
     const num = Number(val) || 0;
     if (num === 0) return 'white-text';
@@ -198,7 +154,6 @@ const getLiabilitiesPlanClass = (val, defaultClass) => {
 
 const handleClick = () => { emit('click', props.widgetKey); };
 
-// ЦВЕТОВАЯ КОДИРОВКА И СТИЛИ
 const cardStyleClass = computed(() => {
   const k = props.widgetKey;
   if (k === 'withdrawalList') return 'style-purple'; 
@@ -221,7 +176,6 @@ const cardStyleClass = computed(() => {
     :class="[cardStyleClass, { 'limit-height': !isSingleLineWidget }]" 
     @click="handleClick"
   >
-    <!-- 🟢 НОВЫЙ ХЕДЕР: Факт - Заголовок - План -->
     <div class="widget-header">
       <div class="header-badge badge-fact">Факт</div>
       <div class="widget-title">{{ widgetInfo }}</div>
@@ -230,7 +184,7 @@ const cardStyleClass = computed(() => {
 
     <div class="widget-body scrollable-list">
       
-      <!-- LIABILITIES WIDGET (Специфичный лейаут) -->
+      <!-- LIABILITIES WIDGET -->
       <div v-if="isLiabilitiesWidget" class="items-list three-col-grid">
           <div class="list-item-grid">
               <div class="col-left white-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
@@ -255,12 +209,13 @@ const cardStyleClass = computed(() => {
       <div v-else class="items-list three-col-grid">
         <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item-grid">
           
-          <!-- КОЛОНКА 1: ФАКТ (Динамический цвет и знак) -->
+          <!-- КОЛОНКА 1: ФАКТ -->
           <div class="col-left" :class="getFactValueClass(item.currentBalance || item.balance)">
              {{ formatVal(item.currentBalance || item.balance) }}
           </div>
           
           <!-- КОЛОНКА 2: НАЗВАНИЕ (Центр) -->
+          <!-- 🟢 FIX: Убран бейдж режима, возвращен лаконичный стиль -->
           <div class="col-center">
               <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
               {{ item.name }}
@@ -269,7 +224,7 @@ const cardStyleClass = computed(() => {
               </span>
           </div>
           
-          <!-- КОЛОНКА 3: ПЛАН (Цвет зависит от виджета) -->
+          <!-- КОЛОНКА 3: ПЛАН -->
           <div class="col-right">
               <template v-if="isForecastActive">
                   <span :class="getRightValueClass(item)">
@@ -298,26 +253,17 @@ const cardStyleClass = computed(() => {
   overflow: hidden; 
   cursor: pointer; 
   border-radius: 12px; 
-  border-top-width: 4px;
+  border-top-width: 4px; 
   border-top-style: solid;
   transition: transform 0.15s ease;
 }
 
-.mobile-widget-card.auto-height {
-  height: auto;
-  min-height: 60px;
-}
-
-.mobile-widget-card.limit-height .widget-body {
-  max-height: 320px; 
-  overflow-y: auto; 
-  scrollbar-width: none;
-}
+.mobile-widget-card.auto-height { height: auto; min-height: 60px; }
+.mobile-widget-card.limit-height .widget-body { max-height: 320px; overflow-y: auto; scrollbar-width: none; }
 .mobile-widget-card.limit-height .widget-body::-webkit-scrollbar { display: none; }
-
 .mobile-widget-card:active { background-color: rgba(255,255,255,0.05); transform: scale(0.98); }
 
-/* ЦВЕТОВЫЕ СТИЛИ ТОПА */
+/* Colors */
 .style-purple { border-top-color: #666666; }
 .style-dark-blue { border-top-color: #666666; }
 .style-cyan { border-top-color: #666666; }
@@ -330,80 +276,20 @@ const cardStyleClass = computed(() => {
 .style-light-blue { border-top-color: #666666; }
 .style-gray { border-top-color: #666666; }
 
-/* ХЕДЕР */
-.widget-header { 
-  display: flex; 
-  justify-content: space-between; 
-  align-items: center; 
-  padding: 10px 12px 6px 12px; 
-  border-bottom: 1px solid rgba(255,255,255,0.05); 
-  flex-shrink: 0; 
-  min-height: 30px; 
-}
+.widget-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; min-height: 30px; }
+.widget-title { font-size: 15px; color: #fff; font-weight: 600; text-align: center; flex-grow: 1; }
+.header-badge { font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600; text-transform: capitalize; min-width: 40px; text-align: center; }
+.badge-fact { background-color: #444; color: #ccc; }
+.badge-plan { background-color: transparent; color: #555; border: 1px solid #444; }
+.badge-plan.active { background-color: rgba(52, 199, 89, 0.2); color: var(--color-primary, #34c759); border: 1px solid var(--color-primary, #34c759); }
 
-.widget-title { 
-    font-size: 15px; 
-    color: #fff; 
-    font-weight: 600; 
-    text-align: center;
-    flex-grow: 1;
-}
+.widget-body { flex-grow: 1; overflow: hidden; padding: 10px 12px 14px 12px; }
+.items-list.three-col-grid { display: flex; flex-direction: column; gap: 8px; }
+.list-item-grid { display: grid; grid-template-columns: 1fr 1.2fr 1fr; align-items: center; font-size: 13px; line-height: 1.3; }
 
-.header-badge {
-    font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-weight: 600;
-    text-transform: capitalize;
-    min-width: 40px;
-    text-align: center;
-}
+.col-left { text-align: left; white-space: nowrap; font-weight: 500; }
 
-.badge-fact {
-    background-color: #444; /* Серый фон */
-    color: #ccc;
-}
-
-.badge-plan {
-    background-color: transparent;
-    color: #555;
-    border: 1px solid #444;
-}
-
-.badge-plan.active {
-    background-color: rgba(52, 199, 89, 0.2);
-    color: var(--color-primary, #34c759);
-    border: 1px solid var(--color-primary, #34c759);
-}
-
-.widget-body { 
-  flex-grow: 1; 
-  overflow: hidden; 
-  padding: 10px 12px 14px 12px; 
-}
-
-/* СЕТКА 3 КОЛОНКИ */
-.items-list.three-col-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.list-item-grid {
-    display: grid;
-    /* Лево (Факт) | Центр (Имя) | Право (План) */
-    grid-template-columns: 1fr 1.2fr 1fr; 
-    align-items: center;
-    font-size: 13px;
-    line-height: 1.3;
-}
-
-.col-left {
-    text-align: left;
-    white-space: nowrap;
-    font-weight: 500;
-}
-
+/* 🟢 FIX: Вернул стили центральной колонки к "строчному" виду (ellipsis работает) */
 .col-center {
     text-align: center;
     color: #ccc;
@@ -413,11 +299,7 @@ const cardStyleClass = computed(() => {
     padding: 0 4px;
 }
 
-.col-right {
-    text-align: right;
-    white-space: nowrap;
-    font-weight: 600;
-}
+.col-right { text-align: right; white-space: nowrap; font-weight: 600; }
 
 .white-text { color: #fff; opacity: 0.9; }
 .green-text { color: var(--color-primary, #34c759); }
