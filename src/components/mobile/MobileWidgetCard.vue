@@ -43,6 +43,15 @@ const isSingleLineWidget = computed(() => {
     ].includes(props.widgetKey);
 });
 
+// 🟢 НОВЫЕ ГРУППЫ ВИДЖЕТОВ
+const isAlwaysNegativeWidget = computed(() => {
+    return ['expenseList', 'withdrawalList', 'credits'].includes(props.widgetKey);
+});
+
+const isTransferWidget = computed(() => {
+    return props.widgetKey === 'transfers';
+});
+
 const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
@@ -91,28 +100,100 @@ const isEmpty = computed(() => {
     return items.value.length === 0; 
 });
 
-const formatVal = (val) => `₸ ${formatNumber(Math.abs(Number(val) || 0))}`;
-// Для правой колонки (План)
-const formatPlanVal = (val) => {
-   const num = Number(val) || 0;
-   const formatted = formatNumber(Math.abs(num));
-   return `+ ${formatted} ₸`; 
-};
-const formatPlanValNegative = (val) => {
-   const num = Number(val) || 0;
-   const formatted = formatNumber(Math.abs(num));
-   return `- ${formatted} ₸`; 
+// 🟢 ФОРМАТИРОВАНИЕ ДЛЯ ЛЕВОЙ КОЛОНКИ (ФАКТ)
+const formatVal = (val) => {
+    const num = Number(val) || 0; // Берем число как есть, чтобы проверить знак
+    const formatted = formatNumber(Math.abs(num));
+
+    // Если значение отрицательное - ставим минус и формат
+    if (num < 0) {
+        return `- ${formatted} ₸`;
+    }
+    
+    // Если положительное - просто сумма
+    return `₸ ${formatted}`;
 };
 
-// Хелпер для определения, что показывать справа (Итого или Дельту)
+// 🟢 ЦВЕТ ДЛЯ ЛЕВОЙ КОЛОНКИ (ФАКТ)
+const getFactValueClass = (val) => {
+    const num = Number(val) || 0;
+    if (num < 0) return 'red-text';
+    return 'white-text';
+};
+
+// Хелпер для определения значения правой колонки
 const getRightValue = (item) => {
     if (isBalanceWidget.value) {
-        // Для счетов показываем будущий баланс
         return item.currentBalance + (item.futureChange || 0);
     } else {
-        // Для остальных показываем изменение (дельту)
         return item.futureChange || 0;
     }
+};
+
+// 🟢 ФОРМАТИРОВАНИЕ ДЛЯ ПРАВОЙ КОЛОНКИ (ПЛАН)
+const getRightValueFormatted = (item) => {
+    const val = getRightValue(item);
+    const num = Math.abs(Number(val) || 0);
+    const formatted = formatNumber(num);
+
+    // Счета, Компании -> Без знака (накопительные)
+    if (isBalanceWidget.value) {
+        return `${formatted} ₸`;
+    }
+
+    // 🟢 ЕСЛИ 0 -> Без знака (для всех кроме счетов/компаний)
+    if (num === 0) {
+        return `${formatted} ₸`;
+    }
+
+    // Расходы, Выводы, Кредиты -> Всегда с минусом (если не 0)
+    if (isAlwaysNegativeWidget.value) {
+        return `- ${formatted} ₸`;
+    }
+
+    // Переводы -> Без знака
+    if (isTransferWidget.value) {
+        return `${formatted} ₸`;
+    }
+
+    // Остальные (Доходы и пр.) -> Со знаком +/-
+    if (val > 0) return `+ ${formatted} ₸`;
+    return `- ${formatted} ₸`;
+};
+
+// 🟢 ЦВЕТ ДЛЯ ПРАВОЙ КОЛОНКИ
+const getRightValueClass = (item) => {
+    const val = getRightValue(item);
+    const num = Number(val) || 0;
+
+    // 🟢 ЕСЛИ 0 и не балансовый -> Белый (без цвета)
+    if (!isBalanceWidget.value && num === 0) {
+        return 'white-text';
+    }
+
+    // Расходы, Выводы, Кредиты -> Всегда красный
+    if (isAlwaysNegativeWidget.value) return 'red-text';
+    
+    // Переводы -> Белый
+    if (isTransferWidget.value) return 'white-text';
+
+    return val >= 0 ? 'green-text' : 'red-text';
+};
+
+// LIABILITIES SPECIAL FORMATTERS
+const formatLiabilitiesPlan = (val) => {
+    const num = Number(val) || 0;
+    const formatted = formatNumber(Math.abs(num));
+    // Если 0 -> просто значение
+    if (num === 0) return `${formatted} ₸`;
+    return val >= 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
+};
+
+// Хелпер для цвета обязательств
+const getLiabilitiesPlanClass = (val, defaultClass) => {
+    const num = Number(val) || 0;
+    if (num === 0) return 'white-text';
+    return defaultClass;
 };
 
 const handleClick = () => { emit('click', props.widgetKey); };
@@ -154,16 +235,16 @@ const cardStyleClass = computed(() => {
           <div class="list-item-grid">
               <div class="col-left white-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
               <div class="col-center">Должны отработать</div>
-              <div class="col-right red-text">
-                  {{ isForecastActive ? formatPlanVal(liabilitiesData.weOweFuture) : '' }}
+              <div class="col-right" :class="getLiabilitiesPlanClass(liabilitiesData.weOweFuture, 'red-text')">
+                  {{ isForecastActive ? formatLiabilitiesPlan(liabilitiesData.weOweFuture) : '' }}
               </div>
           </div>
 
           <div class="list-item-grid">
               <div class="col-left white-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
               <div class="col-center">Должны получить</div>
-              <div class="col-right orange-text">
-                  {{ isForecastActive ? formatPlanVal(liabilitiesData.theyOweFuture) : '' }}
+              <div class="col-right" :class="getLiabilitiesPlanClass(liabilitiesData.theyOweFuture, 'orange-text')">
+                  {{ isForecastActive ? formatLiabilitiesPlan(liabilitiesData.theyOweFuture) : '' }}
               </div>
           </div>
       </div>
@@ -174,8 +255,8 @@ const cardStyleClass = computed(() => {
       <div v-else class="items-list three-col-grid">
         <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item-grid">
           
-          <!-- КОЛОНКА 1: ФАКТ (Белый) -->
-          <div class="col-left white-text">
+          <!-- КОЛОНКА 1: ФАКТ (Динамический цвет и знак) -->
+          <div class="col-left" :class="getFactValueClass(item.currentBalance || item.balance)">
              {{ formatVal(item.currentBalance || item.balance) }}
           </div>
           
@@ -188,14 +269,11 @@ const cardStyleClass = computed(() => {
               </span>
           </div>
           
-          <!-- КОЛОНКА 3: ПЛАН (Зеленый/Цветной) -->
+          <!-- КОЛОНКА 3: ПЛАН (Цвет зависит от виджета) -->
           <div class="col-right">
               <template v-if="isForecastActive">
-                  <span class="green-text" v-if="getRightValue(item) >= 0">
-                      {{ formatPlanVal(getRightValue(item)) }}
-                  </span>
-                  <span class="red-text" v-else>
-                      {{ formatPlanValNegative(getRightValue(item)) }}
+                  <span :class="getRightValueClass(item)">
+                      {{ getRightValueFormatted(item) }}
                   </span>
               </template>
           </div>
@@ -211,7 +289,6 @@ const cardStyleClass = computed(() => {
 <style scoped>
 .mobile-widget-card { 
   background-color: var(--color-background-soft, #282828); 
-  /* 🟢 Убрал явную границу снизу/сбоку, оставил только бордер контейнера, как на скрине */
   border: 1px solid #333; 
   margin-top: 12px; 
   display: flex; 
@@ -221,7 +298,6 @@ const cardStyleClass = computed(() => {
   overflow: hidden; 
   cursor: pointer; 
   border-radius: 12px; 
-  /* Цветная полоска сверху осталась */
   border-top-width: 4px;
   border-top-style: solid;
   transition: transform 0.15s ease;
@@ -254,7 +330,7 @@ const cardStyleClass = computed(() => {
 .style-light-blue { border-top-color: #666666; }
 .style-gray { border-top-color: #666666; }
 
-/* 🟢 НОВЫЙ ХЕДЕР */
+/* ХЕДЕР */
 .widget-header { 
   display: flex; 
   justify-content: space-between; 
@@ -306,7 +382,7 @@ const cardStyleClass = computed(() => {
   padding: 10px 12px 14px 12px; 
 }
 
-/* 🟢 СЕТКА 3 КОЛОНКИ */
+/* СЕТКА 3 КОЛОНКИ */
 .items-list.three-col-grid {
     display: flex;
     flex-direction: column;
