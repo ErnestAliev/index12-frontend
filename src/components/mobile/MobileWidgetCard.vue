@@ -17,8 +17,10 @@ const widgetInfo = computed(() => {
   return w ? w.name : 'Виджет';
 });
 
+// 🟢 ИЗМЕНЕНИЕ: По умолчанию true (активен), если в сторе нет явного false
 const isForecastActive = computed(() => {
-  return mainStore.dashboardForecastState[props.widgetKey] ?? false;
+  const val = mainStore.dashboardForecastState[props.widgetKey];
+  return val !== undefined ? val : true; 
 });
 
 const isListWidget = computed(() => {
@@ -31,7 +33,6 @@ const isBalanceWidget = computed(() => {
 
 const isLiabilitiesWidget = computed(() => props.widgetKey === 'liabilities');
 
-// 🟢 1. Определение "однострочных" виджетов для оптимальной высоты
 const isSingleLineWidget = computed(() => {
     return [
         'incomeList', 
@@ -90,132 +91,114 @@ const isEmpty = computed(() => {
     return items.value.length === 0; 
 });
 
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`;
-
-const formatDelta = (val) => { 
-  const num = Number(val) || 0; 
-  if (num === 0) return '0 ₸'; 
-  const formatted = formatNumber(Math.abs(num)); 
-  return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; 
+const formatVal = (val) => `₸ ${formatNumber(Math.abs(Number(val) || 0))}`;
+// Для правой колонки (План)
+const formatPlanVal = (val) => {
+   const num = Number(val) || 0;
+   const formatted = formatNumber(Math.abs(num));
+   return `+ ${formatted} ₸`; 
+};
+const formatPlanValNegative = (val) => {
+   const num = Number(val) || 0;
+   const formatted = formatNumber(Math.abs(num));
+   return `- ${formatted} ₸`; 
 };
 
-const getDeltaClass = (val) => {
-    const num = Number(val) || 0;
-    return num > 0 ? 'green-text' : (num < 0 ? 'red-text' : 'white-text');
-};
-
-const getValueClass = (val) => {
-    const num = Number(val) || 0;
-    if (isListWidget.value) { 
-        if (props.widgetKey === 'incomeList') return 'green-text'; 
-        if (props.widgetKey === 'transfers') return 'white-text'; 
-        return 'red-text'; 
+// Хелпер для определения, что показывать справа (Итого или Дельту)
+const getRightValue = (item) => {
+    if (isBalanceWidget.value) {
+        // Для счетов показываем будущий баланс
+        return item.currentBalance + (item.futureChange || 0);
+    } else {
+        // Для остальных показываем изменение (дельту)
+        return item.futureChange || 0;
     }
-    return num < 0 ? 'red-text' : 'white-text';
 };
 
 const handleClick = () => { emit('click', props.widgetKey); };
 
-// ЦВЕТОВАЯ КОДИРОВКА И СТИЛИ (Neon Shadows)
+// ЦВЕТОВАЯ КОДИРОВКА И СТИЛИ
 const cardStyleClass = computed(() => {
   const k = props.widgetKey;
-  
   if (k === 'withdrawalList') return 'style-purple'; 
   if (k === 'transfers') return 'style-dark-blue'; 
   if (k === 'individuals') return 'style-cyan'; 
   if (k === 'accounts') return 'style-blue-grey'; 
   if (k === 'companies') return 'style-teal'; 
   if (k === 'projects') return 'style-pink'; 
-
   if (k === 'incomeList') return 'style-green'; 
   if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
   if (k === 'liabilities') return 'style-orange'; 
   if (k === 'credits') return 'style-light-blue'; 
-
   return 'style-gray';
 });
 </script>
 
 <template>
-  <!-- 🟢 Все виджеты теперь auto-height, но с ограничением max-height для списков -->
   <div 
     class="mobile-widget-card auto-height" 
     :class="[cardStyleClass, { 'limit-height': !isSingleLineWidget }]" 
     @click="handleClick"
   >
+    <!-- 🟢 НОВЫЙ ХЕДЕР: Факт - Заголовок - План -->
     <div class="widget-header">
-      <div class="widget-title-row">
-        <span class="widget-title">{{ widgetInfo }}</span>
-        <span v-if="isForecastActive" class="forecast-badge">Прогноз</span>
-      </div>
-      <div class="widget-arrow">
-         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-      </div>
+      <div class="header-badge badge-fact">Факт</div>
+      <div class="widget-title">{{ widgetInfo }}</div>
+      <div class="header-badge badge-plan" :class="{ active: isForecastActive }">План</div>
     </div>
 
     <div class="widget-body scrollable-list">
       
-      <div v-if="isLiabilitiesWidget" class="items-list" :class="{ 'forecast-mode': isForecastActive }">
-          <div class="list-item">
-              <div class="name-cell">Должны отработать</div>
-              <template v-if="isForecastActive">
-                  <div class="current-cell red-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
-                  <div class="arrow-cell">&gt;</div>
-                  <div class="future-cell red-text">{{ formatVal(liabilitiesData.weOweFuture) }}</div>
-              </template>
-              <template v-else>
-                  <div class="single-val-cell red-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
-              </template>
+      <!-- LIABILITIES WIDGET (Специфичный лейаут) -->
+      <div v-if="isLiabilitiesWidget" class="items-list three-col-grid">
+          <div class="list-item-grid">
+              <div class="col-left white-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
+              <div class="col-center">Должны отработать</div>
+              <div class="col-right red-text">
+                  {{ isForecastActive ? formatPlanVal(liabilitiesData.weOweFuture) : '' }}
+              </div>
           </div>
 
-          <div class="list-item">
-              <div class="name-cell">Должны получить</div>
-              <template v-if="isForecastActive">
-                  <div class="current-cell orange-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
-                  <div class="arrow-cell">&gt;</div>
-                  <div class="future-cell orange-text">{{ formatVal(liabilitiesData.theyOweFuture) }}</div>
-              </template>
-              <template v-else>
-                  <div class="single-val-cell orange-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
-              </template>
+          <div class="list-item-grid">
+              <div class="col-left white-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
+              <div class="col-center">Должны получить</div>
+              <div class="col-right orange-text">
+                  {{ isForecastActive ? formatPlanVal(liabilitiesData.theyOweFuture) : '' }}
+              </div>
           </div>
       </div>
 
       <div v-else-if="isEmpty" class="empty-text">Нет данных</div>
       
-      <div v-else class="items-list" :class="{ 'forecast-mode': isForecastActive }">
-        <!-- 🟢 2. slice увеличен, чтобы показать больше элементов при скролле -->
-        <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item">
+      <!-- STANDARD LIST -->
+      <div v-else class="items-list three-col-grid">
+        <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item-grid">
           
-          <div class="name-cell">
-              <span 
-                v-if="item.linkMarkerColor" 
-                class="color-dot" 
-                :style="{ backgroundColor: item.linkMarkerColor }"
-              ></span>
-
+          <!-- КОЛОНКА 1: ФАКТ (Белый) -->
+          <div class="col-left white-text">
+             {{ formatVal(item.currentBalance || item.balance) }}
+          </div>
+          
+          <!-- КОЛОНКА 2: НАЗВАНИЕ (Центр) -->
+          <div class="col-center">
+              <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
               {{ item.name }}
-
               <span v-if="item.isLinked" class="link-icon">
                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
               </span>
           </div>
           
-          <template v-if="isForecastActive">
-              <div class="current-cell" :class="getValueClass(item.currentBalance)">{{ formatVal(item.currentBalance) }}</div>
-              <div class="arrow-cell">&gt;</div>
-              
-              <div v-if="isBalanceWidget" class="future-cell" :class="getValueClass(item.currentBalance + (item.futureChange || 0))">
-                  {{ formatVal(item.currentBalance + (item.futureChange || 0)) }}
-              </div>
-              <div v-else class="future-cell" :class="getDeltaClass(item.futureChange)">
-                  {{ formatDelta(item.futureChange) }}
-              </div>
-          </template>
-
-          <template v-else>
-              <div class="single-val-cell" :class="getValueClass(item.balance || item.currentBalance)">{{ formatVal(item.balance || item.currentBalance) }}</div>
-          </template>
+          <!-- КОЛОНКА 3: ПЛАН (Зеленый/Цветной) -->
+          <div class="col-right">
+              <template v-if="isForecastActive">
+                  <span class="green-text" v-if="getRightValue(item) >= 0">
+                      {{ formatPlanVal(getRightValue(item)) }}
+                  </span>
+                  <span class="red-text" v-else>
+                      {{ formatPlanValNegative(getRightValue(item)) }}
+                  </span>
+              </template>
+          </div>
           
         </div>
         
@@ -228,43 +211,37 @@ const cardStyleClass = computed(() => {
 <style scoped>
 .mobile-widget-card { 
   background-color: var(--color-background-soft, #282828); 
-  border: 1px solid var(--color-border, #444); 
-  
+  /* 🟢 Убрал явную границу снизу/сбоку, оставил только бордер контейнера, как на скрине */
+  border: 1px solid #333; 
   margin-top: 12px; 
-
   display: flex; 
   flex-direction: column; 
   padding: 0; 
   box-sizing: border-box; 
   overflow: hidden; 
   cursor: pointer; 
-  
   border-radius: 12px; 
+  /* Цветная полоска сверху осталась */
   border-top-width: 4px;
   border-top-style: solid;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease;
 }
 
-/* 🟢 АВТО-ВЫСОТА ДЛЯ ВСЕХ */
 .mobile-widget-card.auto-height {
   height: auto;
-  min-height: 60px; /* Минимальная высота (заголовок + отступы) */
+  min-height: 60px;
 }
 
-/* 🟢 ОГРАНИЧЕНИЕ ВЫСОТЫ ДЛЯ СПИСКОВ (примерно 10 элементов) */
 .mobile-widget-card.limit-height .widget-body {
-  /* Расчет: 10 элементов * ~26px (строка + gap) + отступы.
-     320px достаточно для заголовка и ~10 строк.
-  */
   max-height: 320px; 
-  overflow-y: auto; /* Включаем скролл, если больше */
+  overflow-y: auto; 
   scrollbar-width: none;
 }
 .mobile-widget-card.limit-height .widget-body::-webkit-scrollbar { display: none; }
 
 .mobile-widget-card:active { background-color: rgba(255,255,255,0.05); transform: scale(0.98); }
 
-/* ЦВЕТОВЫЕ СТИЛИ */
+/* ЦВЕТОВЫЕ СТИЛИ ТОПА */
 .style-purple { border-top-color: #666666; }
 .style-dark-blue { border-top-color: #666666; }
 .style-cyan { border-top-color: #666666; }
@@ -277,55 +254,102 @@ const cardStyleClass = computed(() => {
 .style-light-blue { border-top-color: #666666; }
 .style-gray { border-top-color: #666666; }
 
+/* 🟢 НОВЫЙ ХЕДЕР */
 .widget-header { 
   display: flex; 
   justify-content: space-between; 
   align-items: center; 
-  margin-bottom: 0; 
-  padding: 8px 12px 4px 12px; 
+  padding: 10px 12px 6px 12px; 
   border-bottom: 1px solid rgba(255,255,255,0.05); 
   flex-shrink: 0; 
-  height: 26px; 
-  box-sizing: content-box; 
+  min-height: 30px; 
 }
-.widget-title-row { display: flex; align-items: center; gap: 6px; overflow: hidden; }
-.widget-title { font-size: 13px; color: #aaa; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.forecast-badge { font-size: 10px; background-color: rgba(52, 199, 89, 0.15); color: var(--color-primary, #34c759); padding: 1px 4px; border-radius: 3px; font-weight: 500; }
+
+.widget-title { 
+    font-size: 15px; 
+    color: #fff; 
+    font-weight: 600; 
+    text-align: center;
+    flex-grow: 1;
+}
+
+.header-badge {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-transform: capitalize;
+    min-width: 40px;
+    text-align: center;
+}
+
+.badge-fact {
+    background-color: #444; /* Серый фон */
+    color: #ccc;
+}
+
+.badge-plan {
+    background-color: transparent;
+    color: #555;
+    border: 1px solid #444;
+}
+
+.badge-plan.active {
+    background-color: rgba(52, 199, 89, 0.2);
+    color: var(--color-primary, #34c759);
+    border: 1px solid var(--color-primary, #34c759);
+}
 
 .widget-body { 
   flex-grow: 1; 
   overflow: hidden; 
-  display: flex; 
-  flex-direction: column; 
-  justify-content: flex-start; 
-  padding: 8px 12px 12px 12px; 
+  padding: 10px 12px 14px 12px; 
 }
 
-@media (orientation: landscape) {
-  .widget-body {
-    justify-content: flex-start;
-    padding-top: 6px;
-  }
+/* 🟢 СЕТКА 3 КОЛОНКИ */
+.items-list.three-col-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.items-list { display: flex; flex-direction: column; gap: 6px; } 
-.list-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; line-height: 1.4; }
-.items-list.forecast-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px auto; column-gap: 4px; row-gap: 4px; align-items: center; align-content: center; }
-.items-list.forecast-mode .list-item { display: contents; }
+.list-item-grid {
+    display: grid;
+    /* Лево (Факт) | Центр (Имя) | Право (План) */
+    grid-template-columns: 1fr 1.2fr 1fr; 
+    align-items: center;
+    font-size: 13px;
+    line-height: 1.3;
+}
 
-.name-cell { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; display: flex; align-items: center; gap: 6px; }
+.col-left {
+    text-align: left;
+    white-space: nowrap;
+    font-weight: 500;
+}
 
-.color-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.link-icon { color: var(--color-primary, #34c759); display: inline-flex; align-items: center; opacity: 0.7; transform: scale(1.1); }
+.col-center {
+    text-align: center;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px;
+}
 
-.single-val-cell { text-align: right; white-space: nowrap; font-weight: 500; }
-.current-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; }
-.arrow-cell { text-align: center; color: #666; font-size: 11px; }
-.future-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.col-right {
+    text-align: right;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.white-text { color: #fff; opacity: 0.9; }
+.green-text { color: var(--color-primary, #34c759); }
 .red-text { color: #ff3b30; }
-.green-text { color: #34c759; }
 .orange-text { color: #FF9D00; }
-.white-text { color: #fff; }
+
 .empty-text { font-size: 13px; color: #555; text-align: center; margin-top: 10px; }
-.more-text { font-size: 11px; color: #666; text-align: right; margin-top: 4px; grid-column: 1 / -1; }
+.more-text { font-size: 11px; color: #666; text-align: right; margin-top: 4px; }
+.color-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.link-icon { color: var(--color-primary, #34c759); opacity: 0.8; margin-left: 2px; }
 </style>
