@@ -204,9 +204,9 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap));
         }
 
-        // 🟢 TAXES LOGIC (ОБНОВЛЕНО ДЛЯ ДИАПАЗОНА)
+        // 🟢 TAXES LOGIC (FIXED: Negative Values for Debt)
         if (k === 'taxes') {
-            // 🟢 Получаем дату конца диапазона из стора
+            // 🟢 Получаем дату конца диапазона
             const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
             if (rangeEndDate) {
                 rangeEndDate.setHours(23, 59, 59, 999);
@@ -217,7 +217,6 @@ export function useWidgetData() {
                 
                 // 1. РАСЧЕТ НА СЕГОДНЯ (Факт)
                 const currentData = mainStore.calculateTaxForPeriod(comp._id, null, now);
-                // Оплачено (только операции с датой <= сейчас)
                 const paidCurrent = mainStore.taxes
                     .filter(t => {
                         const tCompId = getId(t.companyId);
@@ -230,10 +229,7 @@ export function useWidgetData() {
                 const currentDebt = Math.max(0, currentData.tax - paidCurrent);
 
                 // 2. РАСЧЕТ ПРОГНОЗА (С учетом диапазона)
-                // 🟢 Используем rangeEndDate
                 const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
-                
-                // Оплачено всего (с учетом диапазона)
                 const paidTotal = mainStore.taxes
                     .filter(t => {
                         const tCompId = getId(t.companyId);
@@ -245,12 +241,14 @@ export function useWidgetData() {
 
                 const totalForecastDebt = Math.max(0, totalCalc.tax - paidTotal);
 
-                // Значения отрицательные, т.к. это долг/расход
+                // 🟢 FIX: Значения должны быть ОТРИЦАТЕЛЬНЫМИ (Долг)
+                // Если мы должны 490 000, значение должно быть -490 000
                 const currentVal = -currentDebt;
                 const futureVal = -totalForecastDebt;
                 
-                // Delta: Разница между долгом в будущем и текущим.
-                // Если доход 300к в будущем -> Долг вырастет -> futureVal будет меньше currentVal -> change отрицательный (красный)
+                // Delta: Разница.
+                // Было: -490 000. Стало: -490 000. Delta = 0.
+                // Было: -3 000. Стало: -9 000. Delta = -6 000.
                 const change = futureVal - currentVal;
 
                 return {
@@ -261,9 +259,9 @@ export function useWidgetData() {
                     
                     // Для виджета
                     currentBalance: currentVal,
-                    futureChange: change, // Теперь это чистая дельта
-                    totalForecast: futureVal,
-                    futureBalance: futureVal,
+                    futureChange: change, // Delta (Изменение долга)
+                    totalForecast: futureVal, // Total Future (для fullscreen)
+                    futureBalance: futureVal, 
                     
                     // Совместимость
                     balance: isForecastActive ? futureVal : currentVal,

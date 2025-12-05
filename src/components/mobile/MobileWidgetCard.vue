@@ -80,7 +80,7 @@ function filterAndSort(originalList) {
     else if (filterMode.value === 'negative') list = list.filter(i => getFilterValue(i) < 0);
     else if (filterMode.value === 'nonZero') list = list.filter(i => getFilterValue(i) !== 0);
 
-    const getSortVal = (i) => getFilterVal(i);
+    const getSortVal = (i) => getFilterValue(i);
     if (sortMode.value === 'desc') list.sort((a, b) => getSortVal(b) - getSortVal(a));
     else if (sortMode.value === 'asc') list.sort((a, b) => getSortVal(a) - getSortVal(b));
 
