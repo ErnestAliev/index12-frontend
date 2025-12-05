@@ -241,7 +241,6 @@ const handleTaxDelete = async (operation) => {
     if (!operation) return;
     try {
         await mainStore.deleteOperation(operation);
-        // Принудительно обновляем чтобы пересчитать виджет
         await mainStore.fetchAllEntities();
     } catch(e) {
         alert("Ошибка удаления налога: " + e.message);
@@ -279,7 +278,6 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
-                    <!-- 🟢 FIX: Подсвечиваем кнопку фильтра, если есть сортировка -->
                     <button 
                         v-if="!isListWidget" 
                         ref="filterBtnRef" 
@@ -323,6 +321,10 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
                                 </div>
                                 <!-- 🟢 FIX: Отображение связанных счетов -->
                                 <div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div>
+                                <!-- 🟢 NEW: Бейдж режима налогообложения в полноэкранном режиме -->
+                                <div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">
+                                    {{ item.regime }} {{ item.percent }}%
+                                </div>
                            </div>
                            <div class="fs-val-block">
                                <div v-if="!showFutureBalance" class="fs-val" :class="Number(item.balance) < 0 ? 'red-text' : ''">
@@ -518,4 +520,18 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
 .section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
 .section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
 .fixed-footer { flex-shrink: 0; z-index: 200; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
+
+/* 🟢 СТИЛИ ДЛЯ БЕЙДЖА РЕЖИМА В ПОЛНОЭКРАННОМ РЕЖИМЕ */
+.fs-regime-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-top: 3px;
+    display: inline-block;
+    width: fit-content;
+}
+.badge-upr { background-color: rgba(52, 199, 89, 0.15); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.3); }
+.badge-our { background-color: rgba(255, 157, 0, 0.15); color: #FF9D00; border: 1px solid rgba(255, 157, 0, 0.3); }
 </style>
