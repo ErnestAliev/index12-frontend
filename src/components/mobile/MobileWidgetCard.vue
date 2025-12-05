@@ -80,7 +80,7 @@ function filterAndSort(originalList) {
     else if (filterMode.value === 'negative') list = list.filter(i => getFilterValue(i) < 0);
     else if (filterMode.value === 'nonZero') list = list.filter(i => getFilterValue(i) !== 0);
 
-    const getSortVal = (i) => getFilterValue(i);
+    const getSortVal = (i) => getFilterVal(i);
     if (sortMode.value === 'desc') list.sort((a, b) => getSortVal(b) - getSortVal(a));
     else if (sortMode.value === 'asc') list.sort((a, b) => getSortVal(a) - getSortVal(b));
 
@@ -108,9 +108,10 @@ const getFactValueClass = (val) => {
 
 const getRightValue = (item) => {
     if (isBalanceWidget.value) {
+        // Для счетов показываем ИТОГОВЫЙ баланс
         return item.currentBalance + (item.futureChange || 0);
     } else {
-        // Для Налогов и Оборотных виджетов показываем дельту
+        // Для Налогов и Оборотных виджетов показываем ДЕЛЬТУ
         return item.futureChange || 0;
     }
 };
@@ -137,7 +138,8 @@ const getRightValueClass = (item) => {
     if (isAlwaysNegativeWidget.value) return 'red-text';
     if (isTransferWidget.value) return 'white-text';
 
-    // Для налогов, если долг растет (val < 0), красим в красный
+    // 🟢 ИСПРАВЛЕНИЕ: Для налогов, если значение отрицательное (долг растет) -> Красный
+    // Если положительное (долг падает) -> Зеленый
     if (props.widgetKey === 'taxes') {
         return val < 0 ? 'red-text' : 'green-text';
     }
@@ -172,7 +174,7 @@ const cardStyleClass = computed(() => {
   if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
   if (k === 'liabilities') return 'style-orange'; 
   if (k === 'credits') return 'style-light-blue'; 
-  // 🟢 Добавляем стиль для налогов
+  // 🟢 Стиль для налогов - Красный
   if (k === 'taxes') return 'style-red'; 
   return 'style-gray';
 });
@@ -231,7 +233,7 @@ const cardStyleClass = computed(() => {
               </span>
           </div>
           
-          <!-- КОЛОНКА 3: ПЛАН -->
+          <!-- КОЛОНКА 3: ПЛАН (Дельта) -->
           <div class="col-right">
               <template v-if="isForecastActive">
                   <span :class="getRightValueClass(item)">
