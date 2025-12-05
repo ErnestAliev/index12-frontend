@@ -140,30 +140,25 @@ const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['
 // 🟢 FIX: Добавлен 'taxes' в Delta Mode (показываем 0/изменение, а не сумму долга)
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });
 
-// 🟢 Хелпер для класса цвета
-const getValueClass = (val, widgetKey) => {
+// 🟢 1. ХЕЛПЕРЫ ДЛЯ ЦВЕТОВ В ПОЛНОЭКРАННОМ РЕЖИМЕ (ИДЕНТИЧНЫ МИНИАТЮРЕ)
+const getFSValueClass = (val, widgetKey) => {
     const num = Number(val) || 0;
-    // Для налогов отрицательное число (долг) - это красный цвет
     if (widgetKey === 'taxes') {
         return num < 0 ? 'red-text' : 'white-text';
     }
-    // Для остальных отрицательное число - красный
     if (num < 0) return 'red-text';
     return 'white-text'; 
 };
 
-// 🟢 Хелпер для класса цвета ДЕЛЬТЫ (Плана)
-const getDeltaClass = (val, widgetKey) => {
+const getFSDeltaClass = (val, widgetKey) => {
     const num = Number(val) || 0;
-    if (num === 0) return 'white-text';
+    if (num === 0) return 'white-text'; // Если 0 - нейтральный
     
     if (widgetKey === 'taxes') {
-        // Если дельта < 0 (долг вырос) -> красный
-        // Если дельта > 0 (долг уменьшился) -> зеленый
+        // Если долг растет (отрицательная дельта) -> красный
         return num < 0 ? 'red-text' : 'green-text';
     }
-    
-    // Для остальных: + это хорошо, - это плохо
+    // Для остальных + это хорошо
     return num > 0 ? 'green-text' : 'red-text';
 };
 
@@ -198,7 +193,26 @@ const activeWidgetItems = computed(() => {
 });
 const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; }; const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 const googleAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/google`; }); const devAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/dev-login`; }); const isLocalhost = computed(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`; const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; }; const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
+const formatVal = (val) => {
+    const num = Number(val) || 0;
+    const formatted = formatNumber(Math.abs(num));
+    // Если 0 -> "0 ₸"
+    if (num === 0) return `${formatted} ₸`;
+    // Иначе ставим знак, если число отрицательное
+    if (num < 0) return `- ${formatted} ₸`;
+    return `₸ ${formatted}`;
+};
+
+// 🟢 NEW: Форматтер для дельты (+/-)
+const formatDeltaVal = (val) => {
+    const num = Number(val) || 0;
+    if (num === 0) return '0 ₸';
+    const formatted = formatNumber(Math.abs(num));
+    if (num > 0) return `+ ${formatted} ₸`;
+    return `- ${formatted} ₸`;
+};
+
+const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
 const isIncomePopupVisible = ref(false); const isExpensePopupVisible = ref(false); const isTransferPopupVisible = ref(false); const isListEditorVisible = ref(false); const isEntityPopupVisible = ref(false); const isOperationListEditorVisible = ref(false); const isWithdrawalPopupVisible = ref(false); const isRetailPopupVisible = ref(false); const isRefundPopupVisible = ref(false); const isPrepaymentModalVisible = ref(false); const isSmartDealPopupVisible = ref(false); const isTaxDetailsPopupVisible = ref(false); const operationToEdit = ref(null); const selectedDate = ref(new Date()); const selectedCellIndex = ref(0); const popupTitle = ref(''); const editorTitle = ref(''); const editorItems = ref([]); const operationListEditorTitle = ref(''); const operationListEditorType = ref('income'); const prepaymentData = ref({}); const prepaymentDateKey = ref(''); const smartDealPayload = ref(null); const smartDealStatus = ref({ debt: 0, totalDeal: 0 });
 const _parseDateKey = (dateKey) => { if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); const [year, doy] = dateKey.split('-').map(Number); if (isNaN(year) || isNaN(doy)) return new Date(); const date = new Date(year, 0, 1); date.setDate(doy); return date; };
 const handleShowMenu = (payload) => { if (payload.operation) { handleEditOperation(payload.operation); } else { selectedDate.value = payload.date || new Date(); selectedCellIndex.value = payload.cellIndex || 0; isIncomePopupVisible.value = true; } };
@@ -312,11 +326,11 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
                                 </div>
                            </div>
                            <div class="fs-val-block">
-                               <!-- 🟢 ЛЕВАЯ КОЛОНКА -->
+                               <!-- 🟢 1. ФАКТ -->
                                <div v-if="!showFutureBalance" class="fs-val" :class="getValueClass(item.balance, activeWidgetKey)">
                                    {{ formatVal(item.balance) }}
                                </div>
-                               <!-- 🟢 ПРАВАЯ КОЛОНКА (ПРОГНОЗ) -->
+                               <!-- 🟢 2. ПРОГНОЗ -->
                                <div v-else class="fs-val-forecast">
                                    <!-- Текущее -->
                                    <span class="fs-curr" :class="getValueClass(item.balance, activeWidgetKey)">
@@ -325,12 +339,12 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
                                    
                                    <span class="fs-arrow">></span>
                                    
-                                   <!-- Дельта -->
+                                   <!-- 🟢 FIX: Дельта (для налогов и других дельта-виджетов) -->
                                    <span v-if="isWidgetDeltaMode" class="fs-fut" :class="getDeltaClass(item.futureChange, activeWidgetKey)">
                                        {{ formatDelta(item.futureChange) }}
                                    </span>
                                    
-                                   <!-- Итог -->
+                                   <!-- Итог (для счетов/компаний) -->
                                    <span v-else class="fs-fut" :class="Number(item.futureBalance) < 0 ? 'red-text' : 'white-text'">
                                        {{ formatVal(item.futureBalance) }}
                                    </span>
