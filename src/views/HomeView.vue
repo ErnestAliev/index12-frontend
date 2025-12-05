@@ -22,8 +22,10 @@ import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
 import RefundPopup from '@/components/RefundPopup.vue'; 
 import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
+// 🟢 1. Импорт нового попапа
+import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
-console.log('--- HomeView.vue v51.0 (Reactive Fix) Loaded ---'); 
+console.log('--- HomeView.vue v52.0 (Tax Details) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -51,6 +53,8 @@ const isTransferPopupVisible = ref(false);
 const isWithdrawalPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
+// 🟢 2. Состояние для попапа деталей налога
+const isTaxDetailsPopupVisible = ref(false);
 
 // Состояния для Smart Deal (Сценарий 2 - Второй транш)
 const isSmartDealPopupVisible = ref(false);
@@ -376,6 +380,12 @@ const handleEditOperation = (operation) => {
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
 
+  // 🟢 3. ПРОВЕРКА НА НАЛОГ
+  if (mainStore._isTaxPayment(operation)) {
+      isTaxDetailsPopupVisible.value = true;
+      return;
+  }
+
   if (mainStore._isRetailWriteOff(operation)) {
       isRetailPopupVisible.value = true;
       return;
@@ -418,6 +428,22 @@ const handleOperationDelete = async (operation) => {
     handleClosePopup(); 
     handleCloseTransferPopup();
     handleCloseWithdrawalPopup();
+};
+
+// 🟢 4. Хендлер удаления налога
+const handleTaxDelete = async (operation) => {
+    isTaxDetailsPopupVisible.value = false;
+    if (!operation) return;
+    try {
+        await mainStore.deleteOperation(operation);
+        // Принудительно обновим налоги, чтобы виджет обновился
+        const res = await axios.get(`${API_BASE_URL}/taxes`);
+        mainStore.taxes = res.data;
+        // Перерисовываем дни
+        visibleDays.value = [...visibleDays.value];
+    } catch(e) {
+        alert("Ошибка удаления налога: " + e.message);
+    }
 };
 
 const scrollInterval = ref(null);
@@ -524,7 +550,6 @@ const handleRetailClosure = async (payload) => {
     try {
         const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null);
         await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId);
-        showRetailPopup.value = false; 
         // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка: ' + e.message); }
 };
@@ -621,6 +646,14 @@ const handleRefundDelete = async (op) => {
        :category-name="smartDealPayload?.categoryName || 'Категория'"
        @close="handleSmartDealCancel"
        @confirm="handleSmartDealConfirm"
+    />
+
+    <!-- 🟢 TAX DETAILS POPUP -->
+    <TaxPaymentDetailsPopup 
+       v-if="isTaxDetailsPopupVisible"
+       :operation-to-edit="operationToEdit"
+       @close="isTaxDetailsPopupVisible = false"
+       @delete="handleTaxDelete"
     />
 
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />

@@ -18,7 +18,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v82.0 (BALANCE CALC FIX) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v93.0 (TAX FIX) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -44,12 +44,13 @@ export const useMainStore = defineStore('mainStore', () => {
   const calculationCache = ref({});
   
   const accounts    = ref([]);
-  const companies   = ref([]);
+  const companies   = ref([]); 
   const contractors = ref([]);
   const projects    = ref([]);
   const individuals = ref([]); 
   const categories  = ref([]);
   const credits     = ref([]); 
+  const taxes       = ref([]); 
   
   const dealOperations = ref([]);
   
@@ -64,6 +65,7 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
     { key: 'accounts',     name: 'Мои счета' },
     { key: 'companies',    name: 'Мои компании' },
+    { key: 'taxes',        name: 'Мои налоги' }, 
     { key: 'credits',      name: 'Мои кредиты' }, 
     { key: 'contractors',  name: 'Мои контрагенты' },
     { key: 'projects',     name: 'Мои проекты' },
@@ -219,6 +221,17 @@ export const useMainStore = defineStore('mainStore', () => {
       return false;
   };
 
+  // 🟢 NEW: Проверка на Налоговый Платеж
+  const _isTaxPayment = (op) => {
+      if (!op) return false;
+      if (op.type !== 'expense') return false;
+      // Проверяем, есть ли запись в taxes, ссылающаяся на эту операцию
+      return taxes.value.some(t => {
+          const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
+          return String(relId) === String(op._id);
+      });
+  };
+
   function _updateDealCache(op, mode = 'add') {
       const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
       if (!isDealRelated) return;
@@ -370,7 +383,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'credits', 'contractors', 'projects', 'futureTotal', 
+    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors', 'projects', 'futureTotal', 
     'transfers'
   ]);
   watch(dashboardLayout, (n) => localStorage.setItem('dashboardLayout', JSON.stringify(n)), { deep: true });
@@ -851,7 +864,6 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const futureCategoryChanges = computed(() => futureCategoryBalances.value);
   
-  // 🟢 FIX 1: Явное приведение к числу
   const totalInitialBalance = computed(() => (accounts.value || []).reduce((s,a)=>s + Number(a.initialBalance||0), 0));
   
   const _calculateFutureEntityBalance = (snapshotMap, entityIdField) => {
@@ -885,13 +897,11 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
-  // 🟢 FIX 2: Явное приведение к числу
   const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
       ...a, 
       balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0) 
   })));
 
-  // 🟢 FIX 3: Явное приведение к числу
   const futureAccountBalances = computed(() => {
     const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
     return accounts.value.map(a => ({ 
@@ -900,13 +910,10 @@ export const useMainStore = defineStore('mainStore', () => {
     }));
   });
   
-  // 🟢 FIX 4: Надежное сравнение ID для компаний (Текущие)
   const currentCompanyBalances = computed(() => {
       return companies.value.map(comp => {
           const targetId = _toStr(comp._id);
           const linked = currentAccountBalances.value.filter(a => {
-              // const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
-              // return cId === comp._id;
               return _toStr(a.companyId) === targetId;
           });
           const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
@@ -914,13 +921,10 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 FIX 5: Надежное сравнение ID для компаний (Будущие)
   const futureCompanyBalances = computed(() => {
       return companies.value.map(comp => {
           const targetId = _toStr(comp._id);
           const linked = futureAccountBalances.value.filter(a => {
-              // const cId = (a.companyId && typeof a.companyId === 'object') ? a.companyId._id : a.companyId;
-              // return cId === comp._id;
               return _toStr(a.companyId) === targetId;
           });
           const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
@@ -1072,7 +1076,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return populated;
   }
 
-  // 🟢 1. Create Event (Optimistic + Force Sync)
   async function createEvent(eventData) {
     try {
       if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
@@ -1115,9 +1118,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const dealIdx = dealOperations.value.findIndex(d => d._id === tempId);
       if (dealIdx !== -1) dealOperations.value[dealIdx] = serverOp;
 
-      // 🟢 Force Snapshot Sync -> REMOVED to prevent race condition
-      // await fetchSnapshot(); 
-
       return serverOp;
     } catch (error) { 
         console.error("Create Event Error (Optimistic):", error);
@@ -1127,7 +1127,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
   
-  // 🟢 2. Update Operation (Optimistic + Force Sync)
   async function updateOperation(opId, opData) {
     let oldOp = null;
     let oldDateKey = null;
@@ -1142,7 +1141,6 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!oldOp) {
         const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
         await refreshDay(res.data.dateKey);
-        // await fetchSnapshot();
         return res.data;
     }
 
@@ -1194,9 +1192,6 @@ export const useMainStore = defineStore('mainStore', () => {
             if (i !== -1) targetList[i] = serverOp;
         }
 
-        // 🟢 Force Snapshot Sync -> REMOVED
-        // await fetchSnapshot();
-
         return serverOp;
     } catch (e) {
         console.error("Optimistic Update Failed:", e);
@@ -1206,12 +1201,20 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🟢 3. Delete Operation (Optimistic + Force Sync)
   async function deleteOperation(operation){
     const dateKey = operation.dateKey;
     if (!dateKey) return;
     
     try {
+      // 🟢 OPTIMISTIC DELETE FOR TAXES
+      // Если это налог, удаляем и из списка taxes локально
+      if (_isTaxPayment(operation)) {
+          taxes.value = taxes.value.filter(t => {
+              const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
+              return String(relId) !== String(operation._id);
+          });
+      }
+
       if (displayCache.value[dateKey]) {
           displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => o._id !== operation._id);
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
@@ -1226,7 +1229,6 @@ export const useMainStore = defineStore('mainStore', () => {
       
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
 
-      // 🟢 OPTIMISTIC ROLLBACK
       if (operation.isDealTranche && operation.type === 'income') {
           const related = dealOperations.value.filter(op => 
               op._id !== operation._id && 
@@ -1257,7 +1259,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
       
-      // 🟢 OPTIMISTIC RE-OPEN
       if (operation.isWorkAct && operation.relatedEventId) {
           const tranche = dealOperations.value.find(d => d._id === operation.relatedEventId);
           if (tranche) {
@@ -1279,14 +1280,13 @@ export const useMainStore = defineStore('mainStore', () => {
       } else {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
-
-      // 🟢 Force Snapshot Sync -> REMOVED
-      // await fetchSnapshot();
       
     } catch(e) { 
         console.error("Optimistic Delete Failed:", e);
         refreshDay(dateKey); 
         fetchSnapshot();
+        const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
+        taxes.value = taxesRes.data;
     }
   }
 
@@ -1351,13 +1351,14 @@ export const useMainStore = defineStore('mainStore', () => {
   async function fetchAllEntities(){
     if (!user.value) return; 
     try{
-      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes, dealsRes] = await Promise.all([
+      const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes, dealsRes, taxesRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
         axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
         axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
         axios.get(`${API_BASE_URL}/prepayments`),
         axios.get(`${API_BASE_URL}/credits`),
-        axios.get(`${API_BASE_URL}/deals/all`)
+        axios.get(`${API_BASE_URL}/deals/all`),
+        axios.get(`${API_BASE_URL}/taxes`)
       ]);
       
       accounts.value    = _sortByOrder(accRes.data); 
@@ -1367,6 +1368,7 @@ export const useMainStore = defineStore('mainStore', () => {
       individuals.value = _sortByOrder(indRes.data); 
       credits.value     = _sortByOrder(credRes.data);
       dealOperations.value = dealsRes.data; 
+      taxes.value       = taxesRes.data; 
       
       const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
       const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
@@ -1539,13 +1541,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
-  // 🟢 4. Create Transfer (Optimistic + Force Sync)
-  // v80.0 FIX: Удален await fetchSnapshot() для предотвращения race-condition
+  // 🟢 1. ОБНОВЛЕННАЯ ЛОГИКА СОЗДАНИЯ ПЕРЕВОДА С НАЛОГОМ
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
       const transferCategory = await _getOrCreateTransferCategory();
+      
+      // Идентификаторы для "Технического контрагента" (Если перевод межкомпанейский)
       let expenseContractorId = null;
       let incomeContractorId = null;
       
@@ -1553,10 +1556,10 @@ export const useMainStore = defineStore('mainStore', () => {
       const isPastOrToday = finalDate <= now;
       const tempId = `temp_tr_${Date.now()}`;
       
-      // --- OPTIMISTIC LOGIC ---
       let optimisticOps = [];
       
       if (transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use') {
+          // Вывод
           optimisticOps.push({
               _id: tempId,
               type: 'expense',
@@ -1571,6 +1574,7 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       } 
       else {
+          // Стандартный перевод
           optimisticOps.push({
               _id: tempId,
               type: 'transfer',
@@ -1588,20 +1592,17 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       }
 
-      // Apply Snapshot Update
+      // Применяем изменения к снепшоту (балансам)
       if (isPastOrToday) {
           optimisticOps.forEach(op => _applyOptimisticSnapshotUpdate(op, 1));
       }
 
-      // Update Display Cache
       if (!displayCache.value[dateKey]) displayCache.value[dateKey] = [];
       optimisticOps.forEach(op => displayCache.value[dateKey].push(_populateOp(op)));
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       
-      // Update Projection
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       
-      // --- API CALL ---
       if (transferData.transferPurpose === 'inter_company') {
           const fromCompObj = companies.value.find(c => c._id === transferData.fromCompanyId);
           const toCompObj = companies.value.find(c => c._id === transferData.toCompanyId);
@@ -1625,18 +1626,18 @@ export const useMainStore = defineStore('mainStore', () => {
           incomeContractorId
       };
       
+      // Отправляем основной перевод на сервер
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
-      // --- SYNC ---
+      // 🟢 FIX: УБРАН БЛОК СОЗДАНИЯ РАСХОДА (ЧИПА) НА НАЛОГ
+      // Налог будет рассчитан автоматически на основе дохода у компании-получателя.
+      
       await refreshDay(dateKey); 
-      // 🟢 FIX: Only refresh day, do NOT fetch snapshot to avoid race condition
-      // await fetchSnapshot(); 
       
       return data;
     } catch (error) { 
         console.error("Create Transfer Error (Optimistic):", error);
-        // Rollback would go here (refreshDay handles it basically)
         throw error; 
     }
   }
@@ -1652,7 +1653,6 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
-      // await fetchSnapshot(); // REMOVED
       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
       return response.data;
     } catch (error) { throw error; }
@@ -1661,7 +1661,6 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addOperation(op){
     if (!op.dateKey) return;
     await refreshDay(op.dateKey); 
-    // await fetchSnapshot(); // REMOVED
     updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
   }
 
@@ -1675,6 +1674,7 @@ export const useMainStore = defineStore('mainStore', () => {
           if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
           if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
           if (path === 'credits') credits.value = credits.value.filter(i => i._id !== id); 
+          if (path === 'taxes') taxes.value = taxes.value.filter(i => i._id !== id); 
           if (deleteOperations) await forceRefreshAll(); else await forceRefreshAll();
       } catch (error) { throw error; }
   }
@@ -1813,19 +1813,19 @@ export const useMainStore = defineStore('mainStore', () => {
       let creditIncomeCat = categories.value.find(c => c.name.trim().toLowerCase() === 'кредиты');
       if (!creditIncomeCat) creditIncomeCat = await addCategory('Кредиты');
       
-      return { retailInd, realizationCat, debtCat, refundCat, creditProject, repaymentCat, creditIncomeCat };
+      let taxCat = categories.value.find(c => c.name.trim().toLowerCase() === 'налоги');
+      if (!taxCat) taxCat = await addCategory('Налоги');
+
+      return { retailInd, realizationCat, debtCat, refundCat, creditProject, repaymentCat, creditIncomeCat, taxCat };
   }
 
-  // 🟢 UPDATED: Автоматическое определение компании для списания
   async function closeRetailDaily(amount, date, projectId = null) {
       try {
           const { retailInd, realizationCat } = await ensureSystemEntities();
           
-          // 1. Пытаемся найти компанию, связанную с этим проектом (через прошлые доходы)
           let inferredCompanyId = null;
           if (projectId) {
              const pIdStr = _toStr(projectId);
-             // Ищем любой доход по этому проекту от розницы
              const relatedOp = allOperationsFlat.value.find(op => 
                 op.type === 'income' && 
                 _toStr(op.projectId) === pIdStr &&
@@ -1837,7 +1837,6 @@ export const useMainStore = defineStore('mainStore', () => {
              }
           }
           
-          // Если не нашли по проекту, берем первую попавшуюся компанию пользователя (fallback)
           if (!inferredCompanyId && companies.value.length > 0) {
               inferredCompanyId = companies.value[0]._id;
           }
@@ -1845,11 +1844,11 @@ export const useMainStore = defineStore('mainStore', () => {
           const opData = {
               type: 'expense', 
               amount: -Math.abs(amount),
-              accountId: null, // У списания нет счета
+              accountId: null, 
               counterpartyIndividualId: retailInd._id, 
               categoryId: realizationCat._id, 
               projectId: projectId, 
-              companyId: inferredCompanyId, // 🟢 Теперь компания будет записана
+              companyId: inferredCompanyId, 
               date: date,
               description: 'Закрытие смены (Розница)'
           };
@@ -1911,7 +1910,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
-  // 🟢 3. ДОБАВЛЕНИЕ: Список проектов с долгами розницы (для RetailClosurePopup)
   const projectsWithRetailDebts = computed(() => {
       const retailId = retailIndividualId.value;
       if (!retailId) return [];
@@ -1928,19 +1926,16 @@ export const useMainStore = defineStore('mainStore', () => {
           if (!balances.has(pId)) balances.set(pId, 0);
           
           if (op.type === 'income') {
-              // Учитываем только открытые авансы (НЕ ФАКТ)
               if (op.isClosed !== true) {
                   balances.set(pId, balances.get(pId) + (op.amount || 0));
               }
           } else if (op.type === 'expense' && !op.accountId) {
-              // Списание работ
               balances.set(pId, balances.get(pId) - Math.abs(op.amount || 0));
           }
       });
       
       const ids = [];
       balances.forEach((bal, key) => {
-          // Показываем проект, только если есть положительный долг (аванс > списаний)
           if (bal > 0) ids.push(key);
       });
       return ids;
@@ -1960,9 +1955,120 @@ export const useMainStore = defineStore('mainStore', () => {
       }).sort((a, b) => new Date(b.date) - new Date(a.date));
   });
 
+  // 🟢 NEW: Расчет налогов "на лету"
+  const calculateTaxForPeriod = (companyId, startDate = null, endDate = null) => {
+      const company = companies.value.find(c => c._id === companyId);
+      if (!company) return { base: 0, tax: 0, income: 0, expense: 0 };
+
+      const regime = company.taxRegime || 'simplified';
+      const percent = company.taxPercent || (regime === 'simplified' ? 3 : 10);
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+
+      allOperationsFlat.value.forEach(op => {
+          if (startDate && new Date(op.date) < startDate) return;
+          if (endDate && new Date(op.date) > endDate) return;
+
+          // 🟢 1. ОБРАБОТКА ПЕРЕВОДОВ (Включая Межкомпанейские, которые мерджатся в type: 'transfer')
+          if (op.type === 'transfer' || op.isTransfer) {
+              const toId = op.toCompanyId ? _toStr(op.toCompanyId) : null;
+              const fromId = op.fromCompanyId ? _toStr(op.fromCompanyId) : null;
+              const targetId = String(companyId);
+
+              // Если компания - ПОЛУЧАТЕЛЬ (Доход)
+              if (toId === targetId) {
+                  // Считаем доходом, только если перевод пришел извне (не от самой себя)
+                  if (fromId !== targetId) {
+                      totalIncome += (op.amount || 0);
+                  }
+              }
+              
+              // Если компания - ОТПРАВИТЕЛЬ (Расход)
+              if (fromId === targetId) {
+                   // Считаем расходом, только если ушло вовне (не самой себе)
+                   if (toId !== targetId) {
+                       totalExpense += Math.abs(op.amount || 0);
+                   }
+              }
+              return; // Перевод обработан, переходим к следующей операции
+          }
+
+          // 🟢 2. ОБРАБОТКА ОБЫЧНЫХ ОПЕРАЦИЙ (Income/Expense)
+          const opCompId = op.companyId ? (op.companyId._id || op.companyId) : null;
+          if (String(opCompId) !== String(companyId)) return;
+          
+          if (!op.accountId) return; 
+
+          // ПУНКТ 4: Исключаем доходы с категорией "Кредиты"
+          if (op.type === 'income') {
+              const catId = op.categoryId?._id || op.categoryId;
+              if (creditCategoryId.value && String(catId) === String(creditCategoryId.value)) {
+                  return;
+              }
+              totalIncome += (op.amount || 0);
+          } else if (op.type === 'expense') {
+              totalExpense += Math.abs(op.amount || 0);
+          }
+      });
+
+      let taxBase = 0;
+      if (regime === 'simplified') {
+          taxBase = totalIncome;
+      } else {
+          taxBase = Math.max(0, totalIncome - totalExpense);
+      }
+
+      const taxAmount = taxBase * (percent / 100);
+      
+      return {
+          base: taxBase,
+          tax: taxAmount,
+          income: totalIncome,
+          expense: totalExpense,
+          percent,
+          regime
+      };
+  };
+
+  async function createTaxPayment(payload) {
+      try {
+          const { taxCat } = await ensureSystemEntities();
+          
+          const expenseData = {
+              type: 'expense',
+              amount: -Math.abs(payload.amount),
+              date: payload.date,
+              accountId: payload.accountId,
+              companyId: payload.companyId,
+              categoryId: taxCat._id,
+              description: `Налог за период ${new Date(payload.periodFrom).toLocaleDateString()} - ${new Date(payload.periodTo).toLocaleDateString()}`
+          };
+          
+          const expenseOp = await createEvent(expenseData);
+          
+          const taxRecord = {
+              companyId: payload.companyId,
+              periodFrom: payload.periodFrom,
+              periodTo: payload.periodTo,
+              amount: payload.amount,
+              status: 'paid',
+              date: payload.date,
+              relatedEventId: expenseOp._id
+          };
+          
+          const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
+          taxes.value.push(res.data);
+          
+          return res.data;
+      } catch (e) {
+          throw e;
+      }
+  }
+
   return {
     accounts, companies, contractors, projects, categories, individuals, 
-    credits, 
+    credits, taxes, 
     visibleCategories, visibleContractors, 
     operationsCache: displayCache, displayCache, calculationCache,
     allWidgets, dashboardLayout, projection, dashboardForecastState,
@@ -2036,6 +2142,10 @@ export const useMainStore = defineStore('mainStore', () => {
     getProjectDealStatus,
     
     dealOperations,
-    projectsWithRetailDebts 
+    projectsWithRetailDebts,
+    
+    calculateTaxForPeriod,
+    createTaxPayment,
+    _isTaxPayment
   };
 });

@@ -7,11 +7,12 @@ import BaseSelect from './BaseSelect.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.2 - TRANSFER HINT FIX ---
- * * ВЕРСИЯ: 27.2
- * * ДАТА: 2025-12-04
+ * * --- МЕТКА ВЕРСИИ: v28.1 - RECIPIENT TAX FIX ---
+ * * ВЕРСИЯ: 28.1
+ * * ДАТА: 2025-12-05
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) smartHint: Исправлен текст для перевода от Физлица (Вложение средств).
+ * 1. (FIX) Расчет налога теперь берет режим КОМПАНИИ-ПОЛУЧАТЕЛЯ (selectedToOwner), а не отправителя.
+ * 2. (LOGIC) Сумма налога теперь не списывается сразу, а только отображается как "Будет начислено".
  */
 
 const mainStore = useMainStore();
@@ -47,16 +48,45 @@ const smartHint = computed(() => {
     return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
   }
   if (transferPurpose.value === 'inter_company') {
-    // 🟢 FIX: Проверка отправителя-физлица
     if (selectedFromOwner.value && selectedFromOwner.value.startsWith('individual-')) {
         return 'Перевод с личной карты/счета на нужды компании (Вложение средств).';
     }
-    return 'Вы переводите деньги между своими компаниями. Деньги бизнеса -> Деньги другого бизнеса.';
+    return 'Вы переводите деньги между своими компаниями. Налог будет начислен получателю.';
   }
   if (transferPurpose.value === 'personal') {
       return 'Вы переводите деньги на личный счет или карту. Деньги бизнеса -> Личные деньги.';
   }
   return '';
+});
+
+// 🟢 РАСЧЕТ НАЛОГА (ТОЛЬКО ДЛЯ INTER-COMPANY)
+const taxCalculation = computed(() => {
+    if (transferPurpose.value !== 'inter_company') return null;
+    
+    // Получаем ID ПОЛУЧАТЕЛЯ (Fix: Было selectedFromOwner)
+    if (!selectedToOwner.value) return null;
+    const [type, id] = selectedToOwner.value.split('-');
+    
+    // Налог считаем только если получатель - КОМПАНИЯ
+    if (type !== 'company') return null;
+    
+    const company = mainStore.companies.find(c => c._id === id);
+    if (!company) return null;
+    
+    // Процент (по умолчанию 3% для упрощенки, если не задано)
+    const percent = company.taxPercent !== undefined ? company.taxPercent : (company.taxRegime === 'our' ? 10 : 3);
+    
+    const rawAmount = parseFloat((amount.value || '0').replace(/\s/g, ''));
+    if (!rawAmount || rawAmount <= 0) return null;
+    
+    const taxVal = rawAmount * (percent / 100);
+    
+    return {
+        percent: percent,
+        taxAmount: taxVal,
+        // Итого спишется с отправителя только сумма перевода, налог запишется в долг получателю
+        targetCompanyName: company.name
+    };
 });
 
 const toInputDate = (date) => {
@@ -152,11 +182,9 @@ watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
 });
 
 /* 🟢 --- АВТОПОДСТАНОВКА --- */
-// Флаги блокировки
 const isProgrammaticFrom = ref(false);
 const isProgrammaticTo = ref(false);
 
-// 1. ДЛЯ СЧЕТА ОТПРАВИТЕЛЯ
 const showFromAccountSuggestions = ref(false);
 const fromAccountSuggestionsList = computed(() => {
     const query = newFromAccountName.value.trim().toLowerCase();
@@ -183,7 +211,6 @@ watch(newFromAccountName, (val) => {
     showFromAccountSuggestions.value = val.length >= 2; 
 });
 
-// 2. ДЛЯ СЧЕТА ПОЛУЧАТЕЛЯ
 const showToAccountSuggestions = ref(false);
 const toAccountSuggestionsList = computed(() => {
     const query = newToAccountName.value.trim().toLowerCase();
@@ -333,8 +360,8 @@ const handleSave = async () => {
       finalCategoryId = null;
   }
 
+  // Обновление привязок счетов (если они были изменены)
   const updates = [];
-  
   if (fromAccountId.value && selectedFromOwner.value) {
       const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
       if (acc) {
@@ -354,7 +381,6 @@ const handleSave = async () => {
           }
       }
   }
-
   if (toAccountId.value && selectedToOwner.value) {
       const acc = mainStore.accounts.find(a => a._id === toAccountId.value);
       if (acc) {
@@ -377,9 +403,14 @@ const handleSave = async () => {
           }
       }
   }
-
   if (updates.length > 0) {
       await mainStore.batchUpdateEntities('accounts', updates);
+  }
+
+  // 🟢 ДОБАВЛЕНИЕ НАЛОГА К ПЕЙЛОАДУ
+  let finalTaxAmount = 0;
+  if (taxCalculation.value) {
+      finalTaxAmount = taxCalculation.value.taxAmount;
   }
 
   const transferPayload = { 
@@ -393,7 +424,8 @@ const handleSave = async () => {
       toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, 
       transferPurpose: transferPurpose.value,
-      transferReason: null 
+      transferReason: null,
+      taxAmount: finalTaxAmount // 🟢
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
@@ -474,6 +506,24 @@ const closePopup = () => { emit('close'); };
             <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" />
         </div>
 
+        <!-- 🟢 ИНФОРМАЦИЯ О НАЛОГЕ -->
+        <div class="tax-info-box" v-if="taxCalculation">
+            <div class="tax-row">
+                <span class="tax-label">Сумма перевода:</span>
+                <span>{{ amount || 0 }} ₸</span>
+            </div>
+            <div class="tax-row">
+                <span class="tax-label">Налог ({{ taxCalculation.percent }}% от получателя):</span>
+                <span class="tax-val warn-text">{{ formatNumber(taxCalculation.taxAmount) }} ₸</span>
+            </div>
+            <div class="tax-divider"></div>
+            <div class="tax-row total">
+                <span class="tax-label">Будет начислено в налоги:</span>
+                <span>{{ formatNumber(taxCalculation.taxAmount) }} ₸</span>
+            </div>
+            <p class="tax-hint">Сумма налога не списывается со счета автоматически.</p>
+        </div>
+
         <!-- ПОДСКАЗКА -->
         <div class="hint-box" v-if="smartHint">
             {{ smartHint }}
@@ -539,6 +589,44 @@ const closePopup = () => { emit('close'); };
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
 label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
 .hint-box { background-color: #E3F2FD; border: 1px solid #90CAF9; color: #0D47A1; padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; margin-bottom: 12px; }
+
+/* 🟢 Tax Info Box */
+.tax-info-box {
+    background-color: #FFF3E0;
+    border: 1px solid #FFE0B2;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+.tax-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: #555;
+}
+.tax-divider {
+    height: 1px;
+    background-color: #FFCC80;
+    margin: 6px 0;
+}
+.total {
+    font-weight: 700;
+    font-size: 14px;
+    color: #333;
+}
+.warn-text {
+    color: #F59E0B;
+    font-weight: 600;
+}
+.tax-hint {
+    font-size: 11px;
+    color: #888;
+    margin-top: 8px;
+    margin-bottom: 0;
+    font-style: italic;
+}
+
 .fade-in { animation: fadeIn 0.3s ease-in-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }

@@ -25,6 +25,7 @@ import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import InfoModal from '@/components/InfoModal.vue';
+import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -212,11 +213,11 @@ const activeWidgetItems = computed(() => {
 const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; }; const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 const googleAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/google`; }); const devAuthUrl = computed(() => { const baseUrl = API_BASE_URL.replace(/\/api$/, ''); return `${baseUrl}/auth/dev-login`; }); const isLocalhost = computed(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const formatVal = (val) => `${formatNumber(Math.abs(Number(val) || 0))} ₸`; const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); return num > 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`; }; const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
-const isIncomePopupVisible = ref(false); const isExpensePopupVisible = ref(false); const isTransferPopupVisible = ref(false); const isListEditorVisible = ref(false); const isEntityPopupVisible = ref(false); const isOperationListEditorVisible = ref(false); const isWithdrawalPopupVisible = ref(false); const isRetailPopupVisible = ref(false); const isRefundPopupVisible = ref(false); const isPrepaymentModalVisible = ref(false); const isSmartDealPopupVisible = ref(false); const operationToEdit = ref(null); const selectedDate = ref(new Date()); const selectedCellIndex = ref(0); const popupTitle = ref(''); const editorTitle = ref(''); const editorItems = ref([]); const operationListEditorTitle = ref(''); const operationListEditorType = ref('income'); const prepaymentData = ref({}); const prepaymentDateKey = ref(''); const smartDealPayload = ref(null); const smartDealStatus = ref({ debt: 0, totalDeal: 0 });
+const isIncomePopupVisible = ref(false); const isExpensePopupVisible = ref(false); const isTransferPopupVisible = ref(false); const isListEditorVisible = ref(false); const isEntityPopupVisible = ref(false); const isOperationListEditorVisible = ref(false); const isWithdrawalPopupVisible = ref(false); const isRetailPopupVisible = ref(false); const isRefundPopupVisible = ref(false); const isPrepaymentModalVisible = ref(false); const isSmartDealPopupVisible = ref(false); const isTaxDetailsPopupVisible = ref(false); const operationToEdit = ref(null); const selectedDate = ref(new Date()); const selectedCellIndex = ref(0); const popupTitle = ref(''); const editorTitle = ref(''); const editorItems = ref([]); const operationListEditorTitle = ref(''); const operationListEditorType = ref('income'); const prepaymentData = ref({}); const prepaymentDateKey = ref(''); const smartDealPayload = ref(null); const smartDealStatus = ref({ debt: 0, totalDeal: 0 });
 const _parseDateKey = (dateKey) => { if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); const [year, doy] = dateKey.split('-').map(Number); if (isNaN(year) || isNaN(doy)) return new Date(); const date = new Date(year, 0, 1); date.setDate(doy); return date; };
 const handleShowMenu = (payload) => { if (payload.operation) { handleEditOperation(payload.operation); } else { selectedDate.value = payload.date || new Date(); selectedCellIndex.value = payload.cellIndex || 0; isIncomePopupVisible.value = true; } };
 const handleAction = (actionType) => {};
-const handleEditOperation = (operation) => { operationToEdit.value = operation; const opDate = _parseDateKey(operation.dateKey); selectedDate.value = opDate; selectedCellIndex.value = operation.cellIndex; if (mainStore._isRetailWriteOff(operation)) { isRetailPopupVisible.value = true; return; } const catId = operation.categoryId?._id || operation.categoryId; if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) { isRefundPopupVisible.value = true; return; } if (operation.type === 'transfer' || operation.isTransfer) { isTransferPopupVisible.value = true; } else if (operation.isWithdrawal) { isWithdrawalPopupVisible.value = true; } else if (operation.type === 'income') { isIncomePopupVisible.value = true; } else if (operation.type === 'expense') { isExpensePopupVisible.value = true; } };
+const handleEditOperation = (operation) => { operationToEdit.value = operation; const opDate = _parseDateKey(operation.dateKey); selectedDate.value = opDate; selectedCellIndex.value = operation.cellIndex; if (mainStore._isTaxPayment(operation)) { isTaxDetailsPopupVisible.value = true; return; } if (mainStore._isRetailWriteOff(operation)) { isRetailPopupVisible.value = true; return; } const catId = operation.categoryId?._id || operation.categoryId; if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) { isRefundPopupVisible.value = true; return; } if (operation.type === 'transfer' || operation.isTransfer) { isTransferPopupVisible.value = true; } else if (operation.isWithdrawal) { isWithdrawalPopupVisible.value = true; } else if (operation.type === 'income') { isIncomePopupVisible.value = true; } else if (operation.type === 'expense') { isExpensePopupVisible.value = true; } };
 const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
 const handleTransferSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else { await mainStore.updateTransfer(id, data); } isTransferPopupVisible.value = false; } catch (e) { console.error("Mobile Transfer Save Error", e); alert("Ошибка перевода"); } };
 const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Date(); const d = new Date(rawDate); prepaymentDateKey.value = mainStore._getDateKey(d); prepaymentData.value = { ...data, amount: Math.abs(data.amount || 0), contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, operationToEdit: null }; isIncomePopupVisible.value = false; isPrepaymentModalVisible.value = true; };
@@ -234,6 +235,25 @@ const handleItemClick = (item) => {
         showInfoModal.value = true;
     }
 };
+
+const handleTaxDelete = async (operation) => {
+    isTaxDetailsPopupVisible.value = false;
+    if (!operation) return;
+    try {
+        await mainStore.deleteOperation(operation);
+        // Принудительно обновляем чтобы пересчитать виджет
+        await mainStore.fetchAllEntities();
+    } catch(e) {
+        alert("Ошибка удаления налога: " + e.message);
+    }
+};
+const handleRetailClosure = async (payload) => { try { const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null); await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId); isRetailPopupVisible.value = false; } catch (e) { alert('Ошибка: ' + e.message); } };
+const handleRetailSave = async ({ id, data }) => { isRetailPopupVisible.value = false; try { const pId = data.projectId || (data.projectIds && data.projectIds.length > 0 ? data.projectIds[0] : null); await mainStore.updateOperation(id, { amount: -Math.abs(data.amount), projectId: pId, date: new Date(data.date) }); } catch (e) { alert('Ошибка сохранения списания: ' + e.message); } };
+const handleRetailDelete = async (op) => { isRetailPopupVisible.value = false; try { await mainStore.deleteOperation(op); } catch (e) { alert('Ошибка удаления'); } };
+const handleRefundSave = async ({ mode, id, data }) => { isRefundPopupVisible.value = false; try { if (mode === 'create') await mainStore.createEvent(data); else await mainStore.updateOperation(id, data); } catch (e) { alert('Ошибка сохранения возврата'); } };
+const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; try { await mainStore.deleteOperation(op); } catch (e) { alert('Ошибка удаления'); } };
+const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; };
+const handleOperationDelete = async (operation) => { if (!operation) return; await mainStore.deleteOperation(operation); handleClosePopup(); };
 </script>
 
 <template>
@@ -330,11 +350,6 @@ const handleItemClick = (item) => {
             </Teleport>
         </div>
 
-        <!-- 
-            🟢 FIX SCROLL RESET: 
-            Убрали v-else для основного контента. 
-            Теперь он остается в DOM и сохраняет позицию скролла, пока оверлей сверху.
-        -->
         <div class="main-content-view">
             <MobileHeaderTotals class="fixed-header" />
             
@@ -386,8 +401,9 @@ const handleItemClick = (item) => {
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
     <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" />
-    <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" />
-    <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" />
+    <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
+    <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
+    <TaxPaymentDetailsPopup v-if="isTaxDetailsPopupVisible" :operation-to-edit="operationToEdit" @close="isTaxDetailsPopupVisible = false" @delete="handleTaxDelete" />
   </div>
 </template>
 

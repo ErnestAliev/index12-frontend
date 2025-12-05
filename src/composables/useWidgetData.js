@@ -204,6 +204,60 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap));
         }
 
+        // 🟢 TAXES LOGIC (ОБНОВЛЕНО: ТЕКУЩИЕ vs ПРОГНОЗ)
+        if (k === 'taxes') {
+            return mainStore.companies.map(comp => {
+                const now = new Date();
+                
+                // 1. РАСЧЕТ НА СЕГОДНЯ (Факт)
+                const currentData = mainStore.calculateTaxForPeriod(comp._id, null, now);
+                // Оплачено (только операции с датой <= сейчас)
+                const paidCurrent = mainStore.taxes
+                    .filter(t => {
+                        const tCompId = getId(t.companyId);
+                        if (String(tCompId) !== String(comp._id) || t.status !== 'paid') return false;
+                        // Если у налога есть дата, проверяем её
+                        const tDate = t.date ? new Date(t.date) : new Date(0);
+                        return tDate <= now;
+                    })
+                    .reduce((acc, t) => acc + (t.amount || 0), 0);
+                
+                const currentDebt = Math.max(0, currentData.tax - paidCurrent);
+
+                // 2. РАСЧЕТ ПОЛНЫЙ (Прогноз, включая будущие операции)
+                const forecastData = mainStore.calculateTaxForPeriod(comp._id, null, null);
+                // Оплачено всего (включая будущие платежи, если есть)
+                const paidTotal = mainStore.taxes
+                    .filter(t => {
+                        const tCompId = getId(t.companyId);
+                        return String(tCompId) === String(comp._id) && t.status === 'paid';
+                    })
+                    .reduce((acc, t) => acc + (t.amount || 0), 0);
+
+                const totalForecastDebt = Math.max(0, forecastData.tax - paidTotal);
+
+                // Значения отрицательные, т.к. это долг
+                const currentVal = -currentDebt;
+                const futureVal = -totalForecastDebt;
+                const change = futureVal - currentVal;
+
+                return {
+                    _id: comp._id,
+                    name: comp.name,
+                    // Для виджета и списков
+                    currentBalance: currentVal,
+                    futureChange: change, 
+                    totalForecast: futureVal,
+                    futureBalance: futureVal,
+                    // Совместимость
+                    balance: isForecastActive ? futureVal : currentVal,
+                    
+                    linkMarkerColor: null,
+                    isLinked: false
+                };
+            });
+        }
+
         if (k === 'liabilities') {
             const weOweCurrent = mainStore.liabilitiesWeOwe || 0;
             const weOweFuture = mainStore.liabilitiesWeOweFuture || 0; 

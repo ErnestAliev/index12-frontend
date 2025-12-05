@@ -11,11 +11,12 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v27.1 - AUTOCOMPLETE FIX ---
- * * ВЕРСИЯ: 27.1
- * * ДАТА: 2025-12-04
- * * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Добавлен флаг isProgrammaticUpdate для предотвращения повторного открытия списка.
+ * * --- МЕТКА ВЕРСИИ: v37.0 - COMPANY TAX SETTINGS ---
+ * * ВЕРСИЯ: 37.0
+ * * ДАТА: 2025-12-05
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FEAT) Добавлены поля "Режим налогообложения" и "Процент" для Компаний.
+ * 2. (LOGIC) Автоподстановка процента при смене режима (Упрощенка -> 3%, ОУР -> 10%).
  */
 
 const props = defineProps({
@@ -183,13 +184,28 @@ const handleCreateNew = async () => {
       const mappedItem = { ...newItem };
       if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; mappedItem.ownerValue = null; }
       if (isContractorEditor || isIndividualEditor) { mappedItem.defaultProjectId = null; mappedItem.defaultCategoryId = null; mappedItem.selectedProjectIds = []; mappedItem.selectedCategoryIds = []; } 
-      if (isCompanyEditor) { mappedItem.selectedAccountIds = []; }
+      
+      if (isCompanyEditor) { 
+          mappedItem.selectedAccountIds = [];
+          // 🟢 Устанавливаем дефолты для новой компании
+          mappedItem.taxRegime = 'simplified';
+          mappedItem.taxPercent = 3;
+      }
 
       if (isIndividualEditor) { otherItems.value.push(mappedItem); } else { localItems.value.push(mappedItem); }
       cancelCreation();
     }
   } catch (e) { console.error(e); alert('Ошибка при создании: ' + e.message); } 
   finally { isSavingNew.value = false; }
+};
+
+// 🟢 NEW: Обработка смены режима налогообложения
+const onRegimeChange = (item) => {
+    if (item.taxRegime === 'simplified') {
+        item.taxPercent = 3;
+    } else if (item.taxRegime === 'our') {
+        item.taxPercent = 10;
+    }
 };
 
 const formatNumber = (numStr) => { const clean = `${numStr}`.replace(/[^0-9]/g, ''); return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' '); };
@@ -231,7 +247,13 @@ onMounted(() => {
     }
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
-      return { ...item, selectedAccountIds: selectedAccountIds };
+      return { 
+          ...item, 
+          selectedAccountIds: selectedAccountIds,
+          // 🟢 Инициализация налоговых полей
+          taxRegime: item.taxRegime || 'simplified',
+          taxPercent: item.taxPercent !== undefined ? item.taxPercent : 3
+      };
     }
     return item;
   });
@@ -257,6 +279,11 @@ const handleSave = async () => {
     if (isContractorEditor || isIndividualEditor) { 
         data.defaultProjectIds = item.selectedProjectIds || []; data.defaultCategoryIds = item.selectedCategoryIds || [];
         data.defaultProjectId = data.defaultProjectIds[0] || null; data.defaultCategoryId = data.defaultCategoryIds[0] || null;
+    }
+    // 🟢 Сохранение налоговых настроек
+    if (isCompanyEditor) {
+        data.taxRegime = item.taxRegime;
+        data.taxPercent = Number(item.taxPercent);
     }
     return data;
   });
@@ -330,9 +357,16 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         <div v-if="isAccountEditor" class="editor-header account-header-simple">
           <span class="header-name">Название счета</span><span class="header-owner">Владелец</span><span class="header-balance">Нач. баланс</span><span class="header-trash"></span>
         </div>
+        
+        <!-- 🟢 UPDATED: Заголовок для Компаний с налогами -->
         <div v-else-if="isCompanyEditor" class="editor-header owner-header">
-          <span class="header-name">Название Компании</span><span class="header-accounts">Привязанные счета</span><span class="header-trash"></span>
+          <span class="header-name">Название Компании</span>
+          <span class="header-accounts">Привязанные счета</span>
+          <span class="header-tax">Налоги</span>
+          <span class="header-percent">%</span>
+          <span class="header-trash"></span>
         </div>
+        
         <div v-else-if="isContractorEditor" class="editor-header contractor-header">
           <span class="header-name">Название</span><span class="header-project">Проекты</span><span class="header-category">Категории</span><span class="header-trash"></span>
         </div>
@@ -343,6 +377,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
       
       <div class="list-editor">
         <template v-if="isIndividualEditor">
+            <!-- ... (Блок физлиц без изменений) ... -->
             <div v-if="ownerItems.length > 0" class="group-section">
                 <div class="group-title">Владельцы счетов (Привязка через счета)</div>
                  <div class="editor-header contractor-header small-header">
@@ -385,6 +420,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
             <div class="edit-item">
               <span class="drag-handle">⠿</span>
               <input type="text" v-model="item.name" class="edit-input edit-name" />
+              
               <template v-if="isAccountEditor">
                 <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item)" class="edit-input edit-owner">
                     <option :value="null">Нет владельца</option>
@@ -395,13 +431,26 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
                 </select>
                 <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" />
               </template>
+              
               <template v-if="isContractorEditor">
                 <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">{{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}</button>
                 <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}</button>
               </template>
+              
+              <!-- 🟢 UPDATED: Поля налогов для Компании -->
               <template v-if="isCompanyEditor">
                 <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">Выбрано ({{ item.selectedAccountIds.length }})</button>
+                
+                <!-- Режим -->
+                <select v-model="item.taxRegime" class="edit-input edit-tax" @change="onRegimeChange(item)">
+                    <option value="simplified">Упрощенка</option>
+                    <option value="our">ОУР</option>
+                </select>
+                
+                <!-- Процент -->
+                <input type="number" v-model="item.taxPercent" class="edit-input edit-percent" placeholder="%" min="0" max="100" />
               </template>
+              
               <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
             </div>
           </template>
@@ -421,7 +470,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
-.popup-content.wide { width: 50%; max-width: 1300px; }
+.popup-content.wide { width: 55%; max-width: 1400px; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
@@ -443,7 +492,12 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .account-header-simple .header-name { width: 100%; }
 .account-header-simple .header-balance { flex-shrink: 0; width: 130px; text-align: right; padding-right: 14px; }
 .account-header-simple .header-owner { flex-shrink: 0; width: 200px; }
-.owner-header .header-accounts { flex-shrink: 0; width: 310px; }
+
+.owner-header .header-accounts { flex-shrink: 0; width: 220px; }
+/* 🟢 NEW: Колонки для налогов */
+.owner-header .header-tax { flex-shrink: 0; width: 100px; }
+.owner-header .header-percent { flex-shrink: 0; width: 60px; }
+
 .contractor-header .header-project { flex-shrink: 0; width: 200px; } 
 .contractor-header .header-category { flex-shrink: 0; width: 200px; } 
 .small-header { margin-left: 32px; margin-top: 5px; margin-bottom: 5px; }
@@ -461,8 +515,13 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-owner { flex-shrink: 0; width: 200px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; }
 .create-option { font-weight: 600; color: #007AFF; background-color: #f0f8ff; }
 .edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
-.edit-account-picker { flex-shrink: 0; width: 310px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; font-size: 13px; display: flex; align-items: center; margin: 0; padding: 0 10px; height: 28px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; font-family: inherit; }
+.edit-account-picker { flex-shrink: 0; width: 220px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; font-size: 13px; display: flex; align-items: center; margin: 0; padding: 0 10px; height: 28px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; font-family: inherit; }
 .edit-account-picker:hover { border-color: #222222; }
+
+/* 🟢 СТИЛИ ДЛЯ НАЛОГОВ */
+.edit-tax { flex-shrink: 0; width: 100px; }
+.edit-percent { flex-shrink: 0; width: 60px; text-align: center; }
+
 .delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: #999; transition: stroke 0.2s; }
 .delete-btn:hover { border-color: #FF3B30; background: #fff5f5; }

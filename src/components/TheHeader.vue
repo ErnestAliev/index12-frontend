@@ -9,6 +9,8 @@ import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
 import HeaderCreditCard from './HeaderCreditCard.vue'; 
+// 🟢 Импорт карточки налогов
+import HeaderTaxCard from './HeaderTaxCard.vue';
 
 // Попапы
 import TransferPopup from './TransferPopup.vue';
@@ -25,18 +27,20 @@ import RefundPopup from './RefundPopup.vue';
 import PrepaymentListEditor from './PrepaymentListEditor.vue';
 import WithdrawalListEditor from './WithdrawalListEditor.vue';
 
-// 🟢 НОВЫЕ ПОПАПЫ
+// 🟢 НОВЫЕ ПОПАПЫ ДЛЯ НАЛОГОВ
+import TaxListEditor from './TaxListEditor.vue';
+import TaxPaymentPopup from './TaxPaymentPopup.vue';
+
 import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
-// import OperationPopup from './OperationPopup.vue'; // Больше не используется в хедере
 
 /**
- * * --- МЕТКА ВЕРСИИ: v43.0 - POPUP TYPE PASSING ---
- * * ВЕРСИЯ: 43.0 - Передача типа сущности в EntityPopup для автоподстановки
- * * ДАТА: 2025-12-04
- * * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) openAddPopup теперь принимает третий аргумент `entityType`.
- * 2. (TEMPLATE) Вызовы openAddPopup обновлены для передачи типов ('account', 'contractor', 'category').
+ * * --- МЕТКА ВЕРСИИ: v45.0 - TAX MODULE FINAL ---
+ * * ВЕРСИЯ: 45.0
+ * * ДАТА: 2025-12-05
+ * * ИЗМЕНЕНИЯ:
+ * 1. Подключены TaxListEditor и TaxPaymentPopup.
+ * 2. Реализованы обработчики onTaxesAdd и onTaxesEdit.
  */
 
 const mainStore = useMainStore();
@@ -105,7 +109,6 @@ const operationListEditorType = ref('income');
 const operationListEditorTitle = ref('');
 const operationListEditorFilterMode = ref('default');
 
-// 🟢 Заменили isOperationPopupVisible на раздельные
 const isIncomePopupVisible = ref(false);
 const isExpensePopupVisible = ref(false);
 
@@ -116,13 +119,16 @@ const isPrepaymentEditorVisible = ref(false);
 const prepaymentEditorInitialTab = ref('clients');
 const isWithdrawalListEditorVisible = ref(false);
 const isEntityPopupVisible = ref(false);
-// Retail/Refund не вызываются из хедера напрямую, но оставим для совместимости
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
 
+// 🟢 Налоговые стейты
+const isTaxListEditorVisible = ref(false);
+const isTaxPaymentPopupVisible = ref(false);
+
 const popupTitle = ref('');
 const popupInitialValue = ref(''); 
-const popupEntityType = ref(''); // 🟢 Новый ref для типа сущности
+const popupEntityType = ref(''); 
 const saveHandler = ref(null);
 const deleteHandler = ref(null); 
 const showDeleteInPopup = ref(false); 
@@ -199,21 +205,20 @@ const mergedCategoryBalances = computed(() => {
 });
 
 // ... popup handlers ...
-// 🟢 ОБНОВЛЕНО: Добавлен аргумент entityType
 const openAddPopup = (title, storeAction, entityType = '') => { 
     popupTitle.value = title; 
     popupInitialValue.value = ''; 
     showDeleteInPopup.value = false; 
     saveHandler.value = storeAction; 
     deleteHandler.value = null; 
-    popupEntityType.value = entityType; // Сохраняем тип для передачи в Popup
+    popupEntityType.value = entityType; 
     isEntityPopupVisible.value = true; 
 };
 
 const openEditPopup = (title, items, path) => { editorTitle.value = title; editorItems.value = JSON.parse(JSON.stringify(items)); editorSavePath.value = path; isListEditorVisible.value = true; };
 const openRenamePopup = (title, entity, storeUpdateAction, canDelete = false, entityType = '') => {
   popupTitle.value = title; popupInitialValue.value = entity.name; showDeleteInPopup.value = canDelete; 
-  popupEntityType.value = ''; // Для редактирования автоподстановка обычно не нужна/мешает
+  popupEntityType.value = ''; 
   saveHandler.value = async (newName) => { if (entityType) { const updatedItem = { ...entity, name: newName }; await mainStore.batchUpdateEntities(entityType, [updatedItem]); } };
   if (canDelete && entityType) { deleteHandler.value = async ({ deleteOperations, done }) => { try { await mainStore.deleteEntity(entityType, entity._id, deleteOperations); isEntityPopupVisible.value = false; } catch (e) { alert('Ошибка удаления: ' + e.message); if(done) done(); } }; } else { deleteHandler.value = null; }
   isEntityPopupVisible.value = true;
@@ -223,22 +228,12 @@ const onEntityDelete = (payload) => { if (deleteHandler.value) deleteHandler.val
 const onEntityListSave = async (updatedItems) => { if (editorSavePath.value) { try { await mainStore.batchUpdateEntities(editorSavePath.value, updatedItems); } catch (e) { console.error(e); } } isListEditorVisible.value = false; };
 const getWidgetByKey = (key) => mainStore.allWidgets.find(w => w.key === key);
 
-// 🟢 ОБНОВЛЕНО: Открытие Income/Expense Popup
 const onCategoryAdd = (widgetKey, index) => {
     if (widgetKey === 'transfers') { isTransferPopupVisible.value = true; return; }
-    
-    if (widgetKey === 'incomeList') { 
-        isIncomePopupVisible.value = true; 
-        return; 
-    }
-    if (widgetKey === 'expenseList') { 
-        isExpensePopupVisible.value = true; 
-        return; 
-    }
-    
+    if (widgetKey === 'incomeList') { isIncomePopupVisible.value = true; return; }
+    if (widgetKey === 'expenseList') { isExpensePopupVisible.value = true; return; }
     if (widgetKey === 'withdrawalList') { isWithdrawalPopupVisible.value = true; return; }
     
-    // Для виджетов-категорий
     if (widgetKey.startsWith('cat_')) {
         const catId = widgetKey.replace('cat_', '');
         const category = mainStore.getCategoryById(catId);
@@ -250,26 +245,19 @@ const onCategoryAdd = (widgetKey, index) => {
             }
         }
     }
-
     const widget = getWidgetByKey(widgetKey);
     if (widget?.name.toLowerCase().includes('перевод') || widget?.name.toLowerCase().includes('transfer')) { 
         isTransferPopupVisible.value = true; 
         return;
     }
-    
-    // По умолчанию открываем Расход
     isExpensePopupVisible.value = true;
 };
 
-// 🟢 ОБНОВЛЕНО: Предоплаты -> Income Popup
-const onLiabilitiesAdd = () => {
-    isIncomePopupVisible.value = true;
-};
+const onLiabilitiesAdd = () => { isIncomePopupVisible.value = true; };
 
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
     if (widgetKey === 'transfers') { isTransferEditorVisible.value = true; return; }
-    
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationListEditorTitle.value = 'Редактировать расходы'; operationListEditorType.value = 'expense'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'withdrawalList') { isWithdrawalListEditorVisible.value = true; return; }
@@ -283,19 +271,25 @@ const onCategoryEdit = (widgetKey) => {
     }
 };
 
-const onLiabilitiesEdit = () => { 
-    prepaymentEditorInitialTab.value = 'clients'; 
-    isPrepaymentEditorVisible.value = true;
-};
+const onLiabilitiesEdit = () => { prepaymentEditorInitialTab.value = 'clients'; isPrepaymentEditorVisible.value = true; };
+const onLiabilitiesTab = (tabName) => { prepaymentEditorInitialTab.value = tabName; isPrepaymentEditorVisible.value = true; };
 
-const onLiabilitiesTab = (tabName) => {
-    prepaymentEditorInitialTab.value = tabName; 
-    isPrepaymentEditorVisible.value = true;
-};
-
-// Кредиты
 const onCreditsEdit = () => { isCreditEditorVisible.value = true; };
 const onCreditsAdd = () => { isCreditWizardVisible.value = true; };
+
+// 🟢 ОБРАБОТЧИКИ НАЛОГОВ
+const onTaxesAdd = () => {
+    isTaxPaymentPopupVisible.value = true;
+};
+const onTaxesEdit = () => {
+    isTaxListEditorVisible.value = true;
+};
+
+const handleTaxPaymentSuccess = () => {
+    isTaxPaymentPopupVisible.value = false;
+    // Обновляем данные
+    mainStore.fetchAllEntities();
+};
 
 const handleWizardSave = async (payload) => {
     isCreditWizardVisible.value = false;
@@ -321,8 +315,6 @@ const handleWizardSave = async (payload) => {
 };
 
 const handleTransferComplete = async (eventData) => { if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey); isTransferPopupVisible.value = false; };
-
-// 🟢 Handler для новых попапов
 const handleOperationAdded = async ({ mode, id, data }) => {
     if (mode === 'create') {
         if (data.cellIndex === undefined) {
@@ -331,7 +323,6 @@ const handleOperationAdded = async ({ mode, id, data }) => {
         }
         await mainStore.createEvent(data);
     }
-    // Edit mode is less likely from header "+ Add" buttons, but supported
     isIncomePopupVisible.value = false;
     isExpensePopupVisible.value = false;
 };
@@ -377,6 +368,16 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
         
+        <!-- 🟢 NEW: Виджет Налогов -->
+        <HeaderTaxCard
+          v-else-if="widgetKey === 'taxes'"
+          title="Мои налоги"
+          :widgetKey="widgetKey"
+          :widgetIndex="index"
+          @add="onTaxesAdd"
+          @edit="onTaxesEdit"
+        />
+        
         <HeaderLiabilitiesCard
           v-else-if="widgetKey === 'liabilities'"
           title="Мои предоплаты" 
@@ -404,7 +405,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ОБНОВЛЕНО: Передаем 'account' -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
           title="Мои счета"
@@ -427,7 +427,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ОБНОВЛЕНО: Передаем 'contractor' -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'contractors'"
           title="Мои контрагенты"
@@ -461,7 +460,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ОБНОВЛЕНО: Передаем 'category' -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'categories'"
           title="Категории"
@@ -497,7 +495,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     </template>
   </draggable>
 
-  <!-- 🟢 Передаем entityType в EntityPopup -->
+  <!-- Popups -->
   <EntityPopup 
       v-if="isEntityPopupVisible" 
       :title="popupTitle" 
@@ -514,30 +512,18 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <TransferListEditor v-if="isTransferEditorVisible" @close="isTransferEditorVisible = false" />
   <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" :filter-mode="operationListEditorFilterMode" @close="isOperationListEditorVisible = false" />
   
-  <IncomePopup 
-     v-if="isIncomePopupVisible" 
-     :date="new Date()" 
-     :cellIndex="0" 
-     @close="isIncomePopupVisible = false" 
-     @save="handleOperationAdded" 
-  />
-  
-  <ExpensePopup 
-     v-if="isExpensePopupVisible" 
-     :date="new Date()" 
-     :cellIndex="0" 
-     @close="isExpensePopupVisible = false" 
-     @save="handleOperationAdded" 
-  />
-
+  <IncomePopup v-if="isIncomePopupVisible" :date="new Date()" :cellIndex="0" @close="isIncomePopupVisible = false" @save="handleOperationAdded" />
+  <ExpensePopup v-if="isExpensePopupVisible" :date="new Date()" :cellIndex="0" @close="isExpensePopupVisible = false" @save="handleOperationAdded" />
   <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" @save="handleWithdrawalSaved" />
-  
   <CreditListEditor v-if="isCreditEditorVisible" @close="isCreditEditorVisible = false" />
   <CreditWizardPopup v-if="isCreditWizardVisible" @close="isCreditWizardVisible = false" @save="handleWizardSave" />
-  
   <PrepaymentListEditor v-if="isPrepaymentEditorVisible" :initial-tab="prepaymentEditorInitialTab" @close="isPrepaymentEditorVisible = false" />
-  
   <WithdrawalListEditor v-if="isWithdrawalListEditorVisible" @close="isWithdrawalListEditorVisible = false" />
+  
+  <!-- 🟢 POPUPS НАЛОГОВ -->
+  <TaxListEditor v-if="isTaxListEditorVisible" @close="isTaxListEditorVisible = false" />
+  <TaxPaymentPopup v-if="isTaxPaymentPopupVisible" @close="isTaxPaymentPopupVisible = false" @success="handleTaxPaymentSuccess" />
+
 </template>
 
 <style scoped>
