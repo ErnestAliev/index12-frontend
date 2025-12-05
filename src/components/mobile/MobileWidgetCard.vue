@@ -105,7 +105,6 @@ const getFactValueClass = (item) => {
     const val = item.currentBalance || item.balance;
     const num = Number(val) || 0;
     
-    // Для налогов, если долг есть (число отрицательное), красим в красный
     if (props.widgetKey === 'taxes') {
         if (num < 0) return 'red-text';
         return 'white-text';
@@ -116,12 +115,9 @@ const getFactValueClass = (item) => {
 };
 
 const getRightValue = (item) => {
-    // 🟢 ВАЖНОЕ ИСПРАВЛЕНИЕ:
-    // Для счетов показываем ИТОГ (Баланс + Изменение)
     if (isBalanceWidget.value) {
         return item.currentBalance + (item.futureChange || 0);
     } 
-    // Для Налогов и остальных (Обороты) показываем ДЕЛЬТУ (Изменение)
     else {
         return item.futureChange || 0;
     }
@@ -143,21 +139,29 @@ const getRightValueFormatted = (item) => {
 
 // 🟢 ПРАВАЯ КОЛОНКА (План)
 const getRightValueClass = (item) => {
+    // 🟢 Спец. логика для Счетов и Компаний
+    if (isBalanceWidget.value) {
+        const change = item.futureChange || 0;
+        // Рост -> Зеленый
+        if (change > 0) return 'green-text';
+        // Падение -> Красный
+        if (change < 0) return 'red-text';
+        // Без изменений -> Белый
+        return 'white-text';
+    }
+
+    // Логика для остальных (Обороты, Налоги и т.д.)
     const val = getRightValue(item);
     const num = Number(val) || 0;
 
-    if (!isBalanceWidget.value && num === 0) return 'white-text';
+    if (num === 0) return 'white-text';
     if (isAlwaysNegativeWidget.value) return 'red-text';
     if (isTransferWidget.value) return 'white-text';
 
-    // 🟢 ДЛЯ НАЛОГОВ:
-    // Если val (изменение) < 0 (долг растет) -> Красный
-    // Если val > 0 (долг уменьшается/платеж) -> Зеленый
     if (props.widgetKey === 'taxes') {
         return val < 0 ? 'red-text' : 'green-text';
     }
 
-    // Для остальных (доходы): + Зеленый, - Красный
     return val >= 0 ? 'green-text' : 'red-text';
 };
 
@@ -233,7 +237,6 @@ const cardStyleClass = computed(() => {
         <div v-for="item in items.slice(0, 50)" :key="item._id" class="list-item-grid">
           
           <!-- КОЛОНКА 1: ФАКТ -->
-          <!-- Для налогов используем currentBalance, для остальных - balance/currentBalance -->
           <div class="col-left" :class="getFactValueClass(item)">
              {{ formatVal(item.currentBalance !== undefined ? item.currentBalance : item.balance) }}
           </div>
