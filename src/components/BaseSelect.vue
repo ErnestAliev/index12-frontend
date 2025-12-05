@@ -2,18 +2,16 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
- * * --- КОМПОНЕНТ: BaseSelect v4.2 - EVENT FIX & FULL CONTENT ---
- * * ВЕРСИЯ: 4.2 - Исправление зависания при выборе (Stop Propagation)
- * * ДАТА: 2025-12-03
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) Добавлен модификатор @click.stop на элементы списка.
- * 2. (CONTENT) Полный код файла сохранен.
+ * * --- КОМПОНЕНТ: BaseSelect v4.3 - TOOLTIPS ---
+ * * ВЕРСИЯ: 4.3
+ * * ДАТА: 2025-12-05
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FEAT) Добавлен атрибут :title="option.tooltip" для отображения подсказки при наведении.
  */
 
 const props = defineProps({
   modelValue: { type: [String, Number, Object], default: null },
-  options: { type: Array, default: () => [] }, // { value, label, rightText, isSpecial, isHeader, isActionRow }
+  options: { type: Array, default: () => [] }, // { value, label, rightText, tooltip, isSpecial, isHeader, isActionRow }
   placeholder: { type: String, default: 'Выберите...' },
   label: { type: String, default: '' }, 
   disabled: { type: Boolean, default: false }
@@ -86,6 +84,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
              'is-action-row': option.isActionRow,
              'is-selected': option.value === modelValue
           }"
+          :title="option.tooltip || ''"
           @click.stop="selectOption(option)"
         >
           <!-- 1. Заголовок группы -->

@@ -7,12 +7,11 @@ import BaseSelect from './BaseSelect.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v28.1 - RECIPIENT TAX FIX ---
- * * ВЕРСИЯ: 28.1
+ * * --- МЕТКА ВЕРСИИ: v28.2 - TOOLTIPS ---
+ * * ВЕРСИЯ: 28.2
  * * ДАТА: 2025-12-05
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Расчет налога теперь берет режим КОМПАНИИ-ПОЛУЧАТЕЛЯ (selectedToOwner), а не отправителя.
- * 2. (LOGIC) Сумма налога теперь не списывается сразу, а только отображается как "Будет начислено".
+ * 1. (UI) Добавлены тултипы для счетов (показывают владельца).
  */
 
 const mainStore = useMainStore();
@@ -63,7 +62,7 @@ const smartHint = computed(() => {
 const taxCalculation = computed(() => {
     if (transferPurpose.value !== 'inter_company') return null;
     
-    // Получаем ID ПОЛУЧАТЕЛЯ (Fix: Было selectedFromOwner)
+    // Получаем ID ПОЛУЧАТЕЛЯ
     if (!selectedToOwner.value) return null;
     const [type, id] = selectedToOwner.value.split('-');
     
@@ -138,11 +137,27 @@ const onAmountInput = (event) => {
   });
 };
 
+// 🟢 1. Хелпер для названия владельца (для Tooltip)
+const getOwnerName = (acc) => {
+    if (acc.companyId) {
+        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+        const c = mainStore.companies.find(comp => comp._id === cId);
+        return c ? `Компания: ${c.name}` : 'Компания';
+    }
+    if (acc.individualId) {
+        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+        const i = mainStore.individuals.find(ind => ind._id === iId);
+        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+    }
+    return 'Нет привязки';
+};
+
 const accountOptions = computed(() => {
   const options = mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
     label: acc.name,
     rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
+    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
     isSpecial: false
   }));
   options.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', rightText: '', isSpecial: true });
@@ -450,6 +465,7 @@ const closePopup = () => { emit('close'); };
         </div>
         
         <!-- ОТПРАВИТЕЛЬ -->
+        <!-- 🟢 Добавлен BaseSelect с тултипами -->
         <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
         <div v-else class="inline-create-form input-spacing relative">
           <input 
@@ -476,6 +492,7 @@ const closePopup = () => { emit('close'); };
         <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange" />
 
         <!-- ПОЛУЧАТЕЛЬ -->
+        <!-- 🟢 Добавлен BaseSelect с тултипами -->
         <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
         <div v-else class="inline-create-form input-spacing relative">
           <input 

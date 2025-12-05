@@ -9,13 +9,13 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v5.0 - FULL CODE & AUTOCOMPLETE ---
- * * ВЕРСИЯ: 5.0
- * * ДАТА: 2025-12-04
+ * * --- МЕТКА ВЕРСИИ: v5.1 - TOOLTIPS & CONFIRM ---
+ * * ВЕРСИЯ: 5.1
+ * * ДАТА: 2025-12-05
  * * ИЗМЕНЕНИЯ:
- * 1. (FEAT) Автоподстановка для Счетов, Категорий, Контрагентов, Владельцев.
- * 2. (FIX) Флаг isProgrammaticUpdate для корректного закрытия списка.
- * 3. (FULL) Полный код без сокращений.
+ * 1. (UI) Добавлены тултипы для счетов (показывают владельца).
+ * 2. (UX) Добавлено окно подтверждения удаления.
+ * 3. (UX) Мгновенное закрытие при удалении (фоновое удаление).
  */
 
 const mainStore = useMainStore();
@@ -79,7 +79,7 @@ const editableDate = ref('');
 const isInlineSaving = ref(false);
 const isInitialLoad = ref(true);
 const isDateChanged = ref(false); 
-const isDeleteConfirmVisible = ref(false);
+const showDeleteConfirm = ref(false); // 🟢 Состояние попапа подтверждения
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInput = ref(null);
@@ -99,7 +99,6 @@ const contractorTypeToCreate = ref('contractor');
 const newContractorNameInput = ref('');
 const newContractorInputRef = ref(null);
 
-// 🟢 FIX: Флаги программного обновления (чтобы список не открывался после выбора)
 const isProgrammaticAccount = ref(false);
 const isProgrammaticCategory = ref(false);
 const isProgrammaticContractor = ref(false);
@@ -107,7 +106,7 @@ const isProgrammaticOwner = ref(false);
 
 // --- AUTOCOMPLETE LOGIC ---
 
-// 1. Контрагенты (Банки/Орг)
+// 1. Контрагенты
 const showContractorBankSuggestions = ref(false);
 const contractorBankSuggestionsList = computed(() => {
     if (contractorTypeToCreate.value !== 'contractor') return [];
@@ -137,7 +136,7 @@ watch(newContractorNameInput, (val) => {
     showContractorBankSuggestions.value = val.length >= 2; 
 });
 
-// 2. Владельцы (Банки/Орг)
+// 2. Владельцы
 const showOwnerBankSuggestions = ref(false);
 const ownerBankSuggestionsList = computed(() => {
     if (ownerTypeToCreate.value !== 'company') return [];
@@ -286,12 +285,28 @@ const myCreditsProjectId = computed(() => {
     return p ? p._id : null;
 });
 
+// 🟢 1. Хелпер для названия владельца (для Tooltip)
+const getOwnerName = (acc) => {
+    if (acc.companyId) {
+        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+        const c = mainStore.companies.find(comp => comp._id === cId);
+        return c ? `Компания: ${c.name}` : 'Компания';
+    }
+    if (acc.individualId) {
+        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+        const i = mainStore.individuals.find(ind => ind._id === iId);
+        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+    }
+    return 'Нет привязки';
+};
+
 // --- COMPUTED: OPTIONS ---
 const accountOptions = computed(() => {
   const opts = mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
     label: acc.name,
-    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`, 
+    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
+    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
     isSpecial: false
   }));
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', isSpecial: true });
@@ -688,7 +703,6 @@ const handleMainAction = () => {
     }
 
     // 🟢 ЕСЛИ СТАТУС "Предоплата / Сделка" (B2B) -> Открыть Wizard
-    // Для Розницы (Retail) окно предоплаты НЕ ОТКРЫВАЕТСЯ, все идет через handleSave
     if (operationStatus.value === 'prepayment' && !isRetailClientSelected.value) {
         emit('trigger-prepayment', payload);
         return;
@@ -698,7 +712,22 @@ const handleMainAction = () => {
 };
 
 const handleCopyClick = () => { isCloneMode.value = true; nextTick(() => amountInput.value?.focus()); };
-const handleDeleteClick = () => { emit('operation-deleted', props.operationToEdit); };
+
+// 🟢 2. Открытие окна подтверждения удаления
+const handleDeleteClick = () => { 
+    showDeleteConfirm.value = true;
+};
+
+// 🟢 3. Подтверждение удаления
+const confirmDelete = () => {
+    // Мгновенное закрытие попапа (Optimistic UI)
+    showDeleteConfirm.value = false;
+    emit('close'); 
+    
+    // Эмитим событие удаления, которое обработает родитель (HomeView)
+    // HomeView вызовет deleteOperation, который обновит кеш и отправит запрос
+    emit('operation-deleted', props.operationToEdit);
+};
 
 const handleSave = async () => {
     if (isSaving.value) return;
@@ -813,6 +842,7 @@ const closePopup = () => emit('close');
 
       <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
         <div v-if="!isCreatingAccount" class="input-spacing">
+            <!-- 🟢 Добавлен BaseSelect с тултипами -->
             <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="На счет" label="На счет" @change="handleAccountChange" :disabled="isProtectedMode" />
         </div>
         <div v-else class="inline-create-form input-spacing relative">
@@ -913,11 +943,13 @@ const closePopup = () => emit('close');
             <div v-else class="read-only-info">Только чтение</div>
             <div class="icon-actions">
                 <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+                <!-- 🟢 Кнопка Удалить открывает ConfirmationPopup -->
                 <button v-if="props.operationToEdit" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
             </div>
         </div>
       </template>
 
+      <!-- МОДАЛКИ СОЗДАНИЯ -->
       <template v-if="showCreateOwnerModal">
         <div class="smart-create-owner">
           <h4 class="smart-create-title">Новый владелец</h4>
@@ -926,17 +958,7 @@ const closePopup = () => emit('close');
             <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="ownerTypeToCreate = 'individual'">Физлицо</button>
           </div>
           <div class="input-wrapper relative">
-              <input 
-                  type="text" 
-                  v-model="newOwnerName" 
-                  :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" 
-                  ref="newOwnerInputRef" 
-                  class="form-input input-spacing" 
-                  @keyup.enter="saveNewOwner" 
-                  @keyup.esc="cancelCreateOwner" 
-                  @blur="handleOwnerInputBlur" 
-                  @focus="handleOwnerInputFocus" 
-              />
+              <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" />
               <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length > 0" class="bank-suggestions-list">
                   <li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li>
               </ul>
@@ -956,17 +978,7 @@ const closePopup = () => emit('close');
             <button :class="{ active: contractorTypeToCreate === 'individual' }" @click="contractorTypeToCreate = 'individual'">Физлицо</button>
           </div>
           <div class="input-wrapper relative">
-              <input 
-                  type="text" 
-                  v-model="newContractorNameInput" 
-                  :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" 
-                  ref="newContractorInputRef" 
-                  class="form-input input-spacing" 
-                  @keyup.enter="saveNewContractorModal" 
-                  @keyup.esc="cancelCreateContractorModal" 
-                  @blur="handleContractorInputBlur" 
-                  @focus="handleContractorInputFocus" 
-              />
+              <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" @blur="handleContractorInputBlur" @focus="handleContractorInputFocus" />
               <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length > 0" class="bank-suggestions-list">
                   <li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li>
               </ul>
@@ -979,6 +991,16 @@ const closePopup = () => emit('close');
       </template>
 
     </div>
+
+    <!-- 🟢 4. Попап Подтверждения Удаления -->
+    <ConfirmationPopup 
+        v-if="showDeleteConfirm" 
+        title="Подтвердите удаление" 
+        message="Вы уверены, что хотите удалить эту операцию?" 
+        confirmText="Да, удалить"
+        @close="showDeleteConfirm = false" 
+        @confirm="confirmDelete" 
+    />
   </div>
 </template>
 

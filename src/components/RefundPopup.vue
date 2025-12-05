@@ -3,15 +3,14 @@ import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 import BaseSelect from './BaseSelect.vue';
-import ConfirmationPopup from './ConfirmationPopup.vue'; // 🟢 1. Импорт компонента
+import ConfirmationPopup from './ConfirmationPopup.vue'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v1.2 - CUSTOM CONFIRM ---
- * * ВЕРСИЯ: 1.2 - Кастомное окно подтверждения удаления
- * * ДАТА: 2025-11-26
- * * ЧТО ИЗМЕНЕНО:
- * 1. Заменен нативный confirm() на <ConfirmationPopup />.
- * 2. Добавлена логика состояния showDeleteConfirm.
+ * * --- МЕТКА ВЕРСИИ: v1.3 - TOOLTIPS ---
+ * * ВЕРСИЯ: 1.3
+ * * ДАТА: 2025-12-05
+ * * ИЗМЕНЕНИЯ:
+ * 1. (UI) Добавлены тултипы для счетов (показывают владельца).
  */
 
 const props = defineProps({
@@ -35,19 +34,35 @@ const selectedProjectId = ref(null);
 const selectedCategoryId = ref(null); 
 
 // Состояние удаления
-const showDeleteConfirm = ref(false); // 🟢 2. Флаг отображения попапа
+const showDeleteConfirm = ref(false); 
 
 // Состояние
 const isEditMode = computed(() => !!props.operationToEdit);
 const title = computed(() => isEditMode.value ? 'Редактирование возврата' : 'Оформить возврат');
 const btnText = computed(() => isEditMode.value ? 'Сохранить' : 'Подтвердить возврат');
 
+// 🟢 1. Хелпер для названия владельца (для Tooltip)
+const getOwnerName = (acc) => {
+    if (acc.companyId) {
+        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+        const c = mainStore.companies.find(comp => comp._id === cId);
+        return c ? `Компания: ${c.name}` : 'Компания';
+    }
+    if (acc.individualId) {
+        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+        const i = mainStore.individuals.find(ind => ind._id === iId);
+        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+    }
+    return 'Нет привязки';
+};
+
 // --- ОПЦИИ СЕЛЕКТОВ ---
 const accountOptions = computed(() => {
   return mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
     label: acc.name,
-    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`
+    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
+    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
   }));
 });
 
@@ -159,7 +174,6 @@ const handleSave = async () => {
     });
 };
 
-// 🟢 3. Обновленная логика удаления
 const askDelete = () => {
     showDeleteConfirm.value = true;
 };
@@ -263,7 +277,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 🟢 4. Вставка компонента ConfirmationPopup -->
     <ConfirmationPopup 
         v-if="showDeleteConfirm" 
         title="Удаление возврата" 

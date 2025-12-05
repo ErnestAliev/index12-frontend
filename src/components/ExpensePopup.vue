@@ -9,13 +9,11 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.0 - FULL CODE & AUTOCOMPLETE ---
- * * ВЕРСИЯ: 3.0
- * * ДАТА: 2025-12-04
+ * * --- МЕТКА ВЕРСИИ: v3.1 - TOOLTIPS ---
+ * * ВЕРСИЯ: 3.1
+ * * ДАТА: 2025-12-05
  * * ИЗМЕНЕНИЯ:
- * 1. Внедрена автоподстановка для Счетов, Категорий, Контрагентов, Владельцев.
- * 2. Добавлен фикс isProgrammaticUpdate (список сворачивается при выборе).
- * 3. КОД ПОЛНЫЙ, БЕЗ СОКРАЩЕНИЙ.
+ * 1. (UI) Добавлены тултипы для счетов (показывают владельца).
  */
 
 const mainStore = useMainStore();
@@ -151,7 +149,7 @@ watch(newAccountName, (val) => {
 const categorySuggestionsList = computed(() => {
     const query = newCategoryName.value.trim().toLowerCase();
     if (query.length < 2) return [];
-    return categorySuggestions.filter(c => c.name.toLowerCase().includes(query)).slice(0, 4);
+    return categorySuggestions.filter(c => c.name.toLowerCase().includes(q)).slice(0, 4);
 });
 const selectCategorySuggestion = (c) => {
     isProgrammaticCategory.value = true;
@@ -169,6 +167,20 @@ watch(newCategoryName, (val) => {
     showCategorySuggestions.value = val.length >= 2;
 });
 
+// 🟢 Хелпер для названия владельца (для Tooltip)
+const getOwnerName = (acc) => {
+    if (acc.companyId) {
+        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+        const c = mainStore.companies.find(comp => comp._id === cId);
+        return c ? `Компания: ${c.name}` : 'Компания';
+    }
+    if (acc.individualId) {
+        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+        const i = mainStore.individuals.find(ind => ind._id === iId);
+        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+    }
+    return 'Нет привязки';
+};
 
 // --- COMPUTED: OPTIONS ---
 const accountOptions = computed(() => {
@@ -176,6 +188,7 @@ const accountOptions = computed(() => {
     value: acc._id,
     label: acc.name,
     rightText: `${formatNumber(Math.abs(acc.balance))} ₸`, 
+    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
     isSpecial: false
   }));
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', isSpecial: true });
@@ -470,7 +483,12 @@ const saveNewContractorModal = async () => {
 // --- UTILS ---
 const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(new Date()); nextTick(() => amountInput.value?.focus()); };
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
-const onDeleteConfirmed = () => { if (props.operationToEdit) { emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); } emit('close'); };
+const onDeleteConfirmed = () => { 
+    isDeleteConfirmVisible.value = false; // Мгновенно скрываем
+    emit('close'); 
+    emit('operation-deleted', props.operationToEdit);
+    mainStore.deleteOperation(props.operationToEdit); 
+};
 
 // --- INIT ---
 onMounted(async () => {

@@ -6,13 +6,11 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v15.2 - NO RELOAD ON DELETE ---
- * * ВЕРСИЯ: 15.2 - Убран forceRefreshAll при удалении
- * * ДАТА: 2025-11-28
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (FIX) В `confirmDelete` убран вызов `mainStore.forceRefreshAll()`.
- * Удаление происходит тихо в фоне, обновляя только нужный день через стор.
+ * * --- МЕТКА ВЕРСИИ: v15.3 - TOOLTIPS ---
+ * * ВЕРСИЯ: 15.3
+ * * ДАТА: 2025-12-05
+ * * ИЗМЕНЕНИЯ:
+ * 1. (UI) Добавлены тултипы для счетов.
  */
 
 const mainStore = useMainStore();
@@ -47,12 +45,28 @@ const reasonOptions = [
   { value: 'Другое', label: 'Другое' }
 ];
 
+// 🟢 1. Хелпер для названия владельца (для Tooltip)
+const getOwnerName = (acc) => {
+    if (acc.companyId) {
+        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+        const c = mainStore.companies.find(comp => comp._id === cId);
+        return c ? `Компания: ${c.name}` : 'Компания';
+    }
+    if (acc.individualId) {
+        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+        const i = mainStore.individuals.find(ind => ind._id === iId);
+        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+    }
+    return 'Нет привязки';
+};
+
 // Опции счетов (откуда)
 const accountOptions = computed(() => {
   return mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
     label: acc.name,
     rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
+    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
     isSpecial: false
   }));
 });
@@ -60,7 +74,6 @@ const accountOptions = computed(() => {
 // Опции Физлиц (Получателей)
 const individualOptions = computed(() => {
   // Исключаем системные сущности (Розница) и владельцев счетов (опционально, но пользователь просил просто список)
-  // Пользователь просил: "выбор поля физлица из списка созданных или предложить создать новое"
   const opts = mainStore.individuals
     .filter(i => {
         const name = i.name.toLowerCase().trim();
@@ -78,7 +91,6 @@ const individualOptions = computed(() => {
 // --- СОСТОЯНИЯ ---
 const isCloneMode = ref(false);
 const isDeleteConfirmVisible = ref(false);
-// const isDeleting = ref(false); // Больше не нужно, так как закрываем мгновенно
 const editableDate = ref('');
 
 // --- ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ---
@@ -217,16 +229,13 @@ const handleDeleteClick = () => {
     isDeleteConfirmVisible.value = true;
 };
 
-// 🟢 ИЗМЕНЕНО: Мгновенное удаление БЕЗ полной перезагрузки
+// Мгновенное удаление БЕЗ полной перезагрузки
 const confirmDelete = () => {
     if (!props.operationToEdit?._id) return;
 
-    // 1. Скрываем подтверждение и закрываем попап МГНОВЕННО
     isDeleteConfirmVisible.value = false;
     emit('close'); 
 
-    // 2. Запускаем удаление в фоне.
-    // deleteOperation сама обновит кеш нужного дня.
     mainStore.deleteOperation(props.operationToEdit)
         .catch(e => {
             console.error("Ошибка при фоновом удалении вывода:", e);
