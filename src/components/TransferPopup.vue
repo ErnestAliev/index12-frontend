@@ -4,14 +4,18 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
+import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v28.2 - TOOLTIPS ---
- * * ВЕРСИЯ: 28.2
- * * ДАТА: 2025-12-05
+ * * --- МЕТКА ВЕРСИИ: v28.3 - STYLES FIX ---
+ * * ВЕРСИЯ: 28.3
+ * * ДАТА: 2025-12-07
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) Добавлены тултипы для счетов (показывают владельца).
+ * 1. (UI) Применены стили Apple Fonts.
+ * 2. (UI) Цветовая схема зафиксирована на #2F3340 (Темно-синий).
+ * 3. (UI) Sticky-кнопки в селектах.
+ * 4. (UX) InfoModal вместо alert.
  */
 
 const mainStore = useMainStore();
@@ -33,7 +37,6 @@ const selectedFromOwner = ref(null);
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
 
-// --- ЛОГИКА СЦЕНАРИЕВ ---
 const transferPurpose = ref('internal'); 
 
 const purposeOptions = [
@@ -41,6 +44,17 @@ const purposeOptions = [
   { value: 'inter_company', label: 'Между моими компаниями' },
   { value: 'personal', label: 'Перевод на личную карту' }
 ];
+
+// InfoModal
+const showInfoModal = ref(false);
+const infoModalTitle = ref('Внимание');
+const infoModalMessage = ref('');
+
+const showError = (msg) => {
+    infoModalTitle.value = 'Внимание';
+    infoModalMessage.value = msg;
+    showInfoModal.value = true;
+};
 
 const smartHint = computed(() => {
   if (transferPurpose.value === 'internal') {
@@ -58,34 +72,18 @@ const smartHint = computed(() => {
   return '';
 });
 
-// 🟢 РАСЧЕТ НАЛОГА (ТОЛЬКО ДЛЯ INTER-COMPANY)
 const taxCalculation = computed(() => {
     if (transferPurpose.value !== 'inter_company') return null;
-    
-    // Получаем ID ПОЛУЧАТЕЛЯ
     if (!selectedToOwner.value) return null;
     const [type, id] = selectedToOwner.value.split('-');
-    
-    // Налог считаем только если получатель - КОМПАНИЯ
     if (type !== 'company') return null;
-    
     const company = mainStore.companies.find(c => c._id === id);
     if (!company) return null;
-    
-    // Процент (по умолчанию 3% для упрощенки, если не задано)
     const percent = company.taxPercent !== undefined ? company.taxPercent : (company.taxRegime === 'our' ? 10 : 3);
-    
     const rawAmount = parseFloat((amount.value || '0').replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) return null;
-    
     const taxVal = rawAmount * (percent / 100);
-    
-    return {
-        percent: percent,
-        taxAmount: taxVal,
-        // Итого спишется с отправителя только сумма перевода, налог запишется в долг получателю
-        targetCompanyName: company.name
-    };
+    return { percent, taxAmount: taxVal, targetCompanyName: company.name };
 });
 
 const toInputDate = (date) => {
@@ -95,11 +93,7 @@ const toInputDate = (date) => {
   const day = d.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
-const toDisplayDate = (dateStr) => {
-  if (!dateStr) return '';
-  const [year, month, day] = dateStr.split('-');
-  return `${day}.${month}.${year}`;
-}
+const toDisplayDate = (dateStr) => { if (!dateStr) return ''; const [year, month, day] = dateStr.split('-'); return `${day}.${month}.${year}`; }
 const editableDate = ref(toInputDate(props.date));
 const minDateString = computed(() => props.minAllowedDate ? toInputDate(props.minAllowedDate) : null);
 const maxDateString = computed(() => props.maxAllowedDate ? toInputDate(props.maxAllowedDate) : null);
@@ -118,37 +112,12 @@ const newOwnerName = ref('');
 const newOwnerInputRef = ref(null);
 const creatingOwnerFor = ref('from'); 
 
-const formatNumber = (numStr) => {
-  const clean = `${numStr}`.replace(/[^0-9]/g, '');
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-};
+const formatNumber = (numStr) => { const clean = `${numStr}`.replace(/[^0-9]/g, ''); return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' '); };
+const onAmountInput = (event) => { amount.value = formatNumber(event.target.value.replace(/[^0-9]/g, '')); };
 
-const onAmountInput = (event) => {
-  const input = event.target;
-  const value = input.value;
-  const cursorPosition = input.selectionStart;
-  const rawValue = value.replace(/[^0-9]/g, '');
-  const formattedValue = formatNumber(rawValue);
-  const cursorOffset = formattedValue.length - value.length;
-  amount.value = formattedValue;
-  input.value = formattedValue;
-  nextTick(() => {
-    input.setSelectionRange(cursorPosition + cursorOffset, cursorPosition + cursorOffset);
-  });
-};
-
-// 🟢 1. Хелпер для названия владельца (для Tooltip)
 const getOwnerName = (acc) => {
-    if (acc.companyId) {
-        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-        const c = mainStore.companies.find(comp => comp._id === cId);
-        return c ? `Компания: ${c.name}` : 'Компания';
-    }
-    if (acc.individualId) {
-        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-        const i = mainStore.individuals.find(ind => ind._id === iId);
-        return i ? `Физлицо: ${i.name}` : 'Физлицо';
-    }
+    if (acc.companyId) { const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId; const c = mainStore.companies.find(comp => comp._id === cId); return c ? `Компания: ${c.name}` : 'Компания'; }
+    if (acc.individualId) { const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId; const i = mainStore.individuals.find(ind => ind._id === iId); return i ? `Физлицо: ${i.name}` : 'Физлицо'; }
     return 'Нет привязки';
 };
 
@@ -157,46 +126,36 @@ const accountOptions = computed(() => {
     value: acc._id,
     label: acc.name,
     rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
-    tooltip: getOwnerName(acc), // 🟢 Добавлена подсказка
+    tooltip: getOwnerName(acc),
     isSpecial: false
   }));
-  options.push({ value: '--CREATE_NEW--', label: '+ Создать новый счет', rightText: '', isSpecial: true });
+  // 🟢 Sticky option
+  options.push({ value: '--CREATE_NEW--', label: '+ Создать счет', rightText: '', isSpecial: true });
   return options;
 });
 
 const ownerOptions = computed(() => {
   const opts = [];
-  mainStore.currentCompanyBalances.forEach(c => { 
-    opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`, isSpecial: false }); 
-  });
-  mainStore.currentIndividualBalances.forEach(i => { 
-    opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸`, isSpecial: false }); 
-  });
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать Компанию/Физлицо', isSpecial: true });
+  if (mainStore.currentCompanyBalances.length) {
+      opts.push({ label: 'Компании', isHeader: true });
+      mainStore.currentCompanyBalances.forEach(c => { opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`, isSpecial: false }); });
+  }
+  if (mainStore.currentIndividualBalances.length) {
+      opts.push({ label: 'Физлица', isHeader: true });
+      mainStore.currentIndividualBalances.forEach(i => { opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸`, isSpecial: false }); });
+  }
+  opts.push({ isActionRow: true }); // Для кнопок "Создать..."
   return opts;
 });
 
-// 🟢 SMART WATCHER: АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ СЦЕНАРИЯ
 watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
   if (!newFrom || !newTo) return;
-
   const [fromType, fromId] = newFrom.split('-');
   const [toType, toId] = newTo.split('-');
-
-  if (fromId === toId && fromType === toType) {
-      transferPurpose.value = 'internal';
-  }
-  else {
-      if (toType === 'individual') {
-          transferPurpose.value = 'personal';
-      } 
-      else {
-          transferPurpose.value = 'inter_company';
-      }
-  }
+  if (fromId === toId && fromType === toType) { transferPurpose.value = 'internal'; }
+  else { if (toType === 'individual') { transferPurpose.value = 'personal'; } else { transferPurpose.value = 'inter_company'; } }
 });
 
-/* 🟢 --- АВТОПОДСТАНОВКА --- */
 const isProgrammaticFrom = ref(false);
 const isProgrammaticTo = ref(false);
 
@@ -204,54 +163,23 @@ const showFromAccountSuggestions = ref(false);
 const fromAccountSuggestionsList = computed(() => {
     const query = newFromAccountName.value.trim().toLowerCase();
     if (query.length < 2) return [];
-    return accountSuggestions.filter(bank => {
-        if (bank.name.toLowerCase().includes(query)) return true;
-        if (bank.keywords && bank.keywords.some(k => k.startsWith(query))) return true;
-        return false;
-    }).slice(0, 4);
+    return accountSuggestions.filter(bank => bank.name.toLowerCase().includes(query) || (bank.keywords && bank.keywords.some(k => k.startsWith(query)))).slice(0, 4);
 });
-const selectFromAccountSuggestion = (bank) => {
-    isProgrammaticFrom.value = true;
-    newFromAccountName.value = bank.name;
-    showFromAccountSuggestions.value = false;
-    nextTick(() => { 
-        newFromAccountInput.value?.focus(); 
-        isProgrammaticFrom.value = false; 
-    });
-};
+const selectFromAccountSuggestion = (bank) => { isProgrammaticFrom.value = true; newFromAccountName.value = bank.name; showFromAccountSuggestions.value = false; nextTick(() => { newFromAccountInput.value?.focus(); isProgrammaticFrom.value = false; }); };
 const handleFromAccountBlur = () => { setTimeout(() => { showFromAccountSuggestions.value = false; }, 200); };
 const handleFromAccountFocus = () => { if (newFromAccountName.value.length >= 2) showFromAccountSuggestions.value = true; };
-watch(newFromAccountName, (val) => { 
-    if (isProgrammaticFrom.value) return; 
-    showFromAccountSuggestions.value = val.length >= 2; 
-});
+watch(newFromAccountName, (val) => { if (isProgrammaticFrom.value) return; showFromAccountSuggestions.value = val.length >= 2; });
 
 const showToAccountSuggestions = ref(false);
 const toAccountSuggestionsList = computed(() => {
     const query = newToAccountName.value.trim().toLowerCase();
     if (query.length < 2) return [];
-    return accountSuggestions.filter(bank => {
-        if (bank.name.toLowerCase().includes(query)) return true;
-        if (bank.keywords && bank.keywords.some(k => k.startsWith(query))) return true;
-        return false;
-    }).slice(0, 4);
+    return accountSuggestions.filter(bank => bank.name.toLowerCase().includes(query) || (bank.keywords && bank.keywords.some(k => k.startsWith(query)))).slice(0, 4);
 });
-const selectToAccountSuggestion = (bank) => {
-    isProgrammaticTo.value = true;
-    newToAccountName.value = bank.name;
-    showToAccountSuggestions.value = false;
-    nextTick(() => { 
-        newToAccountInput.value?.focus(); 
-        isProgrammaticTo.value = false; 
-    });
-};
+const selectToAccountSuggestion = (bank) => { isProgrammaticTo.value = true; newToAccountName.value = bank.name; showToAccountSuggestions.value = false; nextTick(() => { newToAccountInput.value?.focus(); isProgrammaticTo.value = false; }); };
 const handleToAccountBlur = () => { setTimeout(() => { showToAccountSuggestions.value = false; }, 200); };
 const handleToAccountFocus = () => { if (newToAccountName.value.length >= 2) showToAccountSuggestions.value = true; };
-watch(newToAccountName, (val) => { 
-    if (isProgrammaticTo.value) return; 
-    showToAccountSuggestions.value = val.length >= 2; 
-});
-/* ------------------------------------------- */
+watch(newToAccountName, (val) => { if (isProgrammaticTo.value) return; showToAccountSuggestions.value = val.length >= 2; });
 
 const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
 const handleToAccountChange = (val) => { if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } else { onToAccountSelected(val); } };
@@ -263,7 +191,6 @@ const onFromAccountSelected = (accountId) => {
   if (selectedAccount) {
     if (selectedAccount.companyId) { const cId = typeof selectedAccount.companyId === 'object' ? selectedAccount.companyId._id : selectedAccount.companyId; selectedFromOwner.value = `company-${cId}`; } 
     else if (selectedAccount.individualId) { const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId; selectedFromOwner.value = `individual-${iId}`; } 
-    else { selectedFromOwner.value = null; }
   } else { selectedFromOwner.value = null; }
 };
 
@@ -272,7 +199,6 @@ const onToAccountSelected = (accountId) => {
   if (selectedAccount) {
     if (selectedAccount.companyId) { const cId = typeof selectedAccount.companyId === 'object' ? selectedAccount.companyId._id : selectedAccount.companyId; selectedToOwner.value = `company-${cId}`; } 
     else if (selectedAccount.individualId) { const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId; selectedToOwner.value = `individual-${iId}`; } 
-    else { selectedToOwner.value = null; }
   } else { selectedToOwner.value = null; }
 };
 
@@ -286,12 +212,10 @@ onMounted(async () => {
     amount.value = formatNumber(Math.abs(transfer.amount));
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId;
     toAccountId.value = transfer.toAccountId?._id || transfer.toAccountId;
-    
     if (transfer.fromCompanyId) { const cId = transfer.fromCompanyId?._id || transfer.fromCompanyId; selectedFromOwner.value = `company-${cId}`; } 
     else if (transfer.fromIndividualId) { const iId = transfer.fromIndividualId?._id || transfer.fromIndividualId; selectedFromOwner.value = `individual-${iId}`; }
     if (transfer.toCompanyId) { const cId = transfer.toCompanyId?._id || transfer.toCompanyId; selectedToOwner.value = `company-${cId}`; } 
     else if (transfer.toIndividualId) { const iId = transfer.toIndividualId?._id || transfer.toIndividualId; selectedToOwner.value = `individual-${iId}`; }
-    
     categoryId.value = defaultCategoryId;
     if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
   } else {
@@ -301,12 +225,7 @@ onMounted(async () => {
 });
 
 const title = computed(() => { if (props.transferToEdit && !isCloneMode.value) return 'Редактировать перевод'; return 'Новый перевод'; });
-
-const buttonText = computed(() => { 
-    if (isCloneMode.value) return 'Создать копию перевода';
-    if (props.transferToEdit) return 'Сохранить'; 
-    return 'Добавить перевод'; 
-});
+const buttonText = computed(() => { if (isCloneMode.value) return 'Создать копию перевода'; if (props.transferToEdit) return 'Сохранить'; return 'Добавить перевод'; });
 
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 const onDeleteConfirmed = async () => {
@@ -327,7 +246,7 @@ const saveNewOwner = async () => {
     const newOwnerKey = `${type}-${newItem._id}`;
     if (target === 'from') selectedFromOwner.value = newOwnerKey; else selectedToOwner.value = newOwnerKey;
     showCreateOwnerModal.value = false; newOwnerName.value = '';
-  } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
+  } catch (e) { showError('Ошибка: '+e.message); } finally { isInlineSaving.value = false; }
 };
 
 const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
@@ -336,11 +255,9 @@ const saveNewFromAccount = async () => {
   if (isInlineSaving.value) return; const name = newFromAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
     let cId = null, iId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
-    const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
-    if (existing) { fromAccountId.value = existing._id; onFromAccountSelected(existing._id); } 
-    else { const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); fromAccountId.value = newItem._id; onFromAccountSelected(newItem._id); }
+    const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); fromAccountId.value = newItem._id; onFromAccountSelected(newItem._id);
     cancelCreateFromAccount(); 
-  } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
+  } catch (e) { showError(e.message); } finally { isInlineSaving.value = false; }
 };
 const showToAccountInput = () => { isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
 const cancelCreateToAccount = () => { isCreatingToAccount.value = false; newToAccountName.value = ''; };
@@ -348,20 +265,18 @@ const saveNewToAccount = async () => {
   if (isInlineSaving.value) return; const name = newToAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
     let cId = null, iId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
-    const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
-    if (existing) { toAccountId.value = existing._id; onToAccountSelected(existing._id); } 
-    else { const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); toAccountId.value = newItem._id; onToAccountSelected(newItem._id); }
+    const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); toAccountId.value = newItem._id; onToAccountSelected(newItem._id);
     cancelCreateToAccount(); 
-  } catch (e) { console.error(e); } finally { isInlineSaving.value = false; }
+  } catch (e) { showError(e.message); } finally { isInlineSaving.value = false; }
 };
 
 const handleSave = async () => {
   errorMessage.value = '';
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
   const amountParsed = parseFloat(cleanedAmount);
-  if (isNaN(amountParsed) || amountParsed <= 0) { errorMessage.value = 'Введите корректную сумму'; return; }
-  if (!fromAccountId.value || !toAccountId.value) { errorMessage.value = 'Выберите счета отправителя и получателя'; return; }
-  if (fromAccountId.value === toAccountId.value) { errorMessage.value = 'Счета не должны совпадать'; return; }
+  if (isNaN(amountParsed) || amountParsed <= 0) { showError('Введите корректную сумму'); return; }
+  if (!fromAccountId.value || !toAccountId.value) { showError('Выберите счета отправителя и получателя'); return; }
+  if (fromAccountId.value === toAccountId.value) { showError('Счета не должны совпадать'); return; }
 
   const isEdit = !!props.transferToEdit;
   const transferId = props.transferToEdit?._id;
@@ -371,11 +286,8 @@ const handleSave = async () => {
   let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
   
   let finalCategoryId = categoryId.value;
-  if (transferPurpose.value === 'inter_company') {
-      finalCategoryId = null;
-  }
+  if (transferPurpose.value === 'inter_company') { finalCategoryId = null; }
 
-  // Обновление привязок счетов (если они были изменены)
   const updates = [];
   if (fromAccountId.value && selectedFromOwner.value) {
       const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
@@ -383,11 +295,9 @@ const handleSave = async () => {
           const [type, id] = selectedFromOwner.value.split('-');
           const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
           const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          
           let needsUpdate = false;
           if (type === 'company' && currentCompId !== id) needsUpdate = true;
           if (type === 'individual' && currentIndId !== id) needsUpdate = true;
-          
           if (needsUpdate) {
               const updateData = { _id: acc._id, name: acc.name, order: acc.order };
               if (type === 'company') { updateData.companyId = id; updateData.individualId = null; }
@@ -402,11 +312,9 @@ const handleSave = async () => {
           const [type, id] = selectedToOwner.value.split('-');
           const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
           const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          
           let needsUpdate = false;
           if (type === 'company' && currentCompId !== id) needsUpdate = true;
           if (type === 'individual' && currentIndId !== id) needsUpdate = true;
-          
           if (needsUpdate) {
               const existing = updates.find(u => u._id === acc._id);
               if (!existing) {
@@ -418,29 +326,18 @@ const handleSave = async () => {
           }
       }
   }
-  if (updates.length > 0) {
-      await mainStore.batchUpdateEntities('accounts', updates);
-  }
+  if (updates.length > 0) { await mainStore.batchUpdateEntities('accounts', updates); }
 
-  // 🟢 ДОБАВЛЕНИЕ НАЛОГА К ПЕЙЛОАДУ
   let finalTaxAmount = 0;
-  if (taxCalculation.value) {
-      finalTaxAmount = taxCalculation.value.taxAmount;
-  }
+  if (taxCalculation.value) { finalTaxAmount = taxCalculation.value.taxAmount; }
 
   const transferPayload = { 
-      date: finalDate, 
-      amount: amountParsed, 
-      fromAccountId: fromAccountId.value, 
-      toAccountId: toAccountId.value, 
-      fromCompanyId: fromCompanyId, 
-      toCompanyId: toCompanyId, 
-      fromIndividualId: fromIndividualId, 
-      toIndividualId: toIndividualId, 
-      categoryId: finalCategoryId, 
-      transferPurpose: transferPurpose.value,
-      transferReason: null,
-      taxAmount: finalTaxAmount // 🟢
+      date: finalDate, amount: amountParsed, 
+      fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
+      fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
+      fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
+      categoryId: finalCategoryId, transferPurpose: transferPurpose.value,
+      transferReason: null, taxAmount: finalTaxAmount
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
@@ -451,114 +348,79 @@ const closePopup = () => { emit('close'); };
 
 <template>
   <div class="popup-overlay" @click.self="closePopup">
-    <div class="popup-content theme-edit">
+    <div class="popup-content theme-transfer">
       <h3>{{ title }}</h3>
 
       <template v-if="!showCreateOwnerModal">
-        
-        <!-- СУММА -->
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
              <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" />
           </div>
-        </div>
+      </div>
         
-        <!-- ОТПРАВИТЕЛЬ -->
-        <!-- 🟢 Добавлен BaseSelect с тултипами -->
         <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
         <div v-else class="inline-create-form input-spacing relative">
-          <input 
-            type="text" 
-            v-model="newFromAccountName" 
-            placeholder="Название счета" 
-            ref="newFromAccountInput" 
-            @keyup.enter="saveNewFromAccount" 
-            @keyup.esc="cancelCreateFromAccount" 
-            @blur="handleFromAccountBlur"
-            @focus="handleFromAccountFocus"
-          />
-          <button @click="saveNewFromAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateFromAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
-
-          <!-- 🟢 Suggestions List -->
+          <input type="text" v-model="newFromAccountName" placeholder="Название счета" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" />
+          <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
-              <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">
-                  {{ bank.name }}
-              </li>
+              <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">{{ bank.name }}</li>
           </ul>
         </div>
 
-        <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange" />
+        <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange">
+            <template #action-item>
+                <div class="dual-action-row">
+                    <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                    <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                </div>
+            </template>
+        </BaseSelect>
 
-        <!-- ПОЛУЧАТЕЛЬ -->
-        <!-- 🟢 Добавлен BaseSelect с тултипами -->
         <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
         <div v-else class="inline-create-form input-spacing relative">
-          <input 
-             type="text" 
-             v-model="newToAccountName" 
-             placeholder="Название счета" 
-             ref="newToAccountInput" 
-             @keyup.enter="saveNewToAccount" 
-             @keyup.esc="cancelCreateToAccount" 
-             @blur="handleToAccountBlur"
-             @focus="handleToAccountFocus"
-          />
-          <button @click="saveNewToAccount" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateToAccount" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
-          
-          <!-- 🟢 Suggestions List -->
+          <input type="text" v-model="newToAccountName" placeholder="Название счета" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" />
+          <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
-              <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">
-                  {{ bank.name }}
-              </li>
+              <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">{{ bank.name }}</li>
           </ul>
         </div>
 
-        <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" class="input-spacing" @change="handleToOwnerChange" />
+        <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" class="input-spacing" @change="handleToOwnerChange">
+            <template #action-item>
+                <div class="dual-action-row">
+                    <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                    <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                </div>
+            </template>
+        </BaseSelect>
 
-        <!-- ЦЕЛЬ -->
         <div class="input-spacing">
             <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" />
         </div>
 
-        <!-- 🟢 ИНФОРМАЦИЯ О НАЛОГЕ -->
         <div class="tax-info-box" v-if="taxCalculation">
-            <div class="tax-row">
-                <span class="tax-label">Сумма перевода:</span>
-                <span>{{ amount || 0 }} ₸</span>
-            </div>
-            <div class="tax-row">
-                <span class="tax-label">Налог ({{ taxCalculation.percent }}% от получателя):</span>
-                <span class="tax-val warn-text">{{ formatNumber(taxCalculation.taxAmount) }} ₸</span>
-            </div>
+            <div class="tax-row"><span class="tax-label">Сумма перевода:</span><span>{{ amount || 0 }} ₸</span></div>
+            <div class="tax-row"><span class="tax-label">Налог ({{ taxCalculation.percent }}% от получателя):</span><span class="tax-val warn-text">{{ formatNumber(taxCalculation.taxAmount) }} ₸</span></div>
             <div class="tax-divider"></div>
-            <div class="tax-row total">
-                <span class="tax-label">Будет начислено в налоги:</span>
-                <span>{{ formatNumber(taxCalculation.taxAmount) }} ₸</span>
-            </div>
+            <div class="tax-row total"><span class="tax-label">Будет начислено в налоги:</span><span>{{ formatNumber(taxCalculation.taxAmount) }} ₸</span></div>
             <p class="tax-hint">Сумма налога не списывается со счета автоматически.</p>
         </div>
 
-        <!-- ПОДСКАЗКА -->
-        <div class="hint-box" v-if="smartHint">
-            {{ smartHint }}
-        </div>
+        <div class="hint-box" v-if="smartHint">{{ smartHint }}</div>
         
-        <!-- ДАТА -->
         <div class="custom-input-box input-spacing has-value date-box">
            <div class="input-inner-content">
               <span class="floating-label">Дата перевода</span>
               <div class="date-display-row">
                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
                  <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" />
-                 <span class="calendar-icon">📅</span> 
+                 <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
               </div>
            </div>
         </div>
-
-        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
         <div class="popup-actions-row">
           <button @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving">
@@ -566,12 +428,8 @@ const closePopup = () => { emit('close'); };
           </button>
 
           <div v-if="props.transferToEdit && !isCloneMode" class="icon-actions">
-            <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving">
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg>
-            </button>
-            <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving">
-              <svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>
+            <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+            <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
           </div>
         </div>
       </template>
@@ -583,11 +441,10 @@ const closePopup = () => { emit('close'); };
             <button :class="{ active: ownerTypeToCreate === 'company' }" @click="setOwnerTypeToCreate('company')">Компанию</button>
             <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="setOwnerTypeToCreate('individual')">Физлицо</button>
           </div>
-          <label>Название</label>
           <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
           <div class="smart-create-actions">
-            <button @click="cancelCreateOwner" class="btn-submit btn-submit-secondary" :disabled="isInlineSaving">Отмена</button>
-            <button @click="saveNewOwner" class="btn-submit btn-submit-edit" :disabled="isInlineSaving">Создать</button>
+            <button @click="cancelCreateOwner" class="btn-modal-action btn-modal-cancel" :disabled="isInlineSaving">Отмена</button>
+            <button @click="saveNewOwner" class="btn-modal-action btn-modal-create" :disabled="isInlineSaving">Создать</button>
           </div>
         </div>
       </template>
@@ -595,71 +452,52 @@ const closePopup = () => { emit('close'); };
     </div>
   </div>
 
+  <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
   <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены, что хотите удалить этот перевод?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
 </template>
 
 <style scoped>
-/* (Стили не менялись) */
-.theme-edit { --focus-color: #222222; --focus-shadow: rgba(34, 34, 34, 0.2); }
+/* 🟢 CSS ПЕРЕМЕННЫЕ */
+.popup-content {
+    /* 🟢 Цвет ТЕМНО-СИНИЙ */
+    --color-transfer: #2F3340; 
+    --color-danger: #FF3B30;
+    /* 🟢 Передаем focus-color в BaseSelect */
+    --focus-color: #2F3340;
+    --focus-shadow: rgba(47, 51, 64, 0.2);
+    /* 🟢 SYSTEM APPLE FONT */
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+}
+:deep(*), :deep(input), :deep(button), :deep(select), :deep(textarea) { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
+.theme-edit { border-top: 4px solid var(--color-transfer); }
+.theme-transfer { border-top: 4px solid var(--color-transfer); }
+
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
-label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; font-size: 14px; font-weight: 500; }
 .hint-box { background-color: #E3F2FD; border: 1px solid #90CAF9; color: #0D47A1; padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; margin-bottom: 12px; }
+.tax-info-box { background-color: #FFF3E0; border: 1px solid #FFE0B2; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.tax-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; color: #555; }
+.tax-divider { height: 1px; background-color: #FFCC80; margin: 6px 0; }
+.total { font-weight: 700; font-size: 14px; color: #333; }
+.warn-text { color: #F59E0B; font-weight: 600; }
+.tax-hint { font-size: 11px; color: #888; margin-top: 8px; margin-bottom: 0; font-style: italic; }
 
-/* 🟢 Tax Info Box */
-.tax-info-box {
-    background-color: #FFF3E0;
-    border: 1px solid #FFE0B2;
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 12px;
-}
-.tax-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    margin-bottom: 4px;
-    color: #555;
-}
-.tax-divider {
-    height: 1px;
-    background-color: #FFCC80;
-    margin: 6px 0;
-}
-.total {
-    font-weight: 700;
-    font-size: 14px;
-    color: #333;
-}
-.warn-text {
-    color: #F59E0B;
-    font-weight: 600;
-}
-.tax-hint {
-    font-size: 11px;
-    color: #888;
-    margin-top: 8px;
-    margin-bottom: 0;
-    font-style: italic;
-}
-
-.fade-in { animation: fadeIn 0.3s ease-in-out; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-.custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; }
-.custom-input-box:focus-within { border-color: var(--focus-color, #222); box-shadow: 0 0 0 1px var(--focus-shadow, rgba(34,34,34,0.2)); }
-.custom-input-box:not(.has-value) .real-input { padding-top: 10px; }
+.custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
+/* 🟢 2. ФОКУС СУММЫ - ТЕМНО-СИНИЙ */
+.custom-input-box:focus-within { border-color: var(--color-transfer) !important; box-shadow: 0 0 0 1px var(--focus-shadow) !important; }
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; }
-.real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px; color: #1a1a1a; font-weight: 500; height: auto; line-height: 1.3; outline: none; }
-.real-input::placeholder { font-weight: 400; color: #aaa; }
+.real-input { width: 100%; border: none; background: transparent; padding: 0; font-size: 15px !important; color: #1a1a1a; font-weight: 500; height: auto; line-height: 1.3; outline: none; font-family: inherit; }
 .date-display-row { display: flex; justify-content: space-between; align-items: center; position: relative; width: 100%; }
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
-.calendar-icon { font-size: 16px; color: #999; }
+.calendar-icon-svg { width: 18px; height: 18px; stroke: #999; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
 .input-spacing { margin-bottom: 12px; }
 .form-input { width: 100%; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.form-input:focus { outline: none; border-color: #34C759; }
+.form-input:focus { outline: none; border-color: var(--color-transfer); }
 .error-message { color: #FF3B30; text-align: center; margin-top: 1rem; font-size: 14px; }
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
@@ -668,53 +506,53 @@ label { display: block; margin-bottom: 0.5rem; margin-top: 1rem; color: #333; fo
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }
 .delete-btn:hover { background: #FFF0F0; border-color: #FFD0D0; color: #FF3B30; }
 .delete-btn:hover .icon-stroke { stroke: #FF3B30; }
-.icon { width: 70%; height: 70%; fill: currentColor; display: block; pointer-events: none; }
+.icon { width: 20px; height: 20px; fill: currentColor; display: block; }
 .icon-stroke { width: 20px; height: 20px; stroke: #333; fill: none; transition: stroke 0.2s; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background-color 0.2s ease; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-submit-transfer { background-color: #2f3340; }
+.btn-submit-transfer { background-color: var(--color-transfer); }
 .btn-submit-transfer:hover:not(:disabled) { background-color: #2f3d6bff; }
-.btn-submit-edit {  }
-.btn-submit-edit:hover:not(:disabled) { background-color: #444444; }
-.btn-submit-secondary { background-color: #e0e0e0; color: #333; font-weight: 500; }
-.btn-submit-secondary:hover:not(:disabled) { background-color: #d1d1d1; }
+.btn-submit-edit { background-color: #444; }
+
+/* Inline Create */
+.inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
+.inline-create-form input:focus { outline: none; border-color: var(--color-transfer); }
+
+/* Buttons inline */
+.btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-transfer); color: var(--color-transfer); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+.btn-inline-save:hover { background-color: var(--color-transfer); color: #fff; }
+.btn-inline-cancel { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-danger); color: var(--color-danger); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+.btn-inline-cancel:hover { background-color: var(--color-danger); color: #fff; }
+
+/* Modal Buttons */
+.btn-modal-action { flex: 1; height: 48px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
+.btn-modal-cancel { background-color: #f0f0f0; color: #333; border: 1px solid #ddd; }
+.btn-modal-create { background-color: var(--color-transfer); color: white; } 
+.btn-modal-create:hover { background-color: #444; }
+
 .smart-create-owner { border-top: 1px solid #E0E0E0; margin-top: 1.5rem; padding-top: 1.5rem; }
 .smart-create-title { font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center; margin-top: 0; margin-bottom: 1.5rem; }
 .smart-create-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 1.5rem;  }
 .smart-create-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: 500; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #030303; cursor: pointer; transition: all 0.2s; }
-.smart-create-tabs button.active { background: #34C759; color: #FFFFFF;  }
+.smart-create-tabs button.active { background: #222; color: #FFFFFF; border-color: #222; }
 .smart-create-actions { display: flex; gap: 10px; margin-top: 1rem; }
-.smart-create-actions .btn-submit { flex: 1; }
 
-.inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
-.inline-create-form input:focus { outline: none; border-color: var(--focus-color, #222); }
-.inline-create-form button { flex-shrink: 0; border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer; height: 48px; width: 48px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
-.btn-inline-save { background-color: #34C759; }
-.btn-inline-cancel { background-color: #FF3B30; }
+/* Dual Action in Select */
+.dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-transfer); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; }
 
-/* 🟢 НОВЫЕ СТИЛИ ДЛЯ АВТОПОДСТАНОВКИ */
+/* Sticky buttons in list */
+:deep(.list-item-wrapper.is-action-row) { position: sticky; bottom: 0; z-index: 10; background-color: #fff; border-top: 1px solid #eee; }
+:deep(.list-item-wrapper.is-special) { color: var(--color-transfer); font-weight: 600; position: sticky !important; bottom: 0 !important; z-index: 10; background-color: #fff; border-top: 1px solid #eee; }
+:deep(.list-item-wrapper.is-special:hover) { background-color: #f0f8ff; }
+
 .relative { position: relative; }
-.bank-suggestions-list {
-    position: absolute;
-    top: 100%; left: 0; right: 0;
-    background: #fff;
-    border: 1px solid #E0E0E0;
-    border-top: none;
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    z-index: 2000;
-    list-style: none;
-    padding: 0; margin: 0;
-    max-height: 160px; overflow-y: auto;
-}
-.bank-suggestions-list li {
-    padding: 10px 14px;
-    font-size: 14px; color: #333;
-    cursor: pointer;
-    border-bottom: 1px solid #f5f5f5;
-}
+.bank-suggestions-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E0E0E0; border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); z-index: 2000; list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; }
+.bank-suggestions-list li { padding: 10px 14px; font-size: 14px; color: #333; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
 .bank-suggestions-list li:last-child { border-bottom: none; }
 .bank-suggestions-list li:hover { background-color: #f9f9f9; }
 </style>

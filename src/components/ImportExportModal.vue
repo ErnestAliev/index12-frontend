@@ -177,7 +177,7 @@ const systemFields = [
   { key: 'company', label: 'Компания/Физлицо', entity: 'companies', aliases: ['компания', 'company', 'мои компании', 'компания/физлицо'] },
   { key: 'description', label: 'Описание', entity: null, aliases: ['описание', 'description', 'назначение', 'комментарий'] },
   { key: 'status', label: 'Статус', entity: null, aliases: ['статус', 'status'] },
-  { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'мои физлица'] },
+  { key: 'individual', label: 'Физлицо', entity: 'individuals', aliases: ['физлицо', 'individual', 'физлица'] },
 ];
 
 const newEntities = ref({

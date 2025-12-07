@@ -35,12 +35,11 @@ import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v45.0 - TAX MODULE FINAL ---
- * * ВЕРСИЯ: 45.0
- * * ДАТА: 2025-12-05
+ * * --- МЕТКА ВЕРСИИ: v45.1 - RENAME INDIVIDUALS ---
+ * * ВЕРСИЯ: 45.1
+ * * ДАТА: 2025-12-07
  * * ИЗМЕНЕНИЯ:
- * 1. Подключены TaxListEditor и TaxPaymentPopup.
- * 2. Реализованы обработчики onTaxesAdd и onTaxesEdit.
+ * 1. (UI) Переименован заголовок виджета "Мои Физлица" -> "Физлица".
  */
 
 const mainStore = useMainStore();
@@ -407,7 +406,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
-          title="Мои счета"
+          title="Мои счета/Кассы"
           :items="loggedAccountBalances" emptyText="...счетов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="false"
@@ -449,9 +448,10 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
+        <!-- 🟢 ИСПРАВЛЕНИЕ: Переименовано "Мои Физлица" -> "Физлица" -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'individuals'"
-          title="Мои Физлица"
+          title="Физлица"
           :items="mergedIndividualBalances" emptyText="...физлиц нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="true"

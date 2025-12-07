@@ -18,7 +18,7 @@ function getViewModeInfo(mode) {
 }
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v95.0 (CREDIT LOGIC FIX) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v97.0 (EXCLUDED ACCOUNTS LOGIC) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -63,7 +63,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
-    { key: 'accounts',     name: 'Мои счета' },
+    { key: 'accounts',     name: 'Мои счета/кассы' }, 
     { key: 'companies',    name: 'Мои компании' },
     { key: 'taxes',        name: 'Мои налоги' }, 
     { key: 'credits',      name: 'Мои кредиты' }, 
@@ -75,7 +75,7 @@ export const useMainStore = defineStore('mainStore', () => {
     { key: 'expenseList',  name: 'Мои расходы' },
     { key: 'withdrawalList', name: 'Мои выводы' },
     { key: 'transfers',    name: 'Мои переводы' }, 
-    { key: 'individuals',  name: 'Мои Физлица' },
+    { key: 'individuals',  name: 'Физлица' },
     { key: 'categories',   name: 'Категории' },
   ]);
 
@@ -188,7 +188,6 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op) return false;
       if (op.type !== 'income') return false;
       const catId = op.categoryId?._id || op.categoryId;
-      // 🟢 FIX: Безопасное сравнение с creditCategoryId.value (может быть null)
       return catId && creditCategoryId.value && String(catId) === String(creditCategoryId.value);
   };
   
@@ -760,14 +759,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
-  // 🟢 FIX: Исключаем кредиты из списка доходов ("Мои доходы")
   const currentIncomes = computed(() => currentOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
       !_isPrepaymentOp(op) &&
-      !_isCreditIncome(op) // 🟢 Исключить кредиты
+      !_isCreditIncome(op) 
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -775,14 +773,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
-  // 🟢 FIX: Исключаем кредиты из списка будущих доходов
   const futureIncomes = computed(() => futureOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
       !_isPrepaymentOp(op) &&
-      !_isCreditIncome(op) // 🟢 Исключить кредиты
+      !_isCreditIncome(op)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
@@ -1025,16 +1022,36 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
+  // 🟢 1. ОБНОВЛЕНИЕ: Текущий Общий Баланс (Фильтрация исключенных счетов)
   const currentTotalBalance = computed(() => {
-      return currentAccountBalances.value.reduce((acc, a) => acc + (a.balance || 0), 0);
+      return currentAccountBalances.value.reduce((acc, a) => {
+          // Если счет помечен как исключенный — пропускаем
+          if (a.isExcluded) return acc;
+          return acc + (a.balance || 0);
+      }, 0);
   });
 
+  // 🟢 2. ОБНОВЛЕНИЕ: Будущий Общий Баланс (Фильтрация операций исключенных счетов)
   const futureTotalBalance = computed(() => {
+    // Начинаем с уже отфильтрованного текущего баланса
     let total = currentTotalBalance.value;
+    
+    // Создаем Set исключенных ID для быстрого поиска
+    const excludedIds = new Set();
+    accounts.value.forEach(a => {
+        if (a.isExcluded) excludedIds.add(String(a._id));
+    });
+
     for (const op of futureOps.value) {
         if (isTransfer(op)) continue; 
         if (!op.accountId) continue;
         if (op.isWorkAct) continue;
+        
+        // Получаем ID счета операции
+        const accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+        
+        // Если счет исключен — пропускаем операцию
+        if (excludedIds.has(String(accId))) continue;
         
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
@@ -1042,8 +1059,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
-  // --- OPTIMISTIC OPERATIONS ---
-
+  // ... (rest of the file content remains unchanged, including populateOp, CRUD, etc.)
   function _populateOp(op) {
       const populated = { ...op };
       
@@ -1209,8 +1225,6 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!dateKey) return;
     
     try {
-      // 🟢 OPTIMISTIC DELETE FOR TAXES
-      // Если это налог, удаляем и из списка taxes локально
       if (_isTaxPayment(operation)) {
           taxes.value = taxes.value.filter(t => {
               const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
@@ -1285,9 +1299,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
     } catch(e) { 
-        // 🟢 FIX: Handle 404/200 gracefully. If backend says deleted, we are good.
         if (e.response && (e.response.status === 404 || e.response.status === 200)) {
-            // Already deleted or handled. No need to refresh.
             return;
         }
         console.error("Optimistic Delete Failed:", e);

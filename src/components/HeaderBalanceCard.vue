@@ -85,9 +85,9 @@ const getStatusColor = (currentBalance, totalSystemBalance) => {
     return '#FF3B30';                   
 };
 
-// 🟢 НОВАЯ ЛОГИКА: Окрашивание будущего баланса на основе динамики
+// 3. ЛОГИКА ЦВЕТА БУДУЩЕГО БАЛАНСА
 const getFutureColor = (item) => {
-    // Если это режим дельты (например, контрагенты), оставляем старую логику (красный/зеленый от знака)
+    // Если это режим дельты (например, контрагенты), оставляем старую логику
     if (props.isDeltaMode) {
         if (item.futureBalance > 0) return 'income';
         if (item.futureBalance < 0) return 'expense';
@@ -293,6 +293,11 @@ const formatDelta = (val) => {
           >
              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
           </span>
+
+          <!-- 🟢 Иконка исключенного счета -->
+          <span v-if="item.isExcluded" class="excluded-icon" title="Исключен из общего баланса">
+             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+          </span>
         </span>
         
         <span v-if="!showFutureBalance" class="single-balance" :class="{ 'expense': item.balance < 0 }">
@@ -402,6 +407,8 @@ const formatDelta = (val) => {
 
 .link-icon { color: var(--color-primary); display: inline-flex; align-items: center; opacity: 0.6; cursor: help; }
 .link-icon:hover { opacity: 1; }
+
+.excluded-icon { color: #888; display: inline-flex; align-items: center; opacity: 0.8; cursor: help; }
 
 .current-cell { 
   color: var(--color-text); 

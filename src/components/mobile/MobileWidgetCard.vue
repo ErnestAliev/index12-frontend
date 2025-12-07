@@ -80,7 +80,7 @@ function filterAndSort(originalList) {
     else if (filterMode.value === 'negative') list = list.filter(i => getFilterValue(i) < 0);
     else if (filterMode.value === 'nonZero') list = list.filter(i => getFilterValue(i) !== 0);
 
-    const getSortVal = (i) => getFilterVal(i);
+    const getSortVal = (i) => getFilterValue(i);
     if (sortMode.value === 'desc') list.sort((a, b) => getSortVal(b) - getSortVal(a));
     else if (sortMode.value === 'asc') list.sort((a, b) => getSortVal(a) - getSortVal(b));
 
@@ -245,8 +245,15 @@ const cardStyleClass = computed(() => {
           <div class="col-center">
               <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
               {{ item.name }}
+              
+              <!-- 🟢 Иконка связанности -->
               <span v-if="item.isLinked" class="link-icon">
                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+              </span>
+
+              <!-- 🟢 Иконка исключенного счета -->
+              <span v-if="item.isExcluded" class="excluded-icon" title="Исключен из общего баланса">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
               </span>
           </div>
           
@@ -322,6 +329,9 @@ const cardStyleClass = computed(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .col-right { text-align: right; white-space: nowrap; font-weight: 600; }
@@ -335,4 +345,5 @@ const cardStyleClass = computed(() => {
 .more-text { font-size: 11px; color: #666; text-align: right; margin-top: 4px; }
 .color-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
 .link-icon { color: var(--color-primary, #34c759); opacity: 0.8; margin-left: 2px; }
+.excluded-icon { color: #888; opacity: 0.8; margin-left: 4px; }
 </style>
