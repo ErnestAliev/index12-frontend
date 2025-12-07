@@ -2,11 +2,12 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
- * * --- КОМПОНЕНТ: BaseSelect v4.3 - TOOLTIPS ---
- * * ВЕРСИЯ: 4.3
- * * ДАТА: 2025-12-05
+ * * --- КОМПОНЕНТ: BaseSelect v4.4 - MOBILE OPTIMIZED ---
+ * * ВЕРСИЯ: 4.4
+ * * ДАТА: 2025-12-08
  * * ИЗМЕНЕНИЯ:
- * 1. (FEAT) Добавлен атрибут :title="option.tooltip" для отображения подсказки при наведении.
+ * 1. (CSS) Добавлены медиа-запросы для уменьшения высоты до 44px на мобильных устройствах.
+ * 2. (CSS) Уменьшены отступы и шрифты для компактности.
  */
 
 const props = defineProps({
@@ -119,7 +120,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 /* ТРИГГЕР */
 .select-trigger {
   width: 100%;
-  height: 54px;
+  height: 54px; /* Дефолт для десктопа */
   padding: 0 14px;
   background: #FFFFFF;
   border: 1px solid #E0E0E0;
@@ -268,4 +269,26 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; transform-origin: top; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: scaleY(0.95); }
+
+/* 🟢 MOBILE OPTIMIZATION */
+@media (max-width: 600px), (max-height: 900px) {
+  .select-trigger {
+    height: 44px; /* Уменьшаем высоту */
+    padding: 0 10px;
+  }
+  .selected-text, .placeholder {
+    font-size: 13px; /* Чуть меньше шрифт */
+  }
+  .small-label {
+    font-size: 10px;
+    margin-bottom: -2px; /* Подтягиваем лейбл */
+  }
+  .filled-state {
+    padding-top: 2px;
+  }
+  .list-item-wrapper {
+    padding: 10px 12px; /* Уменьшаем отступы в списке */
+    font-size: 14px;
+  }
+}
 </style>
