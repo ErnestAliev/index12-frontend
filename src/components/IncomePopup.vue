@@ -10,11 +10,12 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v57.0 - MOBILE OPTIMIZED ---
- * * ВЕРСИЯ: 57.0
+ * * --- МЕТКА ВЕРСИИ: v57.2 - MOBILE WIDTH FIX FINAL ---
+ * * ВЕРСИЯ: 57.2
  * * ДАТА: 2025-12-08
  * * ИЗМЕНЕНИЯ:
- * 1. (CSS) Добавлены стили для мобильных устройств (высота полей 44px, уменьшенные отступы).
+ * 1. (CSS) Исправлена ширина попапа на мобильных: width: 100% для заполнения узких экранов,
+ * но возвращен max-width: 420px, чтобы не растягивало на планшетах.
  */
 
 const props = defineProps({
@@ -485,22 +486,13 @@ const saveNewCategory = async () => {
 };
 
 const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
-const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
+const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => {
     if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); if (!name) return;
     isInlineSaving.value = true; try { 
-        let newItem; if (ownerTypeToCreate.value === 'company') { const existing = mainStore.companies.find(c => c.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addCompany(name); } else { const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addIndividual(name); }
-        selectedOwner.value = `${ownerTypeToCreate.value}-${newItem._id}`; 
-        if (selectedAccountId.value) {
-            const currentAccount = mainStore.accounts.find(a => a._id === selectedAccountId.value);
-            if (currentAccount) {
-                const updateData = { _id: currentAccount._id, name: currentAccount.name, order: currentAccount.order };
-                if (ownerTypeToCreate.value === 'company') { updateData.companyId = newItem._id; updateData.individualId = null; } else { updateData.companyId = null; updateData.individualId = newItem._id; }
-                mainStore.batchUpdateEntities('accounts', [updateData]);
-            }
-        }
-        showCreateOwnerModal.value = false; newOwnerName.value = '';
-    } catch(e){ console.error(e); showError('Ошибка при создании владельца: ' + e.message); } finally { isInlineSaving.value = false; }
+        let item; if (ownerTypeToCreate.value === 'company') item = await mainStore.addCompany(name); else item = await mainStore.addIndividual(name);
+        selectedOwner.value = `${ownerTypeToCreate.value}-${item._id}`; showCreateOwnerModal.value = false;
+    } catch(e){ console.error(e); showError('Ошибка создания владельца: ' + e.message); } finally { isInlineSaving.value = false; }
 };
 
 const openCreateContractorModal = (type) => { contractorTypeToCreate.value = type; newContractorNameInput.value = ''; showCreateContractorModal.value = true; nextTick(() => newContractorInputRef.value?.focus()); };
@@ -508,9 +500,10 @@ const cancelCreateContractorModal = () => { showCreateContractorModal.value = fa
 const saveNewContractorModal = async () => {
     if (isInlineSaving.value) return; const name = newContractorNameInput.value.trim(); if (!name) return;
     isInlineSaving.value = true; try {
-        let newItem; if (contractorTypeToCreate.value === 'contractor') { const existing = mainStore.contractors.find(c => c.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addContractor(name); selectedContractorValue.value = `contr_${newItem._id}`; } else { const existing = mainStore.individuals.find(i => i.name.toLowerCase() === name.toLowerCase()); newItem = existing ? existing : await mainStore.addIndividual(name); selectedContractorValue.value = `ind_${newItem._id}`; }
-        showCreateContractorModal.value = false; newContractorNameInput.value = '';
-    } catch(e){ console.error(e); showError('Ошибка при создании контрагента: ' + e.message); } finally { isInlineSaving.value = false; }
+        let item; if (contractorTypeToCreate.value === 'contractor') { item = await mainStore.addContractor(name); selectedContractorValue.value = `contr_${item._id}`; } 
+        else { item = await mainStore.addIndividual(name); selectedContractorValue.value = `ind_${item._id}`; }
+        showCreateContractorModal.value = false;
+    } catch(e){ console.error(e); showError('Ошибка создания контрагента: ' + e.message); } finally { isInlineSaving.value = false; }
 };
 
 const handleMainAction = () => {
@@ -569,7 +562,7 @@ const handleSave = async () => {
 
 const handleCopyClick = () => { isCloneMode.value = true; nextTick(() => amountInput.value?.focus()); };
 const handleDeleteClick = () => { showDeleteConfirm.value = true; };
-const confirmDelete = () => { showDeleteConfirm.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); };
+const confirmDelete = () => { showDeleteConfirm.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); };
 
 onMounted(() => {
     isInitialLoad.value = true;
@@ -748,6 +741,7 @@ const closePopup = () => emit('close');
               </ul>
           </div>
           <div class="smart-create-actions">
+            <!-- 🟢 УНИФИЦИРОВАННЫЕ КНОПКИ -->
             <button @click="cancelCreateContractorModal" class="btn-modal-action btn-modal-cancel">Отмена</button>
             <button @click="saveNewContractorModal" class="btn-modal-action btn-modal-create">Создать</button>
           </div>
@@ -946,7 +940,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
   .popup-content {
     padding: 1.5rem; /* Reduced padding */
     margin: 1rem;
-   
+    width: 100%; /* 🟢 FIX: Force full width to prevent squashing */
     max-width: none;
   }
   h3 {

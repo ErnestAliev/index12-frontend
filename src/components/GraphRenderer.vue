@@ -8,8 +8,8 @@ import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, Li
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v55.0 - GRAPH RETAIL COLORS ---
- * * ВЕРСИЯ: 55.0 - Синхронизация цветов графика для Розницы
+ * * --- МЕТКА ВЕРСИИ: v56.0 - TAX TOOLTIP FIX ---
+ * * ВЕРСИЯ: 56.0 - Улучшенное отображение налогов в тултипах
  */
 
 const props = defineProps({
@@ -73,17 +73,27 @@ const summaries = computed(() => { if (!props.showSummaries) return []; if (!Arr
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
   const sortedOps = [...ops].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  
   return sortedOps.map(op => {
     if (op.isTransfer && !op.isWithdrawal) return null;
+    
+    // 🟢 Проверка на налог
+    const isTax = mainStore._isTaxPayment ? mainStore._isTaxPayment(op) : false;
     const isCredit = mainStore._isCreditIncome(op);
+    
     let catName = op.categoryId?.name || 'Без категории';
-    if (op.isClosed) { catName = 'Сделка закрыта (Факт)'; } 
+    
+    if (isTax) {
+        catName = 'Налог';
+    }
+    else if (op.isClosed) { 
+        catName = 'Сделка закрыта (Факт)'; 
+    } 
     else if (op.type === 'income' && !op.isClosed && !isCredit) { 
          const prepayIds = mainStore.getPrepaymentCategoryIds;
          const catId = op.categoryId?._id || op.categoryId;
          const prepId = op.prepaymentId?._id || op.prepaymentId;
          const isTranche = op.isDealTranche === true;
-         // 🟢 FIX: Проверка розничной предоплаты
          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
          const isRetailPrepay = indId && indId === mainStore.retailIndividualId;
 
@@ -93,6 +103,13 @@ const getTooltipOperationList = (ops) => {
     }
     if (isCredit) catName = 'Кредит';
     if (op.isWithdrawal) catName = 'Вывод средств';
+
+    // Компания для налога
+    let compName = '---';
+    if (isTax) {
+        compName = op.companyId?.name || op.individualId?.name || 'Компания';
+    }
+
     return {
       isIncome: op.type === 'income',
       accName: op.accountId?.name || '???',
@@ -100,7 +117,11 @@ const getTooltipOperationList = (ops) => {
       projName: op.projectId?.name || '---',
       catName: catName, 
       amount: op.amount,
-      isWithdrawal: op.isWithdrawal
+      isWithdrawal: op.isWithdrawal,
+      // 🟢 Новые поля для налога
+      isTax: isTax,
+      compName: compName,
+      desc: op.description
     };
   }).filter(Boolean);
 };
@@ -144,17 +165,14 @@ const chartData = computed(() => {
             const isPrepayCategory = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
             const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
             
-            // 🟢 FIX: Проверка розничной предоплаты (открыто = долг = оранжевый)
             const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
             const isRetailPrepay = retailId && indId === retailId && op.isClosed !== true;
 
             if (isCredit) {
                 creditOps.push(op); dayCreditSum += amt;
             } else if (!op.isClosed && (isTranche || isPrepayCategory || isRetailPrepay)) {
-                // Если открыто и похоже на сделку или розничный аванс -> Оранжевый
                 prepayOps.push(op); dayPrepaySum += amt;
             } else {
-                // Все остальное (в том числе закрытые розничные факты) -> Зеленый
                 incomeOps.push(op); dayIncomeSum += amt;
             }
         }
@@ -207,10 +225,25 @@ const chartOptions = computed(() => {
             lines.push('---'); 
             opsList.forEach(op => {
               const amountStr = formatNumber(Math.abs(op.amount)) + ' т';
-              const acc = op.accName || '???'; const cont = op.contName || '---'; const proj = op.projName || '---'; const cat = op.catName || 'Без кат.';
+              const acc = op.accName || '???'; 
+              const cont = op.contName || '---'; 
+              const proj = op.projName || '---'; 
+              const cat = op.catName || 'Без кат.';
+              
               lines.push('');
-              if (op.isIncome) lines.push(`${amountStr} < ${acc} < ${cont} < ${proj} < ${cat}`);
-              else { if (op.isWithdrawal) lines.push(`${amountStr} > ${acc} (Вывод средств)`); else lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`); }
+              
+              if (op.isTax) {
+                  // 🟢 Формат для налогов
+                  lines.push(`${amountStr} > Налог: ${op.compName}`);
+                  if (op.desc) lines.push(`(${op.desc})`);
+              }
+              else if (op.isIncome) {
+                  lines.push(`${amountStr} < ${acc} < ${cont} < ${proj} < ${cat}`);
+              }
+              else { 
+                  if (op.isWithdrawal) lines.push(`${amountStr} > ${acc} (Вывод средств)`); 
+                  else lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`); 
+              }
             });
             return lines;
           },
