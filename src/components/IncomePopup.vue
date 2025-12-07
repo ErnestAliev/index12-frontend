@@ -9,6 +9,14 @@ import { accountSuggestions } from '@/data/accountSuggestions.js';
 import { categorySuggestions } from '@/data/categorySuggestions.js'; 
 import { knownBanks } from '@/data/knownBanks.js'; 
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v57.0 - MOBILE OPTIMIZED ---
+ * * ВЕРСИЯ: 57.0
+ * * ДАТА: 2025-12-08
+ * * ИЗМЕНЕНИЯ:
+ * 1. (CSS) Добавлены стили для мобильных устройств (высота полей 44px, уменьшенные отступы).
+ */
+
 const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
@@ -757,11 +765,9 @@ const closePopup = () => emit('close');
             <div class="choice-actions">
                 <button class="btn-choice-option" @click="handleCashChoice('regular')">
                     <span class="opt-title">Обычная касса</span>
-                    
                 </button>
                 <button class="btn-choice-option" @click="handleCashChoice('special')">
                     <span class="opt-title">Особая касса</span>
-                  
                 </button>
             </div>
             <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
@@ -932,7 +938,47 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 }
 .btn-choice-option:hover { background: #f0f8ff; border-color: #28B8A0; }
 .opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
-.opt-sub { font-size: 11px; color: #888; }
 .btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
 .btn-cancel-link:hover { color: #555; }
+
+/* 🟢 MOBILE OPTIMIZATION */
+@media (max-width: 600px), (max-height: 900px) {
+  .popup-content {
+    padding: 1.5rem; /* Reduced padding */
+    margin: 1rem;
+    width: auto;
+    max-width: none;
+  }
+  h3 {
+    font-size: 18px;
+    margin-bottom: 1rem;
+  }
+  .custom-input-box {
+    height: 44px; /* Reduced height */
+  }
+  .input-spacing {
+    margin-bottom: 8px; /* Reduced spacing */
+  }
+  .btn-submit, .btn-modal-action, .btn-inline-save, .btn-inline-cancel {
+    height: 44px; /* Reduced button height */
+    font-size: 15px;
+  }
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .form-input {
+    height: 44px;
+  }
+  .floating-label {
+    font-size: 10px;
+    margin-bottom: 0;
+  }
+  .real-input {
+    font-size: 14px !important;
+  }
+  .popup-actions-row {
+    margin-top: 1.5rem;
+  }
+}
 </style>
