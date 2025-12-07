@@ -4,14 +4,13 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.0 - RETAIL COLORS ---
- * * ВЕРСИЯ: 3.0 - Цвета для Розницы (Факт vs Предоплата)
- * * ДАТА: 2025-12-03
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. Логика `isClosedDealOp`: Теперь если это Розница + Закрыто -> Зеленый, но БЕЗ галочки.
- * 2. Логика `isPrepaymentOp`: Розница + Открыто -> Оранжевый (Предоплата).
- * 3. `chipLabel`: Убрана галочка '✓' для розничных закрытых сделок (просто доход).
+ * * --- МЕТКА ВЕРСИИ: v3.2 - SMART CLEAN DESCRIPTION ---
+ * * ВЕРСИЯ: 3.2
+ * * ДАТА: 2025-12-08
+ * * ИСПРАВЛЕНИЯ:
+ * 1. (LOGIC) Обновлена cleanDescription. Теперь она использует безопасный regex ^[\d\s]+\s.
+ * Это удаляет "Сумму" (цифры с пробелами в начале), но только если после них есть пробел.
+ * Текст "2-й транш" (где после цифры идет дефис) останется нетронутым.
  */
 
 const props = defineProps({
@@ -96,6 +95,15 @@ const toOwnerName = computed(() => {
   return op.toAccountId?.name || 'Счет...';
 });
 
+// 🟢 Хелпер для очистки текста от суммы
+// Пример 1: "50 000 2-й транш" -> удаляет "50 000 " (т.к. есть пробел) -> "2-й транш"
+// Пример 2: "2-й транш" -> не удаляет "2" (т.к. после него нет пробела, а дефис) -> "2-й транш"
+const cleanDescription = (desc) => {
+    if (!desc) return '';
+    const cleaned = desc.replace(/^[\d\s]+\s/, '').trim();
+    return cleaned || desc;
+};
+
 const chipLabel = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -109,13 +117,16 @@ const chipLabel = computed(() => {
   }
 
   if (op.isDealTranche === true) {
-      if (op.description && op.description.includes('транш')) return op.description;
+      if (op.description && op.description.includes('транш')) {
+          // 🟢 Применяем умную очистку
+          return cleanDescription(op.description);
+      }
       return 'Транш';
   }
   
   if (isPrepaymentOp.value) {
       if (isRetailClient.value) return 'Предоплата (Розница)';
-      return op.description && op.description.includes('транш') ? op.description : 'Предоплата';
+      return op.description && op.description.includes('транш') ? cleanDescription(op.description) : 'Предоплата';
   }
   
   if (isTechnicalOp.value) return op.description || 'Отработали';

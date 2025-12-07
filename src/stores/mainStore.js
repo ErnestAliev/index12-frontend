@@ -26,7 +26,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v100.0 (TOGGLE EXCLUDED) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v101.0 (REFACTOR DEAL LOGIC) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -279,6 +279,7 @@ export const useMainStore = defineStore('mainStore', () => {
       return Array.from(map.values());
   });
 
+  // 🟢 РЕФАКТОРИНГ: Добавлена логика сброса при закрытой сделке
   function getProjectDealStatus(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
       if (!projectId) return { debt: 0, activeTranche: null, totalDeal: 0, paidTotal: 0, tranchesCount: 0 };
 
@@ -302,13 +303,40 @@ export const useMainStore = defineStore('mainStore', () => {
           return true;
       });
       
-      projectOps.sort((a, b) => new Date(a.date) - new Date(b.date));
+      // 🟢 FIX: Усиленная сортировка.
+      // Сначала по Дате. Если даты равны - по cellIndex (позиции в дне).
+      // Это гарантирует, что старая закрытая сделка (индекс 0) обработается ДО новой (индекс 1).
+      projectOps.sort((a, b) => {
+          const timeA = new Date(a.date).getTime();
+          const timeB = new Date(b.date).getTime();
+          if (timeA !== timeB) return timeA - timeB;
+          
+          const cellA = a.cellIndex !== undefined ? a.cellIndex : -1;
+          const cellB = b.cellIndex !== undefined ? b.cellIndex : -1;
+          if (cellA !== cellB) return cellA - cellB;
+          
+          return (a._id || '').toString().localeCompare((b._id || '').toString());
+      });
 
       projectOps.forEach(op => {
+          // 🟢 ЛОГИКА: Накапливаем данные
           tranchesCount++;
           if ((op.totalDealAmount || 0) > maxTotalDeal) maxTotalDeal = op.totalDealAmount;
           paidTotal += (op.amount || 0);
-          if (!op.isClosed) activeTranche = op;
+          
+          if (!op.isClosed) {
+              activeTranche = op;
+          }
+
+          // 🟢 РЕФАКТОРИНГ: Если текущая операция закрыта (isClosed === true),
+          // это означает, что сделка на этом этапе завершена.
+          // Мы сбрасываем счетчики, чтобы любые СЛЕДУЮЩИЕ операции считались началом НОВОЙ сделки.
+          if (op.isClosed) {
+              maxTotalDeal = 0;
+              paidTotal = 0;
+              tranchesCount = 0;
+              activeTranche = null;
+          }
       });
 
       let debt = Math.max(0, maxTotalDeal - paidTotal);
