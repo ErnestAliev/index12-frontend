@@ -11,6 +11,14 @@ import { accountSuggestions } from '@/data/accountSuggestions.js';
 import { categorySuggestions } from '@/data/categorySuggestions.js'; 
 import { knownBanks } from '@/data/knownBanks.js'; 
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v58.0 - MOBILE OPTIMIZED ---
+ * * ВЕРСИЯ: 58.0
+ * * ДАТА: 2025-12-08
+ * * ИЗМЕНЕНИЯ:
+ * 1. (CSS) Добавлены стили для мобильных устройств (высота полей 44px, уменьшенные отступы).
+ */
+
 const mainStore = useMainStore();
 const props = defineProps({
   date: { type: Date, required: true },
@@ -155,7 +163,7 @@ const selectCategorySuggestion = (c) => {
 };
 const handleCategoryInputBlur = () => { setTimeout(() => { showCategorySuggestions.value = false; }, 200); };
 const handleCategoryInputFocus = () => { if (newCategoryName.value.length >= 2) showCategorySuggestions.value = true; };
-watch(newCategoryName, (val) => { if (!isProgrammaticCategory.value) showCategorySuggestions.value = val.length >= 2; });
+watch(newCategoryName, (val) => { if (isProgrammaticCategory.value) return; showCategorySuggestions.value = val.length >= 2; });
 
 const getOwnerName = (acc) => {
     if (acc.companyId) {
@@ -180,8 +188,8 @@ const accountOptions = computed(() => {
     tooltip: getOwnerName(acc), 
     isSpecial: false
   }));
-  // 🟢 Sticky Create Button via Slot now
-  opts.push({ isActionRow: true });
+  // 🟢 Sticky options теперь через slot #action-item
+  opts.push({ isActionRow: true }); 
   return opts;
 });
 
@@ -905,4 +913,11 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
 .btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
 .btn-cancel-link:hover { color: #555; }
+
+/* 🟢 Dual Action in Select */
+.dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-withdrawal); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; }
 </style>

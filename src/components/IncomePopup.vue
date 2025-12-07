@@ -946,7 +946,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
   .popup-content {
     padding: 1.5rem; /* Reduced padding */
     margin: 1rem;
-    width: auto;
+   
     max-width: none;
   }
   h3 {

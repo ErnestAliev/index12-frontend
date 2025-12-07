@@ -8,12 +8,11 @@ import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v29.0 - CASH REGISTER LOGIC ---
- * * ВЕРСИЯ: 29.0
- * * ДАТА: 2025-12-07
+ * * --- МЕТКА ВЕРСИИ: v29.1 - MOBILE OPTIMIZED ---
+ * * ВЕРСИЯ: 29.1
+ * * ДАТА: 2025-12-08
  * * ИЗМЕНЕНИЯ:
- * 1. (FEAT) Добавлен выбор "Создать кассу" (Обычная/Особая) для обоих полей счетов.
- * 2. (LOGIC) Поддержка флага isExcluded при создании счета.
+ * 1. (CSS) Добавлены стили для мобильных устройств (высота полей 44px, уменьшенные отступы).
  */
 
 const mainStore = useMainStore();
@@ -711,4 +710,58 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
 .btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
 .btn-cancel-link:hover { color: #555; }
+
+/* 🟢 MOBILE OPTIMIZATION */
+@media (max-width: 600px), (max-height: 900px) {
+  .popup-content {
+    padding: 1.5rem;
+    margin: 1rem;
+    width: auto;
+    max-width: none;
+  }
+  h3 {
+    font-size: 18px;
+    margin-bottom: 1rem;
+  }
+  .custom-input-box {
+    height: 44px;
+  }
+  .input-spacing {
+    margin-bottom: 8px;
+  }
+  .btn-submit, .btn-modal-action, .btn-inline-save, .btn-inline-cancel {
+    height: 44px;
+    font-size: 15px;
+  }
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .form-input {
+    height: 44px;
+  }
+  .floating-label {
+    font-size: 10px;
+    margin-bottom: 0;
+  }
+  .real-input {
+    font-size: 14px !important;
+  }
+  .popup-actions-row {
+    margin-top: 1.5rem;
+  }
+  /* Specific to Transfer Popup */
+  .hint-box {
+    font-size: 12px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  .tax-info-box {
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  .tax-row {
+    font-size: 12px;
+  }
+}
 </style>
