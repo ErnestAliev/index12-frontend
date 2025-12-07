@@ -51,6 +51,9 @@ const financialStats = computed(() => {
     const sourceAccounts = mainStore.currentAccountBalances || [];
 
     sourceAccounts.forEach(acc => {
+        // 🟢 Исключаем из базы для расчета цвета, если счет скрыт
+        if (acc.isExcluded && !mainStore.includeExcludedInTotal) return;
+
         const rawBalance = Number(acc.balance);
         const balance = isNaN(rawBalance) ? 0 : rawBalance; 
         
@@ -87,29 +90,27 @@ const getStatusColor = (currentBalance, totalSystemBalance) => {
 
 // 3. ЛОГИКА ЦВЕТА БУДУЩЕГО БАЛАНСА
 const getFutureColor = (item) => {
-    // Если это режим дельты (например, контрагенты), оставляем старую логику
     if (props.isDeltaMode) {
         if (item.futureBalance > 0) return 'income';
         if (item.futureBalance < 0) return 'expense';
         return '';
     }
 
-    // Для счетов и компаний сравниваем Будущее с Текущим
     const current = Number(item.balance) || 0;
     const future = Number(item.futureBalance) || 0;
 
-    // Рост -> Зеленый
     if (future > current) return 'income';
-    // Падение -> Красный
     if (future < current) return 'expense';
     
-    // Без изменений -> Нейтральный (светлый)
     return '';
 };
 
 const processedItems = computed(() => {
   let items = [...props.items];
   
+  // 🟢 УБРАНА ФИЛЬТРАЦИЯ ИСКЛЮЧЕННЫХ СЧЕТОВ
+  // Теперь они всегда видны в списке, меняется только иконка и цвет
+
   if (filterMode.value === 'positive') items = items.filter(item => (item.balance || 0) > 0);
   else if (filterMode.value === 'negative') items = items.filter(item => (item.balance || 0) < 0);
   else if (filterMode.value === 'nonZero') items = items.filter(item => (item.balance || 0) !== 0);
@@ -236,6 +237,24 @@ const formatDelta = (val) => {
       <div class="card-title">{{ props.title }}</div>
 
       <div class="card-actions">
+        <!-- 🟢 НОВАЯ КНОПКА (ТОЛЬКО ДЛЯ СЧЕТОВ) -->
+        <button 
+            v-if="props.widgetKey === 'accounts'" 
+            class="action-square-btn" 
+            :class="{ active: mainStore.includeExcludedInTotal }" 
+            @click.stop="mainStore.toggleExcludedInclusion()" 
+            title="Учитывать скрытые счета"
+        >
+            <svg v-if="mainStore.includeExcludedInTotal" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="icon-svg">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="icon-svg">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+        </button>
+
         <button class="action-square-btn" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
           <img :src="filterIcon" alt="Filter" class="icon-svg" />
         </button>
@@ -294,9 +313,18 @@ const formatDelta = (val) => {
              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
           </span>
 
-          <!-- 🟢 Иконка исключенного счета -->
-          <span v-if="item.isExcluded" class="excluded-icon" title="Исключен из общего баланса">
-             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+          <!-- 🟢 Иконка исключенного счета (Динамическая) -->
+          <span v-if="item.isExcluded" class="excluded-icon" :class="{ 'included-now': mainStore.includeExcludedInTotal }" :title="mainStore.includeExcludedInTotal ? 'Временно включен в расчет' : 'Исключен из общего баланса'">
+             <!-- Если включен учет скрытых - зеленый глаз -->
+             <svg v-if="mainStore.includeExcludedInTotal" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                 <circle cx="12" cy="12" r="3"></circle>
+             </svg>
+             <!-- Иначе - перечеркнутый глаз -->
+             <svg v-else xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                 <line x1="1" y1="1" x2="23" y2="23"></line>
+             </svg>
           </span>
         </span>
         
@@ -408,7 +436,8 @@ const formatDelta = (val) => {
 .link-icon { color: var(--color-primary); display: inline-flex; align-items: center; opacity: 0.6; cursor: help; }
 .link-icon:hover { opacity: 1; }
 
-.excluded-icon { color: #888; display: inline-flex; align-items: center; opacity: 0.8; cursor: help; }
+.excluded-icon { color: #888; display: inline-flex; align-items: center; opacity: 0.8; cursor: help; transition: all 0.2s; }
+.excluded-icon.included-now { color: var(--color-primary); opacity: 1; text-shadow: 0 0 5px rgba(52, 199, 89, 0.4); }
 
 .current-cell { 
   color: var(--color-text); 
@@ -437,7 +466,8 @@ const formatDelta = (val) => {
 
 @media (max-height: 900px) {
   .dashboard-card { padding-right: 1rem; }
-  .card-item { font-size: var(--font-xs); }
+  .card-title { font-size: 0.8em; }
+  .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .card-items-list.forecast-mode { font-size: var(--font-xs); }
 }
 </style>

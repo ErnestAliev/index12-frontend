@@ -26,7 +26,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v99.0 (EXCLUDED ACCOUNTS SUPPORT) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v100.0 (TOGGLE EXCLUDED) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -34,8 +34,18 @@ export const useMainStore = defineStore('mainStore', () => {
   const widgetSortMode = ref('default'); 
   const widgetFilterMode = ref('all');   
 
+  // 🟢 НОВОЕ СОСТОЯНИЕ: Учитывать ли исключенные счета в общем балансе
+  const savedIncludeExcluded = localStorage.getItem('includeExcludedInTotal');
+  const includeExcludedInTotal = ref(savedIncludeExcluded === 'true');
+
   function setWidgetSortMode(mode) { widgetSortMode.value = mode; }
   function setWidgetFilterMode(mode) { widgetFilterMode.value = mode; }
+  
+  // 🟢 НОВОЕ ДЕЙСТВИЕ: Переключение учета исключенных счетов
+  function toggleExcludedInclusion() {
+      includeExcludedInTotal.value = !includeExcludedInTotal.value;
+      localStorage.setItem('includeExcludedInTotal', String(includeExcludedInTotal.value));
+  }
 
   const snapshot = ref({
     totalBalance: 0,
@@ -1047,7 +1057,8 @@ export const useMainStore = defineStore('mainStore', () => {
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => {
           // 🟢 1. Исключаем счета, помеченные isExcluded
-          if (a.isExcluded) return acc;
+          // 🟢 100.0: Новая логика - если флаг выключен (false), исключаем. Если включен, суммируем всё.
+          if (!includeExcludedInTotal.value && a.isExcluded) return acc;
           return acc + (a.balance || 0);
       }, 0);
   });
@@ -1068,8 +1079,8 @@ export const useMainStore = defineStore('mainStore', () => {
         
         const accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
         
-        // 🟢 3. Пропускаем операции по исключенным счетам
-        if (excludedIds.has(String(accId))) continue;
+        // 🟢 3. Пропускаем операции по исключенным счетам, если флаг НЕ включен
+        if (!includeExcludedInTotal.value && excludedIds.has(String(accId))) continue;
         
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
@@ -2201,6 +2212,10 @@ export const useMainStore = defineStore('mainStore', () => {
     
     calculateTaxForPeriod,
     createTaxPayment,
-    _isTaxPayment
+    _isTaxPayment,
+    
+    // 🟢 НОВЫЕ ПОЛЯ ДЛЯ TOGGLE
+    includeExcludedInTotal,
+    toggleExcludedInclusion
   };
 });

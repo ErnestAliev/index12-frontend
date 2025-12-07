@@ -197,27 +197,32 @@ const handleShowMenu = (payload) => {
         selectedDate.value = payload.date || new Date(); 
         selectedCellIndex.value = payload.cellIndex || 0; 
         
-        // Позиционируем меню
+        // 🟢 РЕФАКТОРИНГ: Центрирование меню по горизонтали
+        // И сохранение динамики по вертикали (рядом с пальцем)
+        
         const e = payload.event;
+        let topStyle = '30%'; // Значение по умолчанию
+        
         if (e) {
             // Для touch событий берем первые координаты
-            const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
             const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
             
-            // Расчет позиции (с отступом от пальца, чтобы не перекрывать)
-            let left = clientX - 100; // Центрируем (ширина меню ~200)
-            let top = clientY - 150;  // Показываем выше пальца
+            // Расчет позиции (чуть выше пальца, чтобы не перекрывать)
+            let top = clientY - 150; 
             
-            // Проверка границ экрана
-            if (left < 10) left = 10;
-            if (left + 200 > window.innerWidth) left = window.innerWidth - 210;
-            if (top < 50) top = clientY + 30; // Если сверху мало места, показываем снизу
+            // Если слишком близко к верхнему краю, показываем под пальцем
+            if (top < 50) top = clientY + 30;
             
-            contextMenuPosition.value = { top: `${top}px`, left: `${left}px` };
-        } else {
-            // Фолбэк в центр
-            contextMenuPosition.value = { top: '30%', left: '50%', transform: 'translateX(-50%)' };
-        }
+            topStyle = `${top}px`;
+        } 
+        
+        contextMenuPosition.value = { 
+            top: topStyle, 
+            left: '50%', 
+            transform: 'translateX(-50%)', // Центрирование по ширине
+            position: 'fixed', // Гарантия, что позиционируется от окна
+            zIndex: '9999'
+        };
         
         isContextMenuVisible.value = true;
     } 
@@ -295,6 +300,26 @@ const handleAction = () => {};
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
+                    <!-- 🟢 НОВАЯ КНОПКА: Учет скрытых счетов -->
+                    <button 
+                        v-if="activeWidgetKey === 'accounts'" 
+                        class="action-square-btn" 
+                        :class="{ active: mainStore.includeExcludedInTotal }" 
+                        @click="mainStore.toggleExcludedInclusion()" 
+                        title="Учитывать скрытые счета"
+                    >
+                        <!-- Иконка: Глаз (Открыт/Включено) -->
+                        <svg v-if="mainStore.includeExcludedInTotal" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <!-- Иконка: Глаз перечеркнут (Скрыто) -->
+                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                    </button>
+
                     <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' || sortMode !== 'default' }" @click.stop="toggleFilter" title="Фильтр"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>
                 </div>
@@ -308,7 +333,17 @@ const handleAction = () => {};
                            <div class="fs-val" :class="item.isIncome ? 'green-text' : 'red-text'">{{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸</div>
                        </template>
                        <template v-else>
-                           <div class="fs-name-col"><div class="fs-name-row"><span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span><span class="fs-name">{{ item.name }}</span><span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span></div><div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div><div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">{{ item.regime }} {{ item.percent }}%</div></div>
+                           <div class="fs-name-col"><div class="fs-name-row"><span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span><span class="fs-name">{{ item.name }}</span><span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
+                           <!-- 🟢 Иконка исключенного счета (Динамическая) -->
+                           <span v-if="item.isExcluded" class="excluded-icon" :class="{ 'included-now': mainStore.includeExcludedInTotal }" title="Исключен из общего баланса" style="margin-left: 6px;">
+                                <svg v-if="mainStore.includeExcludedInTotal" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                           </span>
+                           </div><div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div><div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">{{ item.regime }} {{ item.percent }}%</div></div>
                            <div class="fs-val-block"><div v-if="!showFutureBalance" class="fs-val" :class="getValueClass(item.currentBalance, activeWidgetKey)">{{ formatVal(item.currentBalance) }}</div><div v-else class="fs-val-forecast"><span class="fs-curr" :class="getValueClass(item.currentBalance, activeWidgetKey)">{{ formatVal(item.currentBalance) }}</span><span class="fs-arrow">></span><span v-if="isWidgetDeltaMode" class="fs-fut" :class="getDeltaClass(item.futureChange, activeWidgetKey)">{{ formatDelta(item.futureChange) }}</span><span v-else class="fs-fut" :class="Number(item.futureBalance) < 0 ? 'red-text' : 'white-text'">{{ formatVal(item.futureBalance) }}</span></div></div>
                        </template>
                     </div>
@@ -406,6 +441,9 @@ const handleAction = () => {};
 .fs-sub-text-small { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-right: 8px; }
 .link-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #34c759; }
+.excluded-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #888; transition: all 0.2s; }
+.excluded-icon.included-now { color: #34c759; opacity: 1; text-shadow: 0 0 5px rgba(52, 199, 89, 0.4); }
+
 .red-text { color: #ff3b30 !important; }
 .green-text { color: #34c759 !important; }
 .white-text { color: #fff !important; }

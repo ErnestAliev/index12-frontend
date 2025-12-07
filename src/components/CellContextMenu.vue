@@ -27,6 +27,9 @@ const emit = defineEmits(['select']);
   padding: 6px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
   z-index: 1001;
+  /* 🟢 FIX: Запрет переноса строк и сжатия */
+  white-space: nowrap;
+  width: max-content;
 }
 
 .context-menu button {
@@ -36,6 +39,9 @@ const emit = defineEmits(['select']);
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.9em;
+  /* 🟢 FIX: Текст внутри кнопки тоже не должен переноситься */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-income {
