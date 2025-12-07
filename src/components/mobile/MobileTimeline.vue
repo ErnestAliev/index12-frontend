@@ -3,7 +3,8 @@ import { ref, onMounted, watch, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import MobileDayColumn from './MobileDayColumn.vue';
 
-const emit = defineEmits(['show-menu']);
+// 🟢 FIX: Добавлен 'drop-operation' в emits
+const emit = defineEmits(['show-menu', 'drop-operation']);
 const mainStore = useMainStore();
 
 const allDays = ref([]);
@@ -12,7 +13,6 @@ const visibleDays = ref([]);
 const scrollContainer = ref(null);
 const windowWidth = ref(window.innerWidth);
 
-// 🟢 ФИКСИРОВАННАЯ ШИРИНА КОЛОНКИ: 25vw
 const COL_WIDTH_VW = 25; 
 const BUFFER_COLS = 4;
 
@@ -49,7 +49,6 @@ const generateAllDays = () => {
   }
   
   allDays.value = days;
-  // Не вызываем updateVisibleDays здесь напрямую, чтобы не конфликтовать со scrollToDate
 };
 
 const currentPaddingLeft = ref(0);
@@ -59,7 +58,6 @@ const updateVisibleDays = () => {
   
   const scrollLeft = scrollContainer.value.scrollLeft;
   const containerW = scrollContainer.value.clientWidth || windowWidth.value;
-  // Рассчитываем ширину колонки в пикселях на основе ширины окна
   const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
   
   if (!colWidthPx) return;
@@ -99,33 +97,22 @@ const scrollToDate = (targetDate) => {
     
     let idx = allDays.value.findIndex(d => sameDay(d.date, targetDate));
     
-    // Если точной даты нет, ищем "Сегодня" или середину
     if (idx === -1) idx = allDays.value.findIndex(d => d.isToday);
     if (idx === -1) idx = Math.floor(allDays.value.length / 2);
     
     const el = scrollContainer.value;
     const colWidthPx = (el.clientWidth / 100) * COL_WIDTH_VW;
     
-    // Центрируем: (индекс * ширина) - (половина экрана) + (половина колонки)
     let scrollPos = (idx * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
     
     el.scrollLeft = Math.max(0, scrollPos);
-    
-    // Принудительно обновляем видимые дни после скролла
     updateVisibleDays();
 };
 
-// 🟢 ГЛАВНЫЙ ФИКС: При изменении проекции (переключении режима)
 watch(() => mainStore.projection, async () => {
   generateAllDays();
-  
-  await nextTick(); // Ждем рендера DOM
-  
-  // Добавляем небольшой таймаут, чтобы дать браузеру пересчитать ширину контейнера
-  // Это помогает при резком изменении количества колонок (365 -> 12)
+  await nextTick(); 
   setTimeout(() => {
-      // Принудительно скроллим к текущей дате из стора (которую мы установили в ChartControls)
-      // или к "Сегодня", если дата потерялась
       if (mainStore.currentViewDate) { 
           scrollToDate(new Date(mainStore.currentViewDate)); 
       } else { 
@@ -158,6 +145,7 @@ const gridStyle = computed(() => ({
     <div class="timeline-scroll-area scroll-touch" ref="scrollContainer" @scroll="onScroll">
       <div class="timeline-wrapper" :style="{ width: `${allDays.length * COL_WIDTH_VW}vw` }">
         <div class="timeline-grid" :style="gridStyle">
+          <!-- 🟢 FIX: Пробрасываем @drop-operation наверх -->
           <MobileDayColumn 
             v-for="day in visibleDays"
             :key="day.dateKey"
@@ -165,6 +153,7 @@ const gridStyle = computed(() => ({
             :is-today="day.isToday"
             :date-key="day.dateKey"
             @show-menu="(payload) => emit('show-menu', payload)"
+            @drop-operation="(payload) => emit('drop-operation', payload)"
           />
         </div>
       </div>
@@ -186,12 +175,9 @@ const gridStyle = computed(() => ({
   height: 100%;
   overflow-x: auto; 
   overflow-y: hidden;
-  
-  /* 🟢 FIX: Инерция и правильная обработка тачей для iOS */
   -webkit-overflow-scrolling: touch; 
   overscroll-behavior-x: contain;
   touch-action: pan-x;
-  
   scrollbar-width: none; 
 }
 .timeline-scroll-area::-webkit-scrollbar { display: none; }

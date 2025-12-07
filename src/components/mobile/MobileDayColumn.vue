@@ -9,8 +9,8 @@ const props = defineProps({
   dateKey: { type: String, required: true }
 });
 
-// 🟢 Обновили emit
-const emit = defineEmits(['show-menu']); 
+// 🟢 FIX: Добавлен 'drop-operation' в emits
+const emit = defineEmits(['show-menu', 'drop-operation']); 
 const mainStore = useMainStore();
 
 const operations = computed(() => {
@@ -33,9 +33,7 @@ const headerDate = computed(() => {
   return props.date.toLocaleString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
 });
 
-// 🟢 Обработчик клика из ячейки
 const handleShowMenu = (payload) => {
-    // Добавляем дату в payload, так как ячейка знает только dateKey
     emit('show-menu', { ...payload, date: props.date });
 };
 </script>
@@ -44,13 +42,15 @@ const handleShowMenu = (payload) => {
   <div class="mobile-day-col" :class="{ today: isToday }">
     <div class="day-header">{{ headerDate }}</div>
     <div class="day-body">
+      <!-- 🟢 FIX: Пробрасываем @drop-operation наверх -->
       <MobileHourCell 
         v-for="cell in cells" 
         :key="cell.id"
         :operation="cell.operation"
         :date-key="dateKey"
         :cell-index="cell.id"
-        @show-menu="handleShowMenu" 
+        @show-menu="handleShowMenu"
+        @drop-operation="(payload) => emit('drop-operation', payload)"
       />
     </div>
   </div>
@@ -63,7 +63,7 @@ const handleShowMenu = (payload) => {
   height: 100%;
   border-right: 1px solid var(--color-border, #444);
   background-color: var(--color-background-soft, #282828);
-  min-width: 0; /* Важно для Grid */
+  min-width: 0; 
 }
 
 .day-header {
@@ -72,7 +72,7 @@ const handleShowMenu = (payload) => {
   color: #888;
   padding: 8px 4px;
   border-bottom: 1px solid var(--color-border, #444);
-  background-color: var(--color-background, #1a1a1a); /* Чуть темнее фон заголовка */
+  background-color: var(--color-background, #1a1a1a);
   font-weight: 500;
   text-transform: lowercase;
 }
@@ -84,8 +84,7 @@ const handleShowMenu = (payload) => {
 
 .day-body {
   flex-grow: 1;
-  overflow-y: auto; /* Внутренний скролл колонки, если операций много (хотя мы ограничены высотой контейнера) */
-  /* Скрываем скроллбар внутри колонки */
+  overflow-y: auto; 
   scrollbar-width: none; 
 }
 .day-body::-webkit-scrollbar { display: none; }

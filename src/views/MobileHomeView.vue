@@ -23,6 +23,8 @@ import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import InfoModal from '@/components/InfoModal.vue';
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
+// 🟢 ИМПОРТ ГЛОБАЛЬНОГО МЕНЮ
+import CellContextMenu from '@/components/CellContextMenu.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -33,7 +35,9 @@ const timelineRef = ref(null);
 const chartRef = ref(null);
 
 const showGraphModal = ref(false);
-const isDataLoaded = ref(false); // Флаг загрузки данных для графиков
+
+const isWidgetsLoading = ref(true); 
+const isTimelineLoading = ref(true);
 
 // Состояния попапов
 const isIncomePopupVisible = ref(false);
@@ -60,6 +64,10 @@ const selectedCellIndex = ref(0);
 const showInfoModal = ref(false);
 const infoModalTitle = ref('');
 const infoModalMessage = ref('');
+
+// 🟢 СОСТОЯНИЕ КОНТЕКСТНОГО МЕНЮ
+const isContextMenuVisible = ref(false);
+const contextMenuPosition = ref({ top: '0px', left: '0px' });
 
 // --- Scroll Sync Logic ---
 let isTimelineScrolling = false;
@@ -90,9 +98,24 @@ const initScrollSync = () => {
     }
 };
 
-// --- Lifecycle ---
+const loadBackgroundData = async (today) => {
+    isWidgetsLoading.value = true;
+    try {
+        await mainStore.fetchAllEntities();
+    } catch (e) { console.error("Widgets Load Error:", e); } finally { isWidgetsLoading.value = false; }
+
+    isTimelineLoading.value = true;
+    try {
+        if (!mainStore.projection?.mode) { await mainStore.updateFutureProjectionByMode('12d', today); }
+        const modeToLoad = mainStore.projection.mode || '12d';
+        await mainStore.loadCalculationData(modeToLoad, today);
+    } catch (e) { console.error("Timeline Load Error:", e); } finally {
+        isTimelineLoading.value = false;
+        nextTick(() => { initScrollSync(); });
+    }
+};
+
 onMounted(async () => {
-  // Мета-тег для мобилок
   const meta = document.createElement('meta');
   meta.name = "format-detection";
   meta.content = "telephone=no, date=no, email=no, address=no";
@@ -101,24 +124,12 @@ onMounted(async () => {
   try {
       await mainStore.checkAuth();
       if (!mainStore.user) return;
-      await mainStore.fetchAllEntities();
-      
       const today = new Date();
-      // Устанавливаем "сегодня" в стор
       const startOfYear = new Date(today.getFullYear(), 0, 0);
       const diff = (today - startOfYear) + ((startOfYear.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
       const oneDay = 1000 * 60 * 60 * 24;
       mainStore.setToday(Math.floor(diff / oneDay));
-
-      // Загружаем проекцию
-      if (!mainStore.projection?.mode) { await mainStore.updateFutureProjectionByMode('12d', today); }
-      const modeToLoad = mainStore.projection.mode || '12d';
-      await mainStore.loadCalculationData(modeToLoad, today);
-      
-      // Включаем рендер графиков
-      isDataLoaded.value = true; 
-      
-      nextTick(() => { initScrollSync(); });
+      loadBackgroundData(today);
   } catch (error) { console.error("Mobile View Mount Error:", error); }
 });
 
@@ -128,7 +139,6 @@ onUnmounted(() => {
     document.removeEventListener('mousedown', handleFilterClickOutside);
 });
 
-// --- Widget Fullscreen Logic ---
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
@@ -141,46 +151,17 @@ const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''
 const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
 const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
 
-const updateFilterPosition = () => {
-  if (filterBtnRef.value) {
-    const rect = filterBtnRef.value.getBoundingClientRect();
-    filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` };
-  }
-};
-
+const updateFilterPosition = () => { if (filterBtnRef.value) { const rect = filterBtnRef.value.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } };
 const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { nextTick(() => updateFilterPosition()); } isFilterOpen.value = true; } };
-
-const handleFilterClickOutside = (event) => {
-  const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target);
-  const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target);
-  if (!insideTrigger && !insideDropdown) { isFilterOpen.value = false; }
-};
-
-watch(isFilterOpen, (isOpen) => {
-  if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('mousedown', handleFilterClickOutside); window.addEventListener('scroll', updateFilterPosition, true); }); } 
-  else { document.removeEventListener('mousedown', handleFilterClickOutside); window.removeEventListener('scroll', updateFilterPosition, true); }
-});
-
+const handleFilterClickOutside = (event) => { const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target); const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target); if (!insideTrigger && !insideDropdown) { isFilterOpen.value = false; } };
+watch(isFilterOpen, (isOpen) => { if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('mousedown', handleFilterClickOutside); window.addEventListener('scroll', updateFilterPosition, true); }); } else { document.removeEventListener('mousedown', handleFilterClickOutside); window.removeEventListener('scroll', updateFilterPosition, true); } });
 const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; 
 const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
-
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });
-
-// Color Helpers
-const getValueClass = (val, widgetKey) => {
-    const num = Number(val) || 0;
-    if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'white-text';
-    if (num < 0) return 'red-text';
-    return 'white-text'; 
-};
-const getDeltaClass = (val, widgetKey) => {
-    const num = Number(val) || 0;
-    if (num === 0) return 'white-text'; 
-    if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'green-text';
-    return num > 0 ? 'green-text' : 'red-text';
-};
+const getValueClass = (val, widgetKey) => { const num = Number(val) || 0; if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'white-text'; if (num < 0) return 'red-text'; return 'white-text'; };
+const getDeltaClass = (val, widgetKey) => { const num = Number(val) || 0; if (num === 0) return 'white-text'; if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'green-text'; return num > 0 ? 'green-text' : 'red-text'; };
 
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
@@ -188,22 +169,13 @@ const activeWidgetItems = computed(() => {
       const items = getWidgetItems(k, showFutureBalance.value);
       let filtered = [...items];
       const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
-      
       if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); 
       else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); 
       else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
-      
-      if (k === 'companies') {
-          filtered = filtered.map(i => ({
-              ...i,
-              subName: i.linkTooltip ? i.linkTooltip.replace('Счета: ', '') : ''
-          }));
-      }
-
+      if (k === 'companies') { filtered = filtered.map(i => ({ ...i, subName: i.linkTooltip ? i.linkTooltip.replace('Счета: ', '') : '' })); }
       const getSortVal = (i) => getFilterVal(i);
       if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a)); 
       else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
-      
       return filtered;
   } else {
       let list = []; if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes; else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses; else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals; else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
@@ -212,43 +184,72 @@ const activeWidgetItems = computed(() => {
   }
 });
 const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; }; const onWidgetClick = (key) => { activeWidgetKey.value = key; };
-
-const formatVal = (val) => {
-    const num = Number(val) || 0;
-    const formatted = formatNumber(Math.abs(num));
-    if (num === 0) return `${formatted} ₸`;
-    if (num < 0) return `- ${formatted} ₸`;
-    return `₸ ${formatted}`;
-};
-const formatDelta = (val) => {
-    const num = Number(val) || 0;
-    if (num === 0) return '0 ₸';
-    const formatted = formatNumber(Math.abs(num));
-    if (num > 0) return `+ ${formatted} ₸`;
-    return `- ${formatted} ₸`;
-};
+const formatVal = (val) => { const num = Number(val) || 0; const formatted = formatNumber(Math.abs(num)); if (num === 0) return `${formatted} ₸`; if (num < 0) return `- ${formatted} ₸`; return `₸ ${formatted}`; };
+const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); if (num > 0) return `+ ${formatted} ₸`; return `- ${formatted} ₸`; };
 const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
-
 const _parseDateKey = (dateKey) => { if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); const [year, doy] = dateKey.split('-').map(Number); if (isNaN(year) || isNaN(doy)) return new Date(); const date = new Date(year, 0, 1); date.setDate(doy); return date; };
 
-// --- Handlers ---
-const handleShowMenu = (payload) => { if (payload.operation) { handleEditOperation(payload.operation); } else { selectedDate.value = payload.date || new Date(); selectedCellIndex.value = payload.cellIndex || 0; isIncomePopupVisible.value = true; } };
-const handleAction = (actionType) => {};
+// 🟢 ОБРАБОТЧИК КЛИКА ПО ЯЧЕЙКЕ (ОТКРЫТИЕ МЕНЮ)
+const handleShowMenu = (payload) => { 
+    if (payload.operation) { 
+        handleEditOperation(payload.operation); 
+    } else { 
+        selectedDate.value = payload.date || new Date(); 
+        selectedCellIndex.value = payload.cellIndex || 0; 
+        
+        // Позиционируем меню
+        const e = payload.event;
+        if (e) {
+            // Для touch событий берем первые координаты
+            const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+            
+            // Расчет позиции (с отступом от пальца, чтобы не перекрывать)
+            let left = clientX - 100; // Центрируем (ширина меню ~200)
+            let top = clientY - 150;  // Показываем выше пальца
+            
+            // Проверка границ экрана
+            if (left < 10) left = 10;
+            if (left + 200 > window.innerWidth) left = window.innerWidth - 210;
+            if (top < 50) top = clientY + 30; // Если сверху мало места, показываем снизу
+            
+            contextMenuPosition.value = { top: `${top}px`, left: `${left}px` };
+        } else {
+            // Фолбэк в центр
+            contextMenuPosition.value = { top: '30%', left: '50%', transform: 'translateX(-50%)' };
+        }
+        
+        isContextMenuVisible.value = true;
+    } 
+};
+
+// 🟢 ВЫБОР ДЕЙСТВИЯ В МЕНЮ
+const handleContextMenuSelect = (type) => {
+    isContextMenuVisible.value = false;
+    operationToEdit.value = null; 
+
+    if (type === 'income') isIncomePopupVisible.value = true;
+    else if (type === 'expense') isExpensePopupVisible.value = true;
+    else if (type === 'transfer') isTransferPopupVisible.value = true;
+};
+
+// 🟢 РЕДАКТИРОВАНИЕ ОПЕРАЦИИ (КЛИК ПО ЧИПУ - ПОКА ОТКЛЮЧЕН)
 const handleEditOperation = (operation) => { 
-    operationToEdit.value = operation; 
-    const opDate = _parseDateKey(operation.dateKey); 
-    selectedDate.value = opDate; 
-    selectedCellIndex.value = operation.cellIndex; 
+    // console.log("Редактирование отключено для режима 'Только перемещение'");
+    // Разблокировать этот блок, если нужно вернуть редактирование по клику
+    return; 
+};
+
+const handleOperationDrop = async (dropData) => {
+    const { operation, toDateKey, toCellIndex } = dropData;
+    if (!operation || !toDateKey) return;
+    const oldDateKey = operation.dateKey;
+    // Если ничего не поменялось - выходим
+    if (oldDateKey === toDateKey && operation.cellIndex === toCellIndex) return;
     
-    if (mainStore._isTaxPayment(operation)) { isTaxDetailsPopupVisible.value = true; return; } 
-    if (mainStore._isRetailWriteOff(operation)) { isRetailPopupVisible.value = true; return; } 
-    const catId = operation.categoryId?._id || operation.categoryId; 
-    if (mainStore.refundCategoryId && catId === mainStore.refundCategoryId) { isRefundPopupVisible.value = true; return; } 
-    
-    if (operation.type === 'transfer' || operation.isTransfer) { isTransferPopupVisible.value = true; } 
-    else if (operation.isWithdrawal) { isWithdrawalPopupVisible.value = true; } 
-    else if (operation.type === 'income') { isIncomePopupVisible.value = true; } 
-    else if (operation.type === 'expense') { isExpensePopupVisible.value = true; } 
+    try { 
+        await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex); 
+    } catch(e) { console.error("Drop Error:", e); }
 };
 
 const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
@@ -269,11 +270,11 @@ const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePo
 const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
 const handleWithdrawalSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isWithdrawalPopupVisible.value = false; } catch (e) { console.error("Mobile Withdrawal Save Error", e); alert("Ошибка сохранения"); } };
 const handleOperationDelete = async (operation) => { if (!operation) return; await mainStore.deleteOperation(operation); handleClosePopup(); };
-
+const handleAction = () => {}; 
 </script>
 
 <template>
-  <div class="mobile-layout">
+  <div class="mobile-layout" @click="isContextMenuVisible = false">
     
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>
@@ -281,131 +282,57 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
     </div>
 
     <div v-else-if="!mainStore.user" class="login-screen">
-      <!-- (Login box skipped for brevity, same as desktop) -->
+      <div class="login-box">
+          <h1>Управляйте финансами легко INDEX12.COM</h1>
+          <a href="/auth/google" class="google-login-button">Войти через Google</a>
+      </div>
     </div>
 
     <template v-else>
-        <!-- Fullscreen Widget Mode (Overlay) -->
+        <!-- Fullscreen Widget Overlay (без изменений) -->
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
+             <!-- ... (код виджета) ... -->
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
-                    <button 
-                        v-if="!isListWidget" 
-                        ref="filterBtnRef" 
-                        class="action-square-btn" 
-                        :class="{ active: isFilterOpen || filterMode !== 'all' || sortMode !== 'default' }" 
-                        @click.stop="toggleFilter" 
-                        title="Фильтр"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                    </button>
-                    <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-                    </button>
+                    <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' || sortMode !== 'default' }" @click.stop="toggleFilter" title="Фильтр"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
+                    <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>
                 </div>
             </div>
-            
             <div class="fs-body">
                 <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
                 <div class="fs-list">
                     <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="handleItemClick(item)">
-                       <!-- LIST ITEM -->
                        <template v-if="item.isList">
-                           <div class="fs-item-left">
-                               <div class="fs-date">{{ formatDateShort(item.date) }}</div>
-                               <div class="fs-info-col">
-                                   <div class="fs-name-text">{{ item.name }}</div>
-                                   <div class="fs-sub-text" v-if="item.subName">{{ item.subName }}</div>
-                               </div>
-                           </div>
-                           <div class="fs-val" :class="item.isIncome ? 'green-text' : 'red-text'">
-                               {{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸
-                           </div>
+                           <div class="fs-item-left"><div class="fs-date">{{ formatDateShort(item.date) }}</div><div class="fs-info-col"><div class="fs-name-text">{{ item.name }}</div><div class="fs-sub-text" v-if="item.subName">{{ item.subName }}</div></div></div>
+                           <div class="fs-val" :class="item.isIncome ? 'green-text' : 'red-text'">{{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸</div>
                        </template>
-                       <!-- ENTITY ITEM -->
                        <template v-else>
-                           <div class="fs-name-col">
-                                <div class="fs-name-row">
-                                    <span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span>
-                                    <span class="fs-name">{{ item.name }}</span>
-                                    <span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;">
-                                        <!-- 🟢 FIXED SVG -->
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                                    </span>
-                                </div>
-                                <div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div>
-                                <div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">
-                                    {{ item.regime }} {{ item.percent }}%
-                                </div>
-                           </div>
-                           <div class="fs-val-block">
-                               <!-- 🟢 1. ФАКТ (CurrentBalance) -->
-                               <div v-if="!showFutureBalance" class="fs-val" :class="getValueClass(item.currentBalance, activeWidgetKey)">
-                                   {{ formatVal(item.currentBalance) }}
-                               </div>
-                               <!-- 🟢 2. ПРОГНОЗ -->
-                               <div v-else class="fs-val-forecast">
-                                   <!-- Текущее -->
-                                   <span class="fs-curr" :class="getValueClass(item.currentBalance, activeWidgetKey)">
-                                       {{ formatVal(item.currentBalance) }}
-                                   </span>
-                                   
-                                   <span class="fs-arrow">></span>
-                                   
-                                   <!-- Дельта -->
-                                   <span v-if="isWidgetDeltaMode" class="fs-fut" :class="getDeltaClass(item.futureChange, activeWidgetKey)">
-                                       {{ formatDelta(item.futureChange) }}
-                                   </span>
-                                   
-                                   <!-- Итог -->
-                                   <span v-else class="fs-fut" :class="Number(item.futureBalance) < 0 ? 'red-text' : 'white-text'">
-                                       {{ formatVal(item.futureBalance) }}
-                                   </span>
-                               </div>
-                           </div>
+                           <div class="fs-name-col"><div class="fs-name-row"><span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span><span class="fs-name">{{ item.name }}</span><span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span></div><div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div><div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">{{ item.regime }} {{ item.percent }}%</div></div>
+                           <div class="fs-val-block"><div v-if="!showFutureBalance" class="fs-val" :class="getValueClass(item.currentBalance, activeWidgetKey)">{{ formatVal(item.currentBalance) }}</div><div v-else class="fs-val-forecast"><span class="fs-curr" :class="getValueClass(item.currentBalance, activeWidgetKey)">{{ formatVal(item.currentBalance) }}</span><span class="fs-arrow">></span><span v-if="isWidgetDeltaMode" class="fs-fut" :class="getDeltaClass(item.futureChange, activeWidgetKey)">{{ formatDelta(item.futureChange) }}</span><span v-else class="fs-fut" :class="Number(item.futureBalance) < 0 ? 'red-text' : 'white-text'">{{ formatVal(item.futureBalance) }}</span></div></div>
                        </template>
                     </div>
                 </div>
             </div>
-            <div class="fs-footer">
-                <button class="btn-back" @click="handleWidgetBack">Назад</button>
-            </div>
-            <Teleport to="body">
-              <div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @mousedown.stop @click.stop>
-                <div class="filter-group"><div class="filter-group-title">Сортировка</div><ul><li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li><li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li></ul></div>
-                <div class="filter-group"><div class="filter-group-title">Фильтр</div><ul><li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li><li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li><li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li><li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li></ul></div>
-              </div>
-            </Teleport>
+            <div class="fs-footer"><button class="btn-back" @click="handleWidgetBack">Назад</button></div>
+            <Teleport to="body"><div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @mousedown.stop @click.stop><div class="filter-group"><div class="filter-group-title">Сортировка</div><ul><li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li><li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li></ul></div><div class="filter-group"><div class="filter-group-title">Фильтр</div><ul><li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li><li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li><li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li><li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li></ul></div></div></Teleport>
         </div>
 
         <div class="main-content-view">
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body">
-              <!-- Виджеты -->
-              <MobileWidgetGrid 
-                class="section-widgets" 
-                :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" 
-                @widget-click="onWidgetClick" 
-              />
+              <MobileWidgetGrid class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
               
-              <!-- Timeline Section -->
               <div class="section-timeline" v-show="!mainStore.isHeaderExpanded">
-                <MobileTimeline 
-                    v-if="isDataLoaded" 
-                    ref="timelineRef" 
-                    @show-menu="handleShowMenu" 
-                />
+                <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
+                <!-- 🟢 FIX: Прокидываем событие дропа -->
+                <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
               
-              <!-- Chart Section -->
               <div class="section-chart" v-show="!mainStore.isHeaderExpanded">
-                <MobileChartSection 
-                    v-if="isDataLoaded" 
-                    ref="chartRef" 
-                    @scroll="onChartScroll" 
-                />
+                <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
+                <MobileChartSection v-else ref="chartRef" @scroll="onChartScroll" />
               </div>
             </div>
             
@@ -414,6 +341,13 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
             </div>
         </div>
     </template>
+
+    <!-- 🟢 ГЛОБАЛЬНОЕ МЕНЮ (ДЛЯ ПУСТЫХ ЯЧЕЕК) -->
+    <CellContextMenu 
+        v-if="isContextMenuVisible" 
+        :style="contextMenuPosition" 
+        @select="handleContextMenuSelect" 
+    />
 
     <!-- Popups -->
     <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
@@ -434,11 +368,12 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
 .mobile-layout { height: 100vh; height: 100dvh; width: 100vw; background-color: var(--color-background, #1a1a1a); display: flex; flex-direction: column; overflow: hidden; }
 .loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
 .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
+.section-loading { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+.spinner-small { width: 20px; height: 20px; border: 2px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .login-screen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #1a1a1a; padding: 20px; box-sizing: border-box; }
 .login-box { width: 100%; max-width: 320px; text-align: center; }
 .login-box h1 { color: #fff; font-size: 24px; margin-bottom: 10px; font-weight: 700; }
-.login-box p { color: #888; font-size: 14px; margin-bottom: 30px; }
 .google-login-button { display: block; width: 100%; padding: 12px; background: #fff; color: #333; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
 .dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
 
@@ -447,7 +382,6 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
 .fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--color-border, #444); background-color: var(--color-background-soft, #282828); }
 .fs-title { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
 .fs-controls { display: flex; gap: 8px; }
-
 .action-square-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
 .action-square-btn:hover { background-color: #555; color: #ccc; }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
@@ -455,10 +389,8 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
 .fs-body::-webkit-scrollbar { display: none; }
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
 .fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; min-height: 44px;}
-
 .fs-name-row { display: flex; align-items: center; overflow: hidden; width: 100%; }
 .fs-name-col { display: flex; flex-direction: column; overflow: hidden; flex: 1; justify-content: center; }
-
 .fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-val-block { display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px; }
 .fs-val { font-size: 14px; color: #fff; font-weight: 700; white-space: nowrap; }
@@ -480,66 +412,17 @@ const handleOperationDelete = async (operation) => { if (!operation) return; awa
 .fs-empty { text-align: center; color: #666; margin-top: 50px; }
 .fs-footer { padding: 15px 20px; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
 .btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
-
-/* Layout */
-.main-content-view {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  width: 100%;
-  height: 100%;
-}
-
+.main-content-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; width: 100%; height: 100%; }
 .fixed-header, .fixed-footer { flex-shrink: 0; }
-.layout-body {
-    flex-grow: 1; 
-    display: flex; 
-    flex-direction: column; 
-    overflow: hidden; 
-    min-height: 0;
-    position: relative; 
-}
-
-.section-widgets { 
-    width: 100%;
-    flex-shrink: 0; 
-    flex-basis: auto;
-    max-height: 60vh; 
-    overflow-y: auto; 
-    scrollbar-width: none; 
-    -webkit-overflow-scrolling: touch; 
-    overscroll-behavior: contain; 
-}
-
-.section-widgets.expanded-widgets {
-    flex: 1 1 0px; 
-    min-height: 0; 
-    height: auto;
-    max-height: none;
-    padding-bottom: 80px;
-}
-
-:deep(.widgets-grid) {
-    align-content: start !important;
-    min-height: min-content; 
-}
-
+.layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; position: relative; }
+.section-widgets { width: 100%; flex-shrink: 0; flex-basis: auto; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.section-widgets.expanded-widgets { flex: 1 1 0px; min-height: 0; height: auto; max-height: none; padding-bottom: 80px; }
+:deep(.widgets-grid) { align-content: start !important; min-height: min-content; }
 .section-widgets::-webkit-scrollbar { display: none; }
 .section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
 .section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
 .fixed-footer { flex-shrink: 0; z-index: 200; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
-
-.fs-regime-badge {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-weight: 700;
-    text-transform: uppercase;
-    margin-top: 3px;
-    display: inline-block;
-    width: fit-content;
-}
+.fs-regime-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; text-transform: uppercase; margin-top: 3px; display: inline-block; width: fit-content; }
 .badge-upr { background-color: rgba(52, 199, 89, 0.15); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.3); }
 .badge-our { background-color: rgba(255, 157, 0, 0.15); color: #FF9D00; border: 1px solid rgba(255, 157, 0, 0.3); }
 </style>

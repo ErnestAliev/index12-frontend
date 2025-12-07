@@ -1,12 +1,16 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v52.0 - MOBILE RETAIL COLORS ---
- * * ВЕРСИЯ: 52.0 - Синхронизация цветов для мобильной версии
- * * ДАТА: 2025-12-03
+ * * --- МЕТКА ВЕРСИИ: v3.3 - DRAG FIX & MENU ---
+ * * ВЕРСИЯ: 3.3
+ * * ДАТА: 2025-12-07
+ * * ИСПРАВЛЕНИЯ:
+ * 1. (FIX DROP) В onTouchEnd исходный элемент временно скрывается (display: none),
+ * чтобы document.elementFromPoint мог найти ячейку под ним.
+ * 2. (FIX) onAddClick передает event для позиционирования меню.
  */
 
 const props = defineProps({
@@ -15,9 +19,10 @@ const props = defineProps({
   cellIndex: { type: Number, required: true }
 });
 
+const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation', 'show-menu']);
 const mainStore = useMainStore();
 
-/* Логика определения типов операций */
+/* --- ЛОГИКА ТИПОВ ОПЕРАЦИЙ (Без изменений) --- */
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
@@ -36,7 +41,6 @@ const isRetailClient = computed(() => {
     return indId && indId === mainStore.retailIndividualId;
 });
 
-// 🟢 ЗАКРЫТАЯ / ФАКТ (Зеленый)
 const isClosedDealOp = computed(() => {
     const op = props.operation;
     if (!op) return false;
@@ -44,31 +48,29 @@ const isClosedDealOp = computed(() => {
     return false;
 });
 
-// 🟢 ПРЕДОПЛАТА / ТРАНШ (Оранжевый)
 const isPrepaymentOp = computed(() => {
     const op = props.operation;
     if (!op || isTransferOp.value || op.isWithdrawal) return false;
     if (op.type !== 'income') return false;
-    
     if (isClosedDealOp.value) return false;
-
     if ((op.totalDealAmount || 0) > 0) return true;
     if (op.isDealTranche === true) return true;
-
     const prepayIds = mainStore.getPrepaymentCategoryIds;
     const catId = op.categoryId?._id || op.categoryId;
     const prepId = op.prepaymentId?._id || op.prepaymentId;
-    
     if ((catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment)) return true;
-    
     if (isRetailClient.value && op.isClosed !== true) return true;
-
     return false;
 });
 
+const isTechnicalOp = computed(() => {
+    const op = props.operation;
+    return op && op.type === 'expense' && !op.accountId && !op.isWithdrawal; 
+});
+
 const isWithdrawalOp = computed(() => props.operation && props.operation.isWithdrawal);
-const isRetailWriteOffOp = computed(() => mainStore._isRetailWriteOff(props.operation));
 const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
+const isRetailWriteOffOp = computed(() => mainStore._isRetailWriteOff(props.operation));
 
 const toOwnerName = computed(() => {
   const op = props.operation;
@@ -78,33 +80,167 @@ const toOwnerName = computed(() => {
   return op.toAccountId?.name || 'Счет...';
 });
 
-// 🟢 Галочка только для B2B закрытых
+const chipLabel = computed(() => {
+  const op = props.operation;
+  if (!op) return '';
+  if (isClosedDealOp.value) {
+      if (isRetailClient.value) return op.categoryId?.name || 'Выручка';
+      return 'Сделка закрыта'; 
+  }
+  if (op.isDealTranche === true) {
+      if (op.description && op.description.includes('транш')) return op.description;
+      return 'Транш';
+  }
+  if (isPrepaymentOp.value) {
+      if (isRetailClient.value) return 'Предоплата (Розница)';
+      return op.description && op.description.includes('транш') ? op.description : 'Предоплата';
+  }
+  if (isTechnicalOp.value) return op.description || 'Отработали';
+  return op.categoryId?.name || 'Без категории';
+});
+
 const showCheckmark = computed(() => {
     if (!isClosedDealOp.value) return false;
     if (isRetailClient.value) return false; 
     return true;
 });
+
+// Клик по пустой ячейке -> Меню
+const onAddClick = (event) => {
+    emit('show-menu', { 
+        dateKey: props.dateKey, 
+        cellIndex: props.cellIndex,
+        event: event // Передаем событие для координат
+    });
+};
+
+// Клик по операции -> Меню (или редактирование)
+const onEditClick = (event) => { 
+    if (props.operation) {
+        // Можно передать event для позиционирования меню редактирования, если нужно
+        emit('show-menu', { operation: props.operation, event: event });
+    }
+};
+
+/* --- DRAG & DROP LOGIC --- */
+const touchState = ref({ active: false, clone: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
+
+const onTouchStart = (e) => {
+    if (!props.operation) return;
+    // e.preventDefault(); // Не блокируем скролл сразу
+    
+    const touch = e.touches[0];
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    
+    // Создаем визуальный клон
+    const clone = target.cloneNode(true);
+    clone.style.position = 'fixed';
+    clone.style.left = `${rect.left}px`;
+    clone.style.top = `${rect.top}px`;
+    clone.style.width = `${rect.width}px`;
+    clone.style.height = `${rect.height}px`;
+    clone.style.zIndex = '9999';
+    clone.style.opacity = '0.9';
+    clone.style.pointerEvents = 'none'; // Чтобы события проходили сквозь клон
+    clone.style.boxShadow = '0 10px 20px rgba(0,0,0,0.5)';
+    clone.style.transform = 'scale(1.05)';
+    clone.classList.add('dragging-clone');
+    
+    document.body.appendChild(clone);
+    
+    touchState.value = {
+        active: true,
+        clone: clone,
+        offsetX: touch.clientX - rect.left,
+        offsetY: touch.clientY - rect.top
+    };
+    
+    // Делаем оригинал полупрозрачным
+    target.style.opacity = '0.3';
+};
+
+const onTouchMove = (e) => {
+    if (!touchState.value.active) return;
+    const touch = e.touches[0];
+    
+    // Блокируем скролл страницы только если мы реально тащим элемент
+    if (e.cancelable) e.preventDefault();
+    
+    const clone = touchState.value.clone;
+    if (clone) {
+        clone.style.left = `${touch.clientX - touchState.value.offsetX}px`;
+        clone.style.top = `${touch.clientY - touchState.value.offsetY}px`;
+    }
+};
+
+const onTouchEnd = (e) => {
+    if (!touchState.value.active) return;
+    const touch = e.changedTouches[0];
+    
+    // Удаляем клон
+    if (touchState.value.clone) {
+        document.body.removeChild(touchState.value.clone);
+    }
+    
+    const originalEl = e.currentTarget;
+    
+    // 🟢 ВАЖНО: Временно скрываем исходный элемент, чтобы elementFromPoint "пробил" его
+    // и увидел ячейку под ним (если мы уронили его на то же место или рядом)
+    const prevDisplay = originalEl.style.display;
+    originalEl.style.display = 'none';
+    
+    // Ищем элемент под пальцем
+    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    // Восстанавливаем исходный элемент
+    originalEl.style.display = prevDisplay;
+    originalEl.style.opacity = '1';
+    
+    touchState.value.active = false;
+    
+    // Ищем ячейку (.hour-cell)
+    const cellEl = targetEl?.closest('.hour-cell');
+    
+    if (cellEl) {
+        const toDateKey = cellEl.getAttribute('data-date-key');
+        const toCellIndex = parseInt(cellEl.getAttribute('data-cell-index'));
+        
+        if (toDateKey && !isNaN(toCellIndex)) {
+            emit('drop-operation', {
+                operation: props.operation,
+                toDateKey: toDateKey,
+                toCellIndex: toCellIndex
+            });
+        }
+    }
+};
 </script>
 
 <template>
-  <div class="mobile-cell">
+  <div 
+    class="mobile-cell hour-cell" 
+    :data-date-key="dateKey" 
+    :data-cell-index="cellIndex"
+  >
     <div
       v-if="operation"
       class="op-chip"
       :class="{ 
          transfer: isTransferOp, 
          income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
-         expense: operation.type==='expense' && !isWithdrawalOp,
-         
+         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
          prepayment: isPrepaymentOp,
          'closed-deal': isClosedDealOp,
-         
          withdrawal: isWithdrawalOp,
          writeoff: isRetailWriteOffOp,
          'credit-income': isCreditIncomeOp 
       }"
+      @click.stop="onEditClick($event)"
+      @touchstart="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onTouchEnd"
     >
-      <!-- Содержимое чипа -->
       <template v-if="isTransferOp">
         <span class="amt">{{ formatNumber(Math.abs(operation.amount)) }}</span>
         <span class="desc">{{ toOwnerName }}</span>
@@ -135,12 +271,13 @@ const showCheckmark = computed(() => {
       </template>
     </div>
     
-    <!-- Пустая ячейка -->
-    <div v-else class="empty-slot"></div>
+    <!-- Пустая ячейка с обработчиком клика -->
+    <div v-else class="empty-slot" @click.stop="onAddClick($event)"></div>
   </div>
 </template>
 
 <style scoped>
+/* Добавлен класс .hour-cell для поиска через closest */
 .mobile-cell {
   width: 100%;
   height: 28px;
