@@ -8,14 +8,12 @@ import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v28.3 - STYLES FIX ---
- * * ВЕРСИЯ: 28.3
+ * * --- МЕТКА ВЕРСИИ: v29.0 - CASH REGISTER LOGIC ---
+ * * ВЕРСИЯ: 29.0
  * * ДАТА: 2025-12-07
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) Применены стили Apple Fonts.
- * 2. (UI) Цветовая схема зафиксирована на #2F3340 (Темно-синий).
- * 3. (UI) Sticky-кнопки в селектах.
- * 4. (UX) InfoModal вместо alert.
+ * 1. (FEAT) Добавлен выбор "Создать кассу" (Обычная/Особая) для обоих полей счетов.
+ * 2. (LOGIC) Поддержка флага isExcluded при создании счета.
  */
 
 const mainStore = useMainStore();
@@ -55,6 +53,13 @@ const showError = (msg) => {
     infoModalMessage.value = msg;
     showInfoModal.value = true;
 };
+
+// 🟢 CASH REGISTER LOGIC (Новое)
+const showCashChoiceModal = ref(false);
+const showSpecialCashInfo = ref(false);
+const accountCreationPlaceholder = ref('Название счета'); 
+const isCreatingSpecialAccount = ref(false); 
+const creatingAccountFor = ref(null); // 'from' | 'to'
 
 const smartHint = computed(() => {
   if (transferPurpose.value === 'internal') {
@@ -129,8 +134,8 @@ const accountOptions = computed(() => {
     tooltip: getOwnerName(acc),
     isSpecial: false
   }));
-  // 🟢 Sticky option
-  options.push({ value: '--CREATE_NEW--', label: '+ Создать счет', rightText: '', isSpecial: true });
+  // 🟢 Sticky option via slot
+  options.push({ isActionRow: true });
   return options;
 });
 
@@ -181,8 +186,79 @@ const handleToAccountBlur = () => { setTimeout(() => { showToAccountSuggestions.
 const handleToAccountFocus = () => { if (newToAccountName.value.length >= 2) showToAccountSuggestions.value = true; };
 watch(newToAccountName, (val) => { if (isProgrammaticTo.value) return; showToAccountSuggestions.value = val.length >= 2; });
 
-const handleFromAccountChange = (val) => { if (val === '--CREATE_NEW--') { fromAccountId.value = null; showFromAccountInput(); } else { onFromAccountSelected(val); } };
-const handleToAccountChange = (val) => { if (val === '--CREATE_NEW--') { toAccountId.value = null; showToAccountInput(); } else { onToAccountSelected(val); } };
+// 🟢 NEW CASH LOGIC HANDLERS
+const openCashChoice = (target) => {
+    creatingAccountFor.value = target; // 'from' or 'to'
+    showCashChoiceModal.value = true;
+};
+
+const handleCashChoice = (type) => {
+    showCashChoiceModal.value = false;
+    if (type === 'special') {
+        showSpecialCashInfo.value = true;
+    } else {
+        startCashCreation('regular');
+    }
+};
+
+const confirmSpecialCash = () => {
+    showSpecialCashInfo.value = false;
+    startCashCreation('special');
+};
+
+const startCashCreation = (type) => {
+    accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы';
+    isCreatingSpecialAccount.value = (type === 'special');
+    
+    if (creatingAccountFor.value === 'from') {
+        fromAccountId.value = null;
+        isCreatingFromAccount.value = true;
+        newFromAccountName.value = '';
+        nextTick(() => newFromAccountInput.value?.focus());
+    } else {
+        toAccountId.value = null;
+        isCreatingToAccount.value = true;
+        newToAccountName.value = '';
+        nextTick(() => newToAccountInput.value?.focus());
+    }
+};
+
+const showFromAccountInput = () => {
+    creatingAccountFor.value = 'from';
+    isCreatingSpecialAccount.value = false;
+    accountCreationPlaceholder.value = 'Название счета';
+    isCreatingFromAccount.value = true; 
+    newFromAccountName.value = '';
+    nextTick(() => newFromAccountInput.value?.focus()); 
+};
+
+const showToAccountInput = () => {
+    creatingAccountFor.value = 'to';
+    isCreatingSpecialAccount.value = false;
+    accountCreationPlaceholder.value = 'Название счета';
+    isCreatingToAccount.value = true; 
+    newToAccountName.value = '';
+    nextTick(() => newToAccountInput.value?.focus()); 
+};
+
+// SELECT HANDLERS
+const handleFromAccountChange = (val) => { 
+    if (val === '--CREATE_NEW--') { 
+        showFromAccountInput();
+    } else { 
+        fromAccountId.value = val;
+        onFromAccountSelected(val); 
+    } 
+};
+const handleToAccountChange = (val) => { 
+    if (val === '--CREATE_NEW--') { 
+        showToAccountInput();
+    } else { 
+        toAccountId.value = val;
+        onToAccountSelected(val); 
+    } 
+};
+
 const handleFromOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedFromOwner.value = null; openCreateOwnerModal('from'); } };
 const handleToOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedToOwner.value = null; openCreateOwnerModal('to'); } };
 
@@ -249,23 +325,44 @@ const saveNewOwner = async () => {
   } catch (e) { showError('Ошибка: '+e.message); } finally { isInlineSaving.value = false; }
 };
 
-const showFromAccountInput = () => { isCreatingFromAccount.value = true; nextTick(() => newFromAccountInput.value?.focus()); };
-const cancelCreateFromAccount = () => { isCreatingFromAccount.value = false; newFromAccountName.value = ''; };
+const cancelCreateFromAccount = () => { 
+    isCreatingFromAccount.value = false; 
+    newFromAccountName.value = ''; 
+    isCreatingSpecialAccount.value = false;
+};
 const saveNewFromAccount = async () => {
   if (isInlineSaving.value) return; const name = newFromAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
     let cId = null, iId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
-    const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); fromAccountId.value = newItem._id; onFromAccountSelected(newItem._id);
+    // 🟢 PASS EXCLUDED FLAG
+    const newItem = await mainStore.addAccount({ 
+        name: name, 
+        companyId: cId, 
+        individualId: iId,
+        isExcluded: isCreatingSpecialAccount.value 
+    }); 
+    fromAccountId.value = newItem._id; onFromAccountSelected(newItem._id);
     cancelCreateFromAccount(); 
   } catch (e) { showError(e.message); } finally { isInlineSaving.value = false; }
 };
-const showToAccountInput = () => { isCreatingToAccount.value = true; nextTick(() => newToAccountInput.value?.focus()); };
-const cancelCreateToAccount = () => { isCreatingToAccount.value = false; newToAccountName.value = ''; };
+
+const cancelCreateToAccount = () => { 
+    isCreatingToAccount.value = false; 
+    newToAccountName.value = ''; 
+    isCreatingSpecialAccount.value = false;
+};
 const saveNewToAccount = async () => {
   if (isInlineSaving.value) return; const name = newToAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
     let cId = null, iId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
-    const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); toAccountId.value = newItem._id; onToAccountSelected(newItem._id);
+    // 🟢 PASS EXCLUDED FLAG
+    const newItem = await mainStore.addAccount({ 
+        name: name, 
+        companyId: cId, 
+        individualId: iId,
+        isExcluded: isCreatingSpecialAccount.value
+    }); 
+    toAccountId.value = newItem._id; onToAccountSelected(newItem._id);
     cancelCreateToAccount(); 
   } catch (e) { showError(e.message); } finally { isInlineSaving.value = false; }
 };
@@ -359,9 +456,17 @@ const closePopup = () => { emit('close'); };
           </div>
       </div>
         
-        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" />
+        <!-- СЧЕТ ОТПРАВИТЕЛЯ -->
+        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="accountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange">
+            <template #action-item>
+                <div class="dual-action-row">
+                    <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
+                    <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
+                </div>
+            </template>
+        </BaseSelect>
         <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newFromAccountName" placeholder="Название счета" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" />
+          <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" />
           <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
           <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
@@ -378,9 +483,17 @@ const closePopup = () => { emit('close'); };
             </template>
         </BaseSelect>
 
-        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" />
+        <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
+        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange">
+            <template #action-item>
+                <div class="dual-action-row">
+                    <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
+                    <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
+                </div>
+            </template>
+        </BaseSelect>
         <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newToAccountName" placeholder="Название счета" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" />
+          <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" />
           <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
           <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
@@ -450,9 +563,37 @@ const closePopup = () => { emit('close'); };
       </template>
       
     </div>
+
+    <!-- 🟢 CHOICE MODAL: ВЫБОР ТИПА КАССЫ -->
+    <div v-if="showCashChoiceModal" class="inner-overlay" @click.self="showCashChoiceModal = false">
+        <div class="choice-box">
+            <h4>Создание кассы</h4>
+            <p class="choice-desc">Отображаются в виджете 
+                <br> "Счета/Кассы"</p>
+            <div class="choice-actions">
+                <button class="btn-choice-option" @click="handleCashChoice('regular')">
+                    <span class="opt-title">Обычная касса</span>
+                </button>
+                <button class="btn-choice-option" @click="handleCashChoice('special')">
+                    <span class="opt-title">Особая касса</span>
+                </button>
+            </div>
+            <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
+        </div>
+    </div>
+
+    <!-- 🟢 INFO MODAL: ОСОБАЯ КАССА -->
+    <InfoModal 
+       v-if="showSpecialCashInfo" 
+       title="Особая касса" 
+       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
+       buttonText="Продолжить создание"
+       @close="confirmSpecialCash"
+    />
+
   </div>
 
-  <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
+  <InfoModal v-if="showInfoModal && !showSpecialCashInfo" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
   <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены, что хотите удалить этот перевод?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
 </template>
 
@@ -555,4 +696,19 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .bank-suggestions-list li { padding: 10px 14px; font-size: 14px; color: #333; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
 .bank-suggestions-list li:last-child { border-bottom: none; }
 .bank-suggestions-list li:hover { background-color: #f9f9f9; }
+
+/* 🟢 СТИЛИ ДЛЯ МОДАЛКИ ВЫБОРА (CHOICE BOX) */
+.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 2100; }
+.choice-box { background: #fff; padding: 24px; border-radius: 12px; width: 340px; text-align: center; box-shadow: 0 5px 30px rgba(0,0,0,0.3); }
+.choice-box h4 { margin: 0 0 15px 0; color: #222; font-size: 18px; font-weight: 700; }
+.choice-desc { font-size: 14px; color: #666; margin-bottom: 20px; }
+.choice-actions { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+.btn-choice-option { 
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 12px; background: #F9F9F9; border: 1px solid #E0E0E0; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+}
+.btn-choice-option:hover { background: #f0f8ff; border-color: #2F3340; }
+.opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
+.btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
+.btn-cancel-link:hover { color: #555; }
 </style>

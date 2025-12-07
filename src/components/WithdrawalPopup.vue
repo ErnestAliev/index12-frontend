@@ -7,6 +7,15 @@ import InfoModal from './InfoModal.vue';
 import { useMainStore } from '@/stores/mainStore';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v30.0 - CASH REGISTER LOGIC ---
+ * * ВЕРСИЯ: 30.0
+ * * ДАТА: 2025-12-07
+ * * ИЗМЕНЕНИЯ:
+ * 1. (FEAT) Добавлен выбор "Создать кассу" (Обычная/Особая) для счета списания.
+ * 2. (LOGIC) Поддержка флага isExcluded при создании счета.
+ */
+
 const mainStore = useMainStore();
 const props = defineProps({
   initialData: { type: Object, default: () => ({}) },
@@ -32,6 +41,12 @@ const isCreatingAccount = ref(false);
 const newAccountName = ref('');
 const newAccountInputRef = ref(null);
 const showAccountSuggestions = ref(false);
+
+// 🟢 CASH REGISTER LOGIC (Новое)
+const showCashChoiceModal = ref(false);
+const showSpecialCashInfo = ref(false);
+const accountCreationPlaceholder = ref('Название счета'); 
+const isCreatingSpecialAccount = ref(false); 
 
 // InfoModal
 const showInfoModal = ref(false);
@@ -73,8 +88,8 @@ const accountOptions = computed(() => {
     tooltip: getOwnerName(acc),
     isSpecial: false
   }));
-  // 🟢 Sticky button
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать счет', isSpecial: true });
+  // 🟢 Sticky button via slot
+  opts.push({ isActionRow: true });
   return opts;
 });
 
@@ -114,23 +129,57 @@ const onAmountInput = (e) => {
   formattedAmount.value = formatNumber(Number(raw));
 };
 
-// --- HANDLERS СЧЕТА ---
-const handleAccountChange = (val) => {
-    if (val === '--CREATE_NEW--') {
-        fromAccountId.value = null;
-        isCreatingAccount.value = true;
-        nextTick(() => newAccountInputRef.value?.focus());
+// 🟢 NEW CASH LOGIC HANDLERS
+const openCashChoice = () => {
+    showCashChoiceModal.value = true;
+};
+
+const handleCashChoice = (type) => {
+    showCashChoiceModal.value = false;
+    if (type === 'special') {
+        showSpecialCashInfo.value = true;
+    } else {
+        startCashCreation('regular');
     }
 };
 
-const createAccount = async () => {
+const confirmSpecialCash = () => {
+    showSpecialCashInfo.value = false;
+    startCashCreation('special');
+};
+
+const startCashCreation = (type) => {
+    accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы';
+    isCreatingSpecialAccount.value = (type === 'special');
+    showAccountInput();
+};
+
+const showAccountInput = () => {
+    if (!isCreatingSpecialAccount.value) accountCreationPlaceholder.value = 'Название счета';
+    fromAccountId.value = null;
+    isCreatingAccount.value = true;
+    newAccountName.value = '';
+    nextTick(() => newAccountInputRef.value?.focus());
+};
+
+// --- HANDLERS СЧЕТА ---
+const handleAccountChange = (val) => {
+    if (val === '--CREATE_NEW--') {
+        showAccountInput();
+    }
+};
+
+const saveNewAccount = async () => {
     const name = newAccountName.value.trim();
     if (!name) return;
     try {
-        const newAcc = await mainStore.addAccount(name);
+        // 🟢 Pass excluded flag
+        const newAcc = await mainStore.addAccount({ 
+            name, 
+            isExcluded: isCreatingSpecialAccount.value 
+        });
         fromAccountId.value = newAcc._id;
-        isCreatingAccount.value = false;
-        newAccountName.value = '';
+        cancelCreateAccount();
     } catch (e) {
         showError('Ошибка создания счета: ' + e.message);
     }
@@ -139,6 +188,7 @@ const createAccount = async () => {
 const cancelCreateAccount = () => {
     isCreatingAccount.value = false;
     newAccountName.value = '';
+    isCreatingSpecialAccount.value = false;
 };
 
 // Подсказки для счета
@@ -266,10 +316,18 @@ onMounted(() => {
          placeholder="Откуда (Счет)" 
          class="input-spacing"
          @change="handleAccountChange"
-      />
+      >
+          <!-- 🟢 Slot for Dual Create Buttons -->
+          <template #action-item>
+              <div class="dual-action-row">
+                  <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
+                  <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
+              </div>
+          </template>
+      </BaseSelect>
       <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newAccountName" placeholder="Название счета" ref="newAccountInputRef" class="create-input" @keyup.enter="createAccount" @keyup.esc="cancelCreateAccount" @focus="showAccountSuggestions=true" @blur="setTimeout(()=>showAccountSuggestions=false, 200)" />
-          <button @click="createAccount" class="btn-inline-save">✓</button>
+          <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInputRef" class="create-input" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @focus="showAccountSuggestions=true" @blur="setTimeout(()=>showAccountSuggestions=false, 200)" />
+          <button @click="saveNewAccount" class="btn-inline-save">✓</button>
           <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showAccountSuggestions && accountSuggestionsList.length > 0" class="bank-suggestions-list">
               <li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li>
@@ -318,7 +376,34 @@ onMounted(() => {
       </div>
     </div>
     
-    <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
+    <!-- 🟢 CHOICE MODAL: ВЫБОР ТИПА КАССЫ -->
+    <div v-if="showCashChoiceModal" class="inner-overlay" @click.self="showCashChoiceModal = false">
+        <div class="choice-box">
+            <h4>Создание кассы</h4>
+            <p class="choice-desc">Отображаются в виджете 
+                <br> "Счета/Кассы"</p>
+            <div class="choice-actions">
+                <button class="btn-choice-option" @click="handleCashChoice('regular')">
+                    <span class="opt-title">Обычная касса</span>
+                </button>
+                <button class="btn-choice-option" @click="handleCashChoice('special')">
+                    <span class="opt-title">Особая касса</span>
+                </button>
+            </div>
+            <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
+        </div>
+    </div>
+
+    <!-- 🟢 INFO MODAL: ОСОБАЯ КАССА -->
+    <InfoModal 
+       v-if="showSpecialCashInfo" 
+       title="Особая касса" 
+       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
+       buttonText="Продолжить создание"
+       @close="confirmSpecialCash"
+    />
+
+    <InfoModal v-if="showInfoModal && !showSpecialCashInfo" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
     <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Удаление вывода" message="Вы действительно хотите удалить этот вывод? Средства вернутся на баланс." confirmText="Удалить" @close="isDeleteConfirmVisible = false" @confirm="confirmDelete" />
   </div>
 </template>
@@ -390,4 +475,26 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .bank-suggestions-list li { padding: 10px 14px; font-size: 14px; color: #333; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
 .bank-suggestions-list li:last-child { border-bottom: none; }
 .bank-suggestions-list li:hover { background-color: #f9f9f9; }
+
+/* 🟢 СТИЛИ ДЛЯ МОДАЛКИ ВЫБОРА (CHOICE BOX) */
+.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 2100; }
+.choice-box { background: #fff; padding: 24px; border-radius: 12px; width: 340px; text-align: center; box-shadow: 0 5px 30px rgba(0,0,0,0.3); }
+.choice-box h4 { margin: 0 0 15px 0; color: #222; font-size: 18px; font-weight: 700; }
+.choice-desc { font-size: 14px; color: #666; margin-bottom: 20px; }
+.choice-actions { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+.btn-choice-option { 
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 12px; background: #F9F9F9; border: 1px solid #E0E0E0; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+}
+.btn-choice-option:hover { background: #f0f8ff; border-color: #DE8FFF; }
+.opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
+.btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
+.btn-cancel-link:hover { color: #555; }
+
+/* 🟢 Dual Action in Select */
+.dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-withdrawal); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; }
 </style>

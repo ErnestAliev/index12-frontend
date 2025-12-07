@@ -17,7 +17,6 @@ function getViewModeInfo(mode) {
   return VIEW_MODE_DAYS[mode] || VIEW_MODE_DAYS['12d'];
 }
 
-// 🟢 NEW: Утилита для дебаунса (отложенного сохранения)
 const debounce = (fn, delay) => {
   let timeoutId;
   return (...args) => {
@@ -27,7 +26,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v98.0 (SERVER LAYOUT SYNC) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v99.0 (EXCLUDED ACCOUNTS SUPPORT) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -394,11 +393,9 @@ export const useMainStore = defineStore('mainStore', () => {
     'transfers'
   ]);
   
-  // 🟢 NEW: Дебаунс для сохранения на сервер (1 секунда)
   const saveLayoutToServer = debounce(async (newLayout) => {
       if (!user.value) return;
       try {
-          // Отправляем PUT запрос на сервер
           await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
           console.log('[mainStore] Layout saved to server');
       } catch (e) {
@@ -406,11 +403,8 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }, 1000);
 
-  // 🟢 UPDATED: Watcher теперь вызывает и сохранение на сервер
   watch(dashboardLayout, (n) => {
-      // 1. Быстрое сохранение в localStorage (для мгновенности)
       localStorage.setItem('dashboardLayout', JSON.stringify(n));
-      // 2. Отложенное сохранение на сервер (для надежности)
       saveLayoutToServer(n);
   }, { deep: true });
 
@@ -1050,21 +1044,18 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 1. ОБНОВЛЕНИЕ: Текущий Общий Баланс (Фильтрация исключенных счетов)
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => {
-          // Если счет помечен как исключенный — пропускаем
+          // 🟢 1. Исключаем счета, помеченные isExcluded
           if (a.isExcluded) return acc;
           return acc + (a.balance || 0);
       }, 0);
   });
 
-  // 🟢 2. ОБНОВЛЕНИЕ: Будущий Общий Баланс (Фильтрация операций исключенных счетов)
   const futureTotalBalance = computed(() => {
-    // Начинаем с уже отфильтрованного текущего баланса
     let total = currentTotalBalance.value;
     
-    // Создаем Set исключенных ID для быстрого поиска
+    // 🟢 2. Исключенные ID для быстрого поиска
     const excludedIds = new Set();
     accounts.value.forEach(a => {
         if (a.isExcluded) excludedIds.add(String(a._id));
@@ -1075,10 +1066,9 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!op.accountId) continue;
         if (op.isWorkAct) continue;
         
-        // Получаем ID счета операции
         const accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
         
-        // Если счет исключен — пропускаем операцию
+        // 🟢 3. Пропускаем операции по исключенным счетам
         if (excludedIds.has(String(accId))) continue;
         
         const amt = Math.abs(op.amount || 0);
@@ -1087,7 +1077,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
-  // ... (rest of the file content remains unchanged, including populateOp, CRUD, etc.)
   function _populateOp(op) {
       const populated = { ...op };
       
@@ -1589,14 +1578,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
-  // 🟢 1. ОБНОВЛЕННАЯ ЛОГИКА СОЗДАНИЯ ПЕРЕВОДА С НАЛОГОМ
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
       const dateKey = _getDateKey(finalDate);
       const transferCategory = await _getOrCreateTransferCategory();
       
-      // Идентификаторы для "Технического контрагента" (Если перевод межкомпанейский)
       let expenseContractorId = null;
       let incomeContractorId = null;
       
@@ -1607,7 +1594,6 @@ export const useMainStore = defineStore('mainStore', () => {
       let optimisticOps = [];
       
       if (transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use') {
-          // Вывод
           optimisticOps.push({
               _id: tempId,
               type: 'expense',
@@ -1622,7 +1608,6 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       } 
       else {
-          // Стандартный перевод
           optimisticOps.push({
               _id: tempId,
               type: 'transfer',
@@ -1640,7 +1625,6 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       }
 
-      // Применяем изменения к снепшоту (балансам)
       if (isPastOrToday) {
           optimisticOps.forEach(op => _applyOptimisticSnapshotUpdate(op, 1));
       }
@@ -1674,12 +1658,8 @@ export const useMainStore = defineStore('mainStore', () => {
           incomeContractorId
       };
       
-      // Отправляем основной перевод на сервер
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
-      
-      // 🟢 FIX: УБРАН БЛОК СОЗДАНИЯ РАСХОДА (ЧИПА) НА НАЛОГ
-      // Налог будет рассчитан автоматически на основе дохода у компании-получателя.
       
       await refreshDay(dateKey); 
       
@@ -1728,7 +1708,27 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function addCategory(name){ const res = await axios.post(`${API_BASE_URL}/categories`, { name }); categories.value.push(res.data); return res.data; }
-  async function addAccount(data) { let payload = (typeof data === 'string') ? { name: data, initialBalance: 0 } : { name: data.name, initialBalance: data.initialBalance || 0, companyId: data.companyId || null, individualId: data.individualId || null }; const res = await axios.post(`${API_BASE_URL}/accounts`, payload); accounts.value.push(res.data); return res.data; }
+  
+  // 🟢 ОБНОВЛЕННАЯ ФУНКЦИЯ addAccount
+  async function addAccount(data) { 
+      let payload;
+      if (typeof data === 'string') {
+          payload = { name: data, initialBalance: 0 };
+      } else {
+          payload = { 
+              name: data.name, 
+              initialBalance: data.initialBalance || 0, 
+              companyId: data.companyId || null, 
+              individualId: data.individualId || null,
+              // 🟢 Добавляем isExcluded в payload
+              isExcluded: !!data.isExcluded
+          };
+      }
+      const res = await axios.post(`${API_BASE_URL}/accounts`, payload); 
+      accounts.value.push(res.data); 
+      return res.data; 
+  }
+  
   async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); companies.value.push(res.data); return res.data; }
   async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); contractors.value.push(res.data); return res.data; }
   async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); projects.value.push(res.data); return res.data; }
@@ -1794,14 +1794,12 @@ export const useMainStore = defineStore('mainStore', () => {
   async function importOperations(operations, selectedIndices, progressCallback = () => {}) { try { const response = await axios.post(`${API_BASE_URL}/import/operations`, { operations, selectedRows: selectedIndices }); const createdOps = response.data; progressCallback(createdOps.length); await forceRefreshAll(); return createdOps; } catch (error) { if (error.response && error.response.status === 401) user.value = null; throw error; } }
   async function exportAllOperations() { try { const res = await axios.get(`${API_BASE_URL}/events/all-for-export`); return { operations: res.data, initialBalance: totalInitialBalance.value || 0 }; } catch (e) { if (e.response && e.response.status === 401) user.value = null; throw e; } }
   
-  // 🟢 MODIFIED: CheckAuth with Layout Sync
   async function checkAuth() { 
       try { 
           isAuthLoading.value = true; 
           const res = await axios.get(`${API_BASE_URL}/auth/me`); 
           user.value = res.data;
           
-          // 🟢 Apply layout from server if valid
           if (user.value.dashboardLayout && Array.isArray(user.value.dashboardLayout) && user.value.dashboardLayout.length > 0) {
               dashboardLayout.value = user.value.dashboardLayout;
           }
@@ -2021,7 +2019,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }).sort((a, b) => new Date(b.date) - new Date(a.date));
   });
 
-  // 🟢 NEW: Расчет налогов "на лету"
   const calculateTaxForPeriod = (companyId, startDate = null, endDate = null) => {
       const company = companies.value.find(c => c._id === companyId);
       if (!company) return { base: 0, tax: 0, income: 0, expense: 0 };
@@ -2036,37 +2033,29 @@ export const useMainStore = defineStore('mainStore', () => {
           if (startDate && new Date(op.date) < startDate) return;
           if (endDate && new Date(op.date) > endDate) return;
 
-          // 🟢 1. ОБРАБОТКА ПЕРЕВОДОВ (Включая Межкомпанейские, которые мерджатся в type: 'transfer')
           if (op.type === 'transfer' || op.isTransfer) {
               const toId = op.toCompanyId ? _toStr(op.toCompanyId) : null;
               const fromId = op.fromCompanyId ? _toStr(op.fromCompanyId) : null;
               const targetId = String(companyId);
 
-              // Если компания - ПОЛУЧАТЕЛЬ (Доход)
               if (toId === targetId) {
-                  // Считаем доходом, только если перевод пришел извне (не от самой себя)
                   if (fromId !== targetId) {
                       totalIncome += (op.amount || 0);
                   }
               }
-              
-              // Если компания - ОТПРАВИТЕЛЬ (Расход)
               if (fromId === targetId) {
-                   // Считаем расходом, только если ушло вовне (не самой себе)
                    if (toId !== targetId) {
                        totalExpense += Math.abs(op.amount || 0);
                    }
               }
-              return; // Перевод обработан, переходим к следующей операции
+              return;
           }
 
-          // 🟢 2. ОБРАБОТКА ОБЫЧНЫХ ОПЕРАЦИЙ (Income/Expense)
           const opCompId = op.companyId ? (op.companyId._id || op.companyId) : null;
           if (String(opCompId) !== String(companyId)) return;
           
           if (!op.accountId) return; 
 
-          // ПУНКТ 4: Исключаем доходы с категорией "Кредиты"
           if (op.type === 'income') {
               const catId = op.categoryId?._id || op.categoryId;
               if (creditCategoryId.value && String(catId) === String(creditCategoryId.value)) {
