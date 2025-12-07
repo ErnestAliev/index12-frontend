@@ -273,11 +273,11 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 /* 🟢 MOBILE OPTIMIZATION */
 @media (max-width: 600px), (max-height: 900px) {
   .select-trigger {
-    height: 44px; /* Уменьшаем высоту */
+    height: 34px; /* Уменьшаем высоту */
     padding: 0 10px;
   }
   .selected-text, .placeholder {
-    font-size: 13px; /* Чуть меньше шрифт */
+    font-size: 12px; /* Чуть меньше шрифт */
   }
   .small-label {
     font-size: 10px;
