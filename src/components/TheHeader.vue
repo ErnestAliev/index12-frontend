@@ -406,7 +406,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
-          title="Мои счета/Кассы"
+          title="Счета/Кассы"
           :items="loggedAccountBalances" emptyText="...счетов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="false"

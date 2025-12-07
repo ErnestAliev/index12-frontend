@@ -17,8 +17,17 @@ function getViewModeInfo(mode) {
   return VIEW_MODE_DAYS[mode] || VIEW_MODE_DAYS['12d'];
 }
 
+// 🟢 NEW: Утилита для дебаунса (отложенного сохранения)
+const debounce = (fn, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+};
+
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v97.0 (EXCLUDED ACCOUNTS LOGIC) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v98.0 (SERVER LAYOUT SYNC) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -63,7 +72,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
-    { key: 'accounts',     name: 'Мои счета/кассы' }, 
+    { key: 'accounts',     name: 'Счета/Кассы' }, 
     { key: 'companies',    name: 'Мои компании' },
     { key: 'taxes',        name: 'Мои налоги' }, 
     { key: 'credits',      name: 'Мои кредиты' }, 
@@ -384,7 +393,26 @@ export const useMainStore = defineStore('mainStore', () => {
     'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors', 'projects', 'futureTotal', 
     'transfers'
   ]);
-  watch(dashboardLayout, (n) => localStorage.setItem('dashboardLayout', JSON.stringify(n)), { deep: true });
+  
+  // 🟢 NEW: Дебаунс для сохранения на сервер (1 секунда)
+  const saveLayoutToServer = debounce(async (newLayout) => {
+      if (!user.value) return;
+      try {
+          // Отправляем PUT запрос на сервер
+          await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
+          console.log('[mainStore] Layout saved to server');
+      } catch (e) {
+          console.error('[mainStore] Failed to save layout:', e);
+      }
+  }, 1000);
+
+  // 🟢 UPDATED: Watcher теперь вызывает и сохранение на сервер
+  watch(dashboardLayout, (n) => {
+      // 1. Быстрое сохранение в localStorage (для мгновенности)
+      localStorage.setItem('dashboardLayout', JSON.stringify(n));
+      // 2. Отложенное сохранение на сервер (для надежности)
+      saveLayoutToServer(n);
+  }, { deep: true });
 
   const savedForecastState = localStorage.getItem('dashboardForecastState');
   const dashboardForecastState = ref(savedForecastState ? JSON.parse(savedForecastState) : {});
@@ -1765,7 +1793,25 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function importOperations(operations, selectedIndices, progressCallback = () => {}) { try { const response = await axios.post(`${API_BASE_URL}/import/operations`, { operations, selectedRows: selectedIndices }); const createdOps = response.data; progressCallback(createdOps.length); await forceRefreshAll(); return createdOps; } catch (error) { if (error.response && error.response.status === 401) user.value = null; throw error; } }
   async function exportAllOperations() { try { const res = await axios.get(`${API_BASE_URL}/events/all-for-export`); return { operations: res.data, initialBalance: totalInitialBalance.value || 0 }; } catch (e) { if (e.response && e.response.status === 401) user.value = null; throw e; } }
-  async function checkAuth() { try { isAuthLoading.value = true; const res = await axios.get(`${API_BASE_URL}/auth/me`); user.value = res.data; } catch (error) { user.value = null; } finally { isAuthLoading.value = false; } }
+  
+  // 🟢 MODIFIED: CheckAuth with Layout Sync
+  async function checkAuth() { 
+      try { 
+          isAuthLoading.value = true; 
+          const res = await axios.get(`${API_BASE_URL}/auth/me`); 
+          user.value = res.data;
+          
+          // 🟢 Apply layout from server if valid
+          if (user.value.dashboardLayout && Array.isArray(user.value.dashboardLayout) && user.value.dashboardLayout.length > 0) {
+              dashboardLayout.value = user.value.dashboardLayout;
+          }
+      } catch (error) { 
+          user.value = null; 
+      } finally { 
+          isAuthLoading.value = false; 
+      } 
+  }
+  
   async function logout() { axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {}); user.value = null; displayCache.value = {}; calculationCache.value = {}; }
   function computeTotalDaysForMode(mode, baseDate) { return getViewModeInfo(mode).total; }
   async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }

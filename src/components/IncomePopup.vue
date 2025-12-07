@@ -753,7 +753,7 @@ const closePopup = () => emit('close');
         <div class="choice-box">
             <h4>Создание кассы</h4>
             <p class="choice-desc">Отображаются в виджете 
-                <br> "Мои счета/кассы"</p>
+                <br> "Счета/Кассы"</p>
             <div class="choice-actions">
                 <button class="btn-choice-option" @click="handleCashChoice('regular')">
                     <span class="opt-title">Обычная касса</span>
@@ -772,7 +772,7 @@ const closePopup = () => emit('close');
     <InfoModal 
        v-if="showSpecialCashInfo" 
        title="Особая касса" 
-       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Мои счета/кассы'." 
+       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
        buttonText="Продолжить создание"
        @close="confirmSpecialCash"
     />
