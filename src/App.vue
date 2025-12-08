@@ -8,12 +8,17 @@ const mainStore = useMainStore()
 // Функция для инициализации приложения
 const initializeApp = async () => {
   try {
-    ('Инициализация приложения...')
+    console.log('Инициализация приложения...')
     
-    // Инициализируем хранилище
-    mainStore.fetchAllEntities()
+    // Инициализируем хранилище безопасно
+    // 🟢 FIX: Добавлена проверка на существование функции и await
+    if (typeof mainStore.fetchAllEntities === 'function') {
+      await mainStore.fetchAllEntities()
+    } else {
+      console.warn('mainStore.fetchAllEntities не является функцией. Пропуск инициализации.')
+    }
     
-    ('Приложение успешно инициализировано')
+    console.log('Приложение успешно инициализировано')
   } catch (error) {
     console.error('Ошибка при инициализации приложения:', error)
   }
@@ -23,22 +28,30 @@ const initializeApp = async () => {
 onMounted(async () => {
   await initializeApp()
   
-  // Запускаем автообновление
-  mainStore.startAutoRefresh(30000)
+  // Запускаем автообновление, если функция существует
+  if (typeof mainStore.startAutoRefresh === 'function') {
+    mainStore.startAutoRefresh(30000)
+  }
 })
 
 // При размонтировании компонента
 onUnmounted(() => {
-  // Сохраняем кеш перед выходом
-  mainStore.saveOperationsCache()
+  // Сохраняем кеш перед выходом, если функция существует
+  if (typeof mainStore.saveOperationsCache === 'function') {
+    mainStore.saveOperationsCache()
+  }
   
-  // Останавливаем автообновление
-  mainStore.stopAutoRefresh()
+  // Останавливаем автообновление, если функция существует
+  if (typeof mainStore.stopAutoRefresh === 'function') {
+    mainStore.stopAutoRefresh()
+  }
 })
 
 // Функция для принудительного обновления (может быть вызвана из других компонентов)
 const forceRefresh = async () => {
-  await mainStore.forceRefreshAll()
+  if (typeof mainStore.forceRefreshAll === 'function') {
+    await mainStore.forceRefreshAll()
+  }
 }
 </script>
 
