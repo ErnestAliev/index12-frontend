@@ -26,7 +26,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  ('--- mainStore.js v101.0 (REFACTOR DEAL LOGIC) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v102.0 (FULL RESTORE + FIX) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -435,7 +435,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!user.value) return;
       try {
           await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
-          ('[mainStore] Layout saved to server');
+          console.log('[mainStore] Layout saved to server');
       } catch (e) {
           console.error('[mainStore] Failed to save layout:', e);
       }
@@ -1424,6 +1424,7 @@ export const useMainStore = defineStore('mainStore', () => {
     projection.value = { mode:'custom', totalDays: Math.max(1, Math.floor((end-start)/86400000)+1), rangeStartDate:start, rangeEndDate:end, futureIncomeSum: 0 };
   }
 
+  // 🟢 ЭТО КРИТИЧЕСКИ ВАЖНАЯ ФУНКЦИЯ, КОТОРАЯ ОТСУТСТВОВАЛА В ВОЗВРАТЕ
   async function fetchAllEntities(){
     if (!user.value) return; 
     try{
@@ -1453,7 +1454,7 @@ export const useMainStore = defineStore('mainStore', () => {
       await ensureSystemEntities();
       await fetchSnapshot();
 
-      const availableKeys = new Set(allWidgets.value.map(w => w.key));
+      const availableKeys = new Set(staticWidgets.value.map(w => w.key));
       categories.value.forEach(c => availableKeys.add(`cat_${c._id}`));
       const cleanLayout = dashboardLayout.value.filter(key => {
           return key.startsWith('placeholder_') || availableKeys.has(key);
@@ -2160,6 +2161,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
+  // 🟢 ВОЗВРАЩАЕМ ВСЕ МЕТОДЫ И СОСТОЯНИЯ (включая fetchAllEntities)
   return {
     accounts, companies, contractors, projects, categories, individuals, 
     credits, taxes, 

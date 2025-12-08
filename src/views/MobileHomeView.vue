@@ -139,6 +139,59 @@ const onResizerEnd = () => {
     }
 };
 
+// =================================================================
+// 🟢 БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ (Refactor v52.2)
+// =================================================================
+const initializeMobileView = async () => {
+    // 1. Проверка авторизации
+    await mainStore.checkAuth();
+    if (!mainStore.user) {
+        return;
+    }
+
+    // 2. Установка даты
+    const today = new Date();
+    const startOfYear = new Date(today.getFullYear(), 0, 0);
+    const diff = (today - startOfYear) + ((startOfYear.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
+    const oneDay = 1000 * 60 * 60 * 24;
+    mainStore.setToday(Math.floor(diff / oneDay));
+
+    // 3. Загрузка сущностей (Safe Call)
+    isWidgetsLoading.value = true;
+    try {
+        // Проверяем наличие метода перед вызовом, чтобы избежать TypeError
+        if (typeof mainStore.fetchAllEntities === 'function') {
+            await mainStore.fetchAllEntities();
+        } else {
+            console.error("Critical: mainStore.fetchAllEntities is not a function. Check store initialization.");
+        }
+    } catch (e) { 
+        console.error("Widgets Load Error:", e); 
+    } finally { 
+        isWidgetsLoading.value = false; 
+    }
+
+    // 4. Загрузка Таймлайна
+    isTimelineLoading.value = true;
+    try {
+        if (!mainStore.projection?.mode) { 
+            await mainStore.updateFutureProjectionByMode('12d', today); 
+        }
+        const modeToLoad = mainStore.projection.mode || '12d';
+        
+        if (typeof mainStore.loadCalculationData === 'function') {
+            await mainStore.loadCalculationData(modeToLoad, today);
+        }
+    } catch (e) { 
+        console.error("Timeline Load Error:", e); 
+    } finally {
+        isTimelineLoading.value = false;
+        nextTick(() => { 
+            initScrollSync(); 
+        });
+    }
+};
+
 onMounted(async () => {
   const meta = document.createElement('meta');
   meta.name = "format-detection";
@@ -148,50 +201,8 @@ onMounted(async () => {
   window.addEventListener('touchmove', onResizerMove, { passive: false });
   window.addEventListener('touchend', onResizerEnd);
 
-  try {
-      // 1. Проверка авторизации
-      await mainStore.checkAuth();
-      if (!mainStore.user) {
-          return;
-      }
-
-      // 2. Расчет даты "Сегодня"
-      const today = new Date();
-      const startOfYear = new Date(today.getFullYear(), 0, 0);
-      const diff = (today - startOfYear) + ((startOfYear.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
-      const oneDay = 1000 * 60 * 60 * 24;
-      mainStore.setToday(Math.floor(diff / oneDay));
-
-      // 3. Загрузка данных (Инлайн, чтобы избежать потери контекста e.fetchAllEntities)
-      isWidgetsLoading.value = true;
-      try {
-          // 🟢 FIX: Прямой вызов без обертки в функцию
-          await mainStore.fetchAllEntities();
-      } catch (e) { 
-          console.error("Widgets Load Error:", e); 
-      } finally { 
-          isWidgetsLoading.value = false; 
-      }
-
-      isTimelineLoading.value = true;
-      try {
-          if (!mainStore.projection?.mode) { 
-              await mainStore.updateFutureProjectionByMode('12d', today); 
-          }
-          const modeToLoad = mainStore.projection.mode || '12d';
-          await mainStore.loadCalculationData(modeToLoad, today);
-      } catch (e) { 
-          console.error("Timeline Load Error:", e); 
-      } finally {
-          isTimelineLoading.value = false;
-          nextTick(() => { 
-              initScrollSync(); 
-          });
-      }
-
-  } catch (error) { 
-      console.error("Mobile View Mount Error:", error); 
-  }
+  // Запуск безопасной инициализации
+  await initializeMobileView();
 });
 
 onUnmounted(() => {
