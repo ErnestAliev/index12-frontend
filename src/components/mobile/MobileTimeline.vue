@@ -16,6 +16,9 @@ const windowWidth = ref(window.innerWidth);
 const COL_WIDTH_VW = 25; 
 const BUFFER_COLS = 4;
 
+// 🟢 NEW: Флаг для предотвращения петли (Скролл -> Стор -> Скролл)
+const isProgrammaticScroll = ref(false);
+
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const getDayOfYear = (date) => {
   const start = new Date(date.getFullYear(), 0, 0);
@@ -73,6 +76,9 @@ const updateVisibleDays = () => {
 };
 
 const onScroll = () => {
+  // 🟢 FIX: Игнорируем события скролла, если они вызваны программно (scrollToDate)
+  if (isProgrammaticScroll.value) return;
+
   window.requestAnimationFrame(() => {
       updateVisibleDays();
       updateStorePosition();
@@ -86,9 +92,17 @@ const updateStorePosition = () => {
    const centerPx = el.scrollLeft + (containerW / 2);
    const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
    const centerIndex = Math.floor(centerPx / colWidthPx);
+   
    if (centerIndex >= 0 && centerIndex < allDays.value.length) {
        const day = allDays.value[centerIndex];
-       if (day) { mainStore.setCurrentViewDate(day.date); }
+       if (day) { 
+           // 🟢 FIX: Проверка на равенство дат, чтобы не спамить в стор
+           // Это разрывает цикл: Стор обновляется только если день реально сменился
+           const currentStoreDate = new Date(mainStore.currentViewDate);
+           if (!sameDay(currentStoreDate, day.date)) {
+               mainStore.setCurrentViewDate(day.date); 
+           }
+       }
    }
 };
 
@@ -105,7 +119,15 @@ const scrollToDate = (targetDate) => {
     
     let scrollPos = (idx * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
     
+    // 🟢 FIX: Устанавливаем флаг перед программным скроллом
+    isProgrammaticScroll.value = true;
     el.scrollLeft = Math.max(0, scrollPos);
+    
+    // Снимаем флаг с небольшой задержкой, чтобы пропустить инерционные события
+    setTimeout(() => {
+        isProgrammaticScroll.value = false;
+    }, 200);
+
     updateVisibleDays();
 };
 
