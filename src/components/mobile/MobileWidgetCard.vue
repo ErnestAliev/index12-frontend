@@ -93,17 +93,28 @@ const isEmpty = computed(() => {
     return items.value.length === 0; 
 });
 
+// 🟢 ИЗМЕНЕНО: Принудительный минус для расходов
 const formatVal = (val) => {
     const num = Number(val) || 0; 
     const formatted = formatNumber(Math.abs(num));
+    
+    // Если это виджет расходов - всегда ставим минус (кроме 0)
+    if (props.widgetKey === 'expenseList') {
+        if (num === 0) return `${formatted} ₸`;
+        return `- ${formatted} ₸`;
+    }
+
     if (num < 0) return `- ${formatted} ₸`;
     return `₸ ${formatted}`;
 };
 
-// 🟢 ЛЕВАЯ КОЛОНКА (Факт)
+// 🟢 ИЗМЕНЕНО: Принудительный красный цвет для расходов
 const getFactValueClass = (item) => {
     const val = item.currentBalance || item.balance;
     const num = Number(val) || 0;
+    
+    // Если это виджет расходов - всегда красный цвет
+    if (props.widgetKey === 'expenseList') return 'red-text';
     
     if (props.widgetKey === 'taxes') {
         if (num < 0) return 'red-text';
