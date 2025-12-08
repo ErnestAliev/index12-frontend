@@ -25,7 +25,7 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 // 🟢 1. Импорт нового попапа
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
-('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
+('--- HomeView.vue v52.2 (Rubber Band Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -719,7 +719,7 @@ const handleRefundDelete = async (op) => {
 .about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-.timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; }
+.timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; touch-action: pan-y; }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 .timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
 .divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); position: relative; display: flex; align-items: center; }
