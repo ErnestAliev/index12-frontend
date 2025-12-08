@@ -22,9 +22,10 @@ import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
 import RefundPopup from '@/components/RefundPopup.vue'; 
 import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
+// 🟢 1. Импорт нового попапа
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
-('--- HomeView.vue v52.5 (No-Inertia, Strict Fix) Loaded ---'); 
+('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -40,7 +41,7 @@ const showImportModal = ref(false);
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
 
-// Состояние для Prepayment Modal
+// Состояние для Prepayment Modal (Сценарий 1)
 const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
 const prepaymentDateKey = ref('');
@@ -52,12 +53,15 @@ const isTransferPopupVisible = ref(false);
 const isWithdrawalPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
+// 🟢 2. Состояние для попапа деталей налога
 const isTaxDetailsPopupVisible = ref(false);
 
-// Состояния для Smart Deal
+// Состояния для Smart Deal (Сценарий 2 - Второй транш)
 const isSmartDealPopupVisible = ref(false);
 const smartDealPayload = ref(null); 
 const smartDealStatus = ref({ "debt": 0, "totalDeal": 0, "paidTotal": 0 });
+
+// Временное хранение данных для возврата (при отмене)
 const tempIncomeData = ref(null);
 
 // --- Меню пользователя ---
@@ -108,6 +112,7 @@ const debounce = (func, delay) => {
 
 // --- HANDLERS ---
 
+// 1. ОБРАБОТЧИК: Переключение на окно предоплаты
 const handleSwitchToPrepayment = (data) => {
     const rawDate = data.date || new Date();
     const d = new Date(rawDate);
@@ -125,28 +130,35 @@ const handleSwitchToPrepayment = (data) => {
     isPrepaymentModalVisible.value = true;
 };
 
+// 2. ОБРАБОТЧИК: Сохранение предоплаты
 const handlePrepaymentSave = async (finalData) => {
     isPrepaymentModalVisible.value = false;
     try {
         if (!finalData.cellIndex && finalData.cellIndex !== 0) {
             finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey);
         }
+
         const prepayIds = mainStore.getPrepaymentCategoryIds;
         if (prepayIds.length > 0 && !finalData.prepaymentId) {
             finalData.prepaymentId = prepayIds[0];
         }
+
         finalData.description = `Предоплата`;
+
         await mainStore.createEvent(finalData);
+        // 🟢 FIX: Убраны fetchAllEntities и loadCalculationData
     } catch (e) {
         console.error('Prepayment Save Error:', e);
         alert('Не удалось сохранить предоплату: ' + e.message);
     }
 };
 
+// 3. ОБРАБОТЧИК: Умная сделка
 const handleSwitchToSmartDeal = async (payload) => {
     tempIncomeData.value = { ...payload };
     isIncomePopupVisible.value = false;
     smartDealPayload.value = payload;
+    
     let status = payload.dealStatus;
     if (!status && payload.projectId) {
          try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } 
@@ -174,9 +186,11 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
                  data.counterpartyIndividualId
              );
         }
+
         const trancheNum = nextTrancheNum || 2;
         const formattedAmount = formatNumber(data.amount);
         const description = `${formattedAmount} ${trancheNum}-й транш`;
+
         const incomeData = {
             type: 'income',
             amount: data.amount,
@@ -194,11 +208,14 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
             description: description,
             cellIndex: data.cellIndex 
         };
+        
         if (incomeData.cellIndex === undefined) {
              const dateKey = mainStore._getDateKey(new Date(data.date));
              incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
         }
+
         const newOp = await mainStore.createEvent(incomeData);
+
         if (isFinal) {
              await mainStore.closePreviousTranches(
                  data.projectId, 
@@ -206,6 +223,7 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
                  data.contractorId, 
                  data.counterpartyIndividualId
              );
+             
              await mainStore.createWorkAct(
                  data.projectId,
                  data.categoryId,
@@ -219,6 +237,8 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
                  data.individualId
              );
         }
+        
+        // 🟢 FIX: Убраны лишние перезагрузки данных
     } catch (e) {
         console.error('Smart Deal Error:', e);
         alert('Ошибка при проведении транша: ' + e.message);
@@ -228,7 +248,9 @@ const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }
 const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
     if (data.type === 'income') isIncomePopupVisible.value = false;
     else isExpensePopupVisible.value = false;
+    
     operationToEdit.value = null;
+
     try {
         if (mode === 'create') {
              if (data.cellIndex === undefined) {
@@ -239,6 +261,7 @@ const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
         } else if (mode === 'edit') {
             await mainStore.updateOperation(id, data);
         }
+        // 🟢 FIX: Убрана loadCalculationData, store сам обновляет проекцию
     } catch (error) {
         console.error('Save Error (Operation):', error);
         alert('Ошибка сохранения операции.');
@@ -357,10 +380,12 @@ const handleEditOperation = (operation) => {
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
 
+  // 🟢 3. ПРОВЕРКА НА НАЛОГ
   if (mainStore._isTaxPayment(operation)) {
       isTaxDetailsPopupVisible.value = true;
       return;
   }
+
   if (mainStore._isRetailWriteOff(operation)) {
       isRetailPopupVisible.value = true;
       return;
@@ -398,19 +423,23 @@ const recalcProjectionForCurrentView = async () => { await mainStore.loadCalcula
 const handleOperationDelete = async (operation) => { 
     if (!operation) return; 
     await mainStore.deleteOperation(operation); 
+    // 🟢 FIX: Убрана явная перезагрузка проекции
     visibleDays.value = [...visibleDays.value]; 
     handleClosePopup(); 
     handleCloseTransferPopup();
     handleCloseWithdrawalPopup();
 };
 
+// 🟢 4. Хендлер удаления налога
 const handleTaxDelete = async (operation) => {
     isTaxDetailsPopupVisible.value = false;
     if (!operation) return;
     try {
         await mainStore.deleteOperation(operation);
+        // Принудительно обновим налоги, чтобы виджет обновился
         const res = await axios.get(`${API_BASE_URL}/taxes`);
         mainStore.taxes = res.data;
+        // Перерисовываем дни
         visibleDays.value = [...visibleDays.value];
     } catch(e) {
         alert("Ошибка удаления налога: " + e.message);
@@ -456,77 +485,10 @@ const onScrollThumbTouchMove = (e) => { if (!scrollState.isDragging) return; e.p
 const onScrollThumbEnd = () => { scrollState.isDragging = false; window.removeEventListener('mousemove', onScrollThumbMove); window.removeEventListener('mouseup', onScrollThumbEnd); window.removeEventListener('touchmove', onScrollThumbTouchMove); window.removeEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
 const onTrackClick = (e) => { if (e.target.classList.contains('custom-scrollbar-thumb')) return; const trackRect = customScrollbarTrackRef.value.getBoundingClientRect(); const clickX = e.clientX - trackRect.left; const targetThumbX = clickX - (scrollbarThumbWidth.value / 2); const trackWidth = trackRect.width; const availableSpace = trackWidth - scrollbarThumbWidth.value; let newThumbX = Math.max(0, Math.min(targetThumbX, availableSpace)); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); const ratio = newThumbX / availableSpace; virtualStartIndex.value = Math.round(ratio * maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
 const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } } } };
-
-// --- 🟢 UPDATED: Simple 1:1 Drag (Low-Latency) + Strict Rubber Band Kill ---
-const dragOffset = ref(0);
-const contentTouchState = { 
-    startX: 0, 
-    startIndex: 0, 
-    isDragging: false 
-};
-
-const onContentTouchStart = (e) => { 
-    if (!isScrollActive.value) return; 
-    
-    contentTouchState.isDragging = true; 
-    contentTouchState.startX = e.touches[0].clientX; 
-    contentTouchState.startIndex = virtualStartIndex.value; 
-    dragOffset.value = 0;
-};
-
-const onContentTouchMove = (e) => { 
-    if (!contentTouchState.isDragging) return; 
-    
-    const currentX = e.touches[0].clientX;
-    const currentY = e.touches[0].clientY;
-    
-    // 🟢 CRITICAL FIX: Kill Horizontal Rubber Banding
-    // We check if the gesture is primarily horizontal. If so, we PREVENT DEFAULT.
-    // This tells the browser: "Do not do your native history/rubber-band swipe."
-    // We assume horizontal if deltaX > deltaY. 
-    // Since we track from startX, let's look at the movement since start.
-    const absDx = Math.abs(currentX - contentTouchState.startX);
-    // Note: checking Y is tricky if we scrolled down. 
-    // A simpler strict approach: Just prevent default if we are handling the drag.
-    
-    // For a cleaner UX on iPad: 
-    if (e.cancelable) {
-       // If dragging horizontally, kill native behavior
-       // We can allow some vertical slack, but to be safe against rubber band, we prevent.
-       e.preventDefault(); 
-    }
-
-    const deltaPx = contentTouchState.startX - currentX; 
-    
-    // Simple 1:1 drag feedback (no heavy calculations)
-    dragOffset.value = deltaPx;
-};
-
-const onContentTouchEnd = () => { 
-    if (!contentTouchState.isDragging) return;
-    contentTouchState.isDragging = false;
-    
-    const containerWidth = timelineGridRef.value ? timelineGridRef.value.clientWidth : window.innerWidth;
-    const colWidth = containerWidth / VISIBLE_COLS;
-    
-    // Calculate days shifted
-    const daysShift = Math.round(dragOffset.value / colWidth);
-    
-    const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-    
-    let nextVal = contentTouchState.startIndex + daysShift;
-    nextVal = Math.max(0, Math.min(nextVal, maxVirtual));
-    
-    if (nextVal !== virtualStartIndex.value) { 
-        virtualStartIndex.value = nextVal; 
-        rebuildVisibleDays(); 
-        updateScrollbarMetrics(); 
-    }
-    
-    // Reset offset (Snap)
-    dragOffset.value = 0;
-};
-
+const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
+const onContentTouchStart = (e) => { if (!isScrollActive.value) return; contentTouchState.isDragging = true; contentTouchState.startX = e.touches[0].clientX; contentTouchState.startIndex = virtualStartIndex.value; };
+const onContentTouchMove = (e) => { if (!contentTouchState.isDragging) return; const deltaPx = contentTouchState.startX - e.touches[0].clientX; const pxPerDay = 50; const deltaDays = Math.round(deltaPx / pxPerDay); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); let nextVal = contentTouchState.startIndex + deltaDays; nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (e.cancelable) e.preventDefault(); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } };
+const onContentTouchEnd = () => { contentTouchState.isDragging = false; };
 const centerToday = () => { const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); virtualStartIndex.value = Math.min(Math.max(0, globalTodayIndex.value - CENTER_INDEX), maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
 const onChangeView = async (newView) => { const currentStartDate = visibleDays.value[0]?.date || new Date(today.value); viewMode.value = newView; await nextTick(); const msPerDay = 1000 * 60 * 60 * 24; const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay); const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2); let targetIndex = newGlobalTodayIndex + diffDays; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual)); virtualStartIndex.value = targetIndex; rebuildVisibleDays(); await nextTick(); setTimeout(() => { updateScrollbarMetrics(); recalcProjectionForCurrentView(); }, 50); };
 const onWindowResize = () => { applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); };
@@ -536,6 +498,7 @@ let resizeObserver = null;
 onMounted(async () => { checkDayChange(); dayChangeCheckerInterval = setInterval(checkDayChange, 60000); await mainStore.checkAuth(); if (mainStore.isAuthLoading || !mainStore.user) return; mainStore.startAutoRefresh(); await nextTick(); await mainStore.fetchAllEntities(); const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); generateVisibleDays(); await nextTick(); centerToday(); await nextTick(); applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; applyHeights(clampTimelineHeight(initialTop)); if (resizerRef.value) { resizerRef.value.addEventListener('mousedown', initResize); resizerRef.value.addEventListener('touchstart', initResize, { passive: false }); } if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } if (timelineGridRef.value) { timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); } resizeObserver = new ResizeObserver(() => { applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); }); if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); window.addEventListener('resize', onWindowResize); updateScrollbarMetrics(); await recalcProjectionForCurrentView(); });
 onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); } window.removeEventListener('resize', onWindowResize); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
 
+// --- Transfer, Retail, Refund Handlers ---
 const handleTransferSave = async ({ mode, id, data }) => { 
     handleCloseTransferPopup(); 
     try { 
@@ -548,6 +511,7 @@ const handleTransferSave = async ({ mode, id, data }) => {
         } else if (mode === 'edit') { 
             await mainStore.updateTransfer(id, data); 
         } 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка сохранения перевода'); } 
 };
 
@@ -563,6 +527,7 @@ const handleWithdrawalSave = async ({ mode, id, data }) => {
         } else { 
             await mainStore.updateOperation(id, data); 
         } 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка сохранения вывода'); } 
 };
 
@@ -575,6 +540,7 @@ const handleRetailSave = async ({ id, data }) => {
             projectId: pId,
             date: new Date(data.date) 
         }); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { 
         alert('Ошибка сохранения списания: ' + e.message); 
     } 
@@ -584,6 +550,7 @@ const handleRetailClosure = async (payload) => {
     try {
         const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null);
         await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId);
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка: ' + e.message); }
 };
 
@@ -591,6 +558,7 @@ const handleRetailDelete = async (op) => {
     isRetailPopupVisible.value = false; 
     try { 
         await mainStore.deleteOperation(op); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка удаления'); } 
 };
 
@@ -599,6 +567,7 @@ const handleRefundSave = async ({ mode, id, data }) => {
     try { 
         if (mode === 'create') await mainStore.createEvent(data); 
         else await mainStore.updateOperation(id, data); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка сохранения возврата'); } 
 };
 
@@ -606,6 +575,7 @@ const handleRefundDelete = async (op) => {
     isRefundPopupVisible.value = false; 
     try { 
         await mainStore.deleteOperation(op); 
+        // 🟢 FIX: Убрана перезагрузка loadCalculationData
     } catch (e) { alert('Ошибка удаления'); } 
 };
 </script>
@@ -619,7 +589,7 @@ const handleRefundDelete = async (op) => {
     <div class="home-body">
       <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
-        <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef" :style="{ transform: `translateX(${-dragOffset}px)` }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
+        <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
         <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div class="vertical-resizer" ref="resizerRef"></div></div>
         <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
@@ -630,6 +600,7 @@ const handleRefundDelete = async (op) => {
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
     <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
     
+    <!-- 🟢 FIX: Передаем $event (объект операции) в обработчик удаления, так как переменная operationToEdit может быть уже очищена событием close -->
     <IncomePopup 
         v-if="isIncomePopupVisible" 
         :date="selectedDay ? selectedDay.date : new Date()" 
@@ -656,6 +627,7 @@ const handleRefundDelete = async (op) => {
         @operation-deleted="handleOperationDelete($event)"
     />
 
+    <!-- 🟢 PREPAYMENT MODAL -->
     <PrepaymentModal 
        v-if="isPrepaymentModalVisible" 
        :initialData="prepaymentData" 
@@ -664,6 +636,7 @@ const handleRefundDelete = async (op) => {
        @save="handlePrepaymentSave" 
     />
 
+    <!-- 🟢 SMART DEAL CONFIRM -->
     <SmartDealPopup 
        v-if="isSmartDealPopupVisible"
        :deal-status="smartDealStatus"
@@ -675,6 +648,7 @@ const handleRefundDelete = async (op) => {
        @confirm="handleSmartDealConfirm"
     />
 
+    <!-- 🟢 TAX DETAILS POPUP -->
     <TaxPaymentDetailsPopup 
        v-if="isTaxDetailsPopupVisible"
        :operation-to-edit="operationToEdit"
@@ -694,6 +668,7 @@ const handleRefundDelete = async (op) => {
 </template>
 
 <style scoped>
+/* (Стили без изменений) */
 .loading-screen { width: 100vw; height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center; flex-direction: column; background-color: var(--color-background); color: var(--color-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 .spinner { width: 40px; height: 40px; border: 4px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -744,8 +719,7 @@ const handleRefundDelete = async (op) => {
 .about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-/* 🟢 FIX: touch-action: pan-y (Only vertical allowed by browser), plus overscroll-behavior: none */
-.timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; touch-action: pan-y; }
+.timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 .timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
 .divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); position: relative; display: flex; align-items: center; }
