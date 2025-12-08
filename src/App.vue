@@ -8,12 +8,12 @@ const mainStore = useMainStore()
 // Функция для инициализации приложения
 const initializeApp = async () => {
   try {
-    console.log('Инициализация приложения...')
+    ('Инициализация приложения...')
     
     // Инициализируем хранилище
     mainStore.fetchAllEntities()
     
-    console.log('Приложение успешно инициализировано')
+    ('Приложение успешно инициализировано')
   } catch (error) {
     console.error('Ошибка при инициализации приложения:', error)
   }

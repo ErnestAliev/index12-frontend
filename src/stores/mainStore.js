@@ -26,7 +26,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v101.0 (REFACTOR DEAL LOGIC) ЗАГРУЖЕН ---'); 
+  ('--- mainStore.js v101.0 (REFACTOR DEAL LOGIC) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -435,7 +435,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!user.value) return;
       try {
           await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
-          console.log('[mainStore] Layout saved to server');
+          ('[mainStore] Layout saved to server');
       } catch (e) {
           console.error('[mainStore] Failed to save layout:', e);
       }

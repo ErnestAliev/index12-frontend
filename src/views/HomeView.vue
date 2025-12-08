@@ -25,7 +25,7 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 // 🟢 1. Импорт нового попапа
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
-console.log('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
+('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();

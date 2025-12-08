@@ -23,7 +23,6 @@ import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import InfoModal from '@/components/InfoModal.vue';
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
-// 🟢 ИМПОРТ ГЛОБАЛЬНОГО МЕНЮ
 import CellContextMenu from '@/components/CellContextMenu.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -33,9 +32,9 @@ const { getWidgetItems } = useWidgetData();
 // --- Refs & State ---
 const timelineRef = ref(null);
 const chartRef = ref(null);
+const layoutBodyRef = ref(null); 
 
 const showGraphModal = ref(false);
-
 const isWidgetsLoading = ref(true); 
 const isTimelineLoading = ref(true);
 
@@ -60,12 +59,10 @@ const operationToEdit = ref(null);
 const selectedDate = ref(new Date());
 const selectedCellIndex = ref(0);
 
-// Info Modal
 const showInfoModal = ref(false);
 const infoModalTitle = ref('');
 const infoModalMessage = ref('');
 
-// 🟢 СОСТОЯНИЕ КОНТЕКСТНОГО МЕНЮ
 const isContextMenuVisible = ref(false);
 const contextMenuPosition = ref({ top: '0px', left: '0px' });
 
@@ -99,6 +96,7 @@ const initScrollSync = () => {
 };
 
 const loadBackgroundData = async (today) => {
+    ('[DEBUG_MHV] loadBackgroundData: START', today);
     isWidgetsLoading.value = true;
     try {
         await mainStore.fetchAllEntities();
@@ -106,24 +104,84 @@ const loadBackgroundData = async (today) => {
 
     isTimelineLoading.value = true;
     try {
-        if (!mainStore.projection?.mode) { await mainStore.updateFutureProjectionByMode('12d', today); }
+        if (!mainStore.projection?.mode) { 
+            ('[DEBUG_MHV] loadBackgroundData: No projection mode, setting default 12d');
+            await mainStore.updateFutureProjectionByMode('12d', today); 
+        }
         const modeToLoad = mainStore.projection.mode || '12d';
+        (`[DEBUG_MHV] loadBackgroundData: Loading calc data for ${modeToLoad}`);
         await mainStore.loadCalculationData(modeToLoad, today);
     } catch (e) { console.error("Timeline Load Error:", e); } finally {
         isTimelineLoading.value = false;
-        nextTick(() => { initScrollSync(); });
+        nextTick(() => { 
+            ('[DEBUG_MHV] loadBackgroundData: Init Scroll Sync');
+            initScrollSync(); 
+        });
+    }
+};
+
+// =================================================================
+// 🟢 ЛОГИКА РЕСАЙЗА (ВЫСОТА ТАЙМЛАЙНА)
+// =================================================================
+const timelineHeight = ref(240); // Начальная высота таймлайна
+const isResizing = ref(false);
+const startY = ref(0);
+const startHeight = ref(0);
+
+const onResizerStart = (e) => {
+    ('[DEBUG_MHV] Resizer: Start');
+    isResizing.value = true;
+    startY.value = e.touches[0].clientY;
+    startHeight.value = timelineHeight.value;
+    document.body.style.userSelect = 'none'; 
+};
+
+const onResizerMove = (e) => {
+    if (!isResizing.value) return;
+    if (e.cancelable) e.preventDefault(); 
+
+    const currentY = e.touches[0].clientY;
+    const delta = currentY - startY.value;
+    const newHeight = startHeight.value + delta;
+
+    const MIN_HEIGHT = 100;
+    
+    let MAX_HEIGHT = 500; 
+    if (layoutBodyRef.value) {
+        const bodyH = layoutBodyRef.value.clientHeight;
+        const widgetsH = document.querySelector('.section-widgets')?.clientHeight || 0;
+        MAX_HEIGHT = bodyH - widgetsH - 80; 
+    }
+
+    if (newHeight >= MIN_HEIGHT && newHeight <= MAX_HEIGHT) {
+        timelineHeight.value = newHeight;
+    }
+};
+
+const onResizerEnd = () => {
+    if (isResizing.value) {
+        ('[DEBUG_MHV] Resizer: End. New height:', timelineHeight.value);
+        isResizing.value = false;
+        document.body.style.userSelect = '';
     }
 };
 
 onMounted(async () => {
+  ('[DEBUG_MHV] onMounted');
   const meta = document.createElement('meta');
   meta.name = "format-detection";
   meta.content = "telephone=no, date=no, email=no, address=no";
   document.getElementsByTagName('head')[0].appendChild(meta);
 
+  window.addEventListener('touchmove', onResizerMove, { passive: false });
+  window.addEventListener('touchend', onResizerEnd);
+
   try {
       await mainStore.checkAuth();
-      if (!mainStore.user) return;
+      if (!mainStore.user) {
+          ('[DEBUG_MHV] User not logged in, aborting init');
+          return;
+      }
       const today = new Date();
       const startOfYear = new Date(today.getFullYear(), 0, 0);
       const diff = (today - startOfYear) + ((startOfYear.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
@@ -134,9 +192,13 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+    ('[DEBUG_MHV] onUnmounted');
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
     if (el) el.removeEventListener('scroll', onTimelineScroll);
     document.removeEventListener('mousedown', handleFilterClickOutside);
+    
+    window.removeEventListener('touchmove', onResizerMove);
+    window.removeEventListener('touchend', onResizerEnd);
 });
 
 const activeWidgetKey = ref(null);
@@ -187,74 +249,46 @@ const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.valu
 const formatVal = (val) => { const num = Number(val) || 0; const formatted = formatNumber(Math.abs(num)); if (num === 0) return `${formatted} ₸`; if (num < 0) return `- ${formatted} ₸`; return `₸ ${formatted}`; };
 const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); if (num > 0) return `+ ${formatted} ₸`; return `- ${formatted} ₸`; };
 const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
-const _parseDateKey = (dateKey) => { if (typeof dateKey !== 'string' || !dateKey.includes('-')) return new Date(); const [year, doy] = dateKey.split('-').map(Number); if (isNaN(year) || isNaN(doy)) return new Date(); const date = new Date(year, 0, 1); date.setDate(doy); return date; };
 
-// 🟢 ОБРАБОТЧИК КЛИКА ПО ЯЧЕЙКЕ (ОТКРЫТИЕ МЕНЮ)
 const handleShowMenu = (payload) => { 
     if (payload.operation) { 
-        handleEditOperation(payload.operation); 
     } else { 
         selectedDate.value = payload.date || new Date(); 
         selectedCellIndex.value = payload.cellIndex || 0; 
         
-        // 🟢 РЕФАКТОРИНГ: Центрирование меню по горизонтали
-        // И сохранение динамики по вертикали (рядом с пальцем)
-        
         const e = payload.event;
-        let topStyle = '30%'; // Значение по умолчанию
-        
+        let topStyle = '30%'; 
         if (e) {
-            // Для touch событий берем первые координаты
             const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
-            
-            // Расчет позиции (чуть выше пальца, чтобы не перекрывать)
             let top = clientY - 150; 
-            
-            // Если слишком близко к верхнему краю, показываем под пальцем
             if (top < 50) top = clientY + 30;
-            
             topStyle = `${top}px`;
         } 
-        
         contextMenuPosition.value = { 
             top: topStyle, 
             left: '50%', 
-            transform: 'translateX(-50%)', // Центрирование по ширине
-            position: 'fixed', // Гарантия, что позиционируется от окна
+            transform: 'translateX(-50%)', 
+            position: 'fixed', 
             zIndex: '9999'
         };
-        
         isContextMenuVisible.value = true;
     } 
 };
 
-// 🟢 ВЫБОР ДЕЙСТВИЯ В МЕНЮ
 const handleContextMenuSelect = (type) => {
     isContextMenuVisible.value = false;
     operationToEdit.value = null; 
-
     if (type === 'income') isIncomePopupVisible.value = true;
     else if (type === 'expense') isExpensePopupVisible.value = true;
     else if (type === 'transfer') isTransferPopupVisible.value = true;
-};
-
-// 🟢 РЕДАКТИРОВАНИЕ ОПЕРАЦИИ (КЛИК ПО ЧИПУ - ПОКА ОТКЛЮЧЕН)
-const handleEditOperation = (operation) => { 
-    // console.log("Редактирование отключено для режима 'Только перемещение'");
-    // Разблокировать этот блок, если нужно вернуть редактирование по клику
-    return; 
 };
 
 const handleOperationDrop = async (dropData) => {
     const { operation, toDateKey, toCellIndex } = dropData;
     if (!operation || !toDateKey) return;
     const oldDateKey = operation.dateKey;
-    // Если ничего не поменялось - выходим
     if (oldDateKey === toDateKey && operation.cellIndex === toCellIndex) return;
-    
-    try { 
-        await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex); 
-    } catch(e) { console.error("Drop Error:", e); }
+    try { await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex); } catch(e) { console.error("Drop Error:", e); }
 };
 
 const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
@@ -263,7 +297,7 @@ const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Da
 const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
 const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
-const handleItemClick = (item) => { if (item.isList && item.originalOp) { handleEditOperation(item.originalOp); } else if (!item.isList && item.isLinked && item.linkTooltip) { infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true; } };
+const handleItemClick = (item) => { if (item.isList && item.originalOp) { /* handleEditOperation(item.originalOp); */ } else if (!item.isList && item.isLinked && item.linkTooltip) { infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true; } };
 
 const handleTaxDelete = async (operation) => { isTaxDetailsPopupVisible.value = false; if (!operation) return; try { await mainStore.deleteOperation(operation); await mainStore.fetchAllEntities(); } catch(e) { alert("Ошибка удаления налога: " + e.message); } };
 const handleRetailClosure = async (payload) => { try { const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null); await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId); isRetailPopupVisible.value = false; } catch (e) { alert('Ошибка: ' + e.message); } };
@@ -274,7 +308,6 @@ const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; t
 const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; };
 const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
 const handleWithdrawalSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isWithdrawalPopupVisible.value = false; } catch (e) { console.error("Mobile Withdrawal Save Error", e); alert("Ошибка сохранения"); } };
-const handleOperationDelete = async (operation) => { if (!operation) return; await mainStore.deleteOperation(operation); handleClosePopup(); };
 const handleAction = () => {}; 
 </script>
 
@@ -294,32 +327,16 @@ const handleAction = () => {};
     </div>
 
     <template v-else>
-        <!-- Fullscreen Widget Overlay (без изменений) -->
+        <!-- Fullscreen Widget (Без изменений) -->
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
-             <!-- ... (код виджета) ... -->
+             <!-- ... (Код полноэкранного виджета такой же) ... -->
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
-                    <!-- 🟢 НОВАЯ КНОПКА: Учет скрытых счетов -->
-                    <button 
-                        v-if="activeWidgetKey === 'accounts'" 
-                        class="action-square-btn" 
-                        :class="{ active: mainStore.includeExcludedInTotal }" 
-                        @click="mainStore.toggleExcludedInclusion()" 
-                        title="Учитывать скрытые счета"
-                    >
-                        <!-- Иконка: Глаз (Открыт/Включено) -->
-                        <svg v-if="mainStore.includeExcludedInTotal" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                            <circle cx="12" cy="12" r="3"></circle>
-                        </svg>
-                        <!-- Иконка: Глаз перечеркнут (Скрыто) -->
-                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                            <line x1="1" y1="1" x2="23" y2="23"></line>
-                        </svg>
+                    <button v-if="activeWidgetKey === 'accounts'" class="action-square-btn" :class="{ active: mainStore.includeExcludedInTotal }" @click="mainStore.toggleExcludedInclusion()" title="Учитывать скрытые счета">
+                        <svg v-if="mainStore.includeExcludedInTotal" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                     </button>
-
                     <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' || sortMode !== 'default' }" @click.stop="toggleFilter" title="Фильтр"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>
                 </div>
@@ -334,14 +351,9 @@ const handleAction = () => {};
                        </template>
                        <template v-else>
                            <div class="fs-name-col"><div class="fs-name-row"><span v-if="item.linkMarkerColor" class="color-dot" :style="{ backgroundColor: item.linkMarkerColor }"></span><span class="fs-name">{{ item.name }}</span><span v-if="item.isLinked" class="link-icon" style="margin-left: 6px;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
-                           <!-- 🟢 Иконка исключенного счета (Динамическая) -->
                            <span v-if="item.isExcluded" class="excluded-icon" :class="{ 'included-now': mainStore.includeExcludedInTotal }" title="Исключен из общего баланса" style="margin-left: 6px;">
-                                <svg v-if="mainStore.includeExcludedInTotal" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                                <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
-                                </svg>
+                                <svg v-if="mainStore.includeExcludedInTotal" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                            </span>
                            </div><div v-if="item.subName" class="fs-sub-text-small">{{ item.subName }}</div><div v-if="item.regime" class="fs-regime-badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">{{ item.regime }} {{ item.percent }}%</div></div>
                            <div class="fs-val-block"><div v-if="!showFutureBalance" class="fs-val" :class="getValueClass(item.currentBalance, activeWidgetKey)">{{ formatVal(item.currentBalance) }}</div><div v-else class="fs-val-forecast"><span class="fs-curr" :class="getValueClass(item.currentBalance, activeWidgetKey)">{{ formatVal(item.currentBalance) }}</span><span class="fs-arrow">></span><span v-if="isWidgetDeltaMode" class="fs-fut" :class="getDeltaClass(item.futureChange, activeWidgetKey)">{{ formatDelta(item.futureChange) }}</span><span v-else class="fs-fut" :class="Number(item.futureBalance) < 0 ? 'red-text' : 'white-text'">{{ formatVal(item.futureBalance) }}</span></div></div>
@@ -356,15 +368,21 @@ const handleAction = () => {};
         <div class="main-content-view">
             <MobileHeaderTotals class="fixed-header" />
             
-            <div class="layout-body">
+            <div class="layout-body" ref="layoutBodyRef">
               <MobileWidgetGrid class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
               
-              <div class="section-timeline" v-show="!mainStore.isHeaderExpanded">
+              <!-- 🟢 TIMELINE С ДИНАМИЧЕСКОЙ ВЫСОТОЙ -->
+              <div class="section-timeline" v-show="!mainStore.isHeaderExpanded" :style="{ height: timelineHeight + 'px', flexShrink: 0 }">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
-                <!-- 🟢 FIX: Прокидываем событие дропа -->
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
               
+              <!-- 🟢 RESIZER HANDLE -->
+              <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @touchstart.stop.prevent="onResizerStart">
+                  <div class="resizer-handle"></div>
+              </div>
+
+              <!-- 🟢 ГРАФИК (Занимает остаток) -->
               <div class="section-chart" v-show="!mainStore.isHeaderExpanded">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
                 <MobileChartSection v-else ref="chartRef" @scroll="onChartScroll" />
@@ -377,12 +395,7 @@ const handleAction = () => {};
         </div>
     </template>
 
-    <!-- 🟢 ГЛОБАЛЬНОЕ МЕНЮ (ДЛЯ ПУСТЫХ ЯЧЕЕК) -->
-    <CellContextMenu 
-        v-if="isContextMenuVisible" 
-        :style="contextMenuPosition" 
-        @select="handleContextMenuSelect" 
-    />
+    <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
 
     <!-- Popups -->
     <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
@@ -457,8 +470,58 @@ const handleAction = () => {};
 .section-widgets.expanded-widgets { flex: 1 1 0px; min-height: 0; height: auto; max-height: none; padding-bottom: 80px; }
 :deep(.widgets-grid) { align-content: start !important; min-height: min-content; }
 .section-widgets::-webkit-scrollbar { display: none; }
-.section-timeline { flex-shrink: 0; height: 180px; border-top: 1px solid var(--color-border, #444); }
-.section-chart { flex-grow: 1; min-height: 50px; border-top: 1px solid var(--color-border, #444); }
+
+/* 🟢 Timeline теперь имеет динамическую высоту и flex-shrink: 0 */
+.section-timeline { 
+    flex-shrink: 0; 
+    border-top: 1px solid var(--color-border, #444); 
+    overflow: hidden;
+}
+
+/* 🟢 График теперь занимает все остальное пространство */
+.section-chart { 
+    flex-grow: 1; 
+    min-height: 50px; 
+    border-top: 1px solid var(--color-border, #444); 
+    overflow: hidden;
+}
+
+/* 🟢 СТИЛИ РЕСАЙЗЕРА */
+.timeline-resizer {
+    height: 14px;
+    background: var(--color-background-soft, #282828);
+    border-top: 1px solid #444;
+    border-bottom: 1px solid #444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: row-resize;
+    z-index: 10;
+    touch-action: none;
+    flex-shrink: 0;
+}
+
+/* Увеличенная зона нажатия (прозрачная) */
+.timeline-resizer::before {
+    content: '';
+    position: absolute;
+    top: -10px; bottom: -10px; left: 0; right: 0;
+    z-index: 11;
+}
+
+.resizer-handle {
+    width: 36px;
+    height: 4px;
+    background: #666;
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+
+.timeline-resizer:active .resizer-handle {
+    background: var(--color-primary, #34c759);
+    height: 5px;
+}
+
 .fixed-footer { flex-shrink: 0; z-index: 200; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
 .fs-regime-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; text-transform: uppercase; margin-top: 3px; display: inline-block; width: fit-content; }
 .badge-upr { background-color: rgba(52, 199, 89, 0.15); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.3); }

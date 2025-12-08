@@ -13,7 +13,7 @@ import { ref, computed, onMounted } from 'vue';
  */
 
 // --- !!! ВАША МЕТКА !!! ---
-console.log('--- NavigationPanel.vue v1.3-FIXED-EMIT ЗАГРУЖЕН ---');
+('--- NavigationPanel.vue v1.3-FIXED-EMIT ЗАГРУЖЕН ---');
 
 
 const emit = defineEmits(['change-view']);
@@ -46,7 +46,7 @@ const changeView = (direction) => {
     
     // --- !!! ЛОГ !!! ---
     const logDir = direction > 0 ? '⬆️' : '⬇️';
-    console.log(`[ЖУРНАЛ] NavigationPanel: ${logDir} Переключил вид на ${newKey}`);
+    (`[ЖУРНАЛ] NavigationPanel: ${logDir} Переключил вид на ${newKey}`);
 
     emit('change-view', newKey); // Отправляем ПРАВИЛЬНЫЙ новый ключ
     // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
@@ -56,7 +56,7 @@ const changeView = (direction) => {
 onMounted(() => {
   // <— важно: сообщаем родителю стартовый режим
   const startKey = currentView.value.key;
-  console.log(`[ЖУРНАЛ] NavigationPanel: 🚀 Старт. Установлен вид ${startKey}`);
+  (`[ЖУРНАЛ] NavigationPanel: 🚀 Старт. Установлен вид ${startKey}`);
   emit('change-view', startKey);
 });
 </script>

@@ -3,7 +3,6 @@ import { ref, onMounted, watch, nextTick, computed, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import MobileDayColumn from './MobileDayColumn.vue';
 
-// 🟢 FIX: Добавлен 'drop-operation' в emits
 const emit = defineEmits(['show-menu', 'drop-operation']);
 const mainStore = useMainStore();
 
@@ -16,7 +15,6 @@ const windowWidth = ref(window.innerWidth);
 const COL_WIDTH_VW = 25; 
 const BUFFER_COLS = 4;
 
-// 🟢 1. Флаг для блокировки обратной реакции на скролл
 const isProgrammaticScroll = ref(false);
 
 const sameDay = (a, b) => {
@@ -36,15 +34,26 @@ const getDayOfYear = (date) => {
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
 const generateAllDays = () => {
+  ('[DEBUG_MT] generateAllDays: START');
   const proj = mainStore.projection;
-  if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
+  
+  if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) {
+      ('[DEBUG_MT] generateAllDays: SKIP (No projection data)');
+      return;
+  }
 
   const start = new Date(proj.rangeStartDate);
-  // 🟢 2. TIMEZONE FIX: Устанавливаем 12:00, чтобы избежать сдвига даты
   start.setHours(12, 0, 0, 0);
 
   const diffTime = new Date(proj.rangeEndDate).getTime() - start.getTime();
   const totalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  
+  (`[DEBUG_MT] generateAllDays: Range calculated. Start: ${start.toISOString()}, TotalDays: ${totalDays}`);
+
+  if (totalDays > 2000 || totalDays < 0) {
+      console.warn('[DEBUG_MT] 🚨 ANOMALY: Too many days or negative!', totalDays);
+      return;
+  }
   
   const days = [];
   const todayReal = new Date();
@@ -52,7 +61,6 @@ const generateAllDays = () => {
   for (let i = 0; i < totalDays; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
-    // Гарантируем 12:00 для каждого дня
     d.setHours(12, 0, 0, 0);
     
     days.push({
@@ -65,6 +73,7 @@ const generateAllDays = () => {
   }
   
   allDays.value = days;
+  (`[DEBUG_MT] generateAllDays: Generated ${days.length} days.`);
 };
 
 const currentPaddingLeft = ref(0);
@@ -74,9 +83,10 @@ const updateVisibleDays = () => {
   
   const scrollLeft = scrollContainer.value.scrollLeft;
   const containerW = scrollContainer.value.clientWidth || windowWidth.value;
+  if (containerW <= 0) return;
+
   const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
-  
-  if (!colWidthPx) return;
+  if (!colWidthPx || colWidthPx <= 0) return;
 
   const startIndex = Math.floor(scrollLeft / colWidthPx);
   const endIndex = Math.ceil((scrollLeft + containerW) / colWidthPx);
@@ -84,27 +94,29 @@ const updateVisibleDays = () => {
   const renderStart = Math.max(0, startIndex - BUFFER_COLS);
   const renderEnd = Math.min(allDays.value.length, endIndex + BUFFER_COLS);
 
+  // (`[DEBUG_MT] updateVisibleDays: Rendering ${renderStart} to ${renderEnd}`); // Spammy log
+
   visibleDays.value = allDays.value.slice(renderStart, renderEnd);
   currentPaddingLeft.value = renderStart * COL_WIDTH_VW;
 };
 
-// 🟢 3. DEBOUNCE: Таймер для задержки обновления стора
 let storeUpdateTimeout = null;
 
 const onScroll = () => {
-  // Если скролл вызван программно (например, при загрузке), не обновляем стор
-  if (isProgrammaticScroll.value) return;
+  if (isProgrammaticScroll.value) {
+      // ('[DEBUG_MT] onScroll: Ignored (programmatic)');
+      return;
+  }
 
-  // Визуальное обновление (рендеринг колонок) делаем сразу
   window.requestAnimationFrame(() => {
       updateVisibleDays();
   });
 
-  // Обновление глобального состояния откладываем на 150мс после остановки скролла
   clearTimeout(storeUpdateTimeout);
   storeUpdateTimeout = setTimeout(() => {
+      ('[DEBUG_MT] onScroll (Debounced): Calling updateStorePosition');
       updateStorePosition();
-  }, 150);
+  }, 300);
 };
 
 const updateStorePosition = () => {
@@ -113,72 +125,104 @@ const updateStorePosition = () => {
    const containerW = el.clientWidth;
    const centerPx = el.scrollLeft + (containerW / 2);
    const colWidthPx = (containerW / 100) * COL_WIDTH_VW; 
+   if (!colWidthPx) return;
+
    const centerIndex = Math.floor(centerPx / colWidthPx);
    
    if (centerIndex >= 0 && centerIndex < allDays.value.length) {
        const day = allDays.value[centerIndex];
        if (day) { 
-           // 🟢 4. CHECK: Обновляем только если день реально изменился
            const currentStoreDate = new Date(mainStore.currentViewDate);
            if (!sameDay(currentStoreDate, day.date)) {
-               // Передаем дату с 12:00
+               (`[DEBUG_MT] updateStorePosition: 🔄 Updating Store Date to ${day.date.toISOString().slice(0,10)}`);
                const safeDate = new Date(day.date);
                safeDate.setHours(12, 0, 0, 0);
                mainStore.setCurrentViewDate(safeDate); 
+           } else {
+               (`[DEBUG_MT] updateStorePosition: Date match (${day.date.toISOString().slice(0,10)}), no update needed.`);
            }
        }
    }
 };
 
 const scrollToDate = (targetDate) => {
-    if (!scrollContainer.value || allDays.value.length === 0) return;
+    ('[DEBUG_MT] scrollToDate: Target', targetDate);
+    if (!scrollContainer.value || allDays.value.length === 0) {
+        ('[DEBUG_MT] scrollToDate: Container or days missing');
+        return;
+    }
     
     let idx = allDays.value.findIndex(d => sameDay(d.date, targetDate));
-    
-    // Fallback: если дата не найдена, ищем сегодня или середину
-    if (idx === -1) idx = allDays.value.findIndex(d => d.isToday);
+    if (idx === -1) {
+        ('[DEBUG_MT] scrollToDate: Target date not found, checking Today/Center');
+        idx = allDays.value.findIndex(d => d.isToday);
+    }
     if (idx === -1) idx = Math.floor(allDays.value.length / 2);
     
+    (`[DEBUG_MT] scrollToDate: Scrolling to index ${idx}`);
+
     const el = scrollContainer.value;
     const colWidthPx = (el.clientWidth / 100) * COL_WIDTH_VW;
+    if (!colWidthPx) return;
     
     let scrollPos = (idx * colWidthPx) - (el.clientWidth / 2) + (colWidthPx / 2);
     scrollPos = Math.max(0, scrollPos);
 
-    // 🟢 5. OPTIMIZATION: Не скроллим, если уже на месте (погрешность 2px)
-    if (Math.abs(el.scrollLeft - scrollPos) < 2) return;
+    if (Math.abs(el.scrollLeft - scrollPos) < 2) {
+        ('[DEBUG_MT] scrollToDate: Already at position');
+        return;
+    }
 
-    // Блокируем обратную реакцию onScroll
     isProgrammaticScroll.value = true;
     el.scrollLeft = scrollPos;
     
-    // Снимаем блокировку через 300мс (достаточно для завершения инерции)
-    setTimeout(() => {
-        isProgrammaticScroll.value = false;
+    setTimeout(() => { 
+        ('[DEBUG_MT] scrollToDate: Programmatic lock released');
+        isProgrammaticScroll.value = false; 
     }, 300);
-
     updateVisibleDays();
 };
 
-// Метод для внешнего вызова (например, из графика)
 const setScroll = (left) => {
     if (scrollContainer.value) {
         if (Math.abs(scrollContainer.value.scrollLeft - left) < 1) return;
-        
         isProgrammaticScroll.value = true;
         scrollContainer.value.scrollLeft = left;
         updateVisibleDays();
-        
-        // Тут блокировку снимаем быстрее, т.к. это синхронный скролл
         setTimeout(() => { isProgrammaticScroll.value = false; }, 50);
     }
 };
 defineExpose({ setScroll });
 
 watch(() => mainStore.projection, async (newVal, oldVal) => {
-  // Защита от лишних реакций, если объект проекции изменился, но данные те же
-  if (oldVal && newVal && newVal.mode === oldVal.mode && newVal.rangeStartDate === oldVal.rangeStartDate) return;
+  ('[DEBUG_MT] Watcher: projection changed');
+  if (!newVal) return;
+  
+  const toDayStr = (d) => { 
+      if (!d) return ''; 
+      const date = new Date(d); 
+      return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`; 
+  };
 
+  let shouldUpdate = !oldVal || newVal.mode !== oldVal.mode;
+  
+  if (!shouldUpdate && oldVal) {
+      const startSame = toDayStr(newVal.rangeStartDate) === toDayStr(oldVal.rangeStartDate);
+      const endSame = toDayStr(newVal.rangeEndDate) === toDayStr(oldVal.rangeEndDate);
+      
+      (`[DEBUG_MT] Watcher: Check dates. StartSame=${startSame}, EndSame=${endSame}`);
+
+      if (!startSame || !endSame) {
+          shouldUpdate = true;
+      }
+  }
+
+  if (!shouldUpdate) {
+      ('[DEBUG_MT] Watcher: Update SKIPPED (Same dates/mode)');
+      return; 
+  }
+
+  ('[DEBUG_MT] Watcher: PROCEEDING to generate days');
   generateAllDays();
   await nextTick(); 
   
@@ -188,16 +232,19 @@ watch(() => mainStore.projection, async (newVal, oldVal) => {
   }, 100);
 }, { deep: true });
 
-// 🟢 6. DEBOUNCE FETCH: Не грузим данные при быстром скролле
+const visibleDayKeys = computed(() => visibleDays.value.map(d => d.dateKey).join(','));
 let fetchTimeout = null;
-watch(visibleDays, () => {
+
+watch(visibleDayKeys, () => {
     clearTimeout(fetchTimeout);
     fetchTimeout = setTimeout(() => {
+        // ('[DEBUG_MT] Fetching operations for visible days...');
         visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey));
     }, 200);
-}, { deep: true });
+});
 
 onMounted(() => {
+  ('[DEBUG_MT] onMounted');
   windowWidth.value = window.innerWidth;
   generateAllDays();
   const initialDate = mainStore.currentViewDate ? new Date(mainStore.currentViewDate) : new Date();
@@ -205,6 +252,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+    ('[DEBUG_MT] onUnmounted');
     clearTimeout(storeUpdateTimeout);
     clearTimeout(fetchTimeout);
 });
@@ -213,7 +261,8 @@ const gridStyle = computed(() => ({
   display: 'grid',
   gridTemplateColumns: `repeat(${visibleDays.value.length}, ${COL_WIDTH_VW}vw)`,
   paddingLeft: `${currentPaddingLeft.value}vw`,
-  height: '100%'
+  height: 'auto',
+  minHeight: '100%'
 }));
 </script>
 
@@ -250,21 +299,41 @@ const gridStyle = computed(() => ({
   width: 100%;
   height: 100%;
   overflow-x: auto; 
-  overflow-y: hidden;
+  overflow-y: auto;
+  
   -webkit-overflow-scrolling: touch; 
   overscroll-behavior-x: contain;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
   scrollbar-width: none; 
 }
 .timeline-scroll-area::-webkit-scrollbar { display: none; }
 
 .timeline-wrapper {
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   position: relative;
 }
 
 .timeline-grid {
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   box-sizing: border-box;
+}
+
+:deep(.mobile-day-col) {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow: visible !important;
+}
+:deep(.day-body) {
+  overflow: visible !important;
+  height: auto !important;
+  flex-grow: 0 !important; 
+}
+:deep(.day-header) {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.1); 
 }
 </style>

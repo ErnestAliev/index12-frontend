@@ -68,7 +68,7 @@ const onDrop = (dropDataFromHourCell) => {
   const targetDate = new Date(props.date);
   targetDate.setHours(12, 0, 0, 0);
 
-  // console.log(`[DayColumn] 💧 onDrop Safe. DateKey: ${props.dateKey}, Cell: ${dropDataFromHourCell.toCellIndex}, TargetDate(Noon): ${targetDate}`);
+  // (`[DayColumn] 💧 onDrop Safe. DateKey: ${props.dateKey}, Cell: ${dropDataFromHourCell.toCellIndex}, TargetDate(Noon): ${targetDate}`);
 
   emit('drop-operation', {
     ...dropDataFromHourCell,
