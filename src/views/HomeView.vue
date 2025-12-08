@@ -25,7 +25,7 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 // 🟢 1. Импорт нового попапа
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
-('--- HomeView.vue v52.3 (Smooth Scroll Fix) Loaded ---'); 
+('--- HomeView.vue v52.4 (Inertial Scroll) Loaded ---'); 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
@@ -486,53 +486,137 @@ const onScrollThumbEnd = () => { scrollState.isDragging = false; window.removeEv
 const onTrackClick = (e) => { if (e.target.classList.contains('custom-scrollbar-thumb')) return; const trackRect = customScrollbarTrackRef.value.getBoundingClientRect(); const clickX = e.clientX - trackRect.left; const targetThumbX = clickX - (scrollbarThumbWidth.value / 2); const trackWidth = trackRect.width; const availableSpace = trackWidth - scrollbarThumbWidth.value; let newThumbX = Math.max(0, Math.min(targetThumbX, availableSpace)); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); const ratio = newThumbX / availableSpace; virtualStartIndex.value = Math.round(ratio * maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
 const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } } } };
 
-// --- 🟢 NEW: SMOOTH SCROLL (Drag-and-Snap) ---
+// --- 🟢 NEW: INERTIAL MOMENTUM SCROLL (Kinetic) ---
 const dragOffset = ref(0);
-const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
+const contentTouchState = { 
+    startX: 0, 
+    lastX: 0, 
+    lastTime: 0, 
+    velocity: 0, 
+    isDragging: false, 
+    rafId: null 
+};
+
+// Функция инерции (анимация затухания)
+const momentumLoop = () => {
+    // 1. Применяем скорость к смещению
+    dragOffset.value += contentTouchState.velocity * 16; // 16ms per frame approx
+
+    // 2. Применяем трение (замедление)
+    contentTouchState.velocity *= 0.95; 
+
+    // 3. Логика виртуального скролла: Если смещение больше ширины колонки, сдвигаем индекс
+    const containerWidth = timelineGridRef.value ? timelineGridRef.value.clientWidth : window.innerWidth;
+    const colWidth = containerWidth / VISIBLE_COLS;
+    
+    // Сдвиг вправо (видим прошлое)
+    if (dragOffset.value > colWidth) {
+        const shift = Math.floor(dragOffset.value / colWidth);
+        const nextVal = Math.max(0, virtualStartIndex.value - shift);
+        
+        if (nextVal !== virtualStartIndex.value) {
+            virtualStartIndex.value = nextVal;
+            rebuildVisibleDays();
+            dragOffset.value -= shift * colWidth; // Корректируем смещение, чтобы не было скачка
+        } else {
+             // Достигли края
+             dragOffset.value = colWidth; // Ограничиваем
+             contentTouchState.velocity = 0;
+        }
+    } 
+    // Сдвиг влево (видим будущее)
+    else if (dragOffset.value < -colWidth) {
+        const shift = Math.floor(Math.abs(dragOffset.value) / colWidth);
+        const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+        const nextVal = Math.min(maxVirtual, virtualStartIndex.value + shift);
+        
+        if (nextVal !== virtualStartIndex.value) {
+            virtualStartIndex.value = nextVal;
+            rebuildVisibleDays();
+            dragOffset.value += shift * colWidth; // Корректируем смещение
+        } else {
+            // Достигли края
+            dragOffset.value = -colWidth;
+            contentTouchState.velocity = 0;
+        }
+    }
+    
+    updateScrollbarMetrics();
+
+    // 4. Условие остановки
+    if (Math.abs(contentTouchState.velocity) > 0.05) {
+        contentTouchState.rafId = requestAnimationFrame(momentumLoop);
+    } else {
+        // 5. Финальная доводка (Snap) к нулю
+        snapToGrid();
+    }
+};
+
+const snapToGrid = () => {
+    // Просто плавно возвращаем dragOffset в 0 (так как мы уже сдвинули virtualStartIndex)
+    // Можно добавить небольшую анимацию, но для простоты просто сбросим
+    if (Math.abs(dragOffset.value) < 1) {
+        dragOffset.value = 0;
+        return;
+    }
+    dragOffset.value *= 0.8; // Быстрая доводка
+    if (Math.abs(dragOffset.value) > 0.5) {
+        requestAnimationFrame(snapToGrid);
+    } else {
+        dragOffset.value = 0;
+    }
+};
 
 const onContentTouchStart = (e) => { 
     if (!isScrollActive.value) return; 
+    
+    // Останавливаем текущую инерцию, если есть
+    if (contentTouchState.rafId) {
+        cancelAnimationFrame(contentTouchState.rafId);
+        contentTouchState.rafId = null;
+    }
+
     contentTouchState.isDragging = true; 
     contentTouchState.startX = e.touches[0].clientX; 
-    contentTouchState.startIndex = virtualStartIndex.value; 
-    dragOffset.value = 0;
+    contentTouchState.lastX = e.touches[0].clientX;
+    contentTouchState.lastTime = Date.now();
+    contentTouchState.velocity = 0;
 };
 
 const onContentTouchMove = (e) => { 
     if (!contentTouchState.isDragging) return; 
-    // Calculate raw pixel delta
-    const currentX = e.touches[0].clientX;
-    const deltaPx = contentTouchState.startX - currentX; 
-    
-    // Update visual offset only (no data fetch yet)
-    dragOffset.value = deltaPx;
-    
     if (e.cancelable) e.preventDefault(); 
+    
+    const currentX = e.touches[0].clientX;
+    const now = Date.now();
+    const dt = now - contentTouchState.lastTime;
+    
+    // Вычисляем смещение от предыдущего кадра
+    const deltaX = currentX - contentTouchState.lastX;
+    
+    // Обновляем визуальное смещение
+    dragOffset.value += deltaX;
+    
+    // Вычисляем мгновенную скорость (пикселей в мс)
+    if (dt > 0) {
+        contentTouchState.velocity = deltaX / dt;
+    }
+
+    contentTouchState.lastX = currentX;
+    contentTouchState.lastTime = now;
 };
 
 const onContentTouchEnd = () => { 
     if (!contentTouchState.isDragging) return;
     contentTouchState.isDragging = false;
     
-    const containerWidth = timelineGridRef.value ? timelineGridRef.value.clientWidth : window.innerWidth;
-    const colWidth = containerWidth / VISIBLE_COLS;
-    
-    // Calculate how many days we shifted
-    const daysShift = Math.round(dragOffset.value / colWidth);
-    
-    const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-    // Apply shift relative to where we started
-    let nextVal = contentTouchState.startIndex + daysShift;
-    nextVal = Math.max(0, Math.min(nextVal, maxVirtual));
-    
-    if (nextVal !== virtualStartIndex.value) { 
-        virtualStartIndex.value = nextVal; 
-        rebuildVisibleDays(); 
-        updateScrollbarMetrics(); 
+    // Если скорость очень маленькая, просто снепим
+    if (Math.abs(contentTouchState.velocity) < 0.1) {
+        snapToGrid();
+    } else {
+        // Запускаем инерцию
+        momentumLoop();
     }
-    
-    // Reset visual offset (snap back to neutral "0" position but with new data)
-    dragOffset.value = 0;
 };
 
 const centerToday = () => { const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); virtualStartIndex.value = Math.min(Math.max(0, globalTodayIndex.value - CENTER_INDEX), maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
@@ -635,7 +719,7 @@ const handleRefundDelete = async (op) => {
     <div class="home-body">
       <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
-        <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef" :style="{ transform: `translateX(${-dragOffset}px)` }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
+        <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef" :style="{ transform: `translateX(${dragOffset}px)` }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
         <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div class="vertical-resizer" ref="resizerRef"></div></div>
         <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
