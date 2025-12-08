@@ -95,31 +95,6 @@ const initScrollSync = () => {
     }
 };
 
-const loadBackgroundData = async (today) => {
-    ('[DEBUG_MHV] loadBackgroundData: START', today);
-    isWidgetsLoading.value = true;
-    try {
-        await mainStore.fetchAllEntities();
-    } catch (e) { console.error("Widgets Load Error:", e); } finally { isWidgetsLoading.value = false; }
-
-    isTimelineLoading.value = true;
-    try {
-        if (!mainStore.projection?.mode) { 
-            ('[DEBUG_MHV] loadBackgroundData: No projection mode, setting default 12d');
-            await mainStore.updateFutureProjectionByMode('12d', today); 
-        }
-        const modeToLoad = mainStore.projection.mode || '12d';
-        (`[DEBUG_MHV] loadBackgroundData: Loading calc data for ${modeToLoad}`);
-        await mainStore.loadCalculationData(modeToLoad, today);
-    } catch (e) { console.error("Timeline Load Error:", e); } finally {
-        isTimelineLoading.value = false;
-        nextTick(() => { 
-            ('[DEBUG_MHV] loadBackgroundData: Init Scroll Sync');
-            initScrollSync(); 
-        });
-    }
-};
-
 // =================================================================
 // 🟢 ЛОГИКА РЕСАЙЗА (ВЫСОТА ТАЙМЛАЙНА)
 // =================================================================
@@ -129,7 +104,6 @@ const startY = ref(0);
 const startHeight = ref(0);
 
 const onResizerStart = (e) => {
-    ('[DEBUG_MHV] Resizer: Start');
     isResizing.value = true;
     startY.value = e.touches[0].clientY;
     startHeight.value = timelineHeight.value;
@@ -160,14 +134,12 @@ const onResizerMove = (e) => {
 
 const onResizerEnd = () => {
     if (isResizing.value) {
-        ('[DEBUG_MHV] Resizer: End. New height:', timelineHeight.value);
         isResizing.value = false;
         document.body.style.userSelect = '';
     }
 };
 
 onMounted(async () => {
-  ('[DEBUG_MHV] onMounted');
   const meta = document.createElement('meta');
   meta.name = "format-detection";
   meta.content = "telephone=no, date=no, email=no, address=no";
@@ -177,22 +149,52 @@ onMounted(async () => {
   window.addEventListener('touchend', onResizerEnd);
 
   try {
+      // 1. Проверка авторизации
       await mainStore.checkAuth();
       if (!mainStore.user) {
-          ('[DEBUG_MHV] User not logged in, aborting init');
           return;
       }
+
+      // 2. Расчет даты "Сегодня"
       const today = new Date();
       const startOfYear = new Date(today.getFullYear(), 0, 0);
       const diff = (today - startOfYear) + ((startOfYear.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
       const oneDay = 1000 * 60 * 60 * 24;
       mainStore.setToday(Math.floor(diff / oneDay));
-      loadBackgroundData(today);
-  } catch (error) { console.error("Mobile View Mount Error:", error); }
+
+      // 3. Загрузка данных (Инлайн, чтобы избежать потери контекста e.fetchAllEntities)
+      isWidgetsLoading.value = true;
+      try {
+          // 🟢 FIX: Прямой вызов без обертки в функцию
+          await mainStore.fetchAllEntities();
+      } catch (e) { 
+          console.error("Widgets Load Error:", e); 
+      } finally { 
+          isWidgetsLoading.value = false; 
+      }
+
+      isTimelineLoading.value = true;
+      try {
+          if (!mainStore.projection?.mode) { 
+              await mainStore.updateFutureProjectionByMode('12d', today); 
+          }
+          const modeToLoad = mainStore.projection.mode || '12d';
+          await mainStore.loadCalculationData(modeToLoad, today);
+      } catch (e) { 
+          console.error("Timeline Load Error:", e); 
+      } finally {
+          isTimelineLoading.value = false;
+          nextTick(() => { 
+              initScrollSync(); 
+          });
+      }
+
+  } catch (error) { 
+      console.error("Mobile View Mount Error:", error); 
+  }
 });
 
 onUnmounted(() => {
-    ('[DEBUG_MHV] onUnmounted');
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
     if (el) el.removeEventListener('scroll', onTimelineScroll);
     document.removeEventListener('mousedown', handleFilterClickOutside);
@@ -309,6 +311,16 @@ const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePo
 const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
 const handleWithdrawalSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isWithdrawalPopupVisible.value = false; } catch (e) { console.error("Mobile Withdrawal Save Error", e); alert("Ошибка сохранения"); } };
 const handleAction = () => {}; 
+const handleOperationDelete = async (op) => {
+    if (!op) return;
+    try {
+        await mainStore.deleteOperation(op);
+        handleClosePopup();
+    } catch(e) {
+        alert("Ошибка удаления: " + e.message);
+    }
+}
+const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; smartDealPayload.value = null; };
 </script>
 
 <template>
@@ -400,8 +412,8 @@ const handleAction = () => {};
     <!-- Popups -->
     <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
     <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
-    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete($event)" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
-    <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete($event)" />
+    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
+    <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" />
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
