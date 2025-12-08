@@ -26,7 +26,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v102.0 (FULL RESTORE + FIX) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v103.0 (INTEGRITY CHECK) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -304,8 +304,6 @@ export const useMainStore = defineStore('mainStore', () => {
       });
       
       // 🟢 FIX: Усиленная сортировка.
-      // Сначала по Дате. Если даты равны - по cellIndex (позиции в дне).
-      // Это гарантирует, что старая закрытая сделка (индекс 0) обработается ДО новой (индекс 1).
       projectOps.sort((a, b) => {
           const timeA = new Date(a.date).getTime();
           const timeB = new Date(b.date).getTime();
@@ -319,7 +317,6 @@ export const useMainStore = defineStore('mainStore', () => {
       });
 
       projectOps.forEach(op => {
-          // 🟢 ЛОГИКА: Накапливаем данные
           tranchesCount++;
           if ((op.totalDealAmount || 0) > maxTotalDeal) maxTotalDeal = op.totalDealAmount;
           paidTotal += (op.amount || 0);
@@ -328,9 +325,6 @@ export const useMainStore = defineStore('mainStore', () => {
               activeTranche = op;
           }
 
-          // 🟢 РЕФАКТОРИНГ: Если текущая операция закрыта (isClosed === true),
-          // это означает, что сделка на этом этапе завершена.
-          // Мы сбрасываем счетчики, чтобы любые СЛЕДУЮЩИЕ операции считались началом НОВОЙ сделки.
           if (op.isClosed) {
               maxTotalDeal = 0;
               paidTotal = 0;
@@ -1426,6 +1420,9 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // 🟢 ЭТО КРИТИЧЕСКИ ВАЖНАЯ ФУНКЦИЯ, КОТОРАЯ ОТСУТСТВОВАЛА В ВОЗВРАТЕ
   async function fetchAllEntities(){
+    // 🟢 Лог для отладки
+    console.log('[mainStore] fetchAllEntities called');
+    
     if (!user.value) return; 
     try{
       const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes, dealsRes, taxesRes] = await Promise.all([
