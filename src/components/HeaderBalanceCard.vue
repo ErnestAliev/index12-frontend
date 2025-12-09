@@ -36,22 +36,19 @@ const updateFilterPosition = () => {
   }
 };
 
-// --- Хелпер для безопасного извлечения ID ---
 const getId = (field) => {
     if (!field) return null;
     if (typeof field === 'object' && field._id) return field._id;
-    return field; // Если это строка
+    return field; 
 };
 
-// 1. ВЫЧИСЛЕНИЕ ОБЩЕГО БАЛАНСА СИСТЕМЫ И БАЛАНСОВ ВЛАДЕЛЬЦЕВ
 const financialStats = computed(() => {
-    const balances = new Map(); // Map<OwnerID, TotalBalance>
-    let systemTotalBalance = 0; // Общая сумма денег во всей системе (Эталон)
+    const balances = new Map(); 
+    let systemTotalBalance = 0; 
 
     const sourceAccounts = mainStore.currentAccountBalances || [];
 
     sourceAccounts.forEach(acc => {
-        // 🟢 Исключаем из базы для расчета цвета, если счет скрыт
         if (acc.isExcluded && !mainStore.includeExcludedInTotal) return;
 
         const rawBalance = Number(acc.balance);
@@ -75,7 +72,6 @@ const financialStats = computed(() => {
     return { balances, maxBalance };
 });
 
-// 2. ЛОГИКА ЦВЕТА (СВЕТОФОР) ДЛЯ ТЕКУЩЕГО СОСТОЯНИЯ
 const getStatusColor = (currentBalance, totalSystemBalance) => {
     const safeBalance = Number(currentBalance) || 0;
     
@@ -88,7 +84,6 @@ const getStatusColor = (currentBalance, totalSystemBalance) => {
     return '#FF3B30';                   
 };
 
-// 3. ЛОГИКА ЦВЕТА БУДУЩЕГО БАЛАНСА
 const getFutureColor = (item) => {
     if (props.isDeltaMode) {
         if (item.futureBalance > 0) return 'income';
@@ -108,9 +103,6 @@ const getFutureColor = (item) => {
 const processedItems = computed(() => {
   let items = [...props.items];
   
-  // 🟢 УБРАНА ФИЛЬТРАЦИЯ ИСКЛЮЧЕННЫХ СЧЕТОВ
-  // Теперь они всегда видны в списке, меняется только иконка и цвет
-
   if (filterMode.value === 'positive') items = items.filter(item => (item.balance || 0) > 0);
   else if (filterMode.value === 'negative') items = items.filter(item => (item.balance || 0) < 0);
   else if (filterMode.value === 'nonZero') items = items.filter(item => (item.balance || 0) !== 0);
@@ -128,7 +120,6 @@ const processedItems = computed(() => {
 
       const itemId = getId(item); 
 
-      // --- ЛОГИКА ДЛЯ СЧЕТОВ ---
       if (props.widgetKey === 'accounts') {
           color = getStatusColor(item.balance, maxBalance);
 
@@ -150,7 +141,6 @@ const processedItems = computed(() => {
           }
       }
       
-      // --- ЛОГИКА ДЛЯ КОМПАНИЙ ---
       else if (props.widgetKey === 'companies') {
           const totalBalance = balances.get(itemId) || 0;
           color = getStatusColor(totalBalance, maxBalance);
@@ -167,7 +157,6 @@ const processedItems = computed(() => {
           }
       }
 
-      // --- ЛОГИКА ДЛЯ ФИЗЛИЦ ---
       else if (props.widgetKey === 'individuals') {
           const linkedAccounts = mainStore.accounts.filter(acc => getId(acc.individualId) === itemId);
 
@@ -237,7 +226,6 @@ const formatDelta = (val) => {
       <div class="card-title">{{ props.title }}</div>
 
       <div class="card-actions">
-        <!-- 🟢 НОВАЯ КНОПКА (ТОЛЬКО ДЛЯ СЧЕТОВ) -->
         <button 
             v-if="props.widgetKey === 'accounts'" 
             class="action-square-btn" 
@@ -313,14 +301,11 @@ const formatDelta = (val) => {
              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
           </span>
 
-          <!-- 🟢 Иконка исключенного счета (Динамическая) -->
           <span v-if="item.isExcluded" class="excluded-icon" :class="{ 'included-now': mainStore.includeExcludedInTotal }" :title="mainStore.includeExcludedInTotal ? 'Временно включен в расчет' : 'Исключен из общего баланса'">
-             <!-- Если включен учет скрытых - зеленый глаз -->
-             <svg v-if="mainStore.includeExcludedInTotal" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+             <svg v-if="mainStore.includeExcludedInTotal" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                  <circle cx="12" cy="12" r="3"></circle>
              </svg>
-             <!-- Иначе - перечеркнутый глаз -->
              <svg v-else xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                  <line x1="1" y1="1" x2="23" y2="23"></line>
@@ -337,11 +322,9 @@ const formatDelta = (val) => {
              <span class="currency">₸</span> {{ formatBalance(item.balance) }}
           </span>
           <span class="arrow-cell">></span>
-          <!-- 🟢 Если дельта режим (контрагенты) - показываем дельту -->
           <span v-if="isDeltaMode" class="future-cell" :class="{ 'income': item.futureBalance > 0, 'expense': item.futureBalance < 0 }">
              {{ formatDelta(item.futureBalance) }}
           </span>
-          <!-- 🟢 ИНАЧЕ (счета, компании) - используем новую функцию цвета -->
           <span v-else class="future-cell" :class="getFutureColor(item)">
              {{ formatBalance(item.futureBalance) }}
           </span>
@@ -469,5 +452,15 @@ const formatDelta = (val) => {
   .card-title { font-size: 0.8em; }
   .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .card-items-list.forecast-mode { font-size: var(--font-xs); }
+}
+
+/* 🟢 FIX: Принудительный размер шрифта для планшетов */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .card-items-list.forecast-mode {
+        font-size: var(--font-sm) !important;
+    }
+    .card-item { 
+        font-size: var(--font-sm) !important;
+    }
 }
 </style>

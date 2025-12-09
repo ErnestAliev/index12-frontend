@@ -9,7 +9,6 @@ import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
 import HeaderCreditCard from './HeaderCreditCard.vue'; 
-// 🟢 Импорт карточки налогов
 import HeaderTaxCard from './HeaderTaxCard.vue';
 
 // Попапы
@@ -26,20 +25,18 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue';
 import PrepaymentListEditor from './PrepaymentListEditor.vue';
 import WithdrawalListEditor from './WithdrawalListEditor.vue';
-
-// 🟢 НОВЫЕ ПОПАПЫ ДЛЯ НАЛОГОВ
 import TaxListEditor from './TaxListEditor.vue';
 import TaxPaymentPopup from './TaxPaymentPopup.vue';
-
 import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v45.1 - RENAME INDIVIDUALS ---
- * * ВЕРСИЯ: 45.1
- * * ДАТА: 2025-12-07
+ * * --- МЕТКА ВЕРСИИ: v46.0 - TABLET GRID FIX ---
+ * * ВЕРСИЯ: 46.0
+ * * ДАТА: 2025-12-09
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) Переименован заголовок виджета "Мои Физлица" -> "Физлица".
+ * 1. (GRID) Добавлена адаптация для планшетов (768-1024px): 5 колонок.
+ * 2. (LAYOUT) Фиксированное положение виджетов "Всего" (1) и "Прогноз" (5) на планшетах.
  */
 
 const mainStore = useMainStore();
@@ -121,7 +118,6 @@ const isEntityPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
 
-// 🟢 Налоговые стейты
 const isTaxListEditorVisible = ref(false);
 const isTaxPaymentPopupVisible = ref(false);
 
@@ -135,7 +131,6 @@ const isListEditorVisible = ref(false);
 const editorTitle = ref('');
 const editorItems = ref([]);
 const editorSavePath = ref(null);
-const operationToEdit = ref(null);
 
 // ... adaptive utils ...
 const windowWidth = ref(window.innerWidth);
@@ -276,19 +271,9 @@ const onLiabilitiesTab = (tabName) => { prepaymentEditorInitialTab.value = tabNa
 const onCreditsEdit = () => { isCreditEditorVisible.value = true; };
 const onCreditsAdd = () => { isCreditWizardVisible.value = true; };
 
-// 🟢 ОБРАБОТЧИКИ НАЛОГОВ
-const onTaxesAdd = () => {
-    isTaxPaymentPopupVisible.value = true;
-};
-const onTaxesEdit = () => {
-    isTaxListEditorVisible.value = true;
-};
-
-const handleTaxPaymentSuccess = () => {
-    isTaxPaymentPopupVisible.value = false;
-    // Обновляем данные
-    mainStore.fetchAllEntities();
-};
+const onTaxesAdd = () => { isTaxPaymentPopupVisible.value = true; };
+const onTaxesEdit = () => { isTaxListEditorVisible.value = true; };
+const handleTaxPaymentSuccess = () => { isTaxPaymentPopupVisible.value = false; mainStore.fetchAllEntities(); };
 
 const handleWizardSave = async (payload) => {
     isCreditWizardVisible.value = false;
@@ -353,7 +338,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     :animation="200"
   >
     <template #item="{ element: widgetKey, index }">
-      <div class="dashboard-card-wrapper">
+      <!-- 🟢 ДОБАВЛЕН класс widget-{key} для таргетинга в CSS Grid -->
+      <div class="dashboard-card-wrapper" :class="['widget-' + widgetKey]">
         <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
@@ -367,7 +353,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
         
-        <!-- 🟢 NEW: Виджет Налогов -->
         <HeaderTaxCard
           v-else-if="widgetKey === 'taxes'"
           title="Мои налоги"
@@ -448,7 +433,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
 
-        <!-- 🟢 ИСПРАВЛЕНИЕ: Переименовано "Мои Физлица" -> "Физлица" -->
         <HeaderBalanceCard
           v-else-if="widgetKey === 'individuals'"
           title="Физлица"
@@ -520,14 +504,12 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <PrepaymentListEditor v-if="isPrepaymentEditorVisible" :initial-tab="prepaymentEditorInitialTab" @close="isPrepaymentEditorVisible = false" />
   <WithdrawalListEditor v-if="isWithdrawalListEditorVisible" @close="isWithdrawalListEditorVisible = false" />
   
-  <!-- 🟢 POPUPS НАЛОГОВ -->
   <TaxListEditor v-if="isTaxListEditorVisible" @close="isTaxListEditorVisible = false" />
   <TaxPaymentPopup v-if="isTaxPaymentPopupVisible" @close="isTaxPaymentPopupVisible = false" @success="handleTaxPaymentSuccess" />
 
 </template>
 
 <style scoped>
-/* (Стили без изменений) */
 .header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; padding: 1px; background-color: var(--color-border); border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
 .dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--color-background-soft); min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: grab; }
 .dashboard-card-wrapper:active { cursor: grabbing; }
@@ -541,6 +523,48 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .sortable-drag { background-color: var(--color-background-soft); box-shadow: 0 5px 15px rgba(0,0,0,0.3); opacity: 1; z-index: 2000; }
 .header-dashboard.expanded :deep(.card-title span) { display: none !important; }
 .header-dashboard.expanded :deep(.card-title) { cursor: default; pointer-events: none; }
+
+/* 🟢 АДАПТИВ ДЛЯ ПЛАНШЕТОВ (768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .header-dashboard {
+    /* Меняем сетку на 5 колонок */
+    grid-template-columns: repeat(5, 1fr) !important;
+    /* Плотное заполнение, чтобы дырки заполнялись */
+    grid-auto-flow: dense;
+  }
+
+  /* Сбрасываем правый бордер для каждого 5-го элемента */
+  .dashboard-card-wrapper:nth-child(5n) { 
+    border-right: none !important; 
+  }
+  
+  /* Возвращаем бордер для 6-го элемента (т.к. в 6-колоночной он убирался) */
+  .dashboard-card-wrapper:nth-child(6n) {
+    border-right: 1px solid var(--color-border) !important;
+  }
+
+  .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+6) { 
+    display: none; 
+  }
+  
+  .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+5) { 
+    border-bottom: none !important; 
+  }
+
+  /* 🟢 ФИКСИРОВАННОЕ ПОЗИЦИОНИРОВАНИЕ */
+  /* Всего (Баланс) - Всегда 1-я позиция */
+  .widget-currentTotal {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* Прогноз - Всегда 5-я позиция (Правый верхний угол в 5-колоночной сетке) */
+  .widget-futureTotal {
+    grid-column: 5;
+    grid-row: 1;
+  }
+}
+
 @media (max-height: 900px) { :deep(.dashboard-card) { padding: 8px 10px !important; } }
 .global-menu-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 5000; background: transparent; }
 .global-widget-dropdown { position: fixed; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 25px rgba(0,0,0,0.3); padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; color: #333; }
