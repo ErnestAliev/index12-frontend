@@ -35,13 +35,14 @@ import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v46.4 - FIX FONT SIZE & 1400PX GRID ---
- * * ВЕРСИЯ: 46.4
+ * * --- МЕТКА ВЕРСИИ: v46.5 - FORCE FONT SIZE FIX ---
+ * * ВЕРСИЯ: 46.5
  * * ДАТА: 2025-12-09
  * * ИЗМЕНЕНИЯ:
- * 1. (GRID) Диапазон isTabletGrid расширен до 1400px (для iPad Pro и др.).
- * 2. (CSS) Добавлено правило font-size: 14px !important для .dashboard-card в режиме планшета.
- * Это предотвращает уменьшение шрифта при активации прогноза или глобальном масштабировании.
+ * 1. (GRID) Планшетная сетка 5 колонок для ширины 768px - 1400px.
+ * 2. (CSS) Добавлены жесткие переопределения (!important) шрифтов для внутренних элементов карточек.
+ * Это отменяет действие локальных медиа-запросов (max-height: 900px) внутри компонентов, 
+ * которые уменьшали шрифт при включении прогноза.
  */
 
 const mainStore = useMainStore();
@@ -86,8 +87,7 @@ const windowWidth = ref(window.innerWidth);
 const updateWidth = () => { windowWidth.value = window.innerWidth; };
 
 // 🟢 Tablet Detection via MatchMedia (Sync with CSS)
-// Расширяем диапазон до 1400px.
-// Если ширина экрана <= 1400px, включается режим 5 колонок.
+// Расширяем диапазон до 1400px (iPad Pro, горизонтальные планшеты).
 const tabletMediaQuery = window.matchMedia('(min-width: 768px) and (max-width: 1400px)');
 const isTabletGrid = ref(tabletMediaQuery.matches);
 
@@ -97,11 +97,9 @@ const handleTabletChange = (e) => {
 
 onMounted(() => {
   window.addEventListener('resize', updateWidth);
-  // Слушаем изменения медиа-запроса
   if (tabletMediaQuery.addEventListener) {
     tabletMediaQuery.addEventListener('change', handleTabletChange);
   } else {
-    // Fallback
     tabletMediaQuery.addListener(handleTabletChange);
   }
 });
@@ -115,7 +113,7 @@ onUnmounted(() => {
   }
 });
 
-const isTablet = computed(() => windowWidth.value < 1400); // Используется для компактного форматирования дат
+const isTablet = computed(() => windowWidth.value < 1400); 
 
 const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
@@ -132,18 +130,16 @@ const localWidgets = computed({
       const allKeys = mainStore.allWidgets.map(w => w.key);
       const ordered = [...mainStore.dashboardLayout];
       
-      // Добавляем скрытые виджеты в конец
+      // Добавляем скрытые виджеты
       allKeys.forEach(k => { if (!layoutSet.has(k)) ordered.push(k); });
       
-      // 🟢 Динамический размер ряда: 5 для планшетов (включая Pro до 1400px), 6 для больших десктопов
+      // 🟢 Сетка 5x для планшетов (включая Pro до 1400px)
       const rowSize = isTabletGrid.value ? 5 : 6;
       
       const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
       const totalSlots = rows * rowSize;
       
-      // Добиваем плейсхолдерами до полного ряда
-      // С 15 виджетами:
-      // При rowSize=5 -> rows=3, totalSlots=15 -> 0 плейсхолдеров.
+      // Плейсхолдеры
       while (ordered.length < totalSlots) { ordered.push(`placeholder_${ordered.length}`); }
       return ordered;
     }
@@ -583,9 +579,29 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   }
 
   /* 🟢 FIX FONT SIZE STABILITY */
-  /* Принудительно задаем размер шрифта, чтобы он не уменьшался при активации прогноза */
-  :deep(.dashboard-card) {
-      font-size: var(--font-size-regular, 14px) !important;
+  /* Принудительно задаем размер шрифта, чтобы он не уменьшался при активации прогноза.
+     Переопределяем стили для всех типов контента внутри карточек:
+     - .card-items-list (списки счетов/компаний)
+     - .card-item (строки)
+     - .category-items-list-scroll (списки категорий)
+     - .summary-value-block (итоги категорий)
+     - .forecast-mode (сам режим прогноза)
+  */
+  :deep(.dashboard-card),
+  :deep(.card-items-list),
+  :deep(.card-item),
+  :deep(.category-items-list-scroll),
+  :deep(.category-item),
+  :deep(.summary-value-block),
+  :deep(.card-items-list.forecast-mode) {
+      font-size: var(--font-sm, 13px) !important;
+  }
+  
+  /* Игнорируем уменьшение для конкретных ячеек */
+  :deep(.current-cell),
+  :deep(.future-cell),
+  :deep(.forecast-display) {
+      font-size: inherit !important;
   }
   
   /* Сбрасываем стили для 6-й колонки */
