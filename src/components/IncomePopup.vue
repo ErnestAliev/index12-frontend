@@ -936,7 +936,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-cancel-link:hover { color: #555; }
 
 /* 🟢 MOBILE OPTIMIZATION */
-@media (max-width: 600px), (max-height: 900px) {
+@media (max-width: 580px), (max-height: 900px) {
   .popup-content {
     padding: 1.5rem; /* Reduced padding */
     margin: 1rem;
