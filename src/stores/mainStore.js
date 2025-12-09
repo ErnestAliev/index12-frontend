@@ -1,9 +1,12 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 
 axios.defaults.withCredentials = true; 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+// 🟢 Получаем URL для сокета (обычно корень, без /api)
+const SOCKET_URL = API_BASE_URL.replace('/api', '');
 
 const VIEW_MODE_DAYS = {
   '12d': { total: 12 },
@@ -26,11 +29,14 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v103.0 (INTEGRITY CHECK) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v104.0 (SOCKET.IO ENABLED) ЗАГРУЖЕН ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
   
+  // 🟢 Socket instance
+  const socket = ref(null);
+
   const widgetSortMode = ref('default'); 
   const widgetFilterMode = ref('all');   
 
@@ -1078,8 +1084,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => {
-          // 🟢 1. Исключаем счета, помеченные isExcluded
-          // 🟢 100.0: Новая логика - если флаг выключен (false), исключаем. Если включен, суммируем всё.
           if (!includeExcludedInTotal.value && a.isExcluded) return acc;
           return acc + (a.balance || 0);
       }, 0);
@@ -1088,7 +1092,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
     
-    // 🟢 2. Исключенные ID для быстрого поиска
     const excludedIds = new Set();
     accounts.value.forEach(a => {
         if (a.isExcluded) excludedIds.add(String(a._id));
@@ -1101,7 +1104,6 @@ export const useMainStore = defineStore('mainStore', () => {
         
         const accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
         
-        // 🟢 3. Пропускаем операции по исключенным счетам, если флаг НЕ включен
         if (!includeExcludedInTotal.value && excludedIds.has(String(accId))) continue;
         
         const amt = Math.abs(op.amount || 0);
@@ -1143,6 +1145,201 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
       return populated;
+  }
+
+  // 🟢 SOCKET EVENT HANDLERS
+  
+  // Обработка добавления (приходит от других устройств)
+  const handleSocketOperationAdded = (op) => {
+      const existingOp = allOperationsFlat.value.find(o => o._id === op._id);
+      if (existingOp) return; // Уже есть (например, создано текущим клиентом)
+
+      const richOp = _populateOp(op);
+      const dk = richOp.dateKey;
+      
+      if (!displayCache.value[dk]) displayCache.value[dk] = [];
+      displayCache.value[dk].push(richOp);
+      calculationCache.value[dk] = [...displayCache.value[dk]];
+
+      const now = new Date();
+      if (new Date(richOp.date) <= now) {
+          _applyOptimisticSnapshotUpdate(richOp, 1);
+      }
+      _updateDealCache(richOp, 'add');
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+  };
+
+  // Обработка обновления (перемещение, изменение суммы)
+  const handleSocketOperationUpdated = (op) => {
+      // 1. Ищем старую версию
+      let oldOp = null;
+      let oldDateKey = null;
+      
+      for (const dk in displayCache.value) {
+          const found = displayCache.value[dk].find(o => o._id === op._id);
+          if (found) { oldOp = found; oldDateKey = dk; break; }
+      }
+      if (!oldOp) oldOp = allOperationsFlat.value.find(o => o._id === op._id);
+
+      // 2. Если нашли, откатываем её влияние
+      const now = new Date();
+      if (oldOp && new Date(oldOp.date) <= now) {
+          _applyOptimisticSnapshotUpdate(oldOp, -1);
+      }
+
+      // 3. Обновляем кэш (удаляем старую, добавляем новую)
+      const newDateKey = op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : oldDateKey);
+      const richOp = _populateOp({ ...op, date: new Date(op.date) });
+      
+      // Удаляем старую
+      if (oldDateKey && displayCache.value[oldDateKey]) {
+           displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== op._id);
+           calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
+      }
+
+      // Добавляем новую
+      if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
+      
+      // Проверяем, нет ли уже такой (на всякий случай)
+      const existsIndex = displayCache.value[newDateKey].findIndex(o => o._id === op._id);
+      if (existsIndex !== -1) {
+          displayCache.value[newDateKey][existsIndex] = richOp;
+      } else {
+          displayCache.value[newDateKey].push(richOp);
+      }
+      calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
+
+      // 4. Применяем влияние новой версии
+      if (new Date(richOp.date) <= now) {
+          _applyOptimisticSnapshotUpdate(richOp, 1);
+      }
+      
+      _updateDealCache(richOp, 'update');
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+  };
+
+  // Обработка удаления
+  const handleSocketOperationDeleted = (opId) => {
+      let oldOp = null;
+      let oldDateKey = null;
+      
+      for (const dk in displayCache.value) {
+          const found = displayCache.value[dk].find(o => o._id === opId);
+          if (found) { oldOp = found; oldDateKey = dk; break; }
+      }
+      if (!oldOp) return; // Уже удалено
+
+      // Откат баланса
+      const now = new Date();
+      if (new Date(oldOp.date) <= now) {
+          _applyOptimisticSnapshotUpdate(oldOp, -1);
+      }
+
+      // Удаление из кэша
+      if (oldDateKey && displayCache.value[oldDateKey]) {
+          displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== opId);
+          calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
+      }
+      
+      _updateDealCache(oldOp, 'delete');
+      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+  };
+
+  // 🟢 INIT SOCKET
+  async function initSocket() {
+      if (socket.value) return; // Уже инициализирован
+      if (!user.value) return;
+
+      console.log(`[mainStore] Connecting to socket at ${SOCKET_URL}...`);
+      socket.value = io(SOCKET_URL, {
+          withCredentials: true,
+          transports: ['websocket', 'polling']
+      });
+
+      socket.value.on('connect', () => {
+          console.log('[mainStore] Socket connected:', socket.value.id);
+          socket.value.emit('join', user.value._id);
+      });
+
+      // --- OPERATIONS LISTENERS ---
+      socket.value.on('operation_added', (op) => {
+          // console.log('[Socket] operation_added', op);
+          handleSocketOperationAdded(op);
+      });
+      socket.value.on('operation_updated', (op) => {
+          // console.log('[Socket] operation_updated', op);
+          handleSocketOperationUpdated(op);
+      });
+      socket.value.on('operation_deleted', (id) => {
+          // console.log('[Socket] operation_deleted', id);
+          handleSocketOperationDeleted(id);
+      });
+      socket.value.on('operations_imported', (count) => {
+           console.log(`[Socket] Imported ${count} operations. Refreshing...`);
+           forceRefreshAll();
+      });
+
+      // --- ENTITY LISTENERS ---
+      const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category', 'prepayment'];
+      
+      entityTypes.forEach(type => {
+          socket.value.on(`${type}_added`, (item) => {
+             // Generic add to list
+             let listRef = null;
+             if (type === 'account') listRef = accounts;
+             if (type === 'company') listRef = companies;
+             if (type === 'contractor') listRef = contractors;
+             if (type === 'project') listRef = projects;
+             if (type === 'individual') listRef = individuals;
+             if (type === 'category') listRef = categories;
+             
+             if (listRef) {
+                 const exists = listRef.value.find(i => i._id === item._id);
+                 if (!exists) listRef.value.push(item);
+                 listRef.value = _sortByOrder(listRef.value);
+             }
+          });
+          
+          socket.value.on(`${type}_deleted`, (id) => {
+             // Generic remove from list
+             let listRef = null;
+             if (type === 'account') listRef = accounts;
+             if (type === 'company') listRef = companies;
+             if (type === 'contractor') listRef = contractors;
+             if (type === 'project') listRef = projects;
+             if (type === 'individual') listRef = individuals;
+             if (type === 'category') listRef = categories;
+
+             if (listRef) {
+                 listRef.value = listRef.value.filter(i => i._id !== id);
+             }
+          });
+          
+          socket.value.on(`${type}_list_updated`, (newList) => {
+             let listRef = null;
+             if (type === 'account') listRef = accounts;
+             if (type === 'company') listRef = companies;
+             if (type === 'contractor') listRef = contractors;
+             if (type === 'project') listRef = projects;
+             if (type === 'individual') listRef = individuals;
+             if (type === 'category') listRef = categories;
+             
+             if (listRef && Array.isArray(newList)) {
+                 listRef.value = _sortByOrder(newList);
+             }
+          });
+      });
+      
+      // Credits & Taxes specific
+      socket.value.on('credit_added', (c) => { credits.value.push(c); });
+      socket.value.on('credit_updated', (c) => { 
+          const idx = credits.value.findIndex(x => x._id === c._id);
+          if (idx !== -1) credits.value[idx] = c; else credits.value.push(c);
+      });
+      socket.value.on('credit_deleted', (id) => { credits.value = credits.value.filter(c => c._id !== id); });
+
+      socket.value.on('tax_payment_added', (t) => { taxes.value.push(t); });
+      socket.value.on('tax_payment_deleted', (id) => { taxes.value = taxes.value.filter(t => t._id !== id); });
   }
 
   async function createEvent(eventData) {
@@ -1418,9 +1615,7 @@ export const useMainStore = defineStore('mainStore', () => {
     projection.value = { mode:'custom', totalDays: Math.max(1, Math.floor((end-start)/86400000)+1), rangeStartDate:start, rangeEndDate:end, futureIncomeSum: 0 };
   }
 
-  // 🟢 ЭТО КРИТИЧЕСКИ ВАЖНАЯ ФУНКЦИЯ, КОТОРАЯ ОТСУТСТВОВАЛА В ВОЗВРАТЕ
   async function fetchAllEntities(){
-    // 🟢 Лог для отладки
     console.log('[mainStore] fetchAllEntities called');
     
     if (!user.value) return; 
@@ -1450,6 +1645,9 @@ export const useMainStore = defineStore('mainStore', () => {
       
       await ensureSystemEntities();
       await fetchSnapshot();
+      
+      // 🟢 Init Socket after fetch
+      initSocket();
 
       const availableKeys = new Set(staticWidgets.value.map(w => w.key));
       categories.value.forEach(c => availableKeys.add(`cat_${c._id}`));
@@ -1732,6 +1930,9 @@ export const useMainStore = defineStore('mainStore', () => {
   async function deleteEntity(path, id, deleteOperations = false) {
       try {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
+          // Note: Socket event will handle the local removal usually, 
+          // but for instant feedback on initiator we can keep optimistic removal here if desired.
+          // For now relying on Socket is fine or we can keep this for safety.
           if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
           if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
@@ -1762,15 +1963,16 @@ export const useMainStore = defineStore('mainStore', () => {
           };
       }
       const res = await axios.post(`${API_BASE_URL}/accounts`, payload); 
-      accounts.value.push(res.data); 
+      // Socket will add it, but adding here avoids delay
+      if (!accounts.value.find(a => a._id === res.data._id)) accounts.value.push(res.data); 
       return res.data; 
   }
   
-  async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); companies.value.push(res.data); return res.data; }
-  async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); contractors.value.push(res.data); return res.data; }
-  async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); projects.value.push(res.data); return res.data; }
-  async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); individuals.value.push(res.data); return res.data; }
-  async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); credits.value.push(res.data); return res.data; }
+  async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); if(!companies.value.find(i=>i._id===res.data._id)) companies.value.push(res.data); return res.data; }
+  async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); if(!contractors.value.find(i=>i._id===res.data._id)) contractors.value.push(res.data); return res.data; }
+  async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); if(!projects.value.find(i=>i._id===res.data._id)) projects.value.push(res.data); return res.data; }
+  async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); if(!individuals.value.find(i=>i._id===res.data._id)) individuals.value.push(res.data); return res.data; }
+  async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); if(!credits.value.find(i=>i._id===res.data._id)) credits.value.push(res.data); return res.data; }
 
   async function batchUpdateEntities(path, items){ 
     try { 
@@ -1785,6 +1987,7 @@ export const useMainStore = defineStore('mainStore', () => {
           return;
       }
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items); 
+      // Socket handles list update broadcast
       const sortedData = _sortByOrder(res.data);
       if (path==='accounts') accounts.value = sortedData; 
       else if (path==='companies') companies.value = sortedData; 
@@ -1809,19 +2012,15 @@ export const useMainStore = defineStore('mainStore', () => {
     return others;
   }
 
-  let autoRefreshInterval = null;
+  // 🟢 DEPRECATED: startAutoRefresh replaced by Socket
   function startAutoRefresh(intervalMs = 30000) {
-    stopAutoRefresh();
-    autoRefreshInterval = setInterval(async () => {
-      try {
-        await fetchAllEntities();
-        if (projection.value.mode) await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-      } catch (error) {}
-    }, intervalMs);
+      console.log('startAutoRefresh is deprecated. Sockets are active.');
   }
-  function stopAutoRefresh() { if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; } }
+  function stopAutoRefresh() {}
+  
   async function forceRefreshAll() {
     try {
+      // Clear cache to ensure fresh state
       displayCache.value = {}; calculationCache.value = {};
       await fetchAllEntities();
       if (projection.value.mode) await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
@@ -1847,7 +2046,16 @@ export const useMainStore = defineStore('mainStore', () => {
       } 
   }
   
-  async function logout() { axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {}); user.value = null; displayCache.value = {}; calculationCache.value = {}; }
+  async function logout() { 
+      axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {}); 
+      user.value = null; 
+      if (socket.value) {
+          socket.value.disconnect();
+          socket.value = null;
+      }
+      displayCache.value = {}; 
+      calculationCache.value = {}; 
+  }
   function computeTotalDaysForMode(mode, baseDate) { return getViewModeInfo(mode).total; }
   async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
 
@@ -2150,7 +2358,8 @@ export const useMainStore = defineStore('mainStore', () => {
           };
           
           const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
-          taxes.value.push(res.data);
+          // Socket will add to taxes list
+          if (!taxes.value.find(t=>t._id===res.data._id)) taxes.value.push(res.data);
           
           return res.data;
       } catch (e) {
@@ -2243,6 +2452,9 @@ export const useMainStore = defineStore('mainStore', () => {
     
     // 🟢 НОВЫЕ ПОЛЯ ДЛЯ TOGGLE
     includeExcludedInTotal,
-    toggleExcludedInclusion
+    toggleExcludedInclusion,
+    
+    // 🟢 SOCKET INIT
+    initSocket
   };
 });
