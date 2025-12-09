@@ -35,12 +35,13 @@ import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v46.2 - FIX IPAD AIR/PRO GRID ---
- * * ВЕРСИЯ: 46.2
+ * * --- МЕТКА ВЕРСИИ: v46.3 - EXTEND TABLET GRID TO 1400px ---
+ * * ВЕРСИЯ: 46.3
  * * ДАТА: 2025-12-09
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Расширен диапазон isTabletGrid до 1366px (включая iPad Air 1180px и iPad Pro 1366px).
- * Теперь эти устройства используют сетку 5 колонок, что идеально вмещает 15 виджетов в 3 ряда.
+ * 1. (FIX) Диапазон isTabletGrid расширен до 1400px.
+ * Это гарантирует использование сетки 5 колонок на крупных планшетах.
+ * При 15 виджетах это дает ровно 3 ряда (15/5) без остатка и без лишних плейсхолдеров (которые создавали 4-й ряд).
  */
 
 const mainStore = useMainStore();
@@ -85,8 +86,9 @@ const windowWidth = ref(window.innerWidth);
 const updateWidth = () => { windowWidth.value = window.innerWidth; };
 
 // 🟢 Tablet Detection via MatchMedia (Sync with CSS)
-// Расширяем диапазон до 1366px, чтобы захватить iPad Air и Pro
-const tabletMediaQuery = window.matchMedia('(min-width: 768px) and (max-width: 1366px)');
+// Расширяем диапазон до 1400px.
+// Если ширина экрана <= 1400px, включается режим 5 колонок.
+const tabletMediaQuery = window.matchMedia('(min-width: 768px) and (max-width: 1400px)');
 const isTabletGrid = ref(tabletMediaQuery.matches);
 
 const handleTabletChange = (e) => {
@@ -113,7 +115,7 @@ onUnmounted(() => {
   }
 });
 
-const isTablet = computed(() => windowWidth.value < 1400); // Старый флаг для форматирования дат
+const isTablet = computed(() => windowWidth.value < 1400); // Используется для компактного форматирования дат
 
 const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
@@ -133,7 +135,7 @@ const localWidgets = computed({
       // Добавляем скрытые виджеты в конец
       allKeys.forEach(k => { if (!layoutSet.has(k)) ordered.push(k); });
       
-      // 🟢 Динамический размер ряда: 5 для планшетов (включая Pro), 6 для десктопа (>1366)
+      // 🟢 Динамический размер ряда: 5 для планшетов (включая Pro до 1400px), 6 для больших десктопов
       const rowSize = isTabletGrid.value ? 5 : 6;
       
       const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
@@ -568,13 +570,13 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .dashboard-card-wrapper:active { cursor: grabbing; }
 :deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
 
-/* 🟢 DEFAULT 6x1 LOGIC (Desktop) */
+/* 🟢 DEFAULT 6x1 LOGIC (Desktop > 1400px) */
 .dashboard-card-wrapper:nth-child(6n) { border-right: none !important; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) { display: none; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
 
-/* 🟢 TABLET LOGIC (5 columns) - NOW INCLUDES IPAD PRO 1366px */
-@media (min-width: 768px) and (max-width: 1380px) {
+/* 🟢 TABLET LOGIC (5 columns) - NOW INCLUDES ALL UP TO 1400px */
+@media (min-width: 768px) and (max-width: 1400px) {
   /* Сетка 5 колонок */
   .header-dashboard {
     grid-template-columns: repeat(5, 1fr);
@@ -605,7 +607,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }
 
 /* Default desktop expanded bottom border removal (last 6 items) */
-@media (min-width: 1380px) {
+@media (min-width: 1401px) {
   .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
 }
 
