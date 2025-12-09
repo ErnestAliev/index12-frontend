@@ -62,3 +62,5 @@ const forceRefresh = async () => {
 <style scoped>
 /* Стили для корневого компонента приложения */
 </style>
+
+
