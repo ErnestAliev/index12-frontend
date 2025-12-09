@@ -4,13 +4,12 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.2 - SMART CLEAN DESCRIPTION ---
- * * ВЕРСИЯ: 3.2
- * * ДАТА: 2025-12-08
- * * ИСПРАВЛЕНИЯ:
- * 1. (LOGIC) Обновлена cleanDescription. Теперь она использует безопасный regex ^[\d\s]+\s.
- * Это удаляет "Сумму" (цифры с пробелами в начале), но только если после них есть пробел.
- * Текст "2-й транш" (где после цифры идет дефис) останется нетронутым.
+ * * --- МЕТКА ВЕРСИИ: v3.3 - HIDE EXCLUDED ACCOUNTS ---
+ * * ВЕРСИЯ: 3.3
+ * * ДАТА: 2025-12-10
+ * * ИЗМЕНЕНИЯ:
+ * 1. (LOGIC) Добавлена проверка isOpVisible. Теперь операции по скрытым счетам не отображаются,
+ * если выключена настройка "Показывать скрытые" (includeExcludedInTotal).
  */
 
 const props = defineProps({
@@ -44,7 +43,35 @@ const isRetailClient = computed(() => {
     return indId && indId === mainStore.retailIndividualId;
 });
 
-// 🟢 1. Детектор ЗАКРЫТОЙ сделки/факта (Зеленый)
+// 🟢 1. Получаем список ID исключенных счетов
+const excludedAccountIds = computed(() => {
+    // Если глобальная настройка "Показывать скрытые" включена - возвращаем пустой набор
+    if (mainStore.includeExcludedInTotal) return new Set();
+    
+    const ids = new Set();
+    mainStore.accounts.forEach(a => {
+        if (a.isExcluded) ids.add(a._id);
+    });
+    return ids;
+});
+
+// 🟢 2. Видимость текущей операции
+const isOpVisible = computed(() => {
+    const op = props.operation;
+    if (!op) return false;
+    
+    // Если включен показ скрытых - всегда true
+    if (mainStore.includeExcludedInTotal) return true;
+
+    // Проверяем счет операции
+    if (op.accountId) {
+        const aId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+        if (excludedAccountIds.value.has(aId)) return false;
+    }
+    return true;
+});
+
+// 🟢 3. Детектор ЗАКРЫТОЙ сделки/факта (Зеленый)
 const isClosedDealOp = computed(() => {
     const op = props.operation;
     if (!op) return false;
@@ -53,7 +80,7 @@ const isClosedDealOp = computed(() => {
     return false;
 });
 
-// 🟢 2. Детектор ОТКРЫТОЙ предоплаты / Сделки / Транша (Оранжевый)
+// 🟢 4. Детектор ОТКРЫТОЙ предоплаты / Сделки / Транша (Оранжевый)
 const isPrepaymentOp = computed(() => {
     const op = props.operation;
     if (!op || isTransferOp.value || op.isWithdrawal) return false;
@@ -96,8 +123,6 @@ const toOwnerName = computed(() => {
 });
 
 // 🟢 Хелпер для очистки текста от суммы
-// Пример 1: "50 000 2-й транш" -> удаляет "50 000 " (т.к. есть пробел) -> "2-й транш"
-// Пример 2: "2-й транш" -> не удаляет "2" (т.к. после него нет пробела, а дефис) -> "2-й транш"
 const cleanDescription = (desc) => {
     if (!desc) return '';
     const cleaned = desc.replace(/^[\d\s]+\s/, '').trim();
@@ -164,8 +189,9 @@ const onDrop = (event) => {
 
 <template>
   <div class="hour-cell" :class="{ 'drag-over': isDragOver }" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+    <!-- 🟢 FIX: Добавлено условие isOpVisible -->
     <div
-      v-if="operation"
+      v-if="operation && isOpVisible"
       class="operation-chip"
       :class="{ 
          transfer: isTransferOp, 

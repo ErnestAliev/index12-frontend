@@ -4,13 +4,12 @@ import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v3.3 - DRAG FIX & MENU ---
- * * ВЕРСИЯ: 3.3
- * * ДАТА: 2025-12-07
- * * ИСПРАВЛЕНИЯ:
- * 1. (FIX DROP) В onTouchEnd исходный элемент временно скрывается (display: none),
- * чтобы document.elementFromPoint мог найти ячейку под ним.
- * 2. (FIX) onAddClick передает event для позиционирования меню.
+ * * --- МЕТКА ВЕРСИИ: v3.4 - HIDE EXCLUDED MOBILE ---
+ * * ВЕРСИЯ: 3.4
+ * * ДАТА: 2025-12-10
+ * * ИЗМЕНЕНИЯ:
+ * 1. (LOGIC) Добавлена проверка isOpVisible. Теперь операции по скрытым счетам не отображаются в мобильной версии,
+ * если выключена настройка "Показывать скрытые".
  */
 
 const props = defineProps({
@@ -39,6 +38,34 @@ const isRetailClient = computed(() => {
     if (!op) return false;
     const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
     return indId && indId === mainStore.retailIndividualId;
+});
+
+// 🟢 1. Получаем список ID исключенных счетов (Logic copied from HourCell)
+const excludedAccountIds = computed(() => {
+    // Если глобальная настройка "Показывать скрытые" включена - возвращаем пустой набор
+    if (mainStore.includeExcludedInTotal) return new Set();
+    
+    const ids = new Set();
+    mainStore.accounts.forEach(a => {
+        if (a.isExcluded) ids.add(a._id);
+    });
+    return ids;
+});
+
+// 🟢 2. Видимость текущей операции
+const isOpVisible = computed(() => {
+    const op = props.operation;
+    if (!op) return false;
+    
+    // Если включен показ скрытых - всегда true
+    if (mainStore.includeExcludedInTotal) return true;
+
+    // Проверяем счет операции
+    if (op.accountId) {
+        const aId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+        if (excludedAccountIds.value.has(aId)) return false;
+    }
+    return true;
 });
 
 const isClosedDealOp = computed(() => {
@@ -223,8 +250,9 @@ const onTouchEnd = (e) => {
     :data-date-key="dateKey" 
     :data-cell-index="cellIndex"
   >
+    <!-- 🟢 FIX: Добавлено условие isOpVisible для скрытия -->
     <div
-      v-if="operation"
+      v-if="operation && isOpVisible"
       class="op-chip"
       :class="{ 
          transfer: isTransferOp, 

@@ -8,8 +8,14 @@ import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, Li
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v56.0 - TAX TOOLTIP FIX ---
- * * ВЕРСИЯ: 56.0 - Улучшенное отображение налогов в тултипах
+ * * --- МЕТКА ВЕРСИИ: v57.2 - CUMULATIVE BALANCE FIX ---
+ * * ВЕРСИЯ: 57.2
+ * * ДАТА: 2025-12-10
+ * * ИЗМЕНЕНИЯ:
+ * 1. (LOGIC) Итоги дня (balance) теперь считаются накопительным итогом (Cumulative).
+ * 2. (LOGIC) Начальный баланс берется из стора (Opening Balance первого дня) и корректируется
+ * вычитанием текущего баланса скрытых счетов.
+ * 3. (LOGIC) Теперь "Результат" переносится со дня на день.
  */
 
 const props = defineProps({
@@ -20,7 +26,27 @@ const props = defineProps({
 const emit = defineEmits(['update:yLabels']);
 const mainStore = useMainStore();
 
-// ... (externalTooltipHandler без изменений) ...
+// 🟢 1. Получаем список ID исключенных счетов
+const excludedAccountIds = computed(() => {
+    if (mainStore.includeExcludedInTotal) return new Set();
+    const ids = new Set();
+    mainStore.accounts.forEach(a => {
+        if (a.isExcluded) ids.add(a._id);
+    });
+    return ids;
+});
+
+// 🟢 2. Хелпер для проверки видимости операции
+const isOpVisible = (op) => {
+    if (!op) return false;
+    if (op.accountId) {
+        const aId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+        if (excludedAccountIds.value.has(aId)) return false;
+    }
+    return true;
+};
+
+// ... (externalTooltipHandler without changes) ...
 const externalTooltipHandler = (context) => {
   let tooltipEl = document.getElementById('chartjs-custom-tooltip');
   if (!tooltipEl) {
@@ -62,13 +88,88 @@ const externalTooltipHandler = (context) => {
 onUnmounted(() => { const el = document.getElementById('chartjs-custom-tooltip'); if (el) el.remove(); });
 const _getDayOfYear = (date) => { if (!date) return 0; const start = new Date(date.getFullYear(), 0, 0); const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000); return Math.floor(diff / 86400000); };
 const _getDateKey = (date) => { if (!date) return ''; const year = date.getFullYear(); const doy = _getDayOfYear(date); return `${year}-${doy}`; };
+
 const rawMaxY = computed(() => { let max = 0; if (mainStore.dailyChartData) { for (const [, data] of mainStore.dailyChartData) { const totalIncome = (data.income || 0) + (data.prepayment || 0); if (totalIncome > max) max = totalIncome; const totalExpense = Math.abs(data.expense || 0) + Math.abs(data.withdrawal || 0); if (totalExpense > max) max = totalExpense; } } return max || 1; });
 function niceStep(rawStep) { if (rawStep <= 0) return 1; const exp = Math.floor(Math.log10(rawStep)); const base = Math.pow(10, exp); const frac = rawStep / base; let niceFrac; if (frac <= 1) niceFrac = 1; else if (frac <= 2) niceFrac = 2; else if (frac <= 5) niceFrac = 5; else niceFrac = 10; return niceFrac * base; }
 const axisStep = computed(() => { const desired = rawMaxY.value / 8; return niceStep(desired); });
 const axisMax = computed(() => { const maxNeeded = rawMaxY.value; const step = axisStep.value; const minNiceMax = step * 8; if (maxNeeded <= minNiceMax) return minNiceMax; const k = Math.ceil(maxNeeded / step); const kAligned = Math.max(8, k); const kAligned8 = Math.ceil(kAligned / 8) * 8; return kAligned8 * step; });
 const yAxisTicks = computed(() => { const ticks = []; const step = axisStep.value; const max = axisMax.value; for (let v = max; v >= 0; v -= step) { ticks.push(v); } if (ticks.length > 9) return ticks.slice(0, 9); if (ticks.length < 9) { while (ticks.length < 9) ticks.push(0); } return ticks; });
 watch(yAxisTicks, (ticks) => { emit('update:yLabels', ticks); }, { immediate: true });
-const summaries = computed(() => { if (!props.showSummaries) return []; if (!Array.isArray(props.visibleDays)) return []; return props.visibleDays.map(day => { if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; const dateKey = _getDateKey(day.date); const data = mainStore.dailyChartData?.get(dateKey) || { income: 0, prepayment: 0, expense: 0, withdrawal: 0, closingBalance: 0 }; return { date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }), income: (data.income || 0) + (data.prepayment || 0), expense: (data.expense || 0) + (data.withdrawal || 0), balance: data.closingBalance }; }); });
+
+// 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES) С ФИЛЬТРАЦИЕЙ
+const summaries = computed(() => { 
+  if (!props.showSummaries || !Array.isArray(props.visibleDays) || props.visibleDays.length === 0) return []; 
+  
+  // 3.1. Определяем начальный баланс (Anchor)
+  let runningBalance = 0;
+
+  // Пытаемся восстановить входящий баланс первого дня из данных стора
+  const firstDay = props.visibleDays[0];
+  const firstDateKey = _getDateKey(firstDay.date);
+  const firstStoreData = mainStore.dailyChartData?.get(firstDateKey);
+
+  if (firstStoreData) {
+      // Восстанавливаем Opening Balance = Closing - Net
+      // В сторе: income и prepayment могут быть разделены, expense и withdrawal тоже.
+      const totalInc = (firstStoreData.income || 0) + (firstStoreData.prepayment || 0);
+      const totalExp = Math.abs(firstStoreData.expense || 0) + Math.abs(firstStoreData.withdrawal || 0);
+      const dayNet = totalInc - totalExp;
+      
+      // Opening Balance (Общий, включая скрытые)
+      runningBalance = (firstStoreData.closingBalance || 0) - dayNet;
+  }
+
+  // 3.2. Корректировка на скрытые счета
+  // Вычитаем ТЕКУЩИЙ баланс скрытых счетов, чтобы приблизить график к "видимому" состоянию.
+  if (excludedAccountIds.value.size > 0) {
+      let excludedSum = 0;
+      mainStore.accounts.forEach(a => {
+          if (excludedAccountIds.value.has(a._id)) {
+              excludedSum += a.balance || 0;
+          }
+      });
+      runningBalance -= excludedSum;
+  }
+
+  return props.visibleDays.map(day => { 
+    if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; 
+    const dateKey = _getDateKey(day.date); 
+    const dayOps = mainStore.getOperationsForDay(dateKey) || [];
+    
+    let inc = 0;
+    let exp = 0;
+    
+    // Считаем чистый поток за день (Visible only)
+    dayOps.forEach(op => {
+        if (!isOpVisible(op)) return;
+        if (op.type === 'transfer' || op.isTransfer) return;
+        if (op.isWorkAct) return;
+        if (!op.accountId) return;
+
+        const amt = Math.abs(op.amount || 0);
+
+        if (op.isWithdrawal) {
+            exp += amt;
+        } else if (op.type === 'expense') {
+            if (mainStore._isRetailWriteOff(op)) return;
+            exp += amt;
+        } else if (op.type === 'income') {
+            inc += amt;
+        }
+    });
+
+    // 🟢 ИЗМЕНЕНИЕ: Накопительный итог
+    // Добавляем чистый поток этого дня к текущему балансу
+    runningBalance += (inc - exp);
+
+    return { 
+        date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }), 
+        income: inc, 
+        expense: exp, 
+        balance: runningBalance // Теперь это накопительный итог на конец дня
+    }; 
+  }); 
+});
 
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
@@ -77,7 +178,6 @@ const getTooltipOperationList = (ops) => {
   return sortedOps.map(op => {
     if (op.isTransfer && !op.isWithdrawal) return null;
     
-    // 🟢 Проверка на налог
     const isTax = mainStore._isTaxPayment ? mainStore._isTaxPayment(op) : false;
     const isCredit = mainStore._isCreditIncome(op);
     
@@ -104,7 +204,6 @@ const getTooltipOperationList = (ops) => {
     if (isCredit) catName = 'Кредит';
     if (op.isWithdrawal) catName = 'Вывод средств';
 
-    // Компания для налога
     let compName = '---';
     if (isTax) {
         compName = op.companyId?.name || op.individualId?.name || 'Компания';
@@ -118,7 +217,6 @@ const getTooltipOperationList = (ops) => {
       catName: catName, 
       amount: op.amount,
       isWithdrawal: op.isWithdrawal,
-      // 🟢 Новые поля для налога
       isTax: isTax,
       compName: compName,
       desc: op.description
@@ -126,6 +224,7 @@ const getTooltipOperationList = (ops) => {
   }).filter(Boolean);
 };
 
+// ... (chartData logic remains the same as previous step, correctly filtering hidden accounts) ...
 const chartData = computed(() => {
   const labels = [];
   const incomeData = []; const creditIncomeData = []; const prepaymentData = [];
@@ -150,6 +249,8 @@ const chartData = computed(() => {
     let dayExpenseSum = 0; let dayWithdrawalSum = 0;
 
     dayOps.forEach(op => {
+        if (!isOpVisible(op)) return;
+
         const amt = op.amount || 0;
         const absAmt = Math.abs(amt);
 
@@ -233,7 +334,6 @@ const chartOptions = computed(() => {
               lines.push('');
               
               if (op.isTax) {
-                  // 🟢 Формат для налогов
                   lines.push(`${amountStr} > Налог: ${op.compName}`);
                   if (op.desc) lines.push(`(${op.desc})`);
               }
