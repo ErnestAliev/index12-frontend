@@ -9,6 +9,7 @@ import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
 import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
 import HeaderCreditCard from './HeaderCreditCard.vue'; 
+// 🟢 Импорт карточки налогов
 import HeaderTaxCard from './HeaderTaxCard.vue';
 
 // Попапы
@@ -25,18 +26,21 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import RefundPopup from './RefundPopup.vue';
 import PrepaymentListEditor from './PrepaymentListEditor.vue';
 import WithdrawalListEditor from './WithdrawalListEditor.vue';
+
+// 🟢 НОВЫЕ ПОПАПЫ ДЛЯ НАЛОГОВ
 import TaxListEditor from './TaxListEditor.vue';
 import TaxPaymentPopup from './TaxPaymentPopup.vue';
+
 import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v46.0 - TABLET GRID FIX ---
- * * ВЕРСИЯ: 46.0
+ * * --- МЕТКА ВЕРСИИ: v46.2 - FIX IPAD AIR/PRO GRID ---
+ * * ВЕРСИЯ: 46.2
  * * ДАТА: 2025-12-09
  * * ИЗМЕНЕНИЯ:
- * 1. (GRID) Добавлена адаптация для планшетов (768-1024px): 5 колонок.
- * 2. (LAYOUT) Фиксированное положение виджетов "Всего" (1) и "Прогноз" (5) на планшетах.
+ * 1. (FIX) Расширен диапазон isTabletGrid до 1366px (включая iPad Air 1180px и iPad Pro 1366px).
+ * Теперь эти устройства используют сетку 5 колонок, что идеально вмещает 15 виджетов в 3 ряда.
  */
 
 const mainStore = useMainStore();
@@ -76,16 +80,68 @@ const closeDropdown = () => {
   activeDropdown.value = null;
 };
 
+// ... adaptive utils ...
+const windowWidth = ref(window.innerWidth);
+const updateWidth = () => { windowWidth.value = window.innerWidth; };
+
+// 🟢 Tablet Detection via MatchMedia (Sync with CSS)
+// Расширяем диапазон до 1366px, чтобы захватить iPad Air и Pro
+const tabletMediaQuery = window.matchMedia('(min-width: 768px) and (max-width: 1366px)');
+const isTabletGrid = ref(tabletMediaQuery.matches);
+
+const handleTabletChange = (e) => {
+  isTabletGrid.value = e.matches;
+};
+
+onMounted(() => {
+  window.addEventListener('resize', updateWidth);
+  // Слушаем изменения медиа-запроса
+  if (tabletMediaQuery.addEventListener) {
+    tabletMediaQuery.addEventListener('change', handleTabletChange);
+  } else {
+    // Fallback
+    tabletMediaQuery.addListener(handleTabletChange);
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateWidth);
+  if (tabletMediaQuery.removeEventListener) {
+    tabletMediaQuery.removeEventListener('change', handleTabletChange);
+  } else {
+    tabletMediaQuery.removeListener(handleTabletChange);
+  }
+});
+
+const isTablet = computed(() => windowWidth.value < 1400); // Старый флаг для форматирования дат
+
+const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+const todayStr = computed(() => { const d = new Date(); return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d); });
+const futureUntilStr = computed(() => {
+  const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
+  return (d && !isNaN(d.getTime())) ? (isTablet.value ? ruSuperShort.format(d) : ruShort.format(d)) : todayStr.value;
+});
+
 const localWidgets = computed({
   get: () => {
     if (mainStore.isHeaderExpanded) {
       const layoutSet = new Set(mainStore.dashboardLayout);
       const allKeys = mainStore.allWidgets.map(w => w.key);
       const ordered = [...mainStore.dashboardLayout];
+      
+      // Добавляем скрытые виджеты в конец
       allKeys.forEach(k => { if (!layoutSet.has(k)) ordered.push(k); });
-      const rowSize = 6;
+      
+      // 🟢 Динамический размер ряда: 5 для планшетов (включая Pro), 6 для десктопа (>1366)
+      const rowSize = isTabletGrid.value ? 5 : 6;
+      
       const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
       const totalSlots = rows * rowSize;
+      
+      // Добиваем плейсхолдерами до полного ряда
+      // С 15 виджетами:
+      // При rowSize=5 -> rows=3, totalSlots=15 -> 0 плейсхолдеров.
       while (ordered.length < totalSlots) { ordered.push(`placeholder_${ordered.length}`); }
       return ordered;
     }
@@ -118,6 +174,7 @@ const isEntityPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
 
+// 🟢 Налоговые стейты
 const isTaxListEditorVisible = ref(false);
 const isTaxPaymentPopupVisible = ref(false);
 
@@ -131,20 +188,6 @@ const isListEditorVisible = ref(false);
 const editorTitle = ref('');
 const editorItems = ref([]);
 const editorSavePath = ref(null);
-
-// ... adaptive utils ...
-const windowWidth = ref(window.innerWidth);
-const updateWidth = () => { windowWidth.value = window.innerWidth; };
-onMounted(() => window.addEventListener('resize', updateWidth));
-onUnmounted(() => window.removeEventListener('resize', updateWidth));
-const isTablet = computed(() => windowWidth.value < 1400);
-const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
-const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-const todayStr = computed(() => { const d = new Date(); return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d); });
-const futureUntilStr = computed(() => {
-  const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-  return (d && !isNaN(d.getTime())) ? (isTablet.value ? ruSuperShort.format(d) : ruShort.format(d)) : todayStr.value;
-});
 
 // ... computed balances ...
 const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
@@ -271,9 +314,18 @@ const onLiabilitiesTab = (tabName) => { prepaymentEditorInitialTab.value = tabNa
 const onCreditsEdit = () => { isCreditEditorVisible.value = true; };
 const onCreditsAdd = () => { isCreditWizardVisible.value = true; };
 
-const onTaxesAdd = () => { isTaxPaymentPopupVisible.value = true; };
-const onTaxesEdit = () => { isTaxListEditorVisible.value = true; };
-const handleTaxPaymentSuccess = () => { isTaxPaymentPopupVisible.value = false; mainStore.fetchAllEntities(); };
+// 🟢 ОБРАБОТЧИКИ НАЛОГОВ
+const onTaxesAdd = () => {
+    isTaxPaymentPopupVisible.value = true;
+};
+const onTaxesEdit = () => {
+    isTaxListEditorVisible.value = true;
+};
+
+const handleTaxPaymentSuccess = () => {
+    isTaxPaymentPopupVisible.value = false;
+    mainStore.fetchAllEntities();
+};
 
 const handleWizardSave = async (payload) => {
     isCreditWizardVisible.value = false;
@@ -338,8 +390,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     :animation="200"
   >
     <template #item="{ element: widgetKey, index }">
-      <!-- 🟢 ДОБАВЛЕН класс widget-{key} для таргетинга в CSS Grid -->
-      <div class="dashboard-card-wrapper" :class="['widget-' + widgetKey]">
+      <div class="dashboard-card-wrapper">
         <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
@@ -353,6 +404,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
         
+        <!-- 🟢 NEW: Виджет Налогов -->
         <HeaderTaxCard
           v-else-if="widgetKey === 'taxes'"
           title="Мои налоги"
@@ -504,6 +556,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <PrepaymentListEditor v-if="isPrepaymentEditorVisible" :initial-tab="prepaymentEditorInitialTab" @close="isPrepaymentEditorVisible = false" />
   <WithdrawalListEditor v-if="isWithdrawalListEditorVisible" @close="isWithdrawalListEditorVisible = false" />
   
+  <!-- 🟢 POPUPS НАЛОГОВ -->
   <TaxListEditor v-if="isTaxListEditorVisible" @close="isTaxListEditorVisible = false" />
   <TaxPaymentPopup v-if="isTaxPaymentPopupVisible" @close="isTaxPaymentPopupVisible = false" @success="handleTaxPaymentSuccess" />
 
@@ -514,58 +567,56 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--color-background-soft); min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: grab; }
 .dashboard-card-wrapper:active { cursor: grabbing; }
 :deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
+
+/* 🟢 DEFAULT 6x1 LOGIC (Desktop) */
 .dashboard-card-wrapper:nth-child(6n) { border-right: none !important; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) { display: none; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
+
+/* 🟢 TABLET LOGIC (5 columns) - NOW INCLUDES IPAD PRO 1366px */
+@media (min-width: 768px) and (max-width: 1366px) {
+  /* Сетка 5 колонок */
+  .header-dashboard {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  
+  /* Сбрасываем стили для 6-й колонки */
+  .dashboard-card-wrapper:nth-child(6n) {
+    border-right: 1px solid var(--color-border) !important;
+  }
+  
+  /* Убираем границу у 5-го элемента в ряду */
+  .dashboard-card-wrapper:nth-child(5n) {
+    border-right: none !important;
+  }
+  
+  /* В свернутом состоянии скрываем всё после 5-го элемента */
+  .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+6) { 
+    display: none; 
+  }
+  
+  /* В развернутом состоянии, у последних 5 элементов убираем нижнюю границу */
+  .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+5) { 
+    border-bottom: none !important; 
+  }
+}
+
+/* 🟢 EXPANDED LOGIC */
 .header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }
-.header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
+
+/* Default desktop expanded bottom border removal (last 6 items) */
+@media (min-width: 1367px) {
+  .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
+}
+
 .sortable-ghost { opacity: 0.4; background-color: #333; }
 .sortable-drag { background-color: var(--color-background-soft); box-shadow: 0 5px 15px rgba(0,0,0,0.3); opacity: 1; z-index: 2000; }
 .header-dashboard.expanded :deep(.card-title span) { display: none !important; }
 .header-dashboard.expanded :deep(.card-title) { cursor: default; pointer-events: none; }
 
-/* 🟢 АДАПТИВ ДЛЯ ПЛАНШЕТОВ (768px - 1024px) */
-@media (min-width: 768px) and (max-width: 1024px) {
-  .header-dashboard {
-    /* Меняем сетку на 5 колонок */
-    grid-template-columns: repeat(5, 1fr) !important;
-    /* Плотное заполнение, чтобы дырки заполнялись */
-    grid-auto-flow: dense;
-  }
-
-  /* Сбрасываем правый бордер для каждого 5-го элемента */
-  .dashboard-card-wrapper:nth-child(5n) { 
-    border-right: none !important; 
-  }
-  
-  /* Возвращаем бордер для 6-го элемента (т.к. в 6-колоночной он убирался) */
-  .dashboard-card-wrapper:nth-child(6n) {
-    border-right: 1px solid var(--color-border) !important;
-  }
-
-  .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+6) { 
-    display: none; 
-  }
-  
-  .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+5) { 
-    border-bottom: none !important; 
-  }
-
-  /* 🟢 ФИКСИРОВАННОЕ ПОЗИЦИОНИРОВАНИЕ */
-  /* Всего (Баланс) - Всегда 1-я позиция */
-  .widget-currentTotal {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  /* Прогноз - Всегда 5-я позиция (Правый верхний угол в 5-колоночной сетке) */
-  .widget-futureTotal {
-    grid-column: 5;
-    grid-row: 1;
-  }
-}
-
+/* Mobile fallback */
 @media (max-height: 900px) { :deep(.dashboard-card) { padding: 8px 10px !important; } }
+
 .global-menu-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 5000; background: transparent; }
 .global-widget-dropdown { position: fixed; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 25px rgba(0,0,0,0.3); padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; color: #333; }
 .widget-search-input { flex-shrink: 0; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.85em; box-sizing: border-box; width: 100%; background-color: #FFFFFF; color: #333; }
