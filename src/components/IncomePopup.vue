@@ -10,12 +10,13 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v57.2 - MOBILE WIDTH FIX FINAL ---
- * * ВЕРСИЯ: 57.2
- * * ДАТА: 2025-12-08
+ * * --- МЕТКА ВЕРСИИ: v57.3 - TABLET WIDTH FIX ---
+ * * ВЕРСИЯ: 57.3
+ * * ДАТА: 2025-12-09
  * * ИЗМЕНЕНИЯ:
- * 1. (CSS) Исправлена ширина попапа на мобильных: width: 100% для заполнения узких экранов,
- * но возвращен max-width: 420px, чтобы не растягивало на планшетах.
+ * 1. (CSS) Исправлен баг, когда на планшетах (max-height < 900px) попап растягивался на 100%.
+ * Теперь max-width: none применяется ТОЛЬКО к мобильным устройствам (max-width: 600px).
+ * На планшетах сохраняется фиксированная ширина 420px.
  */
 
 const props = defineProps({
@@ -935,26 +936,27 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
 .btn-cancel-link:hover { color: #555; }
 
-/* 🟢 MOBILE OPTIMIZATION */
-@media (max-width: 580px), (max-height: 900px) {
+/* 🟢 MOBILE & COMPACT MODE OPTIMIZATION */
+
+/* 1. Общие стили для компактного режима (планшеты и мобильные) */
+@media (max-width: 600px), (max-height: 900px) {
   .popup-content {
-    padding: 1.5rem; /* Reduced padding */
+    padding: 1.5rem; /* Уменьшенные отступы */
     margin: 1rem;
-    width: 100%; /* 🟢 FIX: Force full width to prevent squashing */
-    max-width: none;
+    /* УБРАНО: width: 100%; max-width: none; -> чтобы не растягивало планшеты */
   }
   h3 {
     font-size: 18px;
     margin-bottom: 1rem;
   }
   .custom-input-box {
-    height: 44px; /* Reduced height */
+    height: 44px; /* Уменьшенная высота */
   }
   .input-spacing {
-    margin-bottom: 8px; /* Reduced spacing */
+    margin-bottom: 8px;
   }
   .btn-submit, .btn-modal-action, .btn-inline-save, .btn-inline-cancel {
-    height: 44px; /* Reduced button height */
+    height: 44px;
     font-size: 15px;
   }
   .icon-btn {
@@ -973,6 +975,14 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
   }
   .popup-actions-row {
     margin-top: 1.5rem;
+  }
+}
+
+/* 2. Принудительное растягивание ТОЛЬКО для телефонов */
+@media (max-width: 600px) {
+  .popup-content {
+    width: 100%;
+    max-width: none; /* Растягиваем на всю ширину только на узких экранах */
   }
 }
 </style>
