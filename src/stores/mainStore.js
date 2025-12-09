@@ -5,8 +5,21 @@ import { io } from 'socket.io-client';
 
 axios.defaults.withCredentials = true; 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-// 🟢 Получаем URL для сокета (обычно корень, без /api)
-const SOCKET_URL = API_BASE_URL.replace('/api', '');
+
+// 🟢 ROBUST SOCKET URL GENERATION
+// Parses the API URL to extract the pure Origin (http://domain.com) removing any paths like /api
+let SOCKET_URL = '';
+try {
+    const urlObj = new URL(API_BASE_URL);
+    SOCKET_URL = urlObj.origin; 
+} catch (e) {
+    console.warn('[mainStore] Failed to parse API_BASE_URL with URL object. Falling back to string replace.', e);
+    SOCKET_URL = API_BASE_URL.replace('/api', '');
+}
+
+// 🟢 Debug logs to help identify .env typos
+console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
+console.log(`[mainStore] Derived SOCKET_URL: ${SOCKET_URL}`);
 
 const VIEW_MODE_DAYS = {
   '12d': { total: 12 },
@@ -29,7 +42,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v104.0 (SOCKET.IO ENABLED) ЗАГРУЖЕН ---'); 
+  console.log('--- mainStore.js v104.1 (SOCKET FIX) LOADED ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -2458,5 +2471,3 @@ export const useMainStore = defineStore('mainStore', () => {
     initSocket
   };
 });
-
-
