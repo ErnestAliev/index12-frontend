@@ -574,7 +574,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
 
 /* 🟢 TABLET LOGIC (5 columns) - NOW INCLUDES IPAD PRO 1366px */
-@media (min-width: 768px) and (max-width: 1366px) {
+@media (min-width: 768px) and (max-width: 1380px) {
   /* Сетка 5 колонок */
   .header-dashboard {
     grid-template-columns: repeat(5, 1fr);
