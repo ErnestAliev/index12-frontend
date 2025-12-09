@@ -605,7 +605,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }
 
 /* Default desktop expanded bottom border removal (last 6 items) */
-@media (min-width: 1367px) {
+@media (min-width: 1380px) {
   .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
 }
 
