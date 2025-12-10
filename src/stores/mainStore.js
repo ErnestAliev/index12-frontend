@@ -42,7 +42,7 @@ const debounce = (fn, delay) => {
 };
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v104.1 (SOCKET FIX) LOADED ---'); 
+  console.log('--- mainStore.js v104.2 (SOCKET DEDUP FIX) LOADED ---'); 
   
   const user = ref(null); 
   const isAuthLoading = ref(true); 
@@ -1164,6 +1164,8 @@ export const useMainStore = defineStore('mainStore', () => {
   
   // Обработка добавления (приходит от других устройств)
   const handleSocketOperationAdded = (op) => {
+      // 🟢 FIX: With server-side exclusion (except sender), we should NOT see our own events here.
+      // But if we do (e.g. strict fallback), we check for duplicates.
       const existingOp = allOperationsFlat.value.find(o => o._id === op._id);
       if (existingOp) return; // Уже есть (например, создано текущим клиентом)
 
@@ -1272,6 +1274,16 @@ export const useMainStore = defineStore('mainStore', () => {
       socket.value.on('connect', () => {
           console.log('[mainStore] Socket connected:', socket.value.id);
           socket.value.emit('join', user.value._id);
+          
+          // 🟢 FIX: Set header so server knows who we are and doesn't echo back our own events
+          if (socket.value.id) {
+              axios.defaults.headers.common['X-Socket-ID'] = socket.value.id;
+          }
+      });
+      
+      socket.value.on('disconnect', () => {
+           console.log('[mainStore] Socket disconnected');
+           delete axios.defaults.headers.common['X-Socket-ID'];
       });
 
       // --- OPERATIONS LISTENERS ---
