@@ -85,7 +85,7 @@ const forceRefresh = async () => {
 /* 🟢 Стили для шторки обновления */
 .repair-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(255, 255, 255, 0.95);
+  background: #1a1a1a;;
   z-index: 99999;
   display: flex; justify-content: center; align-items: center;
 }
@@ -93,7 +93,7 @@ const forceRefresh = async () => {
 .repair-content h3 { margin-bottom: 10px; font-size: 20px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 .repair-content p { font-size: 14px; color: #666; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 .progress-bar {
-  width: 300px; height: 10px; background: #eee;
+  width: 300px; height: 10px; background: #1a1a1a;;
   border-radius: 5px; margin: 20px auto; overflow: hidden;
 }
 .fill { height: 100%; background: #28B8A0; transition: width 0.3s; }

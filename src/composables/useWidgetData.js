@@ -17,6 +17,7 @@ export function useWidgetData() {
         const balances = new Map();
         let systemTotalBalance = 0;
 
+        // Берем уже отфильтрованные счета из mainStore
         const sourceAccounts = mainStore.currentAccountBalances || [];
 
         sourceAccounts.forEach(acc => {
@@ -61,20 +62,24 @@ export function useWidgetData() {
             const currentVal = item.balance || 0;
             const itemIdStr = String(item._id);
             
-            // Получаем будущее значение из Map или берем текущее как fallback
-            let rawFutureVal = currentVal;
-            if (futureMap && futureMap.has(itemIdStr)) {
-                rawFutureVal = futureMap.get(itemIdStr);
-            }
-
-            let delta = 0;
+            // Получаем будущее значение или дельту (зависит от логики store для конкретной сущности)
+            // Для Accounts/Companies mainStore возвращает полные балансы.
+            // Для Projects/Contractors/Categories mainStore возвращает изменения (deltas).
             
-            // Для сущностей с балансом (счета, компании) считаем дельту
+            let delta = 0;
+            let rawFutureVal = currentVal;
+
             if (['accounts', 'companies', 'credits'].includes(k)) {
-                if (futureMap) delta = rawFutureVal - currentVal;
+                if (futureMap && futureMap.has(itemIdStr)) {
+                    rawFutureVal = futureMap.get(itemIdStr);
+                    delta = rawFutureVal - currentVal;
+                }
             } else {
-                // Для категорий/проектов (обороты) будущее значение и есть дельта (изменение)
-                delta = rawFutureVal;
+                // Для остальных (Projects, Contractors, Categories) futureMap содержит изменение
+                if (futureMap && futureMap.has(itemIdStr)) {
+                    delta = futureMap.get(itemIdStr);
+                    rawFutureVal = currentVal + delta;
+                }
             }
 
             // --- COLOR LOGIC ---
@@ -142,7 +147,6 @@ export function useWidgetData() {
                 currentBalance: currentVal,
                 futureChange: delta,
                 totalForecast: currentVal + delta,
-                // 🟢 ВАЖНО: Это поле используется в полноэкранном режиме для второй колонки
                 futureBalance: rawFutureVal, 
                 linkMarkerColor: color,
                 isLinked: hasLink,
@@ -204,9 +208,8 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap));
         }
 
-        // 🟢 TAXES LOGIC (FIXED: Explicit Negative Values & Delta)
+        // TAXES
         if (k === 'taxes') {
-            // Получаем дату конца диапазона для Плана
             const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
             if (rangeEndDate) {
                 rangeEndDate.setHours(23, 59, 59, 999);
@@ -214,8 +217,6 @@ export function useWidgetData() {
 
             return mainStore.companies.map(comp => {
                 const now = new Date();
-                
-                // 1. РАСЧЕТ ФАКТА (Долг на сегодня)
                 const currentData = mainStore.calculateTaxForPeriod(comp._id, null, now);
                 const paidCurrent = mainStore.taxes
                     .filter(t => {
@@ -228,7 +229,6 @@ export function useWidgetData() {
                 
                 const currentDebt = Math.max(0, currentData.tax - paidCurrent);
 
-                // 2. РАСЧЕТ ПРОГНОЗА (Долг на конец периода)
                 const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
                 const paidTotal = mainStore.taxes
                     .filter(t => {
@@ -241,13 +241,8 @@ export function useWidgetData() {
 
                 const totalForecastDebt = Math.max(0, totalCalc.tax - paidTotal);
 
-                // 🟢 FIX: Принудительно делаем значения ОТРИЦАТЕЛЬНЫМИ для UI (так как это долг)
                 const currentVal = -Math.abs(currentDebt); 
                 const futureVal = -Math.abs(totalForecastDebt);
-                
-                // Delta (ПЛАН): Разница между будущим и текущим.
-                // Пример: Было долга 3000 (val=-3000). Стало 9000 (val=-9000).
-                // Change = -9000 - (-3000) = -6000. (Отрицательное число = Рост долга = Красный цвет)
                 const change = futureVal - currentVal;
 
                 return {
@@ -255,15 +250,11 @@ export function useWidgetData() {
                     name: comp.name,
                     regime: currentData.regime === 'simplified' ? 'УПР' : 'ОУР',
                     percent: currentData.percent,
-                    
                     currentBalance: currentVal,
-                    futureChange: change, // Это пойдет в правую колонку
-                    
+                    futureChange: change, 
                     totalForecast: futureVal,
                     futureBalance: futureVal,
-                    
                     balance: isForecastActive ? futureVal : currentVal,
-                    
                     linkMarkerColor: null,
                     isLinked: false
                 };
