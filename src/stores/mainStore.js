@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v118.1 (FIX: Restore Hiding Logic) LOADED ---'); 
+  console.log('--- mainStore.js v119.0 (FIX: Reactivity & Full Code Restoration) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -165,7 +165,6 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   // 🟢 HELPER: Агрегация балансов по видимым операциям
-  // Это замена логики "Снапшот - Дельта", которая давала сбои.
   const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
       const map = new Map();
       
@@ -428,9 +427,9 @@ export const useMainStore = defineStore('mainStore', () => {
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
   // 🟢 CURRENT OPS (FILTERED)
-  // FIX: Используем allKnownOperations (Deals + Calendar) вместо allOperationsFlat (только Calendar).
-  // Это важно, чтобы в виджетах (Доходы и т.д.) учитывались и сделки, и чтобы фильтр _isOpVisible работал на полном объеме данных.
   const currentOps = computed(() => {
+    // ⚡️ FIX: Используем текущее время при сравнении, но snapshot.timestamp 
+    // может быть старым. Если мы добавляем операцию оптимистично, мы обновляем timestamp.
     const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
     return allKnownOperations.value.filter(op => {
         if (!op?.date) return false;
@@ -451,6 +450,11 @@ export const useMainStore = defineStore('mainStore', () => {
   // --- Snapshot Optimistic Updates ---
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
       const s = snapshot.value;
+      
+      // ⚡️ FIX: Обновляем временную метку снапшота при любом изменении,
+      // чтобы computed currentOps немедленно включил новую операцию.
+      s.timestamp = new Date().toISOString();
+
       if (op.isWorkAct) return; 
 
       const absAmt = Math.abs(op.amount || 0);
@@ -1075,7 +1079,8 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const idx = displayCache.value[dk].findIndex(o => o._id === tempId);
       if (idx !== -1) {
-          displayCache.value[dk][idx] = serverOp; 
+          // 🟢 FIX: Populate server response before cache
+          displayCache.value[dk][idx] = _populateOp(serverOp); 
           calculationCache.value[dk] = [...displayCache.value[dk]];
       }
       
@@ -1156,7 +1161,8 @@ export const useMainStore = defineStore('mainStore', () => {
         const targetList = displayCache.value[newDateKey];
         if (targetList) {
             const i = targetList.findIndex(o => o._id === opId);
-            if (i !== -1) targetList[i] = serverOp;
+            // 🟢 FIX: Populate server response before cache
+            if (i !== -1) targetList[i] = _populateOp(serverOp);
         }
 
         return serverOp;
@@ -1233,8 +1239,9 @@ export const useMainStore = defineStore('mainStore', () => {
           for (const { dateKey, data } of results) {
               const raw = Array.isArray(data) ? data.slice() : [];
               const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-              displayCache.value[dateKey] = processedOps;
-              calculationCache.value[dateKey] = processedOps;
+              // 🟢 FIX: Populate ops before storing in cache
+              displayCache.value[dateKey] = processedOps.map(_populateOp);
+              calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
           }
           await new Promise(r => setTimeout(r, 10));
       }
@@ -1299,8 +1306,9 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-      displayCache.value[dateKey] = processedOps;
-      calculationCache.value[dateKey] = processedOps;
+      // 🟢 FIX: Populate ops before storing in cache
+      displayCache.value[dateKey] = processedOps.map(_populateOp);
+      calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
@@ -1360,7 +1368,8 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-      _syncCaches(dateKey, processedOps);
+      // 🟢 FIX: Populate ops before storing in cache
+      _syncCaches(dateKey, processedOps.map(_populateOp));
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
@@ -1500,6 +1509,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
 
       if (!displayCache.value[dateKey]) displayCache.value[dateKey] = [];
+      // 🟢 FIX: Populate optimistic ops
       optimisticOps.forEach(op => displayCache.value[dateKey].push(_populateOp(op)));
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       
