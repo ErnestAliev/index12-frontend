@@ -14,13 +14,12 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v112.3 (CLEANUP: Removed Retail Duplication) LOADED ---'); 
+  console.log('--- mainStore.js v117.0 (REFACTOR: Stage 1 - Immutable Deals) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
   const widgetStore = useWidgetStore();
-  // Projection, Transfer, Socket, and Deal stores are accessed lazily or via getters
-
+  
   const user = ref(null); 
   const isAuthLoading = ref(true); 
 
@@ -30,6 +29,8 @@ export const useMainStore = defineStore('mainStore', () => {
       set: (v) => uiStore.isHeaderExpanded = v
   });
   const toggleHeaderExpansion = () => uiStore.toggleHeaderExpansion();
+  
+  // Флаг: Учитывать ли скрытые счета.
   const includeExcludedInTotal = computed({
       get: () => uiStore.includeExcludedInTotal,
       set: (v) => uiStore.includeExcludedInTotal = v
@@ -88,7 +89,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const credits     = ref([]); 
   const taxes       = ref([]); 
   
-  const dealOperations = ref([]); // Raw storage for deals
+  const dealOperations = ref([]); 
 
   // --- Helpers ---
   const _toStr = (val) => {
@@ -119,6 +120,118 @@ export const useMainStore = defineStore('mainStore', () => {
     const date = new Date(year, 0, 1);
     date.setDate(doy);
     return date;
+  };
+
+  // --- 🟢 EXCLUDED ACCOUNTS LOGIC ---
+
+  const excludedAccountIds = computed(() => {
+    const set = new Set();
+    accounts.value.forEach(a => {
+        if (a.isExcluded) set.add(String(a._id));
+    });
+    return set;
+  });
+
+  // 1. Сборка "Всей известной истории" (Объединяем Deals и Calendar Ops)
+  const allKnownOperations = computed(() => {
+      const uniqueMap = new Map();
+      
+      // Добавляем операции из сделок (они грузятся полностью)
+      dealOperations.value.forEach(op => uniqueMap.set(op._id, op));
+      
+      // Добавляем операции из кэша календаря (что загрузил пользователь)
+      allOperationsFlat.value.forEach(op => {
+          if (!uniqueMap.has(op._id)) uniqueMap.set(op._id, op);
+      });
+      
+      return Array.from(uniqueMap.values());
+  });
+
+  // 2. Расчет DELTA (Влияние скрытых счетов на балансы)
+  // Мы считаем сумму всех операций, которые прошли через скрытые счета.
+  // Эту дельту мы будем ВЫЧИТАТЬ из Snapshot.
+  const excludedDeltaMap = computed(() => {
+      const map = {
+          projects: {},
+          contractors: {},
+          categories: {},
+          individuals: {}
+      };
+
+      // Если режим "Показывать скрытые", дельта не нужна (0)
+      if (includeExcludedInTotal.value) return map;
+
+      const hiddenIds = excludedAccountIds.value;
+      if (hiddenIds.size === 0) return map;
+
+      allKnownOperations.value.forEach(op => {
+          // Проверяем, участвует ли скрытый счет
+          let isHidden = false;
+          
+          if (op.accountId && hiddenIds.has(_toStr(op.accountId))) isHidden = true;
+          else if (op.isTransfer || op.type === 'transfer') {
+              if (op.fromAccountId && hiddenIds.has(_toStr(op.fromAccountId))) isHidden = true;
+              if (op.toAccountId && hiddenIds.has(_toStr(op.toAccountId))) isHidden = true;
+          }
+
+          if (!isHidden) return; // Операция чистая, пропускаем
+
+          // Если операция связана со скрытым счетом, она "загрязняет" баланс сущности.
+          // Мы должны запомнить эту сумму, чтобы потом вычесть её из Snapshot.
+          
+          const amt = op.amount || 0;
+          
+          // Логика знака:
+          // Если это Доход (+100) на Скрытый счет: В Snapshot он дал +100. Мы должны вычесть 100. (Delta +100)
+          // Если это Расход (-50) со Скрытого счета: В Snapshot он дал -50. Мы должны вычесть -50 (то есть прибавить 50). (Delta -50)
+          // Вывод: Мы просто суммируем amount как есть в Delta.
+          // FinalBalance = SnapshotBalance - Delta.
+          
+          // Projects
+          const pId = _toStr(op.projectId);
+          if (pId) {
+              map.projects[pId] = (map.projects[pId] || 0) + amt;
+          }
+
+          // Contractors
+          const cId = _toStr(op.contractorId);
+          if (cId) {
+              map.contractors[cId] = (map.contractors[cId] || 0) + amt;
+          }
+
+          // Individuals (Ops Balance)
+          const iId = _toStr(op.individualId);
+          if (iId) map.individuals[iId] = (map.individuals[iId] || 0) + amt;
+          
+          const ciId = _toStr(op.counterpartyIndividualId);
+          if (ciId) map.individuals[ciId] = (map.individuals[ciId] || 0) + amt;
+
+          // Categories
+          const catId = _toStr(op.categoryId);
+          if (catId) {
+              if (!map.categories[catId]) map.categories[catId] = { total: 0 };
+              map.categories[catId].total += amt;
+          }
+      });
+
+      return map;
+  });
+
+  // --- Проверка видимости для списков (как раньше) ---
+  const _isOpVisible = (op) => {
+      if (includeExcludedInTotal.value) return true;
+      if (!op) return false;
+      const isExcludedId = (id) => {
+          if (!id) return false;
+          const idStr = typeof id === 'object' ? String(id._id) : String(id);
+          return excludedAccountIds.value.has(idStr);
+      };
+      if (op.accountId && isExcludedId(op.accountId)) return false;
+      if (op.isTransfer || op.type === 'transfer') {
+          if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
+          if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
+      }
+      return true;
   };
 
   // --- Categories Logic ---
@@ -179,7 +292,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   };
 
-  // --- Special Entities & Categories ---
+  // --- Special Entities ---
   const retailIndividualId = computed(() => {
       const retail = individuals.value.find(i => {
           const n = i.name.trim().toLowerCase();
@@ -255,50 +368,52 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   };
 
-  // --- Operations Management ---
+  // 🟢 REFACTOR: Immutable updates for reactivity
   function _updateDealCache(op, mode = 'add') {
       const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
       if (!isDealRelated) return;
 
       if (mode === 'add') {
           const idx = dealOperations.value.findIndex(d => d._id === op._id);
-          if (idx === -1) dealOperations.value.push(op);
+          if (idx === -1) {
+              // Immutable add
+              dealOperations.value = [...dealOperations.value, op];
+          }
       } else if (mode === 'update') {
           const idx = dealOperations.value.findIndex(d => d._id === op._id);
-          if (idx !== -1) dealOperations.value[idx] = op;
-          else dealOperations.value.push(op);
+          if (idx !== -1) {
+              // Immutable update
+              const newArr = [...dealOperations.value];
+              newArr[idx] = op;
+              dealOperations.value = newArr;
+          } else {
+              // Immutable add
+              dealOperations.value = [...dealOperations.value, op];
+          }
       } else if (mode === 'delete') {
+          // Immutable delete (filter returns new array)
           dealOperations.value = dealOperations.value.filter(d => d._id !== op._id);
       }
   }
 
-  // 🟢 EXPORT FOR DEAL STORE
   const getAllRelevantOps = computed(() => {
-      const map = new Map();
-      if (dealOperations.value) dealOperations.value.forEach(op => map.set(op._id, op));
-      if (allOperationsFlat.value) allOperationsFlat.value.forEach(op => map.set(op._id, op));
-      return Array.from(map.values());
+      // Здесь тоже применяем фильтр _isOpVisible
+      return allKnownOperations.value.filter(op => _isOpVisible(op));
   });
 
-  const getMergedDealOps = computed(() => getAllRelevantOps.value);
-
-  // 🟢 DELEGATION: Connect to DealStore for Liabilities
   const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOwe);
   const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOwe);
   const liabilitiesWeOweFuture = computed(() => liabilitiesWeOwe.value);
   const liabilitiesTheyOweFuture = computed(() => liabilitiesTheyOwe.value);
 
-  // 🟢 DELEGATION: Get Deal Status
   function getProjectDealStatus(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
       return useDealStore().getDealStatus(projectId, categoryId, contractorId || counterpartyIndividualId);
   }
 
   function closePreviousTranches(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
-      // Logic moved to DealStore chronological processing
-      // This function is kept for backward compatibility if components call it
+      // Logic handled in DealStore
   }
 
-  // --- Lists & Computed ---
   const getActCategoryIds = computed(() => {
     return categories.value
       .filter(c => {
@@ -344,7 +459,8 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const futureOps = computed(() => {
-      return useProjectionStore().futureOps;
+      const rawFuture = useProjectionStore().futureOps;
+      return rawFuture.filter(op => _isOpVisible(op));
   });
 
   const displayOperationsFlat = computed(() => {
@@ -359,10 +475,12 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
+  // 🟢 CURRENT OPS (FILTERED)
   const currentOps = computed(() => {
     const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
     return allOperationsFlat.value.filter(op => {
         if (!op?.date) return false;
+        if (!_isOpVisible(op)) return false; 
         return new Date(op.date) <= now;
     });
   });
@@ -376,6 +494,9 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // --- Snapshot Optimistic Updates ---
+  // Note: We intentionally update the snapshot even if the account is hidden in UI,
+  // because the snapshot reflects the "Server Truth". The filtering happens at the UI/Getter level.
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
       const s = snapshot.value;
       if (op.isWorkAct) return; 
@@ -455,9 +576,31 @@ export const useMainStore = defineStore('mainStore', () => {
   const getCategoryById = (id) => categories.value.find(c => c._id === id);
 
   const currentCategoryBreakdowns = computed(() => {
+    // Если включено - возвращаем Snapshot как есть
+    if (includeExcludedInTotal.value) {
+        const raw = snapshot.value.categoryTotals || {};
+        const mapped = {};
+        Object.keys(raw).forEach(id => { mapped[`cat_${id}`] = raw[id]; });
+        return mapped;
+    }
+    
+    // Если выключено - берем Snapshot и вычитаем Delta
     const raw = snapshot.value.categoryTotals || {};
+    const deltas = excludedDeltaMap.value.categories || {};
+    
     const mapped = {};
-    Object.keys(raw).forEach(id => { mapped[`cat_${id}`] = raw[id]; });
+    Object.keys(raw).forEach(id => { 
+        const snapTotal = raw[id].total || 0;
+        const delta = deltas[id]?.total || 0;
+        
+        // Note: Мы не храним разбивку Income/Expense в Delta для краткости, 
+        // но для виджетов категорий важен Total. Income/Expense будут приблизительными (из Snapshot),
+        // но Total будет точным.
+        mapped[`cat_${id}`] = {
+            ...raw[id],
+            total: snapTotal - delta 
+        };
+    });
     return mapped;
   });
 
@@ -477,12 +620,119 @@ export const useMainStore = defineStore('mainStore', () => {
     return widgetMap;
   });
 
-  const currentCategoryBalances = computed(() => categories.value.map(c => ({ ...c, balance: (snapshot.value.categoryTotals[c._id]?.total || 0) })));
+  // 🟢 ACCOUNTS: Hard Filter
+  const currentAccountBalances = computed(() => {
+      return accounts.value.reduce((acc, a) => {
+          // Если скрыт и мы не показываем скрытое -> Пропускаем
+          if (!includeExcludedInTotal.value && a.isExcluded) {
+              return acc; 
+          }
+          acc.push({ 
+              ...a, 
+              balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0) 
+          });
+          return acc;
+      }, []);
+  });
+
+  const futureAccountBalances = computed(() => {
+    // Future calc
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
+    return accounts.value.reduce((acc, a) => {
+         if (!includeExcludedInTotal.value && a.isExcluded) return acc;
+         acc.push({
+             ...a,
+             balance: Number(futureMap[a._id] || 0) + Number(a.initialBalance || 0)
+         });
+         return acc;
+    }, []);
+  });
+  
+  // 🟢 COMPANIES: Based on filtered accounts
+  const currentCompanyBalances = computed(() => {
+      return companies.value.map(comp => {
+          const targetId = _toStr(comp._id);
+          // currentAccountBalances уже отфильтрован
+          const linked = currentAccountBalances.value.filter(a => {
+              return _toStr(a.companyId) === targetId;
+          });
+          const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
+          return { ...comp, balance: total };
+      });
+  });
+
+  const futureCompanyBalances = computed(() => {
+      return companies.value.map(comp => {
+          const targetId = _toStr(comp._id);
+          const linked = futureAccountBalances.value.filter(a => {
+              return _toStr(a.companyId) === targetId;
+          });
+          const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
+          return { ...comp, balance: total };
+      });
+  });
+
+  // 🟢 CONTRACTORS: Snapshot - Delta
+  const currentContractorBalances = computed(() => {
+      return contractors.value.map(c => {
+          const snapBal = snapshot.value.contractorBalances[c._id] || 0;
+          if (includeExcludedInTotal.value) return { ...c, balance: snapBal };
+          
+          const delta = excludedDeltaMap.value.contractorBalances?.[c._id] || excludedDeltaMap.value.contractors[c._id] || 0;
+          return { ...c, balance: snapBal - delta };
+      });
+  });
+
+  const futureContractorBalances = computed(() => {
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.contractorBalances, 'contractorId');
+    return contractors.value.map(c => {
+        // FutureMap starts from Snapshot. Need to adjust it too if excluded.
+        const base = futureMap[c._id] || 0;
+        if (includeExcludedInTotal.value) return { ...c, balance: base };
+        
+        const delta = excludedDeltaMap.value.contractorBalances?.[c._id] || excludedDeltaMap.value.contractors[c._id] || 0;
+        return { ...c, balance: base - delta };
+    });
+  });
+
+  // 🟢 PROJECTS: Snapshot - Delta
+  const currentProjectBalances = computed(() => {
+      return projects.value.map(p => {
+          const snapBal = snapshot.value.projectBalances[p._id] || 0;
+          if (includeExcludedInTotal.value) return { ...p, balance: snapBal };
+          
+          const delta = excludedDeltaMap.value.projects[p._id] || 0;
+          return { ...p, balance: snapBal - delta };
+      });
+  });
+  
+  const futureProjectBalances = computed(() => {
+    const futureMap = _calculateFutureEntityBalance(snapshot.value.projectBalances, 'projectId');
+    return projects.value.map(p => {
+        const base = futureMap[p._id] || 0;
+        if (includeExcludedInTotal.value) return { ...p, balance: base };
+        
+        const delta = excludedDeltaMap.value.projects[p._id] || 0;
+        return { ...p, balance: base - delta };
+    });
+  });
+
+  // 🟢 CATEGORIES: Snapshot - Delta
+  const currentCategoryBalances = computed(() => {
+      return categories.value.map(c => {
+          const snapBal = snapshot.value.categoryTotals[c._id]?.total || 0;
+          if (includeExcludedInTotal.value) return { ...c, balance: snapBal };
+          
+          const delta = excludedDeltaMap.value.categories[c._id]?.total || 0;
+          return { ...c, balance: snapBal - delta };
+      });
+  });
+
   const futureCategoryBalances = computed(() => {
     const breakdown = futureCategoryBreakdowns.value;
     return categories.value.map(c => ({ ...c, balance: (breakdown[`cat_${c._id}`]?.total || 0) }));
   });
-  
+
   const _calculateFutureEntityChange = (entityIdField) => {
       const futureMap = {}; 
       for (const op of futureOps.value) {
@@ -564,53 +814,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureMap;
   };
 
-  const currentAccountBalances = computed(() => accounts.value.map(a => ({ 
-      ...a, 
-      balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0) 
-  })));
-
-  const futureAccountBalances = computed(() => {
-    const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
-    return accounts.value.map(a => ({ 
-        ...a, 
-        balance: Number(futureMap[a._id] || 0) + Number(a.initialBalance || 0) 
-    }));
-  });
-  
-  const currentCompanyBalances = computed(() => {
-      return companies.value.map(comp => {
-          const targetId = _toStr(comp._id);
-          const linked = currentAccountBalances.value.filter(a => {
-              return _toStr(a.companyId) === targetId;
-          });
-          const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
-          return { ...comp, balance: total };
-      });
-  });
-
-  const futureCompanyBalances = computed(() => {
-      return companies.value.map(comp => {
-          const targetId = _toStr(comp._id);
-          const linked = futureAccountBalances.value.filter(a => {
-              return _toStr(a.companyId) === targetId;
-          });
-          const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
-          return { ...comp, balance: total };
-      });
-  });
-
-  const currentContractorBalances = computed(() => contractors.value.map(c => ({ ...c, balance: snapshot.value.contractorBalances[c._id] || 0 })));
-  const futureContractorBalances = computed(() => {
-    const futureMap = _calculateFutureEntityBalance(snapshot.value.contractorBalances, 'contractorId');
-    return contractors.value.map(c => ({ ...c, balance: futureMap[c._id] || 0 }));
-  });
-
-  const currentProjectBalances = computed(() => projects.value.map(p => ({ ...p, balance: snapshot.value.projectBalances[p._id] || 0 })));
-  const futureProjectBalances = computed(() => {
-    const futureMap = _calculateFutureEntityBalance(snapshot.value.projectBalances, 'projectId');
-    return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
-  });
-
   const currentCreditBalances = computed(() => {
       const repaymentCatId = loanRepaymentCategoryId.value;
       if (!repaymentCatId) {
@@ -619,10 +822,9 @@ export const useMainStore = defineStore('mainStore', () => {
       return credits.value.map(credit => {
           const initialDebt = credit.totalDebt || 0;
           let repaidTotal = 0;
-          const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
-          allOperationsFlat.value.forEach(op => {
+          
+          currentOps.value.forEach(op => {
               if (op.type !== 'expense') return;
-              if (!op.date || new Date(op.date) > now) return; 
               const opCatId = op.categoryId?._id || op.categoryId;
               if (String(opCatId) !== String(repaymentCatId)) return;
               const opContractorId = op.contractorId?._id || op.contractorId;
@@ -644,7 +846,7 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const futureCreditBalances = computed(() => {
       const repaymentCatId = loanRepaymentCategoryId.value;
-      const futureOpsList = futureOps.value; 
+      const futureOpsList = futureOps.value;
       return currentCreditBalances.value.map(credit => {
           let projectedRepayment = 0;
           futureOpsList.forEach(op => {
@@ -664,33 +866,91 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
+  // 🟢 INDIVIDUALS: Hard Filter for linked accounts
   const currentIndividualBalances = computed(() => {
-      return individuals.value.map(i => {
-          const opsBalance = snapshot.value.individualBalances[i._id] || 0;
+      // 1. Identify individuals to hide (Owners of excluded accounts)
+      const hiddenIndividualIds = new Set();
+      if (!includeExcludedInTotal.value) {
+          accounts.value.forEach(a => {
+              if (a.isExcluded && a.individualId) {
+                  const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                  if (iId) hiddenIndividualIds.add(String(iId));
+              }
+          });
+      }
+
+      return individuals.value.reduce((acc, i) => {
+          if (hiddenIndividualIds.has(String(i._id))) return acc; // Skip hidden owners
+
+          // 2. Calculate Balance: Snapshot - Delta
+          let opsBalance = snapshot.value.individualBalances[i._id] || 0;
+          
+          if (!includeExcludedInTotal.value) {
+              const delta = excludedDeltaMap.value.individuals[i._id] || 0;
+              opsBalance -= delta;
+          }
+
+          // 3. Accounts Sum (Using filtered account balances)
           const linkedAccounts = currentAccountBalances.value.filter(a => {
               const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
               return indId === i._id;
           });
-          const accountsBalance = linkedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
-          return { ...i, balance: accountsBalance + opsBalance };
-      });
+          
+          // 🔴 REFACTOR: Changed from summing 'acc.balance' to summing 'acc.initialBalance'
+          // Reason: 'acc.balance' includes both Initial + Operations.
+          // 'opsBalance' (from snapshot) ALSO includes Operations.
+          // Summing them resulted in Double Counting of operations.
+          // Correct formula: (Sum of Initial Balances) + (All Operations for Individual)
+          const accountsInitialSum = linkedAccounts.reduce((sum, acc) => sum + Number(acc.initialBalance || 0), 0);
+
+          acc.push({ ...i, balance: accountsInitialSum + opsBalance });
+          return acc;
+      }, []);
   });
 
   const futureIndividualBalances = computed(() => {
+      // Identical logic for filtering
+      const hiddenIndividualIds = new Set();
+      if (!includeExcludedInTotal.value) {
+          accounts.value.forEach(a => {
+              if (a.isExcluded && a.individualId) {
+                  const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                  if (iId) hiddenIndividualIds.add(String(iId));
+              }
+          });
+      }
+      
       const futureOpsMap = _calculateFutureEntityBalance(snapshot.value.individualBalances, 'individualId');
-      return individuals.value.map(i => {
-          const opsBalance = futureOpsMap[i._id] || 0;
+      
+      return individuals.value.reduce((acc, i) => {
+          if (hiddenIndividualIds.has(String(i._id))) return acc;
+
+          let opsBalance = futureOpsMap[i._id] || 0;
+          
+          if (!includeExcludedInTotal.value) {
+              const delta = excludedDeltaMap.value.individuals[i._id] || 0;
+              opsBalance -= delta;
+          }
+
           const linkedAccounts = futureAccountBalances.value.filter(a => {
               const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
               return indId === i._id;
           });
-          const accountsBalance = linkedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
-          return { ...i, balance: accountsBalance + opsBalance };
-      });
+          
+          // 🔴 REFACTOR: Same fix as above. 
+          // 'futureAccountBalances' includes Future Ops. 'opsBalance' (via futureOpsMap) ALSO includes Future Ops.
+          // We must only add the Initial Balance of accounts.
+          const accountsInitialSum = linkedAccounts.reduce((sum, acc) => sum + Number(acc.initialBalance || 0), 0);
+          
+          acc.push({ ...i, balance: accountsInitialSum + opsBalance });
+          return acc;
+      }, []);
   });
 
+  // 🟢 Updated Total Calculation
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => {
+          // currentAccountBalances is already filtered, but double check doesn't hurt
           if (!includeExcludedInTotal.value && a.isExcluded) return acc;
           return acc + (a.balance || 0);
       }, 0);
@@ -698,16 +958,11 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
-    const excludedIds = new Set();
-    accounts.value.forEach(a => {
-        if (a.isExcluded) excludedIds.add(String(a._id));
-    });
     for (const op of futureOps.value) {
         if (isTransfer(op)) continue; 
         if (!op.accountId) continue;
         if (op.isWorkAct) continue;
-        const accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-        if (!includeExcludedInTotal.value && excludedIds.has(String(accId))) continue;
+        // The op is already validated by _isOpVisible in futureOps computed
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
     }
@@ -880,7 +1135,6 @@ export const useMainStore = defineStore('mainStore', () => {
           eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
       }
       
-      // 🟢 VALIDATION: Check Overpayment via DealStore
       if (eventData.type === 'income' && !eventData.isTransfer && eventData.totalDealAmount === undefined) {
           const isOver = useDealStore().checkOverpayment(eventData.projectId, eventData.categoryId, eventData.contractorId || eventData.counterpartyIndividualId, eventData.amount);
           if (isOver) {
@@ -919,8 +1173,14 @@ export const useMainStore = defineStore('mainStore', () => {
           displayCache.value[dk][idx] = serverOp; 
           calculationCache.value[dk] = [...displayCache.value[dk]];
       }
+      
+      // 🟢 REFACTOR: Immutable update for optimistic replacement
       const dealIdx = dealOperations.value.findIndex(d => d._id === tempId);
-      if (dealIdx !== -1) dealOperations.value[dealIdx] = serverOp;
+      if (dealIdx !== -1) {
+          const newDeals = [...dealOperations.value];
+          newDeals[dealIdx] = serverOp;
+          dealOperations.value = newDeals;
+      }
 
       return serverOp;
     } catch (error) { 
@@ -1140,7 +1400,6 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  // ... (keep getOperationsForDay, _mergeTransfers, _getOrCreateTransferCategory) ...
   function getOperationsForDay(dateKey) { 
       const ops = displayCache.value[dateKey] || [];
       return ops.filter(op => !op.isWorkAct);
@@ -1202,7 +1461,6 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
-    // ... (logic from prev step, just trigger projection update via helper)
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
@@ -1286,7 +1544,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
-  // ... (createTransfer, updateTransfer - same logic but use _triggerProjectionUpdate) ...
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
@@ -1484,7 +1741,6 @@ export const useMainStore = defineStore('mainStore', () => {
       displayCache.value = {}; calculationCache.value = {};
       await fetchAllEntities();
       
-      // 🟢 TRIGGER PROJECTION UPDATE USING STORE DATA
       const ps = useProjectionStore();
       if (ps.projection.mode) {
           await loadCalculationData(ps.projection.mode, new Date(ps.currentYear, 0, ps.todayDayOfYear));
@@ -1492,7 +1748,6 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (error) {}
   }
   
-  // 🟢 DELEGATED IMPORT/EXPORT TO TRANSFER STORE
   async function importOperations(operations, selectedIndices, progressCallback) { 
       return useTransferStore().importOperations(operations, selectedIndices, progressCallback);
   }
@@ -1516,14 +1771,11 @@ export const useMainStore = defineStore('mainStore', () => {
   async function logout() { 
       axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {}); 
       user.value = null; 
-      // 🟢 Socket Disconnect via Store
       useSocketStore().disconnect();
-      
       displayCache.value = {}; 
       calculationCache.value = {}; 
   }
 
-  // ... (ensureSystemEntities, closeRetailDaily, closePrepaymentDeal, createWorkAct - keep as is) ...
   async function ensureSystemEntities() {
       let retailDuplicates = individuals.value.filter(i => {
           const n = i.name.trim().toLowerCase();
@@ -1651,7 +1903,6 @@ export const useMainStore = defineStore('mainStore', () => {
       } catch (e) { throw e; }
   }
   
-  // 🟢 RE-ADDED MISSING FUNCTION DEFINITION
   async function createWorkAct(projectId, categoryId, contractorId, counterpartyIndividualId, amount, date, opIdToClose, skipFetch = false, companyId = null, individualId = null) {
       try {
           const opData = {
@@ -1824,7 +2075,6 @@ export const useMainStore = defineStore('mainStore', () => {
           };
           
           const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
-          // Socket will add to taxes list
           if (!taxes.value.find(t=>t._id===res.data._id)) taxes.value.push(res.data);
           
           return res.data;
@@ -1833,7 +2083,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
-  // 🟢 ВОЗВРАЩАЕМ ВСЕ МЕТОДЫ И СОСТОЯНИЯ (включая fetchAllEntities)
+  // 🟢 EXPORT ALL
   return {
     accounts, companies, contractors, projects, categories, individuals, 
     credits, taxes, 
@@ -1856,7 +2106,6 @@ export const useMainStore = defineStore('mainStore', () => {
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
     currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, 
     
-    // dailyChartData - делегируем геттер
     dailyChartData: computed(() => useProjectionStore().dailyChartData),
 
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
@@ -1865,7 +2114,6 @@ export const useMainStore = defineStore('mainStore', () => {
     currentCreditBalances, futureCreditBalances, creditCategoryId,
 
     liabilitiesWeOwe, liabilitiesTheyOwe, liabilitiesWeOweFuture, liabilitiesTheyOweFuture,
-    // retailLiabilitiesTheyOwe, retailLiabilitiesWeOwe, // 🔴 REMOVED (Duplicate logic, moved to DealStore)
     
     getPrepaymentCategoryIds, getActCategoryIds,
     
@@ -1884,7 +2132,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
     getOperationsForDay, 
 
-    // Date & Projection setters - делегируем
     setToday: (d) => useProjectionStore().setToday(d),
     setCurrentViewDate: (d) => useProjectionStore().setCurrentViewDate(d),
     
@@ -1895,8 +2142,7 @@ export const useMainStore = defineStore('mainStore', () => {
     addIndividual, deleteEntity, batchUpdateEntities,
     addCredit, 
 
-    // Projection methods - делегируем
-    computeTotalDaysForMode: (mode) => useProjectionStore().computeTotalDaysForMode(mode), // 🟢 RESTORED
+    computeTotalDaysForMode: (mode) => useProjectionStore().computeTotalDaysForMode(mode), 
     updateFutureProjectionByMode: (m, t) => useProjectionStore().updateFutureProjectionByMode(m, t),
     setProjectionRange: (s, e) => useProjectionStore().setProjectionRange(s, e),
     
@@ -1912,7 +2158,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
     getFirstFreeCellIndex, _parseDateKey, _getDateKey, 
     
-    // Exports for Projection Store
     _isRetailWriteOff, 
 
     allOperationsFlat, displayOperationsFlat,
@@ -1929,17 +2174,15 @@ export const useMainStore = defineStore('mainStore', () => {
     _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
     getProjectDealStatus,
     
-    dealOperations, getAllRelevantOps, // 🟢 Export for DealStore
+    dealOperations, getAllRelevantOps, 
     projectsWithRetailDebts,
     
     calculateTaxForPeriod,
     createTaxPayment,
     _isTaxPayment,
     
-    // Total Initial Balance export for TransferStore
     totalInitialBalance,
     
-    // 🟢 Export handlers for socketStore
     onSocketOperationAdded,
     onSocketOperationUpdated,
     onSocketOperationDeleted,

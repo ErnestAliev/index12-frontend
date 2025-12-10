@@ -12,12 +12,11 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v60.0 - RETAIL PREPAYMENT FLAGS ---
- * * ВЕРСИЯ: 60.0
+ * * --- МЕТКА ВЕРСИИ: v61.0 - REFACTOR: UI DEAL DETECTION FIX ---
+ * * ВЕРСИЯ: 61.0
  * * ИЗМЕНЕНИЯ:
- * 1. Исправлена логика handleSave для Розницы.
- * 2. Явно проставляется isPrepayment: true для "Retail Prepayment".
- * 3. Явно проставляется isPrepayment: false для "Fact".
+ * 1. isDealDetected теперь возвращает false, если найденная сделка уже закрыта (isClosed).
+ * Это позволяет создавать новые доходы/сделки поверх закрытых, не попадая в ловушку "следующего транша".
  */
 
 const props = defineProps({
@@ -317,7 +316,17 @@ const localDealStatus = computed(() => {
     return status;
 });
 
-const isDealDetected = computed(() => !!localDealStatus.value && !isProtectedMode.value);
+// 🟢 REFACTORED:
+const isDealDetected = computed(() => {
+    if (!localDealStatus.value) return false;
+    if (isProtectedMode.value) return false;
+    // 🟢 NEW: Если сделка закрыта, мы не считаем её "обнаруженной" для режима траншей.
+    // Мы даем пользователю начать новую.
+    if (localDealStatus.value.isClosed) return false;
+    
+    return true;
+});
+
 const nextTrancheNumber = computed(() => (localDealStatus.value?.tranchesCount || 0) + 1);
 
 const mainButtonText = computed(() => {
@@ -554,18 +563,17 @@ const handleSave = async (options = {}) => {
         
         let isClosedState = false; 
         let isDealTrancheForce = undefined;
-        let isPrepaymentState = undefined; // 🟢 Новое поле
+        let isPrepaymentState = undefined; 
 
         if (isRetailClientSelected.value) { 
             isDealTrancheForce = false; 
-            // 🟢 FIX: Явная установка флагов
             if (operationStatus.value === 'fact') { 
                 isClosedState = true; 
-                isPrepaymentState = false; // Это факт
+                isPrepaymentState = false; 
             } else { 
                 // Retail Prepayment
                 isClosedState = false; 
-                isPrepaymentState = true; // Это предоплата
+                isPrepaymentState = true; 
             } 
         } else if (isDealDetected.value) {
             isDealTrancheForce = true;
@@ -581,7 +589,7 @@ const handleSave = async (options = {}) => {
             totalDealAmount: 0, 
             isDealTranche: isDealTrancheForce !== undefined ? isDealTrancheForce : false, 
             isClosed: isClosedState, 
-            isPrepayment: isPrepaymentState, // 🟢 Передаем флаг
+            isPrepayment: isPrepaymentState, 
             cellIndex: targetCellIndex
         };
         

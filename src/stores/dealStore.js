@@ -4,6 +4,7 @@ import { useMainStore } from './mainStore';
 
 export const useDealStore = defineStore('dealStore', () => {
   const mainStore = useMainStore();
+  console.log('--- dealStore.js v117.0 (REFACTOR: Stage 2 - Break Closed Deals) LOADED ---');
 
   const opStatusMap = ref(new Map());
 
@@ -66,13 +67,8 @@ export const useDealStore = defineStore('dealStore', () => {
               }
           }
 
-          // === 🟢 ФЕЙС-КОНТРОЛЬ РОЗНИЦА (FIX) ===
-          // Если это Розница и Доход, мы должны отсеять обычный "Факт".
-          // Факт обычно помечается как isClosed: true при создании.
-          // Предоплата помечается как isClosed: false.
+          // === ФЕЙС-КОНТРОЛЬ РОЗНИЦА ===
           if (isRetailOp && isIncome) {
-              // Если операция закрыта (Факт) И это не явная предоплата -> ИГНОРИРУЕМ.
-              // Она не попадет в коробку и не создаст долг.
               if (op.isClosed && op.isPrepayment !== true) {
                   continue; 
               }
@@ -113,27 +109,43 @@ export const useDealStore = defineStore('dealStore', () => {
               });
           } 
           
-          // === ВЕТКА СДЕЛОК B2B (Не трогаем) ===
+          // === 🟢 ВЕТКА СДЕЛОК B2B (REFACTORED) ===
           else {
               let currentDeal = history.length > 0 ? history[history.length - 1] : null;
               let shouldCreateNew = false;
 
+              // 1. Проверяем, закрыта ли текущая сделка
+              let isCurrentEffectivelyClosed = false;
+              if (currentDeal) {
+                  const debt = Math.max(0, currentDeal.budget - currentDeal.received);
+                  // Если долга нет или сделка закрыта вручную - считаем её завершенной
+                  if (debt <= 0 || currentDeal.isManualClosed) {
+                      isCurrentEffectivelyClosed = true;
+                  }
+              }
+
               if (opBudget > 0) {
-                  if (!currentDeal) {
-                      shouldCreateNew = true;
+                  // Если операция явно задает новый бюджет (напр. "Предоплата" с суммой сделки)
+                  if (!currentDeal || isCurrentEffectivelyClosed) {
+                      shouldCreateNew = true; // Начинаем новую сделку
                   } else {
-                      const debt = Math.max(0, currentDeal.budget - currentDeal.received);
-                      if (debt <= 0 || currentDeal.isManualClosed) {
-                          shouldCreateNew = true;
-                      } else {
-                          if (opBudget > currentDeal.budget) {
-                              currentDeal.budget = opBudget; 
-                          }
+                      // Если старая еще открыта, возможно это расширение бюджета
+                      if (opBudget > currentDeal.budget) {
+                          currentDeal.budget = opBudget; 
                       }
                   }
               }
-              else if (!currentDeal) {
-                  shouldCreateNew = true;
+              else {
+                  // Если это обычная операция (Транш или Факт с бюджетом 0)
+                  if (!currentDeal) {
+                      shouldCreateNew = true;
+                  } 
+                  // 🟢 FIX: Если текущая сделка закрыта, запрещаем добавлять туда новые транши.
+                  // Начинаем новую историю (даже если бюджет 0).
+                  else if (isCurrentEffectivelyClosed) {
+                      shouldCreateNew = true;
+                  }
+                  // Иначе: Сделка открыта, добавляем как транш
               }
 
               if (shouldCreateNew) {
