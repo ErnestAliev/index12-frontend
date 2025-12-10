@@ -12,7 +12,8 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'confirm']);
 
-const isPreviousStageDone = ref(false); // 🟢 1.35. (чек бокс не активен по умолчанию)
+// По умолчанию галочка стоит (автоподписание)
+const isPreviousStageDone = ref(true);
 
 // Логика "Финала"
 const isFinal = computed(() => props.currentAmount >= props.dealStatus.debt);
@@ -20,6 +21,11 @@ const overpayment = computed(() => Math.max(0, props.currentAmount - props.dealS
 
 // Номер следующего транша
 const nextTrancheNum = computed(() => (props.dealStatus.tranchesCount || 0) + 1);
+const hasPreviousTranche = computed(() => (props.dealStatus.tranchesCount || 0) > 0);
+
+// 🟢 FIX: Показываем чекбокс только если есть прошлый транш И сделка НЕ финальная.
+// В финале мы закрываем всё автоматически, спрашивать не нужно.
+const showCheckbox = computed(() => hasPreviousTranche.value && !isFinal.value);
 
 const confirmText = computed(() => {
     if (isFinal.value) return 'Закрыть сделку';
@@ -32,7 +38,8 @@ const title = computed(() => {
 
 const handleConfirm = () => {
     emit('confirm', {
-        closePrevious: isPreviousStageDone.value,
+        // Если финал - принудительно закрываем всё (true), иначе берем значение чекбокса
+        closePrevious: isFinal.value ? true : isPreviousStageDone.value,
         isFinal: isFinal.value,
         nextTrancheNum: nextTrancheNum.value
     });
@@ -51,7 +58,7 @@ const handleCancel = () => {
           <button class="close-btn" @click="handleCancel">&times;</button>
       </div>
 
-      <!-- 🟢 Блок информации о сделке (1.29 - 1.31) -->
+      <!-- Блок информации о сделке -->
       <div class="deal-info-block">
           <div class="info-row">
               <span class="info-label">От кого:</span>
@@ -69,7 +76,7 @@ const handleCancel = () => {
 
       <div class="separator-dashed"></div>
 
-      <!-- 1.32. Статистика (Иконки убраны) -->
+      <!-- Статистика -->
       <div class="stats-grid">
           <!-- Общая сумма -->
           <div class="stat-item">
@@ -84,7 +91,7 @@ const handleCancel = () => {
           </div>
       </div>
 
-      <!-- 1.33. Блок текущего внесения (Сумма зеленая) -->
+      <!-- Блок текущего внесения -->
       <div class="current-op-box">
           <div class="op-row">
               <span class="op-label">Вносимая сумма:</span>
@@ -92,7 +99,7 @@ const handleCancel = () => {
           </div>
       </div>
 
-      <!-- 1.34. Анализ "В пределах остатка" убран. Показываем только Финал. -->
+      <!-- Анализ (Финал) -->
       <div class="analysis-box final-state" v-if="isFinal">
           <div class="analysis-row final">
               <div class="final-icon">
@@ -100,13 +107,14 @@ const handleCancel = () => {
               </div>
               <div class="final-text">
                   <strong>Сделка закрывается полностью</strong>
+                  <span class="sub-text">Все этапы будут отмечены как сданные</span>
                   <span v-if="overpayment > 0" class="over-text">Переплата: {{ formatNumber(overpayment) }} ₸</span>
               </div>
           </div>
       </div>
 
-      <!-- 1.35. Чекбокс закрытия этапа -->
-      <div class="checkbox-wrapper" v-if="!isFinal">
+      <!-- Чекбокс (Скрыт при финале) -->
+      <div class="checkbox-wrapper" v-if="showCheckbox">
           <label class="custom-checkbox">
               <input type="checkbox" v-model="isPreviousStageDone">
               <span class="checkmark"></span>
@@ -131,7 +139,6 @@ const handleCancel = () => {
 h3 { margin: 0; font-size: 20px; font-weight: 700; color: #1a1a1a; }
 .close-btn { background: none; border: none; font-size: 28px; color: #999; cursor: pointer; line-height: 1; padding: 0; }
 
-/* Блок информации */
 .deal-info-block { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
 .info-row { display: flex; justify-content: space-between; font-size: 14px; }
 .info-label { color: #666; }
@@ -162,6 +169,7 @@ h3 { margin: 0; font-size: 20px; font-weight: 700; color: #1a1a1a; }
 .analysis-row.final { align-items: flex-start; }
 .final-icon { color: #34c759; margin-top: 2px; }
 .final-text { display: flex; flex-direction: column; }
+.sub-text { font-size: 11px; color: #aaa; margin-top: 2px; font-weight: 400; }
 .over-text { font-size: 11px; color: #FF9D00; margin-top: 4px; }
 
 .checkbox-wrapper { margin-bottom: 24px; padding: 0 4px; }

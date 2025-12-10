@@ -1,71 +1,70 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
-import { io } from 'socket.io-client';
+import { useUiStore } from './uiStore';
+import { useProjectionStore } from './projectionStore';
+import { useTransferStore } from './transferStore';
+import { useSocketStore } from './socketStore';
+import { useWidgetStore } from './widgetStore';
+import { useDealStore } from './dealStore'; // 🟢 Integration
 
 axios.defaults.withCredentials = true; 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
-// 🟢 ROBUST SOCKET URL GENERATION
-// Parses the API URL to extract the pure Origin (http://domain.com) removing any paths like /api
-let SOCKET_URL = '';
-try {
-    const urlObj = new URL(API_BASE_URL);
-    SOCKET_URL = urlObj.origin; 
-} catch (e) {
-    console.warn('[mainStore] Failed to parse API_BASE_URL with URL object. Falling back to string replace.', e);
-    SOCKET_URL = API_BASE_URL.replace('/api', '');
-}
-
-// 🟢 Debug logs to help identify .env typos
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
-console.log(`[mainStore] Derived SOCKET_URL: ${SOCKET_URL}`);
-
-const VIEW_MODE_DAYS = {
-  '12d': { total: 12 },
-  '1m':  { total: 30 },
-  '3m':  { total: 90 },
-  '6m':  { total: 180 },
-  '1y':  { total: 360 }
-};
-
-function getViewModeInfo(mode) {
-  return VIEW_MODE_DAYS[mode] || VIEW_MODE_DAYS['12d'];
-}
-
-const debounce = (fn, delay) => {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
-};
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v104.2 (SOCKET DEDUP FIX) LOADED ---'); 
+  console.log('--- mainStore.js v112.3 (CLEANUP: Removed Retail Duplication) LOADED ---'); 
   
+  // 🟢 CONNECT SUB-STORES
+  const uiStore = useUiStore();
+  const widgetStore = useWidgetStore();
+  // Projection, Transfer, Socket, and Deal stores are accessed lazily or via getters
+
   const user = ref(null); 
   const isAuthLoading = ref(true); 
+
+  // --- 1. UI STORE BRIDGES ---
+  const isHeaderExpanded = computed({
+      get: () => uiStore.isHeaderExpanded,
+      set: (v) => uiStore.isHeaderExpanded = v
+  });
+  const toggleHeaderExpansion = () => uiStore.toggleHeaderExpansion();
+  const includeExcludedInTotal = computed({
+      get: () => uiStore.includeExcludedInTotal,
+      set: (v) => uiStore.includeExcludedInTotal = v
+  });
+  const toggleExcludedInclusion = () => uiStore.toggleExcludedInclusion();
+
+  // --- 2. WIDGET STORE BRIDGES ---
+  const dashboardLayout = computed({
+      get: () => widgetStore.dashboardLayout,
+      set: (v) => widgetStore.updateDashboardLayout(v)
+  });
+  const allWidgets = computed(() => widgetStore.staticWidgets);
+  const dashboardForecastState = computed(() => widgetStore.dashboardForecastState);
   
-  // 🟢 Socket instance
-  const socket = ref(null);
+  const widgetSortMode = computed({
+      get: () => widgetStore.widgetSortMode,
+      set: (v) => widgetStore.setWidgetSortMode(v)
+  });
+  const widgetFilterMode = computed({
+      get: () => widgetStore.widgetFilterMode,
+      set: (v) => widgetStore.setWidgetFilterMode(v)
+  });
 
-  const widgetSortMode = ref('default'); 
-  const widgetFilterMode = ref('all');   
+  const replaceWidget = (i, k) => widgetStore.replaceWidget(i, k);
+  const setForecastState = (k, v) => widgetStore.setForecastState(k, v);
+  const setWidgetSortMode = (m) => widgetStore.setWidgetSortMode(m);
+  const setWidgetFilterMode = (m) => widgetStore.setWidgetFilterMode(m);
 
-  // 🟢 НОВОЕ СОСТОЯНИЕ: Учитывать ли исключенные счета в общем балансе
-  const savedIncludeExcluded = localStorage.getItem('includeExcludedInTotal');
-  const includeExcludedInTotal = ref(savedIncludeExcluded === 'true');
+  // --- 3. PROJECTION STORE BRIDGES ---
+  const projection = computed({
+      get: () => useProjectionStore().projection,
+      set: (v) => useProjectionStore().projection = v
+  });
 
-  function setWidgetSortMode(mode) { widgetSortMode.value = mode; }
-  function setWidgetFilterMode(mode) { widgetFilterMode.value = mode; }
-  
-  // 🟢 НОВОЕ ДЕЙСТВИЕ: Переключение учета исключенных счетов
-  function toggleExcludedInclusion() {
-      includeExcludedInTotal.value = !includeExcludedInTotal.value;
-      localStorage.setItem('includeExcludedInTotal', String(includeExcludedInTotal.value));
-  }
-
+  // --- 4. DATA STATE ---
   const snapshot = ref({
     totalBalance: 0,
     accountBalances: {},
@@ -89,32 +88,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const credits     = ref([]); 
   const taxes       = ref([]); 
   
-  const dealOperations = ref([]);
-  
-  const todayDayOfYear = ref(0);
-  const currentViewDate = ref(new Date());
-  const currentYear = ref(new Date().getFullYear());
-
-  const isHeaderExpanded = ref(false);
-  function toggleHeaderExpansion() { isHeaderExpanded.value = !isHeaderExpanded.value; }
-
-  const staticWidgets = ref([
-    { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
-    { key: 'accounts',     name: 'Счета/Кассы' }, 
-    { key: 'companies',    name: 'Мои компании' },
-    { key: 'taxes',        name: 'Мои налоги' }, 
-    { key: 'credits',      name: 'Мои кредиты' }, 
-    { key: 'contractors',  name: 'Мои контрагенты' },
-    { key: 'projects',     name: 'Мои проекты' },
-    { key: 'futureTotal',  name: 'Всего на счетах\nс учетом будущих' }, 
-    { key: 'liabilities',  name: 'Мои предоплаты' },
-    { key: 'incomeList',   name: 'Мои доходы' },
-    { key: 'expenseList',  name: 'Мои расходы' },
-    { key: 'withdrawalList', name: 'Мои выводы' },
-    { key: 'transfers',    name: 'Мои переводы' }, 
-    { key: 'individuals',  name: 'Физлица' },
-    { key: 'categories',   name: 'Категории' },
-  ]);
+  const dealOperations = ref([]); // Raw storage for deals
 
   // --- Helpers ---
   const _toStr = (val) => {
@@ -131,23 +105,23 @@ export const useMainStore = defineStore('mainStore', () => {
     return Math.floor(diff / 86400000);
   };
 
-  function setToday(d){ 
-    todayDayOfYear.value = d; 
-    localStorage.setItem('todayDayOfYear', d.toString());
-  }
-  
-  function setCurrentViewDate(date) {
-      if (!date) return;
-      const d = new Date(date);
-      if (isNaN(d.getTime())) return;
-      currentViewDate.value = d;
-  }
+  const _getDateKey = (date) => {
+    const year = date.getFullYear();
+    const doy = _getDayOfYear(date);
+    return `${year}-${doy}`;
+  };
 
-  const savedToday = localStorage.getItem('todayDayOfYear');
-  if (savedToday) {
-    todayDayOfYear.value = parseInt(savedToday);
-  }
-  
+  const _parseDateKey = (dateKey) => {
+    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
+        return new Date(); 
+    }
+    const [year, doy] = dateKey.split('-').map(Number);
+    const date = new Date(year, 0, 1);
+    date.setDate(doy);
+    return date;
+  };
+
+  // --- Categories Logic ---
   const _isTransferCategory = (cat) => {
     if (!cat) return false;
     const name = cat.name.toLowerCase().trim();
@@ -173,6 +147,19 @@ export const useMainStore = defineStore('mainStore', () => {
       return ['меж.комп', 'межкомпаний', 'inter-comp'].includes(name);
   };
 
+  const prepaymentCategoryIdsSet = computed(() => {
+    const ids = new Set();
+    categories.value.forEach(c => {
+        const n = c.name.toLowerCase().trim();
+        if (n.includes('предоплата') || n.includes('prepayment') || n.includes('аванс')) {
+            ids.add(c._id);
+        }
+    });
+    return ids;
+  });
+
+  const getPrepaymentCategoryIds = computed(() => Array.from(prepaymentCategoryIdsSet.value));
+
   const _isPrepaymentOp = (op) => {
       if (!op) return false;
       const prepayIds = prepaymentCategoryIdsSet.value; 
@@ -192,6 +179,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
   };
 
+  // --- Special Entities & Categories ---
   const retailIndividualId = computed(() => {
       const retail = individuals.value.find(i => {
           const n = i.name.trim().toLowerCase();
@@ -267,6 +255,7 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   };
 
+  // --- Operations Management ---
   function _updateDealCache(op, mode = 'add') {
       const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
       if (!isDealRelated) return;
@@ -283,125 +272,33 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
-  const getMergedDealOps = computed(() => {
+  // 🟢 EXPORT FOR DEAL STORE
+  const getAllRelevantOps = computed(() => {
       const map = new Map();
-      if (dealOperations.value) {
-          dealOperations.value.forEach(op => { if (op && op._id) map.set(op._id, op); });
-      }
-      if (allOperationsFlat.value) {
-          allOperationsFlat.value.forEach(op => {
-              if (!op || !op._id) return;
-              const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
-              if (isDealRelated) map.set(op._id, op);
-          });
-      }
+      if (dealOperations.value) dealOperations.value.forEach(op => map.set(op._id, op));
+      if (allOperationsFlat.value) allOperationsFlat.value.forEach(op => map.set(op._id, op));
       return Array.from(map.values());
   });
 
-  // 🟢 РЕФАКТОРИНГ: Добавлена логика сброса при закрытой сделке
+  const getMergedDealOps = computed(() => getAllRelevantOps.value);
+
+  // 🟢 DELEGATION: Connect to DealStore for Liabilities
+  const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOwe);
+  const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOwe);
+  const liabilitiesWeOweFuture = computed(() => liabilitiesWeOwe.value);
+  const liabilitiesTheyOweFuture = computed(() => liabilitiesTheyOwe.value);
+
+  // 🟢 DELEGATION: Get Deal Status
   function getProjectDealStatus(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
-      if (!projectId) return { debt: 0, activeTranche: null, totalDeal: 0, paidTotal: 0, tranchesCount: 0 };
-
-      let maxTotalDeal = 0;
-      let paidTotal = 0;
-      let activeTranche = null;
-      let tranchesCount = 0;
-
-      const targetPId = _toStr(projectId);
-      const targetCId = categoryId ? _toStr(categoryId) : null;
-      const targetContrId = contractorId ? _toStr(contractorId) : null;
-      const targetIndId = counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null;
-
-      const sourceOps = getMergedDealOps.value;
-      const projectOps = sourceOps.filter(op => {
-          if (op.type !== 'income') return false;
-          if (_toStr(op.projectId) !== targetPId) return false;
-          if (targetCId && _toStr(op.categoryId) !== targetCId) return false;
-          if (targetContrId && _toStr(op.contractorId) !== targetContrId) return false;
-          if (targetIndId && _toStr(op.counterpartyIndividualId) !== targetIndId) return false;
-          return true;
-      });
-      
-      // 🟢 FIX: Усиленная сортировка.
-      projectOps.sort((a, b) => {
-          const timeA = new Date(a.date).getTime();
-          const timeB = new Date(b.date).getTime();
-          if (timeA !== timeB) return timeA - timeB;
-          
-          const cellA = a.cellIndex !== undefined ? a.cellIndex : -1;
-          const cellB = b.cellIndex !== undefined ? b.cellIndex : -1;
-          if (cellA !== cellB) return cellA - cellB;
-          
-          return (a._id || '').toString().localeCompare((b._id || '').toString());
-      });
-
-      projectOps.forEach(op => {
-          tranchesCount++;
-          if ((op.totalDealAmount || 0) > maxTotalDeal) maxTotalDeal = op.totalDealAmount;
-          paidTotal += (op.amount || 0);
-          
-          if (!op.isClosed) {
-              activeTranche = op;
-          }
-
-          if (op.isClosed) {
-              maxTotalDeal = 0;
-              paidTotal = 0;
-              tranchesCount = 0;
-              activeTranche = null;
-          }
-      });
-
-      let debt = Math.max(0, maxTotalDeal - paidTotal);
-      return { debt, activeTranche, totalDeal: maxTotalDeal, paidTotal, tranchesCount };
+      return useDealStore().getDealStatus(projectId, categoryId, contractorId || counterpartyIndividualId);
   }
 
-  async function closePreviousTranches(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
-      if (!projectId) return;
-      const targetPId = _toStr(projectId);
-      const targetCId = categoryId ? _toStr(categoryId) : null;
-      const targetContrId = contractorId ? _toStr(contractorId) : null;
-      const targetIndId = counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null;
-      const sourceOps = getMergedDealOps.value;
-
-      const openOps = sourceOps.filter(op => {
-          if (op.type !== 'income' || op.isClosed) return false;
-          if (_toStr(op.projectId) !== targetPId) return false;
-          if (targetCId && _toStr(op.categoryId) !== targetCId) return false;
-          if (targetContrId && _toStr(op.contractorId) !== targetContrId) return false;
-          if (targetIndId && _toStr(op.counterpartyIndividualId) !== targetIndId) return false;
-          return true;
-      });
-
-      for (const op of openOps) {
-           await createWorkAct(
-               op.projectId?._id || op.projectId,
-               op.categoryId?._id || op.categoryId,
-               op.contractorId?._id || op.contractorId,
-               op.counterpartyIndividualId?._id || op.counterpartyIndividualId,
-               op.amount, 
-               new Date(), 
-               op._id, 
-               true, 
-               op.companyId?._id || op.companyId,
-               op.individualId?._id || op.individualId
-           );
-      }
+  function closePreviousTranches(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
+      // Logic moved to DealStore chronological processing
+      // This function is kept for backward compatibility if components call it
   }
 
-  const prepaymentCategoryIdsSet = computed(() => {
-    const ids = new Set();
-    categories.value.forEach(c => {
-        const n = c.name.toLowerCase().trim();
-        if (n.includes('предоплата') || n.includes('prepayment') || n.includes('аванс')) {
-            ids.add(c._id);
-        }
-    });
-    return ids;
-  });
-
-  const getPrepaymentCategoryIds = computed(() => Array.from(prepaymentCategoryIdsSet.value));
-
+  // --- Lists & Computed ---
   const getActCategoryIds = computed(() => {
     return categories.value
       .filter(c => {
@@ -436,80 +333,6 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  const allWidgets = computed(() => staticWidgets.value);
-
-  const savedLayout = localStorage.getItem('dashboardLayout');
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors', 'projects', 'futureTotal', 
-    'transfers'
-  ]);
-  
-  const saveLayoutToServer = debounce(async (newLayout) => {
-      if (!user.value) return;
-      try {
-          await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
-          console.log('[mainStore] Layout saved to server');
-      } catch (e) {
-          console.error('[mainStore] Failed to save layout:', e);
-      }
-  }, 1000);
-
-  watch(dashboardLayout, (n) => {
-      localStorage.setItem('dashboardLayout', JSON.stringify(n));
-      saveLayoutToServer(n);
-  }, { deep: true });
-
-  const savedForecastState = localStorage.getItem('dashboardForecastState');
-  const dashboardForecastState = ref(savedForecastState ? JSON.parse(savedForecastState) : {});
-  watch(dashboardForecastState, (n) => localStorage.setItem('dashboardForecastState', JSON.stringify(n)), { deep: true });
-
-  const savedProjection = localStorage.getItem('projection');
-  const initialProjection = savedProjection ? JSON.parse(savedProjection) : {
-    mode: '12d', totalDays: 12, rangeStartDate: null, rangeEndDate: null,
-    futureIncomeSum: 0, futureExpenseSum: 0
-  };
-  const projection = ref(initialProjection);
-  watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
-  
-  function replaceWidget(i, key){ 
-    if (i >= 0 && i < dashboardLayout.value.length) {
-        if (!dashboardLayout.value.includes(key)) {
-            dashboardLayout.value[i] = key; 
-        }
-    }
-  }
-  function setForecastState(widgetKey, value) {
-    dashboardForecastState.value[widgetKey] = !!value;
-  }
-  
-  const _getDateKey = (date) => {
-    const year = date.getFullYear();
-    const doy = _getDayOfYear(date);
-    return `${year}-${doy}`;
-  };
-  const _parseDateKey = (dateKey) => {
-    if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        return new Date(); 
-    }
-    const [year, doy] = dateKey.split('-').map(Number);
-    const date = new Date(year, 0, 1);
-    date.setDate(doy);
-    return date;
-  };
-  const _calculateDateRangeWithYear = (view, baseDate) => {
-    const startDate = new Date(baseDate);
-    const endDate = new Date(baseDate);
-    switch (view) {
-      case '12d': startDate.setDate(startDate.getDate() - 5); endDate.setDate(endDate.getDate() + 6); break;
-      case '1m':  startDate.setDate(startDate.getDate() - 15); endDate.setDate(endDate.getDate() + 14); break;
-      case '3m':  startDate.setDate(startDate.getDate() - 45); endDate.setDate(endDate.getDate() + 44); break;
-      case '6m':  startDate.setDate(startDate.getDate() - 90); endDate.setDate(endDate.getDate() + 89); break;
-      case '1y':  startDate.setDate(startDate.getDate() - 180); endDate.setDate(endDate.getDate() + 179); break;
-      default:    startDate.setDate(startDate.getDate() - 5); endDate.setDate(endDate.getDate() + 6);
-    }
-    return { startDate, endDate };
-  };
-
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
@@ -521,84 +344,7 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const futureOps = computed(() => {
-    const snapshotTime = snapshot.value.timestamp ? new Date(snapshot.value.timestamp).getTime() : Date.now();
-    const cutOffTime = Math.max(snapshotTime, Date.now());
-
-    let endDate;
-    if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate).getTime(); } 
-    else { endDate = Date.now() + 365*24*60*60*1000; }
-
-    const result = [];
-    for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
-        const date = _parseDateKey(dateKey);
-        const time = date.getTime();
-        
-        if (time >= cutOffTime - 86400000 && time <= endDate) {
-            if (Array.isArray(ops)) {
-                for (const op of ops) {
-                    if (!op.date) continue;
-                    const opTime = new Date(op.date).getTime();
-                    if (opTime > cutOffTime) {
-                        result.push(op);
-                    }
-                }
-            }
-        }
-    }
-    return result;
-  });
-
-  const dailyChartData = computed(() => {
-    const byDateKey = {};
-    const prepayIdsSet = prepaymentCategoryIdsSet.value;
-    for (const [dateKey, ops] of Object.entries(calculationCache.value)) {
-       if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal:0, dayTotal:0 };
-       const dayRec = byDateKey[dateKey];
-       if (Array.isArray(ops)) {
-           for (const op of ops) {
-               if (isTransfer(op)) continue;
-               
-               if (op.isWorkAct) continue;
-
-               if (!op.accountId) continue; 
-               
-               const amt = op.amount || 0;
-               const absAmt = Math.abs(amt);
-               
-               if (op.isWithdrawal) {
-                   dayRec.withdrawal += absAmt;
-                   dayRec.dayTotal -= absAmt;
-               } else if (op.type === 'expense') {
-                   if (_isRetailWriteOff(op)) continue;
-                   dayRec.expense += absAmt;
-                   dayRec.dayTotal -= absAmt;
-               } else if (op.type === 'income') {
-                   const catId = op.categoryId?._id || op.categoryId;
-                   const prepId = op.prepaymentId?._id || op.prepaymentId;
-                   const isPrepay = (catId && prepayIdsSet.has(catId)) || (prepId && prepayIdsSet.has(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
-                   if (isPrepay) dayRec.prepayment += amt;
-                   else dayRec.income += amt;
-                   dayRec.dayTotal += amt;
-               }
-           }
-       }
-    }
-    const chart = new Map();
-    const sortedDateKeys = Object.keys(byDateKey).sort((a, b) => {
-      const [y1, d1] = a.split('-').map(Number);
-      const [y2, d2] = b.split('-').map(Number);
-      return (y1 - y2) || (d1 - d2);
-    });
-    let running = totalInitialBalance.value || 0;
-    for (const dateKey of sortedDateKeys) {
-      const rec = byDateKey[dateKey];
-      running += rec.dayTotal;
-      chart.set(dateKey, { 
-        income: rec.income, prepayment: rec.prepayment, expense: rec.expense, withdrawal: rec.withdrawal,
-        closingBalance: running, date: _parseDateKey(dateKey)
-      });
-    }
-    return chart;
+      return useProjectionStore().futureOps;
   });
 
   const displayOperationsFlat = computed(() => {
@@ -677,158 +423,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       }
   };
-
-  const liabilitiesWeOwe = computed(() => {
-    const liabilitiesMap = new Map();
-
-    const getContextKey = (op) => {
-        const pIdRaw = op.projectId?._id || op.projectId;
-        const pId = _toStr(pIdRaw) || 'no_proj';
-
-        const cIdRaw = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
-        const cId = _toStr(cIdRaw) || 'no_contr';
-
-        const myIdRaw = op.companyId ? (op.companyId._id || op.companyId) : (op.individualId?._id || op.individualId);
-        const myId = _toStr(myIdRaw) || 'no_my';
-        
-        return `${pId}_${cId}_${myId}`;
-    };
-
-    const allSources = getMergedDealOps.value;
-    const actCatIds = new Set(getActCategoryIds.value);
-
-    // 1. СБОР АКТИВНЫХ B2B СДЕЛОК
-    const activeDealGroups = new Set();
-    for (const op of allSources) {
-        if (!op || isTransfer(op)) continue;
-        if (op.type === 'income' && Number(op.totalDealAmount || 0) > 0) {
-            activeDealGroups.add(getContextKey(op));
-        }
-    }
-
-    // 2. РАСЧЕТ ДОЛГА ПО B2B
-    for (const op of allSources) {
-        if (!op || isTransfer(op)) continue;
-        const key = getContextKey(op);
-        
-        if (!activeDealGroups.has(key)) continue;
-
-        if (!liabilitiesMap.has(key)) liabilitiesMap.set(key, { received: 0, acts: 0 });
-        const entry = liabilitiesMap.get(key);
-        const amt = Math.abs(op.amount || 0);
-
-        if (op.type === 'income') {
-            entry.received += amt;
-        }
-        else if (op.type === 'expense') {
-            const isExplicitAct = op.isWorkAct === true;
-            const isTechnicalProjectExpense = !op.accountId && op.projectId; 
-            let isActCategory = false;
-            const catId = op.categoryId?._id || op.categoryId;
-            if (catId && actCatIds.has(catId)) isActCategory = true;
-
-            if (isExplicitAct || isTechnicalProjectExpense || isActCategory) {
-                entry.acts += amt;
-            }
-        }
-    }
-    
-    let totalWeOwe = 0;
-    for (const entry of liabilitiesMap.values()) {
-        const diff = entry.received - entry.acts;
-        if (diff > 0) {
-            totalWeOwe += diff;
-        }
-    }
-
-    // 3. ДОБАВЛЕНИЕ ДОЛГА ПО РОЗНИЦЕ (МЫ ДОЛЖНЫ)
-    const retailIndId = retailIndividualId.value;
-    if (retailIndId) {
-        const retailGroups = new Map();
-        
-        allOperationsFlat.value.forEach(op => {
-            const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-            if (String(indId) !== String(retailIndId)) return;
-            
-            const pId = _toStr(op.projectId?._id || op.projectId) || 'no_project';
-            if (!retailGroups.has(pId)) retailGroups.set(pId, { income: 0, expense: 0 });
-            const g = retailGroups.get(pId);
-            
-            if (op.type === 'income') {
-                if (op.isClosed !== true) {
-                    g.income += (op.amount || 0);
-                }
-            } else if (op.type === 'expense' && !op.accountId) {
-                g.expense += Math.abs(op.amount || 0);
-            }
-        });
-        
-        retailGroups.forEach(g => {
-            const retailDebt = Math.max(0, g.income - g.expense);
-            totalWeOwe += retailDebt;
-        });
-    }
-
-    return totalWeOwe;
-  });
-
-  const liabilitiesTheyOwe = computed(() => {
-    const dealsMap = new Map(); 
-    const ops = getMergedDealOps.value;
-    
-    // 1. РАСЧЕТ ДОЛГА B2B
-    for (const op of ops) {
-      if (isTransfer(op)) continue;
-      if (op.type === 'income') {
-          const pId = op.projectId?._id || op.projectId;
-          const cId = op.categoryId?._id || op.categoryId;
-          const contrId = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
-          if (pId) {
-              const key = `${pId}_${cId}_${contrId}`;
-              if (!dealsMap.has(key)) dealsMap.set(key, { maxTotalDeal: 0, receivedSum: 0 });
-              const deal = dealsMap.get(key);
-              if ((op.totalDealAmount || 0) > deal.maxTotalDeal) deal.maxTotalDeal = op.totalDealAmount;
-              deal.receivedSum += (op.amount || 0);
-          }
-      }
-    }
-    let totalDebt = 0;
-    dealsMap.forEach(deal => {
-        const debt = Math.max(0, deal.maxTotalDeal - deal.receivedSum);
-        totalDebt += debt;
-    });
-
-    // 2. ДОБАВЛЕНИЕ ДОЛГА ПО РОЗНИЦЕ (НАМ ДОЛЖНЫ)
-    const retailIndId = retailIndividualId.value;
-    if (retailIndId) {
-        const retailGroups = new Map();
-        
-        allOperationsFlat.value.forEach(op => {
-            const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-            if (String(indId) !== String(retailIndId)) return;
-            
-            const pId = _toStr(op.projectId?._id || op.projectId) || 'no_project';
-            if (!retailGroups.has(pId)) retailGroups.set(pId, { allIncome: 0, expense: 0 });
-            const g = retailGroups.get(pId);
-            
-            if (op.type === 'income') {
-                g.allIncome += (op.amount || 0);
-            } else if (op.type === 'expense' && !op.accountId) {
-                g.expense += Math.abs(op.amount || 0);
-            }
-        });
-        
-        retailGroups.forEach(g => {
-            const retailReceivable = Math.max(0, g.expense - g.allIncome);
-            totalDebt += retailReceivable;
-        });
-    }
-
-    return totalDebt;
-  });
-
-  const liabilitiesWeOweFuture = computed(() => liabilitiesWeOwe.value);
-  const liabilitiesTheyOweFuture = computed(() => liabilitiesTheyOwe.value);
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
@@ -1104,21 +698,16 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTotalBalance = computed(() => {
     let total = currentTotalBalance.value;
-    
     const excludedIds = new Set();
     accounts.value.forEach(a => {
         if (a.isExcluded) excludedIds.add(String(a._id));
     });
-
     for (const op of futureOps.value) {
         if (isTransfer(op)) continue; 
         if (!op.accountId) continue;
         if (op.isWorkAct) continue;
-        
         const accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-        
         if (!includeExcludedInTotal.value && excludedIds.has(String(accId))) continue;
-        
         const amt = Math.abs(op.amount || 0);
         if (op.type === 'income') total += (op.amount || 0); else total -= amt;
     }
@@ -1160,14 +749,16 @@ export const useMainStore = defineStore('mainStore', () => {
       return populated;
   }
 
+  // 🟢 HELPER: обновление проекции через Projection Store
+  const _triggerProjectionUpdate = () => {
+      const ps = useProjectionStore();
+      ps.updateProjectionFromCalculationData(ps.projection.mode, new Date(ps.currentYear, 0, ps.todayDayOfYear));
+  };
+
   // 🟢 SOCKET EVENT HANDLERS
-  
-  // Обработка добавления (приходит от других устройств)
-  const handleSocketOperationAdded = (op) => {
-      // 🟢 FIX: With server-side exclusion (except sender), we should NOT see our own events here.
-      // But if we do (e.g. strict fallback), we check for duplicates.
+  const onSocketOperationAdded = (op) => {
       const existingOp = allOperationsFlat.value.find(o => o._id === op._id);
-      if (existingOp) return; // Уже есть (например, создано текущим клиентом)
+      if (existingOp) return; 
 
       const richOp = _populateOp(op);
       const dk = richOp.dateKey;
@@ -1181,12 +772,10 @@ export const useMainStore = defineStore('mainStore', () => {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
       _updateDealCache(richOp, 'add');
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      _triggerProjectionUpdate(); 
   };
 
-  // Обработка обновления (перемещение, изменение суммы)
-  const handleSocketOperationUpdated = (op) => {
-      // 1. Ищем старую версию
+  const onSocketOperationUpdated = (op) => {
       let oldOp = null;
       let oldDateKey = null;
       
@@ -1196,26 +785,21 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       if (!oldOp) oldOp = allOperationsFlat.value.find(o => o._id === op._id);
 
-      // 2. Если нашли, откатываем её влияние
       const now = new Date();
       if (oldOp && new Date(oldOp.date) <= now) {
           _applyOptimisticSnapshotUpdate(oldOp, -1);
       }
 
-      // 3. Обновляем кэш (удаляем старую, добавляем новую)
       const newDateKey = op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : oldDateKey);
       const richOp = _populateOp({ ...op, date: new Date(op.date) });
       
-      // Удаляем старую
       if (oldDateKey && displayCache.value[oldDateKey]) {
            displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== op._id);
            calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
       }
 
-      // Добавляем новую
       if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
       
-      // Проверяем, нет ли уже такой (на всякий случай)
       const existsIndex = displayCache.value[newDateKey].findIndex(o => o._id === op._id);
       if (existsIndex !== -1) {
           displayCache.value[newDateKey][existsIndex] = richOp;
@@ -1224,17 +808,15 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
 
-      // 4. Применяем влияние новой версии
       if (new Date(richOp.date) <= now) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
       
       _updateDealCache(richOp, 'update');
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      _triggerProjectionUpdate(); 
   };
 
-  // Обработка удаления
-  const handleSocketOperationDeleted = (opId) => {
+  const onSocketOperationDeleted = (opId) => {
       let oldOp = null;
       let oldDateKey = null;
       
@@ -1242,130 +824,54 @@ export const useMainStore = defineStore('mainStore', () => {
           const found = displayCache.value[dk].find(o => o._id === opId);
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
-      if (!oldOp) return; // Уже удалено
+      if (!oldOp) return; 
 
-      // Откат баланса
       const now = new Date();
       if (new Date(oldOp.date) <= now) {
           _applyOptimisticSnapshotUpdate(oldOp, -1);
       }
 
-      // Удаление из кэша
       if (oldDateKey && displayCache.value[oldDateKey]) {
           displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== opId);
           calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
       }
       
       _updateDealCache(oldOp, 'delete');
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      _triggerProjectionUpdate(); 
   };
 
-  // 🟢 INIT SOCKET
-  async function initSocket() {
-      if (socket.value) return; // Уже инициализирован
-      if (!user.value) return;
-
-      console.log(`[mainStore] Connecting to socket at ${SOCKET_URL}...`);
-      socket.value = io(SOCKET_URL, {
-          withCredentials: true,
-          transports: ['websocket', 'polling']
-      });
-
-      socket.value.on('connect', () => {
-          console.log('[mainStore] Socket connected:', socket.value.id);
-          socket.value.emit('join', user.value._id);
-          
-          // 🟢 FIX: Set header so server knows who we are and doesn't echo back our own events
-          if (socket.value.id) {
-              axios.defaults.headers.common['X-Socket-ID'] = socket.value.id;
-          }
-      });
-      
-      socket.value.on('disconnect', () => {
-           console.log('[mainStore] Socket disconnected');
-           delete axios.defaults.headers.common['X-Socket-ID'];
-      });
-
-      // --- OPERATIONS LISTENERS ---
-      socket.value.on('operation_added', (op) => {
-          // console.log('[Socket] operation_added', op);
-          handleSocketOperationAdded(op);
-      });
-      socket.value.on('operation_updated', (op) => {
-          // console.log('[Socket] operation_updated', op);
-          handleSocketOperationUpdated(op);
-      });
-      socket.value.on('operation_deleted', (id) => {
-          // console.log('[Socket] operation_deleted', id);
-          handleSocketOperationDeleted(id);
-      });
-      socket.value.on('operations_imported', (count) => {
-           console.log(`[Socket] Imported ${count} operations. Refreshing...`);
-           forceRefreshAll();
-      });
-
-      // --- ENTITY LISTENERS ---
-      const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category', 'prepayment'];
-      
-      entityTypes.forEach(type => {
-          socket.value.on(`${type}_added`, (item) => {
-             // Generic add to list
-             let listRef = null;
-             if (type === 'account') listRef = accounts;
-             if (type === 'company') listRef = companies;
-             if (type === 'contractor') listRef = contractors;
-             if (type === 'project') listRef = projects;
-             if (type === 'individual') listRef = individuals;
-             if (type === 'category') listRef = categories;
-             
-             if (listRef) {
-                 const exists = listRef.value.find(i => i._id === item._id);
-                 if (!exists) listRef.value.push(item);
-                 listRef.value = _sortByOrder(listRef.value);
-             }
-          });
-          
-          socket.value.on(`${type}_deleted`, (id) => {
-             // Generic remove from list
-             let listRef = null;
-             if (type === 'account') listRef = accounts;
-             if (type === 'company') listRef = companies;
-             if (type === 'contractor') listRef = contractors;
-             if (type === 'project') listRef = projects;
-             if (type === 'individual') listRef = individuals;
-             if (type === 'category') listRef = categories;
-
-             if (listRef) {
-                 listRef.value = listRef.value.filter(i => i._id !== id);
-             }
-          });
-          
-          socket.value.on(`${type}_list_updated`, (newList) => {
-             let listRef = null;
-             if (type === 'account') listRef = accounts;
-             if (type === 'company') listRef = companies;
-             if (type === 'contractor') listRef = contractors;
-             if (type === 'project') listRef = projects;
-             if (type === 'individual') listRef = individuals;
-             if (type === 'category') listRef = categories;
-             
-             if (listRef && Array.isArray(newList)) {
-                 listRef.value = _sortByOrder(newList);
-             }
-          });
-      });
-      
-      // Credits & Taxes specific
-      socket.value.on('credit_added', (c) => { credits.value.push(c); });
-      socket.value.on('credit_updated', (c) => { 
-          const idx = credits.value.findIndex(x => x._id === c._id);
-          if (idx !== -1) credits.value[idx] = c; else credits.value.push(c);
-      });
-      socket.value.on('credit_deleted', (id) => { credits.value = credits.value.filter(c => c._id !== id); });
-
-      socket.value.on('tax_payment_added', (t) => { taxes.value.push(t); });
-      socket.value.on('tax_payment_deleted', (id) => { taxes.value = taxes.value.filter(t => t._id !== id); });
+  const _getListRefByType = (type) => {
+     if (type === 'account') return accounts;
+     if (type === 'company') return companies;
+     if (type === 'contractor') return contractors;
+     if (type === 'project') return projects;
+     if (type === 'individual') return individuals;
+     if (type === 'category') return categories;
+     return null;
   }
+
+  const onSocketEntityAdded = (type, item) => {
+     const listRef = _getListRefByType(type);
+     if (listRef) {
+         const exists = listRef.value.find(i => i._id === item._id);
+         if (!exists) listRef.value.push(item);
+         listRef.value = _sortByOrder(listRef.value);
+     }
+  };
+
+  const onSocketEntityDeleted = (type, id) => {
+     const listRef = _getListRefByType(type);
+     if (listRef) {
+         listRef.value = listRef.value.filter(i => i._id !== id);
+     }
+  };
+
+  const onSocketEntityListUpdated = (type, newList) => {
+     const listRef = _getListRefByType(type);
+     if (listRef && Array.isArray(newList)) {
+         listRef.value = _sortByOrder(newList);
+     }
+  };
 
   async function createEvent(eventData) {
     try {
@@ -1374,6 +880,14 @@ export const useMainStore = defineStore('mainStore', () => {
           eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
       }
       
+      // 🟢 VALIDATION: Check Overpayment via DealStore
+      if (eventData.type === 'income' && !eventData.isTransfer && eventData.totalDealAmount === undefined) {
+          const isOver = useDealStore().checkOverpayment(eventData.projectId, eventData.categoryId, eventData.contractorId || eventData.counterpartyIndividualId, eventData.amount);
+          if (isOver) {
+              console.warn('Overpayment detected! (Logging warning only)');
+          }
+      }
+
       const tempId = `temp_${Date.now()}`;
       const tempOp = { 
           ...eventData, 
@@ -1395,8 +909,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
       _updateDealCache(richOp, 'add');
-      
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      _triggerProjectionUpdate(); 
 
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
       const serverOp = response.data;
@@ -1469,8 +982,7 @@ export const useMainStore = defineStore('mainStore', () => {
         }
         
         _updateDealCache(richOp, 'update');
-        
-        updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+        _triggerProjectionUpdate(); 
 
         const updatePayload = { ...opData, dateKey: newDateKey };
         
@@ -1515,54 +1027,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
       _updateDealCache(operation, 'delete');
-      
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
-
-      if (operation.isDealTranche && operation.type === 'income') {
-          const related = dealOperations.value.filter(op => 
-              op._id !== operation._id && 
-              op.type === 'income' &&
-              (op.projectId?._id || op.projectId) === (operation.projectId?._id || operation.projectId) &&
-              (op.categoryId?._id || op.categoryId) === (operation.categoryId?._id || operation.categoryId) &&
-              (
-                  (op.contractorId && (op.contractorId._id || op.contractorId) === (operation.contractorId?._id || operation.contractorId)) ||
-                  (op.counterpartyIndividualId && (op.counterpartyIndividualId._id || op.counterpartyIndividualId) === (operation.counterpartyIndividualId?._id || operation.counterpartyIndividualId))
-              )
-          );
-          
-          related.sort((a, b) => new Date(b.date) - new Date(a.date));
-          
-          const prevOp = related[0]; 
-          if (prevOp && prevOp.isClosed) {
-              const prevDateKey = prevOp.dateKey;
-              prevOp.isClosed = false;
-              
-              if (displayCache.value[prevDateKey]) {
-                  const idx = displayCache.value[prevDateKey].findIndex(o => o._id === prevOp._id);
-                  if (idx !== -1) {
-                      displayCache.value[prevDateKey][idx] = { ...prevOp }; 
-                      calculationCache.value[prevDateKey] = [...displayCache.value[prevDateKey]];
-                  }
-              }
-              _updateDealCache(prevOp, 'update');
-          }
-      }
-      
-      if (operation.isWorkAct && operation.relatedEventId) {
-          const tranche = dealOperations.value.find(d => d._id === operation.relatedEventId);
-          if (tranche) {
-              tranche.isClosed = false;
-              const tDateKey = tranche.dateKey;
-              if (displayCache.value[tDateKey]) {
-                  const idx = displayCache.value[tDateKey].findIndex(o => o._id === tranche._id);
-                  if (idx !== -1) {
-                      displayCache.value[tDateKey][idx] = { ...tranche };
-                      calculationCache.value[tDateKey] = [...displayCache.value[tDateKey]];
-                  }
-              }
-              _updateDealCache(tranche, 'update');
-          }
-      }
+      _triggerProjectionUpdate(); 
 
       if (isTransfer(operation) && operation._id2) {
           await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
@@ -1580,13 +1045,6 @@ export const useMainStore = defineStore('mainStore', () => {
         const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
         taxes.value = taxesRes.data;
     }
-  }
-
-  async function updateProjectionFromCalculationData(mode, today = new Date()) {
-    const base = new Date(today); base.setHours(0, 0, 0, 0);
-    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    let futureIncomeSum = 0; let futureExpenseSum = 0;
-    projection.value = { mode, totalDays: computeTotalDaysForMode(mode, base), rangeStartDate: startDate, rangeEndDate: endDate, futureIncomeSum, futureExpenseSum };
   }
 
   async function fetchOperationsRange(startDate, endDate) {
@@ -1620,25 +1078,16 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   const _syncCaches = (key, ops) => { displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops]; };
+  
   async function updateFutureProjectionWithData(mode, today = new Date()) {
+    const ps = useProjectionStore(); 
     const base = new Date(today); base.setHours(0, 0, 0, 0);
-    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
+    const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, base);
     await fetchOperationsRange(startDate, endDate); 
-    await updateProjectionFromCalculationData(mode, today); 
+    ps.updateProjectionFromCalculationData(mode, today); 
   }
-  function updateFutureProjection({ mode, totalDays, today = new Date() }) {}
-  function updateFutureProjectionByMode(mode, today = new Date()){
-    const base = new Date(today); base.setHours(0,0,0,0);
-    const info = getViewModeInfo(mode);
-    const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    projection.value = { mode: mode, totalDays: info.total, rangeStartDate: startDate, rangeEndDate: endDate, futureIncomeSum: 0, futureExpenseSum: 0 };
-  }
-  function setProjectionRange(startDate, endDate){
-    const t0 = new Date(); t0.setHours(0,0,0,0);
-    const start = new Date(startDate); start.setHours(0,0,0,0);
-    const end   = new Date(endDate); end.setHours(0,0,0,0);
-    projection.value = { mode:'custom', totalDays: Math.max(1, Math.floor((end-start)/86400000)+1), rangeStartDate:start, rangeEndDate:end, futureIncomeSum: 0 };
-  }
+
+  async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
 
   async function fetchAllEntities(){
     console.log('[mainStore] fetchAllEntities called');
@@ -1671,15 +1120,11 @@ export const useMainStore = defineStore('mainStore', () => {
       await ensureSystemEntities();
       await fetchSnapshot();
       
-      // 🟢 Init Socket after fetch
-      initSocket();
+      // Socket Connect via Store
+      if (user.value) {
+          useSocketStore().connect(user.value._id);
+      }
 
-      const availableKeys = new Set(staticWidgets.value.map(w => w.key));
-      categories.value.forEach(c => availableKeys.add(`cat_${c._id}`));
-      const cleanLayout = dashboardLayout.value.filter(key => {
-          return key.startsWith('placeholder_') || availableKeys.has(key);
-      });
-      if (cleanLayout.length !== dashboardLayout.value.length) dashboardLayout.value = cleanLayout;
     }catch(e){ if (e.response && e.response.status === 401) user.value = null; }
   }
   
@@ -1695,6 +1140,7 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
+  // ... (keep getOperationsForDay, _mergeTransfers, _getOrCreateTransferCategory) ...
   function getOperationsForDay(dateKey) { 
       const ops = displayCache.value[dateKey] || [];
       return ops.filter(op => !op.isWorkAct);
@@ -1756,6 +1202,7 @@ export const useMainStore = defineStore('mainStore', () => {
   }
 
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
+    // ... (logic from prev step, just trigger projection update via helper)
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
@@ -1816,7 +1263,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 _applyOptimisticSnapshotUpdate(opToUpdate, sign);
            }
        }
-       updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+       _triggerProjectionUpdate(); 
+
        const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date };
        const promises = [
            axios.put(`${API_BASE_URL}/events/${moved._id}`, payload)
@@ -1838,6 +1286,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   function _generateTransferGroupId(){ return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
+  // ... (createTransfer, updateTransfer - same logic but use _triggerProjectionUpdate) ...
   async function createTransfer(transferData) {
     try {
       const finalDate = new Date(transferData.date);
@@ -1893,7 +1342,7 @@ export const useMainStore = defineStore('mainStore', () => {
       optimisticOps.forEach(op => displayCache.value[dateKey].push(_populateOp(op)));
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      _triggerProjectionUpdate(); 
       
       if (transferData.transferPurpose === 'inter_company') {
           const fromCompObj = companies.value.find(c => c._id === transferData.fromCompanyId);
@@ -1941,7 +1390,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
-      updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      _triggerProjectionUpdate(); 
       return response.data;
     } catch (error) { throw error; }
   }
@@ -1949,15 +1398,13 @@ export const useMainStore = defineStore('mainStore', () => {
   async function addOperation(op){
     if (!op.dateKey) return;
     await refreshDay(op.dateKey); 
-    updateProjectionFromCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+    _triggerProjectionUpdate(); 
   }
 
   async function deleteEntity(path, id, deleteOperations = false) {
       try {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
-          // Note: Socket event will handle the local removal usually, 
-          // but for instant feedback on initiator we can keep optimistic removal here if desired.
-          // For now relying on Socket is fine or we can keep this for safety.
+          
           if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
           if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
           if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
@@ -1972,7 +1419,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function addCategory(name){ const res = await axios.post(`${API_BASE_URL}/categories`, { name }); categories.value.push(res.data); return res.data; }
   
-  // 🟢 ОБНОВЛЕННАЯ ФУНКЦИЯ addAccount
   async function addAccount(data) { 
       let payload;
       if (typeof data === 'string') {
@@ -1983,12 +1429,10 @@ export const useMainStore = defineStore('mainStore', () => {
               initialBalance: data.initialBalance || 0, 
               companyId: data.companyId || null, 
               individualId: data.individualId || null,
-              // 🟢 Добавляем isExcluded в payload
               isExcluded: !!data.isExcluded
           };
       }
       const res = await axios.post(`${API_BASE_URL}/accounts`, payload); 
-      // Socket will add it, but adding here avoids delay
       if (!accounts.value.find(a => a._id === res.data._id)) accounts.value.push(res.data); 
       return res.data; 
   }
@@ -2012,7 +1456,6 @@ export const useMainStore = defineStore('mainStore', () => {
           return;
       }
       const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items); 
-      // Socket handles list update broadcast
       const sortedData = _sortByOrder(res.data);
       if (path==='accounts') accounts.value = sortedData; 
       else if (path==='companies') companies.value = sortedData; 
@@ -2031,13 +1474,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return idx;
   }
   
-  function _compactIndices(arr, excludeId=null){
-    const others = excludeId ? arr.filter(o => o._id !== excludeId) : arr.slice();
-    others.sort((a,b)=>a.cellIndex - b.cellIndex).forEach((o,i)=>{ o.cellIndex = i; });
-    return others;
-  }
-
-  // 🟢 DEPRECATED: startAutoRefresh replaced by Socket
   function startAutoRefresh(intervalMs = 30000) {
       console.log('startAutoRefresh is deprecated. Sockets are active.');
   }
@@ -2045,25 +1481,31 @@ export const useMainStore = defineStore('mainStore', () => {
   
   async function forceRefreshAll() {
     try {
-      // Clear cache to ensure fresh state
       displayCache.value = {}; calculationCache.value = {};
       await fetchAllEntities();
-      if (projection.value.mode) await loadCalculationData(projection.value.mode, new Date(currentYear.value, 0, todayDayOfYear.value));
+      
+      // 🟢 TRIGGER PROJECTION UPDATE USING STORE DATA
+      const ps = useProjectionStore();
+      if (ps.projection.mode) {
+          await loadCalculationData(ps.projection.mode, new Date(ps.currentYear, 0, ps.todayDayOfYear));
+      }
     } catch (error) {}
   }
+  
+  // 🟢 DELEGATED IMPORT/EXPORT TO TRANSFER STORE
+  async function importOperations(operations, selectedIndices, progressCallback) { 
+      return useTransferStore().importOperations(operations, selectedIndices, progressCallback);
+  }
 
-  async function importOperations(operations, selectedIndices, progressCallback = () => {}) { try { const response = await axios.post(`${API_BASE_URL}/import/operations`, { operations, selectedRows: selectedIndices }); const createdOps = response.data; progressCallback(createdOps.length); await forceRefreshAll(); return createdOps; } catch (error) { if (error.response && error.response.status === 401) user.value = null; throw error; } }
-  async function exportAllOperations() { try { const res = await axios.get(`${API_BASE_URL}/events/all-for-export`); return { operations: res.data, initialBalance: totalInitialBalance.value || 0 }; } catch (e) { if (e.response && e.response.status === 401) user.value = null; throw e; } }
+  async function exportAllOperations() { 
+      return useTransferStore().exportAllOperations();
+  }
   
   async function checkAuth() { 
       try { 
           isAuthLoading.value = true; 
           const res = await axios.get(`${API_BASE_URL}/auth/me`); 
           user.value = res.data;
-          
-          if (user.value.dashboardLayout && Array.isArray(user.value.dashboardLayout) && user.value.dashboardLayout.length > 0) {
-              dashboardLayout.value = user.value.dashboardLayout;
-          }
       } catch (error) { 
           user.value = null; 
       } finally { 
@@ -2074,16 +1516,14 @@ export const useMainStore = defineStore('mainStore', () => {
   async function logout() { 
       axios.post(`${API_BASE_URL}/auth/logout`).then(() => {}).catch(error => {}); 
       user.value = null; 
-      if (socket.value) {
-          socket.value.disconnect();
-          socket.value = null;
-      }
+      // 🟢 Socket Disconnect via Store
+      useSocketStore().disconnect();
+      
       displayCache.value = {}; 
       calculationCache.value = {}; 
   }
-  function computeTotalDaysForMode(mode, baseDate) { return getViewModeInfo(mode).total; }
-  async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
 
+  // ... (ensureSystemEntities, closeRetailDaily, closePrepaymentDeal, createWorkAct - keep as is) ...
   async function ensureSystemEntities() {
       let retailDuplicates = individuals.value.filter(i => {
           const n = i.name.trim().toLowerCase();
@@ -2211,12 +1651,13 @@ export const useMainStore = defineStore('mainStore', () => {
       } catch (e) { throw e; }
   }
   
+  // 🟢 RE-ADDED MISSING FUNCTION DEFINITION
   async function createWorkAct(projectId, categoryId, contractorId, counterpartyIndividualId, amount, date, opIdToClose, skipFetch = false, companyId = null, individualId = null) {
       try {
           const opData = {
               type: 'expense',
               amount: -Math.abs(amount),
-              accountId: null,
+              accountId: null, 
               projectId: projectId,
               categoryId: categoryId,
               contractorId: contractorId,
@@ -2398,21 +1839,33 @@ export const useMainStore = defineStore('mainStore', () => {
     credits, taxes, 
     visibleCategories, visibleContractors, 
     operationsCache: displayCache, displayCache, calculationCache,
-    allWidgets, dashboardLayout, projection, dashboardForecastState,
+    
+    // UI Store Bridges
+    isHeaderExpanded, toggleHeaderExpansion, includeExcludedInTotal, toggleExcludedInclusion,
+
+    // Widget Store Bridges
+    allWidgets, dashboardLayout, dashboardForecastState,
+    widgetSortMode, widgetFilterMode, 
+    replaceWidget, setForecastState, setWidgetSortMode, setWidgetFilterMode,
+
+    // Projection Store Bridges
+    projection,
+
     user, isAuthLoading,
 
-    widgetSortMode, widgetFilterMode, setWidgetSortMode, setWidgetFilterMode,
-
-    isHeaderExpanded, toggleHeaderExpansion,
-
     currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
-    currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, dailyChartData,
+    currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns, 
+    
+    // dailyChartData - делегируем геттер
+    dailyChartData: computed(() => useProjectionStore().dailyChartData),
+
     futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
     futureIndividualBalances, 
     
     currentCreditBalances, futureCreditBalances, creditCategoryId,
 
     liabilitiesWeOwe, liabilitiesTheyOwe, liabilitiesWeOweFuture, liabilitiesTheyOweFuture,
+    // retailLiabilitiesTheyOwe, retailLiabilitiesWeOwe, // 🔴 REMOVED (Duplicate logic, moved to DealStore)
     
     getPrepaymentCategoryIds, getActCategoryIds,
     
@@ -2431,8 +1884,9 @@ export const useMainStore = defineStore('mainStore', () => {
 
     getOperationsForDay, 
 
-    setToday, replaceWidget, setForecastState,
-    setCurrentViewDate, currentViewDate,
+    // Date & Projection setters - делегируем
+    setToday: (d) => useProjectionStore().setToday(d),
+    setCurrentViewDate: (d) => useProjectionStore().setCurrentViewDate(d),
     
     fetchAllEntities, fetchOperations, refreshDay, 
     
@@ -2441,8 +1895,12 @@ export const useMainStore = defineStore('mainStore', () => {
     addIndividual, deleteEntity, batchUpdateEntities,
     addCredit, 
 
-    computeTotalDaysForMode, updateFutureProjection, updateFutureProjectionByMode, setProjectionRange,
-    loadCalculationData, updateProjectionFromCalculationData,
+    // Projection methods - делегируем
+    computeTotalDaysForMode: (mode) => useProjectionStore().computeTotalDaysForMode(mode), // 🟢 RESTORED
+    updateFutureProjectionByMode: (m, t) => useProjectionStore().updateFutureProjectionByMode(m, t),
+    setProjectionRange: (s, e) => useProjectionStore().setProjectionRange(s, e),
+    
+    loadCalculationData, 
 
     createTransfer, updateTransfer, updateOperation, createEvent,
     createWorkAct,
@@ -2453,6 +1911,9 @@ export const useMainStore = defineStore('mainStore', () => {
     startAutoRefresh, stopAutoRefresh, forceRefreshAll,
 
     getFirstFreeCellIndex, _parseDateKey, _getDateKey, 
+    
+    // Exports for Projection Store
+    _isRetailWriteOff, 
 
     allOperationsFlat, displayOperationsFlat,
     
@@ -2468,18 +1929,22 @@ export const useMainStore = defineStore('mainStore', () => {
     _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
     getProjectDealStatus,
     
-    dealOperations,
+    dealOperations, getAllRelevantOps, // 🟢 Export for DealStore
     projectsWithRetailDebts,
     
     calculateTaxForPeriod,
     createTaxPayment,
     _isTaxPayment,
     
-    // 🟢 НОВЫЕ ПОЛЯ ДЛЯ TOGGLE
-    includeExcludedInTotal,
-    toggleExcludedInclusion,
+    // Total Initial Balance export for TransferStore
+    totalInitialBalance,
     
-    // 🟢 SOCKET INIT
-    initSocket
+    // 🟢 Export handlers for socketStore
+    onSocketOperationAdded,
+    onSocketOperationUpdated,
+    onSocketOperationDeleted,
+    onSocketEntityAdded,
+    onSocketEntityDeleted,
+    onSocketEntityListUpdated
   };
 });

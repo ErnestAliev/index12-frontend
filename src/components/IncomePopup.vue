@@ -5,18 +5,19 @@ import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
+import SmartDealPopup from './SmartDealPopup.vue'; 
+import WorkActPopup from './WorkActPopup.vue'; 
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 import { categorySuggestions } from '@/data/categorySuggestions.js'; 
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v57.3 - TABLET WIDTH FIX ---
- * * ВЕРСИЯ: 57.3
- * * ДАТА: 2025-12-09
+ * * --- МЕТКА ВЕРСИИ: v60.0 - RETAIL PREPAYMENT FLAGS ---
+ * * ВЕРСИЯ: 60.0
  * * ИЗМЕНЕНИЯ:
- * 1. (CSS) Исправлен баг, когда на планшетах (max-height < 900px) попап растягивался на 100%.
- * Теперь max-width: none применяется ТОЛЬКО к мобильным устройствам (max-width: 600px).
- * На планшетах сохраняется фиксированная ширина 420px.
+ * 1. Исправлена логика handleSave для Розницы.
+ * 2. Явно проставляется isPrepayment: true для "Retail Prepayment".
+ * 3. Явно проставляется isPrepayment: false для "Fact".
  */
 
 const props = defineProps({
@@ -27,7 +28,7 @@ const props = defineProps({
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment', 'trigger-smart-deal']);
+const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment']);
 
 const mainStore = useMainStore();
 
@@ -55,10 +56,15 @@ const showError = (msg, title = 'Внимание') => {
     showInfoModal.value = true;
 };
 
-// --- СОСТОЯНИЯ СОЗДАНИЯ (CASH REGISTER) ---
-const showCashChoiceModal = ref(false); // Выбор типа кассы
-const showSpecialCashInfo = ref(false); // Инфо о спец. кассе
-const accountCreationPlaceholder = ref('Название счета'); // Динамический плейсхолдер
+// --- СОСТОЯНИЯ ---
+const showCashChoiceModal = ref(false); 
+const showSpecialCashInfo = ref(false); 
+const accountCreationPlaceholder = ref('Название счета');
+
+// 🟢 SMART DEAL STATES
+const showSmartDealPopup = ref(false);
+const showWorkActPopup = ref(false);
+const itemToClose = ref(null); 
 
 const isRetailClientSelected = computed(() => {
     if (!selectedContractorValue.value) return false;
@@ -200,7 +206,6 @@ const accountOptions = computed(() => {
     tooltip: getOwnerName(acc),
     isSpecial: false
   }));
-  // 🟢 Sticky options теперь через slot #action-item
   opts.push({ isActionRow: true }); 
   return opts;
 });
@@ -312,7 +317,7 @@ const localDealStatus = computed(() => {
     return status;
 });
 
-const isDealDetected = computed(() => !!localDealStatus.value);
+const isDealDetected = computed(() => !!localDealStatus.value && !isProtectedMode.value);
 const nextTrancheNumber = computed(() => (localDealStatus.value?.tranchesCount || 0) + 1);
 
 const mainButtonText = computed(() => {
@@ -394,53 +399,15 @@ const toInputDate = (dateObj) => { if (!dateObj) return ''; const d = new Date(d
 const createNoonDate = (str) => { if(!str) return new Date(); const [y,m,d]=str.split('-'); return new Date(y,m-1,d,12,0,0); };
 const toDisplayDate = (str) => { if(!str) return ''; const [y,m,d]=str.split('-'); return `${d}.${m}.${y}`; };
 
-// --- 🟢 NEW: CASH REGISTER LOGIC ---
-const openCashChoice = () => {
-    showCashChoiceModal.value = true;
-};
+// --- 🟢 CASH REGISTER LOGIC ---
+const openCashChoice = () => { showCashChoiceModal.value = true; };
+const handleCashChoice = (type) => { showCashChoiceModal.value = false; if (type === 'special') showSpecialCashInfo.value = true; else startCashCreation('regular'); };
+const confirmSpecialCash = () => { showSpecialCashInfo.value = false; startCashCreation('special'); };
+const startCashCreation = (type) => { accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы'; newAccountName.value = ''; isCreatingAccount.value = true; selectedAccountId.value = null; nextTick(() => newAccountInput.value?.focus()); };
+const handleAccountChange = (val) => { if (val === '--CREATE_NEW--') { selectedAccountId.value = null; accountCreationPlaceholder.value = 'Название счета'; showAccountInput(); } else { selectedAccountId.value = val; onAccountSelected(val); } };
+const showAccountInput = () => { isCreatingAccount.value = true; newAccountName.value = ''; nextTick(() => newAccountInput.value?.focus()); };
 
-const handleCashChoice = (type) => {
-    showCashChoiceModal.value = false;
-    if (type === 'special') {
-        showSpecialCashInfo.value = true;
-    } else {
-        startCashCreation('regular');
-    }
-};
-
-const confirmSpecialCash = () => {
-    showSpecialCashInfo.value = false;
-    startCashCreation('special');
-};
-
-const startCashCreation = (type) => {
-    accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы';
-    newAccountName.value = '';
-    isCreatingAccount.value = true;
-    // Очищаем селект
-    selectedAccountId.value = null;
-    nextTick(() => newAccountInput.value?.focus());
-};
-
-const handleAccountChange = (val) => { 
-    if (val === '--CREATE_NEW--') {
-        // Fallback for sticky click if needed
-        selectedAccountId.value = null; 
-        accountCreationPlaceholder.value = 'Название счета';
-        showAccountInput(); 
-    } else {
-        selectedAccountId.value = val; 
-        onAccountSelected(val); 
-    }
-};
-
-const showAccountInput = () => { 
-    isCreatingAccount.value = true; 
-    newAccountName.value = '';
-    nextTick(() => newAccountInput.value?.focus()); 
-};
-
-// --- REST OF HANDLERS ---
+// --- HANDLERS ---
 const handleProjectChange = (val) => { if (val==='--CREATE_NEW--') { selectedProjectId.value=null; showProjectInput(); } };
 const handleCategoryChange = (val) => { if (val==='--CREATE_NEW--') { selectedCategoryId.value=null; showCategoryInput(); } };
 const onAccountSelected = (accId) => {
@@ -459,14 +426,7 @@ const saveNewAccount = async () => {
     const existing = mainStore.accounts.find(a => a.name.toLowerCase() === name.toLowerCase()); 
     let cId = null, iId = null; 
     if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; } 
-    if (existing) { 
-        selectedAccountId.value = existing._id; 
-        onAccountSelected(existing._id); 
-    } else { 
-        const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); 
-        selectedAccountId.value = newItem._id; 
-        onAccountSelected(newItem._id); 
-    } 
+    if (existing) { selectedAccountId.value = existing._id; onAccountSelected(existing._id); } else { const newItem = await mainStore.addAccount({ name: name, companyId: cId, individualId: iId }); selectedAccountId.value = newItem._id; onAccountSelected(newItem._id); } 
     cancelCreateAccount(); 
   } catch (e) { console.error(e); showError('Ошибка при создании счета: ' + e.message); } 
   finally { isInlineSaving.value = false; } 
@@ -474,38 +434,19 @@ const saveNewAccount = async () => {
 
 const showProjectInput = () => { isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); };
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
-const saveNewProject = async () => {
-    if (isInlineSaving.value) return; const name = newProjectName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addProject(name); selectedProjectId.value = item._id; cancelCreateProject(); } catch(e){ console.error(e); showError('Ошибка создания проекта: ' + e.message); } finally { isInlineSaving.value = false; }
-};
+const saveNewProject = async () => { if (isInlineSaving.value) return; const name = newProjectName.value.trim(); if (!name) return; isInlineSaving.value = true; try { const item = await mainStore.addProject(name); selectedProjectId.value = item._id; cancelCreateProject(); } catch(e){ console.error(e); showError('Ошибка создания проекта: ' + e.message); } finally { isInlineSaving.value = false; } };
 
 const showCategoryInput = () => { isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); };
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
-const saveNewCategory = async () => {
-    if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryId.value = item._id; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; }
-};
+const saveNewCategory = async () => { if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return; isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryId.value = item._id; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
 
 const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
-const saveNewOwner = async () => {
-    if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { 
-        let item; if (ownerTypeToCreate.value === 'company') item = await mainStore.addCompany(name); else item = await mainStore.addIndividual(name);
-        selectedOwner.value = `${ownerTypeToCreate.value}-${item._id}`; showCreateOwnerModal.value = false;
-    } catch(e){ console.error(e); showError('Ошибка создания владельца: ' + e.message); } finally { isInlineSaving.value = false; }
-};
+const saveNewOwner = async () => { if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); if (!name) return; isInlineSaving.value = true; try { let item; if (ownerTypeToCreate.value === 'company') item = await mainStore.addCompany(name); else item = await mainStore.addIndividual(name); selectedOwner.value = `${ownerTypeToCreate.value}-${item._id}`; showCreateOwnerModal.value = false; } catch(e){ console.error(e); showError('Ошибка создания владельца: ' + e.message); } finally { isInlineSaving.value = false; } };
 
 const openCreateContractorModal = (type) => { contractorTypeToCreate.value = type; newContractorNameInput.value = ''; showCreateContractorModal.value = true; nextTick(() => newContractorInputRef.value?.focus()); };
 const cancelCreateContractorModal = () => { showCreateContractorModal.value = false; newContractorNameInput.value = ''; if (!selectedContractorValue.value) selectedContractorValue.value = null; };
-const saveNewContractorModal = async () => {
-    if (isInlineSaving.value) return; const name = newContractorNameInput.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try {
-        let item; if (contractorTypeToCreate.value === 'contractor') { item = await mainStore.addContractor(name); selectedContractorValue.value = `contr_${item._id}`; } 
-        else { item = await mainStore.addIndividual(name); selectedContractorValue.value = `ind_${item._id}`; }
-        showCreateContractorModal.value = false;
-    } catch(e){ console.error(e); showError('Ошибка создания контрагента: ' + e.message); } finally { isInlineSaving.value = false; }
-};
+const saveNewContractorModal = async () => { if (isInlineSaving.value) return; const name = newContractorNameInput.value.trim(); if (!name) return; isInlineSaving.value = true; try { let item; if (contractorTypeToCreate.value === 'contractor') { item = await mainStore.addContractor(name); selectedContractorValue.value = `contr_${item._id}`; } else { item = await mainStore.addIndividual(name); selectedContractorValue.value = `ind_${item._id}`; } showCreateContractorModal.value = false; } catch(e){ console.error(e); showError('Ошибка создания контрагента: ' + e.message); } finally { isInlineSaving.value = false; } };
 
 const handleMainAction = () => {
     if (isProtectedMode.value) return;
@@ -515,49 +456,158 @@ const handleMainAction = () => {
     if (!selectedOwner.value) { showError('Пожалуйста, укажите владельца (Компанию или Физлицо).'); return; }
     if (!selectedContractorValue.value) { showError('Необходимо выбрать плательщика.'); return; }
 
-    let cId = null, indId = null; let contractorName = 'Контрагент';
-    if (selectedContractorValue.value) { const [p, id] = selectedContractorValue.value.split('_'); if (p === 'contr') { cId = id; const c = mainStore.contractors.find(x => x._id === id); if (c) contractorName = c.name; } else { indId = id; const i = mainStore.individuals.find(x => x._id === id); if (i) contractorName = i.name; } }
-    const [oType, oId] = selectedOwner.value.split('-');
-    let projectName = 'Проект'; if (selectedProjectId.value) { const p = mainStore.projects.find(x => x._id === selectedProjectId.value); if (p) projectName = p.name; }
-    let categoryName = 'Категория'; if (selectedCategoryId.value) { const c = mainStore.categories.find(x => x._id === selectedCategoryId.value); if (c) categoryName = c.name; }
-    let targetCellIndex = undefined; if (!isDateChanged.value && !isEditMode.value) { targetCellIndex = props.cellIndex; }
+    if (isDealDetected.value) { 
+        showSmartDealPopup.value = true;
+        return; 
+    }
+    
+    if (operationStatus.value === 'prepayment' && !isRetailClientSelected.value) { 
+        const [oType, oId] = selectedOwner.value.split('-');
+        let cId = null, indId = null; 
+        if (selectedContractorValue.value) { const [p, id] = selectedContractorValue.value.split('_'); if (p === 'contr') cId = id; else indId = id; }
+        
+        let contractorName = 'Контрагент';
+        if (cId) { const c = mainStore.contractors.find(x => x._id === cId); if (c) contractorName = c.name; }
+        else if (indId) { const i = mainStore.individuals.find(x => x._id === indId); if (i) contractorName = i.name; }
+        
+        let projectName = 'Проект'; if (selectedProjectId.value) { const p = mainStore.projects.find(x => x._id === selectedProjectId.value); if (p) projectName = p.name; }
+        let categoryName = 'Категория'; if (selectedCategoryId.value) { const c = mainStore.categories.find(x => x._id === selectedCategoryId.value); if (c) categoryName = c.name; }
 
-    const payload = {
-        amount: rawAmount, accountId: selectedAccountId.value, contractorId: cId, counterpartyIndividualId: indId,
-        projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
-        companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
-        date: createNoonDate(editableDate.value), cellIndex: targetCellIndex, operationToEdit: props.operationToEdit,
-        dealStatus: localDealStatus.value, nextTrancheNum: nextTrancheNumber.value,
-        contractorName: contractorName, projectName: projectName, categoryName: categoryName
-    };
-
-    if (isDealDetected.value) { emit('trigger-smart-deal', payload); return; }
-    if (operationStatus.value === 'prepayment' && !isRetailClientSelected.value) { emit('trigger-prepayment', payload); return; }
+        emit('trigger-prepayment', {
+            amount: rawAmount, accountId: selectedAccountId.value, contractorId: cId, counterpartyIndividualId: indId,
+            projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
+            companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
+            date: createNoonDate(editableDate.value), cellIndex: props.cellIndex, operationToEdit: props.operationToEdit,
+            contractorName, projectName, categoryName
+        });
+        return; 
+    }
+    
     handleSave();
 };
 
-const handleSave = async () => {
+const handleSmartDealConfirm = (decision) => {
+    showSmartDealPopup.value = false;
+
+    if (decision.isFinal) {
+        if (localDealStatus.value?.activeTranche) {
+             const prevOp = localDealStatus.value.activeTranche;
+             mainStore.createWorkAct(
+                prevOp.projectId?._id || prevOp.projectId,
+                prevOp.categoryId?._id || prevOp.categoryId,
+                prevOp.contractorId?._id || prevOp.contractorId,
+                prevOp.counterpartyIndividualId?._id || prevOp.counterpartyIndividualId,
+                prevOp.amount, 
+                createNoonDate(editableDate.value), 
+                prevOp._id 
+             ).catch(e => console.error('Ошибка авто-закрытия прошлого транша:', e));
+        }
+        handleSave({ autoCloseCurrent: true }); 
+        return;
+    }
+
+    if (decision.closePrevious && localDealStatus.value?.activeTranche) {
+        const op = localDealStatus.value.activeTranche;
+        itemToClose.value = {
+            totalDeal: localDealStatus.value.totalDeal,
+            amount: op.amount,
+            accountName: op.accountId?.name || '-',
+            companyName: op.companyId?.name || op.individualId?.name || '-',
+            contractorName: op.contractorId?.name || op.counterpartyIndividualId?.name || '-',
+            projectName: op.projectId?.name || '-',
+            categoryName: op.categoryId?.name || '-',
+            date: op.date,
+            originalOp: op
+        };
+        showWorkActPopup.value = true;
+    } else {
+        handleSave();
+    }
+};
+
+const handleWorkActConfirm = (actData) => {
+    showWorkActPopup.value = false;
+    const op = itemToClose.value.originalOp;
+    
+    mainStore.createWorkAct(
+        op.projectId?._id || op.projectId,
+        op.categoryId?._id || op.categoryId,
+        op.contractorId?._id || op.contractorId,
+        op.counterpartyIndividualId?._id || op.counterpartyIndividualId,
+        itemToClose.value.amount,
+        actData.date, 
+        op._id 
+    ).catch(e => console.error('Ошибка создания акта:', e));
+    
+    handleSave({ closePrevious: true }); 
+    
+    emit('close'); 
+};
+
+const handleSave = async (options = {}) => {
     if (isSaving.value) return; isSaving.value = true;
     try {
         const rawAmount = parseFloat(String(amount.value).replace(/\s/g, ''));
         const [oType, oId] = selectedOwner.value.split('-');
         let cId = null, indId = null; if (selectedContractorValue.value) { const [p, id] = selectedContractorValue.value.split('_'); if (p === 'contr') cId = id; else indId = id; }
         let targetCellIndex = undefined; if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) { targetCellIndex = props.cellIndex; }
-        let isClosedState = false; let isDealTrancheForce = undefined;
-        if (isRetailClientSelected.value) { isDealTrancheForce = false; if (operationStatus.value === 'fact') { isClosedState = true; } else { isClosedState = false; } }
+        
+        let isClosedState = false; 
+        let isDealTrancheForce = undefined;
+        let isPrepaymentState = undefined; // 🟢 Новое поле
+
+        if (isRetailClientSelected.value) { 
+            isDealTrancheForce = false; 
+            // 🟢 FIX: Явная установка флагов
+            if (operationStatus.value === 'fact') { 
+                isClosedState = true; 
+                isPrepaymentState = false; // Это факт
+            } else { 
+                // Retail Prepayment
+                isClosedState = false; 
+                isPrepaymentState = true; // Это предоплата
+            } 
+        } else if (isDealDetected.value) {
+            isDealTrancheForce = true;
+            if (options.autoCloseCurrent) isClosedState = true; 
+        } else if (operationStatus.value === 'prepayment') {
+            isPrepaymentState = true; // B2B Prepayment
+        }
+
         const payload = {
             type: 'income', amount: rawAmount, date: createNoonDate(editableDate.value), accountId: selectedAccountId.value,
             companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
             contractorId: cId, counterpartyIndividualId: indId, projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
-            totalDealAmount: 0, isDealTranche: isDealTrancheForce !== undefined ? isDealTrancheForce : false, isClosed: isClosedState, cellIndex: targetCellIndex
+            totalDealAmount: 0, 
+            isDealTranche: isDealTrancheForce !== undefined ? isDealTrancheForce : false, 
+            isClosed: isClosedState, 
+            isPrepayment: isPrepaymentState, // 🟢 Передаем флаг
+            cellIndex: targetCellIndex
         };
+        
         emit('save', { mode: isEditMode.value ? 'edit' : 'create', id: props.operationToEdit?._id, data: payload });
+        
+        if (options.autoCloseCurrent) {
+            mainStore.createWorkAct(
+                selectedProjectId.value,
+                selectedCategoryId.value,
+                cId,
+                indId,
+                rawAmount, 
+                createNoonDate(editableDate.value), 
+                null 
+            ).catch(e => console.error('Ошибка авто-акта для финала:', e));
+        }
+
         if (!isSelectedContractorBank.value && (cId || indId)) {
              const type = cId ? 'contractors' : 'individuals'; const id = cId || indId; const updateData = { _id: id }; let needsUpdate = false;
              if (selectedProjectId.value) { updateData.defaultProjectId = selectedProjectId.value; needsUpdate = true; }
              if (selectedCategoryId.value) { updateData.defaultCategoryId = selectedCategoryId.value; needsUpdate = true; }
              if (needsUpdate) { mainStore.batchUpdateEntities(type, [updateData]); }
         }
+        
+        emit('close'); 
+
     } catch (e) { showError('Ошибка сохранения: ' + e.message); isSaving.value = false; }
 };
 
@@ -583,6 +633,28 @@ onMounted(() => {
     nextTick(() => isInitialLoad.value = false);
 });
 const closePopup = () => emit('close');
+
+// Props extraction for SmartDealPopup
+const getSmartDealProps = computed(() => {
+    if (!localDealStatus.value) return {};
+    let contractorName = 'Контрагент';
+    if (selectedContractorValue.value) { 
+        const [p, id] = selectedContractorValue.value.split('_'); 
+        if (p === 'contr') { const c = mainStore.contractors.find(x => x._id === id); if (c) contractorName = c.name; } 
+        else { const i = mainStore.individuals.find(x => x._id === id); if (i) contractorName = i.name; } 
+    }
+    let projectName = 'Проект'; if (selectedProjectId.value) { const p = mainStore.projects.find(x => x._id === selectedProjectId.value); if (p) projectName = p.name; }
+    let categoryName = 'Категория'; if (selectedCategoryId.value) { const c = mainStore.categories.find(x => x._id === selectedCategoryId.value); if (c) categoryName = c.name; }
+    const rawAmount = parseFloat(String(amount.value).replace(/\s/g, '')) || 0;
+
+    return {
+        dealStatus: localDealStatus.value,
+        currentAmount: rawAmount,
+        projectName,
+        contractorName,
+        categoryName
+    };
+});
 </script>
 
 <template>
@@ -609,7 +681,6 @@ const closePopup = () => emit('close');
                 @change="handleAccountChange" 
                 :disabled="isProtectedMode" 
             >
-                <!-- 🟢 Слот для кнопок создания -->
                 <template #action-item>
                     <div class="dual-action-row">
                         <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
@@ -742,7 +813,6 @@ const closePopup = () => emit('close');
               </ul>
           </div>
           <div class="smart-create-actions">
-            <!-- 🟢 УНИФИЦИРОВАННЫЕ КНОПКИ -->
             <button @click="cancelCreateContractorModal" class="btn-modal-action btn-modal-cancel">Отмена</button>
             <button @click="saveNewContractorModal" class="btn-modal-action btn-modal-create">Создать</button>
           </div>
@@ -751,31 +821,41 @@ const closePopup = () => emit('close');
 
     </div>
 
-    <!-- 🟢 CHOICE MODAL: ВЫБОР ТИПА КАССЫ -->
+    <!-- 🟢 CHOICE MODAL -->
     <div v-if="showCashChoiceModal" class="inner-overlay" @click.self="showCashChoiceModal = false">
         <div class="choice-box">
             <h4>Создание кассы</h4>
-            <p class="choice-desc">Отображаются в виджете 
-                <br> "Счета/Кассы"</p>
+            <p class="choice-desc">Отображаются в виджете <br> "Счета/Кассы"</p>
             <div class="choice-actions">
-                <button class="btn-choice-option" @click="handleCashChoice('regular')">
-                    <span class="opt-title">Обычная касса</span>
-                </button>
-                <button class="btn-choice-option" @click="handleCashChoice('special')">
-                    <span class="opt-title">Особая касса</span>
-                </button>
+                <button class="btn-choice-option" @click="handleCashChoice('regular')"><span class="opt-title">Обычная касса</span></button>
+                <button class="btn-choice-option" @click="handleCashChoice('special')"><span class="opt-title">Особая касса</span></button>
             </div>
             <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
         </div>
     </div>
 
-    <!-- 🟢 INFO MODAL: ОСОБАЯ КАССА -->
     <InfoModal 
        v-if="showSpecialCashInfo" 
        title="Особая касса" 
        message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
        buttonText="Продолжить создание"
        @close="confirmSpecialCash"
+    />
+
+    <!-- 🟢 SMART DEAL POPUP -->
+    <SmartDealPopup 
+        v-if="showSmartDealPopup" 
+        v-bind="getSmartDealProps" 
+        @close="showSmartDealPopup = false" 
+        @confirm="handleSmartDealConfirm" 
+    />
+
+    <!-- 🟢 WORK ACT POPUP -->
+    <WorkActPopup 
+        v-if="showWorkActPopup && itemToClose" 
+        :dealItem="itemToClose" 
+        @close="showWorkActPopup = false" 
+        @confirm="handleWorkActConfirm" 
     />
 
     <InfoModal 
@@ -805,12 +885,11 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .theme-readonly { border-top: 4px solid #999; }
 .theme-credit { border-top: 4px solid #8FD4FF; }
 
-/* 🟢 CSS ПЕРЕМЕННЫЕ ДЛЯ ЦВЕТОВ */
+/* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     --color-income: #28B8A0;
     --color-danger: #FF3B30;
     --focus-shadow: rgba(40, 184, 160, 0.2);
-    /* 🟢 SYSTEM APPLE FONT */
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
 }
 
@@ -819,10 +898,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 }
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
-.custom-input-box:focus-within { 
-    border-color: #28B8A0 !important; 
-    box-shadow: 0 0 0 1px rgba(40, 184, 160, 0.2) !important; 
-}
+.custom-input-box:focus-within { border-color: #28B8A0 !important; box-shadow: 0 0 0 1px rgba(40, 184, 160, 0.2) !important; }
 .is-disabled { background-color: #e9e9e9; color: #777; cursor: not-allowed; }
 .is-disabled input { cursor: not-allowed; color: #555; }
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
@@ -833,11 +909,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 
-.calendar-icon-svg { 
-    width: 18px; height: 18px; 
-    stroke: #999; fill: none; 
-    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
-}
+.calendar-icon-svg { width: 18px; height: 18px; stroke: #999; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
@@ -860,39 +932,14 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
 
-.btn-inline-save { 
-    width: 48px; height: 48px; 
-    background-color: transparent; 
-    border: 1px solid var(--color-income); 
-    color: var(--color-income); 
-    border-radius: 8px; 
-    font-size: 20px; 
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
-}
+.btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-income); color: var(--color-income); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
 .btn-inline-save:hover { background-color: var(--color-income); color: #fff; }
 
-.btn-inline-cancel { 
-    width: 48px; height: 48px; 
-    background-color: transparent; 
-    border: 1px solid var(--color-danger); 
-    color: var(--color-danger); 
-    border-radius: 8px; 
-    font-size: 20px; 
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
-}
+.btn-inline-cancel { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-danger); color: var(--color-danger); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
 .btn-inline-cancel:hover { background-color: var(--color-danger); color: #fff; }
 
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
-.btn-dual-action { 
-    flex: 1; border: none; background-color: #fff; 
-    font-size: 13px; font-weight: 600; 
-    color: var(--color-income); 
-    cursor: pointer; transition: background-color 0.2s; white-space: nowrap; 
-}
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-income); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
 .btn-dual-action:hover { background-color: #f0fdfa; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
@@ -921,68 +968,30 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 :deep(.list-item-wrapper.is-special) { color: var(--color-income); font-weight: 600; position: sticky !important; bottom: 0 !important; z-index: 10; background-color: #fff; border-top: 1px solid #eee; }
 :deep(.list-item-wrapper.is-special:hover) { background-color: #f0fdfa; }
 
-/* 🟢 СТИЛИ ДЛЯ МОДАЛКИ ВЫБОРА (CHOICE BOX) */
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 2100; }
 .choice-box { background: #fff; padding: 24px; border-radius: 12px; width: 340px; text-align: center; box-shadow: 0 5px 30px rgba(0,0,0,0.3); }
 .choice-box h4 { margin: 0 0 15px 0; color: #222; font-size: 18px; font-weight: 700; }
 .choice-desc { font-size: 14px; color: #666; margin-bottom: 20px; }
 .choice-actions { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-.btn-choice-option { 
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 12px; background: #F9F9F9; border: 1px solid #E0E0E0; border-radius: 8px; cursor: pointer; transition: all 0.2s;
-}
+.btn-choice-option { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; background: #F9F9F9; border: 1px solid #E0E0E0; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
 .btn-choice-option:hover { background: #f0f8ff; border-color: #28B8A0; }
 .opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
 .btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
 .btn-cancel-link:hover { color: #555; }
 
-/* 🟢 MOBILE & COMPACT MODE OPTIMIZATION */
-
-/* 1. Общие стили для компактного режима (планшеты и мобильные) */
 @media (max-width: 600px), (max-height: 900px) {
-  .popup-content {
-    padding: 1.5rem; /* Уменьшенные отступы */
-    margin: 1rem;
-    /* УБРАНО: width: 100%; max-width: none; -> чтобы не растягивало планшеты */
-  }
-  h3 {
-    font-size: 18px;
-    margin-bottom: 1rem;
-  }
-  .custom-input-box {
-    height: 44px; /* Уменьшенная высота */
-  }
-  .input-spacing {
-    margin-bottom: 8px;
-  }
-  .btn-submit, .btn-modal-action, .btn-inline-save, .btn-inline-cancel {
-    height: 44px;
-    font-size: 15px;
-  }
-  .icon-btn {
-    width: 44px;
-    height: 44px;
-  }
-  .form-input {
-    height: 44px;
-  }
-  .floating-label {
-    font-size: 10px;
-    margin-bottom: 0;
-  }
-  .real-input {
-    font-size: 14px !important;
-  }
-  .popup-actions-row {
-    margin-top: 1.5rem;
-  }
+  .popup-content { padding: 1.5rem; margin: 1rem; }
+  h3 { font-size: 18px; margin-bottom: 1rem; }
+  .custom-input-box { height: 44px; }
+  .input-spacing { margin-bottom: 8px; }
+  .btn-submit, .btn-modal-action, .btn-inline-save, .btn-inline-cancel { height: 44px; font-size: 15px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .form-input { height: 44px; }
+  .floating-label { font-size: 10px; margin-bottom: 0; }
+  .real-input { font-size: 14px !important; }
+  .popup-actions-row { margin-top: 1.5rem; }
 }
-
-/* 2. Принудительное растягивание ТОЛЬКО для телефонов */
 @media (max-width: 600px) {
-  .popup-content {
-    width: 100%;
-    max-width: none; /* Растягиваем на всю ширину только на узких экранах */
-  }
+  .popup-content { width: 100%; max-width: none; }
 }
 </style>
