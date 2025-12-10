@@ -4,9 +4,10 @@ import { useMainStore } from './mainStore';
 
 export const useDealStore = defineStore('dealStore', () => {
   const mainStore = useMainStore();
-  console.log('--- dealStore.js v117.0 (REFACTOR: Stage 2 - Break Closed Deals) LOADED ---');
+  console.log('--- dealStore.js v117.1 (FIX: Reactivity Side-Effect) LOADED ---');
 
-  const opStatusMap = ref(new Map());
+  // 🟢 FIX: Убираем ref, который мутировался внутри computed. 
+  // Теперь это будет clean computed.
 
   const _toStr = (val) => {
       if (!val) return '';
@@ -32,14 +33,17 @@ export const useDealStore = defineStore('dealStore', () => {
       }
   };
 
-  const dealGroups = computed(() => {
+  // 🟢 REFACTOR: Единый computed для расчетов, возвращающий и Группы, и Карту статусов.
+  // Это исключает Side-Effects (мутации) внутри процесса вычисления.
+  const calculationResult = computed(() => {
       const groups = new Map(); 
-      opStatusMap.value.clear();
+      const statusMap = new Map();
 
       const allOps = mainStore.getAllRelevantOps;
       const retailId = mainStore.retailIndividualId;
       const prepaymentCategoryIds = mainStore.getPrepaymentCategoryIds || [];
 
+      // Создаем копию для сортировки, чтобы не мутировать исходный массив
       const sortedOps = [...allOps].sort((a, b) => {
           const timeA = new Date(a.date).getTime();
           const timeB = new Date(b.date).getTime();
@@ -56,7 +60,7 @@ export const useDealStore = defineStore('dealStore', () => {
           const isExpense = op.type === 'expense';
           const opBudget = Number(op.totalDealAmount || 0);
 
-          // === ФЕЙС-КОНТРОЛЬ B2B (НЕ ТРОГАЕМ) ===
+          // === ФЕЙС-КОНТРОЛЬ B2B ===
           if (!isRetailOp && isIncome) {
               if (op.isPrepayment === false) continue;
               if (op.isPrepayment !== true) { 
@@ -82,7 +86,7 @@ export const useDealStore = defineStore('dealStore', () => {
 
           const amt = Math.abs(op.amount || 0);
 
-          // === ВЕТКА РОЗНИЦЫ (Вечная коробка) ===
+          // === ВЕТКА РОЗНИЦЫ ===
           if (isRetailOp) {
               if (history.length === 0) {
                   history.push({
@@ -102,50 +106,43 @@ export const useDealStore = defineStore('dealStore', () => {
                   currentBox.workedOut += amt;
               }
               
-              opStatusMap.value.set(op._id, { 
+              // Заполняем локальную map вместо мутации внешней переменной
+              statusMap.set(op._id, { 
                   trancheIndex: 0, 
                   isDealClosed: false,
                   dealUUID: key 
               });
           } 
           
-          // === 🟢 ВЕТКА СДЕЛОК B2B (REFACTORED) ===
+          // === ВЕТКА СДЕЛОК B2B ===
           else {
               let currentDeal = history.length > 0 ? history[history.length - 1] : null;
               let shouldCreateNew = false;
 
-              // 1. Проверяем, закрыта ли текущая сделка
               let isCurrentEffectivelyClosed = false;
               if (currentDeal) {
                   const debt = Math.max(0, currentDeal.budget - currentDeal.received);
-                  // Если долга нет или сделка закрыта вручную - считаем её завершенной
                   if (debt <= 0 || currentDeal.isManualClosed) {
                       isCurrentEffectivelyClosed = true;
                   }
               }
 
               if (opBudget > 0) {
-                  // Если операция явно задает новый бюджет (напр. "Предоплата" с суммой сделки)
                   if (!currentDeal || isCurrentEffectivelyClosed) {
-                      shouldCreateNew = true; // Начинаем новую сделку
+                      shouldCreateNew = true; 
                   } else {
-                      // Если старая еще открыта, возможно это расширение бюджета
                       if (opBudget > currentDeal.budget) {
                           currentDeal.budget = opBudget; 
                       }
                   }
               }
               else {
-                  // Если это обычная операция (Транш или Факт с бюджетом 0)
                   if (!currentDeal) {
                       shouldCreateNew = true;
                   } 
-                  // 🟢 FIX: Если текущая сделка закрыта, запрещаем добавлять туда новые транши.
-                  // Начинаем новую историю (даже если бюджет 0).
                   else if (isCurrentEffectivelyClosed) {
                       shouldCreateNew = true;
                   }
-                  // Иначе: Сделка открыта, добавляем как транш
               }
 
               if (shouldCreateNew) {
@@ -176,7 +173,7 @@ export const useDealStore = defineStore('dealStore', () => {
               
               const isOpClosed = !!op.isClosed; 
               
-              opStatusMap.value.set(op._id, { 
+              statusMap.set(op._id, { 
                   trancheIndex: trancheIdx,
                   isDealClosed: isOpClosed,
                   dealUUID: currentDeal.id,
@@ -185,8 +182,12 @@ export const useDealStore = defineStore('dealStore', () => {
           }
       }
 
-      return groups;
+      return { groups, statusMap };
   });
+
+  // 🟢 FIX: Теперь dealGroups и opStatusMap это чистые computed-оболочки
+  const dealGroups = computed(() => calculationResult.value.groups);
+  const opStatusMap = computed(() => calculationResult.value.statusMap);
 
   const liabilitiesTheyOwe = computed(() => {
       let total = 0;
@@ -194,7 +195,6 @@ export const useDealStore = defineStore('dealStore', () => {
           history.forEach(deal => {
               if (deal.isManualClosed) return;
               if (deal.isRetail) {
-                  // Для розницы: Долг клиента = Отработано (Списано) - Получено
                   total += Math.max(0, deal.workedOut - deal.received);
               } else {
                   total += Math.max(0, deal.budget - deal.received);
@@ -209,7 +209,6 @@ export const useDealStore = defineStore('dealStore', () => {
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
               if (deal.isManualClosed) return;
-              // Для розницы: Мы должны (Аванс) = Получено - Отработано
               total += Math.max(0, deal.received - deal.workedOut);
           });
       });
@@ -217,7 +216,8 @@ export const useDealStore = defineStore('dealStore', () => {
   });
 
   function getOpTrancheStatus(opId) {
-      if (!dealGroups.value) return null;
+      // Используем .value, так как теперь это computed
+      if (!opStatusMap.value) return null;
       const status = opStatusMap.value.get(opId);
       if (!status) return null;
       

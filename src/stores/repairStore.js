@@ -45,18 +45,12 @@ export const useRepairStore = defineStore('repairStore', () => {
         try {
             log('Запуск полного восстановления данных...');
 
-            // 1. Очистка текущих кэшей
-            mainStore.displayCache = {};
-            mainStore.calculationCache = {};
-            mainStore.dealOperations = []; // Сброс сделок
-            
-            log('Кэши очищены. Начинаем загрузку всей истории...');
-
-            // 2. Загрузка ВСЕХ операций (используем широкий диапазон дат)
-            // Допустим, с 2000 года по 2100 год, чтобы наверняка захватить всё
+            // 1. Сначала загружаем данные (БЕЗ очистки кэша, чтобы не ломать UI при ошибке)
             const startDate = '2000-01-01';
             const endDate = '2100-01-01';
             
+            log(`Запрос данных с сервера: ${startDate} - ${endDate}`);
+
             // Адаптивная загрузка
             const response = await axios.get(`${API_BASE_URL}/events`, {
                 params: {
@@ -69,11 +63,15 @@ export const useRepairStore = defineStore('repairStore', () => {
             let rawOps = response.data;
             if (!Array.isArray(rawOps)) rawOps = [];
             
-            log(`Загружено ${rawOps.length} операций.`);
+            log(`Загружено ${rawOps.length} операций. Начинаем пересчет...`);
             progress.value = 50;
 
-            // 3. Структурирование данных (Re-indexing)
+            // 2. Только теперь, когда данные есть, очищаем текущие кэши
+            mainStore.displayCache = {};
+            mainStore.calculationCache = {};
+            mainStore.dealOperations = []; // Сброс сделок
             
+            // 3. Структурирование данных (Re-indexing)
             const newSnapshot = {
                 totalBalance: 0,
                 accountBalances: {},
@@ -188,8 +186,8 @@ export const useRepairStore = defineStore('repairStore', () => {
             return true; // Успех
 
         } catch (e) {
-            console.error(e);
-            log(`Ошибка: ${e.message}`);
+            console.error('[Repair] Critical Error:', e);
+            log(`Ошибка загрузки: ${e.message}. Данные не были затронуты.`);
             return false; // Ошибка
         } finally {
             isRepairing.value = false;

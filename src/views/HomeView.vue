@@ -683,7 +683,7 @@ const handleRefundDelete = async (op) => {
 .user-profile-widget { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px; }
 .user-profile-button { display: flex; align-items: center; width: 100%; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; color: var(--color-text); text-align: left; }
 .user-profile-button:hover { background-color: var(--color-background-mute); border-color: var(--color-border-hover); }
-.user-avatar { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; object-fit: cover; border: 1px solid var(--color-border); }
+.user-avatar { width: 28px; height: 28px; border-radius: 50%; right: 0px; object-fit: cover; border: 1px solid var(--color-border); }
 .user-avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; background-color: var(--color-primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
 .user-name { flex-grow: 1; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .user-menu { position: fixed; width: 180px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); z-index: 2000; overflow: hidden; }
@@ -702,20 +702,20 @@ const handleRefundDelete = async (op) => {
 .home-right-panel { width: 60px; flex-shrink: 0; overflow-y: auto; background-color: var(--color-background-soft); border-left: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; position: relative; }
 .home-right-panel::-webkit-scrollbar { display: none; }
 
-.header-expand-btn { position: absolute; top: 8px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
+.header-expand-btn { position: absolute; top: 8px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
 .header-expand-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .header-expand-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
 .header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-.import-export-btn { position: absolute; top: 48px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
+.import-export-btn { position: absolute; top: 48px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
 .import-export-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-.graph-btn { position: absolute; top: 88px; right: 8px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
+.graph-btn { position: absolute; top: 88px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
 .graph-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-.about-btn { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--color-primary); border: 1px solid var(--color-primary); color: #ffffff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.2s; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); }
+.about-btn { position: absolute; bottom: 64px; right: 0px; transform: translateX(-50%); z-index: 20; background: var(--color-primary); border: 1px solid var(--color-primary); color: #ffffff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.2s; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); }
 .about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }

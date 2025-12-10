@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v119.0 (FIX: Reactivity & Full Code Restoration) LOADED ---'); 
+  console.log('--- mainStore.js v119.3 (FIX: Widget Reactivity / Time Ignored) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -30,7 +30,7 @@ export const useMainStore = defineStore('mainStore', () => {
   });
   const toggleHeaderExpansion = () => uiStore.toggleHeaderExpansion();
   
-  // Флаг: Учитывать ли скрытые счета.
+  // Флаг: Учитывать ли исключенные счета в общих суммах
   const includeExcludedInTotal = computed({
       get: () => uiStore.includeExcludedInTotal,
       set: (v) => uiStore.includeExcludedInTotal = v
@@ -120,6 +120,17 @@ export const useMainStore = defineStore('mainStore', () => {
     const date = new Date(year, 0, 1);
     date.setDate(doy);
     return date;
+  };
+
+  // 🟢 Helper for Time Check (Fix for 12:00 vs 09:00 issue)
+  // Сравниваем с КОНЦОМ текущего дня. Если операция сегодня в 12:00, а сейчас 09:00, 
+  // то 12:00 <= 23:59 -> TRUE. Операция считается "прошедшей/текущей" для виджетов.
+  const _isEffectivelyPastOrToday = (dateInput) => {
+      if (!dateInput) return false;
+      const d = new Date(dateInput);
+      const cutoff = new Date();
+      cutoff.setHours(23, 59, 59, 999); // Конец сегодняшнего дня
+      return d <= cutoff;
   };
 
   // --- 🟢 EXCLUDED ACCOUNTS LOGIC ---
@@ -428,13 +439,14 @@ export const useMainStore = defineStore('mainStore', () => {
   
   // 🟢 CURRENT OPS (FILTERED)
   const currentOps = computed(() => {
-    // ⚡️ FIX: Используем текущее время при сравнении, но snapshot.timestamp 
-    // может быть старым. Если мы добавляем операцию оптимистично, мы обновляем timestamp.
-    const now = snapshot.value.timestamp ? new Date(snapshot.value.timestamp) : new Date();
+    // ⚡️ FIX: Используем мягкую проверку времени (конец дня), 
+    // чтобы операции "сегодня 12:00" попадали в виджеты даже утром.
+    // Триггер reactivity: snapshot.timestamp
+    const _tick = snapshot.value.timestamp; 
     return allKnownOperations.value.filter(op => {
         if (!op?.date) return false;
         if (!_isOpVisible(op)) return false; 
-        return new Date(op.date) <= now;
+        return _isEffectivelyPastOrToday(op.date);
     });
   });
 
@@ -931,8 +943,8 @@ export const useMainStore = defineStore('mainStore', () => {
       displayCache.value[dk].push(richOp);
       calculationCache.value[dk] = [...displayCache.value[dk]];
 
-      const now = new Date();
-      if (new Date(richOp.date) <= now) {
+      // ⚡️ FIX: Use new time check
+      if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
       _updateDealCache(richOp, 'add');
@@ -949,8 +961,8 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       if (!oldOp) oldOp = allOperationsFlat.value.find(o => o._id === op._id);
 
-      const now = new Date();
-      if (oldOp && new Date(oldOp.date) <= now) {
+      // ⚡️ FIX: Use new time check
+      if (oldOp && _isEffectivelyPastOrToday(oldOp.date)) {
           _applyOptimisticSnapshotUpdate(oldOp, -1);
       }
 
@@ -972,7 +984,8 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
 
-      if (new Date(richOp.date) <= now) {
+      // ⚡️ FIX: Use new time check
+      if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
       
@@ -990,8 +1003,8 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       if (!oldOp) return; 
 
-      const now = new Date();
-      if (new Date(oldOp.date) <= now) {
+      // ⚡️ FIX: Use new time check
+      if (_isEffectivelyPastOrToday(oldOp.date)) {
           _applyOptimisticSnapshotUpdate(oldOp, -1);
       }
 
@@ -1066,8 +1079,8 @@ export const useMainStore = defineStore('mainStore', () => {
       displayCache.value[dk].push(richOp);
       calculationCache.value[dk] = [...displayCache.value[dk]];
       
-      const now = new Date();
-      if (new Date(richOp.date) <= now) {
+      // ⚡️ FIX: Use new time check
+      if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
       
@@ -1121,8 +1134,8 @@ export const useMainStore = defineStore('mainStore', () => {
         const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldOp.dateKey);
         const isDateChanged = oldDateKey !== newDateKey;
         
-        const now = new Date();
-        if (new Date(oldOp.date) <= now) {
+        // ⚡️ FIX: Use new time check
+        if (_isEffectivelyPastOrToday(oldOp.date)) {
             _applyOptimisticSnapshotUpdate(oldOp, -1);
         }
         
@@ -1146,7 +1159,8 @@ export const useMainStore = defineStore('mainStore', () => {
             calculationCache.value[oldDateKey] = [...list];
         }
 
-        if (new Date(richOp.date) <= now) {
+        // ⚡️ FIX: Use new time check
+        if (_isEffectivelyPastOrToday(richOp.date)) {
             _applyOptimisticSnapshotUpdate(richOp, 1);
         }
         
@@ -1191,8 +1205,8 @@ export const useMainStore = defineStore('mainStore', () => {
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       }
       
-      const now = new Date();
-      if (new Date(operation.date) <= now) {
+      // ⚡️ FIX: Use new time check
+      if (_isEffectivelyPastOrToday(operation.date)) {
           _applyOptimisticSnapshotUpdate(operation, -1);
       }
       
@@ -1421,11 +1435,10 @@ export const useMainStore = defineStore('mainStore', () => {
        const moved = { ...sourceOpData, dateKey: newDateKey, date: _parseDateKey(newDateKey), cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
-       const now = new Date();
-       const oldDate = _parseDateKey(oldDateKey);
-       const newDate = _parseDateKey(newDateKey);
-       const wasInSnapshot = oldDate <= now;
-       const isInSnapshot = newDate <= now;
+       
+       // ⚡️ FIX: Use new time check
+       const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
+       const isInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(newDateKey));
        const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
        if (needsSnapshotUpdate) {
            const sign = isInSnapshot ? 1 : -1;
@@ -1466,8 +1479,6 @@ export const useMainStore = defineStore('mainStore', () => {
       let expenseContractorId = null;
       let incomeContractorId = null;
       
-      const now = new Date();
-      const isPastOrToday = finalDate <= now;
       const tempId = `temp_tr_${Date.now()}`;
       
       let optimisticOps = [];
@@ -1504,13 +1515,18 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       }
 
-      if (isPastOrToday) {
-          optimisticOps.forEach(op => _applyOptimisticSnapshotUpdate(op, 1));
-      }
-
       if (!displayCache.value[dateKey]) displayCache.value[dateKey] = [];
-      // 🟢 FIX: Populate optimistic ops
-      optimisticOps.forEach(op => displayCache.value[dateKey].push(_populateOp(op)));
+      
+      // 🟢 FIX: Correct order for Reactivity + Time check update
+      optimisticOps.forEach(rawOp => {
+          const richOp = _populateOp(rawOp);
+          displayCache.value[dateKey].push(richOp);
+          
+          // ⚡️ FIX: Use new time check (Ignores 12:00 vs 09:00 issue)
+          if (_isEffectivelyPastOrToday(richOp.date)) {
+              _applyOptimisticSnapshotUpdate(richOp, 1);
+          }
+      });
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       
       _triggerProjectionUpdate(); 

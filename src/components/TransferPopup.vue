@@ -8,14 +8,16 @@ import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v29.1 - MOBILE OPTIMIZED ---
- * * ВЕРСИЯ: 29.1
- * * ДАТА: 2025-12-08
+ * * --- МЕТКА ВЕРСИИ: v29.3 - WIDGET FREEZE FIX ---
+ * * ВЕРСИЯ: 29.3
+ * * ДАТА: 2025-12-11
  * * ИЗМЕНЕНИЯ:
- * 1. (CSS) Добавлены стили для мобильных устройств (высота полей 44px, уменьшенные отступы).
+ * 1. handleSave: Добавлена принудительная проверка владельцев счетов перед отправкой.
+ * Теперь ID компаний/физлиц всегда попадают в payload, что чинит "зависание" виджетов при оптимистичном обновлении.
  */
 
 const mainStore = useMainStore();
+
 const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
@@ -378,13 +380,43 @@ const handleSave = async () => {
   const transferId = props.transferToEdit?._id;
   const isClone = isCloneMode.value;
   const [year, month, day] = editableDate.value.split('-').map(Number); const finalDate = new Date(year, month - 1, day, 12, 0, 0); 
-  let fromCompanyId = null, fromIndividualId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') fromCompanyId = id; else fromIndividualId = id; }
-  let toCompanyId = null, toIndividualId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') toCompanyId = id; else toIndividualId = id; }
+  
+  // 🟢 REFACTORED OWNER RESOLUTION (FIX FOR OPTIMISTIC UPDATES)
+  const resolveOwner = (accountId, ownerValue) => {
+      let cId = null;
+      let iId = null;
+
+      // 1. Try from UI selection
+      if (ownerValue && ownerValue !== '--CREATE_NEW--') {
+          const [type, id] = ownerValue.split('-');
+          if (type === 'company') cId = id;
+          else if (type === 'individual') iId = id;
+      }
+
+      // 2. If missing, force fetch from Account
+      if (!cId && !iId && accountId) {
+          const acc = mainStore.accounts.find(a => a._id === accountId);
+          if (acc) {
+               if (acc.companyId) cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+               else if (acc.individualId) iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+          }
+      }
+      return { companyId: cId, individualId: iId };
+  };
+
+  const fromOwnerData = resolveOwner(fromAccountId.value, selectedFromOwner.value);
+  const toOwnerData = resolveOwner(toAccountId.value, selectedToOwner.value);
+
+  const fromCompanyId = fromOwnerData.companyId;
+  const fromIndividualId = fromOwnerData.individualId;
+  const toCompanyId = toOwnerData.companyId;
+  const toIndividualId = toOwnerData.individualId;
   
   let finalCategoryId = categoryId.value;
   if (transferPurpose.value === 'inter_company') { finalCategoryId = null; }
 
   const updates = [];
+  // Existing Batch Update Logic (Kept for safety, though resolveOwner now handles ID retrieval for payload)
   if (fromAccountId.value && selectedFromOwner.value) {
       const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
       if (acc) {
@@ -451,7 +483,7 @@ const closePopup = () => { emit('close'); };
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
-             <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" />
+             <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" />
           </div>
       </div>
         
@@ -465,7 +497,7 @@ const closePopup = () => { emit('close'); };
             </template>
         </BaseSelect>
         <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" />
+          <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" autocomplete="off" />
           <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
           <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
@@ -492,7 +524,7 @@ const closePopup = () => { emit('close'); };
             </template>
         </BaseSelect>
         <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" />
+          <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" autocomplete="off" />
           <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
           <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
           <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
@@ -553,7 +585,7 @@ const closePopup = () => { emit('close'); };
             <button :class="{ active: ownerTypeToCreate === 'company' }" @click="setOwnerTypeToCreate('company')">Компанию</button>
             <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="setOwnerTypeToCreate('individual')">Физлицо</button>
           </div>
-          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" />
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
           <div class="smart-create-actions">
             <button @click="cancelCreateOwner" class="btn-modal-action btn-modal-cancel" :disabled="isInlineSaving">Отмена</button>
             <button @click="saveNewOwner" class="btn-modal-action btn-modal-create" :disabled="isInlineSaving">Создать</button>
@@ -656,7 +688,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 /* Inline Create */
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
+.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a; font-size: 15px; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: var(--color-transfer); }
 
 /* Buttons inline */
