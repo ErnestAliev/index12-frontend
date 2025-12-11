@@ -75,7 +75,7 @@ export function useWidgetData() {
                     delta = rawFutureVal - currentVal;
                 }
             } else {
-                // Для остальных (Projects, Contractors, Categories) futureMap содержит изменение
+                // Для остальных (Projects, Contractors, Categories, Individuals) futureMap содержит изменение
                 if (futureMap && futureMap.has(itemIdStr)) {
                     delta = futureMap.get(itemIdStr);
                     rawFutureVal = currentVal + delta;
@@ -169,10 +169,18 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap));
         }
         
+        // 🟢 FIX: INDIVIDUALS
+        // Теперь используем currentIndividualBalances из mainStore, но убедимся, что он считает ВСЕ операции
+        // В mainStore.js currentIndividualBalances уже считает агрегацию по операциям (_calculateAggregatedBalance).
+        // Проблема была в том, что он мог фильтровать тех, у кого 0.
+        // Здесь мы берем ВСЕХ individuals и мапим их через mapItem.
         if (k === 'individuals') {
             const current = mainStore.currentIndividualBalances || [];
             const future = mainStore.futureIndividualChanges || []; 
+            
+            // futureIndividualChanges возвращает массив объектов { _id, balance (это дельта) }
             const futureMap = new Map(future.map(i => [String(i._id), i.balance]));
+            
             return current.map(item => mapItem(item, futureMap));
         }
 
