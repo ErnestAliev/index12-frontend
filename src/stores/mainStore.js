@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v120.2 (FULL REGEN: FORCE NOON) LOADED ---'); 
+  console.log('--- mainStore.js v121.0 (TRUE TIME FIX) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -902,13 +902,30 @@ export const useMainStore = defineStore('mainStore', () => {
       const populated = { ...op };
       
       // 🟢 SANITIZATION: FORCE 12:00 SYSTEM TIME (Anti-Midnight Bug)
-      // Если есть dateKey, восстанавливаем дату из него (это самое надежное, там уже 12:00)
-      if (populated.dateKey) {
+      // FIX v2: Если дата уже есть, доверяем ей (чтобы сохранить точное время "сейчас" для Сегодня).
+      // Восстанавливаем из dateKey ТОЛЬКО если даты нет.
+      
+      if (populated.date) {
+          // Если дата строкой - превращаем в объект
+          if (typeof populated.date === 'string') {
+              populated.date = new Date(populated.date);
+          }
+          // Если dateKey есть, проверим, не "улетела" ли дата в другой день (редкий кейс, но для надежности)
+          if (populated.dateKey) {
+               const calculatedKey = _getDateKey(populated.date);
+               if (calculatedKey !== populated.dateKey) {
+                   // Конфликт! Ключ говорит одно, дата другое. Верим ключу (безопасный фоллбек на 12:00)
+                   populated.date = _parseDateKey(populated.dateKey);
+               }
+          }
+      } 
+      else if (populated.dateKey) {
+          // Даты нет, восстанавливаем из ключа (будет 12:00)
           populated.date = _parseDateKey(populated.dateKey);
       } 
-      // Если ключа нет, но есть дата - принудительно ставим полдень
-      else if (populated.date) {
-          const d = new Date(populated.date);
+      // Если ключа нет, но есть дата (уже обработано выше) или ничего нет - принудительно ставим полдень
+      else {
+          const d = new Date();
           d.setHours(12, 0, 0, 0);
           populated.date = d;
       }
