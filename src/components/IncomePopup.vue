@@ -12,19 +12,34 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v61.0 - REFACTOR: UI DEAL DETECTION FIX ---
- * * ВЕРСИЯ: 61.0
+ * * --- МЕТКА ВЕРСИИ: v61.2 - SYNTAX FIX & TRUE TIME ---
+ * * ВЕРСИЯ: 61.2
  * * ИЗМЕНЕНИЯ:
- * 1. isDealDetected теперь возвращает false, если найденная сделка уже закрыта (isClosed).
- * Это позволяет создавать новые доходы/сделки поверх закрытых, не попадая в ловушку "следующего транша".
+ * 1. (FIX) Исправлен синтаксис defineProps (убраны потенциальные конфликты).
+ * 2. (LOGIC) createSmartDate: Если дата "Сегодня", подставляем new Date() (текущее время).
  */
 
 const props = defineProps({
-  date: { type: Date, required: true },
-  cellIndex: { type: Number, required: true },
-  operationToEdit: { type: Object, default: null },
-  minAllowedDate: { type: Date, default: null },
-  maxAllowedDate: { type: Date, default: null }
+  date: {
+    type: Date,
+    required: true
+  },
+  cellIndex: {
+    type: Number,
+    required: true
+  },
+  operationToEdit: {
+    type: Object,
+    default: null
+  },
+  minAllowedDate: {
+    type: Date,
+    default: null
+  },
+  maxAllowedDate: {
+    type: Date,
+    default: null
+  }
 });
 
 const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment']);
@@ -316,12 +331,10 @@ const localDealStatus = computed(() => {
     return status;
 });
 
-// 🟢 REFACTORED:
+// 🟢 REFACTOR:
 const isDealDetected = computed(() => {
     if (!localDealStatus.value) return false;
     if (isProtectedMode.value) return false;
-    // 🟢 NEW: Если сделка закрыта, мы не считаем её "обнаруженной" для режима траншей.
-    // Мы даем пользователю начать новую.
     if (localDealStatus.value.isClosed) return false;
     
     return true;
@@ -405,7 +418,30 @@ watch([showCreateContractorModal, showCreateOwnerModal], ([creatingContr, creati
 
 const onAmountInput = (e) => { amount.value = formatNumber(e.target.value.replace(/[^0-9]/g, '')); };
 const toInputDate = (dateObj) => { if (!dateObj) return ''; const d = new Date(dateObj); const year = d.getFullYear(); const month = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; };
-const createNoonDate = (str) => { if(!str) return new Date(); const [y,m,d]=str.split('-'); return new Date(y,m-1,d,12,0,0); };
+
+// 🟢 2. ИСПРАВЛЕННАЯ ФУНКЦИЯ ДАТЫ: "ИСТИННОЕ ВРЕМЯ" (TRUE TIME)
+const createSmartDate = (str) => {
+    if (!str) return new Date();
+    const [y, m, d] = str.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    
+    // Получаем текущее время
+    const now = new Date();
+    
+    // Проверка: Является ли выбранная дата "Сегодняшним днем"?
+    const isToday = now.getFullYear() === y && now.getMonth() === (m - 1) && now.getDate() === d;
+    
+    if (isToday) {
+        // Если сегодня - возвращаем текущее время (с точностью до секунд)
+        // Это решит проблему "будущего", так как сервер получит 03:52, а не 12:00
+        return now;
+    } else {
+        // Если дата другая (вчера/завтра) - ставим 12:00, чтобы избежать сдвигов часовых поясов
+        date.setHours(12, 0, 0, 0);
+        return date;
+    }
+};
+
 const toDisplayDate = (str) => { if(!str) return ''; const [y,m,d]=str.split('-'); return `${d}.${m}.${y}`; };
 
 // --- 🟢 CASH REGISTER LOGIC ---
@@ -486,7 +522,9 @@ const handleMainAction = () => {
             amount: rawAmount, accountId: selectedAccountId.value, contractorId: cId, counterpartyIndividualId: indId,
             projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
             companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
-            date: createNoonDate(editableDate.value), cellIndex: props.cellIndex, operationToEdit: props.operationToEdit,
+            // 🟢 Используем умную дату
+            date: createSmartDate(editableDate.value), 
+            cellIndex: props.cellIndex, operationToEdit: props.operationToEdit,
             contractorName, projectName, categoryName
         });
         return; 
@@ -507,7 +545,8 @@ const handleSmartDealConfirm = (decision) => {
                 prevOp.contractorId?._id || prevOp.contractorId,
                 prevOp.counterpartyIndividualId?._id || prevOp.counterpartyIndividualId,
                 prevOp.amount, 
-                createNoonDate(editableDate.value), 
+                // 🟢 Используем умную дату
+                createSmartDate(editableDate.value), 
                 prevOp._id 
              ).catch(e => console.error('Ошибка авто-закрытия прошлого транша:', e));
         }
@@ -583,7 +622,10 @@ const handleSave = async (options = {}) => {
         }
 
         const payload = {
-            type: 'income', amount: rawAmount, date: createNoonDate(editableDate.value), accountId: selectedAccountId.value,
+            type: 'income', amount: rawAmount, 
+            // 🟢 ИСПОЛЬЗУЕМ УМНУЮ ДАТУ (СЕГОДНЯ = СЕЙЧАС)
+            date: createSmartDate(editableDate.value), 
+            accountId: selectedAccountId.value,
             companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
             contractorId: cId, counterpartyIndividualId: indId, projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
             totalDealAmount: 0, 
@@ -602,7 +644,8 @@ const handleSave = async (options = {}) => {
                 cId,
                 indId,
                 rawAmount, 
-                createNoonDate(editableDate.value), 
+                // 🟢 Используем умную дату
+                createSmartDate(editableDate.value), 
                 null 
             ).catch(e => console.error('Ошибка авто-акта для финала:', e));
         }
