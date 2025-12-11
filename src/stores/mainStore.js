@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v121.1 (TIMEZONE SYNC FIX) LOADED ---'); 
+  console.log('--- mainStore.js v122.0 (INDIVIDUALS FIX) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -826,16 +826,49 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 REFACTOR: INDIVIDUALS
-  // FIX: Восстановлена логика скрытия физлиц, если они являются владельцами скрытых счетов.
+  // 🟢 REFACTOR: INDIVIDUALS (FIXED FOR COUNTERPARTIES)
+  // Теперь учитываем операции, где физлицо является контрагентом (counterpartyIndividualId)
   const currentIndividualBalances = computed(() => {
-      const opsMap = _calculateAggregatedBalance(allKnownOperations.value, 'individualId');
+      // 1. Агрегация операций по ОБОИМ ролям
+      const opsMap = new Map();
       
-      // 1. Собираем ID физлиц, которых нужно скрыть (если режим "Скрыть выключенные")
+      allKnownOperations.value.forEach(op => {
+          if (!_isOpVisible(op)) return;
+
+          const amt = Math.abs(op.amount || 0);
+          
+          if (op.type === 'transfer' || op.isTransfer) {
+               // Переводы: списываем у отправителя, добавляем получателю
+               if (op.fromIndividualId) {
+                   const key = _toStr(op.fromIndividualId);
+                   opsMap.set(key, (opsMap.get(key) || 0) - amt);
+               }
+               if (op.toIndividualId) {
+                   const key = _toStr(op.toIndividualId);
+                   opsMap.set(key, (opsMap.get(key) || 0) + amt);
+               }
+          } else {
+               // Доход/Расход/Вывод
+               const sign = op.type === 'income' ? 1 : -1;
+               const value = amt * sign;
+               
+               // Роль Владельца
+               if (op.individualId) {
+                   const key = _toStr(op.individualId);
+                   opsMap.set(key, (opsMap.get(key) || 0) + value);
+               }
+               // Роль Контрагента (Кому платим / От кого получаем)
+               if (op.counterpartyIndividualId) {
+                   const key = _toStr(op.counterpartyIndividualId);
+                   opsMap.set(key, (opsMap.get(key) || 0) + value);
+               }
+          }
+      });
+      
+      // 2. Список скрытых физлиц (владельцы скрытых счетов)
       const hiddenIndividualIds = new Set();
       if (!includeExcludedInTotal.value) {
           accounts.value.forEach(a => {
-              // Если счет выключен и у него есть владелец-физлицо
               if (a.isExcluded && a.individualId) {
                   const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
                   if (iId) hiddenIndividualIds.add(String(iId));
@@ -844,7 +877,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
 
       return individuals.value.reduce((acc, i) => {
-          // Если физлицо в списке скрытых - пропускаем его
           if (hiddenIndividualIds.has(String(i._id))) return acc;
 
           const linkedAccounts = currentAccountBalances.value.filter(a => {
