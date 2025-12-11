@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v121.0 (TRUE TIME FIX) LOADED ---'); 
+  console.log('--- mainStore.js v121.1 (TIMEZONE SYNC FIX) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -460,7 +460,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function fetchSnapshot() {
     try {
-      const res = await axios.get(`${API_BASE_URL}/snapshot`);
+      // 🟢 FIX: Передаем текущее время клиента, чтобы сервер использовал его
+      // вместо своего системного времени. Это решает проблему "слепой зоны".
+      const clientDate = new Date().toISOString();
+      const res = await axios.get(`${API_BASE_URL}/snapshot`, {
+          params: { date: clientDate }
+      });
       snapshot.value = res.data;
     } catch (e) {
       console.error('Failed to fetch snapshot:', e);
