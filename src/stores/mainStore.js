@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v119.3 (FIX: Widget Reactivity / Time Ignored) LOADED ---'); 
+  console.log('--- mainStore.js v120.0 (SYSTEM TIME STANDARD: NOON POLICY) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -101,6 +101,7 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   const _getDayOfYear = (date) => {
+    // Используем системное время для расчета дня года
     const start = new Date(date.getFullYear(), 0, 0);
     const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
     return Math.floor(diff / 86400000);
@@ -112,24 +113,31 @@ export const useMainStore = defineStore('mainStore', () => {
     return `${year}-${doy}`;
   };
 
+  // 🟢 ГЛАВНЫЙ СТАНДАРТ: ВСЕГДА 12:00 (ПОЛДЕНЬ)
+  // Это гарантирует, что дата не "улетит" во вчера при конвертации
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        return new Date(); 
+        const now = new Date();
+        now.setHours(12, 0, 0, 0);
+        return now;
     }
     const [year, doy] = dateKey.split('-').map(Number);
     const date = new Date(year, 0, 1);
     date.setDate(doy);
+    
+    // ⚡️ FIX: Жестко ставим 12:00 системного времени
+    date.setHours(12, 0, 0, 0);
+    
     return date;
   };
 
-  // 🟢 Helper for Time Check (Fix for 12:00 vs 09:00 issue)
-  // Сравниваем с КОНЦОМ текущего дня. Если операция сегодня в 12:00, а сейчас 09:00, 
-  // то 12:00 <= 23:59 -> TRUE. Операция считается "прошедшей/текущей" для виджетов.
+  // 🟢 Helper for Time Check
+  // Сравниваем с КОНЦОМ текущего дня по СИСТЕМНОМУ времени.
   const _isEffectivelyPastOrToday = (dateInput) => {
       if (!dateInput) return false;
       const d = new Date(dateInput);
-      const cutoff = new Date();
-      cutoff.setHours(23, 59, 59, 999); // Конец сегодняшнего дня
+      const cutoff = new Date(); // Сейчас (системное время)
+      cutoff.setHours(23, 59, 59, 999); // Конец сегодняшнего системного дня
       return d <= cutoff;
   };
 
@@ -1387,7 +1395,8 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex){
+  // 🟢 FIX: Добавлен аргумент specificTargetDate (Позволяет принять дату 12:00 от DayColumn)
+  async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
     if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
@@ -1432,13 +1441,18 @@ export const useMainStore = defineStore('mainStore', () => {
            const usedIndices = new Set(newOps.map(o => o.cellIndex));
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
-       const moved = { ...sourceOpData, dateKey: newDateKey, date: _parseDateKey(newDateKey), cellIndex: finalIndex };
+       
+       // ⚡️ FIX: ИСПОЛЬЗУЕМ ЯВНУЮ ДАТУ ИЗ DAY COLUMN (12:00) ИЛИ ГЕНЕРИРУЕМ 12:00
+       const newDateObj = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(newDateKey);
+       
+       const moved = { ...sourceOpData, dateKey: newDateKey, date: newDateObj, cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
        // ⚡️ FIX: Use new time check
        const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
-       const isInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(newDateKey));
+       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); // Проверяем новую дату
+       
        const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
        if (needsSnapshotUpdate) {
            const sign = isInSnapshot ? 1 : -1;
