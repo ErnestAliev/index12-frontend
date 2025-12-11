@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v120.0 (SYSTEM TIME STANDARD: NOON POLICY) LOADED ---'); 
+  console.log('--- mainStore.js v120.2 (FULL REGEN: FORCE NOON) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -901,6 +901,18 @@ export const useMainStore = defineStore('mainStore', () => {
   function _populateOp(op) {
       const populated = { ...op };
       
+      // 🟢 SANITIZATION: FORCE 12:00 SYSTEM TIME (Anti-Midnight Bug)
+      // Если есть dateKey, восстанавливаем дату из него (это самое надежное, там уже 12:00)
+      if (populated.dateKey) {
+          populated.date = _parseDateKey(populated.dateKey);
+      } 
+      // Если ключа нет, но есть дата - принудительно ставим полдень
+      else if (populated.date) {
+          const d = new Date(populated.date);
+          d.setHours(12, 0, 0, 0);
+          populated.date = d;
+      }
+
       if (!populated.accountId || typeof populated.accountId === 'string') {
           populated.accountId = accounts.value.find(a => a._id === (populated.accountId || op.accountId)) || null;
       }
@@ -1260,8 +1272,8 @@ export const useMainStore = defineStore('mainStore', () => {
           const results = await Promise.all(promises);
           for (const { dateKey, data } of results) {
               const raw = Array.isArray(data) ? data.slice() : [];
-              const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-              // 🟢 FIX: Populate ops before storing in cache
+              const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+              // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
               displayCache.value[dateKey] = processedOps.map(_populateOp);
               calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
           }
@@ -1327,8 +1339,8 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-      // 🟢 FIX: Populate ops before storing in cache
+      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+      // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
       displayCache.value[dateKey] = processedOps.map(_populateOp);
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
@@ -1389,8 +1401,8 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
-      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey, date: op.date || _parseDateKey(dateKey) }));
-      // 🟢 FIX: Populate ops before storing in cache
+      const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+      // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
       _syncCaches(dateKey, processedOps.map(_populateOp));
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
@@ -1833,7 +1845,7 @@ export const useMainStore = defineStore('mainStore', () => {
               type: 'expense', 
               amount: -amount,
               accountId: null, 
-              companyId: originalOp.companyId,
+              companyId: originalOp.companyId, 
               individualId: originalOp.individualId, 
               contractorId: originalOp.contractorId, 
               counterpartyIndividualId: originalOp.counterpartyIndividualId, 
