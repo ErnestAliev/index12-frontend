@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v125.0 (FIX: Transfer Refresh & Prepayment Stubs) LOADED ---'); 
+  console.log('--- mainStore.js v126.0 (FIX: Liabilities Forecast Split) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -381,10 +381,15 @@ export const useMainStore = defineStore('mainStore', () => {
       return allKnownOperations.value.filter(op => _isOpVisible(op));
   });
 
-  const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOwe);
-  const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOwe);
-  const liabilitiesWeOweFuture = computed(() => liabilitiesWeOwe.value);
-  const liabilitiesTheyOweFuture = computed(() => liabilitiesTheyOwe.value);
+  // 🟢 FIX: SPLIT LIABILITIES INTO FACT AND FORECAST
+  // liabilitiesWeOwe (Current) = Fact
+  // liabilitiesWeOweFuture (Total) = Forecast
+  
+  const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOweCurrent);
+  const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOweCurrent);
+  
+  const liabilitiesWeOweFuture = computed(() => useDealStore().liabilitiesWeOweTotal);
+  const liabilitiesTheyOweFuture = computed(() => useDealStore().liabilitiesTheyOweTotal);
 
   function getProjectDealStatus(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
       return useDealStore().getDealStatus(projectId, categoryId, contractorId || counterpartyIndividualId);
@@ -2324,7 +2329,11 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentCreditBalances, futureCreditBalances, creditCategoryId,
 
-    liabilitiesWeOwe, liabilitiesTheyOwe, liabilitiesWeOweFuture, liabilitiesTheyOweFuture,
+    // 🟢 UPDATED: Split Liabilities (Fact vs Forecast)
+    liabilitiesWeOwe: computed(() => useDealStore().liabilitiesWeOweCurrent), // Fact
+    liabilitiesTheyOwe: computed(() => useDealStore().liabilitiesTheyOweCurrent), // Fact
+    liabilitiesWeOweFuture: computed(() => useDealStore().liabilitiesWeOweTotal), // Forecast (Plan)
+    liabilitiesTheyOweFuture: computed(() => useDealStore().liabilitiesTheyOweTotal), // Forecast (Plan)
     
     getPrepaymentCategoryIds, getActCategoryIds,
     
