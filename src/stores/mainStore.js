@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v124.3 (FIX: Socket Transfers Merge) LOADED ---'); 
+  console.log('--- mainStore.js v124.4 (FIX: Socket Robust Populate) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -989,8 +989,19 @@ export const useMainStore = defineStore('mainStore', () => {
           const id = (typeof raw === 'object') ? raw._id : raw;
           // Use safe ID match
           const found = storeRef.value.find(item => _idsMatch(item._id, id));
-          // If found in store, use it. If not, fallback to what we have.
-          populated[field] = found || raw;
+          
+          if (found) {
+              populated[field] = found;
+          } else {
+              // 🟢 FIX v2: Если объект не найден в сторе (например, Prepayment категория с сокета),
+              // но сервер прислал объект - оставляем его.
+              // Если сервер прислал только ID - создаем заглушку, чтобы UI не падал при обращении к .name
+              if (typeof raw === 'object') {
+                  populated[field] = raw;
+              } else {
+                  populated[field] = { _id: raw, name: 'Загрузка...', isMissing: true };
+              }
+          }
       };
 
       bindEntity('accountId', accounts);
