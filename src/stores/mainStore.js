@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v124.0 (FIX: Future Duping in Current Balances) LOADED ---'); 
+  console.log('--- mainStore.js v124.1 (NEW: Company Funds Check) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -2016,7 +2016,8 @@ export const useMainStore = defineStore('mainStore', () => {
           if (bal > 0) ids.push(key);
       });
       return ids;
-  });
+  }
+);
 
   const getRetailWriteOffs = computed(() => {
       const retail = individuals.value.find(i => {
@@ -2115,6 +2116,28 @@ export const useMainStore = defineStore('mainStore', () => {
           regime
       };
   };
+
+  // 🟢 HELPER: Проверка на "минус" по счетам компаний
+  // Возвращает объект ошибки, если средств недостаточно, или null, если всё ок.
+  function checkInsufficientFunds(accountId, expenseAmount) {
+      const acc = accounts.value.find(a => a._id === accountId);
+      if (!acc) return null; // Счета нет - пропускаем (или ошибка валидации в другом месте)
+
+      // Проверка: только для счетов компаний
+      if (!acc.companyId) return null;
+
+      // Текущий баланс (snapshot уже содержит локальные оптимистичные правки, если они были)
+      const currentBal = (snapshot.value.accountBalances[acc._id] || 0) + (acc.initialBalance || 0);
+      
+      if (expenseAmount > currentBal) {
+          return {
+              accountName: acc.name,
+              currentBalance: currentBal,
+              diff: expenseAmount - currentBal
+          };
+      }
+      return null;
+  }
 
   async function createTaxPayment(payload) {
       try {
@@ -2246,6 +2269,7 @@ export const useMainStore = defineStore('mainStore', () => {
     projectsWithRetailDebts,
     
     calculateTaxForPeriod,
+    checkInsufficientFunds, // 🟢 Export
     createTaxPayment,
     _isTaxPayment,
     
