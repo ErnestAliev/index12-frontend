@@ -11,7 +11,7 @@ const VIEW_MODE_DAYS = {
 };
 
 export const useProjectionStore = defineStore('projection', () => {
-  console.log('--- projectionStore.js v1.0 (NEW) LOADED ---');
+  console.log('--- projectionStore.js v2.0 (FIX: TODAY IS FACT) LOADED ---');
 
   // --- 1. Date Helpers (Pure Functions) ---
   const _getDayOfYear = (date) => {
@@ -96,9 +96,6 @@ export const useProjectionStore = defineStore('projection', () => {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     
-    // Здесь мы просто обновляем метаданные проекции
-    // Сами данные (income/expense sum) можно пересчитать, если нужно, 
-    // но в оригинале они часто оставались 0 или считались отдельно.
     let futureIncomeSum = 0; 
     let futureExpenseSum = 0;
     
@@ -142,8 +139,17 @@ export const useProjectionStore = defineStore('projection', () => {
 
   const futureOps = computed(() => {
     const mainStore = useMainStore();
-    const snapshotTime = mainStore.snapshot?.timestamp ? new Date(mainStore.snapshot.timestamp).getTime() : Date.now();
-    const cutOffTime = Math.max(snapshotTime, Date.now());
+    
+    // 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
+    // Раньше мы брали Date.now() и сравнивали по секундам.
+    // Если операция была в 12:00, а сейчас 09:00, она считалась будущей.
+    // ТЕПЕРЬ: Мы берем КОНЕЦ СЕГОДНЯШНЕГО ДНЯ. 
+    // Всё, что "Сегодня" (в любой час) — это НЕ будущее, это уже ФАКТ.
+    // Будущее начинается СТРОГО с 00:00 Завтрашнего дня.
+    
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    const cutOffTime = todayEnd.getTime();
 
     let endDate;
     if (projection.value?.rangeEndDate) { endDate = new Date(projection.value.rangeEndDate).getTime(); } 
@@ -156,14 +162,17 @@ export const useProjectionStore = defineStore('projection', () => {
         const date = _parseDateKey(dateKey);
         const time = date.getTime();
         
-        if (time >= cutOffTime - 86400000 && time <= endDate) {
-            if (Array.isArray(ops)) {
-                for (const op of ops) {
-                    if (!op.date) continue;
-                    const opTime = new Date(op.date).getTime();
-                    if (opTime > cutOffTime) {
-                        result.push(op);
-                    }
+        // Берем операции, которые попадают в диапазон
+        // Но фильтруем их строго: opTime должен быть > cutOffTime (т.е. Завтра и позже)
+        
+        if (Array.isArray(ops)) {
+            for (const op of ops) {
+                if (!op.date) continue;
+                const opTime = new Date(op.date).getTime();
+                
+                // 🟢 ГЛАВНАЯ ПРОВЕРКА: Только если время операции БОЛЬШЕ конца сегодняшнего дня
+                if (opTime > cutOffTime) {
+                    result.push(op);
                 }
             }
         }
@@ -173,25 +182,17 @@ export const useProjectionStore = defineStore('projection', () => {
 
   const dailyChartData = computed(() => {
     const mainStore = useMainStore();
-    
-    // Получаем необходимые данные из MainStore
     const cache = mainStore.calculationCache || {};
-    const prepayIdsSet = new Set(mainStore.getPrepaymentCategoryIds || []); // Используем геттер
+    const prepayIdsSet = new Set(mainStore.getPrepaymentCategoryIds || []); 
     const totalInitialBalance = (mainStore.accounts || []).reduce((s,a)=>s + Number(a.initialBalance||0), 0);
 
     const byDateKey = {};
-    
-    // Вспомогательные проверки (копируем логику или используем методы mainStore, если они экспортированы)
-    // Так как _isRetailWriteOff и isTransfer пока в mainStore и не всегда экспортируются как публичные helpers,
-    // для надежности продублируем простую логику проверок здесь или обратимся к mainStore, если он их экспортирует.
-    // В текущей версии mainStore они экспортируются.
     
     for (const [dateKey, ops] of Object.entries(cache)) {
        if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal:0, dayTotal:0 };
        const dayRec = byDateKey[dateKey];
        if (Array.isArray(ops)) {
            for (const op of ops) {
-               // Проверки
                const isTransfer = !!op && (op.type === 'transfer' || op.isTransfer === true);
                if (isTransfer) continue;
                if (op.isWorkAct) continue;
