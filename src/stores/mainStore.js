@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v122.3 (HYBRID SYNC: Local Move / Server CRUD) LOADED ---'); 
+  console.log('--- mainStore.js v123.0 (HYBRID SYNC: Instant Local + Smart Server Sync) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
