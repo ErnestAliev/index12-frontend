@@ -11,9 +11,9 @@ const VIEW_MODE_DAYS = {
 };
 
 export const useProjectionStore = defineStore('projection', () => {
-  console.log('--- projectionStore.js v2.0 (FIX: TODAY IS FACT) LOADED ---');
+  console.log('--- projectionStore.js v2.2 (TIME FIX) LOADED ---');
 
-  // --- 1. Date Helpers (Pure Functions) ---
+  // --- 1. Date Helpers ---
   const _getDayOfYear = (date) => {
     const start = new Date(date.getFullYear(), 0, 0);
     const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
@@ -54,7 +54,7 @@ export const useProjectionStore = defineStore('projection', () => {
     return VIEW_MODE_DAYS[mode] || VIEW_MODE_DAYS['12d'];
   }
 
-  // --- 2. State: Time Context ---
+  // --- 2. State ---
   const todayDayOfYear = ref(0);
   const currentViewDate = ref(new Date());
   const currentYear = ref(new Date().getFullYear());
@@ -76,7 +76,7 @@ export const useProjectionStore = defineStore('projection', () => {
       currentViewDate.value = d;
   }
 
-  // --- 3. State: Projection Settings ---
+  // --- 3. Projection Settings ---
   const savedProjection = localStorage.getItem('projection');
   const initialProjection = savedProjection ? JSON.parse(savedProjection) : {
     mode: '12d', totalDays: 12, rangeStartDate: null, rangeEndDate: null,
@@ -86,8 +86,7 @@ export const useProjectionStore = defineStore('projection', () => {
   
   watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
 
-  // --- 4. Actions: Projection Logic ---
-  
+  // --- 4. Actions ---
   function computeTotalDaysForMode(mode) { 
       return getViewModeInfo(mode).total; 
   }
@@ -96,16 +95,13 @@ export const useProjectionStore = defineStore('projection', () => {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     
-    let futureIncomeSum = 0; 
-    let futureExpenseSum = 0;
-    
     projection.value = { 
         mode, 
         totalDays: computeTotalDaysForMode(mode), 
         rangeStartDate: startDate, 
         rangeEndDate: endDate, 
-        futureIncomeSum, 
-        futureExpenseSum 
+        futureIncomeSum: 0, 
+        futureExpenseSum: 0 
     };
   }
 
@@ -135,18 +131,15 @@ export const useProjectionStore = defineStore('projection', () => {
     };
   }
 
-  // --- 5. Computed: Logic (Using MainStore Data) ---
+  // --- 5. Computed: Logic (FIXED) ---
 
   const futureOps = computed(() => {
     const mainStore = useMainStore();
     
-    // 🔴 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
-    // Раньше мы брали Date.now() и сравнивали по секундам.
-    // Если операция была в 12:00, а сейчас 09:00, она считалась будущей.
-    // ТЕПЕРЬ: Мы берем КОНЕЦ СЕГОДНЯШНЕГО ДНЯ. 
-    // Всё, что "Сегодня" (в любой час) — это НЕ будущее, это уже ФАКТ.
-    // Будущее начинается СТРОГО с 00:00 Завтрашнего дня.
-    
+    // 🟢 ГЛАВНОЕ ИСПРАВЛЕНИЕ (Задача 1.2 Projection):
+    // Граница будущего — это КОНЕЦ СЕГОДНЯШНЕГО ДНЯ.
+    // Всё, что сегодня (даже в 23:59) — это еще ФАКТ.
+    // Будущее начинается завтра в 00:00.
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
     const cutOffTime = todayEnd.getTime();
@@ -159,18 +152,13 @@ export const useProjectionStore = defineStore('projection', () => {
     const cache = mainStore.calculationCache || {};
 
     for (const [dateKey, ops] of Object.entries(cache)) {
-        const date = _parseDateKey(dateKey);
-        const time = date.getTime();
-        
-        // Берем операции, которые попадают в диапазон
-        // Но фильтруем их строго: opTime должен быть > cutOffTime (т.е. Завтра и позже)
-        
+        // Мы не используем _parseDateKey здесь, чтобы доверять времени в op.date
         if (Array.isArray(ops)) {
             for (const op of ops) {
                 if (!op.date) continue;
                 const opTime = new Date(op.date).getTime();
                 
-                // 🟢 ГЛАВНАЯ ПРОВЕРКА: Только если время операции БОЛЬШЕ конца сегодняшнего дня
+                // Только если время СТРОГО больше конца сегодняшнего дня
                 if (opTime > cutOffTime) {
                     result.push(op);
                 }
@@ -240,29 +228,9 @@ export const useProjectionStore = defineStore('projection', () => {
   });
 
   return {
-    // State
-    todayDayOfYear,
-    currentViewDate,
-    currentYear,
-    projection,
-    
-    // Helpers
-    _getDateKey,
-    _parseDateKey,
-    _getDayOfYear,
-    _calculateDateRangeWithYear,
-    getViewModeInfo,
-    computeTotalDaysForMode,
-
-    // Actions
-    setToday,
-    setCurrentViewDate,
-    updateProjectionFromCalculationData,
-    updateFutureProjectionByMode,
-    setProjectionRange,
-
-    // Computed
-    futureOps,
-    dailyChartData
+    todayDayOfYear, currentViewDate, currentYear, projection,
+    _getDateKey, _parseDateKey, _getDayOfYear, _calculateDateRangeWithYear, getViewModeInfo, computeTotalDaysForMode,
+    setToday, setCurrentViewDate, updateProjectionFromCalculationData, updateFutureProjectionByMode, setProjectionRange,
+    futureOps, dailyChartData
   };
 });

@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v122.0 (INDIVIDUALS FIX) LOADED ---'); 
+  console.log('--- mainStore.js v122.1 (TIME LOGIC FIX) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -131,14 +131,15 @@ export const useMainStore = defineStore('mainStore', () => {
     return date;
   };
 
-  // 🟢 Helper for Time Check
+  // 🟢 Helper for Time Check (Задача 1.1)
   // Сравниваем с КОНЦОМ текущего дня по СИСТЕМНОМУ времени.
   const _isEffectivelyPastOrToday = (dateInput) => {
       if (!dateInput) return false;
       const d = new Date(dateInput);
       const cutoff = new Date(); // Сейчас (системное время)
       cutoff.setHours(23, 59, 59, 999); // Конец сегодняшнего системного дня
-      return d <= cutoff;
+      // ⚡️ FIX: Используем .getTime() для надежного сравнения
+      return d.getTime() <= cutoff.getTime();
   };
 
   // --- 🟢 EXCLUDED ACCOUNTS LOGIC ---
@@ -445,7 +446,7 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
-  // 🟢 CURRENT OPS (FILTERED)
+  // 🟢 CURRENT OPS (FILTERED) (Задача 1.2)
   const currentOps = computed(() => {
     // ⚡️ FIX: Используем мягкую проверку времени (конец дня), 
     // чтобы операции "сегодня 12:00" попадали в виджеты даже утром.
@@ -454,6 +455,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return allKnownOperations.value.filter(op => {
         if (!op?.date) return false;
         if (!_isOpVisible(op)) return false; 
+        // ⚡️ FIX: Используем новый хелпер для определения "Факта"
         return _isEffectivelyPastOrToday(op.date);
     });
   });
@@ -1274,14 +1276,15 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       }
 
+      // ⚡️ FIX (Задача 2.1): Сначала откатываем снапшот, пока операция еще "жива"
+      if (_isEffectivelyPastOrToday(operation.date)) {
+          _applyOptimisticSnapshotUpdate(operation, -1);
+      }
+
+      // Затем удаляем из кэша отображения
       if (displayCache.value[dateKey]) {
           displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => o._id !== operation._id);
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
-      }
-      
-      // ⚡️ FIX: Use new time check
-      if (_isEffectivelyPastOrToday(operation.date)) {
-          _applyOptimisticSnapshotUpdate(operation, -1);
       }
       
       _updateDealCache(operation, 'delete');
@@ -1461,7 +1464,7 @@ export const useMainStore = defineStore('mainStore', () => {
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  // 🟢 FIX: Добавлен аргумент specificTargetDate (Позволяет принять дату 12:00 от DayColumn)
+  // 🟢 FIX (Задача 3.1): Добавлен аргумент specificTargetDate
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -1508,16 +1511,16 @@ export const useMainStore = defineStore('mainStore', () => {
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
        
-       // ⚡️ FIX: ИСПОЛЬЗУЕМ ЯВНУЮ ДАТУ ИЗ DAY COLUMN (12:00) ИЛИ ГЕНЕРИРУЕМ 12:00
+       // ⚡️ FIX (Задача 3.2): Используем переданную точную дату (specificTargetDate), если есть
        const newDateObj = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(newDateKey);
        
        const moved = { ...sourceOpData, dateKey: newDateKey, date: newDateObj, cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       // ⚡️ FIX: Use new time check
+       // ⚡️ FIX (Задача 3.3): Проверяем переход Факт <-> План для снапшота
        const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
-       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); // Проверяем новую дату
+       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); // Проверяем по новой дате
        
        const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
        if (needsSnapshotUpdate) {
@@ -1538,6 +1541,7 @@ export const useMainStore = defineStore('mainStore', () => {
        }
        await Promise.all(promises)
             .then(() => {
+                // Если статус поменялся (ушло из снапшота или пришло), обновим глобально для надежности
                 if (needsSnapshotUpdate) {
                     fetchSnapshot().catch(e => console.error("Background snapshot sync failed", e));
                 }
