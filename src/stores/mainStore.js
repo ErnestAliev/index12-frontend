@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v124.4 (FIX: Socket Robust Populate) LOADED ---'); 
+  console.log('--- mainStore.js v124.5 (FIX: Transfer Self-Update & Ghosting) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -1757,9 +1757,27 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
-      // 🟢 FIX: Убрано refreshDay для ускорения. 
-      // Мы доверяем оптимистичному обновлению (оно выше) и просто обновляем снапшот
-      // await refreshDay(dateKey); 
+      // 🟢 FIX v124.5: MANUAL CACHE SYNC TO FIX GHOSTING ON CREATOR
+      // Сервер возвращает либо массив операций (income/expense), либо основной трансфер.
+      // Мы должны заменить наш tempId на реальные ID, иначе создатель не увидит обновленный трансфер.
+      
+      const serverOps = Array.isArray(data) ? data : [data];
+      const mergedServerOp = _mergeTransfers(serverOps).find(o => o.isTransfer);
+      
+      if (mergedServerOp) {
+          const dk = mergedServerOp.dateKey || dateKey;
+          const list = displayCache.value[dk];
+          if (list) {
+              const tempIndex = list.findIndex(o => _idsMatch(o._id, tempId));
+              if (tempIndex !== -1) {
+                  list[tempIndex] = _populateOp(mergedServerOp);
+                  calculationCache.value[dk] = [...list];
+              }
+          }
+      } else {
+          // Fallback: если структура ответа сложная, просто обновим день
+          await refreshDay(dateKey);
+      }
       
       // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
