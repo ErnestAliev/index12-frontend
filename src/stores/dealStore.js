@@ -4,10 +4,7 @@ import { useMainStore } from './mainStore';
 
 export const useDealStore = defineStore('dealStore', () => {
   const mainStore = useMainStore();
-  console.log('--- dealStore.js v117.1 (FIX: Reactivity Side-Effect) LOADED ---');
-
-  // 🟢 FIX: Убираем ref, который мутировался внутри computed. 
-  // Теперь это будет clean computed.
+  console.log('--- dealStore.js v118.0 (FIX: Fact vs Forecast Split) LOADED ---');
 
   const _toStr = (val) => {
       if (!val) return '';
@@ -15,6 +12,16 @@ export const useDealStore = defineStore('dealStore', () => {
           return val._id ? String(val._id) : ''; 
       }
       return String(val);
+  };
+  
+  // 🟢 Helper for "Fact" calculation (Today or Past)
+  const _isPastOrToday = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      const now = new Date();
+      // Compare with end of today to include all today's ops
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      return d <= endOfToday;
   };
 
   const getStrictKey = (op, isRetail) => {
@@ -33,8 +40,7 @@ export const useDealStore = defineStore('dealStore', () => {
       }
   };
 
-  // 🟢 REFACTOR: Единый computed для расчетов, возвращающий и Группы, и Карту статусов.
-  // Это исключает Side-Effects (мутации) внутри процесса вычисления.
+  // 🟢 REFACTOR: Single source of truth for deal grouping
   const calculationResult = computed(() => {
       const groups = new Map(); 
       const statusMap = new Map();
@@ -43,7 +49,7 @@ export const useDealStore = defineStore('dealStore', () => {
       const retailId = mainStore.retailIndividualId;
       const prepaymentCategoryIds = mainStore.getPrepaymentCategoryIds || [];
 
-      // Создаем копию для сортировки, чтобы не мутировать исходный массив
+      // Sort by date to ensure correct timeline processing
       const sortedOps = [...allOps].sort((a, b) => {
           const timeA = new Date(a.date).getTime();
           const timeB = new Date(b.date).getTime();
@@ -60,7 +66,7 @@ export const useDealStore = defineStore('dealStore', () => {
           const isExpense = op.type === 'expense';
           const opBudget = Number(op.totalDealAmount || 0);
 
-          // === ФЕЙС-КОНТРОЛЬ B2B ===
+          // === B2B FILTER ===
           if (!isRetailOp && isIncome) {
               if (op.isPrepayment === false) continue;
               if (op.isPrepayment !== true) { 
@@ -71,7 +77,7 @@ export const useDealStore = defineStore('dealStore', () => {
               }
           }
 
-          // === ФЕЙС-КОНТРОЛЬ РОЗНИЦА ===
+          // === RETAIL FILTER ===
           if (isRetailOp && isIncome) {
               if (op.isClosed && op.isPrepayment !== true) {
                   continue; 
@@ -86,7 +92,7 @@ export const useDealStore = defineStore('dealStore', () => {
 
           const amt = Math.abs(op.amount || 0);
 
-          // === ВЕТКА РОЗНИЦЫ ===
+          // === RETAIL LOGIC ===
           if (isRetailOp) {
               if (history.length === 0) {
                   history.push({
@@ -106,7 +112,6 @@ export const useDealStore = defineStore('dealStore', () => {
                   currentBox.workedOut += amt;
               }
               
-              // Заполняем локальную map вместо мутации внешней переменной
               statusMap.set(op._id, { 
                   trancheIndex: 0, 
                   isDealClosed: false,
@@ -114,7 +119,7 @@ export const useDealStore = defineStore('dealStore', () => {
               });
           } 
           
-          // === ВЕТКА СДЕЛОК B2B ===
+          // === B2B DEAL LOGIC ===
           else {
               let currentDeal = history.length > 0 ? history[history.length - 1] : null;
               let shouldCreateNew = false;
@@ -161,6 +166,11 @@ export const useDealStore = defineStore('dealStore', () => {
 
               currentDeal.ops.push(op);
               
+              // 🟢 Capture manual close
+              if (op.isClosed) {
+                  currentDeal.isManualClosed = true;
+              }
+              
               let trancheIdx = 0;
 
               if (isIncome) {
@@ -185,38 +195,104 @@ export const useDealStore = defineStore('dealStore', () => {
       return { groups, statusMap };
   });
 
-  // 🟢 FIX: Теперь dealGroups и opStatusMap это чистые computed-оболочки
   const dealGroups = computed(() => calculationResult.value.groups);
   const opStatusMap = computed(() => calculationResult.value.statusMap);
 
-  const liabilitiesTheyOwe = computed(() => {
+  // 🟢 1. TOTAL (Forecast) - Includes ALL operations (Future + Past)
+  const liabilitiesTheyOweTotal = computed(() => {
       let total = 0;
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
               if (deal.isManualClosed) return;
               if (deal.isRetail) {
-                  total += Math.max(0, deal.workedOut - deal.received);
+                  total += Math.max(0, deal.workedOut - deal.received); // Retail Debt
               } else {
-                  total += Math.max(0, deal.budget - deal.received);
+                  total += Math.max(0, deal.budget - deal.received); // B2B Debt
               }
           });
       });
       return total;
   });
 
-  const liabilitiesWeOwe = computed(() => {
+  const liabilitiesWeOweTotal = computed(() => {
       let total = 0;
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
               if (deal.isManualClosed) return;
-              total += Math.max(0, deal.received - deal.workedOut);
+              total += Math.max(0, deal.received - deal.workedOut); // Advance
           });
       });
       return total;
   });
 
+  // 🟢 2. CURRENT (Fact) - Includes ONLY Past/Today operations
+  const liabilitiesTheyOweCurrent = computed(() => {
+      let total = 0;
+      dealGroups.value.forEach((history) => {
+          history.forEach(deal => {
+              // Re-calculate state based on current operations only
+              const currentOps = deal.ops.filter(op => _isPastOrToday(op.date));
+              
+              // If no ops happened yet, the deal hasn't technically started for "Fact"
+              if (currentOps.length === 0) return;
+
+              let curReceived = 0;
+              let curWorked = 0;
+              let curBudget = 0;
+              let isClosedNow = false;
+
+              currentOps.forEach(op => {
+                   if (op.type === 'income') {
+                       curReceived += op.amount;
+                       if (op.totalDealAmount > curBudget) curBudget = op.totalDealAmount;
+                   } else if (op.type === 'expense') {
+                       curWorked += Math.abs(op.amount);
+                   }
+                   if (op.isClosed) isClosedNow = true;
+              });
+
+              if (isClosedNow) return; 
+
+              if (deal.isRetail) {
+                  total += Math.max(0, curWorked - curReceived);
+              } else {
+                  total += Math.max(0, curBudget - curReceived);
+              }
+          });
+      });
+      return total;
+  });
+
+  const liabilitiesWeOweCurrent = computed(() => {
+      let total = 0;
+      dealGroups.value.forEach((history) => {
+          history.forEach(deal => {
+              const currentOps = deal.ops.filter(op => _isPastOrToday(op.date));
+              if (currentOps.length === 0) return;
+
+              let curReceived = 0;
+              let curWorked = 0;
+              let isClosedNow = false;
+
+              currentOps.forEach(op => {
+                   if (op.type === 'income') curReceived += op.amount;
+                   else if (op.type === 'expense') curWorked += Math.abs(op.amount);
+                   if (op.isClosed) isClosedNow = true;
+              });
+
+              if (isClosedNow) return;
+
+              total += Math.max(0, curReceived - curWorked);
+          });
+      });
+      return total;
+  });
+
+
+  // --- Public API ---
+  // We expose both Total (Future) and Current (Fact)
+  
   function getOpTrancheStatus(opId) {
-      // Используем .value, так как теперь это computed
       if (!opStatusMap.value) return null;
       const status = opStatusMap.value.get(opId);
       if (!status) return null;
@@ -287,8 +363,17 @@ export const useDealStore = defineStore('dealStore', () => {
 
   return {
       dealGroups,
-      liabilitiesTheyOwe,
-      liabilitiesWeOwe,
+      
+      // Expose Separated Values
+      liabilitiesTheyOwe: liabilitiesTheyOweTotal, // Deprecated alias, keeping for safety if used directly
+      liabilitiesWeOwe: liabilitiesWeOweTotal,     // Deprecated alias
+      
+      // New Explicit API
+      liabilitiesTheyOweTotal,
+      liabilitiesWeOweTotal,
+      liabilitiesTheyOweCurrent,
+      liabilitiesWeOweCurrent,
+
       getDealStatus,
       checkOverpayment,
       getOpTrancheStatus
