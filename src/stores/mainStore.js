@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v123.0 (HYBRID SYNC: Instant Local + Smart Server Sync) LOADED ---'); 
+  console.log('--- mainStore.js v124.0 (FIX: Future Duping in Current Balances) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -567,7 +567,8 @@ export const useMainStore = defineStore('mainStore', () => {
         return mapped;
     }
 
-    const aggregated = _calculateAggregatedBalance(allKnownOperations.value, 'categoryId');
+    // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
+    const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
     
     const mapped = {};
     aggregated.forEach((val, key) => {
@@ -650,7 +651,8 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
       }
 
-      const aggregated = _calculateAggregatedBalance(allKnownOperations.value, 'contractorId');
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
+      const aggregated = _calculateAggregatedBalance(currentOps.value, 'contractorId');
       return contractors.value.map(c => ({
           ...c,
           balance: aggregated.get(String(c._id)) || 0
@@ -670,7 +672,8 @@ export const useMainStore = defineStore('mainStore', () => {
            }));
       }
 
-      const aggregated = _calculateAggregatedBalance(allKnownOperations.value, 'projectId');
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
+      const aggregated = _calculateAggregatedBalance(currentOps.value, 'projectId');
       return projects.value.map(p => ({
           ...p,
           balance: aggregated.get(String(p._id)) || 0
@@ -681,7 +684,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // 🟢 REFACTOR: CATEGORIES (List)
   const currentCategoryBalances = computed(() => {
-      const aggregated = _calculateAggregatedBalance(allKnownOperations.value, 'categoryId');
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
+      const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
       return categories.value.map(c => ({
           ...c,
           balance: includeExcludedInTotal.value 
@@ -834,8 +838,10 @@ export const useMainStore = defineStore('mainStore', () => {
       // 1. Агрегация операций по ОБОИМ ролям
       const opsMap = new Map();
       
-      allKnownOperations.value.forEach(op => {
-          if (!_isOpVisible(op)) return;
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
+      // Это гарантирует, что сюда попадают только операции из прошлого/настоящего.
+      currentOps.value.forEach(op => {
+          // if (!_isOpVisible(op)) return; // Уже отфильтровано в currentOps
 
           const amt = Math.abs(op.amount || 0);
           
