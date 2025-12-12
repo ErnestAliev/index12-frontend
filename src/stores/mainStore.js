@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v126.0 (FIX: Liabilities Forecast Split) LOADED ---'); 
+  console.log('--- mainStore.js v127.0 (FIX: Hidden Account Logic) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -175,20 +175,46 @@ export const useMainStore = defineStore('mainStore', () => {
       return Array.from(uniqueMap.values());
   });
 
-  // --- Проверка видимости для списков (как раньше) ---
+  // 🟢 OPTIMIZATION: Карта всех операций для быстрого поиска по ID
+  const allOpsMap = computed(() => {
+      const map = new Map();
+      allKnownOperations.value.forEach(op => map.set(String(op._id), op));
+      return map;
+  });
+
+  // --- Проверка видимости для списков (FIXED) ---
   const _isOpVisible = (op) => {
       if (includeExcludedInTotal.value) return true;
       if (!op) return false;
+      
       const isExcludedId = (id) => {
           if (!id) return false;
           const idStr = typeof id === 'object' ? String(id._id) : String(id);
           return excludedAccountIds.value.has(idStr);
       };
+
+      // 1. Прямая проверка счета
       if (op.accountId && isExcludedId(op.accountId)) return false;
+      
+      // 2. Проверка переводов (если любой из счетов скрыт - скрываем весь перевод)
       if (op.isTransfer || op.type === 'transfer') {
           if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
           if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
       }
+
+      // 🟢 3. FIX: Проверка связанных операций (Акты/Закрытия)
+      // Если это Акт (расход без счета), и он привязан к траншу (relatedEventId),
+      // который лежит на скрытом счете -> скрываем Акт.
+      if (op.relatedEventId && !op.accountId) {
+          const parentId = typeof op.relatedEventId === 'object' ? String(op.relatedEventId._id) : String(op.relatedEventId);
+          // Быстрый поиск родителя через карту
+          const parent = allOpsMap.value.get(parentId);
+          
+          if (parent && parent.accountId && isExcludedId(parent.accountId)) {
+              return false; // Родитель скрыт -> Акт скрыт
+          }
+      }
+
       return true;
   };
 
