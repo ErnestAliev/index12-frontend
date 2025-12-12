@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v122.1 (TIME LOGIC FIX) LOADED ---'); 
+  console.log('--- mainStore.js v122.2 (NO SERVER SPAM ON DRAG) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -1539,15 +1539,20 @@ export const useMainStore = defineStore('mainStore', () => {
        if (isMerged) {
            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
        }
+       
+       // 🟢 FIX: NO FETCH SNAPSHOT TO AVOID FLICKER
+       // Мы доверяем нашему оптимистичному обновлению (_applyOptimisticSnapshotUpdate).
+       // Запрос к серверу отправляется для сохранения, но мы НЕ обновляем снапшот с сервера,
+       // чтобы избежать "прыжков" цифр.
        await Promise.all(promises)
             .then(() => {
-                // Если статус поменялся (ушло из снапшота или пришло), обновим глобально для надежности
-                if (needsSnapshotUpdate) {
-                    fetchSnapshot().catch(e => console.error("Background snapshot sync failed", e));
-                }
+                // SUCCESS: Do nothing. Trust local state.
             })
             .catch(() => { 
-                refreshDay(oldDateKey); refreshDay(newDateKey); fetchSnapshot();
+                // FAIL: Rollback only on error
+                refreshDay(oldDateKey); 
+                refreshDay(newDateKey); 
+                fetchSnapshot();
             });
     }
   }
