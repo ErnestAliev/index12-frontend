@@ -2042,9 +2042,26 @@ export const useMainStore = defineStore('mainStore', () => {
       let totalIncome = 0;
       let totalExpense = 0;
 
+      // 🟢 FIX: Корректная граница конца периода
+      // Если endDate не передан, берем текущий момент и сдвигаем на конец дня.
+      // Если передан - тоже гарантируем конец дня, чтобы включить операции "сегодня" (которые могут быть в 12:00 или позже).
+      let effectiveEndDate;
+      if (endDate) {
+          effectiveEndDate = new Date(endDate);
+          effectiveEndDate.setHours(23, 59, 59, 999);
+      } else {
+          effectiveEndDate = new Date();
+          effectiveEndDate.setHours(23, 59, 59, 999);
+      }
+
+      // Для startDate обычно достаточно 00:00:00 (по умолчанию у new Date(str) так и есть, если только дата)
+      let effectiveStartDate = startDate ? new Date(startDate) : null;
+      if (effectiveStartDate) effectiveStartDate.setHours(0, 0, 0, 0);
+
       allOperationsFlat.value.forEach(op => {
-          if (startDate && new Date(op.date) < startDate) return;
-          if (endDate && new Date(op.date) > endDate) return;
+          const opDate = new Date(op.date);
+          if (effectiveStartDate && opDate < effectiveStartDate) return;
+          if (effectiveEndDate && opDate > effectiveEndDate) return;
 
           if (op.type === 'transfer' || op.isTransfer) {
               const toId = op.toCompanyId ? _toStr(op.toCompanyId) : null;
