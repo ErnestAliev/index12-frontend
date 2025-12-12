@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v127.0 (FIX: Hidden Account Logic) LOADED ---'); 
+  console.log('--- mainStore.js v127.1 (FIX: Hidden Account Logic & Negative Deals) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -203,15 +203,23 @@ export const useMainStore = defineStore('mainStore', () => {
       }
 
       // 🟢 3. FIX: Проверка связанных операций (Акты/Закрытия)
-      // Если это Акт (расход без счета), и он привязан к траншу (relatedEventId),
-      // который лежит на скрытом счете -> скрываем Акт.
+      // Если это Акт (расход без счета) или любая операция, привязанная к другой
       if (op.relatedEventId && !op.accountId) {
           const parentId = typeof op.relatedEventId === 'object' ? String(op.relatedEventId._id) : String(op.relatedEventId);
-          // Быстрый поиск родителя через карту
-          const parent = allOpsMap.value.get(parentId);
           
-          if (parent && parent.accountId && isExcludedId(parent.accountId)) {
-              return false; // Родитель скрыт -> Акт скрыт
+          // Поиск родителя: сначала в карте, если нет — ищем напрямую в сделках (для надежности)
+          let parent = allOpsMap.value.get(parentId);
+          if (!parent) {
+             parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
+          }
+          
+          if (parent) {
+             // Если у родителя (Предоплаты) есть счет, и он скрыт — скрываем и Акт
+             if (parent.accountId && isExcludedId(parent.accountId)) {
+                 return false; 
+             }
+             // Рекурсивная логика (опционально): Если родитель тоже невидим по какой-то причине
+             // if (!_isOpVisible(parent)) return false;
           }
       }
 
@@ -1106,7 +1114,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 fromAccountId: expenseOp.accountId, 
                 toAccountId: incomeOp.accountId,
                 fromCompanyId: expenseOp.companyId, 
-                toCompanyId: incomeOp.companyId,
+                toCompanyId: incomeOp.companyId, 
                 fromIndividualId: expenseOp.individualId, 
                 toIndividualId: incomeOp.individualId, 
                 dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
