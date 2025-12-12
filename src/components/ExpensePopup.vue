@@ -12,11 +12,12 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v58.0 - MOBILE OPTIMIZED ---
- * * ВЕРСИЯ: 58.0
- * * ДАТА: 2025-12-08
+ * * --- МЕТКА ВЕРСИИ: v58.1 - TRUE TIME FIX ---
+ * * ВЕРСИЯ: 58.1
+ * * ДАТА: 2025-12-12
  * * ИЗМЕНЕНИЯ:
- * 1. (CSS) Добавлены стили для мобильных устройств (высота полей 44px, уменьшенные отступы).
+ * 1. (FIX) Внедрена логика createSmartDate (как в IncomePopup) для устранения дублей и зависаний при переносе.
+ * 2. (FIX) Дата теперь корректно обрабатывает "Сегодня" (ставит текущее время) и другие дни (ставит 12:00).
  */
 
 const mainStore = useMainStore();
@@ -328,6 +329,31 @@ const toInputDate = (dateObj) => {
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
+
+// 🟢 2. ИСПРАВЛЕННАЯ ФУНКЦИЯ ДАТЫ: "ИСТИННОЕ ВРЕМЯ" (TRUE TIME)
+// Копируем логику из IncomePopup для синхронизации
+const createSmartDate = (str) => {
+    if (!str) return new Date();
+    const [y, m, d] = str.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    
+    // Получаем текущее время
+    const now = new Date();
+    
+    // Проверка: Является ли выбранная дата "Сегодняшним днем"?
+    const isToday = now.getFullYear() === y && now.getMonth() === (m - 1) && now.getDate() === d;
+    
+    if (isToday) {
+        // Если сегодня - возвращаем текущее время (с точностью до секунд)
+        // Это решит проблему "будущего", так как сервер получит реальное время, а не 12:00
+        return now;
+    } else {
+        // Если дата другая (вчера/завтра) - ставим 12:00, чтобы избежать сдвигов часовых поясов
+        date.setHours(12, 0, 0, 0);
+        return date;
+    }
+};
+
 const toDisplayDate = (d) => { if (!d) return ''; const [y,m,d_] = d.split('-'); return `${d_}.${m}.${y}`; };
 
 const processSave = () => {
@@ -342,15 +368,11 @@ const processSave = () => {
     let targetCellIndex = undefined;
     if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) targetCellIndex = props.cellIndex;
 
-    const [y, m, d] = editableDate.value.split('-').map(Number);
-    let finalDate = new Date(y, m - 1, d, 12, 0, 0);
-    if (!isDateChanged.value && props.date) {
-         const original = new Date(props.date);
-         finalDate.setHours(original.getHours(), original.getMinutes(), 0, 0);
-    }
-
     const payload = {
-        type: 'expense', amount: finalAmount, date: finalDate, 
+        type: 'expense', 
+        amount: finalAmount, 
+        // 🟢 ИСПОЛЬЗУЕМ УМНУЮ ДАТУ (СЕГОДНЯ = СЕЙЧАС)
+        date: createSmartDate(editableDate.value), 
         accountId: selectedAccountId.value, companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: selectedCategoryId.value, projectId: selectedProjectId.value,
@@ -785,7 +807,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 
 .popup-actions-row { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
 .save-wide { flex: 1 1 auto; height: 54px; }
-.btn-submit { width: 100%; height: 50px; border-radius: 8px; border: none; color: white; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
+.btn-submit { width: 100%; height: 50px; border-radius: 8px; border: none; color: white; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 🟢 ЦВЕТ КНОПКИ СОХРАНИТЬ (КРАСНЫЙ/ОРАНЖЕВЫЙ) */
