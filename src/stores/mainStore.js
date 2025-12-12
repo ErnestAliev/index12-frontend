@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v124.1 (NEW: Company Funds Check) LOADED ---'); 
+  console.log('--- mainStore.js v124.2 (FIX: Strict ID Compare & Re-Populate) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -98,6 +98,14 @@ export const useMainStore = defineStore('mainStore', () => {
           return val._id ? String(val._id) : ''; 
       }
       return String(val);
+  };
+
+  // 🟢 FIX: Безопасное сравнение ID (String vs Object)
+  const _idsMatch = (id1, id2) => {
+      if (!id1 || !id2) return false;
+      const s1 = (typeof id1 === 'object' && id1 !== null) ? id1._id : id1;
+      const s2 = (typeof id2 === 'object' && id2 !== null) ? id2._id : id2;
+      return String(s1) === String(s2);
   };
 
   const _getDayOfYear = (date) => {
@@ -227,7 +235,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op || !op.categoryId) return false;
       const name = (op.categoryId.name || '').toLowerCase().trim();
       if (!name && typeof op.categoryId === 'string') {
-          const cat = categories.value.find(c => c._id === op.categoryId);
+          const cat = categories.value.find(c => _idsMatch(c._id, op.categoryId));
           if (cat) {
               const n = cat.name.toLowerCase().trim();
               return ['меж.комп', 'межкомпаний', 'inter-comp'].includes(n);
@@ -320,7 +328,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (op.type !== 'expense') return false;
       if (op.accountId) return false; 
       const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-      if (indId && indId === retailIndividualId.value) return true;
+      if (indId && retailIndividualId.value && _idsMatch(indId, retailIndividualId.value)) return true;
       return false;
   };
 
@@ -328,9 +336,9 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op) return false;
       if (op.type !== 'expense') return false;
       const catId = op.categoryId?._id || op.categoryId;
-      if (catId && catId === refundCategoryId.value) {
+      if (catId && refundCategoryId.value && _idsMatch(catId, refundCategoryId.value)) {
           const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-          return indId && indId === retailIndividualId.value;
+          return indId && retailIndividualId.value && _idsMatch(indId, retailIndividualId.value);
       }
       return false;
   };
@@ -340,7 +348,7 @@ export const useMainStore = defineStore('mainStore', () => {
       if (op.type !== 'expense') return false;
       return taxes.value.some(t => {
           const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
-          return String(relId) === String(op._id);
+          return _idsMatch(relId, op._id);
       });
   };
 
@@ -350,12 +358,13 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!isDealRelated) return;
 
       if (mode === 'add') {
-          const idx = dealOperations.value.findIndex(d => d._id === op._id);
+          // FIX: _idsMatch
+          const idx = dealOperations.value.findIndex(d => _idsMatch(d._id, op._id));
           if (idx === -1) {
               dealOperations.value = [...dealOperations.value, op];
           }
       } else if (mode === 'update') {
-          const idx = dealOperations.value.findIndex(d => d._id === op._id);
+          const idx = dealOperations.value.findIndex(d => _idsMatch(d._id, op._id));
           if (idx !== -1) {
               const newArr = [...dealOperations.value];
               newArr[idx] = op;
@@ -364,7 +373,7 @@ export const useMainStore = defineStore('mainStore', () => {
               dealOperations.value = [...dealOperations.value, op];
           }
       } else if (mode === 'delete') {
-          dealOperations.value = dealOperations.value.filter(d => d._id !== op._id);
+          dealOperations.value = dealOperations.value.filter(d => !_idsMatch(d._id, op._id));
       }
   }
 
@@ -556,7 +565,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   const futureWithdrawals = computed(() => futureOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
-  const getCategoryById = (id) => categories.value.find(c => c._id === id);
+  const getCategoryById = (id) => categories.value.find(c => _idsMatch(c._id, id));
 
   // 🟢 REFACTOR: CATEGORIES
   const currentCategoryBreakdowns = computed(() => {
@@ -795,8 +804,8 @@ export const useMainStore = defineStore('mainStore', () => {
               if (String(opCatId) !== String(repaymentCatId)) return;
               const opContractorId = op.contractorId?._id || op.contractorId;
               const opIndId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-              const isContractorMatch = credit.contractorId && opContractorId && String(opContractorId) === String(credit.contractorId._id || credit.contractorId);
-              const isIndividualMatch = credit.individualId && opIndId && String(opIndId) === String(credit.individualId._id || credit.individualId);
+              const isContractorMatch = credit.contractorId && opContractorId && _idsMatch(opContractorId, credit.contractorId._id || credit.contractorId);
+              const isIndividualMatch = credit.individualId && opIndId && _idsMatch(opIndId, credit.individualId._id || credit.individualId);
               if (isContractorMatch || isIndividualMatch) {
                   repaidTotal += Math.abs(op.amount || 0);
               }
@@ -821,8 +830,8 @@ export const useMainStore = defineStore('mainStore', () => {
               if (String(opCatId) !== String(repaymentCatId)) return;
               const opContractorId = op.contractorId?._id || op.contractorId;
               const opIndId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-              const isContractorMatch = credit.contractorId && opContractorId && String(opContractorId) === String(credit.contractorId._id || credit.contractorId);
-              const isIndividualMatch = credit.individualId && opIndId && String(opIndId) === String(credit.individualId._id || credit.individualId);
+              const isContractorMatch = credit.contractorId && opContractorId && _idsMatch(opContractorId, credit.contractorId._id || credit.contractorId);
+              const isIndividualMatch = credit.individualId && opIndId && _idsMatch(opIndId, credit.individualId._id || credit.individualId);
               if (isContractorMatch || isIndividualMatch) {
                   projectedRepayment += Math.abs(op.amount || 0);
               }
@@ -943,65 +952,58 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
+  // 🟢 FIX: Re-Populate logic (Always prefer Store objects)
   function _populateOp(op) {
       const populated = { ...op };
       
-      // 🟢 SANITIZATION: FORCE 12:00 SYSTEM TIME (Anti-Midnight Bug)
-      // FIX v2: Если дата уже есть, доверяем ей (чтобы сохранить точное время "сейчас" для Сегодня).
-      // Восстанавливаем из dateKey ТОЛЬКО если даты нет.
-      
+      // --- Date Logic ---
       if (populated.date) {
-          // Если дата строкой - превращаем в объект
           if (typeof populated.date === 'string') {
               populated.date = new Date(populated.date);
           }
-          // Если dateKey есть, проверим, не "улетела" ли дата в другой день (редкий кейс, но для надежности)
           if (populated.dateKey) {
                const calculatedKey = _getDateKey(populated.date);
                if (calculatedKey !== populated.dateKey) {
-                   // Конфликт! Ключ говорит одно, дата другое. Верим ключу (безопасный фоллбек на 12:00)
                    populated.date = _parseDateKey(populated.dateKey);
                }
           }
       } 
       else if (populated.dateKey) {
-          // Даты нет, восстанавливаем из ключа (будет 12:00)
           populated.date = _parseDateKey(populated.dateKey);
       } 
-      // Если ключа нет, но есть дата (уже обработано выше) или ничего нет - принудительно ставим полдень
       else {
           const d = new Date();
           d.setHours(12, 0, 0, 0);
           populated.date = d;
       }
 
-      if (!populated.accountId || typeof populated.accountId === 'string') {
-          populated.accountId = accounts.value.find(a => a._id === (populated.accountId || op.accountId)) || null;
-      }
-      if (!populated.projectId || typeof populated.projectId === 'string') {
-          populated.projectId = projects.value.find(p => p._id === (populated.projectId || op.projectId)) || null;
-      }
-      if (!populated.categoryId || typeof populated.categoryId === 'string') {
-          populated.categoryId = categories.value.find(c => c._id === (populated.categoryId || op.categoryId)) || null;
-      }
-      if (!populated.companyId || typeof populated.companyId === 'string') {
-          populated.companyId = companies.value.find(c => c._id === (populated.companyId || op.companyId)) || null;
-      }
-      if (!populated.contractorId || typeof populated.contractorId === 'string') {
-          populated.contractorId = contractors.value.find(c => c._id === (populated.contractorId || op.contractorId)) || null;
-      }
-      if (!populated.individualId || typeof populated.individualId === 'string') {
-          populated.individualId = individuals.value.find(i => i._id === (populated.individualId || op.individualId)) || null;
-      }
-      if (!populated.counterpartyIndividualId || typeof populated.counterpartyIndividualId === 'string') {
-          populated.counterpartyIndividualId = individuals.value.find(i => i._id === (populated.counterpartyIndividualId || op.counterpartyIndividualId)) || null;
-      }
+      // ⚡️ FIX: FORCE RE-BINDING TO REACTIVE STORE ENTITIES
+      // Even if server sent { _id: '...', name: 'Old Name' }, we find { _id: '...', name: 'New Name' } in store.
+      
+      const bindEntity = (field, storeRef) => {
+          const raw = populated[field];
+          if (!raw) {
+             populated[field] = null;
+             return;
+          }
+          const id = (typeof raw === 'object') ? raw._id : raw;
+          // Use safe ID match
+          const found = storeRef.value.find(item => _idsMatch(item._id, id));
+          // If found in store, use it. If not, fallback to what we have.
+          populated[field] = found || raw;
+      };
+
+      bindEntity('accountId', accounts);
+      bindEntity('projectId', projects);
+      bindEntity('categoryId', categories);
+      bindEntity('companyId', companies);
+      bindEntity('contractorId', contractors);
+      bindEntity('individualId', individuals);
+      bindEntity('counterpartyIndividualId', individuals);
       
       if (populated.isTransfer) {
-          if (!populated.fromAccountId || typeof populated.fromAccountId === 'string')
-              populated.fromAccountId = accounts.value.find(a => a._id === (populated.fromAccountId || op.fromAccountId)) || null;
-          if (!populated.toAccountId || typeof populated.toAccountId === 'string')
-              populated.toAccountId = accounts.value.find(a => a._id === (populated.toAccountId || op.toAccountId)) || null;
+          bindEntity('fromAccountId', accounts);
+          bindEntity('toAccountId', accounts);
       }
       
       return populated;
@@ -1015,7 +1017,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // 🟢 SOCKET EVENT HANDLERS
   const onSocketOperationAdded = (op) => {
-      const existingOp = allOperationsFlat.value.find(o => o._id === op._id);
+      // FIX: _idsMatch
+      const existingOp = allOperationsFlat.value.find(o => _idsMatch(o._id, op._id));
       if (existingOp) return; 
 
       const richOp = _populateOp(op);
@@ -1038,10 +1041,11 @@ export const useMainStore = defineStore('mainStore', () => {
       let oldDateKey = null;
       
       for (const dk in displayCache.value) {
-          const found = displayCache.value[dk].find(o => o._id === op._id);
+          // FIX: _idsMatch
+          const found = displayCache.value[dk].find(o => _idsMatch(o._id, op._id));
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
-      if (!oldOp) oldOp = allOperationsFlat.value.find(o => o._id === op._id);
+      if (!oldOp) oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, op._id));
 
       // ⚡️ FIX: Use new time check
       if (oldOp && _isEffectivelyPastOrToday(oldOp.date)) {
@@ -1052,13 +1056,14 @@ export const useMainStore = defineStore('mainStore', () => {
       const richOp = _populateOp({ ...op, date: new Date(op.date) });
       
       if (oldDateKey && displayCache.value[oldDateKey]) {
-           displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== op._id);
+           displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, op._id));
            calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
       }
 
       if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
       
-      const existsIndex = displayCache.value[newDateKey].findIndex(o => o._id === op._id);
+      // FIX: _idsMatch
+      const existsIndex = displayCache.value[newDateKey].findIndex(o => _idsMatch(o._id, op._id));
       if (existsIndex !== -1) {
           displayCache.value[newDateKey][existsIndex] = richOp;
       } else {
@@ -1080,7 +1085,8 @@ export const useMainStore = defineStore('mainStore', () => {
       let oldDateKey = null;
       
       for (const dk in displayCache.value) {
-          const found = displayCache.value[dk].find(o => o._id === opId);
+          // FIX: _idsMatch
+          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId));
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
       if (!oldOp) return; 
@@ -1091,7 +1097,8 @@ export const useMainStore = defineStore('mainStore', () => {
       }
 
       if (oldDateKey && displayCache.value[oldDateKey]) {
-          displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== opId);
+          // FIX: _idsMatch
+          displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
           calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
       }
       
@@ -1112,7 +1119,8 @@ export const useMainStore = defineStore('mainStore', () => {
   const onSocketEntityAdded = (type, item) => {
      const listRef = _getListRefByType(type);
      if (listRef) {
-         const exists = listRef.value.find(i => i._id === item._id);
+         // FIX: _idsMatch
+         const exists = listRef.value.find(i => _idsMatch(i._id, item._id));
          if (!exists) listRef.value.push(item);
          listRef.value = _sortByOrder(listRef.value);
      }
@@ -1121,7 +1129,8 @@ export const useMainStore = defineStore('mainStore', () => {
   const onSocketEntityDeleted = (type, id) => {
      const listRef = _getListRefByType(type);
      if (listRef) {
-         listRef.value = listRef.value.filter(i => i._id !== id);
+         // FIX: _idsMatch
+         listRef.value = listRef.value.filter(i => !_idsMatch(i._id, id));
      }
   };
 
@@ -1172,14 +1181,16 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
       const serverOp = response.data;
       
-      const idx = displayCache.value[dk].findIndex(o => o._id === tempId);
+      // FIX: _idsMatch
+      const idx = displayCache.value[dk].findIndex(o => _idsMatch(o._id, tempId));
       if (idx !== -1) {
           // 🟢 FIX: Populate server response before cache
           displayCache.value[dk][idx] = _populateOp(serverOp); 
           calculationCache.value[dk] = [...displayCache.value[dk]];
       }
       
-      const dealIdx = dealOperations.value.findIndex(d => d._id === tempId);
+      // FIX: _idsMatch
+      const dealIdx = dealOperations.value.findIndex(d => _idsMatch(d._id, tempId));
       if (dealIdx !== -1) {
           const newDeals = [...dealOperations.value];
           newDeals[dealIdx] = serverOp;
@@ -1203,11 +1214,12 @@ export const useMainStore = defineStore('mainStore', () => {
     let oldDateKey = null;
     
     for (const dk in displayCache.value) {
-        const found = displayCache.value[dk].find(o => o._id === opId);
+        // FIX: _idsMatch
+        const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId));
         if (found) { oldOp = found; oldDateKey = dk; break; }
     }
     
-    if (!oldOp) oldOp = allOperationsFlat.value.find(o => o._id === opId);
+    if (!oldOp) oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, opId));
     
     if (!oldOp) {
         const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
@@ -1232,7 +1244,8 @@ export const useMainStore = defineStore('mainStore', () => {
         
         if (isDateChanged) {
             if (displayCache.value[oldDateKey]) {
-                displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => o._id !== opId);
+                // FIX: _idsMatch
+                displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
                 calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
             }
             if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
@@ -1240,7 +1253,8 @@ export const useMainStore = defineStore('mainStore', () => {
             calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
         } else {
             const list = displayCache.value[oldDateKey];
-            const idx = list.findIndex(o => o._id === opId);
+            // FIX: _idsMatch
+            const idx = list.findIndex(o => _idsMatch(o._id, opId));
             if (idx !== -1) list[idx] = richOp;
             calculationCache.value[oldDateKey] = [...list];
         }
@@ -1260,9 +1274,13 @@ export const useMainStore = defineStore('mainStore', () => {
         const serverOp = response.data;
         const targetList = displayCache.value[newDateKey];
         if (targetList) {
-            const i = targetList.findIndex(o => o._id === opId);
-            // 🟢 FIX: Populate server response before cache
-            if (i !== -1) targetList[i] = _populateOp(serverOp);
+            // FIX: _idsMatch
+            const i = targetList.findIndex(o => _idsMatch(o._id, opId));
+            // 🟢 FIX: Populate server response AND SYNC CALCULATION CACHE
+            if (i !== -1) {
+                targetList[i] = _populateOp(serverOp);
+                calculationCache.value[newDateKey] = [...targetList]; // <--- NEW SYNC
+            }
         }
 
         // 🟢 REQ: Sync with Server for Edit
@@ -1283,27 +1301,16 @@ export const useMainStore = defineStore('mainStore', () => {
     
     try {
       if (_isTaxPayment(operation)) {
-          // Для налогов можно оставить оптимистичное удаление из списка, но не баланса, 
-          // или тоже ждать сервера. Для консистентности лучше ждать.
-          // Пока оставим фильтрацию списка, так как это не влияет на цифры баланса напрямую.
           taxes.value = taxes.value.filter(t => {
               const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
-              return String(relId) !== String(operation._id);
+              return !_idsMatch(relId, operation._id);
           });
       }
 
-      // 🔴 REVERTED: Убрано оптимистичное обновление снапшота при удалении.
-      // Теперь виджеты будут ждать ответа от сервера (fetchSnapshot), чтобы избежать скачков цифр.
-      /*
-      if (_isEffectivelyPastOrToday(operation.date)) {
-          _applyOptimisticSnapshotUpdate(operation, -1);
-      }
-      */
-
-      // Удаляем из кэша отображения (UI списка операций), чтобы операция исчезла визуально из списка
-      // Это допустимо, так как список и виджеты баланса - разные вещи.
+      // Удаляем из кэша отображения
       if (displayCache.value[dateKey]) {
-          displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => o._id !== operation._id);
+          // FIX: _idsMatch
+          displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => !_idsMatch(o._id, operation._id));
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       }
       
@@ -1317,7 +1324,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
       
       // 🟢 REQ: Sync with Server for Deletion (ОБЯЗАТЕЛЬНО)
-      // Именно здесь придут новые цифры для виджетов
       await fetchSnapshot();
       
     } catch(e) { 
@@ -1499,8 +1505,10 @@ export const useMainStore = defineStore('mainStore', () => {
 
     if (oldDateKey === newDateKey) {
        const ops = [...(displayCache.value[oldDateKey] || [])];
-       const sourceOp = ops.find(o => o._id === operation._id);
-       const targetOp = ops.find(o => o.cellIndex === targetIndex && o._id !== operation._id);
+       // FIX: _idsMatch
+       const sourceOp = ops.find(o => _idsMatch(o._id, operation._id));
+       // FIX: _idsMatch
+       const targetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
        if (sourceOp) {
            if (targetOp) {
                const originalSourceIndex = sourceOp.cellIndex;
@@ -1525,8 +1533,10 @@ export const useMainStore = defineStore('mainStore', () => {
     } 
     else {
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
-       const sourceOpData = oldOps.find(o => o._id === operation._id);
-       oldOps = oldOps.filter(o => o._id !== operation._id);
+       // FIX: _idsMatch
+       const sourceOpData = oldOps.find(o => _idsMatch(o._id, operation._id));
+       // FIX: _idsMatch
+       oldOps = oldOps.filter(o => !_idsMatch(o._id, operation._id));
        _syncCaches(oldDateKey, oldOps);
        let newOps = [...(displayCache.value[newDateKey] || [])];
        const occupant = newOps.find(o => o.cellIndex === targetIndex);
@@ -1646,8 +1656,8 @@ export const useMainStore = defineStore('mainStore', () => {
       _triggerProjectionUpdate(); 
       
       if (transferData.transferPurpose === 'inter_company') {
-          const fromCompObj = companies.value.find(c => c._id === transferData.fromCompanyId);
-          const toCompObj = companies.value.find(c => c._id === transferData.toCompanyId);
+          const fromCompObj = companies.value.find(c => _idsMatch(c._id, transferData.fromCompanyId));
+          const toCompObj = companies.value.find(c => _idsMatch(c._id, transferData.toCompanyId));
           if (toCompObj) {
               let c = contractors.value.find(cnt => cnt.name.toLowerCase() === toCompObj.name.toLowerCase());
               if (!c) c = await addContractor(toCompObj.name);
@@ -1687,7 +1697,8 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
-      const oldOp = allOperationsFlat.value.find(o => o._id === transferId);
+      // FIX: _idsMatch
+      const oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, transferId));
       let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
       else newCellIndex = await getFirstFreeCellIndex(newDateKey);
@@ -1713,14 +1724,15 @@ export const useMainStore = defineStore('mainStore', () => {
       try {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
           
-          if (path === 'accounts') accounts.value = accounts.value.filter(i => i._id !== id);
-          if (path === 'companies') companies.value = companies.value.filter(i => i._id !== id);
-          if (path === 'contractors') contractors.value = contractors.value.filter(i => i._id !== id);
-          if (path === 'projects') projects.value = projects.value.filter(i => i._id !== id);
-          if (path === 'individuals') individuals.value = individuals.value.filter(i => i._id !== id); 
-          if (path === 'categories') categories.value = categories.value.filter(i => i._id !== id);
-          if (path === 'credits') credits.value = credits.value.filter(i => i._id !== id); 
-          if (path === 'taxes') taxes.value = taxes.value.filter(i => i._id !== id); 
+          // FIX: _idsMatch
+          if (path === 'accounts') accounts.value = accounts.value.filter(i => !_idsMatch(i._id, id));
+          if (path === 'companies') companies.value = companies.value.filter(i => !_idsMatch(i._id, id));
+          if (path === 'contractors') contractors.value = contractors.value.filter(i => !_idsMatch(i._id, id));
+          if (path === 'projects') projects.value = projects.value.filter(i => !_idsMatch(i._id, id));
+          if (path === 'individuals') individuals.value = individuals.value.filter(i => !_idsMatch(i._id, id)); 
+          if (path === 'categories') categories.value = categories.value.filter(i => !_idsMatch(i._id, id));
+          if (path === 'credits') credits.value = credits.value.filter(i => !_idsMatch(i._id, id)); 
+          if (path === 'taxes') taxes.value = taxes.value.filter(i => !_idsMatch(i._id, id)); 
           if (deleteOperations) await forceRefreshAll(); else await forceRefreshAll();
       } catch (error) { throw error; }
   }
@@ -1741,15 +1753,16 @@ export const useMainStore = defineStore('mainStore', () => {
           };
       }
       const res = await axios.post(`${API_BASE_URL}/accounts`, payload); 
-      if (!accounts.value.find(a => a._id === res.data._id)) accounts.value.push(res.data); 
+      // FIX: _idsMatch
+      if (!accounts.value.find(a => _idsMatch(a._id, res.data._id))) accounts.value.push(res.data); 
       return res.data; 
   }
   
-  async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); if(!companies.value.find(i=>i._id===res.data._id)) companies.value.push(res.data); return res.data; }
-  async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); if(!contractors.value.find(i=>i._id===res.data._id)) contractors.value.push(res.data); return res.data; }
-  async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); if(!projects.value.find(i=>i._id===res.data._id)) projects.value.push(res.data); return res.data; }
-  async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); if(!individuals.value.find(i=>i._id===res.data._id)) individuals.value.push(res.data); return res.data; }
-  async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); if(!credits.value.find(i=>i._id===res.data._id)) credits.value.push(res.data); return res.data; }
+  async function addCompany(name){ const res = await axios.post(`${API_BASE_URL}/companies`, { name }); if(!companies.value.find(i=>_idsMatch(i._id, res.data._id))) companies.value.push(res.data); return res.data; }
+  async function addContractor(name){ const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); if(!contractors.value.find(i=>_idsMatch(i._id, res.data._id))) contractors.value.push(res.data); return res.data; }
+  async function addProject(name){ const res = await axios.post(`${API_BASE_URL}/projects`, { name }); if(!projects.value.find(i=>_idsMatch(i._id, res.data._id))) projects.value.push(res.data); return res.data; }
+  async function addIndividual(name){ const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); if(!individuals.value.find(i=>_idsMatch(i._id, res.data._id))) individuals.value.push(res.data); return res.data; }
+  async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); if(!credits.value.find(i=>_idsMatch(i._id, res.data._id))) credits.value.push(res.data); return res.data; }
 
   async function batchUpdateEntities(path, items){ 
     try { 
@@ -1906,7 +1919,7 @@ export const useMainStore = defineStore('mainStore', () => {
              const relatedOp = allOperationsFlat.value.find(op => 
                 op.type === 'income' && 
                 _toStr(op.projectId) === pIdStr &&
-                _toStr(op.counterpartyIndividualId) === retailInd._id &&
+                _idsMatch(op.counterpartyIndividualId, retailInd._id) && // FIX
                 op.companyId
              );
              if (relatedOp) {
@@ -1975,7 +1988,8 @@ export const useMainStore = defineStore('mainStore', () => {
           const newOp = await createEvent(opData);
           
           if (opIdToClose) {
-              const op = dealOperations.value.find(o => o._id === opIdToClose) || allOperationsFlat.value.find(o => o._id === opIdToClose);
+              // FIX: _idsMatch
+              const op = dealOperations.value.find(o => _idsMatch(o._id, opIdToClose)) || allOperationsFlat.value.find(o => _idsMatch(o._id, opIdToClose));
               if (op) {
                   await updateOperation(opIdToClose, { ...op, isClosed: true });
               }
@@ -1995,7 +2009,7 @@ export const useMainStore = defineStore('mainStore', () => {
       
       allOperationsFlat.value.forEach(op => {
           const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-          if (String(indId) !== String(retailId)) return;
+          if (!_idsMatch(indId, retailId)) return;
           
           const pId = _toStr(op.projectId?._id || op.projectId);
           if (!pId) return;
@@ -2029,12 +2043,13 @@ export const useMainStore = defineStore('mainStore', () => {
          if (op.type !== 'expense') return false;
          if (op.accountId) return false; 
          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-         return indId === retail._id;
+         return _idsMatch(indId, retail._id);
       }).sort((a, b) => new Date(b.date) - new Date(a.date));
   });
 
   const calculateTaxForPeriod = (companyId, startDate = null, endDate = null) => {
-      const company = companies.value.find(c => c._id === companyId);
+      // FIX: _idsMatch
+      const company = companies.value.find(c => _idsMatch(c._id, companyId));
       if (!company) return { base: 0, tax: 0, income: 0, expense: 0 };
 
       const regime = company.taxRegime || 'simplified';
@@ -2120,7 +2135,8 @@ export const useMainStore = defineStore('mainStore', () => {
   // 🟢 HELPER: Проверка на "минус" по счетам компаний
   // Возвращает объект ошибки, если средств недостаточно, или null, если всё ок.
   function checkInsufficientFunds(accountId, expenseAmount) {
-      const acc = accounts.value.find(a => a._id === accountId);
+      // FIX: _idsMatch
+      const acc = accounts.value.find(a => _idsMatch(a._id, accountId));
       if (!acc) return null; // Счета нет - пропускаем (или ошибка валидации в другом месте)
 
       // Проверка: только для счетов компаний
@@ -2166,7 +2182,8 @@ export const useMainStore = defineStore('mainStore', () => {
           };
           
           const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
-          if (!taxes.value.find(t=>t._id===res.data._id)) taxes.value.push(res.data);
+          // FIX: _idsMatch
+          if (!taxes.value.find(t=>_idsMatch(t._id, res.data._id))) taxes.value.push(res.data);
           
           return res.data;
       } catch (e) {
