@@ -1277,18 +1277,25 @@ export const useMainStore = defineStore('mainStore', () => {
     
     try {
       if (_isTaxPayment(operation)) {
+          // Для налогов можно оставить оптимистичное удаление из списка, но не баланса, 
+          // или тоже ждать сервера. Для консистентности лучше ждать.
+          // Пока оставим фильтрацию списка, так как это не влияет на цифры баланса напрямую.
           taxes.value = taxes.value.filter(t => {
               const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
               return String(relId) !== String(operation._id);
           });
       }
 
-      // ⚡️ FIX (Задача 2.1): Сначала откатываем снапшот, пока операция еще "жива"
+      // 🔴 REVERTED: Убрано оптимистичное обновление снапшота при удалении.
+      // Теперь виджеты будут ждать ответа от сервера (fetchSnapshot), чтобы избежать скачков цифр.
+      /*
       if (_isEffectivelyPastOrToday(operation.date)) {
           _applyOptimisticSnapshotUpdate(operation, -1);
       }
+      */
 
-      // Затем удаляем из кэша отображения
+      // Удаляем из кэша отображения (UI списка операций), чтобы операция исчезла визуально из списка
+      // Это допустимо, так как список и виджеты баланса - разные вещи.
       if (displayCache.value[dateKey]) {
           displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => o._id !== operation._id);
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
@@ -1303,14 +1310,16 @@ export const useMainStore = defineStore('mainStore', () => {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
       
-      // 🟢 REQ: Sync with Server for Deletion
+      // 🟢 REQ: Sync with Server for Deletion (ОБЯЗАТЕЛЬНО)
+      // Именно здесь придут новые цифры для виджетов
       await fetchSnapshot();
       
     } catch(e) { 
         if (e.response && (e.response.status === 404 || e.response.status === 200)) {
             return;
         }
-        console.error("Optimistic Delete Failed:", e);
+        console.error("Delete Failed:", e);
+        // Если ошибка - восстанавливаем список
         refreshDay(dateKey); 
         fetchSnapshot();
         const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
