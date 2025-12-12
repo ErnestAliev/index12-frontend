@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v124.2 (FIX: Strict ID Compare & Re-Populate) LOADED ---'); 
+  console.log('--- mainStore.js v124.3 (FIX: Socket Transfers Merge) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -1017,7 +1017,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // 🟢 SOCKET EVENT HANDLERS
   const onSocketOperationAdded = (op) => {
-      // FIX: _idsMatch
       const existingOp = allOperationsFlat.value.find(o => _idsMatch(o._id, op._id));
       if (existingOp) return; 
 
@@ -1025,7 +1024,52 @@ export const useMainStore = defineStore('mainStore', () => {
       const dk = richOp.dateKey;
       
       if (!displayCache.value[dk]) displayCache.value[dk] = [];
-      displayCache.value[dk].push(richOp);
+
+      // 🟢 FIX: SOCKET TRANSFER MERGE LOGIC (Исправление двоения переводов)
+      if (richOp.transferGroupId) {
+          const existingHalfIndex = displayCache.value[dk].findIndex(o => 
+             o.transferGroupId === richOp.transferGroupId && !_idsMatch(o._id, richOp._id)
+          );
+          
+          if (existingHalfIndex !== -1) {
+              // Нашли вторую половину! Склеиваем в один Transfer.
+              const otherHalf = displayCache.value[dk][existingHalfIndex];
+              const incomeOp = richOp.amount > 0 ? richOp : otherHalf;
+              const expenseOp = richOp.amount < 0 ? richOp : otherHalf;
+              
+              const mergedTransfer = {
+                _id: incomeOp._id, 
+                _id2: expenseOp._id, 
+                type: 'transfer', 
+                isTransfer: true,
+                transferGroupId: richOp.transferGroupId, 
+                amount: Math.abs(incomeOp.amount),
+                fromAccountId: expenseOp.accountId, 
+                toAccountId: incomeOp.accountId,
+                fromCompanyId: expenseOp.companyId, 
+                toCompanyId: incomeOp.companyId,
+                fromIndividualId: expenseOp.individualId, 
+                toIndividualId: incomeOp.individualId, 
+                dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
+                cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
+                categoryId: { _id: 'transfer', name: 'Перевод' }, // Или найти в категориях
+                date: incomeOp.date || expenseOp.date,
+                dateKey: dk
+              };
+              
+              // Заменяем старую половинку на полноценный перевод
+              displayCache.value[dk][existingHalfIndex] = _populateOp(mergedTransfer);
+          } else {
+              // Половинки нет, добавляем пока как есть (будет выглядеть как половина перевода, пока не придет вторая часть)
+              displayCache.value[dk].push(richOp);
+          }
+      } else {
+          displayCache.value[dk].push(richOp);
+      }
+
+      // 🟢 FIX: Сортировка, чтобы предоплата не улетала в конец
+      displayCache.value[dk].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
+
       calculationCache.value[dk] = [...displayCache.value[dk]];
 
       // ⚡️ FIX: Use new time check
@@ -1041,13 +1085,11 @@ export const useMainStore = defineStore('mainStore', () => {
       let oldDateKey = null;
       
       for (const dk in displayCache.value) {
-          // FIX: _idsMatch
           const found = displayCache.value[dk].find(o => _idsMatch(o._id, op._id));
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
       if (!oldOp) oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, op._id));
 
-      // ⚡️ FIX: Use new time check
       if (oldOp && _isEffectivelyPastOrToday(oldOp.date)) {
           _applyOptimisticSnapshotUpdate(oldOp, -1);
       }
@@ -1062,16 +1104,38 @@ export const useMainStore = defineStore('mainStore', () => {
 
       if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
       
-      // FIX: _idsMatch
       const existsIndex = displayCache.value[newDateKey].findIndex(o => _idsMatch(o._id, op._id));
       if (existsIndex !== -1) {
-          displayCache.value[newDateKey][existsIndex] = richOp;
+          // Если это перевод, нам нужно быть осторожными и не "развалить" склеенный объект, 
+          // если обновление пришло только для одной половины. 
+          // Но пока оставим простую замену, так как обновление обычно идет для всего объекта.
+          displayCache.value[newDateKey][existsIndex] = { ...displayCache.value[newDateKey][existsIndex], ...richOp };
       } else {
-          displayCache.value[newDateKey].push(richOp);
+          // Логика добавления (если вдруг update пришел раньше add или сменился день)
+          // Здесь тоже нужна логика склейки, если это перевод
+           if (richOp.transferGroupId) {
+              const existingHalfIndex = displayCache.value[newDateKey].findIndex(o => 
+                 o.transferGroupId === richOp.transferGroupId && !_idsMatch(o._id, richOp._id)
+              );
+              if (existingHalfIndex !== -1) {
+                  // Merge logic (simplified reuse)
+                   const otherHalf = displayCache.value[newDateKey][existingHalfIndex];
+                   const incomeOp = richOp.amount > 0 ? richOp : otherHalf;
+                   const expenseOp = richOp.amount < 0 ? richOp : otherHalf;
+                   const merged = { ...richOp, ...otherHalf, _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true, amount: Math.abs(incomeOp.amount) };
+                   displayCache.value[newDateKey][existingHalfIndex] = _populateOp(merged);
+              } else {
+                  displayCache.value[newDateKey].push(richOp);
+              }
+           } else {
+              displayCache.value[newDateKey].push(richOp);
+           }
       }
+      
+      // Сортировка
+      displayCache.value[newDateKey].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
       calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
 
-      // ⚡️ FIX: Use new time check
       if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
@@ -1085,20 +1149,21 @@ export const useMainStore = defineStore('mainStore', () => {
       let oldDateKey = null;
       
       for (const dk in displayCache.value) {
-          // FIX: _idsMatch
-          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId));
+          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId) || _idsMatch(o._id2, opId)); // Проверка и по _id2 (переводы)
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
       if (!oldOp) return; 
 
-      // ⚡️ FIX: Use new time check
       if (_isEffectivelyPastOrToday(oldOp.date)) {
           _applyOptimisticSnapshotUpdate(oldOp, -1);
       }
 
       if (oldDateKey && displayCache.value[oldDateKey]) {
-          // FIX: _idsMatch
-          displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
+          // Если удаляем часть перевода, удаляем весь перевод из отображения, 
+          // так как он станет невалидным или вторая часть тоже придет на удаление.
+          displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => 
+             !_idsMatch(o._id, opId) && !_idsMatch(o._id2, opId)
+          );
           calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
       }
       
@@ -1681,7 +1746,9 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
-      await refreshDay(dateKey); 
+      // 🟢 FIX: Убрано refreshDay для ускорения. 
+      // Мы доверяем оптимистичному обновлению (оно выше) и просто обновляем снапшот
+      // await refreshDay(dateKey); 
       
       // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
