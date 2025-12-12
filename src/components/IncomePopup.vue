@@ -347,7 +347,7 @@ const nextTrancheNumber = computed(() => (localDealStatus.value?.tranchesCount |
 
 const mainButtonText = computed(() => {
     if (isCloneMode.value) return 'Создать копию';
-    if (isEditMode.value) return 'Сохранить изменения';
+    if (isEditMode.value) return 'Сохранить';
     if (isDealDetected.value) return `Внести ${nextTrancheNumber.value}-й транш...`;
     if (isRetailClientSelected.value && operationStatus.value === 'retail_prepayment') return 'Предоплата от розницы';
     if (operationStatus.value === 'prepayment') return 'Оформить предоплату...';

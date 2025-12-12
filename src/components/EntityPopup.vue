@@ -123,7 +123,7 @@ watch(inputValue, (val) => {
           
       <div class="popup-actions">
         <button @click="$emit('save', inputValue)" class="btn-submit">
-          Сохранить изменения
+          Сохранить
         </button>
       </div>
     </div>

@@ -530,7 +530,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         </template>
 
       </div>
-      <div class="popup-actions"><button @click="handleSave" class="btn-submit btn-submit-edit">Сохранить изменения</button></div>
+      <div class="popup-actions"><button @click="handleSave" class="btn-submit btn-submit-edit">Сохранить</button></div>
     </div>
 
     <!-- Диалоги удаления и создания (без изменений) -->
