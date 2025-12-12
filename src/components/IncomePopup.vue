@@ -12,11 +12,11 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v61.2 - SYNTAX FIX & TRUE TIME ---
- * * ВЕРСИЯ: 61.2
+ * * --- МЕТКА ВЕРСИИ: v61.3 - COMPATIBILITY UPDATE ---
+ * * ВЕРСИЯ: 61.3
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Исправлен синтаксис defineProps (убраны потенциальные конфликты).
- * 2. (LOGIC) createSmartDate: Если дата "Сегодня", подставляем new Date() (текущее время).
+ * 1. (FIX) Защита от NaN в accountOptions и ownerOptions (balance || 0).
+ * 2. (CHECK) Проверена совместимость с mainStore v124.4 (Socket fixes).
  */
 
 const props = defineProps({
@@ -216,7 +216,8 @@ const accountOptions = computed(() => {
   const opts = mainStore.currentAccountBalances.map(acc => ({
     value: acc._id,
     label: acc.name,
-    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
+    // 🟢 FIX: (acc.balance || 0) protection
+    rightText: `${formatNumber(Math.abs(acc.balance || 0))} ₸`,
     tooltip: getOwnerName(acc),
     isSpecial: false
   }));
@@ -228,10 +229,12 @@ const ownerOptions = computed(() => {
   const opts = [];
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
+      // 🟢 FIX: (c.balance || 0)
       mainStore.currentCompanyBalances.forEach(c => { opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatNumber(Math.abs(c.balance || 0))} ₸` }); });
   }
   if (mainStore.currentIndividualBalances.length) {
       opts.push({ label: 'Физлица', isHeader: true });
+      // 🟢 FIX: (i.balance || 0)
       mainStore.currentIndividualBalances.forEach(i => { 
           const nameLower = i.name.trim().toLowerCase();
           if (nameLower === 'розничные клиенты' || nameLower === 'розница') return;
