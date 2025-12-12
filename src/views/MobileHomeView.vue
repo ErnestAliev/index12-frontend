@@ -265,6 +265,8 @@ const formatDateShort = (date) => { if (!date) return ''; const d = new Date(dat
 
 const handleShowMenu = (payload) => { 
     if (payload.operation) { 
+        // 🟢 FIX: Обработка клика по операции
+        handleEditOperation(payload.operation);
     } else { 
         selectedDate.value = payload.date || new Date(); 
         selectedCellIndex.value = payload.cellIndex || 0; 
@@ -286,6 +288,58 @@ const handleShowMenu = (payload) => {
         };
         isContextMenuVisible.value = true;
     } 
+};
+
+// 🟢 НОВЫЙ МЕТОД: Обработчик клика по операции для открытия редактора
+const handleEditOperation = (operation) => {
+  operationToEdit.value = operation;
+  // Устанавливаем дату и индекс, чтобы попап знал контекст (для сохранения)
+  if (operation.dateKey) {
+      selectedDate.value = mainStore._parseDateKey(operation.dateKey);
+  }
+  if (operation.cellIndex !== undefined) {
+      selectedCellIndex.value = operation.cellIndex;
+  }
+
+  // 1. Проверка на налог
+  if (mainStore._isTaxPayment(operation)) {
+      isTaxDetailsPopupVisible.value = true;
+      return;
+  }
+
+  // 2. Проверка на списание розницы
+  if (mainStore._isRetailWriteOff(operation)) {
+      isRetailPopupVisible.value = true;
+      return;
+  }
+
+  // 3. Проверка на возврат
+  const catId = operation.categoryId?._id || operation.categoryId;
+  if (mainStore.refundCategoryId && String(catId) === String(mainStore.refundCategoryId)) {
+      isRefundPopupVisible.value = true;
+      return;
+  }
+
+  // 4. Перевод
+  if (operation.type === 'transfer' || operation.isTransfer) {
+    isTransferPopupVisible.value = true;
+    return;
+  } 
+
+  // 5. Вывод
+  if (operation.isWithdrawal) {
+    isWithdrawalPopupVisible.value = true;
+    return;
+  }
+
+  // 6. Доход
+  if (operation.type === 'income') {
+    isIncomePopupVisible.value = true;
+    return;
+  }
+
+  // 7. Расход (по умолчанию)
+  isExpensePopupVisible.value = true; 
 };
 
 const handleContextMenuSelect = (type) => {
@@ -310,7 +364,13 @@ const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Da
 const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
 const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
-const handleItemClick = (item) => { if (item.isList && item.originalOp) { /* handleEditOperation(item.originalOp); */ } else if (!item.isList && item.isLinked && item.linkTooltip) { infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true; } };
+const handleItemClick = (item) => { 
+    if (item.isList && item.originalOp) { 
+        handleEditOperation(item.originalOp); // 🟢 FIX: Открываем редактор при клике в виджете списка
+    } else if (!item.isList && item.isLinked && item.linkTooltip) { 
+        infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true; 
+    } 
+};
 
 const handleTaxDelete = async (operation) => { isTaxDetailsPopupVisible.value = false; if (!operation) return; try { await mainStore.deleteOperation(operation); await mainStore.fetchAllEntities(); } catch(e) { alert("Ошибка удаления налога: " + e.message); } };
 const handleRetailClosure = async (payload) => { try { const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null); await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId); isRetailPopupVisible.value = false; } catch (e) { alert('Ошибка: ' + e.message); } };
@@ -427,7 +487,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" />
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
-    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
+    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :transferToEdit="operationToEdit" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
     <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" :operation-to-edit="operationToEdit" @close="handleCloseWithdrawalPopup" @save="handleWithdrawalSave" />
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
