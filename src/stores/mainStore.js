@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v122.2 (NO SERVER SPAM ON DRAG) LOADED ---'); 
+  console.log('--- mainStore.js v122.3 (HYBRID SYNC: Local Move / Server CRUD) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -1180,6 +1180,9 @@ export const useMainStore = defineStore('mainStore', () => {
           dealOperations.value = newDeals;
       }
 
+      // 🟢 REQ: Sync with Server for Creation
+      await fetchSnapshot();
+
       return serverOp;
     } catch (error) { 
         console.error("Create Event Error (Optimistic):", error);
@@ -1203,6 +1206,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!oldOp) {
         const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
         await refreshDay(res.data.dateKey);
+        await fetchSnapshot(); // Sync for unknown op
         return res.data;
     }
 
@@ -1255,6 +1259,9 @@ export const useMainStore = defineStore('mainStore', () => {
             if (i !== -1) targetList[i] = _populateOp(serverOp);
         }
 
+        // 🟢 REQ: Sync with Server for Edit
+        await fetchSnapshot();
+
         return serverOp;
     } catch (e) {
         console.error("Optimistic Update Failed:", e);
@@ -1295,6 +1302,9 @@ export const useMainStore = defineStore('mainStore', () => {
       } else {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
+      
+      // 🟢 REQ: Sync with Server for Deletion
+      await fetchSnapshot();
       
     } catch(e) { 
         if (e.response && (e.response.status === 404 || e.response.status === 200)) {
@@ -1648,6 +1658,9 @@ export const useMainStore = defineStore('mainStore', () => {
       
       await refreshDay(dateKey); 
       
+      // 🟢 REQ: Sync with Server for Creation
+      await fetchSnapshot();
+
       return data;
     } catch (error) { 
         console.error("Create Transfer Error (Optimistic):", error);
@@ -1667,6 +1680,10 @@ export const useMainStore = defineStore('mainStore', () => {
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       _triggerProjectionUpdate(); 
+      
+      // 🟢 REQ: Sync with Server for Edit
+      await fetchSnapshot();
+
       return response.data;
     } catch (error) { throw error; }
   }
