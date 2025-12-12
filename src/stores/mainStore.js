@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v124.5 (FIX: Transfer Self-Update & Ghosting) LOADED ---'); 
+  console.log('--- mainStore.js v125.0 (FIX: Transfer Refresh & Prepayment Stubs) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -993,13 +993,16 @@ export const useMainStore = defineStore('mainStore', () => {
           if (found) {
               populated[field] = found;
           } else {
-              // 🟢 FIX v2: Если объект не найден в сторе (например, Prepayment категория с сокета),
-              // но сервер прислал объект - оставляем его.
-              // Если сервер прислал только ID - создаем заглушку, чтобы UI не падал при обращении к .name
+              // 🟢 FIX v125.0: STUB CREATION FOR MISSING ENTITIES
+              // Если объект не найден в сторе (рассинхрон), создаем заглушку, 
+              // чтобы UI не падал при обращении к .name.
+              // Критично для сокетов, когда пришла операция, а справочник еще не обновился.
               if (typeof raw === 'object') {
+                  // Если сервер прислал объект, используем его (лучше, чем просто ID)
                   populated[field] = raw;
               } else {
-                  populated[field] = { _id: raw, name: 'Загрузка...', isMissing: true };
+                  // Если только ID - создаем заглушку
+                  populated[field] = { _id: raw, name: '...', isMissing: true };
               }
           }
       };
@@ -1027,7 +1030,21 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   // 🟢 SOCKET EVENT HANDLERS
-  const onSocketOperationAdded = (op) => {
+  const onSocketOperationAdded = async (op) => {
+      // 🟢 FIX v125.0: CHECK FOR MISSING CATEGORIES
+      // Если пришла операция с категорией, которой нет в справочнике - обновляем справочники.
+      // Это лечит баг с "исчезающей предоплатой" на втором устройстве.
+      if (op.categoryId) {
+          const catId = typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId;
+          // FIX: _idsMatch
+          const exists = categories.value.find(c => _idsMatch(c._id, catId));
+          if (!exists) {
+              console.warn('[Socket] Unknown Category detected. Syncing entities...');
+              // Запрашиваем обновление справочников
+              await fetchAllEntities(); 
+          }
+      }
+
       const existingOp = allOperationsFlat.value.find(o => _idsMatch(o._id, op._id));
       if (existingOp) return; 
 
@@ -1757,27 +1774,12 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
-      // 🟢 FIX v124.5: MANUAL CACHE SYNC TO FIX GHOSTING ON CREATOR
-      // Сервер возвращает либо массив операций (income/expense), либо основной трансфер.
-      // Мы должны заменить наш tempId на реальные ID, иначе создатель не увидит обновленный трансфер.
-      
-      const serverOps = Array.isArray(data) ? data : [data];
-      const mergedServerOp = _mergeTransfers(serverOps).find(o => o.isTransfer);
-      
-      if (mergedServerOp) {
-          const dk = mergedServerOp.dateKey || dateKey;
-          const list = displayCache.value[dk];
-          if (list) {
-              const tempIndex = list.findIndex(o => _idsMatch(o._id, tempId));
-              if (tempIndex !== -1) {
-                  list[tempIndex] = _populateOp(mergedServerOp);
-                  calculationCache.value[dk] = [...list];
-              }
-          }
-      } else {
-          // Fallback: если структура ответа сложная, просто обновим день
-          await refreshDay(dateKey);
-      }
+      // 🟢 FIX v125.0: SIMPLIFIED SERVER SYNC (Forced Refresh)
+      // Вместо сложной ручной склейки ответа сервера (который может быть массивом или объектом),
+      // мы принудительно обновляем весь день. Это гарантирует, что создатель увидит 
+      // корректно склеенный трансфер, а не "разбитые" операции.
+      // Да, это лишний запрос, но надежность важнее.
+      await refreshDay(dateKey);
       
       // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
@@ -1785,6 +1787,11 @@ export const useMainStore = defineStore('mainStore', () => {
       return data;
     } catch (error) { 
         console.error("Create Transfer Error (Optimistic):", error);
+        // Fallback: refresh day if optimistic update failed
+        if (transferData.date) {
+            const k = _getDateKey(new Date(transferData.date));
+            refreshDay(k);
+        }
         throw error; 
     }
   }
