@@ -5,12 +5,11 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v59.0 - LIST FORECAST FIX ---
- * * ВЕРСИЯ: 59.0
+ * * --- МЕТКА ВЕРСИИ: v59.1 - STYLING FIX ---
+ * * ВЕРСИЯ: 59.1
  * * ИЗМЕНЕНИЯ:
- * 1. (LOGIC) projectedSum теперь возвращает ТОЛЬКО сумму будущих операций (Delta),
- * а не "Факт + План". Это исправляет логику виджетов "Мои доходы/расходы",
- * где прогноз должен показывать то, что ПРЕДСТОИТ, а не итог.
+ * 1. (STYLE) Прогноз для доходов теперь отображается зеленым цветом (class 'income').
+ * 2. (STYLE) Текущий факт для доходов отображается стандартным серым (class 'normal-text' изменен на var(--color-text)).
  */
 
 const props = defineProps({
@@ -48,7 +47,7 @@ const currentSum = computed(() => {
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// 🟢 ИСПРАВЛЕНО: Прогноз теперь показывает только БУДУЩИЕ операции (без сложения с фактом)
+// 🟢 ИСПРАВЛЕНО: Прогноз теперь показывает только БУДУЩИЕ операции
 const projectedSum = computed(() => {
   let list = [];
   if (isTransferWidget.value) list = mainStore.futureTransfers;
@@ -58,7 +57,6 @@ const projectedSum = computed(() => {
   
   const futureSum = (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
   
-  // Было: return currentSum.value + futureSum;
   return futureSum; 
 });
 
@@ -125,7 +123,7 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
         
         <!-- Редактировать -->
         <button @click.stop="$emit('edit')" class="action-square-btn" title="Редактировать">
-           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
 
         <!-- Добавить -->
@@ -153,16 +151,20 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
         <div class="summary-row">
             <span class="summary-label">Всего</span>
             <span class="summary-value-block">
-                <!-- ФАКТ -->
+                <!-- ФАКТ: Для доходов используется normal-text (теперь серый) -->
                 <span class="current-val" :class="{ 'normal-text': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
                     <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>{{ formatNumber(currentSum) }} ₸
                 </span>
                 
                 <!-- ПРОГНОЗ (ТОЛЬКО БУДУЩЕЕ) -->
                 <template v-if="showFutureBalance">
-                    <!-- Заменили стрелочку > на + для ясности, что это добавка, или оставили > как разделитель "План" -->
                     <span class="summary-arrow"> &gt; </span>
-                    <span class="projected-val" :class="{ 'normal-text': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
+                    <!-- 
+                         ИЗМЕНЕНИЕ: 
+                         Для доходов (isIncomeListWidget) теперь ставим класс 'income' (зеленый),
+                         вместо 'normal-text'.
+                    -->
+                    <span class="projected-val" :class="{ 'income': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
                         <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>
                         <template v-else-if="isIncomeListWidget">+</template>
                         {{ formatNumber(projectedSum) }} ₸
@@ -253,7 +255,13 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
 .expense { color: var(--color-danger); font-size: var(--font-sm); } 
 .withdrawal { color: #ffffff; font-size: var(--font-sm);} 
 .transfer-neutral { color: var(--color-text); font-size: var(--font-sm);} 
-.normal-text { color: var(--color-heading); font-size: var(--font-sm);} 
+
+/* ИЗМЕНЕНИЕ: Для 'normal-text' (используется для ФАКТА доходов) 
+  установили var(--color-text), чтобы он был стандартным серым/текстовым, 
+  а не ярко-белым (heading). 
+*/
+.normal-text { color: var(--color-text); font-size: var(--font-sm);} 
+
 .summary-arrow { color: var(--text-mute); margin: 0 4px; font-size: 0.9em; }
 
 .category-breakdown-list { display: flex; flex-direction: column; }
