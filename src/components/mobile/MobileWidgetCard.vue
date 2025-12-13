@@ -93,10 +93,12 @@ const isEmpty = computed(() => {
     return items.value.length === 0; 
 });
 
+// 🟢 ИЗМЕНЕНО: Принудительный минус для расходов
 const formatVal = (val) => {
     const num = Number(val) || 0; 
     const formatted = formatNumber(Math.abs(num));
     
+    // Если это виджет расходов - всегда ставим минус (кроме 0)
     if (props.widgetKey === 'expenseList') {
         if (num === 0) return `${formatted} ₸`;
         return `- ${formatted} ₸`;
@@ -106,11 +108,12 @@ const formatVal = (val) => {
     return `₸ ${formatted}`;
 };
 
-// 🟢 ЛЕВАЯ КОЛОНКА (ФАКТ)
+// 🟢 ИЗМЕНЕНО: Принудительный красный цвет для расходов
 const getFactValueClass = (item) => {
     const val = item.currentBalance || item.balance;
     const num = Number(val) || 0;
     
+    // Если это виджет расходов - всегда красный цвет
     if (props.widgetKey === 'expenseList') return 'red-text';
     
     if (props.widgetKey === 'taxes') {
@@ -119,7 +122,7 @@ const getFactValueClass = (item) => {
     }
 
     if (num < 0) return 'red-text';
-    return 'white-text'; // Стандартный серый/белый
+    return 'white-text';
 };
 
 const getRightValue = (item) => {
@@ -145,15 +148,20 @@ const getRightValueFormatted = (item) => {
     return `- ${formatted} ₸`;
 };
 
-// 🟢 ПРАВАЯ КОЛОНКА (ПЛАН/ПРОГНОЗ)
+// 🟢 ПРАВАЯ КОЛОНКА (План)
 const getRightValueClass = (item) => {
+    // 🟢 Спец. логика для Счетов и Компаний
     if (isBalanceWidget.value) {
         const change = item.futureChange || 0;
+        // Рост -> Зеленый
         if (change > 0) return 'green-text';
+        // Падение -> Красный
         if (change < 0) return 'red-text';
+        // Без изменений -> Белый
         return 'white-text';
     }
 
+    // Логика для остальных (Обороты, Налоги и т.д.)
     const val = getRightValue(item);
     const num = Number(val) || 0;
 
@@ -165,7 +173,6 @@ const getRightValueClass = (item) => {
         return val < 0 ? 'red-text' : 'green-text';
     }
 
-    // 🟢 ДЛЯ INCOME LIST: Всегда зеленый, если > 0
     return val >= 0 ? 'green-text' : 'red-text';
 };
 
