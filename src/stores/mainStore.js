@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v127.2 (FIX: Incomes Include Prepayments) LOADED ---'); 
+  console.log('--- mainStore.js v127.1 (FIX: Hidden Account Logic & Negative Deals) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -218,6 +218,8 @@ export const useMainStore = defineStore('mainStore', () => {
              if (parent.accountId && isExcludedId(parent.accountId)) {
                  return false; 
              }
+             // Рекурсивная логика (опционально): Если родитель тоже невидим по какой-то причине
+             // if (!_isOpVisible(parent)) return false;
           }
       }
 
@@ -384,11 +386,13 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   };
 
+  // 🟢 REFACTOR: Immutable updates for reactivity
   function _updateDealCache(op, mode = 'add') {
       const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
       if (!isDealRelated) return;
 
       if (mode === 'add') {
+          // FIX: _idsMatch
           const idx = dealOperations.value.findIndex(d => _idsMatch(d._id, op._id));
           if (idx === -1) {
               dealOperations.value = [...dealOperations.value, op];
@@ -411,6 +415,10 @@ export const useMainStore = defineStore('mainStore', () => {
       return allKnownOperations.value.filter(op => _isOpVisible(op));
   });
 
+  // 🟢 FIX: SPLIT LIABILITIES INTO FACT AND FORECAST
+  // liabilitiesWeOwe (Current) = Fact
+  // liabilitiesWeOweFuture (Total) = Forecast
+  
   const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOweCurrent);
   const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOweCurrent);
   
@@ -486,17 +494,24 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
+  // 🟢 CURRENT OPS (FILTERED) (Задача 1.2)
   const currentOps = computed(() => {
+    // ⚡️ FIX: Используем мягкую проверку времени (конец дня), 
+    // чтобы операции "сегодня 12:00" попадали в виджеты даже утром.
+    // Триггер reactivity: snapshot.timestamp
     const _tick = snapshot.value.timestamp; 
     return allKnownOperations.value.filter(op => {
         if (!op?.date) return false;
         if (!_isOpVisible(op)) return false; 
+        // ⚡️ FIX: Используем новый хелпер для определения "Факта"
         return _isEffectivelyPastOrToday(op.date);
     });
   });
 
   async function fetchSnapshot() {
     try {
+      // 🟢 FIX: Передаем текущее время клиента, чтобы сервер использовал его
+      // вместо своего системного времени. Это решает проблему "слепой зоны".
       const clientDate = new Date().toISOString();
       const res = await axios.get(`${API_BASE_URL}/snapshot`, {
           params: { date: clientDate }
@@ -507,8 +522,12 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // --- Snapshot Optimistic Updates ---
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
       const s = snapshot.value;
+      
+      // ⚡️ FIX: Обновляем временную метку снапшота при любом изменении,
+      // чтобы computed currentOps немедленно включил новую операцию.
       s.timestamp = new Date().toISOString();
 
       if (op.isWorkAct) return; 
@@ -559,14 +578,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
-  // 🟢 1. ИЗМЕНЕНО: Включены предоплаты в currentIncomes
   const currentIncomes = computed(() => currentOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      // !_isPrepaymentOp(op) && // 🟢 Удален фильтр, чтобы предоплаты попадали в виджет
-      !_isCreditIncomeOp(op) 
+      !_isPrepaymentOp(op) &&
+      !_isCreditIncome(op) 
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
   const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -574,14 +592,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
-  // 🟢 1. ИЗМЕНЕНО: Включены предоплаты в futureIncomes
   const futureIncomes = computed(() => futureOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      // !_isPrepaymentOp(op) && // 🟢 Удален фильтр, чтобы предоплаты попадали в виджет
-      !_isCreditIncomeOp(op)
+      !_isPrepaymentOp(op) &&
+      !_isCreditIncome(op)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
   const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
@@ -589,6 +606,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const getCategoryById = (id) => categories.value.find(c => _idsMatch(c._id, id));
 
+  // 🟢 REFACTOR: CATEGORIES
   const currentCategoryBreakdowns = computed(() => {
     if (includeExcludedInTotal.value) {
         const raw = snapshot.value.categoryTotals || {};
@@ -597,6 +615,7 @@ export const useMainStore = defineStore('mainStore', () => {
         return mapped;
     }
 
+    // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
     const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
     
     const mapped = {};
@@ -622,6 +641,7 @@ export const useMainStore = defineStore('mainStore', () => {
     return widgetMap;
   });
 
+  // 🟢 ACCOUNTS: Hard Filter
   const currentAccountBalances = computed(() => {
       return accounts.value.reduce((acc, a) => {
           if (!includeExcludedInTotal.value && a.isExcluded) {
@@ -647,6 +667,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }, []);
   });
   
+  // 🟢 COMPANIES: Based on filtered accounts
   const currentCompanyBalances = computed(() => {
       return companies.value.map(comp => {
           const targetId = _toStr(comp._id);
@@ -669,6 +690,7 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
+  // 🟢 REFACTOR: CONTRACTORS
   const currentContractorBalances = computed(() => {
       if (includeExcludedInTotal.value) {
           return contractors.value.map(c => ({
@@ -677,6 +699,7 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
       }
 
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
       const aggregated = _calculateAggregatedBalance(currentOps.value, 'contractorId');
       return contractors.value.map(c => ({
           ...c,
@@ -688,6 +711,7 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureContractorChanges.value;
   });
 
+  // 🟢 REFACTOR: PROJECTS
   const currentProjectBalances = computed(() => {
       if (includeExcludedInTotal.value) {
            return projects.value.map(p => ({
@@ -696,6 +720,7 @@ export const useMainStore = defineStore('mainStore', () => {
            }));
       }
 
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
       const aggregated = _calculateAggregatedBalance(currentOps.value, 'projectId');
       return projects.value.map(p => ({
           ...p,
@@ -705,7 +730,9 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const futureProjectBalances = computed(() => futureProjectChanges.value);
 
+  // 🟢 REFACTOR: CATEGORIES (List)
   const currentCategoryBalances = computed(() => {
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
       const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
       return categories.value.map(c => ({
           ...c,
@@ -853,13 +880,21 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
+  // 🟢 REFACTOR: INDIVIDUALS (FIXED FOR COUNTERPARTIES)
+  // Теперь учитываем операции, где физлицо является контрагентом (counterpartyIndividualId)
   const currentIndividualBalances = computed(() => {
+      // 1. Агрегация операций по ОБОИМ ролям
       const opsMap = new Map();
       
+      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
+      // Это гарантирует, что сюда попадают только операции из прошлого/настоящего.
       currentOps.value.forEach(op => {
+          // if (!_isOpVisible(op)) return; // Уже отфильтровано в currentOps
+
           const amt = Math.abs(op.amount || 0);
           
           if (op.type === 'transfer' || op.isTransfer) {
+               // Переводы: списываем у отправителя, добавляем получателю
                if (op.fromIndividualId) {
                    const key = _toStr(op.fromIndividualId);
                    opsMap.set(key, (opsMap.get(key) || 0) - amt);
@@ -869,13 +904,16 @@ export const useMainStore = defineStore('mainStore', () => {
                    opsMap.set(key, (opsMap.get(key) || 0) + amt);
                }
           } else {
+               // Доход/Расход/Вывод
                const sign = op.type === 'income' ? 1 : -1;
                const value = amt * sign;
                
+               // Роль Владельца
                if (op.individualId) {
                    const key = _toStr(op.individualId);
                    opsMap.set(key, (opsMap.get(key) || 0) + value);
                }
+               // Роль Контрагента (Кому платим / От кого получаем)
                if (op.counterpartyIndividualId) {
                    const key = _toStr(op.counterpartyIndividualId);
                    opsMap.set(key, (opsMap.get(key) || 0) + value);
@@ -883,6 +921,7 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       });
       
+      // 2. Список скрытых физлиц (владельцы скрытых счетов)
       const hiddenIndividualIds = new Set();
       if (!includeExcludedInTotal.value) {
           accounts.value.forEach(a => {
@@ -910,6 +949,7 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const futureIndividualBalances = computed(() => {
+      // И для Future тоже скрываем
       const hiddenIndividualIds = new Set();
       if (!includeExcludedInTotal.value) {
           accounts.value.forEach(a => {
@@ -931,6 +971,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }, []);
   });
 
+  // 🟢 Updated Total Calculation
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => {
           if (!includeExcludedInTotal.value && a.isExcluded) return acc;
@@ -950,9 +991,11 @@ export const useMainStore = defineStore('mainStore', () => {
     return total;
   });
 
+  // 🟢 FIX: Re-Populate logic (Always prefer Store objects)
   function _populateOp(op) {
       const populated = { ...op };
       
+      // --- Date Logic ---
       if (populated.date) {
           if (typeof populated.date === 'string') {
               populated.date = new Date(populated.date);
@@ -972,6 +1015,9 @@ export const useMainStore = defineStore('mainStore', () => {
           d.setHours(12, 0, 0, 0);
           populated.date = d;
       }
+
+      // ⚡️ FIX: FORCE RE-BINDING TO REACTIVE STORE ENTITIES
+      // Even if server sent { _id: '...', name: 'Old Name' }, we find { _id: '...', name: 'New Name' } in store.
       
       const bindEntity = (field, storeRef) => {
           const raw = populated[field];
@@ -980,14 +1026,21 @@ export const useMainStore = defineStore('mainStore', () => {
              return;
           }
           const id = (typeof raw === 'object') ? raw._id : raw;
+          // Use safe ID match
           const found = storeRef.value.find(item => _idsMatch(item._id, id));
           
           if (found) {
               populated[field] = found;
           } else {
+              // 🟢 FIX v125.0: STUB CREATION FOR MISSING ENTITIES
+              // Если объект не найден в сторе (рассинхрон), создаем заглушку, 
+              // чтобы UI не падал при обращении к .name.
+              // Критично для сокетов, когда пришла операция, а справочник еще не обновился.
               if (typeof raw === 'object') {
+                  // Если сервер прислал объект, используем его (лучше, чем просто ID)
                   populated[field] = raw;
               } else {
+                  // Если только ID - создаем заглушку
                   populated[field] = { _id: raw, name: '...', isMissing: true };
               }
           }
@@ -1009,17 +1062,24 @@ export const useMainStore = defineStore('mainStore', () => {
       return populated;
   }
 
+  // 🟢 HELPER: обновление проекции через Projection Store
   const _triggerProjectionUpdate = () => {
       const ps = useProjectionStore();
       ps.updateProjectionFromCalculationData(ps.projection.mode, new Date(ps.currentYear, 0, ps.todayDayOfYear));
   };
 
+  // 🟢 SOCKET EVENT HANDLERS
   const onSocketOperationAdded = async (op) => {
+      // 🟢 FIX v125.0: CHECK FOR MISSING CATEGORIES
+      // Если пришла операция с категорией, которой нет в справочнике - обновляем справочники.
+      // Это лечит баг с "исчезающей предоплатой" на втором устройстве.
       if (op.categoryId) {
           const catId = typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId;
+          // FIX: _idsMatch
           const exists = categories.value.find(c => _idsMatch(c._id, catId));
           if (!exists) {
               console.warn('[Socket] Unknown Category detected. Syncing entities...');
+              // Запрашиваем обновление справочников
               await fetchAllEntities(); 
           }
       }
@@ -1032,12 +1092,14 @@ export const useMainStore = defineStore('mainStore', () => {
       
       if (!displayCache.value[dk]) displayCache.value[dk] = [];
 
+      // 🟢 FIX: SOCKET TRANSFER MERGE LOGIC (Исправление двоения переводов)
       if (richOp.transferGroupId) {
           const existingHalfIndex = displayCache.value[dk].findIndex(o => 
              o.transferGroupId === richOp.transferGroupId && !_idsMatch(o._id, richOp._id)
           );
           
           if (existingHalfIndex !== -1) {
+              // Нашли вторую половину! Склеиваем в один Transfer.
               const otherHalf = displayCache.value[dk][existingHalfIndex];
               const incomeOp = richOp.amount > 0 ? richOp : otherHalf;
               const expenseOp = richOp.amount < 0 ? richOp : otherHalf;
@@ -1057,23 +1119,27 @@ export const useMainStore = defineStore('mainStore', () => {
                 toIndividualId: incomeOp.individualId, 
                 dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
                 cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-                categoryId: { _id: 'transfer', name: 'Перевод' }, 
+                categoryId: { _id: 'transfer', name: 'Перевод' }, // Или найти в категориях
                 date: incomeOp.date || expenseOp.date,
                 dateKey: dk
               };
               
+              // Заменяем старую половинку на полноценный перевод
               displayCache.value[dk][existingHalfIndex] = _populateOp(mergedTransfer);
           } else {
+              // Половинки нет, добавляем пока как есть (будет выглядеть как половина перевода, пока не придет вторая часть)
               displayCache.value[dk].push(richOp);
           }
       } else {
           displayCache.value[dk].push(richOp);
       }
 
+      // 🟢 FIX: Сортировка, чтобы предоплата не улетала в конец
       displayCache.value[dk].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
 
       calculationCache.value[dk] = [...displayCache.value[dk]];
 
+      // ⚡️ FIX: Use new time check
       if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
@@ -1107,13 +1173,19 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const existsIndex = displayCache.value[newDateKey].findIndex(o => _idsMatch(o._id, op._id));
       if (existsIndex !== -1) {
+          // Если это перевод, нам нужно быть осторожными и не "развалить" склеенный объект, 
+          // если обновление пришло только для одной половины. 
+          // Но пока оставим простую замену, так как обновление обычно идет для всего объекта.
           displayCache.value[newDateKey][existsIndex] = { ...displayCache.value[newDateKey][existsIndex], ...richOp };
       } else {
+          // Логика добавления (если вдруг update пришел раньше add или сменился день)
+          // Здесь тоже нужна логика склейки, если это перевод
            if (richOp.transferGroupId) {
               const existingHalfIndex = displayCache.value[newDateKey].findIndex(o => 
                  o.transferGroupId === richOp.transferGroupId && !_idsMatch(o._id, richOp._id)
               );
               if (existingHalfIndex !== -1) {
+                  // Merge logic (simplified reuse)
                    const otherHalf = displayCache.value[newDateKey][existingHalfIndex];
                    const incomeOp = richOp.amount > 0 ? richOp : otherHalf;
                    const expenseOp = richOp.amount < 0 ? richOp : otherHalf;
@@ -1127,6 +1199,7 @@ export const useMainStore = defineStore('mainStore', () => {
            }
       }
       
+      // Сортировка
       displayCache.value[newDateKey].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
       calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
 
@@ -1143,7 +1216,7 @@ export const useMainStore = defineStore('mainStore', () => {
       let oldDateKey = null;
       
       for (const dk in displayCache.value) {
-          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId) || _idsMatch(o._id2, opId)); 
+          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId) || _idsMatch(o._id2, opId)); // Проверка и по _id2 (переводы)
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
       if (!oldOp) return; 
@@ -1153,6 +1226,8 @@ export const useMainStore = defineStore('mainStore', () => {
       }
 
       if (oldDateKey && displayCache.value[oldDateKey]) {
+          // Если удаляем часть перевода, удаляем весь перевод из отображения, 
+          // так как он станет невалидным или вторая часть тоже придет на удаление.
           displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => 
              !_idsMatch(o._id, opId) && !_idsMatch(o._id2, opId)
           );
@@ -1176,6 +1251,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const onSocketEntityAdded = (type, item) => {
      const listRef = _getListRefByType(type);
      if (listRef) {
+         // FIX: _idsMatch
          const exists = listRef.value.find(i => _idsMatch(i._id, item._id));
          if (!exists) listRef.value.push(item);
          listRef.value = _sortByOrder(listRef.value);
@@ -1185,6 +1261,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const onSocketEntityDeleted = (type, id) => {
      const listRef = _getListRefByType(type);
      if (listRef) {
+         // FIX: _idsMatch
          listRef.value = listRef.value.filter(i => !_idsMatch(i._id, id));
      }
   };
@@ -1225,6 +1302,7 @@ export const useMainStore = defineStore('mainStore', () => {
       displayCache.value[dk].push(richOp);
       calculationCache.value[dk] = [...displayCache.value[dk]];
       
+      // ⚡️ FIX: Use new time check
       if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
@@ -1235,12 +1313,15 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
       const serverOp = response.data;
       
+      // FIX: _idsMatch
       const idx = displayCache.value[dk].findIndex(o => _idsMatch(o._id, tempId));
       if (idx !== -1) {
+          // 🟢 FIX: Populate server response before cache
           displayCache.value[dk][idx] = _populateOp(serverOp); 
           calculationCache.value[dk] = [...displayCache.value[dk]];
       }
       
+      // FIX: _idsMatch
       const dealIdx = dealOperations.value.findIndex(d => _idsMatch(d._id, tempId));
       if (dealIdx !== -1) {
           const newDeals = [...dealOperations.value];
@@ -1248,6 +1329,7 @@ export const useMainStore = defineStore('mainStore', () => {
           dealOperations.value = newDeals;
       }
 
+      // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
 
       return serverOp;
@@ -1264,6 +1346,7 @@ export const useMainStore = defineStore('mainStore', () => {
     let oldDateKey = null;
     
     for (const dk in displayCache.value) {
+        // FIX: _idsMatch
         const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId));
         if (found) { oldOp = found; oldDateKey = dk; break; }
     }
@@ -1273,7 +1356,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!oldOp) {
         const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
         await refreshDay(res.data.dateKey);
-        await fetchSnapshot(); 
+        await fetchSnapshot(); // Sync for unknown op
         return res.data;
     }
 
@@ -1281,6 +1364,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldOp.dateKey);
         const isDateChanged = oldDateKey !== newDateKey;
         
+        // ⚡️ FIX: Use new time check
         if (_isEffectivelyPastOrToday(oldOp.date)) {
             _applyOptimisticSnapshotUpdate(oldOp, -1);
         }
@@ -1292,6 +1376,7 @@ export const useMainStore = defineStore('mainStore', () => {
         
         if (isDateChanged) {
             if (displayCache.value[oldDateKey]) {
+                // FIX: _idsMatch
                 displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
                 calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
             }
@@ -1300,11 +1385,13 @@ export const useMainStore = defineStore('mainStore', () => {
             calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
         } else {
             const list = displayCache.value[oldDateKey];
+            // FIX: _idsMatch
             const idx = list.findIndex(o => _idsMatch(o._id, opId));
             if (idx !== -1) list[idx] = richOp;
             calculationCache.value[oldDateKey] = [...list];
         }
 
+        // ⚡️ FIX: Use new time check
         if (_isEffectivelyPastOrToday(richOp.date)) {
             _applyOptimisticSnapshotUpdate(richOp, 1);
         }
@@ -1319,13 +1406,16 @@ export const useMainStore = defineStore('mainStore', () => {
         const serverOp = response.data;
         const targetList = displayCache.value[newDateKey];
         if (targetList) {
+            // FIX: _idsMatch
             const i = targetList.findIndex(o => _idsMatch(o._id, opId));
+            // 🟢 FIX: Populate server response AND SYNC CALCULATION CACHE
             if (i !== -1) {
                 targetList[i] = _populateOp(serverOp);
-                calculationCache.value[newDateKey] = [...targetList]; 
+                calculationCache.value[newDateKey] = [...targetList]; // <--- NEW SYNC
             }
         }
 
+        // 🟢 REQ: Sync with Server for Edit
         await fetchSnapshot();
 
         return serverOp;
@@ -1349,7 +1439,9 @@ export const useMainStore = defineStore('mainStore', () => {
           });
       }
 
+      // Удаляем из кэша отображения
       if (displayCache.value[dateKey]) {
+          // FIX: _idsMatch
           displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => !_idsMatch(o._id, operation._id));
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       }
@@ -1363,6 +1455,7 @@ export const useMainStore = defineStore('mainStore', () => {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
       
+      // 🟢 REQ: Sync with Server for Deletion (ОБЯЗАТЕЛЬНО)
       await fetchSnapshot();
       
     } catch(e) { 
@@ -1370,6 +1463,7 @@ export const useMainStore = defineStore('mainStore', () => {
             return;
         }
         console.error("Delete Failed:", e);
+        // Если ошибка - восстанавливаем список
         refreshDay(dateKey); 
         fetchSnapshot();
         const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
@@ -1399,6 +1493,7 @@ export const useMainStore = defineStore('mainStore', () => {
           for (const { dateKey, data } of results) {
               const raw = Array.isArray(data) ? data.slice() : [];
               const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+              // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
               displayCache.value[dateKey] = processedOps.map(_populateOp);
               calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
           }
@@ -1450,6 +1545,7 @@ export const useMainStore = defineStore('mainStore', () => {
       await ensureSystemEntities();
       await fetchSnapshot();
       
+      // Socket Connect via Store
       if (user.value) {
           useSocketStore().connect(user.value._id);
       }
@@ -1464,6 +1560,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+      // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
       displayCache.value[dateKey] = processedOps.map(_populateOp);
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
@@ -1525,10 +1622,12 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+      // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
       _syncCaches(dateKey, processedOps.map(_populateOp));
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
+  // 🟢 FIX (Задача 3.1): Добавлен аргумент specificTargetDate
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -1538,7 +1637,9 @@ export const useMainStore = defineStore('mainStore', () => {
 
     if (oldDateKey === newDateKey) {
        const ops = [...(displayCache.value[oldDateKey] || [])];
+       // FIX: _idsMatch
        const sourceOp = ops.find(o => _idsMatch(o._id, operation._id));
+       // FIX: _idsMatch
        const targetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
        if (sourceOp) {
            if (targetOp) {
@@ -1564,7 +1665,9 @@ export const useMainStore = defineStore('mainStore', () => {
     } 
     else {
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
+       // FIX: _idsMatch
        const sourceOpData = oldOps.find(o => _idsMatch(o._id, operation._id));
+       // FIX: _idsMatch
        oldOps = oldOps.filter(o => !_idsMatch(o._id, operation._id));
        _syncCaches(oldDateKey, oldOps);
        let newOps = [...(displayCache.value[newDateKey] || [])];
@@ -1575,14 +1678,16 @@ export const useMainStore = defineStore('mainStore', () => {
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
        
+       // ⚡️ FIX (Задача 3.2): Используем переданную точную дату (specificTargetDate), если есть
        const newDateObj = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(newDateKey);
        
        const moved = { ...sourceOpData, dateKey: newDateKey, date: newDateObj, cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
+       // ⚡️ FIX (Задача 3.3): Проверяем переход Факт <-> План для снапшота
        const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
-       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); 
+       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); // Проверяем по новой дате
        
        const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
        if (needsSnapshotUpdate) {
@@ -1602,10 +1707,16 @@ export const useMainStore = defineStore('mainStore', () => {
            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
        }
        
+       // 🟢 FIX: NO FETCH SNAPSHOT TO AVOID FLICKER
+       // Мы доверяем нашему оптимистичному обновлению (_applyOptimisticSnapshotUpdate).
+       // Запрос к серверу отправляется для сохранения, но мы НЕ обновляем снапшот с сервера,
+       // чтобы избежать "прыжков" цифр.
        await Promise.all(promises)
             .then(() => {
+                // SUCCESS: Do nothing. Trust local state.
             })
             .catch(() => { 
+                // FAIL: Rollback only on error
                 refreshDay(oldDateKey); 
                 refreshDay(newDateKey); 
                 fetchSnapshot();
@@ -1662,10 +1773,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
       if (!displayCache.value[dateKey]) displayCache.value[dateKey] = [];
       
+      // 🟢 FIX: Correct order for Reactivity + Time check update
       optimisticOps.forEach(rawOp => {
           const richOp = _populateOp(rawOp);
           displayCache.value[dateKey].push(richOp);
           
+          // ⚡️ FIX: Use new time check (Ignores 12:00 vs 09:00 issue)
           if (_isEffectivelyPastOrToday(richOp.date)) {
               _applyOptimisticSnapshotUpdate(richOp, 1);
           }
@@ -1700,12 +1813,20 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
+      // 🟢 FIX v125.0: SIMPLIFIED SERVER SYNC (Forced Refresh)
+      // Вместо сложной ручной склейки ответа сервера (который может быть массивом или объектом),
+      // мы принудительно обновляем весь день. Это гарантирует, что создатель увидит 
+      // корректно склеенный трансфер, а не "разбитые" операции.
+      // Да, это лишний запрос, но надежность важнее.
       await refreshDay(dateKey);
+      
+      // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
 
       return data;
     } catch (error) { 
         console.error("Create Transfer Error (Optimistic):", error);
+        // Fallback: refresh day if optimistic update failed
         if (transferData.date) {
             const k = _getDateKey(new Date(transferData.date));
             refreshDay(k);
@@ -1718,6 +1839,7 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
+      // FIX: _idsMatch
       const oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, transferId));
       let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
@@ -1726,6 +1848,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
       await refreshDay(newDateKey);
       _triggerProjectionUpdate(); 
+      
+      // 🟢 REQ: Sync with Server for Edit
       await fetchSnapshot();
 
       return response.data;
@@ -1742,6 +1866,7 @@ export const useMainStore = defineStore('mainStore', () => {
       try {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
           
+          // FIX: _idsMatch
           if (path === 'accounts') accounts.value = accounts.value.filter(i => !_idsMatch(i._id, id));
           if (path === 'companies') companies.value = companies.value.filter(i => !_idsMatch(i._id, id));
           if (path === 'contractors') contractors.value = contractors.value.filter(i => !_idsMatch(i._id, id));
@@ -1770,6 +1895,7 @@ export const useMainStore = defineStore('mainStore', () => {
           };
       }
       const res = await axios.post(`${API_BASE_URL}/accounts`, payload); 
+      // FIX: _idsMatch
       if (!accounts.value.find(a => _idsMatch(a._id, res.data._id))) accounts.value.push(res.data); 
       return res.data; 
   }
@@ -2004,6 +2130,7 @@ export const useMainStore = defineStore('mainStore', () => {
           const newOp = await createEvent(opData);
           
           if (opIdToClose) {
+              // FIX: _idsMatch
               const op = dealOperations.value.find(o => _idsMatch(o._id, opIdToClose)) || allOperationsFlat.value.find(o => _idsMatch(o._id, opIdToClose));
               if (op) {
                   await updateOperation(opIdToClose, { ...op, isClosed: true });
@@ -2063,6 +2190,7 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const calculateTaxForPeriod = (companyId, startDate = null, endDate = null) => {
+      // FIX: _idsMatch
       const company = companies.value.find(c => _idsMatch(c._id, companyId));
       if (!company) return { base: 0, tax: 0, income: 0, expense: 0 };
 
@@ -2072,6 +2200,9 @@ export const useMainStore = defineStore('mainStore', () => {
       let totalIncome = 0;
       let totalExpense = 0;
 
+      // 🟢 FIX: Корректная граница конца периода
+      // Если endDate не передан, берем текущий момент и сдвигаем на конец дня.
+      // Если передан - тоже гарантируем конец дня, чтобы включить операции "сегодня" (которые могут быть в 12:00 или позже).
       let effectiveEndDate;
       if (endDate) {
           effectiveEndDate = new Date(endDate);
@@ -2081,6 +2212,7 @@ export const useMainStore = defineStore('mainStore', () => {
           effectiveEndDate.setHours(23, 59, 59, 999);
       }
 
+      // Для startDate обычно достаточно 00:00:00 (по умолчанию у new Date(str) так и есть, если только дата)
       let effectiveStartDate = startDate ? new Date(startDate) : null;
       if (effectiveStartDate) effectiveStartDate.setHours(0, 0, 0, 0);
 
@@ -2142,12 +2274,17 @@ export const useMainStore = defineStore('mainStore', () => {
       };
   };
 
+  // 🟢 HELPER: Проверка на "минус" по счетам компаний
+  // Возвращает объект ошибки, если средств недостаточно, или null, если всё ок.
   function checkInsufficientFunds(accountId, expenseAmount) {
+      // FIX: _idsMatch
       const acc = accounts.value.find(a => _idsMatch(a._id, accountId));
-      if (!acc) return null; 
+      if (!acc) return null; // Счета нет - пропускаем (или ошибка валидации в другом месте)
 
+      // Проверка: только для счетов компаний
       if (!acc.companyId) return null;
 
+      // Текущий баланс (snapshot уже содержит локальные оптимистичные правки, если они были)
       const currentBal = (snapshot.value.accountBalances[acc._id] || 0) + (acc.initialBalance || 0);
       
       if (expenseAmount > currentBal) {
@@ -2187,6 +2324,7 @@ export const useMainStore = defineStore('mainStore', () => {
           };
           
           const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
+          // FIX: _idsMatch
           if (!taxes.value.find(t=>_idsMatch(t._id, res.data._id))) taxes.value.push(res.data);
           
           return res.data;
@@ -2195,6 +2333,7 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
+  // 🟢 EXPORT ALL
   return {
     accounts, companies, contractors, projects, categories, individuals, 
     credits, taxes, 
@@ -2224,10 +2363,11 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentCreditBalances, futureCreditBalances, creditCategoryId,
 
-    liabilitiesWeOwe: computed(() => useDealStore().liabilitiesWeOweCurrent), 
-    liabilitiesTheyOwe: computed(() => useDealStore().liabilitiesTheyOweCurrent), 
-    liabilitiesWeOweFuture: computed(() => useDealStore().liabilitiesWeOweTotal), 
-    liabilitiesTheyOweFuture: computed(() => useDealStore().liabilitiesTheyOweTotal), 
+    // 🟢 UPDATED: Split Liabilities (Fact vs Forecast)
+    liabilitiesWeOwe: computed(() => useDealStore().liabilitiesWeOweCurrent), // Fact
+    liabilitiesTheyOwe: computed(() => useDealStore().liabilitiesTheyOweCurrent), // Fact
+    liabilitiesWeOweFuture: computed(() => useDealStore().liabilitiesWeOweTotal), // Forecast (Plan)
+    liabilitiesTheyOweFuture: computed(() => useDealStore().liabilitiesTheyOweTotal), // Forecast (Plan)
     
     getPrepaymentCategoryIds, getActCategoryIds,
     
@@ -2292,7 +2432,7 @@ export const useMainStore = defineStore('mainStore', () => {
     projectsWithRetailDebts,
     
     calculateTaxForPeriod,
-    checkInsufficientFunds, 
+    checkInsufficientFunds, // 🟢 Export
     createTaxPayment,
     _isTaxPayment,
     
