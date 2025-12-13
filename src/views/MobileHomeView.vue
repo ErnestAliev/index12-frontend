@@ -26,6 +26,12 @@ import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
+// 🟢 FIX: Формируем абсолютную ссылку для авторизации через Google
+// Удаляем '/api' с конца, если он есть, чтобы получить корень сервера (например, http://localhost:3000)
+// и добавляем путь авторизации /auth/google
+const googleAuthUrl = `${API_BASE_URL.replace(/\/api\/?$/, '')}/auth/google`;
+
 const mainStore = useMainStore();
 const { getWidgetItems } = useWidgetData();
 
@@ -405,7 +411,8 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <div v-else-if="!mainStore.user" class="login-screen">
       <div class="login-box">
           <h1>Управляйте финансами легко INDEX12.COM</h1>
-          <a href="/auth/google" class="google-login-button">Войти через Google</a>
+          <!-- 🟢 FIX: Используем абсолютную ссылку на бэкенд для авторизации -->
+          <a :href="googleAuthUrl" class="google-login-button">Войти через Google</a>
       </div>
     </div>
 
