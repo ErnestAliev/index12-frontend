@@ -5,12 +5,11 @@ import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v59.0 - LIST FORECAST FIX ---
- * * ВЕРСИЯ: 59.0
+ * * --- МЕТКА ВЕРСИИ: v59.1 - PREPAYMENT FIX & COLORS ---
+ * * ВЕРСИЯ: 59.1
  * * ИЗМЕНЕНИЯ:
- * 1. (LOGIC) projectedSum теперь возвращает ТОЛЬКО сумму будущих операций (Delta),
- * а не "Факт + План". Это исправляет логику виджетов "Мои доходы/расходы",
- * где прогноз должен показывать то, что ПРЕДСТОИТ, а не итог.
+ * 1. (LOGIC) projectedSum возвращает только будущие операции.
+ * 2. (STYLE) Факт - серый/стандартный. План - зеленый.
  */
 
 const props = defineProps({
@@ -48,7 +47,7 @@ const currentSum = computed(() => {
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
-// 🟢 ИСПРАВЛЕНО: Прогноз теперь показывает только БУДУЩИЕ операции (без сложения с фактом)
+// 🟢 Прогноз (только будущее)
 const projectedSum = computed(() => {
   let list = [];
   if (isTransferWidget.value) list = mainStore.futureTransfers;
@@ -57,8 +56,6 @@ const projectedSum = computed(() => {
   else if (isWithdrawalListWidget.value) list = mainStore.futureWithdrawals;
   
   const futureSum = (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-  
-  // Было: return currentSum.value + futureSum;
   return futureSum; 
 });
 
@@ -153,16 +150,15 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
         <div class="summary-row">
             <span class="summary-label">Всего</span>
             <span class="summary-value-block">
-                <!-- ФАКТ -->
+                <!-- 🟢 ФАКТ: Теперь всегда 'normal-text' (Серый) для Доходов -->
                 <span class="current-val" :class="{ 'normal-text': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
                     <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>{{ formatNumber(currentSum) }} ₸
                 </span>
                 
-                <!-- ПРОГНОЗ (ТОЛЬКО БУДУЩЕЕ) -->
+                <!-- 🟢 ПРОГНОЗ: Используем 'income' (Зеленый) для Доходов -->
                 <template v-if="showFutureBalance">
-                    <!-- Заменили стрелочку > на + для ясности, что это добавка, или оставили > как разделитель "План" -->
                     <span class="summary-arrow"> &gt; </span>
-                    <span class="projected-val" :class="{ 'normal-text': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
+                    <span class="projected-val" :class="{ 'income': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
                         <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>
                         <template v-else-if="isIncomeListWidget">+</template>
                         {{ formatNumber(projectedSum) }} ₸
