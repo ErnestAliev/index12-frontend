@@ -4,6 +4,15 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import filterIcon from '@/assets/filter-edit.svg';
 
+/**
+ * * --- МЕТКА ВЕРСИИ: v59.0 - LIST FORECAST FIX ---
+ * * ВЕРСИЯ: 59.0
+ * * ИЗМЕНЕНИЯ:
+ * 1. (LOGIC) projectedSum теперь возвращает ТОЛЬКО сумму будущих операций (Delta),
+ * а не "Факт + План". Это исправляет логику виджетов "Мои доходы/расходы",
+ * где прогноз должен показывать то, что ПРЕДСТОИТ, а не итог.
+ */
+
 const props = defineProps({
   title: { type: String, required: true },
   widgetKey: { type: String, required: true },
@@ -39,14 +48,18 @@ const currentSum = computed(() => {
   return (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
 });
 
+// 🟢 ИСПРАВЛЕНО: Прогноз теперь показывает только БУДУЩИЕ операции (без сложения с фактом)
 const projectedSum = computed(() => {
   let list = [];
   if (isTransferWidget.value) list = mainStore.futureTransfers;
   else if (isIncomeListWidget.value) list = mainStore.futureIncomes;
   else if (isExpenseListWidget.value) list = mainStore.futureExpenses;
   else if (isWithdrawalListWidget.value) list = mainStore.futureWithdrawals;
+  
   const futureSum = (list || []).reduce((acc, op) => acc + Math.abs(op.amount || 0), 0);
-  return currentSum.value + futureSum;
+  
+  // Было: return currentSum.value + futureSum;
+  return futureSum; 
 });
 
 const showFutureBalance = computed({
@@ -140,13 +153,19 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
         <div class="summary-row">
             <span class="summary-label">Всего</span>
             <span class="summary-value-block">
+                <!-- ФАКТ -->
                 <span class="current-val" :class="{ 'normal-text': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
                     <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>{{ formatNumber(currentSum) }} ₸
                 </span>
+                
+                <!-- ПРОГНОЗ (ТОЛЬКО БУДУЩЕЕ) -->
                 <template v-if="showFutureBalance">
+                    <!-- Заменили стрелочку > на + для ясности, что это добавка, или оставили > как разделитель "План" -->
                     <span class="summary-arrow"> &gt; </span>
                     <span class="projected-val" :class="{ 'normal-text': isIncomeListWidget, 'expense': isExpenseListWidget, 'transfer-neutral': isTransferWidget, 'withdrawal': isWithdrawalListWidget }">
-                        <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>{{ formatNumber(projectedSum) }} ₸
+                        <template v-if="isExpenseListWidget || isWithdrawalListWidget">- </template>
+                        <template v-else-if="isIncomeListWidget">+</template>
+                        {{ formatNumber(projectedSum) }} ₸
                     </span>
                 </template>
             </span>
@@ -196,7 +215,6 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
 
-/* 🟢 1. ФОН КНОПОК */
 .action-square-btn { 
   width: 18px; height: 18px; 
   border: 1px solid transparent; border-radius: 4px; 
@@ -223,7 +241,6 @@ const setFilterMode = (mode) => { filterMode.value = mode; };
 .summary-row { display: flex; justify-content: space-between; align-items: baseline; width: 100%; }
 .summary-label { font-size: var(--font-sm); color: var(--text-soft); white-space: nowrap; }
 
-/* 🟢 2. ШРИФТЫ */
 .summary-value-block { 
   font-size: var(--font-sm); 
   font-weight: var(--fw-medium); 
