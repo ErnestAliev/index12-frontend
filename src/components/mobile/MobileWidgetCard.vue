@@ -108,7 +108,7 @@ const formatVal = (val) => {
     return `₸ ${formatted}`;
 };
 
-// 🟢 ИЗМЕНЕНО: Принудительный красный цвет для расходов
+// 🟢 ЛЕВАЯ КОЛОНКА (Факт): Строго Серый/Стандартный для Доходов
 const getFactValueClass = (item) => {
     const val = item.currentBalance || item.balance;
     const num = Number(val) || 0;
@@ -122,6 +122,8 @@ const getFactValueClass = (item) => {
     }
 
     if (num < 0) return 'red-text';
+    // ⚡️ ИНАЧЕ ВОЗВРАЩАЕМ БЕЛЫЙ/СЕРЫЙ (white-text имеет opacity 0.9)
+    // Никогда не возвращаем зеленый для факта, как и просили.
     return 'white-text';
 };
 
@@ -144,11 +146,12 @@ const getRightValueFormatted = (item) => {
     if (isAlwaysNegativeWidget.value) return `- ${formatted} ₸`;
     if (isTransferWidget.value) return `${formatted} ₸`;
 
+    // ⚡️ ПЛАН/ПРОГНОЗ: Всегда с плюсом для положительных значений
     if (val > 0) return `+ ${formatted} ₸`;
     return `- ${formatted} ₸`;
 };
 
-// 🟢 ПРАВАЯ КОЛОНКА (План)
+// 🟢 ПРАВАЯ КОЛОНКА (План): Всегда Зеленый для положительного прогноза
 const getRightValueClass = (item) => {
     // 🟢 Спец. логика для Счетов и Компаний
     if (isBalanceWidget.value) {
@@ -172,7 +175,8 @@ const getRightValueClass = (item) => {
     if (props.widgetKey === 'taxes') {
         return val < 0 ? 'red-text' : 'green-text';
     }
-
+    
+    // ⚡️ ДЛЯ СПИСКОВ (IncomeList и др.): Положительный прогноз -> Зеленый
     return val >= 0 ? 'green-text' : 'red-text';
 };
 

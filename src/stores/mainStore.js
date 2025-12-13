@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v127.1 (FIX: Hidden Account Logic & Negative Deals) LOADED ---'); 
+  console.log('--- mainStore.js v128.0 (FIX: Prepayments in Income Widget) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -578,12 +578,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
+  // 🟢 FIX v128.0: Убрана фильтрация предоплаты (!_isPrepaymentOp),
+  // чтобы предоплаты попадали в виджет "Мои доходы"
   const currentIncomes = computed(() => currentOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      !_isPrepaymentOp(op) &&
+      // !_isPrepaymentOp(op) && // <--- REMOVED
       !_isCreditIncome(op) 
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
@@ -592,12 +594,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
+  // 🟢 FIX v128.0: Убрана фильтрация предоплаты для прогноза тоже
   const futureIncomes = computed(() => futureOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      !_isPrepaymentOp(op) &&
+      // !_isPrepaymentOp(op) && // <--- REMOVED
       !_isCreditIncome(op)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
