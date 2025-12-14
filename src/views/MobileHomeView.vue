@@ -27,9 +27,6 @@ import CellContextMenu from '@/components/CellContextMenu.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
-// 🟢 FIX: Формируем абсолютную ссылку для авторизации через Google
-// Удаляем '/api' с конца, если он есть, чтобы получить корень сервера (например, http://localhost:3000)
-// и добавляем путь авторизации /auth/google
 const googleAuthUrl = `${API_BASE_URL.replace(/\/api\/?$/, '')}/auth/google`;
 
 const mainStore = useMainStore();
@@ -145,9 +142,6 @@ const onResizerEnd = () => {
     }
 };
 
-// =================================================================
-// 🟢 БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ (Refactor v52.2)
-// =================================================================
 const initializeMobileView = async () => {
     // 1. Проверка авторизации
     await mainStore.checkAuth();
@@ -165,7 +159,6 @@ const initializeMobileView = async () => {
     // 3. Загрузка сущностей (Safe Call)
     isWidgetsLoading.value = true;
     try {
-        // Проверяем наличие метода перед вызовом, чтобы избежать TypeError
         if (typeof mainStore.fetchAllEntities === 'function') {
             await mainStore.fetchAllEntities();
         } else {
@@ -207,7 +200,6 @@ onMounted(async () => {
   window.addEventListener('touchmove', onResizerMove, { passive: false });
   window.addEventListener('touchend', onResizerEnd);
 
-  // Запуск безопасной инициализации
   await initializeMobileView();
 });
 
@@ -271,7 +263,6 @@ const formatDateShort = (date) => { if (!date) return ''; const d = new Date(dat
 
 const handleShowMenu = (payload) => { 
     if (payload.operation) { 
-        // 🟢 FIX: Обработка клика по операции
         handleEditOperation(payload.operation);
     } else { 
         selectedDate.value = payload.date || new Date(); 
@@ -296,10 +287,8 @@ const handleShowMenu = (payload) => {
     } 
 };
 
-// 🟢 НОВЫЙ МЕТОД: Обработчик клика по операции для открытия редактора
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
-  // Устанавливаем дату и индекс, чтобы попап знал контекст (для сохранения)
   if (operation.dateKey) {
       selectedDate.value = mainStore._parseDateKey(operation.dateKey);
   }
@@ -307,44 +296,37 @@ const handleEditOperation = (operation) => {
       selectedCellIndex.value = operation.cellIndex;
   }
 
-  // 1. Проверка на налог
   if (mainStore._isTaxPayment(operation)) {
       isTaxDetailsPopupVisible.value = true;
       return;
   }
 
-  // 2. Проверка на списание розницы
   if (mainStore._isRetailWriteOff(operation)) {
       isRetailPopupVisible.value = true;
       return;
   }
 
-  // 3. Проверка на возврат
   const catId = operation.categoryId?._id || operation.categoryId;
   if (mainStore.refundCategoryId && String(catId) === String(mainStore.refundCategoryId)) {
       isRefundPopupVisible.value = true;
       return;
   }
 
-  // 4. Перевод
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
     return;
   } 
 
-  // 5. Вывод
   if (operation.isWithdrawal) {
     isWithdrawalPopupVisible.value = true;
     return;
   }
 
-  // 6. Доход
   if (operation.type === 'income') {
     isIncomePopupVisible.value = true;
     return;
   }
 
-  // 7. Расход (по умолчанию)
   isExpensePopupVisible.value = true; 
 };
 
@@ -372,7 +354,7 @@ const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value 
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
 const handleItemClick = (item) => { 
     if (item.isList && item.originalOp) { 
-        handleEditOperation(item.originalOp); // 🟢 FIX: Открываем редактор при клике в виджете списка
+        handleEditOperation(item.originalOp); 
     } else if (!item.isList && item.isLinked && item.linkTooltip) { 
         infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true; 
     } 
@@ -411,7 +393,6 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <div v-else-if="!mainStore.user" class="login-screen">
       <div class="login-box">
           <h1>Управляйте финансами легко INDEX12.COM</h1>
-          <!-- 🟢 FIX: Используем абсолютную ссылку на бэкенд для авторизации -->
           <a :href="googleAuthUrl" class="google-login-button">Войти через Google</a>
       </div>
     </div>
@@ -419,7 +400,6 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <template v-else>
         <!-- Fullscreen Widget (Без изменений) -->
         <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
-             <!-- ... (Код полноэкранного виджета такой же) ... -->
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
@@ -461,18 +441,15 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             <div class="layout-body" ref="layoutBodyRef">
               <MobileWidgetGrid class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
               
-              <!-- 🟢 TIMELINE С ДИНАМИЧЕСКОЙ ВЫСОТОЙ -->
               <div class="section-timeline" v-show="!mainStore.isHeaderExpanded" :style="{ height: timelineHeight + 'px', flexShrink: 0 }">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
               
-              <!-- 🟢 RESIZER HANDLE -->
               <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @touchstart.stop.prevent="onResizerStart">
                   <div class="resizer-handle"></div>
               </div>
 
-              <!-- 🟢 ГРАФИК (Занимает остаток) -->
               <div class="section-chart" v-show="!mainStore.isHeaderExpanded">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
                 <MobileChartSection v-else ref="chartRef" @scroll="onChartScroll" />
@@ -502,8 +479,41 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   </div>
 </template>
 
+<style>
+/* 🟢 FIX: Глобальный стиль для предотвращения зума на мобильных. */
+/* Принудительный размер шрифта 16px для всех полей ввода. */
+/* Это отключает авто-зум в Safari и других мобильных браузерах. */
+@media (max-width: 768px) {
+  input[type="text"], 
+  input[type="number"], 
+  input[type="email"], 
+  input[type="password"], 
+  input[type="search"], 
+  input[type="tel"], 
+  input[type="url"],
+  select, 
+  textarea,
+  .real-input,
+  .form-input,
+  .create-input {
+    font-size: 16px !important;
+  }
+}
+</style>
+
 <style scoped>
-.mobile-layout { height: 100vh; height: 100dvh; width: 100vw; background-color: var(--color-background, #1a1a1a); display: flex; flex-direction: column; overflow: hidden; }
+.mobile-layout { 
+  height: 100vh; 
+  height: 100dvh; 
+  width: 100vw; 
+  background-color: var(--color-background, #1a1a1a); 
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden; 
+  
+  /* 🟢 FIX: Запрещаем стандартные жесты браузера (зум, свайп назад) */
+  touch-action: none;
+}
 .loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
 .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
 .section-loading { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
@@ -561,14 +571,12 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 :deep(.widgets-grid) { align-content: start !important; min-height: min-content; }
 .section-widgets::-webkit-scrollbar { display: none; }
 
-/* 🟢 Timeline теперь имеет динамическую высоту и flex-shrink: 0 */
 .section-timeline { 
     flex-shrink: 0; 
     border-top: 1px solid var(--color-border, #444); 
     overflow: hidden;
 }
 
-/* 🟢 График теперь занимает все остальное пространство */
 .section-chart { 
     flex-grow: 1; 
     min-height: 50px; 
@@ -576,7 +584,6 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     overflow: hidden;
 }
 
-/* 🟢 СТИЛИ РЕСАЙЗЕРА */
 .timeline-resizer {
     height: 14px;
     background: var(--color-background-soft, #282828);
@@ -591,7 +598,6 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     flex-shrink: 0;
 }
 
-/* Увеличенная зона нажатия (прозрачная) */
 .timeline-resizer::before {
     content: '';
     position: absolute;
