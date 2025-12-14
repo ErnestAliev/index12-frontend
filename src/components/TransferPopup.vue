@@ -8,11 +8,11 @@ import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v29.4 - ACCOUNT OWNER DISPLAY ---
- * * ВЕРСИЯ: 29.4
+ * * --- МЕТКА ВЕРСИИ: v29.5 - HIDE OWNER SELECTS ---
+ * * ВЕРСИЯ: 29.5
  * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
+ * 1. (UI) Скрытие полей "Отправитель" и "Получатель", если они уже определены счетом.
  */
 
 const mainStore = useMainStore();
@@ -134,7 +134,7 @@ const getOwnerName = (acc) => {
     return null;
 };
 
-// 🟢 ОБНОВЛЕНО: Формирование списка счетов с subLabel
+// Формирование списка счетов с subLabel
 const accountOptions = computed(() => {
   const options = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -147,7 +147,6 @@ const accountOptions = computed(() => {
         isSpecial: false
     };
   });
-  // 🟢 Sticky option via slot
   options.push({ isActionRow: true });
   return options;
 });
@@ -290,6 +289,24 @@ const onToAccountSelected = (accountId) => {
     else if (selectedAccount.individualId) { const iId = typeof selectedAccount.individualId === 'object' ? selectedAccount.individualId._id : selectedAccount.individualId; selectedToOwner.value = `individual-${iId}`; } 
   } else { selectedToOwner.value = null; }
 };
+
+// 🟢 ЛОГИКА СКРЫТИЯ ВЛАДЕЛЬЦА ОТПРАВИТЕЛЯ
+const isFromOwnerSelectVisible = computed(() => {
+    if (isCreatingFromAccount.value) return true;
+    if (!fromAccountId.value) return true;
+    const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
+    if (acc && (acc.companyId || acc.individualId)) return false;
+    return true;
+});
+
+// 🟢 ЛОГИКА СКРЫТИЯ ВЛАДЕЛЬЦА ПОЛУЧАТЕЛЯ
+const isToOwnerSelectVisible = computed(() => {
+    if (isCreatingToAccount.value) return true;
+    if (!toAccountId.value) return true;
+    const acc = mainStore.accounts.find(a => a._id === toAccountId.value);
+    if (acc && (acc.companyId || acc.individualId)) return false;
+    return true;
+});
 
 onMounted(async () => {
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
@@ -517,14 +534,17 @@ const closePopup = () => { emit('close'); };
           </ul>
         </div>
 
-        <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" class="input-spacing" @change="handleFromOwnerChange">
-            <template #action-item>
-                <div class="dual-action-row">
-                    <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                    <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                </div>
-            </template>
-        </BaseSelect>
+        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
+        <div v-if="isFromOwnerSelectVisible" class="input-spacing">
+            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" @change="handleFromOwnerChange">
+                <template #action-item>
+                    <div class="dual-action-row">
+                        <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                        <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                    </div>
+                </template>
+            </BaseSelect>
+        </div>
 
         <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
         <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="accountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange">
@@ -544,14 +564,17 @@ const closePopup = () => { emit('close'); };
           </ul>
         </div>
 
-        <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" class="input-spacing" @change="handleToOwnerChange">
-            <template #action-item>
-                <div class="dual-action-row">
-                    <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                    <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                </div>
-            </template>
-        </BaseSelect>
+        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
+        <div v-if="isToOwnerSelectVisible" class="input-spacing">
+            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" @change="handleToOwnerChange">
+                <template #action-item>
+                    <div class="dual-action-row">
+                        <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                        <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                    </div>
+                </template>
+            </BaseSelect>
+        </div>
 
         <div class="input-spacing">
             <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" />
@@ -754,6 +777,13 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .opt-title { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 4px; }
 .btn-cancel-link { background: none; border: none; font-size: 14px; color: #888; cursor: pointer; text-decoration: underline; }
 .btn-cancel-link:hover { color: #555; }
+
+/* 🟢 Dual Action in Select */
+.dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-withdrawal); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
+.btn-dual-action.right { border-bottom-right-radius: 8px; }
 
 /* 🟢 MOBILE OPTIMIZATION */
 @media (max-width: 600px), (max-height: 900px) {

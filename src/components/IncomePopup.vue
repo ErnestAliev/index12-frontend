@@ -12,11 +12,11 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v61.5 - ACCOUNT OWNER DISPLAY ---
- * * ВЕРСИЯ: 61.5
+ * * --- МЕТКА ВЕРСИИ: v62.0 - HIDE OWNER SELECT ---
+ * * ВЕРСИЯ: 62.0
  * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
+ * 1. (UI) Если у выбранного счета уже есть владелец, поле выбора владельца скрывается.
  */
 
 const props = defineProps({
@@ -163,7 +163,7 @@ watch(newOwnerName, (val) => { if (isProgrammaticOwner.value) return; showOwnerB
 
 const accountSuggestionsList = computed(() => {
     const q = newAccountName.value.trim().toLowerCase();
-    if (q.length < 2) return [];
+    if (query.length < 2) return [];
     return accountSuggestions.filter(acc => acc.name.toLowerCase().includes(q)).slice(0, 4);
 });
 const selectAccountSuggestion = (acc) => {
@@ -197,7 +197,7 @@ const getOwnerName = (acc) => {
     return null;
 };
 
-// 🟢 ОБНОВЛЕНО: Формирование списка счетов с subLabel
+// Формирование списка счетов с subLabel
 const accountOptions = computed(() => {
   const opts = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -351,6 +351,26 @@ const mainButtonClass = computed(() => {
 const myCreditsProjectId = computed(() => {
     const p = mainStore.projects.find(x => x.name.trim().toLowerCase() === 'мои кредиты');
     return p ? p._id : null;
+});
+
+// 🟢 ЛОГИКА СКРЫТИЯ ВЛАДЕЛЬЦА
+const isOwnerSelectVisible = computed(() => {
+    // 1. Если создаем новый счет - нужно дать выбрать/создать владельца
+    if (isCreatingAccount.value) return true;
+    
+    // 2. Если счет не выбран - показываем
+    if (!selectedAccountId.value) return true;
+
+    // 3. Если счет выбран, проверяем, есть ли у него привязанный владелец
+    const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+    
+    // Если у счета есть companyId или individualId - скрываем
+    if (acc && (acc.companyId || acc.individualId)) {
+        return false;
+    }
+    
+    // Иначе показываем (счет-сирота)
+    return true;
 });
 
 watch(selectedAccountId, (newVal) => {
@@ -735,7 +755,8 @@ const getSmartDealProps = computed(() => {
             <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
         </div>
 
-        <div class="input-spacing">
+        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ ПОЛЯ ВЛАДЕЛЕЦ -->
+        <div v-if="isOwnerSelectVisible" class="input-spacing">
             <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владелец" label="Владелец" :disabled="isProtectedMode" @change="handleOwnerChange">
                 <template #action-item>
                     <div class="dual-action-row">

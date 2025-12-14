@@ -12,11 +12,11 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v58.3 - ACCOUNT OWNER DISPLAY ---
- * * ВЕРСИЯ: 58.3
+ * * --- МЕТКА ВЕРСИИ: v59.0 - HIDE OWNER SELECT ---
+ * * ВЕРСИЯ: 59.0
  * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
+ * 1. (UI) Если у выбранного счета уже есть владелец, поле выбора владельца скрывается (isOwnerSelectVisible).
  */
 
 const mainStore = useMainStore();
@@ -180,7 +180,6 @@ const getOwnerName = (acc) => {
 };
 
 // --- OPTIONS ---
-// 🟢 ОБНОВЛЕНО: Формирование списка счетов с subLabel
 const accountOptions = computed(() => {
   const opts = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -194,7 +193,6 @@ const accountOptions = computed(() => {
         isSpecial: false
     };
   });
-  // 🟢 Sticky options через slot #action-item
   opts.push({ isActionRow: true }); 
   return opts;
 });
@@ -274,6 +272,26 @@ const myCreditsProjectId = computed(() => {
     return p ? p._id : null;
 });
 
+// 🟢 ЛОГИКА СКРЫТИЯ ВЛАДЕЛЬЦА
+const isOwnerSelectVisible = computed(() => {
+    // 1. Если создаем новый счет - нужно дать выбрать/создать владельца
+    if (isCreatingAccount.value) return true;
+    
+    // 2. Если счет не выбран - показываем
+    if (!selectedAccountId.value) return true;
+
+    // 3. Если счет выбран, проверяем, есть ли у него привязанный владелец
+    const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+    
+    // Если у счета есть companyId или individualId - скрываем
+    if (acc && (acc.companyId || acc.individualId)) {
+        return false;
+    }
+    
+    // Иначе показываем (счет-сирота)
+    return true;
+});
+
 // --- LOGIC WATCHERS ---
 
 watch(selectedAccountId, (newVal) => {
@@ -335,7 +353,7 @@ const toInputDate = (dateObj) => {
     return `${year}-${month}-${day}`;
 };
 
-// 🟢 2. ИСПРАВЛЕННАЯ ФУНКЦИЯ ДАТЫ: "ИСТИННОЕ ВРЕМЯ" (TRUE TIME)
+// 🟢 ИСТИННОЕ ВРЕМЯ (TRUE TIME)
 const createSmartDate = (str) => {
     if (!str) return new Date();
     const [y, m, d] = str.split('-').map(Number);
@@ -368,7 +386,7 @@ const processSave = () => {
     const payload = {
         type: 'expense', 
         amount: finalAmount, 
-        // 🟢 ИСПОЛЬЗУЕМ УМНУЮ ДАТУ (СЕГОДНЯ = СЕЙЧАС)
+        // 🟢 ИСПОЛЬЗУЕМ УМНУЮ ДАТУ
         date: createSmartDate(editableDate.value), 
         accountId: selectedAccountId.value, companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
@@ -518,8 +536,7 @@ const saveNewProject = async () => {
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
     if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryId.value = item._id; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; }
-};
+    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryId.value = item._id; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
 
 const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
@@ -603,8 +620,8 @@ onMounted(async () => {
               <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
           </div>
 
-          <!-- ВЛАДЕЛЕЦ -->
-          <div class="input-spacing">
+          <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
+          <div v-if="isOwnerSelectVisible" class="input-spacing">
               <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Кто платит" label="Кто платит (Владелец)">
                   <template #action-item>
                       <div class="dual-action-row">
