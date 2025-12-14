@@ -12,37 +12,22 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v61.3 - COMPATIBILITY UPDATE ---
- * * ВЕРСИЯ: 61.3
+ * * --- МЕТКА ВЕРСИИ: v61.5 - ACCOUNT OWNER DISPLAY ---
+ * * ВЕРСИЯ: 61.5
+ * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Защита от NaN в accountOptions и ownerOptions (balance || 0).
- * 2. (CHECK) Проверена совместимость с mainStore v124.4 (Socket fixes).
+ * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
  */
 
 const props = defineProps({
-  date: {
-    type: Date,
-    required: true
-  },
-  cellIndex: {
-    type: Number,
-    required: true
-  },
-  operationToEdit: {
-    type: Object,
-    default: null
-  },
-  minAllowedDate: {
-    type: Date,
-    default: null
-  },
-  maxAllowedDate: {
-    type: Date,
-    default: null
-  }
+  date: { type: Date, required: true },
+  cellIndex: { type: Number, required: true },
+  operationToEdit: { type: Object, default: null },
+  minAllowedDate: { type: Date, default: null },
+  maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment']);
+const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment', 'trigger-smart-deal']);
 
 const mainStore = useMainStore();
 
@@ -207,20 +192,25 @@ const handleCategoryInputFocus = () => { if (newCategoryName.value.length >= 2) 
 watch(newCategoryName, (val) => { if (isProgrammaticCategory.value) return; showCategorySuggestions.value = val.length >= 2; });
 
 const getOwnerName = (acc) => {
-    if (acc.companyId) { const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId; const c = mainStore.companies.find(comp => comp._id === cId); return c ? `Компания: ${c.name}` : 'Компания'; }
-    if (acc.individualId) { const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId; const i = mainStore.individuals.find(ind => ind._id === iId); return i ? `Физлицо: ${i.name}` : 'Физлицо'; }
-    return 'Нет привязки';
+    if (acc.companyId) { const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId; const c = mainStore.companies.find(comp => comp._id === cId); return c ? c.name : 'Компания'; }
+    if (acc.individualId) { const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId; const i = mainStore.individuals.find(ind => ind._id === iId); return i ? i.name : 'Физлицо'; }
+    return null;
 };
 
+// 🟢 ОБНОВЛЕНО: Формирование списка счетов с subLabel
 const accountOptions = computed(() => {
-  const opts = mainStore.currentAccountBalances.map(acc => ({
-    value: acc._id,
-    label: acc.name,
-    // 🟢 FIX: (acc.balance || 0) protection
-    rightText: `${formatNumber(Math.abs(acc.balance || 0))} ₸`,
-    tooltip: getOwnerName(acc),
-    isSpecial: false
-  }));
+  const opts = mainStore.currentAccountBalances.map(acc => {
+    const owner = getOwnerName(acc);
+    
+    return {
+        value: acc._id,
+        label: acc.name, // Имя счета
+        subLabel: owner, // 🟢 Владелец серым цветом
+        rightText: `${formatNumber(Math.abs(acc.balance || 0))} ₸`,
+        tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
+        isSpecial: false
+    };
+  });
   opts.push({ isActionRow: true }); 
   return opts;
 });
@@ -229,12 +219,10 @@ const ownerOptions = computed(() => {
   const opts = [];
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
-      // 🟢 FIX: (c.balance || 0)
       mainStore.currentCompanyBalances.forEach(c => { opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatNumber(Math.abs(c.balance || 0))} ₸` }); });
   }
   if (mainStore.currentIndividualBalances.length) {
       opts.push({ label: 'Физлица', isHeader: true });
-      // 🟢 FIX: (i.balance || 0)
       mainStore.currentIndividualBalances.forEach(i => { 
           const nameLower = i.name.trim().toLowerCase();
           if (nameLower === 'розничные клиенты' || nameLower === 'розница') return;
@@ -334,7 +322,6 @@ const localDealStatus = computed(() => {
     return status;
 });
 
-// 🟢 REFACTOR:
 const isDealDetected = computed(() => {
     if (!localDealStatus.value) return false;
     if (isProtectedMode.value) return false;
@@ -422,24 +409,16 @@ watch([showCreateContractorModal, showCreateOwnerModal], ([creatingContr, creati
 const onAmountInput = (e) => { amount.value = formatNumber(e.target.value.replace(/[^0-9]/g, '')); };
 const toInputDate = (dateObj) => { if (!dateObj) return ''; const d = new Date(dateObj); const year = d.getFullYear(); const month = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; };
 
-// 🟢 2. ИСПРАВЛЕННАЯ ФУНКЦИЯ ДАТЫ: "ИСТИННОЕ ВРЕМЯ" (TRUE TIME)
 const createSmartDate = (str) => {
     if (!str) return new Date();
     const [y, m, d] = str.split('-').map(Number);
     const date = new Date(y, m - 1, d);
-    
-    // Получаем текущее время
     const now = new Date();
-    
-    // Проверка: Является ли выбранная дата "Сегодняшним днем"?
     const isToday = now.getFullYear() === y && now.getMonth() === (m - 1) && now.getDate() === d;
     
     if (isToday) {
-        // Если сегодня - возвращаем текущее время (с точностью до секунд)
-        // Это решит проблему "будущего", так как сервер получит 03:52, а не 12:00
         return now;
     } else {
-        // Если дата другая (вчера/завтра) - ставим 12:00, чтобы избежать сдвигов часовых поясов
         date.setHours(12, 0, 0, 0);
         return date;
     }
@@ -525,7 +504,6 @@ const handleMainAction = () => {
             amount: rawAmount, accountId: selectedAccountId.value, contractorId: cId, counterpartyIndividualId: indId,
             projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
             companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
-            // 🟢 Используем умную дату
             date: createSmartDate(editableDate.value), 
             cellIndex: props.cellIndex, operationToEdit: props.operationToEdit,
             contractorName, projectName, categoryName
@@ -548,7 +526,6 @@ const handleSmartDealConfirm = (decision) => {
                 prevOp.contractorId?._id || prevOp.contractorId,
                 prevOp.counterpartyIndividualId?._id || prevOp.counterpartyIndividualId,
                 prevOp.amount, 
-                // 🟢 Используем умную дату
                 createSmartDate(editableDate.value), 
                 prevOp._id 
              ).catch(e => console.error('Ошибка авто-закрытия прошлого транша:', e));
@@ -613,7 +590,6 @@ const handleSave = async (options = {}) => {
                 isClosedState = true; 
                 isPrepaymentState = false; 
             } else { 
-                // Retail Prepayment
                 isClosedState = false; 
                 isPrepaymentState = true; 
             } 
@@ -621,12 +597,11 @@ const handleSave = async (options = {}) => {
             isDealTrancheForce = true;
             if (options.autoCloseCurrent) isClosedState = true; 
         } else if (operationStatus.value === 'prepayment') {
-            isPrepaymentState = true; // B2B Prepayment
+            isPrepaymentState = true; 
         }
 
         const payload = {
             type: 'income', amount: rawAmount, 
-            // 🟢 ИСПОЛЬЗУЕМ УМНУЮ ДАТУ (СЕГОДНЯ = СЕЙЧАС)
             date: createSmartDate(editableDate.value), 
             accountId: selectedAccountId.value,
             companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
@@ -647,7 +622,6 @@ const handleSave = async (options = {}) => {
                 cId,
                 indId,
                 rawAmount, 
-                // 🟢 Используем умную дату
                 createSmartDate(editableDate.value), 
                 null 
             ).catch(e => console.error('Ошибка авто-акта для финала:', e));

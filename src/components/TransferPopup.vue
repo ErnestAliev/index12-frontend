@@ -8,12 +8,11 @@ import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v29.3 - WIDGET FREEZE FIX ---
- * * ВЕРСИЯ: 29.3
- * * ДАТА: 2025-12-11
+ * * --- МЕТКА ВЕРСИИ: v29.4 - ACCOUNT OWNER DISPLAY ---
+ * * ВЕРСИЯ: 29.4
+ * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. handleSave: Добавлена принудительная проверка владельцев счетов перед отправкой.
- * Теперь ID компаний/физлиц всегда попадают в payload, что чинит "зависание" виджетов при оптимистичном обновлении.
+ * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
  */
 
 const mainStore = useMainStore();
@@ -122,19 +121,32 @@ const formatNumber = (numStr) => { const clean = `${numStr}`.replace(/[^0-9]/g, 
 const onAmountInput = (event) => { amount.value = formatNumber(event.target.value.replace(/[^0-9]/g, '')); };
 
 const getOwnerName = (acc) => {
-    if (acc.companyId) { const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId; const c = mainStore.companies.find(comp => comp._id === cId); return c ? `Компания: ${c.name}` : 'Компания'; }
-    if (acc.individualId) { const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId; const i = mainStore.individuals.find(ind => ind._id === iId); return i ? `Физлицо: ${i.name}` : 'Физлицо'; }
-    return 'Нет привязки';
+    if (acc.companyId) { 
+        const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId; 
+        const c = mainStore.companies.find(comp => comp._id === cId); 
+        return c ? c.name : 'Компания'; 
+    }
+    if (acc.individualId) { 
+        const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId; 
+        const i = mainStore.individuals.find(ind => ind._id === iId); 
+        return i ? i.name : 'Физлицо'; 
+    }
+    return null;
 };
 
+// 🟢 ОБНОВЛЕНО: Формирование списка счетов с subLabel
 const accountOptions = computed(() => {
-  const options = mainStore.currentAccountBalances.map(acc => ({
-    value: acc._id,
-    label: acc.name,
-    rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
-    tooltip: getOwnerName(acc),
-    isSpecial: false
-  }));
+  const options = mainStore.currentAccountBalances.map(acc => {
+    const owner = getOwnerName(acc);
+    return {
+        value: acc._id,
+        label: acc.name,
+        subLabel: owner, // 🟢 Владелец серым цветом
+        rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
+        tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
+        isSpecial: false
+    };
+  });
   // 🟢 Sticky option via slot
   options.push({ isActionRow: true });
   return options;

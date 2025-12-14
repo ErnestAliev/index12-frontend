@@ -2,17 +2,17 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
- * * --- КОМПОНЕНТ: BaseSelect v4.4 - MOBILE OPTIMIZED ---
- * * ВЕРСИЯ: 4.4
- * * ДАТА: 2025-12-08
+ * * --- КОМПОНЕНТ: BaseSelect v4.5 - OWNER LABEL SUPPORT ---
+ * * ВЕРСИЯ: 4.5
+ * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (CSS) Добавлены медиа-запросы для уменьшения высоты до 44px на мобильных устройствах.
- * 2. (CSS) Уменьшены отступы и шрифты для компактности.
+ * 1. (UI) Добавлена поддержка `subLabel` для отображения владельца (компании/физлица) серым цветом.
+ * 2. (CSS) Обновлена структура отображения выбранного элемента и опций списка.
  */
 
 const props = defineProps({
   modelValue: { type: [String, Number, Object], default: null },
-  options: { type: Array, default: () => [] }, // { value, label, rightText, tooltip, isSpecial, isHeader, isActionRow }
+  options: { type: Array, default: () => [] }, // { value, label, subLabel, rightText, tooltip, isSpecial, isHeader, isActionRow }
   placeholder: { type: String, default: 'Выберите...' },
   label: { type: String, default: '' }, 
   disabled: { type: Boolean, default: false }
@@ -60,7 +60,11 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
         <div v-if="selectedOption && selectedOption.value !== null" class="filled-state">
           <span class="small-label">{{ label }}</span>
           <div class="value-row">
-             <span class="selected-text">{{ selectedOption.label }}</span>
+             <div class="text-group">
+                 <span class="selected-text">{{ selectedOption.label }}</span>
+                 <!-- 🟢 subLabel (Компания/Владелец) -->
+                 <span v-if="selectedOption.subLabel" class="sub-text">{{ selectedOption.subLabel }}</span>
+             </div>
              <span v-if="selectedOption.rightText" class="right-text">{{ selectedOption.rightText }}</span>
           </div>
         </div>
@@ -100,7 +104,11 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 
           <!-- 3. Обычная опция -->
           <div v-else class="option-row">
-            <span class="option-left">{{ option.label }}</span>
+            <div class="option-left-group">
+                <span class="option-label">{{ option.label }}</span>
+                <!-- 🟢 subLabel в списке -->
+                <span v-if="option.subLabel" class="option-sub">{{ option.subLabel }}</span>
+            </div>
             <span v-if="option.rightText" class="option-right">{{ option.rightText }}</span>
           </div>
         </li>
@@ -170,12 +178,32 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   width: 100%;
   justify-content: space-between;
   align-items: baseline;
+  overflow: hidden; /* Предотвращает вываливание */
+}
+
+/* Группа текста (Название + Компания) */
+.text-group {
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
+  flex-grow: 1;
+  margin-right: 8px;
 }
 
 .selected-text {
   font-size: 15px;
   color: #1a1a1a;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 🟢 Стиль для subLabel в триггере */
+.sub-text {
+  font-size: 13px;
+  color: #999; /* Бледно-серый */
+  font-weight: 400;
+  margin-left: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -184,7 +212,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .right-text {
   font-size: 13px;
   color: #999;
-  margin-left: 8px;
+  flex-shrink: 0;
 }
 
 .placeholder { 
@@ -264,8 +292,29 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   align-items: center;
   width: 100%;
 }
-.option-left { text-align: left; flex-grow: 1; }
-.option-right { text-align: right; font-size: 0.9em; color: #aaa; }
+
+.option-left-group {
+    display: flex;
+    align-items: baseline;
+    flex-grow: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+.option-label {
+    color: #1a1a1a;
+}
+
+/* 🟢 Стиль для subLabel в списке */
+.option-sub {
+    font-size: 13px;
+    color: #aaa;
+    margin-left: 8px;
+    font-weight: 400;
+}
+
+.option-right { text-align: right; font-size: 0.9em; color: #aaa; flex-shrink: 0; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; transform-origin: top; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: scaleY(0.95); }
@@ -279,6 +328,10 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   .selected-text, .placeholder {
     font-size: 12px; /* Чуть меньше шрифт */
   }
+  .sub-text {
+      font-size: 11px; /* Чуть меньше сабтекст */
+      margin-left: 6px;
+  }
   .small-label {
     font-size: 10px;
     margin-bottom: -2px; /* Подтягиваем лейбл */
@@ -289,6 +342,9 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   .list-item-wrapper {
     padding: 10px 12px; /* Уменьшаем отступы в списке */
     font-size: 14px;
+  }
+  .option-sub {
+      font-size: 12px;
   }
 }
 </style>

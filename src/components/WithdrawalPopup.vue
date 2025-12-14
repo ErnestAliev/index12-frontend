@@ -8,12 +8,11 @@ import { useMainStore } from '@/stores/mainStore';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v30.0 - CASH REGISTER LOGIC ---
- * * ВЕРСИЯ: 30.0
- * * ДАТА: 2025-12-07
+ * * --- МЕТКА ВЕРСИИ: v30.1 - ACCOUNT OWNER DISPLAY ---
+ * * ВЕРСИЯ: 30.1
+ * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (FEAT) Добавлен выбор "Создать кассу" (Обычная/Особая) для счета списания.
- * 2. (LOGIC) Поддержка флага isExcluded при создании счета.
+ * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
  */
 
 const mainStore = useMainStore();
@@ -69,25 +68,29 @@ const getOwnerName = (acc) => {
     if (acc.companyId) {
         const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
         const c = mainStore.companies.find(comp => comp._id === cId);
-        return c ? `Компания: ${c.name}` : 'Компания';
+        return c ? c.name : 'Компания';
     }
     if (acc.individualId) {
         const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
         const i = mainStore.individuals.find(ind => ind._id === iId);
-        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+        return i ? i.name : 'Физлицо';
     }
-    return 'Нет привязки';
+    return null;
 };
 
 // Опции Счетов
 const accountOptions = computed(() => {
-  const opts = mainStore.currentAccountBalances.map(acc => ({
-    value: acc._id,
-    label: acc.name,
-    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
-    tooltip: getOwnerName(acc),
-    isSpecial: false
-  }));
+  const opts = mainStore.currentAccountBalances.map(acc => {
+    const owner = getOwnerName(acc);
+    return {
+        value: acc._id,
+        label: acc.name,
+        subLabel: owner, // 🟢 Передаем владельца в subLabel
+        rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
+        tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
+        isSpecial: false
+    };
+  });
   // 🟢 Sticky button via slot
   opts.push({ isActionRow: true });
   return opts;

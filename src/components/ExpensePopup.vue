@@ -12,12 +12,11 @@ import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js'; 
 
 /**
- * * --- МЕТКА ВЕРСИИ: v58.1 - TRUE TIME FIX ---
- * * ВЕРСИЯ: 58.1
- * * ДАТА: 2025-12-12
+ * * --- МЕТКА ВЕРСИИ: v58.3 - ACCOUNT OWNER DISPLAY ---
+ * * ВЕРСИЯ: 58.3
+ * * ДАТА: 2025-12-14
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Внедрена логика createSmartDate (как в IncomePopup) для устранения дублей и зависаний при переносе.
- * 2. (FIX) Дата теперь корректно обрабатывает "Сегодня" (ставит текущее время) и другие дни (ставит 12:00).
+ * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
  */
 
 const mainStore = useMainStore();
@@ -170,26 +169,32 @@ const getOwnerName = (acc) => {
     if (acc.companyId) {
         const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
         const c = mainStore.companies.find(comp => comp._id === cId);
-        return c ? `Компания: ${c.name}` : 'Компания';
+        return c ? c.name : 'Компания';
     }
     if (acc.individualId) {
         const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
         const i = mainStore.individuals.find(ind => ind._id === iId);
-        return i ? `Физлицо: ${i.name}` : 'Физлицо';
+        return i ? i.name : 'Физлицо';
     }
-    return 'Нет привязки';
+    return null;
 };
 
 // --- OPTIONS ---
+// 🟢 ОБНОВЛЕНО: Формирование списка счетов с subLabel
 const accountOptions = computed(() => {
-  const opts = mainStore.currentAccountBalances.map(acc => ({
-    value: acc._id,
-    label: acc.name,
-    rightText: `${formatNumber(Math.abs(acc.balance))} ₸`, 
-    tooltip: getOwnerName(acc), 
-    isSpecial: false
-  }));
-  // 🟢 Sticky options теперь через slot #action-item
+  const opts = mainStore.currentAccountBalances.map(acc => {
+    const owner = getOwnerName(acc);
+    
+    return {
+        value: acc._id,
+        label: acc.name, // Имя счета
+        subLabel: owner, // 🟢 Владелец серым цветом
+        rightText: `${formatNumber(Math.abs(acc.balance))} ₸`, 
+        tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
+        isSpecial: false
+    };
+  });
+  // 🟢 Sticky options через slot #action-item
   opts.push({ isActionRow: true }); 
   return opts;
 });
@@ -331,24 +336,16 @@ const toInputDate = (dateObj) => {
 };
 
 // 🟢 2. ИСПРАВЛЕННАЯ ФУНКЦИЯ ДАТЫ: "ИСТИННОЕ ВРЕМЯ" (TRUE TIME)
-// Копируем логику из IncomePopup для синхронизации
 const createSmartDate = (str) => {
     if (!str) return new Date();
     const [y, m, d] = str.split('-').map(Number);
     const date = new Date(y, m - 1, d);
-    
-    // Получаем текущее время
     const now = new Date();
-    
-    // Проверка: Является ли выбранная дата "Сегодняшним днем"?
     const isToday = now.getFullYear() === y && now.getMonth() === (m - 1) && now.getDate() === d;
     
     if (isToday) {
-        // Если сегодня - возвращаем текущее время (с точностью до секунд)
-        // Это решит проблему "будущего", так как сервер получит реальное время, а не 12:00
         return now;
     } else {
-        // Если дата другая (вчера/завтра) - ставим 12:00, чтобы избежать сдвигов часовых поясов
         date.setHours(12, 0, 0, 0);
         return date;
     }
