@@ -65,7 +65,8 @@ const formatMoney = (val) => formatNumber(Math.abs(val || 0));
 </script>
 
 <template>
-  <div class="dashboard-card" @click.stop="isFilterOpen = false">
+  <!-- 🟢 Убрал .stop чтобы клик прошел вверх к TheHeader для Fullscreen -->
+  <div class="dashboard-card" @click="isFilterOpen = false">
     
     <div class="card-title-container">
       <div class="card-title">{{ props.title }}</div>

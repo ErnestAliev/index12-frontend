@@ -21,9 +21,6 @@ import OperationListEditor from './OperationListEditor.vue';
 import WithdrawalPopup from './WithdrawalPopup.vue';
 import CreditListEditor from './CreditListEditor.vue'; 
 import CreditWizardPopup from './CreditWizardPopup.vue'; 
-import PrepaymentModal from './PrepaymentModal.vue';
-import RetailClosurePopup from './RetailClosurePopup.vue';
-import RefundPopup from './RefundPopup.vue';
 import PrepaymentListEditor from './PrepaymentListEditor.vue';
 import WithdrawalListEditor from './WithdrawalListEditor.vue';
 
@@ -35,14 +32,11 @@ import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v46.5 - FORCE FONT SIZE FIX ---
- * * ВЕРСИЯ: 46.5
- * * ДАТА: 2025-12-09
+ * * --- МЕТКА ВЕРСИИ: v47.1 - DRAGGABLE FIX ---
+ * * ВЕРСИЯ: 47.1
+ * * ДАТА: 2025-12-15
  * * ИЗМЕНЕНИЯ:
- * 1. (GRID) Планшетная сетка 5 колонок для ширины 768px - 1400px.
- * 2. (CSS) Добавлены жесткие переопределения (!important) шрифтов для внутренних элементов карточек.
- * Это отменяет действие локальных медиа-запросов (max-height: 900px) внутри компонентов, 
- * которые уменьшали шрифт при включении прогноза.
+ * 1. (FIX) Удален комментарий из слота #item в draggable, который вызывал ошибку "Item slot must have only one child".
  */
 
 const mainStore = useMainStore();
@@ -50,6 +44,22 @@ const mainStore = useMainStore();
 // --- ГЛОБАЛЬНОЕ МЕНЮ ВИДЖЕТОВ ---
 const activeDropdown = ref(null);
 const searchQuery = ref('');
+
+// 🟢 FULLSCREEN STATE
+const fullscreenWidgetKey = ref(null);
+
+const openFullscreen = (key) => {
+  // Не открываем плейсхолдеры
+  if (key && !key.startsWith('placeholder_')) {
+    fullscreenWidgetKey.value = key;
+    document.body.style.overflow = 'hidden'; // Блокируем скролл страницы
+  }
+};
+
+const closeFullscreen = () => {
+  fullscreenWidgetKey.value = null;
+  document.body.style.overflow = ''; // Разблокируем скролл
+};
 
 const filteredWidgets = computed(function() {
   if (!searchQuery.value) return mainStore.allWidgets;
@@ -87,7 +97,6 @@ const windowWidth = ref(window.innerWidth);
 const updateWidth = () => { windowWidth.value = window.innerWidth; };
 
 // 🟢 Tablet Detection via MatchMedia (Sync with CSS)
-// Расширяем диапазон до 1400px (iPad Pro, горизонтальные планшеты).
 const tabletMediaQuery = window.matchMedia('(min-width: 768px) and (max-width: 1400px)');
 const isTabletGrid = ref(tabletMediaQuery.matches);
 
@@ -130,16 +139,13 @@ const localWidgets = computed({
       const allKeys = mainStore.allWidgets.map(w => w.key);
       const ordered = [...mainStore.dashboardLayout];
       
-      // Добавляем скрытые виджеты
       allKeys.forEach(k => { if (!layoutSet.has(k)) ordered.push(k); });
       
-      // 🟢 Сетка 5x для планшетов (включая Pro до 1400px)
       const rowSize = isTabletGrid.value ? 5 : 6;
       
       const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
       const totalSlots = rows * rowSize;
       
-      // Плейсхолдеры
       while (ordered.length < totalSlots) { ordered.push(`placeholder_${ordered.length}`); }
       return ordered;
     }
@@ -169,8 +175,6 @@ const isPrepaymentEditorVisible = ref(false);
 const prepaymentEditorInitialTab = ref('clients');
 const isWithdrawalListEditorVisible = ref(false);
 const isEntityPopupVisible = ref(false);
-const isRetailPopupVisible = ref(false);
-const isRefundPopupVisible = ref(false);
 
 // 🟢 Налоговые стейты
 const isTaxListEditorVisible = ref(false);
@@ -377,7 +381,141 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     </div>
   </div>
 
-  <!-- DRAGGABLE -->
+  <!-- 🟢 FULLSCREEN OVERLAY -->
+  <Teleport to="body">
+    <div v-if="fullscreenWidgetKey" class="fullscreen-overlay" @click.self="closeFullscreen">
+       <div class="fullscreen-content">
+          <div class="fullscreen-card-container">
+             <!-- Рендерим нужный виджет на основе fullscreenWidgetKey -->
+             
+             <HeaderTotalCard
+                v-if="fullscreenWidgetKey === 'currentTotal'"
+                :title="'Всего на счетах\nна текущий момент'"
+                :totalBalance="loggedCurrentTotal" 
+                :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
+                :subtitleDate="`до ${todayStr}`"
+                :widgetKey="fullscreenWidgetKey"
+                :widgetIndex="-1"
+             />
+
+             <HeaderTaxCard
+                v-else-if="fullscreenWidgetKey === 'taxes'"
+                title="Мои налоги"
+                :widgetKey="fullscreenWidgetKey"
+                :widgetIndex="-1"
+                @add="onTaxesAdd"
+                @edit="onTaxesEdit"
+             />
+
+             <HeaderLiabilitiesCard
+                v-else-if="fullscreenWidgetKey === 'liabilities'"
+                title="Мои предоплаты" 
+                :weOweAmount="mainStore.liabilitiesWeOwe"
+                :theyOweAmount="mainStore.liabilitiesTheyOwe"
+                :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
+                :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
+                :widgetKey="fullscreenWidgetKey"
+                :widgetIndex="-1"
+                @add="onLiabilitiesAdd"
+                @edit="onLiabilitiesEdit"
+                @open-tab="onLiabilitiesTab"
+             />
+
+             <HeaderCreditCard
+                v-else-if="fullscreenWidgetKey === 'credits'"
+                title="Мои кредиты"
+                :items="mergedCreditBalances"
+                emptyText="...кредитов нет..."
+                :widgetKey="fullscreenWidgetKey"
+                :widgetIndex="-1"
+                @add="onCreditsAdd"
+                @edit="onCreditsEdit"
+             />
+
+             <HeaderBalanceCard
+                v-else-if="fullscreenWidgetKey === 'accounts'"
+                title="Счета/Кассы"
+                :items="loggedAccountBalances" emptyText="...счетов нет..."
+                :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
+                :isDeltaMode="false"
+                @add="openAddPopup('Новый счет', mainStore.addAccount, 'account')"
+                @edit="openEditPopup('Редактировать счета', mainStore.accounts, 'accounts')"
+             />
+
+             <HeaderBalanceCard
+                v-else-if="fullscreenWidgetKey === 'companies'"
+                title="Мои компании"
+                :items="mergedCompanyBalances" emptyText="...компаний нет..."
+                :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
+                :isDeltaMode="false"
+                @add="openAddPopup('Новая компания', mainStore.addCompany, 'company')"
+                @edit="openEditPopup('Редактировать компании', mainStore.companies, 'companies')"
+             />
+
+             <HeaderBalanceCard
+                v-else-if="fullscreenWidgetKey === 'contractors'"
+                title="Мои контрагенты"
+                :items="mergedContractorBalances" emptyText="...контрагентов нет..."
+                :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
+                :isDeltaMode="true"
+                @add="openAddPopup('Новый контрагент', mainStore.addContractor, 'contractor')"
+                @edit="openEditPopup('Редактировать контрагентов', mainStore.visibleContractors, 'contractors')"
+             />
+
+             <HeaderBalanceCard
+                v-else-if="fullscreenWidgetKey === 'projects'"
+                title="Мои проекты"
+                :items="mergedProjectBalances" emptyText="...проектов нет..."
+                :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
+                :isDeltaMode="true"
+                @add="openAddPopup('Новый проект', mainStore.addProject, 'project')"
+                @edit="openEditPopup('Редактировать проекты', mainStore.projects, 'projects')"
+             />
+
+             <HeaderBalanceCard
+                v-else-if="fullscreenWidgetKey === 'individuals'"
+                title="Физлица"
+                :items="mergedIndividualBalances" emptyText="...физлиц нет..."
+                :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
+                :isDeltaMode="true"
+                @add="openAddPopup('Новое Физлицо', mainStore.addIndividual, 'individual')"
+                @edit="openEditPopup('Редактировать Физлиц', mainStore.individuals, 'individuals')"
+             />
+
+             <HeaderBalanceCard
+                v-else-if="fullscreenWidgetKey === 'categories'"
+                title="Категории"
+                :items="mergedCategoryBalances" emptyText="...категорий нет..."
+                :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
+                :isDeltaMode="true"
+                @add="openAddPopup('Новая категория', mainStore.addCategory, 'category')"
+                @edit="openEditPopup('Редактировать категории', mainStore.visibleCategories, 'categories')"
+             />
+
+             <HeaderTotalCard
+                v-else-if="fullscreenWidgetKey === 'futureTotal'"
+                :title="'Всего на счетах\nс учетом будущих'"
+                :totalBalance="loggedFutureTotal" 
+                :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
+                :subtitleDate="`до ${futureUntilStr}`"
+                :widgetKey="fullscreenWidgetKey"
+                :widgetIndex="-1"
+             />
+
+             <HeaderCategoryCard
+                v-else-if="fullscreenWidgetKey === 'transfers' || fullscreenWidgetKey.startsWith('cat_') || fullscreenWidgetKey === 'incomeList' || fullscreenWidgetKey === 'expenseList' || fullscreenWidgetKey === 'withdrawalList'"
+                :title="getWidgetByKey(fullscreenWidgetKey)?.name || '...'"
+                :widgetKey="fullscreenWidgetKey"
+                :widgetIndex="-1"
+                @add="onCategoryAdd(fullscreenWidgetKey, -1)"
+                @edit="onCategoryEdit(fullscreenWidgetKey)"
+             />
+          </div>
+       </div>
+    </div>
+  </Teleport>
+
+  <!-- DRAGGABLE GRID -->
   <draggable 
     v-model="localWidgets" 
     item-key="key"
@@ -388,7 +526,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     :animation="200"
   >
     <template #item="{ element: widgetKey, index }">
-      <div class="dashboard-card-wrapper">
+      <div class="dashboard-card-wrapper" @click="openFullscreen(widgetKey)">
         <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
@@ -402,7 +540,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
         
-        <!-- 🟢 NEW: Виджет Налогов -->
         <HeaderTaxCard
           v-else-if="widgetKey === 'taxes'"
           title="Мои налоги"
@@ -562,31 +699,64 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 <style scoped>
 .header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; padding: 1px; background-color: var(--color-border); border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
-.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--color-background-soft); min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: grab; }
+.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--color-background-soft); min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: grab; transition: background-color 0.2s; }
 .dashboard-card-wrapper:active { cursor: grabbing; }
+
+/* 🟢 HOVER EFFECT */
+.dashboard-card-wrapper:hover {
+  background-color: var(--color-background-mute); /* Slight highlight */
+}
+
 :deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
+
+/* 🟢 FULLSCREEN STYLES */
+.fullscreen-overlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0, 0, 0, 0.7); /* Затемнение */
+  backdrop-filter: blur(5px);      /* Размытие */
+  z-index: 5000;
+  display: flex; justify-content: center; align-items: center;
+  padding: 40px;
+  box-sizing: border-box;
+}
+
+.fullscreen-content {
+  width: 100%; max-width: 800px; height: 80vh;
+  display: flex; flex-direction: column;
+}
+
+.fullscreen-card-container {
+  width: 100%; height: 100%;
+  background: var(--color-background-soft);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  /* 🟢 Внутри карточки все шрифты будут крупнее/стандартными */
+}
+
+/* Принудительно растягиваем карточку внутри модалки */
+.fullscreen-card-container :deep(.dashboard-card) {
+    padding: 24px !important;
+    height: 100% !important;
+}
+
+/* Увеличиваем шрифт в полноэкранном режиме */
+.fullscreen-card-container :deep(.card-title) { font-size: 18px !important; }
+.fullscreen-card-container :deep(.card-items-list),
+.fullscreen-card-container :deep(.card-item) { font-size: 16px !important; line-height: 1.6 !important; }
+.fullscreen-card-container :deep(.card-total-balance) { font-size: 48px !important; }
+
 
 /* 🟢 DEFAULT 6x1 LOGIC (Desktop > 1400px) */
 .dashboard-card-wrapper:nth-child(6n) { border-right: none !important; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) { display: none; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
 
-/* 🟢 TABLET LOGIC (5 columns) - NOW INCLUDES ALL UP TO 1400px */
+/* 🟢 TABLET LOGIC (5 columns) */
 @media (min-width: 768px) and (max-width: 1400px) {
-  /* Сетка 5 колонок */
-  .header-dashboard {
-    grid-template-columns: repeat(5, 1fr);
-  }
+  .header-dashboard { grid-template-columns: repeat(5, 1fr); }
 
-  /* 🟢 FIX FONT SIZE STABILITY */
-  /* Принудительно задаем размер шрифта, чтобы он не уменьшался при активации прогноза.
-     Переопределяем стили для всех типов контента внутри карточек:
-     - .card-items-list (списки счетов/компаний)
-     - .card-item (строки)
-     - .category-items-list-scroll (списки категорий)
-     - .summary-value-block (итоги категорий)
-     - .forecast-mode (сам режим прогноза)
-  */
   :deep(.dashboard-card),
   :deep(.card-items-list),
   :deep(.card-item),
@@ -597,38 +767,17 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       font-size: var(--font-sm, 13px) !important;
   }
   
-  /* Игнорируем уменьшение для конкретных ячеек */
-  :deep(.current-cell),
-  :deep(.future-cell),
-  :deep(.forecast-display) {
-      font-size: inherit !important;
-  }
+  :deep(.current-cell), :deep(.future-cell), :deep(.forecast-display) { font-size: inherit !important; }
   
-  /* Сбрасываем стили для 6-й колонки */
-  .dashboard-card-wrapper:nth-child(6n) {
-    border-right: 1px solid var(--color-border) !important;
-  }
-  
-  /* Убираем границу у 5-го элемента в ряду */
-  .dashboard-card-wrapper:nth-child(5n) {
-    border-right: none !important;
-  }
-  
-  /* В свернутом состоянии скрываем всё после 5-го элемента */
-  .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+6) { 
-    display: none; 
-  }
-  
-  /* В развернутом состоянии, у последних 5 элементов убираем нижнюю границу */
-  .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+5) { 
-    border-bottom: none !important; 
-  }
+  .dashboard-card-wrapper:nth-child(6n) { border-right: 1px solid var(--color-border) !important; }
+  .dashboard-card-wrapper:nth-child(5n) { border-right: none !important; }
+  .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+6) { display: none; }
+  .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+5) { border-bottom: none !important; }
 }
 
 /* 🟢 EXPANDED LOGIC */
 .header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }
 
-/* Default desktop expanded bottom border removal (last 6 items) */
 @media (min-width: 1401px) {
   .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }
 }
