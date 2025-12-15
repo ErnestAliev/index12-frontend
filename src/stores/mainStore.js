@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v128.0 (FIX: Prepayments in Income Widget) LOADED ---'); 
+  console.log('--- mainStore.js v129.0 (EAGER LOADING LOGIC) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -1067,8 +1067,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
   // 🟢 HELPER: обновление проекции через Projection Store
   const _triggerProjectionUpdate = () => {
-      const ps = useProjectionStore();
-      ps.updateProjectionFromCalculationData(ps.projection.mode, new Date(ps.currentYear, 0, ps.todayDayOfYear));
+      // В новой парадигме Eager Loading, если мы добавляем/изменяем операцию локально,
+      // мы можем захотеть обновить проекцию.
+      // Но глобальный пересчет loadCalculationData тяжелый.
+      // Пока оставим как есть, projectionStore будет реактивно обновляться от calculationCache.
+      // const ps = useProjectionStore();
+      // ps.updateProjectionFromCalculationData(...); 
   };
 
   // 🟢 SOCKET EVENT HANDLERS
@@ -1508,14 +1512,65 @@ export const useMainStore = defineStore('mainStore', () => {
   const _syncCaches = (key, ops) => { displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops]; };
   
   async function updateFutureProjectionWithData(mode, today = new Date()) {
-    const ps = useProjectionStore(); 
-    const base = new Date(today); base.setHours(0, 0, 0, 0);
-    const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, base);
-    await fetchOperationsRange(startDate, endDate); 
-    ps.updateProjectionFromCalculationData(mode, today); 
+     // Deprecated. Use loadCalculationData.
+     await loadCalculationData(mode, today);
   }
 
-  async function loadCalculationData(mode, date) { await updateFutureProjectionWithData(mode, date); }
+  // 🟢🟢 REFACTOR: EAGER LOADING IMPLEMENTATION 🟢🟢
+  async function loadCalculationData(mode, date = new Date()) {
+    const ps = useProjectionStore();
+    
+    // 1. Ставим статус "Считаем"
+    ps.setCalculationStatus('calculating');
+
+    try {
+        // Базовая дата для расчета (обычно 1 января или "сегодня", от которого строим)
+        // В ProjectionStore используется currentYear/todayDayOfYear, передаем "date" как опорную точку
+        // (Обычно это ps.todayDayOfYear преобразованный в дату)
+        
+        const anchorDate = new Date(date); // Copy
+        
+        // 2. Вычисляем полный диапазон дат для этого режима
+        const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, anchorDate);
+
+        // 3. Eager Fetch: Загружаем данные для всего диапазона, даже если не видно на экране
+        await fetchOperationsRange(startDate, endDate);
+
+        // 4. Обновляем состояние проекции (даты), чтобы computed-свойства в store пересчитались
+        ps.updateProjectionState(mode, anchorDate);
+
+        // 5. Считаем глобальный баланс на конец периода
+        // Используем filteredOps из mainStore (они учитывают includeExcludedInTotal)
+        // Но нам нужны только FUTURE ops. В mainStore.futureOps они уже отфильтрованы по проекции!
+        // Так как мы обновили проекцию в шаге 4, futureOps реактивно обновятся.
+        
+        // ВАЖНО: Даем Vue такт на обновление computed свойств
+        // Но в action это синхронно для computed.
+        
+        const currentBal = currentTotalBalance.value; 
+        const futureOperations = futureOps.value; // Computed уже должен видеть новые границы дат
+
+        let futureSum = 0;
+        futureOperations.forEach(op => {
+             // Фильтры уже применены в futureOps (isTransfer, visibility), но перестрахуемся по типам
+             if (op.type === 'income') {
+                 futureSum += (op.amount || 0);
+             } else if (op.type === 'expense') {
+                 futureSum -= Math.abs(op.amount || 0);
+             }
+        });
+
+        const finalBalance = currentBal + futureSum;
+
+        // 6. Сохраняем результат
+        ps.setGlobalProjectedBalance(finalBalance, endDate);
+        ps.setCalculationStatus('done');
+
+    } catch (e) {
+        console.error("Projection Calculation Failed:", e);
+        ps.setCalculationStatus('idle'); 
+    }
+  }
 
   async function fetchAllEntities(){
     console.log('[mainStore] fetchAllEntities called');
