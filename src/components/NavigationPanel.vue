@@ -20,9 +20,9 @@ const emit = defineEmits(['change-view']);
 
 const views = [
   { key: '12d', num: '12', unit: 'ДНЕЙ' },
-  { key: '1m',  num: '1',  unit: 'МЕСЯЦ' },
-  { key: '3m',  num: '3',  unit: 'МЕСЯЦА' },
-  { key: '6m',  num: '6',  unit: 'МЕСЯЦЕВ' },
+  { key: '1m',  num: '1',  unit: 'МЕС' },
+  { key: '3m',  num: '3',  unit: 'МЕС' },
+  { key: '6m',  num: '6',  unit: 'МЕС' },
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
 const currentIndex = ref(0); // Стартуем с '12d'
