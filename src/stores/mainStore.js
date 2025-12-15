@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v129.0 (EAGER LOADING LOGIC) LOADED ---'); 
+  console.log('--- mainStore.js v131.0 (PERFORMANCE FIX: BULK RANGE FETCH) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -1478,35 +1478,53 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
+  // 🟢🟢 OPTIMIZATION: FAST RANGE FETCH (NO CHUNKING)
   async function fetchOperationsRange(startDate, endDate) {
     try {
-      const dateKeysToFetch = [];
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dateKey = _getDateKey(d);
-        if (!displayCache.value[dateKey]) {
-          dateKeysToFetch.push(dateKey);
+        // Запрос к серверу за один раз (используя startDate и endDate)
+        const response = await axios.get(`${API_BASE_URL}/events`, {
+            params: {
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString()
+            }
+        });
+        
+        const rawOps = Array.isArray(response.data) ? response.data : [];
+        const processedOps = _mergeTransfers(rawOps);
+        
+        // Группировка полученных операций по dateKey
+        const fetchedMap = new Map();
+        processedOps.forEach(op => {
+            const dk = op.dateKey || _getDateKey(new Date(op.date));
+            if (!fetchedMap.has(dk)) fetchedMap.set(dk, []);
+            fetchedMap.get(dk).push(_populateOp({ ...op, dateKey: dk }));
+        });
+
+        // Обновляем кэш
+        // Проходим по ВСЕМ дням диапазона, чтобы пометить пустые дни как загруженные
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            const dateKey = _getDateKey(d);
+            
+            const serverOps = fetchedMap.get(dateKey) || [];
+            
+            // Сохраняем локальные оптимистичные операции (которые еще не на сервере)
+            let existingOptimistic = [];
+            if (displayCache.value[dateKey]) {
+                existingOptimistic = displayCache.value[dateKey].filter(o => o.isOptimistic);
+            }
+            
+            // Объединяем и сортируем
+            // Если день пустой на сервере и нет оптимистичных - будет пустой массив (loaded, no events)
+            const finalOps = [...existingOptimistic, ...serverOps].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
+            
+            displayCache.value[dateKey] = finalOps;
+            calculationCache.value[dateKey] = [...finalOps];
         }
-      }
-      if (dateKeysToFetch.length === 0) return;
-      const CHUNK_SIZE = 10;
-      for (let i = 0; i < dateKeysToFetch.length; i += CHUNK_SIZE) {
-          const chunk = dateKeysToFetch.slice(i, i + CHUNK_SIZE);
-          const promises = chunk.map(dateKey => 
-              axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`)
-                   .then(res => ({ dateKey, data: res.data }))
-                   .catch(() => ({ dateKey, data: [] }))
-          );
-          const results = await Promise.all(promises);
-          for (const { dateKey, data } of results) {
-              const raw = Array.isArray(data) ? data.slice() : [];
-              const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
-              // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
-              displayCache.value[dateKey] = processedOps.map(_populateOp);
-              calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
-          }
-          await new Promise(r => setTimeout(r, 10));
-      }
-    } catch (error) { if (error.response && error.response.status === 401) user.value = null; }
+
+    } catch (error) { 
+        if (error.response && error.response.status === 401) user.value = null; 
+        console.error("Bulk Fetch Error:", error);
+    }
   }
 
   const _syncCaches = (key, ops) => { displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops]; };
@@ -1516,60 +1534,54 @@ export const useMainStore = defineStore('mainStore', () => {
      await loadCalculationData(mode, today);
   }
 
-  // 🟢🟢 REFACTOR: EAGER LOADING IMPLEMENTATION 🟢🟢
+  // 🟢🟢 REFACTOR: EAGER LOADING WITH FAST BULK FETCH 🟢🟢
   async function loadCalculationData(mode, date = new Date()) {
     const ps = useProjectionStore();
     
-    // 1. Ставим статус "Считаем"
+    // 1. Статус "Считаем"
     ps.setCalculationStatus('calculating');
 
     try {
-        // Базовая дата для расчета (обычно 1 января или "сегодня", от которого строим)
-        // В ProjectionStore используется currentYear/todayDayOfYear, передаем "date" как опорную точку
-        // (Обычно это ps.todayDayOfYear преобразованный в дату)
+        const anchorDate = new Date(date);
         
-        const anchorDate = new Date(date); // Copy
-        
-        // 2. Вычисляем полный диапазон дат для этого режима
+        // 2. Получаем полный диапазон
         const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, anchorDate);
-
-        // 3. Eager Fetch: Загружаем данные для всего диапазона, даже если не видно на экране
+        
+        // 3. BULK FETCH (Один быстрый запрос)
         await fetchOperationsRange(startDate, endDate);
 
-        // 4. Обновляем состояние проекции (даты), чтобы computed-свойства в store пересчитались
+        // 4. Обновляем состояние проекции
         ps.updateProjectionState(mode, anchorDate);
-
-        // 5. Считаем глобальный баланс на конец периода
-        // Используем filteredOps из mainStore (они учитывают includeExcludedInTotal)
-        // Но нам нужны только FUTURE ops. В mainStore.futureOps они уже отфильтрованы по проекции!
-        // Так как мы обновили проекцию в шаге 4, futureOps реактивно обновятся.
         
-        // ВАЖНО: Даем Vue такт на обновление computed свойств
-        // Но в action это синхронно для computed.
+        // 5. Пересчитываем баланс
+        recalculateGlobalBalance(endDate);
         
-        const currentBal = currentTotalBalance.value; 
-        const futureOperations = futureOps.value; // Computed уже должен видеть новые границы дат
-
-        let futureSum = 0;
-        futureOperations.forEach(op => {
-             // Фильтры уже применены в futureOps (isTransfer, visibility), но перестрахуемся по типам
-             if (op.type === 'income') {
-                 futureSum += (op.amount || 0);
-             } else if (op.type === 'expense') {
-                 futureSum -= Math.abs(op.amount || 0);
-             }
-        });
-
-        const finalBalance = currentBal + futureSum;
-
-        // 6. Сохраняем результат
-        ps.setGlobalProjectedBalance(finalBalance, endDate);
+        // 6. Готово
         ps.setCalculationStatus('done');
 
     } catch (e) {
         console.error("Projection Calculation Failed:", e);
         ps.setCalculationStatus('idle'); 
     }
+  }
+
+  // 🟢 Helper to calculate final balance without freezing
+  function recalculateGlobalBalance(endDate) {
+      const ps = useProjectionStore();
+      const currentBal = currentTotalBalance.value; 
+      const futureOperations = futureOps.value; // Reactive
+
+      let futureSum = 0;
+      futureOperations.forEach(op => {
+           if (op.type === 'income') {
+               futureSum += (op.amount || 0);
+           } else if (op.type === 'expense') {
+               futureSum -= Math.abs(op.amount || 0);
+           }
+      });
+
+      const finalBalance = currentBal + futureSum;
+      ps.setGlobalProjectedBalance(finalBalance, endDate);
   }
 
   async function fetchAllEntities(){

@@ -11,7 +11,7 @@ const VIEW_MODE_DAYS = {
 };
 
 export const useProjectionStore = defineStore('projection', () => {
-  console.log('--- projectionStore.js v4.1 (SYNC FIX: EXACT DATES) LOADED ---');
+  console.log('--- projectionStore.js v4.2 (SYNC FIX: CURTAIN LOGIC) LOADED ---');
 
   // --- 1. Date Helpers ---
   const _getDayOfYear = (date) => {
@@ -40,17 +40,30 @@ export const useProjectionStore = defineStore('projection', () => {
     const startDate = new Date(baseDate);
     const endDate = new Date(baseDate);
     
-    // 🟢 FIX: Используем точное количество дней из конфигурации режима.
-    // Больше никаких "запасов" (+35 вместо 30), чтобы дата расчета 
-    // строго совпадала с правым краем таймлайна.
     const modeInfo = VIEW_MODE_DAYS[view] || VIEW_MODE_DAYS['12d'];
-    const daysToAdd = modeInfo.total;
-
-    // Сдвигаем старт немного назад, чтобы видеть контекст (например, вчерашний день)
-    startDate.setDate(startDate.getDate() - 5); 
+    const totalDays = modeInfo.total;
     
-    // Конец периода - ровно базовая дата + длительность режима
-    endDate.setDate(endDate.getDate() + daysToAdd); 
+    // 🟢 FIX: Полная синхронизация с логикой "Шторок" (Curtains) из HomeView.
+    // Таймлайн расширяется влево и вправо. Нам нужно вычислить, сколько дней 
+    // реально видно справа от "сегодня", чтобы расчет совпадал с видимой границей.
+
+    let todayIndex;
+    if (view === '12d') {
+        // В HomeView для 12d используется константа CENTER_INDEX = 5 (при 12 колонках)
+        // То есть "сегодня" стоит на индексе 5 (0..11). Справа остается 6 дней.
+        todayIndex = 5;
+    } else {
+        // Для остальных режимов HomeView центрирует "сегодня": floor(total / 2)
+        // Например, для 1m (30): index 15. Справа остается 14 дней.
+        todayIndex = Math.floor(totalDays / 2);
+    }
+
+    const daysForward = (totalDays - 1) - todayIndex; // Сколько дней в будущем (справа)
+    const daysBack = todayIndex;                      // Сколько дней в прошлом (слева)
+
+    // Применяем смещение
+    startDate.setDate(startDate.getDate() - daysBack);
+    endDate.setDate(endDate.getDate() + daysForward);
     
     return { startDate, endDate };
   };
