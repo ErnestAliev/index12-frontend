@@ -11,7 +11,7 @@ const VIEW_MODE_DAYS = {
 };
 
 export const useProjectionStore = defineStore('projection', () => {
-  console.log('--- projectionStore.js v4.0 (EAGER STATE ADDED) LOADED ---');
+  console.log('--- projectionStore.js v4.1 (SYNC FIX: EXACT DATES) LOADED ---');
 
   // --- 1. Date Helpers ---
   const _getDayOfYear = (date) => {
@@ -40,34 +40,18 @@ export const useProjectionStore = defineStore('projection', () => {
     const startDate = new Date(baseDate);
     const endDate = new Date(baseDate);
     
+    // 🟢 FIX: Используем точное количество дней из конфигурации режима.
+    // Больше никаких "запасов" (+35 вместо 30), чтобы дата расчета 
+    // строго совпадала с правым краем таймлайна.
+    const modeInfo = VIEW_MODE_DAYS[view] || VIEW_MODE_DAYS['12d'];
+    const daysToAdd = modeInfo.total;
+
     // Сдвигаем старт немного назад, чтобы видеть контекст (например, вчерашний день)
-    // Но для расчета будущего нам важна дата окончания.
+    startDate.setDate(startDate.getDate() - 5); 
     
-    switch (view) {
-      case '12d': 
-          startDate.setDate(startDate.getDate() - 5); 
-          endDate.setDate(endDate.getDate() + 12); 
-          break;
-      case '1m':  
-          startDate.setDate(startDate.getDate() - 5); 
-          endDate.setDate(endDate.getDate() + 35); // С запасом на месяц
-          break;
-      case '3m':  
-          startDate.setDate(startDate.getDate() - 5); 
-          endDate.setDate(endDate.getDate() + 95); 
-          break;
-      case '6m':  
-          startDate.setDate(startDate.getDate() - 5); 
-          endDate.setDate(endDate.getDate() + 185); 
-          break;
-      case '1y':  
-          startDate.setDate(startDate.getDate() - 5); 
-          endDate.setDate(endDate.getDate() + 370); 
-          break;
-      default:    
-          startDate.setDate(startDate.getDate() - 5); 
-          endDate.setDate(endDate.getDate() + 12);
-    }
+    // Конец периода - ровно базовая дата + длительность режима
+    endDate.setDate(endDate.getDate() + daysToAdd); 
+    
     return { startDate, endDate };
   };
 
@@ -83,7 +67,7 @@ export const useProjectionStore = defineStore('projection', () => {
   // 🟢 NEW STATE: Eager Calculation Status
   const calculationStatus = ref('idle'); // 'idle' | 'calculating' | 'done'
   const calculatedUntil = ref(null);     // Date object (до какого числа посчитан прогноз)
-  const globalProjectedBalance = ref(0); // Total balance at the end of the calculated period (независимо от скролла)
+  const globalProjectedBalance = ref(0); // Total balance at the end of the calculated period
 
   const savedToday = localStorage.getItem('todayDayOfYear');
   if (savedToday) {
@@ -117,7 +101,7 @@ export const useProjectionStore = defineStore('projection', () => {
       return getViewModeInfo(mode).total; 
   }
 
-  // 🟢 NEW ACTIONS for Eager Loading
+  // 🟢 ACTIONS for Eager Loading
   function setCalculationStatus(status) {
       calculationStatus.value = status;
   }
@@ -132,9 +116,8 @@ export const useProjectionStore = defineStore('projection', () => {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
     
-    // Сброс статуса при переключении режима, чтобы UI понял, что данные обновляются
+    // Сброс статуса при переключении режима
     calculationStatus.value = 'idle';
-    // calculatedUntil.value = null; // Можно не сбрасывать сразу, чтобы показать предыдущее значение пока грузится новое
 
     projection.value = { 
         mode, 
@@ -146,13 +129,11 @@ export const useProjectionStore = defineStore('projection', () => {
     };
   }
 
-  // Deprecated wrapper, logic moved to mainStore.loadCalculationData
+  // Deprecated wrapper
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
      updateProjectionState(mode, today);
   }
 
-  // Используется UI для переключения. 
-  // В новом подходе mainStore сам вызовет обновление данных.
   async function updateFutureProjectionByMode(mode, today = new Date()){
      updateProjectionState(mode, today);
   }
@@ -191,8 +172,6 @@ export const useProjectionStore = defineStore('projection', () => {
     const result = [];
     const cache = mainStore.calculationCache || {};
 
-    // Мы проходим по кэшу. Благодаря Eager Loading в mainStore, 
-    // кэш теперь гарантированно содержит данные для всего выбранного диапазона.
     for (const [dateKey, ops] of Object.entries(cache)) {
         if (Array.isArray(ops)) {
             for (const op of ops) {
@@ -217,14 +196,11 @@ export const useProjectionStore = defineStore('projection', () => {
 
     const byDateKey = {};
     
-    // Аналогично, считаем график только по загруженным данным
     for (const [dateKey, ops] of Object.entries(cache)) {
        if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal:0, dayTotal:0 };
        const dayRec = byDateKey[dateKey];
        if (Array.isArray(ops)) {
            for (const op of ops) {
-               // Логика фильтрации скрытых счетов
-               // (В GraphRenderer есть своя, но здесь базовая для store)
                if (op.accountId && !mainStore.includeExcludedInTotal) {
                    const acc = mainStore.accounts.find(a => mainStore._idsMatch(a._id, op.accountId));
                    if (acc && acc.isExcluded) continue;
@@ -278,10 +254,10 @@ export const useProjectionStore = defineStore('projection', () => {
 
   return {
     todayDayOfYear, currentViewDate, currentYear, projection,
-    calculationStatus, calculatedUntil, globalProjectedBalance, // 🟢 Exports
+    calculationStatus, calculatedUntil, globalProjectedBalance, 
     _getDateKey, _parseDateKey, _getDayOfYear, _calculateDateRangeWithYear, getViewModeInfo, computeTotalDaysForMode,
     setToday, setCurrentViewDate, 
-    setCalculationStatus, setGlobalProjectedBalance, // 🟢 Exports
+    setCalculationStatus, setGlobalProjectedBalance,
     updateProjectionState,
     updateProjectionFromCalculationData, 
     updateFutureProjectionByMode, 
