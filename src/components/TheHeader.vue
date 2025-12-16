@@ -704,7 +704,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 /* 🟢 HOVER EFFECT */
 .dashboard-card-wrapper:hover {
-  background-color: var(--color-background-mute); /* Slight highlight */
+  background-color:  rgba(19, 19, 19, 0.7);  /* Slight highlight */
+  
 }
 
 :deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
