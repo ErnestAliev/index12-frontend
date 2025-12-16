@@ -4,7 +4,7 @@ import { useMainStore } from './mainStore';
 
 export const useDealStore = defineStore('dealStore', () => {
   const mainStore = useMainStore();
-  console.log('--- dealStore.js v118.0 (FIX: Fact vs Forecast Split) LOADED ---');
+  console.log('--- dealStore.js v142.0 (FIX: Auto-Reset Deal Cycle) LOADED ---');
 
   const _toStr = (val) => {
       if (!val) return '';
@@ -14,14 +14,15 @@ export const useDealStore = defineStore('dealStore', () => {
       return String(val);
   };
   
-  // 🟢 Helper for "Fact" calculation (Today or Past)
   const _isPastOrToday = (dateStr) => {
       if (!dateStr) return false;
       const d = new Date(dateStr);
       const now = new Date();
-      // Compare with end of today to include all today's ops
-      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      return d <= endOfToday;
+      
+      d.setHours(0, 0, 0, 0);
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      
+      return d.getTime() <= today.getTime();
   };
 
   const getStrictKey = (op, isRetail) => {
@@ -40,16 +41,15 @@ export const useDealStore = defineStore('dealStore', () => {
       }
   };
 
-  // 🟢 REFACTOR: Single source of truth for deal grouping
   const calculationResult = computed(() => {
+      const _trigger = mainStore.cacheVersion;
+      
       const groups = new Map(); 
       const statusMap = new Map();
 
       const allOps = mainStore.getAllRelevantOps;
       const retailId = mainStore.retailIndividualId;
-      const prepaymentCategoryIds = mainStore.getPrepaymentCategoryIds || [];
 
-      // Sort by date to ensure correct timeline processing
       const sortedOps = [...allOps].sort((a, b) => {
           const timeA = new Date(a.date).getTime();
           const timeB = new Date(b.date).getTime();
@@ -64,16 +64,17 @@ export const useDealStore = defineStore('dealStore', () => {
           const isRetailOp = (retailId && opIndId === String(retailId));
           const isIncome = op.type === 'income';
           const isExpense = op.type === 'expense';
+          
           const opBudget = Number(op.totalDealAmount || 0);
 
           // === B2B FILTER ===
           if (!isRetailOp && isIncome) {
-              if (op.isPrepayment === false) continue;
-              if (op.isPrepayment !== true) { 
-                  const opCatId = _toStr(op.categoryId?._id || op.categoryId);
-                  const isPrepaymentCat = prepaymentCategoryIds.includes(opCatId);
-                  const isTranche = op.isDealTranche === true;
-                  if (opBudget === 0 && !isTranche && !isPrepaymentCat) continue; 
+              const isExplicitPrepay = op.isPrepayment === true;
+              const isTranche = op.isDealTranche === true;
+              const hasBudget = opBudget > 0;
+              
+              if (!isExplicitPrepay && !isTranche && !hasBudget) {
+                  continue; 
               }
           }
 
@@ -91,6 +92,7 @@ export const useDealStore = defineStore('dealStore', () => {
           const history = groups.get(key);
 
           const amt = Math.abs(op.amount || 0);
+          const isOpClosed = !!op.isClosed;
 
           // === RETAIL LOGIC ===
           if (isRetailOp) {
@@ -100,7 +102,8 @@ export const useDealStore = defineStore('dealStore', () => {
                       budget: 0,
                       received: 0,
                       workedOut: 0,
-                      ops: []
+                      ops: [],
+                      hasOpenOps: false
                   });
               }
               const currentBox = history[0];
@@ -110,6 +113,10 @@ export const useDealStore = defineStore('dealStore', () => {
                   currentBox.received += amt;
               } else if (isExpense) {
                   currentBox.workedOut += amt;
+              }
+              
+              if (!isOpClosed) {
+                  currentBox.hasOpenOps = true;
               }
               
               statusMap.set(op._id, { 
@@ -125,28 +132,56 @@ export const useDealStore = defineStore('dealStore', () => {
               let shouldCreateNew = false;
 
               let isCurrentEffectivelyClosed = false;
+
               if (currentDeal) {
                   const debt = Math.max(0, currentDeal.budget - currentDeal.received);
-                  if (debt <= 0 || currentDeal.isManualClosed) {
+                  // Сделка считается "финансово закрытой", если бюджет набран
+                  if (currentDeal.budget > 0 && debt <= 0) {
                       isCurrentEffectivelyClosed = true;
                   }
               }
 
               if (opBudget > 0) {
-                  if (!currentDeal || isCurrentEffectivelyClosed) {
-                      shouldCreateNew = true; 
-                  } else {
+                  // Если пришла операция с БЮДЖЕТОМ (Новая сделка или корректировка)
+                  if (currentDeal && !isCurrentEffectivelyClosed) {
                       if (opBudget > currentDeal.budget) {
-                          currentDeal.budget = opBudget; 
+                          currentDeal.budget = opBudget;
                       }
+                      shouldCreateNew = false; 
+                  } else {
+                      // Если текущая сделка закрыта, а пришел новый бюджет -> это новая сделка
+                      shouldCreateNew = true; 
                   }
               }
               else {
+                  // Если пришла операция БЕЗ бюджета (Акт, Транш, Доп.расход)
                   if (!currentDeal) {
-                      shouldCreateNew = true;
+                      shouldCreateNew = true; 
                   } 
-                  else if (isCurrentEffectivelyClosed) {
-                      shouldCreateNew = true;
+                  else {
+                      // 🟢 LOGIC UPDATE: Проверяем, активна ли текущая сделка
+                      if (isIncome) {
+                          const debt = Math.max(0, currentDeal.budget - currentDeal.received);
+                          
+                          // Критерии активности сделки:
+                          // 1. Есть открытые операции (незакрытые транши)
+                          // 2. Бюджет задан и не исчерпан
+                          // 3. Бюджета нет (работа по факту), но есть переплата (received > workedOut)
+                          const isActive = currentDeal.hasOpenOps || 
+                                           (currentDeal.budget > 0 && debt > 0) || 
+                                           (currentDeal.budget === 0 && currentDeal.received > currentDeal.workedOut);
+                          
+                          if (!isActive) {
+                              // Сделка завершена -> Начинаем новую (счетчик траншей сбросится)
+                              shouldCreateNew = true;
+                          } else {
+                              // Сделка активна -> Прикрепляем как следующий транш
+                              shouldCreateNew = false;
+                          }
+                      } else {
+                          // Расходы (Акты) всегда прикрепляем к текущей, чтобы "закрыть" её
+                          shouldCreateNew = false;
+                      }
                   }
               }
 
@@ -157,19 +192,18 @@ export const useDealStore = defineStore('dealStore', () => {
                       budget: opBudget,
                       received: 0,
                       workedOut: 0, 
-                      isManualClosed: false,
                       incomeCount: 0,
-                      ops: []
+                      ops: [],
+                      hasOpenOps: false 
                   };
                   history.push(currentDeal);
               }
 
-              currentDeal.ops.push(op);
-              
-              // 🟢 Capture manual close
-              if (op.isClosed) {
-                  currentDeal.isManualClosed = true;
+              if (opBudget > currentDeal.budget) {
+                  currentDeal.budget = opBudget;
               }
+
+              currentDeal.ops.push(op);
               
               let trancheIdx = 0;
 
@@ -181,11 +215,15 @@ export const useDealStore = defineStore('dealStore', () => {
                   currentDeal.workedOut += amt;
               }
               
-              const isOpClosed = !!op.isClosed; 
+              // Только ОТКРЫТЫЕ ДОХОДЫ (Транши) держат сделку открытой.
+              // Расходы (Акты) и закрытые доходы не должны влиять на флаг hasOpenOps.
+              if (isIncome && !isOpClosed) {
+                  currentDeal.hasOpenOps = true;
+              }
               
               statusMap.set(op._id, { 
                   trancheIndex: trancheIdx,
-                  isDealClosed: isOpClosed,
+                  isDealClosed: isOpClosed, 
                   dealUUID: currentDeal.id,
                   dealRef: currentDeal
               });
@@ -198,16 +236,27 @@ export const useDealStore = defineStore('dealStore', () => {
   const dealGroups = computed(() => calculationResult.value.groups);
   const opStatusMap = computed(() => calculationResult.value.statusMap);
 
-  // 🟢 1. TOTAL (Forecast) - Includes ALL operations (Future + Past)
+  const _isDealActive = (deal) => {
+      const debt = Math.max(0, deal.budget - deal.received);
+      
+      if (deal.hasOpenOps) return true;
+      if (deal.budget > 0 && debt > 0) return true;
+      if (deal.budget === 0 && deal.received > deal.workedOut) return true;
+      
+      return false;
+  };
+
+  // 🟢 TOTAL (Forecast)
   const liabilitiesTheyOweTotal = computed(() => {
       let total = 0;
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
-              if (deal.isManualClosed) return;
+              if (!_isDealActive(deal)) return;
+
               if (deal.isRetail) {
-                  total += Math.max(0, deal.workedOut - deal.received); // Retail Debt
+                  total += Math.max(0, deal.workedOut - deal.received); 
               } else {
-                  total += Math.max(0, deal.budget - deal.received); // B2B Debt
+                  total += Math.max(0, deal.budget - deal.received); 
               }
           });
       });
@@ -218,40 +267,38 @@ export const useDealStore = defineStore('dealStore', () => {
       let total = 0;
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
-              if (deal.isManualClosed) return;
-              total += Math.max(0, deal.received - deal.workedOut); // Advance
+              if (!_isDealActive(deal)) return;
+              total += Math.max(0, deal.received - deal.workedOut); 
           });
       });
       return total;
   });
 
-  // 🟢 2. CURRENT (Fact) - Includes ONLY Past/Today operations
+  // 🟢 CURRENT (Fact)
   const liabilitiesTheyOweCurrent = computed(() => {
       let total = 0;
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
-              // Re-calculate state based on current operations only
+              if (!_isDealActive(deal)) return;
+
               const currentOps = deal.ops.filter(op => _isPastOrToday(op.date));
               
-              // If no ops happened yet, the deal hasn't technically started for "Fact"
+              if (currentOps.length === 0 && deal.budget > 0) {
+                 return;
+              }
               if (currentOps.length === 0) return;
 
               let curReceived = 0;
               let curWorked = 0;
-              let curBudget = 0;
-              let isClosedNow = false;
+              const curBudget = deal.budget; 
 
               currentOps.forEach(op => {
                    if (op.type === 'income') {
-                       curReceived += op.amount;
-                       if (op.totalDealAmount > curBudget) curBudget = op.totalDealAmount;
+                       curReceived += (op.amount || 0);
                    } else if (op.type === 'expense') {
-                       curWorked += Math.abs(op.amount);
+                       curWorked += Math.abs(op.amount || 0);
                    }
-                   if (op.isClosed) isClosedNow = true;
               });
-
-              if (isClosedNow) return; 
 
               if (deal.isRetail) {
                   total += Math.max(0, curWorked - curReceived);
@@ -267,38 +314,33 @@ export const useDealStore = defineStore('dealStore', () => {
       let total = 0;
       dealGroups.value.forEach((history) => {
           history.forEach(deal => {
+              if (!_isDealActive(deal)) return;
+
               const currentOps = deal.ops.filter(op => _isPastOrToday(op.date));
               if (currentOps.length === 0) return;
 
               let curReceived = 0;
               let curWorked = 0;
-              let isClosedNow = false;
 
               currentOps.forEach(op => {
-                   if (op.type === 'income') curReceived += op.amount;
-                   else if (op.type === 'expense') curWorked += Math.abs(op.amount);
-                   if (op.isClosed) isClosedNow = true;
+                   if (op.type === 'income') curReceived += (op.amount || 0);
+                   else if (op.type === 'expense') curWorked += Math.abs(op.amount || 0);
               });
 
-              if (isClosedNow) return;
-
+              // Должны отработать = Получено - Отработано
               total += Math.max(0, curReceived - curWorked);
           });
       });
       return total;
   });
 
-
-  // --- Public API ---
-  // We expose both Total (Future) and Current (Fact)
-  
   function getOpTrancheStatus(opId) {
       if (!opStatusMap.value) return null;
       const status = opStatusMap.value.get(opId);
       if (!status) return null;
       
       const deal = status.dealRef;
-      const isFullyDone = deal && (deal.isManualClosed || (deal.budget > 0 && deal.received >= deal.budget && deal.workedOut >= deal.received));
+      const isFullyDone = !_isDealActive(deal);
       
       return {
           trancheIndex: status.trancheIndex,
@@ -332,7 +374,7 @@ export const useDealStore = defineStore('dealStore', () => {
            debt = Math.max(0, activeDeal.budget - activeDeal.received);
       }
       
-      if (activeDeal.isManualClosed) debt = 0;
+      if (!_isDealActive(activeDeal)) debt = 0;
       
       const activeTrancheOp = activeDeal.ops
           .slice()
@@ -345,7 +387,7 @@ export const useDealStore = defineStore('dealStore', () => {
           debt: debt,
           activeTranche: activeTrancheOp || null,
           tranchesCount: activeDeal.incomeCount || 0,
-          isClosed: activeDeal.isManualClosed || debt <= 0
+          isClosed: !_isDealActive(activeDeal)
       };
   }
 
@@ -363,16 +405,13 @@ export const useDealStore = defineStore('dealStore', () => {
 
   return {
       dealGroups,
-      
-      // Expose Separated Values
-      liabilitiesTheyOwe: liabilitiesTheyOweTotal, // Deprecated alias, keeping for safety if used directly
-      liabilitiesWeOwe: liabilitiesWeOweTotal,     // Deprecated alias
-      
-      // New Explicit API
       liabilitiesTheyOweTotal,
       liabilitiesWeOweTotal,
       liabilitiesTheyOweCurrent,
       liabilitiesWeOweCurrent,
+      
+      liabilitiesTheyOwe: liabilitiesTheyOweTotal,
+      liabilitiesWeOwe: liabilitiesWeOweTotal,
 
       getDealStatus,
       checkOverpayment,

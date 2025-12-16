@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-  console.log('--- mainStore.js v131.0 (PERFORMANCE FIX: BULK RANGE FETCH) LOADED ---'); 
+  console.log('--- mainStore.js v138.0 (FIX: Reactive Prepayments) LOADED ---'); 
   
   // 🟢 CONNECT SUB-STORES
   const uiStore = useUiStore();
@@ -23,6 +23,9 @@ export const useMainStore = defineStore('mainStore', () => {
   const user = ref(null); 
   const isAuthLoading = ref(true); 
 
+  // 🟢 CACHE VERSIONING (Для принудительного обновления графиков)
+  const cacheVersion = ref(0);
+
   // --- 1. UI STORE BRIDGES ---
   const isHeaderExpanded = computed({
       get: () => uiStore.isHeaderExpanded,
@@ -30,7 +33,6 @@ export const useMainStore = defineStore('mainStore', () => {
   });
   const toggleHeaderExpansion = () => uiStore.toggleHeaderExpansion();
   
-  // Флаг: Учитывать ли исключенные счета в общих суммах
   const includeExcludedInTotal = computed({
       get: () => uiStore.includeExcludedInTotal,
       set: (v) => uiStore.includeExcludedInTotal = v
@@ -100,7 +102,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return String(val);
   };
 
-  // 🟢 FIX: Безопасное сравнение ID (String vs Object)
   const _idsMatch = (id1, id2) => {
       if (!id1 || !id2) return false;
       const s1 = (typeof id1 === 'object' && id1 !== null) ? id1._id : id1;
@@ -109,7 +110,6 @@ export const useMainStore = defineStore('mainStore', () => {
   };
 
   const _getDayOfYear = (date) => {
-    // Используем системное время для расчета дня года
     const start = new Date(date.getFullYear(), 0, 0);
     const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000);
     return Math.floor(diff / 86400000);
@@ -121,8 +121,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return `${year}-${doy}`;
   };
 
-  // 🟢 ГЛАВНЫЙ СТАНДАРТ: ВСЕГДА 12:00 (ПОЛДЕНЬ)
-  // Это гарантирует, что дата не "улетит" во вчера при конвертации
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
         const now = new Date();
@@ -132,57 +130,42 @@ export const useMainStore = defineStore('mainStore', () => {
     const [year, doy] = dateKey.split('-').map(Number);
     const date = new Date(year, 0, 1);
     date.setDate(doy);
-    
-    // ⚡️ FIX: Жестко ставим 12:00 системного времени
     date.setHours(12, 0, 0, 0);
-    
     return date;
   };
 
-  // 🟢 Helper for Time Check (Задача 1.1)
-  // Сравниваем с КОНЦОМ текущего дня по СИСТЕМНОМУ времени.
   const _isEffectivelyPastOrToday = (dateInput) => {
       if (!dateInput) return false;
       const d = new Date(dateInput);
-      const cutoff = new Date(); // Сейчас (системное время)
-      cutoff.setHours(23, 59, 59, 999); // Конец сегодняшнего системного дня
-      // ⚡️ FIX: Используем .getTime() для надежного сравнения
+      const cutoff = new Date(); 
+      cutoff.setHours(23, 59, 59, 999); 
       return d.getTime() <= cutoff.getTime();
   };
 
-  // --- 🟢 EXCLUDED ACCOUNTS LOGIC ---
-
+  // --- EXCLUDED ACCOUNTS ---
   const excludedAccountIds = computed(() => {
     const set = new Set();
     accounts.value.forEach(a => {
-        if (a.isExcluded) set.add(String(a._id));
+        if (a && a.isExcluded) set.add(String(a._id));
     });
     return set;
   });
 
-  // 1. Сборка "Всей известной истории" (Объединяем Deals и Calendar Ops)
   const allKnownOperations = computed(() => {
       const uniqueMap = new Map();
-      
-      // Добавляем операции из сделок (они грузятся полностью)
       dealOperations.value.forEach(op => uniqueMap.set(op._id, op));
-      
-      // Добавляем операции из кэша календаря (что загрузил пользователь)
       allOperationsFlat.value.forEach(op => {
           if (!uniqueMap.has(op._id)) uniqueMap.set(op._id, op);
       });
-      
       return Array.from(uniqueMap.values());
   });
 
-  // 🟢 OPTIMIZATION: Карта всех операций для быстрого поиска по ID
   const allOpsMap = computed(() => {
       const map = new Map();
       allKnownOperations.value.forEach(op => map.set(String(op._id), op));
       return map;
   });
 
-  // --- Проверка видимости для списков (FIXED) ---
   const _isOpVisible = (op) => {
       if (includeExcludedInTotal.value) return true;
       if (!op) return false;
@@ -193,60 +176,41 @@ export const useMainStore = defineStore('mainStore', () => {
           return excludedAccountIds.value.has(idStr);
       };
 
-      // 1. Прямая проверка счета
       if (op.accountId && isExcludedId(op.accountId)) return false;
       
-      // 2. Проверка переводов (если любой из счетов скрыт - скрываем весь перевод)
       if (op.isTransfer || op.type === 'transfer') {
           if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
           if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
       }
 
-      // 🟢 3. FIX: Проверка связанных операций (Акты/Закрытия)
-      // Если это Акт (расход без счета) или любая операция, привязанная к другой
       if (op.relatedEventId && !op.accountId) {
           const parentId = typeof op.relatedEventId === 'object' ? String(op.relatedEventId._id) : String(op.relatedEventId);
-          
-          // Поиск родителя: сначала в карте, если нет — ищем напрямую в сделках (для надежности)
           let parent = allOpsMap.value.get(parentId);
           if (!parent) {
              parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
           }
-          
           if (parent) {
-             // Если у родителя (Предоплаты) есть счет, и он скрыт — скрываем и Акт
              if (parent.accountId && isExcludedId(parent.accountId)) {
                  return false; 
              }
-             // Рекурсивная логика (опционально): Если родитель тоже невидим по какой-то причине
-             // if (!_isOpVisible(parent)) return false;
           }
       }
 
       return true;
   };
 
-  // 🟢 HELPER: Агрегация балансов по видимым операциям
   const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
       const map = new Map();
-      
       ops.forEach(op => {
-          if (!_isOpVisible(op)) return; // ⚡️ Главный фильтр: скрытые счета игнорируются
-          
+          if (!_isOpVisible(op)) return; 
           let key = null;
           const rawKey = op[groupByField];
           key = _toStr(rawKey);
-          
           if (!key) return;
-
-          // Игнорируем переводы для P&L (Проекты, Контрагенты, Категории)
           if ((op.type === 'transfer' || op.isTransfer) && groupByField !== 'individualId') return;
-
           const amt = Math.abs(op[sumField] || 0);
           const sign = op.type === 'income' ? 1 : -1;
-          
           const value = amt * sign;
-
           map.set(key, (map.get(key) || 0) + value);
       });
       return map;
@@ -301,12 +265,20 @@ export const useMainStore = defineStore('mainStore', () => {
       return false;
   };
 
+  // 🟢 SAFE SORT (ROBUST)
   const _sortByOrder = (arr) => {
     if (!Array.isArray(arr)) return [];
-    return arr.sort((a, b) => {
-        const orderDiff = (a.order || 0) - (b.order || 0);
+    const safeArr = arr.filter(x => x && typeof x === 'object');
+    return safeArr.sort((a, b) => {
+        const orderA = (a.order !== undefined && a.order !== null) ? Number(a.order) : 0;
+        const orderB = (b.order !== undefined && b.order !== null) ? Number(b.order) : 0;
+        
+        const orderDiff = orderA - orderB;
         if (orderDiff !== 0) return orderDiff;
-        return (a._id || '').toString().localeCompare((b._id || '').toString());
+        
+        const idA = a._id ? String(a._id) : '';
+        const idB = b._id ? String(b._id) : '';
+        return idA.localeCompare(idB);
     });
   };
 
@@ -386,13 +358,13 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   };
 
-  // 🟢 REFACTOR: Immutable updates for reactivity
   function _updateDealCache(op, mode = 'add') {
-      const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true;
+      // 🟢 FIX: Добавлена проверка op.isPrepayment === true
+      // Теперь одиночные предоплаты без бюджета сразу попадают в кэш сделок и видны в виджете
+      const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true || op.isPrepayment === true;
       if (!isDealRelated) return;
 
       if (mode === 'add') {
-          // FIX: _idsMatch
           const idx = dealOperations.value.findIndex(d => _idsMatch(d._id, op._id));
           if (idx === -1) {
               dealOperations.value = [...dealOperations.value, op];
@@ -415,13 +387,8 @@ export const useMainStore = defineStore('mainStore', () => {
       return allKnownOperations.value.filter(op => _isOpVisible(op));
   });
 
-  // 🟢 FIX: SPLIT LIABILITIES INTO FACT AND FORECAST
-  // liabilitiesWeOwe (Current) = Fact
-  // liabilitiesWeOweFuture (Total) = Forecast
-  
   const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOweCurrent);
   const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOweCurrent);
-  
   const liabilitiesWeOweFuture = computed(() => useDealStore().liabilitiesWeOweTotal);
   const liabilitiesTheyOweFuture = computed(() => useDealStore().liabilitiesTheyOweTotal);
 
@@ -429,9 +396,101 @@ export const useMainStore = defineStore('mainStore', () => {
       return useDealStore().getDealStatus(projectId, categoryId, contractorId || counterpartyIndividualId);
   }
 
-  function closePreviousTranches(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
-      // Logic handled in DealStore
+  // 🟢 🔴 FIX: ULTRA-STRICT CLOSING LOGIC
+  // 1. Exclude the CURRENT operation from closing (it must remain orange)
+  // 2. Ignore pure "Fact" operations (no deal flags)
+  async function closeDealScope(projectId, categoryId, contractorId, counterpartyIndividualId, excludeOpId = null) {
+      console.log('Smart Closing: Updating tranches for deal scope...', { excludeOpId });
+      
+      const pId = _toStr(projectId);
+      const cId = _toStr(categoryId);
+      const targetContrId = contractorId ? _toStr(contractorId) : (counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null);
+      
+      if (!pId || !cId || !targetContrId) return;
+
+      const candidates = allKnownOperations.value.filter(op => {
+          if (op.type !== 'income') return false;
+          if (op.isTransfer) return false;
+          
+          // 🟢 1. SELF-PROTECTION: Exclude the operation we just created/are creating
+          if (excludeOpId && _idsMatch(op._id, excludeOpId)) {
+              return false;
+          }
+
+          // 🟢 2. FACT PROTECTION: Exclude pure facts
+          // Only close things that are explicitly part of a deal structure
+          const isExplicitPrepay = op.isPrepayment === true;
+          const isTranche = op.isDealTranche === true;
+          const hasBudget = (op.totalDealAmount || 0) > 0;
+          
+          if (!isExplicitPrepay && !isTranche && !hasBudget) {
+              return false; // This is a FACT (Clean Income), don't touch it.
+          }
+
+          const opPid = _toStr(op.projectId?._id || op.projectId);
+          const opCid = _toStr(op.categoryId?._id || op.categoryId);
+          
+          if (opPid !== pId || opCid !== cId) return false;
+          
+          const opContr = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
+          return _toStr(opContr) === targetContrId;
+      });
+
+      for (const op of candidates) {
+          if (!op.isClosed) {
+              await updateOperation(op._id, { ...op, isClosed: true });
+          }
+      }
   }
+
+  async function reopenDealScope(closingOp) {
+      console.log('Rollback: Reopening deal scope...', closingOp);
+      
+      const projectId = closingOp.projectId;
+      const categoryId = closingOp.categoryId;
+      const contractorId = closingOp.contractorId;
+      const counterpartyIndividualId = closingOp.counterpartyIndividualId;
+      
+      const pId = _toStr(projectId);
+      const cId = _toStr(categoryId);
+      const targetContrId = contractorId ? _toStr(contractorId) : (counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null);
+      
+      if (!pId || !cId || !targetContrId) return;
+      
+      const candidates = allKnownOperations.value.filter(op => {
+          if (op.type !== 'income') return false;
+          if (op.isTransfer) return false;
+          
+          // Strict check here too for consistency
+          const isExplicitPrepay = op.isPrepayment === true;
+          const isTranche = op.isDealTranche === true;
+          const hasBudget = (op.totalDealAmount || 0) > 0;
+          
+          if (!isExplicitPrepay && !isTranche && !hasBudget) {
+              return false; 
+          }
+
+          const opPid = _toStr(op.projectId?._id || op.projectId);
+          const opCid = _toStr(op.categoryId?._id || op.categoryId);
+          
+          if (opPid !== pId || opCid !== cId) return false;
+          
+          const opContr = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
+          return _toStr(opContr) === targetContrId;
+      });
+
+      for (const op of candidates) {
+          if (op.isClosed === true) {
+              await updateOperation(op._id, { ...op, isClosed: false });
+          }
+      }
+  }
+
+  async function closePreviousTranches(p, c, co, ci, excludeOpId) {
+      return closeDealScope(p, c, co, ci, excludeOpId);
+  }
+
+  // ... (Categories/Contractors getters remain unchanged) ...
 
   const getActCategoryIds = computed(() => {
     return categories.value
@@ -467,6 +526,7 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
+  // ... (Data Caching Logic remains unchanged) ...
   const allOperationsFlat = computed(() => {
     const allOps = [];
     Object.values(calculationCache.value).forEach(dayOps => {
@@ -494,24 +554,17 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
   
-  // 🟢 CURRENT OPS (FILTERED) (Задача 1.2)
   const currentOps = computed(() => {
-    // ⚡️ FIX: Используем мягкую проверку времени (конец дня), 
-    // чтобы операции "сегодня 12:00" попадали в виджеты даже утром.
-    // Триггер reactivity: snapshot.timestamp
     const _tick = snapshot.value.timestamp; 
     return allKnownOperations.value.filter(op => {
         if (!op?.date) return false;
         if (!_isOpVisible(op)) return false; 
-        // ⚡️ FIX: Используем новый хелпер для определения "Факта"
         return _isEffectivelyPastOrToday(op.date);
     });
   });
 
   async function fetchSnapshot() {
     try {
-      // 🟢 FIX: Передаем текущее время клиента, чтобы сервер использовал его
-      // вместо своего системного времени. Это решает проблему "слепой зоны".
       const clientDate = new Date().toISOString();
       const res = await axios.get(`${API_BASE_URL}/snapshot`, {
           params: { date: clientDate }
@@ -522,17 +575,14 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // --- Snapshot Optimistic Updates ---
+  // ... (Snapshot optimistics logic remains unchanged) ...
   const _applyOptimisticSnapshotUpdate = (op, sign) => {
       const s = snapshot.value;
-      
-      // ⚡️ FIX: Обновляем временную метку снапшота при любом изменении,
-      // чтобы computed currentOps немедленно включил новую операцию.
       s.timestamp = new Date().toISOString();
 
       if (op.isWorkAct) return; 
 
-      const absAmt = Math.abs(op.amount || 0);
+      const absAmt = Math.abs(Number(op.amount) || 0);
       const updateMap = (map, id, delta) => {
           if (!id) return;
           const key = (typeof id === 'object' ? id._id : id).toString();
@@ -576,16 +626,14 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   };
 
+  // ... (Computed lists for widgets remain unchanged) ...
   const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   
-  // 🟢 FIX v128.0: Убрана фильтрация предоплаты (!_isPrepaymentOp),
-  // чтобы предоплаты попадали в виджет "Мои доходы"
   const currentIncomes = computed(() => currentOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      // !_isPrepaymentOp(op) && // <--- REMOVED
       !_isCreditIncome(op) 
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
@@ -594,13 +642,11 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   
-  // 🟢 FIX v128.0: Убрана фильтрация предоплаты для прогноза тоже
   const futureIncomes = computed(() => futureOps.value.filter(op => 
       !isTransfer(op) && 
       op.type === 'income' && 
       !op.isWithdrawal && 
       !_isInterCompanyOp(op) &&
-      // !_isPrepaymentOp(op) && // <--- REMOVED
       !_isCreditIncome(op)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
@@ -609,7 +655,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const getCategoryById = (id) => categories.value.find(c => _idsMatch(c._id, id));
 
-  // 🟢 REFACTOR: CATEGORIES
   const currentCategoryBreakdowns = computed(() => {
     if (includeExcludedInTotal.value) {
         const raw = snapshot.value.categoryTotals || {};
@@ -618,7 +663,6 @@ export const useMainStore = defineStore('mainStore', () => {
         return mapped;
     }
 
-    // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
     const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
     
     const mapped = {};
@@ -635,8 +679,8 @@ export const useMainStore = defineStore('mainStore', () => {
       if (!op?.categoryId) continue;
       const cId = op.categoryId._id || op.categoryId;
       if (!map[cId]) map[cId] = { income: 0, expense: 0, total: 0 };
-      const amt = Math.abs(op.amount || 0);
-      if (op.type === 'income') { map[cId].income += (op.amount || 0); map[cId].total += (op.amount || 0); } 
+      const amt = Math.abs(Number(op.amount) || 0);
+      if (op.type === 'income') { map[cId].income += (Number(op.amount) || 0); map[cId].total += (Number(op.amount) || 0); } 
       else if (op.type === 'expense' && !op.isWorkAct) { map[cId].expense += amt; map[cId].total -= amt; }
     }
     const widgetMap = {};
@@ -644,7 +688,6 @@ export const useMainStore = defineStore('mainStore', () => {
     return widgetMap;
   });
 
-  // 🟢 ACCOUNTS: Hard Filter
   const currentAccountBalances = computed(() => {
       return accounts.value.reduce((acc, a) => {
           if (!includeExcludedInTotal.value && a.isExcluded) {
@@ -670,7 +713,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }, []);
   });
   
-  // 🟢 COMPANIES: Based on filtered accounts
   const currentCompanyBalances = computed(() => {
       return companies.value.map(comp => {
           const targetId = _toStr(comp._id);
@@ -693,7 +735,6 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 REFACTOR: CONTRACTORS
   const currentContractorBalances = computed(() => {
       if (includeExcludedInTotal.value) {
           return contractors.value.map(c => ({
@@ -702,7 +743,6 @@ export const useMainStore = defineStore('mainStore', () => {
           }));
       }
 
-      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
       const aggregated = _calculateAggregatedBalance(currentOps.value, 'contractorId');
       return contractors.value.map(c => ({
           ...c,
@@ -714,7 +754,6 @@ export const useMainStore = defineStore('mainStore', () => {
       return futureContractorChanges.value;
   });
 
-  // 🟢 REFACTOR: PROJECTS
   const currentProjectBalances = computed(() => {
       if (includeExcludedInTotal.value) {
            return projects.value.map(p => ({
@@ -723,7 +762,6 @@ export const useMainStore = defineStore('mainStore', () => {
            }));
       }
 
-      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
       const aggregated = _calculateAggregatedBalance(currentOps.value, 'projectId');
       return projects.value.map(p => ({
           ...p,
@@ -733,9 +771,7 @@ export const useMainStore = defineStore('mainStore', () => {
   
   const futureProjectBalances = computed(() => futureProjectChanges.value);
 
-  // 🟢 REFACTOR: CATEGORIES (List)
   const currentCategoryBalances = computed(() => {
-      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
       const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
       return categories.value.map(c => ({
           ...c,
@@ -754,7 +790,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const futureMap = {}; 
       for (const op of futureOps.value) {
           if (_isRetailWriteOff(op) || op.isWorkAct) continue;
-          const amt = Math.abs(op.amount || 0);
+          const amt = Math.abs(Number(op.amount) || 0);
           if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
           if (isTransfer(op)) {
               let fromId, toId;
@@ -769,12 +805,12 @@ export const useMainStore = defineStore('mainStore', () => {
               if (entityIdField === 'individualId') {
                   const ownerId = op.individualId?._id || op.individualId;
                   const contrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-                  if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (op.amount || 0); else futureMap[ownerId] -= amt; }
-                  if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (op.amount || 0); else futureMap[contrId] -= amt; }
+                  if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (Number(op.amount) || 0); else futureMap[ownerId] -= amt; }
+                  if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (Number(op.amount) || 0); else futureMap[contrId] -= amt; }
               } else {
                   let id = op[entityIdField]; id = id?._id || id; if (!id) continue;
                   if (futureMap[id] === undefined) futureMap[id] = 0;
-                  if (op.type === 'income') futureMap[id] += (op.amount || 0); else futureMap[id] -= amt;
+                  if (op.type === 'income') futureMap[id] += (Number(op.amount) || 0); else futureMap[id] -= amt;
               }
           }
       }
@@ -804,7 +840,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const futureMap = { ...snapshotMap }; 
       for (const op of futureOps.value) {
           if (_isRetailWriteOff(op) || op.isWorkAct) continue;
-          const amt = Math.abs(op.amount || 0);
+          const amt = Math.abs(Number(op.amount) || 0);
           if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
           if (isTransfer(op)) {
               let fromId, toId;
@@ -819,12 +855,12 @@ export const useMainStore = defineStore('mainStore', () => {
               if (entityIdField === 'individualId') {
                   const ownerId = op.individualId?._id || op.individualId;
                   const contrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-                  if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (op.amount || 0); else futureMap[ownerId] -= amt; }
-                  if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (op.amount || 0); else futureMap[contrId] -= amt; }
+                  if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (Number(op.amount) || 0); else futureMap[ownerId] -= amt; }
+                  if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (Number(op.amount) || 0); else futureMap[contrId] -= amt; }
               } else {
                   let id = op[entityIdField]; id = id?._id || id; if (!id) continue;
                   if (futureMap[id] === undefined) futureMap[id] = 0;
-                  if (op.type === 'income') futureMap[id] += (op.amount || 0); else futureMap[id] -= amt;
+                  if (op.type === 'income') futureMap[id] += (Number(op.amount) || 0); else futureMap[id] -= amt;
               }
           }
       }
@@ -849,7 +885,7 @@ export const useMainStore = defineStore('mainStore', () => {
               const isContractorMatch = credit.contractorId && opContractorId && _idsMatch(opContractorId, credit.contractorId._id || credit.contractorId);
               const isIndividualMatch = credit.individualId && opIndId && _idsMatch(opIndId, credit.individualId._id || credit.individualId);
               if (isContractorMatch || isIndividualMatch) {
-                  repaidTotal += Math.abs(op.amount || 0);
+                  repaidTotal += Math.abs(Number(op.amount) || 0);
               }
           });
           const currentDebt = Math.max(0, initialDebt - repaidTotal);
@@ -875,7 +911,7 @@ export const useMainStore = defineStore('mainStore', () => {
               const isContractorMatch = credit.contractorId && opContractorId && _idsMatch(opContractorId, credit.contractorId._id || credit.contractorId);
               const isIndividualMatch = credit.individualId && opIndId && _idsMatch(opIndId, credit.individualId._id || credit.individualId);
               if (isContractorMatch || isIndividualMatch) {
-                  projectedRepayment += Math.abs(op.amount || 0);
+                  projectedRepayment += Math.abs(Number(op.amount) || 0);
               }
           });
           const futureDebt = Math.max(0, credit.balance - projectedRepayment);
@@ -883,21 +919,11 @@ export const useMainStore = defineStore('mainStore', () => {
       });
   });
 
-  // 🟢 REFACTOR: INDIVIDUALS (FIXED FOR COUNTERPARTIES)
-  // Теперь учитываем операции, где физлицо является контрагентом (counterpartyIndividualId)
   const currentIndividualBalances = computed(() => {
-      // 1. Агрегация операций по ОБОИМ ролям
       const opsMap = new Map();
-      
-      // ⚡️ FIX: ИСПОЛЬЗУЕМ currentOps ВМЕСТО allKnownOperations
-      // Это гарантирует, что сюда попадают только операции из прошлого/настоящего.
       currentOps.value.forEach(op => {
-          // if (!_isOpVisible(op)) return; // Уже отфильтровано в currentOps
-
-          const amt = Math.abs(op.amount || 0);
-          
+          const amt = Math.abs(Number(op.amount) || 0);
           if (op.type === 'transfer' || op.isTransfer) {
-               // Переводы: списываем у отправителя, добавляем получателю
                if (op.fromIndividualId) {
                    const key = _toStr(op.fromIndividualId);
                    opsMap.set(key, (opsMap.get(key) || 0) - amt);
@@ -907,16 +933,12 @@ export const useMainStore = defineStore('mainStore', () => {
                    opsMap.set(key, (opsMap.get(key) || 0) + amt);
                }
           } else {
-               // Доход/Расход/Вывод
                const sign = op.type === 'income' ? 1 : -1;
                const value = amt * sign;
-               
-               // Роль Владельца
                if (op.individualId) {
                    const key = _toStr(op.individualId);
                    opsMap.set(key, (opsMap.get(key) || 0) + value);
                }
-               // Роль Контрагента (Кому платим / От кого получаем)
                if (op.counterpartyIndividualId) {
                    const key = _toStr(op.counterpartyIndividualId);
                    opsMap.set(key, (opsMap.get(key) || 0) + value);
@@ -924,11 +946,10 @@ export const useMainStore = defineStore('mainStore', () => {
           }
       });
       
-      // 2. Список скрытых физлиц (владельцы скрытых счетов)
       const hiddenIndividualIds = new Set();
       if (!includeExcludedInTotal.value) {
           accounts.value.forEach(a => {
-              if (a.isExcluded && a.individualId) {
+              if (a && a.isExcluded && a.individualId) {
                   const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
                   if (iId) hiddenIndividualIds.add(String(iId));
               }
@@ -952,11 +973,10 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const futureIndividualBalances = computed(() => {
-      // И для Future тоже скрываем
       const hiddenIndividualIds = new Set();
       if (!includeExcludedInTotal.value) {
           accounts.value.forEach(a => {
-              if (a.isExcluded && a.individualId) {
+              if (a && a.isExcluded && a.individualId) {
                   const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
                   if (iId) hiddenIndividualIds.add(String(iId));
               }
@@ -974,7 +994,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }, []);
   });
 
-  // 🟢 Updated Total Calculation
   const currentTotalBalance = computed(() => {
       return currentAccountBalances.value.reduce((acc, a) => {
           if (!includeExcludedInTotal.value && a.isExcluded) return acc;
@@ -988,17 +1007,15 @@ export const useMainStore = defineStore('mainStore', () => {
         if (isTransfer(op)) continue; 
         if (!op.accountId) continue;
         if (op.isWorkAct) continue;
-        const amt = Math.abs(op.amount || 0);
-        if (op.type === 'income') total += (op.amount || 0); else total -= amt;
+        const amt = Math.abs(Number(op.amount) || 0);
+        if (op.type === 'income') total += (Number(op.amount) || 0); else total -= amt;
     }
     return total;
   });
 
-  // 🟢 FIX: Re-Populate logic (Always prefer Store objects)
   function _populateOp(op) {
       const populated = { ...op };
       
-      // --- Date Logic ---
       if (populated.date) {
           if (typeof populated.date === 'string') {
               populated.date = new Date(populated.date);
@@ -1019,9 +1036,6 @@ export const useMainStore = defineStore('mainStore', () => {
           populated.date = d;
       }
 
-      // ⚡️ FIX: FORCE RE-BINDING TO REACTIVE STORE ENTITIES
-      // Even if server sent { _id: '...', name: 'Old Name' }, we find { _id: '...', name: 'New Name' } in store.
-      
       const bindEntity = (field, storeRef) => {
           const raw = populated[field];
           if (!raw) {
@@ -1029,21 +1043,14 @@ export const useMainStore = defineStore('mainStore', () => {
              return;
           }
           const id = (typeof raw === 'object') ? raw._id : raw;
-          // Use safe ID match
           const found = storeRef.value.find(item => _idsMatch(item._id, id));
           
           if (found) {
               populated[field] = found;
           } else {
-              // 🟢 FIX v125.0: STUB CREATION FOR MISSING ENTITIES
-              // Если объект не найден в сторе (рассинхрон), создаем заглушку, 
-              // чтобы UI не падал при обращении к .name.
-              // Критично для сокетов, когда пришла операция, а справочник еще не обновился.
               if (typeof raw === 'object') {
-                  // Если сервер прислал объект, используем его (лучше, чем просто ID)
                   populated[field] = raw;
               } else {
-                  // Если только ID - создаем заглушку
                   populated[field] = { _id: raw, name: '...', isMissing: true };
               }
           }
@@ -1065,28 +1072,15 @@ export const useMainStore = defineStore('mainStore', () => {
       return populated;
   }
 
-  // 🟢 HELPER: обновление проекции через Projection Store
   const _triggerProjectionUpdate = () => {
-      // В новой парадигме Eager Loading, если мы добавляем/изменяем операцию локально,
-      // мы можем захотеть обновить проекцию.
-      // Но глобальный пересчет loadCalculationData тяжелый.
-      // Пока оставим как есть, projectionStore будет реактивно обновляться от calculationCache.
-      // const ps = useProjectionStore();
-      // ps.updateProjectionFromCalculationData(...); 
+      cacheVersion.value++; 
   };
 
-  // 🟢 SOCKET EVENT HANDLERS
   const onSocketOperationAdded = async (op) => {
-      // 🟢 FIX v125.0: CHECK FOR MISSING CATEGORIES
-      // Если пришла операция с категорией, которой нет в справочнике - обновляем справочники.
-      // Это лечит баг с "исчезающей предоплатой" на втором устройстве.
       if (op.categoryId) {
           const catId = typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId;
-          // FIX: _idsMatch
           const exists = categories.value.find(c => _idsMatch(c._id, catId));
           if (!exists) {
-              console.warn('[Socket] Unknown Category detected. Syncing entities...');
-              // Запрашиваем обновление справочников
               await fetchAllEntities(); 
           }
       }
@@ -1099,14 +1093,12 @@ export const useMainStore = defineStore('mainStore', () => {
       
       if (!displayCache.value[dk]) displayCache.value[dk] = [];
 
-      // 🟢 FIX: SOCKET TRANSFER MERGE LOGIC (Исправление двоения переводов)
       if (richOp.transferGroupId) {
           const existingHalfIndex = displayCache.value[dk].findIndex(o => 
              o.transferGroupId === richOp.transferGroupId && !_idsMatch(o._id, richOp._id)
           );
           
           if (existingHalfIndex !== -1) {
-              // Нашли вторую половину! Склеиваем в один Transfer.
               const otherHalf = displayCache.value[dk][existingHalfIndex];
               const incomeOp = richOp.amount > 0 ? richOp : otherHalf;
               const expenseOp = richOp.amount < 0 ? richOp : otherHalf;
@@ -1117,36 +1109,32 @@ export const useMainStore = defineStore('mainStore', () => {
                 type: 'transfer', 
                 isTransfer: true,
                 transferGroupId: richOp.transferGroupId, 
-                amount: Math.abs(incomeOp.amount),
+                amount: Math.abs(Number(incomeOp.amount)),
                 fromAccountId: expenseOp.accountId, 
-                toAccountId: incomeOp.accountId,
+                toAccountId: incomeOp.accountId, 
                 fromCompanyId: expenseOp.companyId, 
                 toCompanyId: incomeOp.companyId, 
                 fromIndividualId: expenseOp.individualId, 
                 toIndividualId: incomeOp.individualId, 
                 dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
                 cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-                categoryId: { _id: 'transfer', name: 'Перевод' }, // Или найти в категориях
+                categoryId: { _id: 'transfer', name: 'Перевод' }, 
                 date: incomeOp.date || expenseOp.date,
                 dateKey: dk
               };
               
-              // Заменяем старую половинку на полноценный перевод
               displayCache.value[dk][existingHalfIndex] = _populateOp(mergedTransfer);
           } else {
-              // Половинки нет, добавляем пока как есть (будет выглядеть как половина перевода, пока не придет вторая часть)
               displayCache.value[dk].push(richOp);
           }
       } else {
           displayCache.value[dk].push(richOp);
       }
 
-      // 🟢 FIX: Сортировка, чтобы предоплата не улетала в конец
       displayCache.value[dk].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
 
       calculationCache.value[dk] = [...displayCache.value[dk]];
 
-      // ⚡️ FIX: Use new time check
       if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
@@ -1180,23 +1168,17 @@ export const useMainStore = defineStore('mainStore', () => {
       
       const existsIndex = displayCache.value[newDateKey].findIndex(o => _idsMatch(o._id, op._id));
       if (existsIndex !== -1) {
-          // Если это перевод, нам нужно быть осторожными и не "развалить" склеенный объект, 
-          // если обновление пришло только для одной половины. 
-          // Но пока оставим простую замену, так как обновление обычно идет для всего объекта.
           displayCache.value[newDateKey][existsIndex] = { ...displayCache.value[newDateKey][existsIndex], ...richOp };
       } else {
-          // Логика добавления (если вдруг update пришел раньше add или сменился день)
-          // Здесь тоже нужна логика склейки, если это перевод
            if (richOp.transferGroupId) {
               const existingHalfIndex = displayCache.value[newDateKey].findIndex(o => 
                  o.transferGroupId === richOp.transferGroupId && !_idsMatch(o._id, richOp._id)
               );
               if (existingHalfIndex !== -1) {
-                  // Merge logic (simplified reuse)
                    const otherHalf = displayCache.value[newDateKey][existingHalfIndex];
                    const incomeOp = richOp.amount > 0 ? richOp : otherHalf;
                    const expenseOp = richOp.amount < 0 ? richOp : otherHalf;
-                   const merged = { ...richOp, ...otherHalf, _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true, amount: Math.abs(incomeOp.amount) };
+                   const merged = { ...richOp, ...otherHalf, _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true, amount: Math.abs(Number(incomeOp.amount)) };
                    displayCache.value[newDateKey][existingHalfIndex] = _populateOp(merged);
               } else {
                   displayCache.value[newDateKey].push(richOp);
@@ -1206,7 +1188,6 @@ export const useMainStore = defineStore('mainStore', () => {
            }
       }
       
-      // Сортировка
       displayCache.value[newDateKey].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
       calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
 
@@ -1223,7 +1204,7 @@ export const useMainStore = defineStore('mainStore', () => {
       let oldDateKey = null;
       
       for (const dk in displayCache.value) {
-          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId) || _idsMatch(o._id2, opId)); // Проверка и по _id2 (переводы)
+          const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId) || _idsMatch(o._id2, opId)); 
           if (found) { oldOp = found; oldDateKey = dk; break; }
       }
       if (!oldOp) return; 
@@ -1233,8 +1214,6 @@ export const useMainStore = defineStore('mainStore', () => {
       }
 
       if (oldDateKey && displayCache.value[oldDateKey]) {
-          // Если удаляем часть перевода, удаляем весь перевод из отображения, 
-          // так как он станет невалидным или вторая часть тоже придет на удаление.
           displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => 
              !_idsMatch(o._id, opId) && !_idsMatch(o._id2, opId)
           );
@@ -1258,7 +1237,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const onSocketEntityAdded = (type, item) => {
      const listRef = _getListRefByType(type);
      if (listRef) {
-         // FIX: _idsMatch
          const exists = listRef.value.find(i => _idsMatch(i._id, item._id));
          if (!exists) listRef.value.push(item);
          listRef.value = _sortByOrder(listRef.value);
@@ -1268,7 +1246,6 @@ export const useMainStore = defineStore('mainStore', () => {
   const onSocketEntityDeleted = (type, id) => {
      const listRef = _getListRefByType(type);
      if (listRef) {
-         // FIX: _idsMatch
          listRef.value = listRef.value.filter(i => !_idsMatch(i._id, id));
      }
   };
@@ -1309,7 +1286,6 @@ export const useMainStore = defineStore('mainStore', () => {
       displayCache.value[dk].push(richOp);
       calculationCache.value[dk] = [...displayCache.value[dk]];
       
-      // ⚡️ FIX: Use new time check
       if (_isEffectivelyPastOrToday(richOp.date)) {
           _applyOptimisticSnapshotUpdate(richOp, 1);
       }
@@ -1320,15 +1296,12 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/events`, eventData);
       const serverOp = response.data;
       
-      // FIX: _idsMatch
       const idx = displayCache.value[dk].findIndex(o => _idsMatch(o._id, tempId));
       if (idx !== -1) {
-          // 🟢 FIX: Populate server response before cache
           displayCache.value[dk][idx] = _populateOp(serverOp); 
           calculationCache.value[dk] = [...displayCache.value[dk]];
       }
       
-      // FIX: _idsMatch
       const dealIdx = dealOperations.value.findIndex(d => _idsMatch(d._id, tempId));
       if (dealIdx !== -1) {
           const newDeals = [...dealOperations.value];
@@ -1336,7 +1309,6 @@ export const useMainStore = defineStore('mainStore', () => {
           dealOperations.value = newDeals;
       }
 
-      // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
 
       return serverOp;
@@ -1353,7 +1325,6 @@ export const useMainStore = defineStore('mainStore', () => {
     let oldDateKey = null;
     
     for (const dk in displayCache.value) {
-        // FIX: _idsMatch
         const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId));
         if (found) { oldOp = found; oldDateKey = dk; break; }
     }
@@ -1363,7 +1334,7 @@ export const useMainStore = defineStore('mainStore', () => {
     if (!oldOp) {
         const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
         await refreshDay(res.data.dateKey);
-        await fetchSnapshot(); // Sync for unknown op
+        await fetchSnapshot(); 
         return res.data;
     }
 
@@ -1371,7 +1342,6 @@ export const useMainStore = defineStore('mainStore', () => {
         const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldOp.dateKey);
         const isDateChanged = oldDateKey !== newDateKey;
         
-        // ⚡️ FIX: Use new time check
         if (_isEffectivelyPastOrToday(oldOp.date)) {
             _applyOptimisticSnapshotUpdate(oldOp, -1);
         }
@@ -1383,7 +1353,6 @@ export const useMainStore = defineStore('mainStore', () => {
         
         if (isDateChanged) {
             if (displayCache.value[oldDateKey]) {
-                // FIX: _idsMatch
                 displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
                 calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
             }
@@ -1392,13 +1361,11 @@ export const useMainStore = defineStore('mainStore', () => {
             calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
         } else {
             const list = displayCache.value[oldDateKey];
-            // FIX: _idsMatch
             const idx = list.findIndex(o => _idsMatch(o._id, opId));
             if (idx !== -1) list[idx] = richOp;
             calculationCache.value[oldDateKey] = [...list];
         }
 
-        // ⚡️ FIX: Use new time check
         if (_isEffectivelyPastOrToday(richOp.date)) {
             _applyOptimisticSnapshotUpdate(richOp, 1);
         }
@@ -1413,16 +1380,13 @@ export const useMainStore = defineStore('mainStore', () => {
         const serverOp = response.data;
         const targetList = displayCache.value[newDateKey];
         if (targetList) {
-            // FIX: _idsMatch
             const i = targetList.findIndex(o => _idsMatch(o._id, opId));
-            // 🟢 FIX: Populate server response AND SYNC CALCULATION CACHE
             if (i !== -1) {
                 targetList[i] = _populateOp(serverOp);
-                calculationCache.value[newDateKey] = [...targetList]; // <--- NEW SYNC
+                calculationCache.value[newDateKey] = [...targetList]; 
             }
         }
 
-        // 🟢 REQ: Sync with Server for Edit
         await fetchSnapshot();
 
         return serverOp;
@@ -1448,13 +1412,16 @@ export const useMainStore = defineStore('mainStore', () => {
 
       // Удаляем из кэша отображения
       if (displayCache.value[dateKey]) {
-          // FIX: _idsMatch
           displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => !_idsMatch(o._id, operation._id));
           calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
       }
       
       _updateDealCache(operation, 'delete');
       _triggerProjectionUpdate(); 
+      
+      if (operation.isWorkAct) {
+          await reopenDealScope(operation);
+      }
 
       if (isTransfer(operation) && operation._id2) {
           await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
@@ -1462,7 +1429,6 @@ export const useMainStore = defineStore('mainStore', () => {
           await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
       }
       
-      // 🟢 REQ: Sync with Server for Deletion (ОБЯЗАТЕЛЬНО)
       await fetchSnapshot();
       
     } catch(e) { 
@@ -1470,7 +1436,6 @@ export const useMainStore = defineStore('mainStore', () => {
             return;
         }
         console.error("Delete Failed:", e);
-        // Если ошибка - восстанавливаем список
         refreshDay(dateKey); 
         fetchSnapshot();
         const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
@@ -1478,10 +1443,8 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🟢🟢 OPTIMIZATION: FAST RANGE FETCH (NO CHUNKING)
   async function fetchOperationsRange(startDate, endDate) {
     try {
-        // Запрос к серверу за один раз (используя startDate и endDate)
         const response = await axios.get(`${API_BASE_URL}/events`, {
             params: {
                 startDate: startDate.toISOString(),
@@ -1492,7 +1455,6 @@ export const useMainStore = defineStore('mainStore', () => {
         const rawOps = Array.isArray(response.data) ? response.data : [];
         const processedOps = _mergeTransfers(rawOps);
         
-        // Группировка полученных операций по dateKey
         const fetchedMap = new Map();
         processedOps.forEach(op => {
             const dk = op.dateKey || _getDateKey(new Date(op.date));
@@ -1500,21 +1462,16 @@ export const useMainStore = defineStore('mainStore', () => {
             fetchedMap.get(dk).push(_populateOp({ ...op, dateKey: dk }));
         });
 
-        // Обновляем кэш
-        // Проходим по ВСЕМ дням диапазона, чтобы пометить пустые дни как загруженные
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
             const dateKey = _getDateKey(d);
             
             const serverOps = fetchedMap.get(dateKey) || [];
             
-            // Сохраняем локальные оптимистичные операции (которые еще не на сервере)
             let existingOptimistic = [];
             if (displayCache.value[dateKey]) {
                 existingOptimistic = displayCache.value[dateKey].filter(o => o.isOptimistic);
             }
             
-            // Объединяем и сортируем
-            // Если день пустой на сервере и нет оптимистичных - будет пустой массив (loaded, no events)
             const finalOps = [...existingOptimistic, ...serverOps].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
             
             displayCache.value[dateKey] = finalOps;
@@ -1527,36 +1484,28 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  const _syncCaches = (key, ops) => { displayCache.value[key] = [...ops]; calculationCache.value[key] = [...ops]; };
+  const _syncCaches = (key, ops) => { 
+      displayCache.value[key] = [...ops]; 
+      calculationCache.value[key] = [...ops];
+      cacheVersion.value++; 
+  };
   
   async function updateFutureProjectionWithData(mode, today = new Date()) {
-     // Deprecated. Use loadCalculationData.
      await loadCalculationData(mode, today);
   }
 
-  // 🟢🟢 REFACTOR: EAGER LOADING WITH FAST BULK FETCH 🟢🟢
   async function loadCalculationData(mode, date = new Date()) {
     const ps = useProjectionStore();
-    
-    // 1. Статус "Считаем"
     ps.setCalculationStatus('calculating');
 
     try {
         const anchorDate = new Date(date);
-        
-        // 2. Получаем полный диапазон
         const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, anchorDate);
         
-        // 3. BULK FETCH (Один быстрый запрос)
         await fetchOperationsRange(startDate, endDate);
 
-        // 4. Обновляем состояние проекции
         ps.updateProjectionState(mode, anchorDate);
-        
-        // 5. Пересчитываем баланс
         recalculateGlobalBalance(endDate);
-        
-        // 6. Готово
         ps.setCalculationStatus('done');
 
     } catch (e) {
@@ -1565,18 +1514,17 @@ export const useMainStore = defineStore('mainStore', () => {
     }
   }
 
-  // 🟢 Helper to calculate final balance without freezing
   function recalculateGlobalBalance(endDate) {
       const ps = useProjectionStore();
       const currentBal = currentTotalBalance.value; 
-      const futureOperations = futureOps.value; // Reactive
+      const futureOperations = futureOps.value; 
 
       let futureSum = 0;
       futureOperations.forEach(op => {
            if (op.type === 'income') {
-               futureSum += (op.amount || 0);
+               futureSum += (Number(op.amount) || 0);
            } else if (op.type === 'expense') {
-               futureSum -= Math.abs(op.amount || 0);
+               futureSum -= Math.abs(Number(op.amount) || 0);
            }
       });
 
@@ -1615,7 +1563,6 @@ export const useMainStore = defineStore('mainStore', () => {
       await ensureSystemEntities();
       await fetchSnapshot();
       
-      // Socket Connect via Store
       if (user.value) {
           useSocketStore().connect(user.value._id);
       }
@@ -1630,15 +1577,15 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
-      // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
       displayCache.value[dateKey] = processedOps.map(_populateOp);
       calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
   function getOperationsForDay(dateKey) { 
-      const ops = displayCache.value[dateKey] || [];
-      return ops.filter(op => !op.isWorkAct);
+      const ops = displayCache.value[dateKey];
+      if (!Array.isArray(ops)) return []; // Safety check
+      return ops.filter(op => op && !op.isWorkAct); // Safety check for op existence
   }
 
   function _mergeTransfers(list) {
@@ -1659,7 +1606,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (expenseOp && incomeOp) {
           mergedTransfers.push({
             _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true,
-            transferGroupId: groupId, amount: Math.abs(incomeOp.amount),
+            transferGroupId: groupId, amount: Math.abs(Number(incomeOp.amount)),
             fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
             fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
             fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId, 
@@ -1674,7 +1621,7 @@ export const useMainStore = defineStore('mainStore', () => {
       const firstOp = transferOps[0];
       mergedTransfers.push({
         ...firstOp, type: 'transfer', isTransfer: true,
-        transferGroupId: groupId, amount: Math.abs(firstOp.amount),
+        transferGroupId: groupId, amount: Math.abs(Number(firstOp.amount)),
         categoryId: { _id: 'transfer', name: 'Перевод' }
       });
     }
@@ -1692,12 +1639,10 @@ export const useMainStore = defineStore('mainStore', () => {
       const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
       const raw = Array.isArray(res.data) ? res.data.slice() : [];
       const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
-      // 🟢 FIX: Populate ops before storing in cache (Let _populateOp enforce Date from Key)
       _syncCaches(dateKey, processedOps.map(_populateOp));
     } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
   }
 
-  // 🟢 FIX (Задача 3.1): Добавлен аргумент specificTargetDate
   async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null){
     if (!oldDateKey || !newDateKey) return;
     if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
@@ -1707,9 +1652,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     if (oldDateKey === newDateKey) {
        const ops = [...(displayCache.value[oldDateKey] || [])];
-       // FIX: _idsMatch
        const sourceOp = ops.find(o => _idsMatch(o._id, operation._id));
-       // FIX: _idsMatch
        const targetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
        if (sourceOp) {
            if (targetOp) {
@@ -1735,9 +1678,7 @@ export const useMainStore = defineStore('mainStore', () => {
     } 
     else {
        let oldOps = [...(displayCache.value[oldDateKey] || [])];
-       // FIX: _idsMatch
        const sourceOpData = oldOps.find(o => _idsMatch(o._id, operation._id));
-       // FIX: _idsMatch
        oldOps = oldOps.filter(o => !_idsMatch(o._id, operation._id));
        _syncCaches(oldDateKey, oldOps);
        let newOps = [...(displayCache.value[newDateKey] || [])];
@@ -1748,16 +1689,14 @@ export const useMainStore = defineStore('mainStore', () => {
            while(usedIndices.has(finalIndex)) finalIndex++;
        }
        
-       // ⚡️ FIX (Задача 3.2): Используем переданную точную дату (specificTargetDate), если есть
        const newDateObj = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(newDateKey);
        
        const moved = { ...sourceOpData, dateKey: newDateKey, date: newDateObj, cellIndex: finalIndex };
        newOps.push(moved);
        _syncCaches(newDateKey, newOps);
        
-       // ⚡️ FIX (Задача 3.3): Проверяем переход Факт <-> План для снапшота
        const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
-       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); // Проверяем по новой дате
+       const isInSnapshot = _isEffectivelyPastOrToday(newDateObj); 
        
        const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
        if (needsSnapshotUpdate) {
@@ -1777,16 +1716,10 @@ export const useMainStore = defineStore('mainStore', () => {
            promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
        }
        
-       // 🟢 FIX: NO FETCH SNAPSHOT TO AVOID FLICKER
-       // Мы доверяем нашему оптимистичному обновлению (_applyOptimisticSnapshotUpdate).
-       // Запрос к серверу отправляется для сохранения, но мы НЕ обновляем снапшот с сервера,
-       // чтобы избежать "прыжков" цифр.
        await Promise.all(promises)
             .then(() => {
-                // SUCCESS: Do nothing. Trust local state.
             })
             .catch(() => { 
-                // FAIL: Rollback only on error
                 refreshDay(oldDateKey); 
                 refreshDay(newDateKey); 
                 fetchSnapshot();
@@ -1814,7 +1747,7 @@ export const useMainStore = defineStore('mainStore', () => {
               _id: tempId,
               type: 'expense',
               isWithdrawal: true,
-              amount: -Math.abs(transferData.amount),
+              amount: -Math.abs(Number(transferData.amount)),
               accountId: transferData.fromAccountId,
               companyId: transferData.fromCompanyId, 
               individualId: transferData.fromIndividualId,
@@ -1828,7 +1761,7 @@ export const useMainStore = defineStore('mainStore', () => {
               _id: tempId,
               type: 'transfer',
               isTransfer: true,
-              amount: Math.abs(transferData.amount),
+              amount: Math.abs(Number(transferData.amount)),
               fromAccountId: transferData.fromAccountId, 
               toAccountId: transferData.toAccountId,
               fromCompanyId: transferData.fromCompanyId, 
@@ -1843,12 +1776,10 @@ export const useMainStore = defineStore('mainStore', () => {
 
       if (!displayCache.value[dateKey]) displayCache.value[dateKey] = [];
       
-      // 🟢 FIX: Correct order for Reactivity + Time check update
       optimisticOps.forEach(rawOp => {
           const richOp = _populateOp(rawOp);
           displayCache.value[dateKey].push(richOp);
           
-          // ⚡️ FIX: Use new time check (Ignores 12:00 vs 09:00 issue)
           if (_isEffectivelyPastOrToday(richOp.date)) {
               _applyOptimisticSnapshotUpdate(richOp, 1);
           }
@@ -1883,20 +1814,13 @@ export const useMainStore = defineStore('mainStore', () => {
       const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
       const data = response.data;
       
-      // 🟢 FIX v125.0: SIMPLIFIED SERVER SYNC (Forced Refresh)
-      // Вместо сложной ручной склейки ответа сервера (который может быть массивом или объектом),
-      // мы принудительно обновляем весь день. Это гарантирует, что создатель увидит 
-      // корректно склеенный трансфер, а не "разбитые" операции.
-      // Да, это лишний запрос, но надежность важнее.
       await refreshDay(dateKey);
       
-      // 🟢 REQ: Sync with Server for Creation
       await fetchSnapshot();
 
       return data;
     } catch (error) { 
         console.error("Create Transfer Error (Optimistic):", error);
-        // Fallback: refresh day if optimistic update failed
         if (transferData.date) {
             const k = _getDateKey(new Date(transferData.date));
             refreshDay(k);
@@ -1909,7 +1833,6 @@ export const useMainStore = defineStore('mainStore', () => {
     try {
       const finalDate = new Date(transferData.date);
       const newDateKey = _getDateKey(finalDate);
-      // FIX: _idsMatch
       const oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, transferId));
       let newCellIndex;
       if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
@@ -1919,7 +1842,6 @@ export const useMainStore = defineStore('mainStore', () => {
       await refreshDay(newDateKey);
       _triggerProjectionUpdate(); 
       
-      // 🟢 REQ: Sync with Server for Edit
       await fetchSnapshot();
 
       return response.data;
@@ -1936,7 +1858,6 @@ export const useMainStore = defineStore('mainStore', () => {
       try {
           await axios.delete(`${API_BASE_URL}/${path}/${id}`, { params: { deleteOperations } });
           
-          // FIX: _idsMatch
           if (path === 'accounts') accounts.value = accounts.value.filter(i => !_idsMatch(i._id, id));
           if (path === 'companies') companies.value = companies.value.filter(i => !_idsMatch(i._id, id));
           if (path === 'contractors') contractors.value = contractors.value.filter(i => !_idsMatch(i._id, id));
@@ -1965,7 +1886,6 @@ export const useMainStore = defineStore('mainStore', () => {
           };
       }
       const res = await axios.post(`${API_BASE_URL}/accounts`, payload); 
-      // FIX: _idsMatch
       if (!accounts.value.find(a => _idsMatch(a._id, res.data._id))) accounts.value.push(res.data); 
       return res.data; 
   }
@@ -2131,7 +2051,7 @@ export const useMainStore = defineStore('mainStore', () => {
              const relatedOp = allOperationsFlat.value.find(op => 
                 op.type === 'income' && 
                 _toStr(op.projectId) === pIdStr &&
-                _idsMatch(op.counterpartyIndividualId, retailInd._id) && // FIX
+                _idsMatch(op.counterpartyIndividualId, retailInd._id) && 
                 op.companyId
              );
              if (relatedOp) {
@@ -2145,7 +2065,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
           const opData = {
               type: 'expense', 
-              amount: -Math.abs(amount),
+              amount: -Math.abs(Number(amount)),
               accountId: null, 
               counterpartyIndividualId: retailInd._id, 
               categoryId: realizationCat._id, 
@@ -2160,7 +2080,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
   async function closePrepaymentDeal(originalOp) {
       try {
-          const amount = Math.abs(originalOp.amount);
+          const amount = Math.abs(Number(originalOp.amount));
           const opData = {
               type: 'expense', 
               amount: -amount,
@@ -2174,16 +2094,21 @@ export const useMainStore = defineStore('mainStore', () => {
               date: new Date(),
               description: `Закрытие сделки по предоплате от ${new Date(originalOp.date).toLocaleDateString()}`
           };
+          
           await createEvent(opData);
-          await updateOperation(originalOp._id, { ...originalOp, isClosed: true });
+          
+          // 🟢 Close all related tranches
+          await closeDealScope(originalOp.projectId, originalOp.categoryId, originalOp.contractorId, originalOp.counterpartyIndividualId);
+          
       } catch (e) { throw e; }
   }
   
+  // 🟢 Updated: Auto-close scope when Act is created
   async function createWorkAct(projectId, categoryId, contractorId, counterpartyIndividualId, amount, date, opIdToClose, skipFetch = false, companyId = null, individualId = null) {
       try {
           const opData = {
               type: 'expense',
-              amount: -Math.abs(amount),
+              amount: -Math.abs(Number(amount)),
               accountId: null, 
               projectId: projectId,
               categoryId: categoryId,
@@ -2199,13 +2124,8 @@ export const useMainStore = defineStore('mainStore', () => {
           
           const newOp = await createEvent(opData);
           
-          if (opIdToClose) {
-              // FIX: _idsMatch
-              const op = dealOperations.value.find(o => _idsMatch(o._id, opIdToClose)) || allOperationsFlat.value.find(o => _idsMatch(o._id, opIdToClose));
-              if (op) {
-                  await updateOperation(opIdToClose, { ...op, isClosed: true });
-              }
-          }
+          // 🟢 SMART CLOSING: Mark matching income ops as Closed (excluding the new one)
+          await closeDealScope(projectId, categoryId, contractorId, counterpartyIndividualId, newOp._id);
           
           return newOp;
       } catch (e) {
@@ -2230,10 +2150,10 @@ export const useMainStore = defineStore('mainStore', () => {
           
           if (op.type === 'income') {
               if (op.isClosed !== true) {
-                  balances.set(pId, balances.get(pId) + (op.amount || 0));
+                  balances.set(pId, balances.get(pId) + (Number(op.amount) || 0));
               }
           } else if (op.type === 'expense' && !op.accountId) {
-              balances.set(pId, balances.get(pId) - Math.abs(op.amount || 0));
+              balances.set(pId, balances.get(pId) - Math.abs(Number(op.amount) || 0));
           }
       });
       
@@ -2260,7 +2180,6 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const calculateTaxForPeriod = (companyId, startDate = null, endDate = null) => {
-      // FIX: _idsMatch
       const company = companies.value.find(c => _idsMatch(c._id, companyId));
       if (!company) return { base: 0, tax: 0, income: 0, expense: 0 };
 
@@ -2270,9 +2189,6 @@ export const useMainStore = defineStore('mainStore', () => {
       let totalIncome = 0;
       let totalExpense = 0;
 
-      // 🟢 FIX: Корректная граница конца периода
-      // Если endDate не передан, берем текущий момент и сдвигаем на конец дня.
-      // Если передан - тоже гарантируем конец дня, чтобы включить операции "сегодня" (которые могут быть в 12:00 или позже).
       let effectiveEndDate;
       if (endDate) {
           effectiveEndDate = new Date(endDate);
@@ -2282,7 +2198,6 @@ export const useMainStore = defineStore('mainStore', () => {
           effectiveEndDate.setHours(23, 59, 59, 999);
       }
 
-      // Для startDate обычно достаточно 00:00:00 (по умолчанию у new Date(str) так и есть, если только дата)
       let effectiveStartDate = startDate ? new Date(startDate) : null;
       if (effectiveStartDate) effectiveStartDate.setHours(0, 0, 0, 0);
 
@@ -2298,12 +2213,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
               if (toId === targetId) {
                   if (fromId !== targetId) {
-                      totalIncome += (op.amount || 0);
+                      totalIncome += (Number(op.amount) || 0);
                   }
               }
               if (fromId === targetId) {
                    if (toId !== targetId) {
-                       totalExpense += Math.abs(op.amount || 0);
+                       totalExpense += Math.abs(Number(op.amount) || 0);
                    }
               }
               return;
@@ -2319,9 +2234,9 @@ export const useMainStore = defineStore('mainStore', () => {
               if (creditCategoryId.value && String(catId) === String(creditCategoryId.value)) {
                   return;
               }
-              totalIncome += (op.amount || 0);
+              totalIncome += (Number(op.amount) || 0);
           } else if (op.type === 'expense') {
-              totalExpense += Math.abs(op.amount || 0);
+              totalExpense += Math.abs(Number(op.amount) || 0);
           }
       });
 
@@ -2344,17 +2259,12 @@ export const useMainStore = defineStore('mainStore', () => {
       };
   };
 
-  // 🟢 HELPER: Проверка на "минус" по счетам компаний
-  // Возвращает объект ошибки, если средств недостаточно, или null, если всё ок.
   function checkInsufficientFunds(accountId, expenseAmount) {
-      // FIX: _idsMatch
       const acc = accounts.value.find(a => _idsMatch(a._id, accountId));
-      if (!acc) return null; // Счета нет - пропускаем (или ошибка валидации в другом месте)
+      if (!acc) return null; 
 
-      // Проверка: только для счетов компаний
       if (!acc.companyId) return null;
 
-      // Текущий баланс (snapshot уже содержит локальные оптимистичные правки, если они были)
       const currentBal = (snapshot.value.accountBalances[acc._id] || 0) + (acc.initialBalance || 0);
       
       if (expenseAmount > currentBal) {
@@ -2373,7 +2283,7 @@ export const useMainStore = defineStore('mainStore', () => {
           
           const expenseData = {
               type: 'expense',
-              amount: -Math.abs(payload.amount),
+              amount: -Math.abs(Number(payload.amount)),
               date: payload.date,
               accountId: payload.accountId,
               companyId: payload.companyId,
@@ -2394,7 +2304,6 @@ export const useMainStore = defineStore('mainStore', () => {
           };
           
           const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
-          // FIX: _idsMatch
           if (!taxes.value.find(t=>_idsMatch(t._id, res.data._id))) taxes.value.push(res.data);
           
           return res.data;
@@ -2403,8 +2312,90 @@ export const useMainStore = defineStore('mainStore', () => {
       }
   }
 
+  function getBalanceAtDate(accountId, targetDate) {
+      const acc = currentAccountBalances.value.find(a => _idsMatch(a._id, accountId));
+      if (!acc) return 0;
+      let balance = acc.balance;
+
+      const targetTime = new Date(targetDate).getTime();
+      
+      const relevantOps = futureOps.value.filter(op => {
+          if (!op.date) return false;
+          let isMatch = false;
+          let amountChange = 0;
+
+          if (isTransfer(op)) {
+               if (_idsMatch(op.fromAccountId, accountId)) {
+                   isMatch = true;
+               } else if (_idsMatch(op.toAccountId, accountId)) {
+                   isMatch = true;
+               }
+          } else {
+               const opAccId = op.accountId?._id || op.accountId;
+               if (_idsMatch(opAccId, accountId)) {
+                   isMatch = true;
+               }
+          }
+          
+          if (!isMatch) return false;
+          
+          const opTime = new Date(op.date).getTime();
+          return opTime <= targetTime;
+      });
+
+      relevantOps.forEach(op => {
+           if (isTransfer(op)) {
+               if (_idsMatch(op.fromAccountId, accountId)) {
+                   balance -= Math.abs(Number(op.amount) || 0);
+               } else if (_idsMatch(op.toAccountId, accountId)) {
+                   balance += Math.abs(Number(op.amount) || 0);
+               }
+          } else {
+               if (op.type === 'income') {
+                   balance += Math.abs(Number(op.amount) || 0);
+               } else {
+                   balance -= Math.abs(Number(op.amount) || 0);
+               }
+          }
+      });
+
+      return balance;
+  }
+
+  function validateTransaction(accountId, amount, targetDate) {
+      const isFuture = !_isEffectivelyPastOrToday(targetDate);
+      
+      let available = 0;
+      
+      if (isFuture) {
+          available = getBalanceAtDate(accountId, targetDate);
+      } else {
+          const acc = currentAccountBalances.value.find(a => _idsMatch(a._id, accountId));
+          available = acc ? acc.balance : 0;
+      }
+
+      if (available < amount) {
+          return {
+              isValid: false,
+              availableBalance: available,
+              message: `Недостаточно средств${isFuture ? ' (по плану)' : ''}. Доступно: ${available} ₸`
+          };
+      }
+
+      return {
+          isValid: true,
+          availableBalance: available,
+          message: ''
+      };
+  }
+
   // 🟢 EXPORT ALL
   return {
+    cacheVersion,
+    
+    // 🟢 Exporting helper so other stores (projectionStore) can use it
+    _idsMatch,
+
     accounts, companies, contractors, projects, categories, individuals, 
     credits, taxes, 
     visibleCategories, visibleContractors, 
@@ -2433,7 +2424,6 @@ export const useMainStore = defineStore('mainStore', () => {
     
     currentCreditBalances, futureCreditBalances, creditCategoryId,
 
-    // 🟢 UPDATED: Split Liabilities (Fact vs Forecast)
     liabilitiesWeOwe: computed(() => useDealStore().liabilitiesWeOweCurrent), // Fact
     liabilitiesTheyOwe: computed(() => useDealStore().liabilitiesTheyOweCurrent), // Fact
     liabilitiesWeOweFuture: computed(() => useDealStore().liabilitiesWeOweTotal), // Forecast (Plan)
@@ -2474,13 +2464,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
     createTransfer, updateTransfer, updateOperation, createEvent,
     createWorkAct,
-    closePreviousTranches,
+    closeDealScope, closePreviousTranches,
 
     fetchOperationsRange, updateFutureProjectionWithData,
 
     startAutoRefresh, stopAutoRefresh, forceRefreshAll,
 
-    getFirstFreeCellIndex, _parseDateKey, _getDateKey, 
+    getFirstFreeCellIndex, _parseDateKey, _getDateKey, _isEffectivelyPastOrToday, // Exported helper
     
     _isRetailWriteOff, 
 
@@ -2507,6 +2497,9 @@ export const useMainStore = defineStore('mainStore', () => {
     _isTaxPayment,
     
     totalInitialBalance,
+    
+    getBalanceAtDate,
+    validateTransaction,
     
     onSocketOperationAdded,
     onSocketOperationUpdated,

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue';
+import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
@@ -8,11 +8,13 @@ import { useMainStore } from '@/stores/mainStore';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v30.1 - ACCOUNT OWNER DISPLAY ---
- * * ВЕРСИЯ: 30.1
- * * ДАТА: 2025-12-14
+ * * --- МЕТКА ВЕРСИИ: v30.2 - FUTURE WITHDRAWAL VALIDATION ---
+ * * ВЕРСИЯ: 30.2
+ * * ДАТА: 2025-12-16
  * * ИЗМЕНЕНИЯ:
- * 1. (UI) В выпадающем списке счетов теперь отображается владелец (Компания/Физлицо) в поле subLabel.
+ * 1. (LOGIC) Валидация баланса при выводе на будущую дату.
+ * 2. (UI) Динамический заголовок "Запланировать вывод".
+ * 3. (UI) Прогнозируемый баланс в списке счетов.
  */
 
 const mainStore = useMainStore();
@@ -41,7 +43,7 @@ const newAccountName = ref('');
 const newAccountInputRef = ref(null);
 const showAccountSuggestions = ref(false);
 
-// 🟢 CASH REGISTER LOGIC (Новое)
+// 🟢 CASH REGISTER LOGIC
 const showCashChoiceModal = ref(false);
 const showSpecialCashInfo = ref(false);
 const accountCreationPlaceholder = ref('Название счета'); 
@@ -78,20 +80,107 @@ const getOwnerName = (acc) => {
     return null;
 };
 
-// Опции Счетов
+const isCloneMode = ref(false);
+const isDeleteConfirmVisible = ref(false);
+const editableDate = ref('');
+
+// --- DATE LOGIC ---
+const toInputDate = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toDisplayDate = (dateStr) => { 
+    if (!dateStr) return ''; 
+    const [year, month, day] = dateStr.split('-'); 
+    return `${day}.${month}.${year}`; 
+};
+
+// 🟢 ИСТИННОЕ ВРЕМЯ
+const createSmartDate = (str) => {
+    if (!str) return new Date();
+    const [y, m, d] = str.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const now = new Date();
+    const isToday = now.getFullYear() === y && now.getMonth() === (m - 1) && now.getDate() === d;
+    
+    if (isToday) {
+        return now;
+    } else {
+        date.setHours(12, 0, 0, 0);
+        return date;
+    }
+};
+
+const isFutureDate = computed(() => {
+    const targetDate = createSmartDate(editableDate.value);
+    if (mainStore._isEffectivelyPastOrToday) {
+        return !mainStore._isEffectivelyPastOrToday(targetDate);
+    }
+    return false;
+});
+
+// --- ВАЛИДАЦИЯ ---
+const validationResult = computed(() => {
+    if (!fromAccountId.value) return { isValid: true };
+    const rawAmount = amount.value;
+    if (!rawAmount || rawAmount <= 0) return { isValid: true };
+
+    const targetDate = createSmartDate(editableDate.value);
+    
+    if (mainStore.validateTransaction) {
+        return mainStore.validateTransaction(fromAccountId.value, rawAmount, targetDate);
+    }
+    return { isValid: true };
+});
+
+const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
+
+// 🟢 ДИНАМИЧЕСКИЙ ЗАГОЛОВОК
+const title = computed(() => {
+    if (isCloneMode.value) return 'Копия: Вывод денег';
+    if (isEditMode.value) return 'Редактировать Вывод денег';
+    
+    if (isFutureDate.value) return 'Запланировать вывод';
+    
+    return 'Оформление вывода';
+});
+
+const btnText = computed(() => {
+    if (isSaving.value) return 'Сохранение...';
+    if (isCloneMode.value) return 'Создать копию вывода';
+    if (isEditMode.value) return 'Сохранить';
+    
+    if (isFutureDate.value) return 'Запланировать';
+    
+    return 'Подтвердить';
+});
+
+// --- ОПЦИИ СЧЕТОВ (ДИНАМИЧЕСКИЙ БАЛАНС) ---
 const accountOptions = computed(() => {
+  const targetDate = createSmartDate(editableDate.value);
+  const isFuture = isFutureDate.value;
+
   const opts = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
+    
+    let displayBalance = acc.balance || 0;
+    if (isFuture && mainStore.getBalanceAtDate) {
+        displayBalance = mainStore.getBalanceAtDate(acc._id, targetDate);
+    }
+
     return {
         value: acc._id,
         label: acc.name,
-        subLabel: owner, // 🟢 Передаем владельца в subLabel
-        rightText: `${formatNumber(Math.abs(acc.balance))} ₸`,
+        subLabel: owner, 
+        rightText: `${formatNumber(Math.round(displayBalance))} ₸`, // Округляем
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
   });
-  // 🟢 Sticky button via slot
   opts.push({ isActionRow: true });
   return opts;
 });
@@ -104,27 +193,9 @@ const individualOptions = computed(() => {
         return name !== 'розничные клиенты' && name !== 'розница';
     })
     .map(i => ({ value: i._id, label: i.name }));
-  // 🟢 Sticky button
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать Физлицо', isSpecial: true });
   return opts;
 });
-
-const isCloneMode = ref(false);
-const isDeleteConfirmVisible = ref(false);
-const editableDate = ref('');
-
-const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
-const title = computed(() => isCloneMode.value ? 'Копия: Вывод денег' : (isEditMode.value ? 'Редактировать Вывод денег' : 'Оформление вывода'));
-const btnText = computed(() => isSaving.value ? 'Сохранение...' : (isCloneMode.value ? 'Создать копию вывода' : (isEditMode.value ? 'Сохранить' : 'Подтвердить')));
-
-const toInputDate = (date) => {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const day = d.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const toDisplayDate = (dateStr) => { if (!dateStr) return ''; const [year, month, day] = dateStr.split('-'); return `${day}.${month}.${year}`; };
 
 const onAmountInput = (e) => {
   const raw = e.target.value.replace(/[^0-9]/g, '');
@@ -240,11 +311,16 @@ const handleSave = async () => {
       return;
   }
   if (!selectedIndividualId.value) { showError('Выберите получателя (Физлицо)'); return; }
+
+  // 🟢 ВАЛИДАЦИЯ БАЛАНСА
+  if (validationResult.value && !validationResult.value.isValid) {
+      showError(validationResult.value.message);
+      return;
+  }
   
   isSaving.value = true;
   
-  const [year, month, day] = editableDate.value.split('-').map(Number);
-  const finalDate = new Date(year, month - 1, day, 12, 0, 0);
+  const targetDate = createSmartDate(editableDate.value);
 
   let withdrawalCat = mainStore.categories.find(c => {
       const n = c.name.toLowerCase().trim();
@@ -255,7 +331,7 @@ const handleSave = async () => {
   const payload = {
     amount: amount.value, destination: reason.value, reason: reason.value, description: reason.value, 
     type: 'expense', isWithdrawal: true, accountId: fromAccountId.value,
-    date: finalDate, categoryId: withdrawalCat ? withdrawalCat._id : null,
+    date: targetDate, categoryId: withdrawalCat ? withdrawalCat._id : null,
     counterpartyIndividualId: selectedIndividualId.value, individualId: null, contractorId: null
   };
 
@@ -302,12 +378,17 @@ onMounted(() => {
         Вывод средств со счета <b>{{ initialData.fromAccountName }}</b>.
       </div>
       
-      <!-- СУММА -->
-      <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
+      <!-- СУММА + ВАЛИДАЦИЯ -->
+      <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма к выводу, ₸</span>
              <input type="text" v-model="formattedAmount" @input="onAmountInput" class="real-input wd-amount" placeholder="Сумма вывода ₸" />
           </div>
+      </div>
+
+      <!-- 🟢 Блок ошибки валидации -->
+      <div v-if="validationResult && !validationResult.isValid" class="validation-error">
+          {{ validationResult.message }}
       </div>
       
       <!-- СЧЕТ СПИСАНИЯ -->
@@ -356,11 +437,18 @@ onMounted(() => {
 
       <BaseSelect v-model="reason" :options="reasonOptions" label="Причина / Цель" placeholder="Выберите причину" class="input-spacing" />
 
+      <!-- ДАТА -->
       <div class="custom-input-box input-spacing has-value date-box">
          <div class="input-inner-content">
              <span class="floating-label">Дата вывода</span>
              <div class="date-display-row">
                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
+                 
+                 <!-- 🟢 Индикатор ПЛАН/ФАКТ -->
+                 <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
+                     {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
+                 </span>
+
                  <input type="date" v-model="editableDate" class="real-input date-overlay" />
                  <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
              </div>
@@ -368,7 +456,7 @@ onMounted(() => {
       </div>
 
       <div class="popup-actions-row">
-        <button class="btn-submit save-wide wd-btn-confirm" @click="handleSave" :disabled="amount <= 0 || isSaving || !fromAccountId || !selectedIndividualId">
+        <button class="btn-submit save-wide wd-btn-confirm" @click="handleSave" :disabled="amount <= 0 || isSaving || !fromAccountId || !selectedIndividualId || (validationResult && !validationResult.isValid)">
           {{ btnText }}
         </button>
 
@@ -432,6 +520,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
 .custom-input-box:focus-within { border-color: var(--color-withdrawal) !important; box-shadow: 0 0 0 1px var(--focus-shadow) !important; }
+/* 🟢 Ошибка валидации */
+.custom-input-box.is-invalid { border-color: #FF3B30 !important; box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.2) !important; }
+.validation-error { color: #FF3B30; font-size: 13px; margin-top: 6px; font-weight: 500; margin-left: 2px; }
+
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; }
 .real-input { width: 100%; border: none; background: transparent; font-size: 15px !important; color: #1a1a1a; font-weight: 500; outline: none; height: auto; line-height: 1.3; padding: 0; font-family: inherit; }
@@ -443,6 +535,11 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .date-value-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 .date-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .calendar-icon-svg { width: 18px; height: 18px; stroke: #999; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* 🟢 БЕЙДЖ ДАТЫ */
+.date-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-left: 8px; display: inline-block; vertical-align: middle; }
+.fact-badge { background-color: rgba(52, 199, 89, 0.15); color: #34c759; }
+.plan-badge { background-color: rgba(0, 122, 255, 0.15); color: #007AFF; }
+
 
 /* Inline Create */
 .inline-create-form { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -460,7 +557,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 .icon-actions { display: flex; gap: 10px; }
 .wd-btn-confirm { padding: 0 1rem; height: 50px; border: none; background: var(--color-withdrawal); color: #fff; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 16px; transition: background 0.2s; }
 .wd-btn-confirm:hover:not(:disabled) { background: #8E24AA; }
-.wd-btn-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
+.wd-btn-confirm:disabled { opacity: 0.6; cursor: not-allowed; background-color: #aaa; }
 
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; border-radius: 10px; cursor: pointer; background: #F4F4F4; border: 1px solid #E0E0E0; color: #333; transition: all 0.2s; padding: 0; }
 .copy-btn:hover { background: #E8F5E9; border-color: #A5D6A7; color: #34C759; }

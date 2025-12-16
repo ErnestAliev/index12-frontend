@@ -8,14 +8,13 @@ import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, Li
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 /**
- * * --- МЕТКА ВЕРСИИ: v57.2 - CUMULATIVE BALANCE FIX ---
- * * ВЕРСИЯ: 57.2
- * * ДАТА: 2025-12-10
+ * * --- МЕТКА ВЕРСИИ: v60.2 - RENDER CRASH FIX ---
+ * * ВЕРСИЯ: 60.2
+ * * ДАТА: 2025-12-16
  * * ИЗМЕНЕНИЯ:
- * 1. (LOGIC) Итоги дня (balance) теперь считаются накопительным итогом (Cumulative).
- * 2. (LOGIC) Начальный баланс берется из стора (Opening Balance первого дня) и корректируется
- * вычитанием текущего баланса скрытых счетов.
- * 3. (LOGIC) Теперь "Результат" переносится со дня на день.
+ * 1. (FIX) Добавлены проверки на существование объектов (op, account) во всех циклах.
+ * 2. (FIX) Приведение ID к String() перед сравнением в isOpVisible.
+ * 3. (FIX) Принудительное приведение amount к Number() для защиты от NaN.
  */
 
 const props = defineProps({
@@ -26,27 +25,32 @@ const props = defineProps({
 const emit = defineEmits(['update:yLabels']);
 const mainStore = useMainStore();
 
-// 🟢 1. Получаем список ID исключенных счетов
+// 🟢 1. Получаем список ID исключенных счетов (SAFE)
 const excludedAccountIds = computed(() => {
     if (mainStore.includeExcludedInTotal) return new Set();
     const ids = new Set();
-    mainStore.accounts.forEach(a => {
-        if (a.isExcluded) ids.add(a._id);
-    });
+    if (Array.isArray(mainStore.accounts)) {
+        mainStore.accounts.forEach(a => {
+            if (a && a.isExcluded) {
+                ids.add(String(a._id)); // Always store as String
+            }
+        });
+    }
     return ids;
 });
 
-// 🟢 2. Хелпер для проверки видимости операции
+// 🟢 2. Хелпер для проверки видимости операции (SAFE)
 const isOpVisible = (op) => {
     if (!op) return false;
     if (op.accountId) {
         const aId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-        if (excludedAccountIds.value.has(aId)) return false;
+        // Check if ID exists and is in the set (casted to string)
+        if (aId && excludedAccountIds.value.has(String(aId))) return false;
     }
     return true;
 };
 
-// ... (externalTooltipHandler without changes) ...
+// ... (externalTooltipHandler logic) ...
 const externalTooltipHandler = (context) => {
   let tooltipEl = document.getElementById('chartjs-custom-tooltip');
   if (!tooltipEl) {
@@ -89,43 +93,70 @@ onUnmounted(() => { const el = document.getElementById('chartjs-custom-tooltip')
 const _getDayOfYear = (date) => { if (!date) return 0; const start = new Date(date.getFullYear(), 0, 0); const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000); return Math.floor(diff / 86400000); };
 const _getDateKey = (date) => { if (!date) return ''; const year = date.getFullYear(); const doy = _getDayOfYear(date); return `${year}-${doy}`; };
 
-const rawMaxY = computed(() => { let max = 0; if (mainStore.dailyChartData) { for (const [, data] of mainStore.dailyChartData) { const totalIncome = (data.income || 0) + (data.prepayment || 0); if (totalIncome > max) max = totalIncome; const totalExpense = Math.abs(data.expense || 0) + Math.abs(data.withdrawal || 0); if (totalExpense > max) max = totalExpense; } } return max || 1; });
+const rawMaxY = computed(() => { 
+  const _v = mainStore.cacheVersion;
+  let max = 0; 
+  
+  if (!Array.isArray(props.visibleDays)) return 1;
+
+  for (const day of props.visibleDays) {
+     if (!day || !day.date) continue;
+     const dateKey = _getDateKey(day.date);
+     const dayOps = mainStore.getOperationsForDay(dateKey) || [];
+     
+     let dayIncome = 0;
+     let dayExpense = 0;
+     
+     dayOps.forEach(op => {
+         if (!op) return; // Guard
+         if (!isOpVisible(op)) return;
+         if (op.type === 'transfer' || op.isTransfer) return;
+         if (op.isWorkAct) return;
+         
+         // Safe number parsing
+         const amt = Math.abs(Number(op.amount) || 0);
+         
+         if (op.type === 'income') dayIncome += amt;
+         else if (op.type === 'expense' || op.isWithdrawal) dayExpense += amt;
+     });
+     
+     if (dayIncome > max) max = dayIncome;
+     if (dayExpense > max) max = dayExpense;
+  }
+  return max || 1; 
+});
+
 function niceStep(rawStep) { if (rawStep <= 0) return 1; const exp = Math.floor(Math.log10(rawStep)); const base = Math.pow(10, exp); const frac = rawStep / base; let niceFrac; if (frac <= 1) niceFrac = 1; else if (frac <= 2) niceFrac = 2; else if (frac <= 5) niceFrac = 5; else niceFrac = 10; return niceFrac * base; }
 const axisStep = computed(() => { const desired = rawMaxY.value / 8; return niceStep(desired); });
 const axisMax = computed(() => { const maxNeeded = rawMaxY.value; const step = axisStep.value; const minNiceMax = step * 8; if (maxNeeded <= minNiceMax) return minNiceMax; const k = Math.ceil(maxNeeded / step); const kAligned = Math.max(8, k); const kAligned8 = Math.ceil(kAligned / 8) * 8; return kAligned8 * step; });
 const yAxisTicks = computed(() => { const ticks = []; const step = axisStep.value; const max = axisMax.value; for (let v = max; v >= 0; v -= step) { ticks.push(v); } if (ticks.length > 9) return ticks.slice(0, 9); if (ticks.length < 9) { while (ticks.length < 9) ticks.push(0); } return ticks; });
 watch(yAxisTicks, (ticks) => { emit('update:yLabels', ticks); }, { immediate: true });
 
-// 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES) С ФИЛЬТРАЦИЕЙ
+// 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES) - SAFE
 const summaries = computed(() => { 
+  const _v = mainStore.cacheVersion;
   if (!props.showSummaries || !Array.isArray(props.visibleDays) || props.visibleDays.length === 0) return []; 
   
-  // 3.1. Определяем начальный баланс (Anchor)
   let runningBalance = 0;
-
-  // Пытаемся восстановить входящий баланс первого дня из данных стора
   const firstDay = props.visibleDays[0];
+  if (!firstDay) return [];
+
   const firstDateKey = _getDateKey(firstDay.date);
   const firstStoreData = mainStore.dailyChartData?.get(firstDateKey);
 
   if (firstStoreData) {
-      // Восстанавливаем Opening Balance = Closing - Net
-      // В сторе: income и prepayment могут быть разделены, expense и withdrawal тоже.
       const totalInc = (firstStoreData.income || 0) + (firstStoreData.prepayment || 0);
       const totalExp = Math.abs(firstStoreData.expense || 0) + Math.abs(firstStoreData.withdrawal || 0);
       const dayNet = totalInc - totalExp;
-      
-      // Opening Balance (Общий, включая скрытые)
       runningBalance = (firstStoreData.closingBalance || 0) - dayNet;
   }
 
-  // 3.2. Корректировка на скрытые счета
-  // Вычитаем ТЕКУЩИЙ баланс скрытых счетов, чтобы приблизить график к "видимому" состоянию.
-  if (excludedAccountIds.value.size > 0) {
+  // Корректировка на скрытые счета
+  if (excludedAccountIds.value.size > 0 && Array.isArray(mainStore.accounts)) {
       let excludedSum = 0;
       mainStore.accounts.forEach(a => {
-          if (excludedAccountIds.value.has(a._id)) {
-              excludedSum += a.balance || 0;
+          if (a && excludedAccountIds.value.has(String(a._id))) {
+              excludedSum += Number(a.balance) || 0;
           }
       });
       runningBalance -= excludedSum;
@@ -139,47 +170,47 @@ const summaries = computed(() => {
     let inc = 0;
     let exp = 0;
     
-    // Считаем чистый поток за день (Visible only)
     dayOps.forEach(op => {
+        if (!op) return; // Guard
         if (!isOpVisible(op)) return;
         if (op.type === 'transfer' || op.isTransfer) return;
         if (op.isWorkAct) return;
         if (!op.accountId) return;
 
-        const amt = Math.abs(op.amount || 0);
+        const amt = Math.abs(Number(op.amount) || 0);
 
         if (op.isWithdrawal) {
             exp += amt;
         } else if (op.type === 'expense') {
-            if (mainStore._isRetailWriteOff(op)) return;
+            if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) return;
             exp += amt;
         } else if (op.type === 'income') {
             inc += amt;
         }
     });
 
-    // 🟢 ИЗМЕНЕНИЕ: Накопительный итог
-    // Добавляем чистый поток этого дня к текущему балансу
     runningBalance += (inc - exp);
 
     return { 
         date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }), 
         income: inc, 
         expense: exp, 
-        balance: runningBalance // Теперь это накопительный итог на конец дня
+        balance: runningBalance 
     }; 
   }); 
 });
 
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
-  const sortedOps = [...ops].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  // Safety sort
+  const sortedOps = [...ops].sort((a, b) => Math.abs(Number(b.amount)||0) - Math.abs(Number(a.amount)||0));
   
   return sortedOps.map(op => {
+    if (!op) return null;
     if (op.isTransfer && !op.isWithdrawal) return null;
     
     const isTax = mainStore._isTaxPayment ? mainStore._isTaxPayment(op) : false;
-    const isCredit = mainStore._isCreditIncome(op);
+    const isCredit = mainStore._isCreditIncome ? mainStore._isCreditIncome(op) : false;
     
     let catName = op.categoryId?.name || 'Без категории';
     
@@ -190,10 +221,10 @@ const getTooltipOperationList = (ops) => {
         catName = 'Сделка закрыта (Факт)'; 
     } 
     else if (op.type === 'income' && !op.isClosed && !isCredit) { 
-         const prepayIds = mainStore.getPrepaymentCategoryIds;
+         const prepayIds = mainStore.getPrepaymentCategoryIds || [];
          const catId = op.categoryId?._id || op.categoryId;
          const prepId = op.prepaymentId?._id || op.prepaymentId;
-         const isTranche = op.isDealTranche === true;
+         const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
          const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
          const isRetailPrepay = indId && indId === mainStore.retailIndividualId;
 
@@ -224,8 +255,10 @@ const getTooltipOperationList = (ops) => {
   }).filter(Boolean);
 };
 
-// ... (chartData logic remains the same as previous step, correctly filtering hidden accounts) ...
+// 🟢 CHART DATA COMPUTED - SAFE
 const chartData = computed(() => {
+  const _v = mainStore.cacheVersion;
+
   const labels = [];
   const incomeData = []; const creditIncomeData = []; const prepaymentData = [];
   const expenseData = []; const withdrawalData = [];
@@ -233,7 +266,7 @@ const chartData = computed(() => {
   const expenseDetails = []; const withdrawalDetails = [];
 
   const safeDays = Array.isArray(props.visibleDays) ? props.visibleDays : [];
-  const prepayIds = mainStore.getPrepaymentCategoryIds;
+  const prepayIds = mainStore.getPrepaymentCategoryIds || [];
   const creditCatId = mainStore.creditCategoryId;
   const retailId = mainStore.retailIndividualId;
 
@@ -249,25 +282,26 @@ const chartData = computed(() => {
     let dayExpenseSum = 0; let dayWithdrawalSum = 0;
 
     dayOps.forEach(op => {
+        if (!op) return; // Guard
         if (!isOpVisible(op)) return;
 
-        const amt = op.amount || 0;
+        const amt = Number(op.amount) || 0;
         const absAmt = Math.abs(amt);
 
         if (op.isWithdrawal) {
             withdrawalOps.push(op); dayWithdrawalSum += absAmt;
         } else if (op.type === 'expense') {
-            if (mainStore._isRetailWriteOff(op)) return;
+            if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) return;
             expenseOps.push(op); dayExpenseSum += absAmt;
         } else if (op.type === 'income') {
             const catId = op.categoryId?._id || op.categoryId;
             const prepId = op.prepaymentId?._id || op.prepaymentId;
-            const isCredit = creditCatId && catId === creditCatId;
+            const isCredit = creditCatId && String(catId) === String(creditCatId);
             const isPrepayCategory = (catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
             const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
             
             const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-            const isRetailPrepay = retailId && indId === retailId && op.isClosed !== true;
+            const isRetailPrepay = retailId && String(indId) === String(retailId) && op.isClosed !== true;
 
             if (isCredit) {
                 creditOps.push(op); dayCreditSum += amt;
@@ -364,7 +398,15 @@ const chartOptions = computed(() => {
 });
 
 const chartRef = ref(null);
-watch([chartData, chartOptions], async () => { await nextTick(); const chart = chartRef.value?.chart; if (chart) chart.update('none'); });
+
+watch([chartData, chartOptions], async () => { 
+    await nextTick(); 
+    const chart = chartRef.value?.chart; 
+    if (chart) {
+        chart.update('none'); 
+    }
+}, { deep: true });
+
 </script>
 
 <template>
