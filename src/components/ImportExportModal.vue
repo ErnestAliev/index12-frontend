@@ -5,12 +5,16 @@ import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v11.3 - STYLE FIX & HEADER WIDTH ---
- * * ВЕРСИЯ: 11.3
- * * ДАТА: 2025-12-03
+ * * --- МЕТКА ВЕРСИИ: v14.2 - FULL FILE RESTORE ---
+ * * ВЕРСИЯ: 14.2
+ * * ДАТА: 2025-12-19
  * * ЧТО ИЗМЕНЕНО:
- * 1. (CSS) Усилены стили сетки (!important) для предотвращения "ступенек" из-за глобальных стилей.
- * 2. (LOGIC) calculateColumnWidths теперь учитывает длину заголовка, чтобы шапка не ломалась.
+ * 1. ПОЛНАЯ СБОРКА ФАЙЛА (Скрипт + Шаблон + Стили).
+ * 2. ВЕСЬ КОД ИМПОРТА (JS и HTML) ВОССТАНОВЛЕН и ЗАКОММЕНТИРОВАН.
+ * 3. Логика экспорта (v14.1):
+ * - Нет колонок прогноза.
+ * - ID выгружаются только если включена галочка `showDebugIds`.
+ * - Цвета применяются к тексту.
  */
 
 const emit = defineEmits(['close', 'import-complete']);
@@ -19,7 +23,8 @@ const mainStore = useMainStore();
 // --- UI Refs ---
 const scrollContainerRef = ref(null); // Ссылка на контейнер таблицы для авто-скролла
 
-const currentTab = ref('import');
+// ИЗМЕНЕНО: По умолчанию открываем экспорт
+const currentTab = ref('export'); 
 const isExporting = ref(false);
 const exportError = ref(null);
 
@@ -28,9 +33,9 @@ const isDataReady = ref(false);
 const processedAllData = ref({}); 
 const showExportPreview = ref(false);
 
-const showDebugIds = ref(false);
+const showDebugIds = ref(false); // 🟢 Главный переключатель для ID
 const isFitContent = ref(true);
-const isColorized = ref(false);
+const isColorized = ref(true); // По умолчанию включено
 
 const colorSettings = ref({
   income: true,
@@ -38,8 +43,8 @@ const colorSettings = ref({
   prepayment: true,
   transfer: true,
   withdrawal: true,
-  act: true,   // 🟢 Новый тип: Акт
-  shift: true  // 🟢 Новый тип: Смена
+  act: true,
+  shift: true
 });
 
 watch(isColorized, (newVal) => {
@@ -63,13 +68,13 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.body.style.overflow = '';
-  stopAutoScroll(); // Очистка таймера при уничтожении
+  stopAutoScroll(); 
 });
 
 // --- Логика Авто-Скролла ---
 let scrollAnimationFrame = null;
-const SCROLL_SPEED = 15; // Скорость прокрутки
-const SENSOR_SIZE = 60; // Размер зоны срабатывания в пикселях от края
+const SCROLL_SPEED = 15; 
+const SENSOR_SIZE = 60; 
 
 const startAutoScrollCheck = (e) => {
   if (!scrollContainerRef.value) return;
@@ -85,11 +90,9 @@ const startAutoScrollCheck = (e) => {
   let dx = 0;
   let dy = 0;
 
-  // Горизонталь
   if (x < SENSOR_SIZE) dx = -SCROLL_SPEED;
   else if (x > w - SENSOR_SIZE) dx = SCROLL_SPEED;
 
-  // Вертикаль
   if (y < SENSOR_SIZE) dy = -SCROLL_SPEED;
   else if (y > h - SENSOR_SIZE) dy = SCROLL_SPEED;
 
@@ -146,6 +149,11 @@ const hasActiveFilters = computed(() => {
   return f.dateFrom || f.dateTo || f.type || f.category || f.account || f.project || f.status || f.contractor || f.owner;
 });
 
+// ====================================================================================
+// ==================== ЗАКОММЕНТИРОВАННАЯ ЛОГИКА ИМПОРТА (НЕ УДАЛЯТЬ) ================
+// ====================================================================================
+
+/*
 // --- Шаги (Импорт) ---
 const step = ref('upload'); 
 const error = ref(null);
@@ -217,34 +225,6 @@ function resetState() {
   showExportPreview.value = false;
   resetExportFilters(); 
   if (fileInputRef.value) fileInputRef.value.value = null;
-}
-
-function resetExport() {
-  isExporting.value = false;
-  exportError.value = null;
-  isDataReady.value = false;
-  processedAllData.value = {};
-  showExportPreview.value = false; 
-  resetExportFilters(); 
-}
-
-function resetExportFilters() {
-  exportFilters.value = {
-    dateFrom: '',
-    dateTo: '',
-    type: '',
-    category: '',
-    account: '',
-    project: '',
-    status: '',
-    contractor: '',
-    owner: ''
-  };
-}
-
-function closeModal() {
-  resetState(); 
-  emit('close');
 }
 
 function previousStep() {
@@ -539,56 +519,11 @@ function normalizeType(value) {
   return null;
 }
 
-const UNIFIED_COLUMNS = [
-  'Дата', 'Тип', 'Категория', 'Проект', 'Сумма', 'Прогноз', 'Счет', 'Контрагент',
-  'Компания/Физлицо', 'Описание', 'Статус', 'account_id', 'category_id', 'project_id'
-];
-
 function downloadTemplate() {
   const csvString = UNIFIED_COLUMNS.join(",");
   triggerCsvDownload(csvString, "Import_Template_IncomeExpense");
 }
 
-function resolveEntityName(entityOrId, storeList) {
-  if (!entityOrId) return '';
-  if (typeof entityOrId === 'object' && entityOrId.name) return entityOrId.name;
-  if (typeof entityOrId === 'string' && storeList) {
-    const found = storeList.find(item => item._id === entityOrId);
-    return found ? found.name : '';
-  }
-  return '';
-}
-
-function resolveEntityId(entityOrId, storeList) {
-  if (!entityOrId) return '';
-  if (typeof entityOrId === 'object' && entityOrId._id) return entityOrId._id;
-  if (typeof entityOrId === 'string') {
-      const foundById = storeList.find(item => item._id === entityOrId);
-      if (foundById) return foundById._id;
-      const foundByName = storeList.find(item => item.name && item.name.toLowerCase() === entityOrId.toLowerCase());
-      if (foundByName) return foundByName._id;
-      return entityOrId; 
-  }
-  return '';
-}
-
-// 🟢 Хелпер для цветов
-const getRowColorClass = (row) => {
-    if (!isColorized.value) return '';
-    const type = row['Тип'];
-    
-    if (type === 'Доход' && colorSettings.value.income) return 'row-income';
-    if (type === 'Расход' && colorSettings.value.expense) return 'row-expense';
-    if (type === 'Предоплата' && colorSettings.value.prepayment) return 'row-prepayment';
-    if (type === 'Вывод средств' && colorSettings.value.withdrawal) return 'row-withdrawal';
-    if ((type === 'Перевод (Исх)' || type === 'Перевод (Вх)') && colorSettings.value.transfer) return 'row-transfer';
-    if (type === 'Акт выполненных работ' && colorSettings.value.act) return 'row-act'; // 🟢 NEW
-    if (type === 'Закрытие смены' && colorSettings.value.shift) return 'row-shift'; // 🟢 NEW
-    
-    return '';
-};
-
-// 🟢 Новая функция для раскраски ИМПОРТА
 const getImportRowColorClass = (row) => {
     if (!isColorized.value) return '';
     
@@ -609,7 +544,6 @@ const getImportRowColorClass = (row) => {
     return '';
 };
 
-// 🟢 Статистика для ревью импорта
 const importStats = computed(() => {
   const ops = operationsToImport.value;
   const stats = {
@@ -631,7 +565,101 @@ const importStats = computed(() => {
   });
   return stats;
 });
+*/
 
+// ====================================================================================
+// ==================== КОНЕЦ БЛОКА ИМПОРТА ===========================================
+// ====================================================================================
+
+
+// --- Активная логика Экспорта ---
+
+function resetExport() {
+  isExporting.value = false;
+  exportError.value = null;
+  isDataReady.value = false;
+  processedAllData.value = {};
+  showExportPreview.value = false; 
+  resetExportFilters(); 
+}
+
+function resetExportFilters() {
+  exportFilters.value = {
+    dateFrom: '',
+    dateTo: '',
+    type: '',
+    category: '',
+    account: '',
+    project: '',
+    status: '',
+    contractor: '',
+    owner: ''
+  };
+}
+
+function closeModal() {
+  // resetState(); // БЫЛО ДЛЯ ИМПОРТА
+  emit('close');
+}
+
+// 🟢 ОСНОВНЫЕ КОЛОНКИ (БЕЗ ID)
+const BASE_COLUMNS = [
+  'Дата', 'Тип', 'Категория', 'Проект', 
+  'Сумма Дохода', 'Сумма Расхода', 
+  'Счет', 'Контрагент',
+  'Компания/Физлицо', 'Описание', 'Статус'
+];
+
+function resolveEntityName(entityOrId, storeList, fallback = '') {
+  if (!entityOrId) return fallback;
+  if (typeof entityOrId === 'object' && entityOrId.name) return entityOrId.name;
+  if (typeof entityOrId === 'string' && storeList) {
+    const found = storeList.find(item => item._id === entityOrId);
+    return found ? found.name : fallback;
+  }
+  return fallback;
+}
+
+function resolveEntityId(entityOrId, storeList) {
+  if (!entityOrId) return '';
+  if (typeof entityOrId === 'object' && entityOrId._id) return entityOrId._id;
+  if (typeof entityOrId === 'string') {
+      const foundById = storeList.find(item => item._id === entityOrId);
+      if (foundById) return foundById._id;
+      const foundByName = storeList.find(item => item.name && item.name.toLowerCase() === entityOrId.toLowerCase());
+      if (foundByName) return foundByName._id;
+      return entityOrId; 
+  }
+  return '';
+}
+
+// 🟢 Хелпер для цветов (обновлен список колонок)
+const getRowColorClass = (row) => {
+    if (!isColorized.value) return '';
+    const type = row['Тип'];
+    
+    // Цвета применяем к колонкам Тип и Суммам
+    if (type === 'Доход' && colorSettings.value.income) return 'row-income';
+    if (type === 'Расход' && colorSettings.value.expense) return 'row-expense';
+    if (type === 'Предоплата' && colorSettings.value.prepayment) return 'row-prepayment';
+    if (type === 'Вывод средств' && colorSettings.value.withdrawal) return 'row-withdrawal';
+    if ((type === 'Перевод (Исх)' || type === 'Перевод (Вх)') && colorSettings.value.transfer) return 'row-transfer';
+    if (type === 'Акт выполненных работ' && colorSettings.value.act) return 'row-act'; 
+    if (type === 'Закрытие смены' && colorSettings.value.shift) return 'row-shift'; 
+    
+    return '';
+};
+
+// 🟢 Хелпер форматирования чисел (разделитель тысяч)
+function formatMoney(val) {
+    const num = Number(val);
+    if (isNaN(num)) return '0'; // Если не число, возвращаем 0
+    if (num === 0) return '0';
+    // Используем ru-RU для пробелов (2 000 000)
+    return new Intl.NumberFormat('ru-RU').format(num); 
+}
+
+// 🟢 ПОДГОТОВКА ЭКСПОРТА (ЧИСТАЯ ЛОГИКА)
 async function prepareExportData() {
   isExporting.value = true;
   exportError.value = null;
@@ -641,8 +669,9 @@ async function prepareExportData() {
   try {
     const today = new Date(); today.setHours(0, 0, 0, 0); const todayTimestamp = today.getTime();
     const { operations } = await mainStore.exportAllOperations(); 
-    const runningBalances = new Map(); mainStore.accounts.forEach(acc => { runningBalances.set(acc._id, acc.initialBalance || 0); });
     const allRows = [];
+    
+    // Сортировка
     operations.sort((a, b) => {
       const dateA = new Date(a.date).getTime(); const dateB = new Date(b.date).getTime();
       if (dateA !== dateB) return dateA - dateB;
@@ -650,7 +679,6 @@ async function prepareExportData() {
       return createdA - createdB;
     });
 
-    // 🟢 1. Индексируем операции для быстрого поиска
     const opsMap = new Map();
     operations.forEach(op => opsMap.set(op._id, op));
     
@@ -659,19 +687,35 @@ async function prepareExportData() {
       let dateStr = ''; let opTimestamp = 0;
       try { const d = new Date(op.date); opTimestamp = d.getTime(); const day = String(d.getDate()).padStart(2, '0'); const month = String(d.getMonth() + 1).padStart(2, '0'); const year = d.getFullYear(); dateStr = `${day}.${month}.${year}`; } catch (e) { continue; }
 
-      const isFuture = opTimestamp > todayTimestamp; const status = isFuture ? 'План' : 'Исполнено'; const opAmount = op.amount || 0;
-      let catName = resolveEntityName(op.categoryId, mainStore.categories); let projName = resolveEntityName(op.projectId, mainStore.projects);
-      let contrName = resolveEntityName(op.contractorId, mainStore.contractors) || resolveEntityName(op.counterpartyIndividualId, mainStore.individuals);
+      // 🟢 ОПРЕДЕЛЕНИЕ СТАТУСА ПЛАН/ФАКТ
+      const isFuture = opTimestamp > todayTimestamp; 
+      const isForecast = op.status === 'plan' || isFuture; 
+      // const isFact = !isForecast; 
+
+      const status = isForecast ? 'План' : 'Исполнено'; 
+      const opAmount = op.amount || 0;
+      
+      // 🟢 Fallback "Без ..." если пусто
+      let catName = resolveEntityName(op.categoryId, mainStore.categories, 'Без категории'); 
+      let projName = resolveEntityName(op.projectId, mainStore.projects, 'Без проекта');
+      let contrName = resolveEntityName(op.contractorId, mainStore.contractors) || resolveEntityName(op.counterpartyIndividualId, mainStore.individuals, 'Без контрагента');
       let ownerName = resolveEntityName(op.companyId, mainStore.companies) || resolveEntityName(op.individualId, mainStore.individuals);
       
-      if (!ownerName && op.accountId) { const accIdRaw = resolveEntityId(op.accountId, mainStore.accounts); const accObj = mainStore.accounts.find(a => a._id === accIdRaw); if (accObj) { ownerName = resolveEntityName(accObj.companyId, mainStore.companies) || resolveEntityName(accObj.individualId, mainStore.individuals); } }
+      if (!ownerName && op.accountId) { 
+          const accIdRaw = resolveEntityId(op.accountId, mainStore.accounts); 
+          const accObj = mainStore.accounts.find(a => a._id === accIdRaw); 
+          if (accObj) { 
+              ownerName = resolveEntityName(accObj.companyId, mainStore.companies) || resolveEntityName(accObj.individualId, mainStore.individuals); 
+          } 
+      }
+      if (!ownerName) ownerName = 'Без компании/физлица';
 
-      let catId = resolveEntityId(op.categoryId, mainStore.categories); let projId = resolveEntityId(op.projectId, mainStore.projects); let accountId = resolveEntityId(op.accountId, mainStore.accounts);
-      if (!projName || projName.trim() === '') projName = 'Без проекта';
+      let catId = resolveEntityId(op.categoryId, mainStore.categories); 
+      let projId = resolveEntityId(op.projectId, mainStore.projects); 
+      let accountId = resolveEntityId(op.accountId, mainStore.accounts);
 
-      // 🟢 2. SMART ACCOUNT RESOLUTION (Fix for Acts/Shifts)
+      // Smart Account Resolution
       if (!accountId) {
-           // Case A: Work Act -> Find Tranche -> Take Account
            if (op.isWorkAct && op.relatedEventId) {
                const relatedId = typeof op.relatedEventId === 'object' ? op.relatedEventId._id : op.relatedEventId;
                const parentOp = opsMap.get(relatedId);
@@ -679,39 +723,78 @@ async function prepareExportData() {
                    accountId = resolveEntityId(parentOp.accountId, mainStore.accounts);
                }
            }
-           // Case B: Retail Shift -> Find Income for Project+Client -> Take Account
            else if (mainStore._isRetailWriteOff(op)) {
                const pId = resolveEntityId(op.projectId, mainStore.projects);
                const cIndId = resolveEntityId(op.counterpartyIndividualId, mainStore.individuals);
-               
                if (pId && cIndId) {
-                   // Search for any income with this Project and Retail Client
                    const match = operations.find(candidate => 
                        candidate.type === 'income' &&
                        resolveEntityId(candidate.projectId, mainStore.projects) === pId &&
                        resolveEntityId(candidate.counterpartyIndividualId, mainStore.individuals) === cIndId &&
                        candidate.accountId
                    );
-                   if (match) {
-                       accountId = resolveEntityId(match.accountId, mainStore.accounts);
-                   }
+                   if (match) accountId = resolveEntityId(match.accountId, mainStore.accounts);
                }
            }
       }
 
       const addRow = (accId, amountChange, typeLabel, desc, overrides = {}) => {
-         let currentBalance = 0; let accName = '';
-         if (accId) { const prev = runningBalances.get(accId) || 0; currentBalance = prev + amountChange; runningBalances.set(accId, currentBalance); accName = mainStore.accounts.find(a => a._id === accId)?.name || '???'; }
+         let accName = '';
+         if (accId) { accName = mainStore.accounts.find(a => a._id === accId)?.name || '???'; }
          let finalCatId = catId; if (overrides.category && overrides.category !== catName) finalCatId = resolveEntityId(overrides.category, mainStore.categories);
 
-         allRows.push({ 'Дата': dateStr, 'Тип': typeLabel, 'Категория': overrides.category !== undefined ? overrides.category : catName, 'Проект': projName, 'Сумма': amountChange, 'Прогноз': accId ? currentBalance : '', 'Счет': accName, 'Контрагент': overrides.contractor !== undefined ? overrides.contractor : contrName, 'Компания/Физлицо': overrides.owner !== undefined ? overrides.owner : ownerName, 'Описание': desc, 'Статус': status, 'account_id': accId || '', 'category_id': finalCatId || '', 'project_id': projId || '' });
+         // 🟢 РАСЧЕТ ТЕКУЩИХ КОЛОНОК (БЕЗ ПРОГНОЗА)
+         let incomeVal = 0;
+         let expenseVal = 0;
+
+         const isShift = typeLabel === 'Закрытие смены'; 
+         let rawVal = 0;
+         
+         if (isShift) {
+             rawVal = Math.abs(amountChange); 
+         } else {
+             rawVal = amountChange;
+         }
+
+         if (rawVal > 0) {
+             incomeVal = rawVal;
+         } else if (rawVal < 0) {
+             expenseVal = Math.abs(rawVal);
+         }
+
+         // Формируем базовый объект строки
+         const row = { 
+             'Дата': dateStr, 
+             'Тип': typeLabel, 
+             'Категория': overrides.category !== undefined ? overrides.category : catName, 
+             'Проект': projName, 
+             
+             // 🟢 ТОЛЬКО 2 КОЛОНКИ
+             'Сумма Дохода': formatMoney(incomeVal),
+             'Сумма Расхода': formatMoney(expenseVal),
+             
+             'Счет': accName, 
+             'Контрагент': overrides.contractor !== undefined ? overrides.contractor : contrName, 
+             'Компания/Физлицо': overrides.owner !== undefined ? overrides.owner : ownerName, 
+             'Описание': desc, 
+             'Статус': status, 
+         };
+
+         // 🟢 Добавляем ID только если включен показ ID
+         if (showDebugIds.value) {
+             row['account_id'] = accId || '';
+             row['category_id'] = finalCatId || '';
+             row['project_id'] = projId || '';
+         }
+
+         allRows.push(row);
       };
 
       if (op.type === 'transfer' || op.isTransfer) {
          const fromAccId = resolveEntityId(op.fromAccountId, mainStore.accounts); const toAccId = resolveEntityId(op.toAccountId, mainStore.accounts);
-         const fromOwner = resolveEntityName(op.fromCompanyId, mainStore.companies) || resolveEntityName(op.fromIndividualId, mainStore.individuals);
-         const toOwner = resolveEntityName(op.toCompanyId, mainStore.companies) || resolveEntityName(op.toIndividualId, mainStore.individuals);
-         const absAmount = Math.abs(opAmount); const transferCategory = catName || 'Перевод';
+         const fromOwner = resolveEntityName(op.fromCompanyId, mainStore.companies) || resolveEntityName(op.fromIndividualId, mainStore.individuals, 'Без компании/физлица');
+         const toOwner = resolveEntityName(op.toCompanyId, mainStore.companies) || resolveEntityName(op.toIndividualId, mainStore.individuals, 'Без компании/физлица');
+         const absAmount = Math.abs(opAmount); const transferCategory = catName === 'Без категории' ? 'Перевод' : catName;
          const isInterCompany = op.fromCompanyId && op.toCompanyId && ((op.fromCompanyId._id || op.fromCompanyId) !== (op.toCompanyId._id || op.toCompanyId)); const isToPersonal = !!op.toIndividualId; 
 
          if (isInterCompany) {
@@ -728,64 +811,107 @@ async function prepareExportData() {
          }
       } else if (op.type === 'withdrawal' || op.isWithdrawal) {
           const acc = mainStore.accounts.find(a => a._id === accountId); let withdrawalContr = contrName; 
-          if (!withdrawalContr && acc && acc.individualId) withdrawalContr = resolveEntityName(acc.individualId, mainStore.individuals);
-          const desc = op.description || `Вывод средств (${withdrawalContr})`; const withdrawalCategory = catName || 'Вывод средств';
+          if (withdrawalContr === 'Без контрагента' && acc && acc.individualId) withdrawalContr = resolveEntityName(acc.individualId, mainStore.individuals);
+          const desc = op.description || `Вывод средств (${withdrawalContr})`; const withdrawalCategory = catName === 'Без категории' ? 'Вывод средств' : catName;
           addRow(accountId, opAmount, 'Вывод средств', desc, { contractor: withdrawalContr, category: withdrawalCategory });
       } else {
          let typeLabel = 'Расход'; let finalDesc = op.description || '';
-         let displayAmount = opAmount; // 🟢 Переменная для отображаемой суммы
+         let displayAmount = opAmount; 
 
          const isRealPrepayment = op.type === 'prepayment' || (op.type === 'income' && (op.totalDealAmount > 0 || op.prepaymentId));
          const isWorkAct = op.isWorkAct === true;
          const isRetailShift = mainStore._isRetailWriteOff(op);
 
-         // 🟢 Иерархия проверок
          if (isWorkAct) {
              typeLabel = 'Акт выполненных работ';
              if (!finalDesc) finalDesc = `Акт по проекту: ${projName}`;
-             displayAmount = Math.abs(opAmount); // 🟢 Убираем минус
+             displayAmount = 0; // Акты без сумм (0)
          }
          else if (isRetailShift) {
              typeLabel = 'Закрытие смены';
              if (!finalDesc) finalDesc = 'Списание выручки (Розница)';
-             displayAmount = Math.abs(opAmount); // 🟢 Убираем минус
+             // 🟢 FIX: Закрытие смены - это доход! Ставим положительное число.
+             displayAmount = Math.abs(opAmount); 
          }
          else if (isRealPrepayment) { 
              typeLabel = 'Предоплата'; 
              if (!finalDesc) finalDesc = `Предоплата: ${projName !== 'Без проекта' ? projName : catName}`; 
+             // Если это доход (реализация), сумма должна быть > 0.
+             if (op.type === 'income') displayAmount = Math.abs(opAmount);
+             else displayAmount = opAmount; 
          }
          else if (op.type === 'income') { 
              typeLabel = 'Доход'; 
              if (!finalDesc) finalDesc = `Доход: ${catName}`; 
+             displayAmount = Math.abs(opAmount); // Всегда плюс для дохода
          }
          else { 
              typeLabel = 'Расход'; 
              if (!finalDesc) finalDesc = `Расход: ${catName}`; 
+             // Для расхода должно быть отрицательное число, чтобы попасть в колонку расхода
+             if (opAmount > 0) displayAmount = -opAmount;
+             else displayAmount = opAmount;
          }
          
-         // 🟢 Используем displayAmount вместо opAmount
          addRow(accountId, displayAmount, typeLabel, finalDesc, {} );
       }
     }
-    processedAllData.value = { data: allRows, columns: UNIFIED_COLUMNS }; isDataReady.value = true;
+    
+    // 🟢 Формируем итоговые колонки динамически
+    const finalColumns = [...BASE_COLUMNS];
+    if (showDebugIds.value) {
+        finalColumns.push('account_id', 'category_id', 'project_id');
+    }
+
+    processedAllData.value = { data: allRows, columns: finalColumns }; isDataReady.value = true;
   } catch (err) { console.error("Ошибка при подготовке экспорта:", err); exportError.value = `Не удалось подготовить данные: ${err.message || 'Неизвестная ошибка'}`; } finally { isExporting.value = false; }
 }
 
-function downloadAllData() { const csvString = Papa.unparse(processedAllData.value.data, { header: true, columns: processedAllData.value.columns, transform: (value) => (value === null || value === undefined) ? "" : value, }); triggerCsvDownload(csvString, "Full_Statement"); }
+function downloadAllData() { const csvString = Papa.unparse(filteredExportData.value, { header: true, columns: processedAllData.value.columns, transform: (value) => (value === null || value === undefined) ? "" : value, }); triggerCsvDownload(csvString, "Full_Statement"); }
 function triggerCsvDownload(csvString, filenamePrefix = "export") { const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement('a'); const url = URL.createObjectURL(blob); link.setAttribute('href', url); const d = new Date(); const pad = (num) => String(num).padStart(2, '0'); const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; link.setAttribute('download', `index12_${filenamePrefix}_${timestamp}.csv`); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); }
 
 const exportFilterOptions = computed(() => { const data = processedAllData.value.data || []; const options = { type: new Set(), category: new Set(), account: new Set(), project: new Set(), status: new Set(), contractor: new Set(), owner: new Set() }; data.forEach(row => { if (row['Тип']) options.type.add(row['Тип']); if (row['Категория']) options.category.add(row['Категория']); if (row['Счет']) options.account.add(row['Счет']); if (row['Проект']) options.project.add(row['Проект']); if (row['Статус']) options.status.add(row['Статус']); if (row['Контрагент']) options.contractor.add(row['Контрагент']); if (row['Компания/Физлицо']) options.owner.add(row['Компания/Физлицо']); }); return { type: Array.from(options.type).sort(), category: Array.from(options.category).sort(), account: Array.from(options.account).sort(), project: Array.from(options.project).sort(), status: Array.from(options.status).sort(), contractor: Array.from(options.contractor).sort(), owner: Array.from(options.owner).sort() }; });
 function parseRowDate(dateStr) { if (!dateStr) return null; const parts = dateStr.split('.'); if (parts.length !== 3) return null; return new Date(parts[2], parts[1] - 1, parts[0]); }
-const filteredExportData = computed(() => { let data = processedAllData.value.data || []; const f = exportFilters.value; if (f.type) data = data.filter(r => r['Тип'] === f.type); if (f.category) data = data.filter(r => r['Категория'] === f.category); if (f.account) data = data.filter(r => r['Счет'] === f.account); if (f.project) data = data.filter(r => r['Проект'] === f.project); if (f.status) data = data.filter(r => r['Статус'] === f.status); if (f.contractor) data = data.filter(r => r['Контрагент'] === f.contractor); if (f.owner) data = data.filter(r => r['Компания/Физлицо'] === f.owner); if (f.dateFrom || f.dateTo) { const from = f.dateFrom ? new Date(f.dateFrom) : null; const to = f.dateTo ? new Date(f.dateTo) : null; if (from) from.setHours(0,0,0,0); if (to) to.setHours(23,59,59,999); data = data.filter(r => { const rDate = parseRowDate(r['Дата']); if (!rDate) return false; if (from && rDate < from) return false; if (to && rDate > to) return false; return true; }); } return data; });
+
+// 🟢 ОБНОВЛЕННАЯ ЛОГИКА ФИЛЬТРАЦИИ: Учитываем Color Toggles
+const filteredExportData = computed(() => { 
+  let data = processedAllData.value.data || []; 
+  const f = exportFilters.value; 
+  
+  // 1. Сначала фильтруем по видимости на основе Color Settings
+  if (isColorized.value) {
+      data = data.filter(row => {
+          const type = row['Тип'];
+          if (type === 'Доход' && !colorSettings.value.income) return false;
+          if (type === 'Расход' && !colorSettings.value.expense) return false;
+          if (type === 'Предоплата' && !colorSettings.value.prepayment) return false;
+          if (type === 'Вывод средств' && !colorSettings.value.withdrawal) return false;
+          if ((type === 'Перевод (Исх)' || type === 'Перевод (Вх)') && !colorSettings.value.transfer) return false;
+          if (type === 'Акт выполненных работ' && !colorSettings.value.act) return false;
+          if (type === 'Закрытие смены' && !colorSettings.value.shift) return false;
+          return true;
+      });
+  }
+
+  // 2. Стандартные фильтры
+  if (f.type) data = data.filter(r => r['Тип'] === f.type); 
+  if (f.category) data = data.filter(r => r['Категория'] === f.category); 
+  if (f.account) data = data.filter(r => r['Счет'] === f.account); 
+  if (f.project) data = data.filter(r => r['Проект'] === f.project); 
+  if (f.status) data = data.filter(r => r['Статус'] === f.status); 
+  if (f.contractor) data = data.filter(r => r['Контрагент'] === f.contractor); 
+  if (f.owner) data = data.filter(r => r['Компания/Физлицо'] === f.owner); 
+  if (f.dateFrom || f.dateTo) { const from = f.dateFrom ? new Date(f.dateFrom) : null; const to = f.dateTo ? new Date(f.dateTo) : null; if (from) from.setHours(0,0,0,0); if (to) to.setHours(23,59,59,999); data = data.filter(r => { const rDate = parseRowDate(r['Дата']); if (!rDate) return false; if (from && rDate < from) return false; if (to && rDate > to) return false; return true; }); } 
+  
+  return data; 
+});
 
 // 🟢 1. CALCULATE DYNAMIC COLUMN WIDTHS (Function)
 const calculateColumnWidths = (headers, data) => {
   const checkboxWidth = '48px'; 
   const widths = [];
   headers.forEach(header => {
-     // 🟢 FIX: Start with header length to ensure header text fits
      let maxLen = header.length; 
-     
      const sample = data.slice(0, 20);
      sample.forEach(row => {
         const val = row[header] ? String(row[header]).length : 0;
@@ -803,11 +929,19 @@ const calculateColumnWidths = (headers, data) => {
 };
 
 const gridTemplate = computed(() => { 
-   const widths = calculateColumnWidths(visibleColumns.value, filteredExportData.value);
+   // 🟢 Используем processedAllData.columns для расчета ширины, чтобы сетка соответствовала экспорту
+   const cols = processedAllData.value.columns || BASE_COLUMNS;
+   const widths = calculateColumnWidths(cols, filteredExportData.value);
    return widths.join(' ');
 });
 
-const visibleColumns = computed(() => { const cols = [...UNIFIED_COLUMNS]; if (!showDebugIds.value) { return cols.filter(c => !c.includes('_id')); } return cols; });
+// 🟢 visibleColumns теперь берется из processedAllData для синхронизации
+const visibleColumns = computed(() => { 
+    return processedAllData.value.columns || BASE_COLUMNS; 
+});
+
+// 🟢 ВОССТАНОВЛЕННЫЕ COMPUTED ДЛЯ ИМПОРТА (НЕ УДАЛЯТЬ)
+/*
 const visibleCsvHeaders = computed(() => { if (showDebugIds.value) return csvHeaders.value; return csvHeaders.value.filter(h => { const lower = h.trim().toLowerCase(); return !lower.endsWith('_id') && lower !== 'id' && lower !== '_id'; }); });
 
 const importGridTemplate = computed(() => { 
@@ -815,6 +949,7 @@ const importGridTemplate = computed(() => {
   const cols = calculateColumnWidths(visibleCsvHeaders.value, csvData.value);
   return [checkboxWidth, ...cols].join(' '); 
 });
+*/
 </script>
 
 <template>
@@ -823,11 +958,14 @@ const importGridTemplate = computed(() => {
       <button class="close-btn" @click="closeModal" title="Закрыть">&times;</button>
       <h2>{{ currentTab === 'import' ? 'Импорт операций' : 'Экспорт Отчетов' }}</h2>
       <div class="modal-tabs">
+        <!-- 🟢 ВОССТАНОВЛЕН ТАБ ИМПОРТА (ЗАКОММЕНТИРОВАН)
         <button class="tab-btn" :class="{ active: currentTab === 'import' }" @click="currentTab = 'import'">Импорт (CSV)</button>
+        -->
         <button class="tab-btn" :class="{ active: currentTab === 'export' }" @click="currentTab = 'export'">Экспорт (CSV)</button>
       </div>
 
-      <!-- ИМПОРТ -->
+      <!-- 🟢 ВОССТАНОВЛЕН ВЕСЬ HTML ИМПОРТА (ЗАКОММЕНТИРОВАН) -->
+      <!--
       <div v-if="currentTab === 'import'" class="import-content-wrapper">
         <div v-if="step === 'upload'" class="modal-step-content">
           <div 
@@ -856,7 +994,6 @@ const importGridTemplate = computed(() => {
           <div v-if="error" class="error-message">{{ error }}</div>
         </div>
 
-        <!-- ИМПОРТ: MAPPING -->
         <div v-if="step === 'mapping'" class="export-preview-container">
            <div class="preview-header-bar">
               <h3>Сопоставьте колонки</h3>
@@ -894,7 +1031,6 @@ const importGridTemplate = computed(() => {
            <div v-if="error" class="error-message" style="margin: 10px 24px;">{{ error }}</div>
         </div>
 
-        <!-- ИМПОРТ: REVIEW -->
         <div v-if="step === 'review'" class="modal-step-content review-step">
           <div class="review-dashboard">
               <div class="review-intro">
@@ -963,6 +1099,7 @@ const importGridTemplate = computed(() => {
           <div class="loading-indicator"><div class="spinner"></div><p>Импорт... {{ importProgress }} / {{ operationsToImport.length }}</p></div>
         </div>
       </div>
+      -->
       
       <!-- ЭКСПОРТ -->
       <div v-if="currentTab === 'export'" class="modal-step-content export-step">
@@ -987,15 +1124,13 @@ const importGridTemplate = computed(() => {
                 
                 <div class="header-controls">
                     <div class="color-controls-wrapper">
-                        <label class="debug-toggle"><input type="checkbox" v-model="isColorized"> Показать цвета</label>
+                        <label class="debug-toggle"><input type="checkbox" v-model="isColorized"> Цвета / Фильтр</label>
                         <div v-if="isColorized" class="sub-color-toggles">
                            <label class="sub-toggle income" title="Доход"><input type="checkbox" v-model="colorSettings.income">Доход</label>
                            <label class="sub-toggle expense" title="Расход"><input type="checkbox" v-model="colorSettings.expense">Расход</label>
                            <label class="sub-toggle prepayment" title="Предоплата"><input type="checkbox" v-model="colorSettings.prepayment">Предоплата</label>
                            <label class="sub-toggle transfer" title="Перевод"><input type="checkbox" v-model="colorSettings.transfer">Перевод</label>
                            <label class="sub-toggle withdrawal" title="Вывод"><input type="checkbox" v-model="colorSettings.withdrawal">Вывод</label>
-                           
-                           <!-- 🟢 НОВЫЕ ТИПЫ -->
                            <label class="sub-toggle act" title="Акт"><input type="checkbox" v-model="colorSettings.act">Акт</label>
                            <label class="sub-toggle shift" title="Смена"><input type="checkbox" v-model="colorSettings.shift">Смена</label>
                         </div>
@@ -1006,7 +1141,6 @@ const importGridTemplate = computed(() => {
                 </div>
             </div>
             <div class="grid-table-container" ref="scrollContainerRef" @mousemove="startAutoScrollCheck" @mouseleave="stopAutoScroll">
-                <!-- 🟢 FIX: Добавлены !important классы для сетки -->
                 <div class="unified-grid" :class="{ 'fit-mode': isFitContent, 'colorized': isColorized }" :style="{ gridTemplateColumns: gridTemplate }">
                     <div class="header-group contents-display">
                         <div v-for="col in visibleColumns" :key="col" class="grid-header-cell sticky">
@@ -1022,7 +1156,11 @@ const importGridTemplate = computed(() => {
                         </div>
                     </div>
                     <div v-for="(row, idx) in filteredExportData" :key="idx" class="row-group contents-display">
-                        <div v-for="col in visibleColumns" :key="col" class="grid-cell" :class="getRowColorClass(row)" :title="row[col]">{{ row[col] }}</div>
+                        <div v-for="col in visibleColumns" :key="col" class="grid-cell" 
+                             :class="['Тип', 'Сумма Дохода', 'Сумма Расхода'].includes(col) ? getRowColorClass(row) : ''" 
+                             :title="row[col]">
+                             {{ row[col] }}
+                        </div>
                     </div>
                     <div v-if="filteredExportData.length === 0" class="empty-state" style="grid-column: 1 / -1;">Нет данных</div>
                 </div>
@@ -1036,15 +1174,19 @@ const importGridTemplate = computed(() => {
 
       <div v-if="currentTab === 'import' && step !== 'review' && step !== 'importing'" class="modal-actions">
         <button @click="closeModal" class="btn-secondary">Отмена</button>
+        <!-- 🟢 ВОССТАНОВЛЕНЫ КНОПКИ (ЗАКОММЕНТИРОВАНЫ)
         <button @click="previousStep" v-if="step !== 'upload'" class="btn-secondary">Назад</button>
         <button @click="goToReviewStep" v-if="step === 'mapping'" class="btn-primary" :disabled="isReviewDisabled">Проверить</button>
+        -->
       </div>
       
+      <!-- 🟢 ВОССТАНОВЛЕН FOOTER (ЗАКОММЕНТИРОВАН)
       <div v-if="currentTab === 'import' && step === 'review'" class="modal-actions review-actions-footer">
           <button class="btn-primary btn-green" @click="startImport" :disabled="operationsToImport.length === 0">Подтвердить и Загрузить</button>
           <div class="spacer"></div>
           <button class="btn-secondary" @click="previousStep">Назад к таблице</button>
       </div>
+      -->
 
       <div v-if="currentTab === 'export' && !showExportPreview" class="modal-actions">
         <button @click="closeModal" class="btn-secondary">Закрыть</button>
@@ -1119,7 +1261,7 @@ const importGridTemplate = computed(() => {
 .unified-grid.fit-mode .grid-cell { overflow: visible; text-overflow: clip; }
 .grid-header-cell.import-grid-header { flex-direction: column; justify-content: center; align-items: flex-start; padding-top: 0; padding: 4px 8px; }
 .csv-header-name { font-size: 11px; font-weight: 600; color: var(--color-text-soft); margin-bottom: 4px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
-.mapping-select { width: 100%; height: 24px; font-size: 12px; border: 1px solid transparent; border-radius: 4px; background-color: transparent; color: var(--color-heading); font-weight: 600; appearance: none; -webkit-appearance: none; -moz-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding: 0 20px 0 4px !important; cursor: pointer; transition: all 0.2s ease; }
+.mapping-select { width: 100%; height: 24px; font-size: 12px; border: 1px solid transparent; border-radius: 4px; background-color: transparent; color: var(--color-heading); font-weight: 600; appearance: none; -webkit-appearance: none; -moz-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 16px; }
 .mapping-select:hover { background-color: var(--color-background); border-color: var(--color-border); }
 .mapping-select:focus { background-color: var(--color-background); border-color: var(--color-accent); outline: none; }
 .mapping-select option { background-color: var(--color-background-soft); color: var(--color-text); padding: 4px; }
@@ -1172,18 +1314,19 @@ h2 { padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--color-border)
 .drop-zone { border: 2px dashed var(--color-border); padding: 40px; text-align: center; margin-bottom: 20px; }
 .file-input { display: none; }
 .file-input-label { background: var(--color-accent); color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: inline-block; margin: 10px 0; }
-/* 🟢 3. СТИЛИ ДЛЯ ЦВЕТНЫХ СТРОК (В КОНЦЕ ФАЙЛА) */
-.unified-grid.colorized .row-income { background-color: rgba(16, 185, 129, 1); color:#000000; }
-.unified-grid.colorized .row-expense { background-color: rgba(239, 68, 68, 1); color:#ffffff;}
-.unified-grid.colorized .row-prepayment { background-color: rgba(245, 158, 11, 1); color:#000000;}
-.unified-grid.colorized .row-transfer { background-color: rgba(55, 65, 81, 1); color:#ffffff;}
-.unified-grid.colorized .row-withdrawal { background-color: rgba(216, 180, 254, 1); color:#000000; }
+
+/* 🟢 3. СТИЛИ ДЛЯ ЦВЕТНЫХ ТЕКСТОВ (В КОНЦЕ ФАЙЛА) - REMOVED BACKGROUNDS */
+.unified-grid.colorized .row-income { color: #10b981; font-weight: 700; } /* Emerald 500 */
+.unified-grid.colorized .row-expense { color: #ef4444; font-weight: 700; } /* Red 500 */
+.unified-grid.colorized .row-prepayment { color: #f59e0b; font-weight: 700; } /* Amber 500 */
+.unified-grid.colorized .row-transfer { color: #6b7280; font-weight: 700; } /* Gray 500 */
+.unified-grid.colorized .row-withdrawal { color: #a855f7; font-weight: 700; } /* Purple 500 */
 
 /* 🟢 НОВЫЕ ЦВЕТА */
-.unified-grid.colorized .row-act { background-color: #E2E8F0; color: #1e293b; } /* Нейтральный серо-синий */
-.unified-grid.colorized .row-shift { background-color: #E9D5FF; color: #581c87; } /* Светло-фиолетовый */
+.unified-grid.colorized .row-act { color: #475569; font-weight: 700; } /* Slate 600 - Act */
+.unified-grid.colorized .row-shift { color: #7e22ce; font-weight: 700; } /* Purple 700 - Shift */
 
-.unified-grid.colorized .grid-cell { border-bottom-color: #fff; border-right-color: #fff; }
+.unified-grid.colorized .grid-cell { border-bottom-color: #e5e7eb; border-right-color: #e5e7eb; } /* Возвращаем границы, так как фон убрали */
 .color-controls-wrapper { display: flex; align-items: center; gap: 12px; margin-right: 12px; padding-right: 12px; border-right: 1px solid var(--color-border); }
 .sub-color-toggles { display: flex; gap: 8px; align-items: center; }
 .sub-toggle { font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer; color: var(--color-text-soft); user-select: none; }

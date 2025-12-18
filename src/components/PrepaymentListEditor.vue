@@ -10,13 +10,12 @@ import RetailClosurePopup from './RetailClosurePopup.vue';
 import WorkActPopup from './WorkActPopup.vue';
 
 /**
- * * --- МЕТКА ВЕРСИИ: v73.0 - DEAL STORE INTEGRATION ---
- * * ВЕРСИЯ: 73.0
+ * * --- МЕТКА ВЕРСИИ: v73.2 - HIDE ACCOUNT IN HISTORY ---
+ * * ВЕРСИЯ: 73.2
  * * ИЗМЕНЕНИЯ:
- * 1. (FIX) Логика расчета переведена на useDealStore. Теперь редактор берет данные из того же источника, 
- * что и виджеты. Это гарантирует совпадение цифр.
- * 2. loadOperations теперь перебирает готовые "Коробки" сделок (dealGroups) вместо ручного фильтра.
- * 3. Исправлено некорректное отображение "Должны отработать" и "Должны получить".
+ * 1. (UX) В вкладке "История корректировок" скрыта колонка "Счет", так как для списаний/корректировок 
+ * она часто неактуальна (списание из общего баланса).
+ * 2. Сетка таблицы (Grid) переведена на динамический стиль для корректного отображения колонок.
  */
 
 const props = defineProps({
@@ -31,8 +30,52 @@ const dealStore = useDealStore(); // 🟢 Подключение
 // TABS
 const activeTab = ref(props.initialTab || 'clients'); 
 
+// 🟢 КОЛОНКИ: Управление видимостью
 const showActDateColumn = computed(() => {
     return activeTab.value !== 'retail';
+});
+
+const showAccountColumn = computed(() => {
+    // Скрываем колонку "Счет" в истории корректировок
+    return activeTab.value !== 'history_retail';
+});
+
+// 🟢 ГРИД: Динамический шаблон колонок
+const gridStyle = computed(() => {
+    // Базовая структура:
+    // 1. Статус (80px)
+    // 2. Дата (100px)
+    // 3. Сумма/Бюджет (130px)
+    // 4. Сумма/Отработано (130px)
+    // 5. Долг (130px)
+    // 6. [ОПЦИОНАЛЬНО] Счет (120px)
+    // 7. Компания (120px)
+    // 8. Контрагент (120px)
+    // 9. Проект (120px)
+    // 10. Категория (120px)
+    // 11. [ОПЦИОНАЛЬНО] Дата Акта (130px)
+    // 12. Действия (60px)
+    // 13. Удалить (40px)
+    
+    let cols = '80px 100px 130px 130px 130px ';
+    
+    if (showAccountColumn.value) {
+        cols += '120px ';
+    }
+    
+    // Компания, Контрагент, Проект, Категория
+    cols += '120px 120px 120px 120px ';
+    
+    if (showActDateColumn.value) {
+        cols += '130px ';
+    }
+    
+    // Actions + Delete
+    cols += '60px 40px';
+    
+    return {
+        gridTemplateColumns: cols
+    };
 });
 
 const localItems = ref([]);
@@ -80,7 +123,6 @@ const loadOperations = () => {
           const combined = [];
           
           // Получаем готовые сгруппированные сделки из DealStore
-          // Это те же самые данные, что использует виджет
           const groups = dealStore.dealGroups; 
 
           groups.forEach((history, key) => {
@@ -92,17 +134,12 @@ const loadOperations = () => {
               // --- 1. B2B CLIENTS ---
               if (!isRetailGroup) {
                   history.forEach(deal => {
-                      // Проходимся по всем операциям внутри сделки
                       deal.ops.forEach(op => {
-                          // Нас интересуют только доходы (Транши/Предоплаты) для списка
                           if (op.type !== 'income') return;
 
                           const actDate = op.isClosed ? (op.closingDate || op.updatedAt || op.date) : null;
-                          
-                          // Текущий долг по сделке
                           const currentDebt = Math.max(0, deal.budget - deal.received);
                           
-                          // Статус для лейбла
                           let statusLabel = 'Получ';
                           if (op.isDealTranche) statusLabel = 'Транш';
                           if (op.isClosed) statusLabel = op.isDealTranche ? 'Отраб' : 'Испл';
@@ -111,33 +148,25 @@ const loadOperations = () => {
                               _id: op._id, 
                               originalOp: op, 
                               type: 'deal',
-                              
                               statusLabel: statusLabel,
                               date: op.date, 
                               adjustDate: actDate, 
-                              
                               totalDeal: deal.budget, 
                               totalDealFormatted: formatNumber(deal.budget),
-                              
                               amount: op.amount || 0, 
                               amountFormatted: formatNumber(op.amount || 0),
-                              
-                              // ВАЖНО: Долг берем из состояния сделки, к которой относится транш
                               debt: currentDebt,
                               debtFormatted: formatNumber(currentDebt),
-                              
                               accountName: op.accountId?.name || '-',
                               companyName: op.companyId?.name || op.individualId?.name || '-',
                               contractorName: op.contractorId?.name || op.counterpartyIndividualId?.name || '-',
                               projectName: op.projectId?.name || '---',
                               categoryName: op.categoryId?.name || '-',
-                              
                               accountId: op.accountId?._id || op.accountId,
                               companyId: op.companyId?._id || op.companyId,
                               contractorValue: op.contractorId ? `contr_${op.contractorId._id || op.contractorId}` : `ind_${op.counterpartyIndividualId?._id || op.counterpartyIndividualId}`,
                               projectId: op.projectId?._id || op.projectId,
                               categoryId: op.categoryId?._id || op.categoryId,
-                              
                               isClosed: !!op.isClosed
                           });
                       });
@@ -146,28 +175,12 @@ const loadOperations = () => {
               
               // --- 2. RETAIL ---
               else {
-                  // history[0] - это единственная "вечная" коробка для розницы (per Project+Category)
                   const retailBox = history[0];
-                  
-                  // Считаем общие показатели для этой коробки
-                  // Для розницы в списке мы часто хотим группировать по Проектам
-                  // Но dealStore группирует по Project+Category.
-                  // Чтобы сохранить логику отображения "по проектам", нам нужно будет сгруппировать их обратно,
-                  // ИЛИ отображать как есть (более детально).
-                  // Давайте отображать как есть в dealStore (Project + Category), это точнее.
-                  
-                  // A. ACTIVE RETAIL (Summary row)
-                  const debt = Math.max(0, retailBox.workedOut - retailBox.received); // В рознице долг = (Списано - Получено)? Или наоборот? 
-                  // В dealStore: liabilitiesTheyOwe (Нам должны) = workedOut - received (Овердрафт/Долг клиента)
-                  // В dealStore: liabilitiesWeOwe (Мы должны) = received - workedOut (Аванс)
-                  
-                  // Для вкладки "Предоплаты по розничным клиентам" мы обычно показываем Авансы (Мы должны)
+                  // A. ACTIVE RETAIL
                   const advance = Math.max(0, retailBox.received - retailBox.workedOut);
                   
                   if (advance > 0) {
-                      // Берем данные из первой операции для названий
                       const sampleOp = retailBox.ops[0] || {};
-                      
                       combined.push({
                           _id: `retail_summary_${key}`, 
                           originalOp: sampleOp, 
@@ -175,33 +188,27 @@ const loadOperations = () => {
                           statusLabel: 'Аванс', 
                           date: sampleOp.date || new Date(), 
                           adjustDate: null,
-                          
-                          totalDeal: retailBox.received, // Всего получено
+                          totalDeal: retailBox.received, 
                           totalDealFormatted: formatNumber(retailBox.received),
-                          
-                          amount: retailBox.workedOut, // Отработано
+                          amount: retailBox.workedOut, 
                           amountFormatted: formatNumber(retailBox.workedOut),
-                          
-                          debt: advance, // Остаток аванса
+                          debt: advance, 
                           debtFormatted: formatNumber(advance),
-                          
                           projectName: sampleOp.projectId?.name || 'Без проекта', 
                           contractorName: 'Розничные клиенты',
-                          accountName: '-', 
+                          accountName: sampleOp.accountId?.name || '-', 
                           companyName: sampleOp.companyId?.name || '-',
                           categoryName: sampleOp.categoryId?.name || '-',
-                          
                           projectId: sampleOp.projectId?._id || sampleOp.projectId,
                           categoryId: sampleOp.categoryId?._id || sampleOp.categoryId,
                           companyId: sampleOp.companyId?._id || sampleOp.companyId,
-                          
                           isClosed: false
                       });
                   }
 
-                  // B. HISTORY RETAIL (Expenses/Write-offs)
+                  // B. HISTORY RETAIL
                   retailBox.ops.forEach(op => {
-                      if (op.type === 'expense' && !op.accountId) { // Списания
+                      if (op.type === 'expense') { 
                           combined.push({
                               _id: op._id, 
                               originalOp: op, 
@@ -209,26 +216,21 @@ const loadOperations = () => {
                               statusLabel: 'Спис', 
                               date: op.date, 
                               adjustDate: op.date,
-                              
-                              totalDeal: retailBox.received, // Контекст всей коробки
+                              totalDeal: retailBox.received, 
                               totalDealFormatted: formatNumber(retailBox.received),
-                              
                               amount: Math.abs(op.amount), 
                               amountFormatted: formatNumber(Math.abs(op.amount)),
-                              
-                              debt: advance, // Текущий остаток аванса
+                              debt: advance, 
                               debtFormatted: formatNumber(advance),
-                              
                               projectName: op.projectId?.name || 'Без проекта', 
                               contractorName: 'Розничные клиенты',
-                              accountName: '-', 
+                              accountName: op.accountId?.name || '-', 
                               companyName: op.companyId?.name || '-', 
                               categoryName: op.categoryId?.name || '-',
-                              
                               projectId: op.projectId?._id || op.projectId, 
                               categoryId: op.categoryId?._id || op.categoryId,
                               companyId: op.companyId?._id || op.companyId,
-                              
+                              accountId: op.accountId?._id || op.accountId,
                               isClosed: true
                           });
                       }
@@ -249,7 +251,6 @@ onMounted(async () => {
     loadOperations(); 
 });
 
-// Следим за изменениями в dealStore (он реактивный)
 watch(() => dealStore.dealGroups, () => {
     loadOperations();
 }, { deep: true });
@@ -289,32 +290,18 @@ const filteredItems = computed(() => {
 
 const clientsSummary = computed(() => {
     let totalDeal = 0, totalPrepayment = 0, totalDebt = 0;
-    
-    // Используем Set для подсчета уникальных сделок, чтобы не дублировать бюджет
-    // Но так как у нас список траншей, бюджет дублируется в строках.
-    // Нам нужно просуммировать уникальные бюджеты и долги.
-    
     const uniqueDeals = new Set();
     
     filteredItems.value.forEach(i => {
        if (i.type !== 'deal') return;
-       // Группируем по уникальному ID сделки (если он есть в dealStore, иначе собираем ключ)
-       // В dealStore мы не прокидывали ID сделки в op, но мы можем использовать dealKey logic
-       // Но проще взять op.dealUUID если мы его сохраняли?
-       // dealStore.js: opStatusMap.value.set(op._id, { ... dealUUID ... })
-       // Мы можем получить статус из dealStore
-       
        const status = dealStore.getOpTrancheStatus(i._id);
        const dealUUID = status?.dealUUID || `${i.projectId}_${i.contractorValue}_${i.categoryId}_fallback`;
        
        if (!uniqueDeals.has(dealUUID)) {
            uniqueDeals.add(dealUUID);
-           // Берем бюджет и долг только один раз на сделку
            totalDeal += (i.totalDeal || 0);
            totalDebt += (i.debt || 0);
        }
-       
-       // "Внесено" суммируем по всем траншам
        totalPrepayment += (i.amount || 0);
     });
     
@@ -329,22 +316,16 @@ const retailSummary = computed(() => {
     let tDeal = 0, tExec = 0, tDebt = 0;
     const activeRetailItems = localItems.value.filter(i => i.type === 'retail_adj');
     activeRetailItems.forEach(i => { 
-        tDeal += i.totalDeal; // Всего получено
-        tExec += i.amount;    // Отработано
-        tDebt += i.debt;      // Остаток
+        tDeal += i.totalDeal; 
+        tExec += i.amount;    
+        tDebt += i.debt;      
     });
     return { totalDeal: formatTotal(tDeal), received: formatTotal(tExec), debt: formatTotal(tDebt) };
 });
 
 const historySummary = computed(() => {
-    const retailId = mainStore.retailIndividualId;
     let totalIn = 0, totalOut = 0;
-    // Для истории берем сырые данные, чтобы показать общую картину, 
-    // но можно тоже через dealStore, если там хранится полная история.
-    // dealStore хранит всё.
-    
-    // Используем dealStore retail boxes
-    dealStore.dealGroups.forEach((history, key) => {
+    dealStore.dealGroups.forEach((history) => {
         if (!history[0]?.isRetail) return;
         const box = history[0];
         totalIn += box.received;
@@ -458,7 +439,8 @@ const contractorOptions = computed(() => {
       </div>
 
       <div class="table-wrapper">
-          <div class="list-header-row unified-grid" :class="{ 'no-act-date': !showActDateColumn }">
+          <!-- 🟢 ПРИМЕНЯЕМ ДИНАМИЧЕСКИЙ СТИЛЬ ГРИДА -->
+          <div class="list-header-row unified-grid" :style="gridStyle">
               <div class="header-filter-wrapper">СТАТУС</div>
               <div class="header-filter-wrapper">
                   <DateRangePicker v-model="filters.dateRange" placeholder="ДАТА ОП." class="header-date-picker" />
@@ -470,12 +452,15 @@ const contractorOptions = computed(() => {
                   {{ activeTab === 'retail' ? 'ОТРАБОТАНО' : (activeTab === 'history_retail' ? 'ОТРАБОТАНО (СПИС)' : 'ВНЕСЕНО') }}
               </div>
               <div class="header-filter-wrapper">ДОЛГ</div>
-              <div class="header-filter-wrapper">
+              
+              <!-- 🟢 СКРЫВАЕМ СЧЕТ В ИСТОРИИ -->
+              <div class="header-filter-wrapper" v-if="showAccountColumn">
                    <select v-model="filters.account" class="header-select">
                        <option value="">СЧЕТ</option>
                        <option v-for="a in accounts" :key="a._id" :value="a.name">{{ a.name }}</option>
                    </select>
               </div>
+
               <div class="header-filter-wrapper">
                    <select v-model="filters.company" class="header-select"><option value="">КОМПАНИЯ</option><option v-for="c in companies" :key="c._id" :value="c._id">{{ c.name }}</option></select>
               </div>
@@ -513,7 +498,8 @@ const contractorOptions = computed(() => {
             <div v-if="filteredItems.length === 0 && !isLoading" class="empty-state">Нет записей.</div>
             
             <div v-show="!isLoading">
-                <div v-for="item in filteredItems" :key="item._id" class="grid-row unified-grid" :class="{ 'row-closed': item.isClosed, 'no-act-date': !showActDateColumn }">
+                <!-- 🟢 ПРИМЕНЯЕМ ДИНАМИЧЕСКИЙ СТИЛЬ ГРИДА -->
+                <div v-for="item in filteredItems" :key="item._id" class="grid-row unified-grid" :class="{ 'row-closed': item.isClosed }" :style="gridStyle">
                   <div class="col-status-text" :class="{ 'status-done': item.isClosed }">{{ item.statusLabel }}</div>
                   <div class="col-date">{{ formatDateReadable(item.date) }}</div>
                   
@@ -531,7 +517,10 @@ const contractorOptions = computed(() => {
                   </template>
 
                   <div class="col-debt warn-text">{{ item.debtFormatted }}</div>
-                  <div class="col-text" :title="item.accountName">{{ item.accountName }}</div>
+                  
+                  <!-- 🟢 СКРЫВАЕМ СЧЕТ В ИСТОРИИ -->
+                  <div class="col-text" :title="item.accountName" v-if="showAccountColumn">{{ item.accountName }}</div>
+
                   <div class="col-text" style="font-weight: 600;" :title="item.companyName">{{ item.companyName }}</div>
                   <div class="col-text" :title="item.contractorName">{{ item.contractorName }}</div>
                   <div class="col-text" :title="item.projectName">{{ item.projectName }}</div>
@@ -620,15 +609,11 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 .grid-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .row-closed { opacity: 0.75; background-color: #f8fafc; }
 
+/* 🟢 Unified Grid: базовые стили, но колонки теперь задаются инлайн через :style */
 .unified-grid { 
   display: grid; 
-  grid-template-columns: 80px 100px 130px 130px 130px 120px 120px 120px 120px 120px 130px 60px 40px; 
   gap: 10px; 
   min-width: 1440px; 
-}
-
-.unified-grid.no-act-date {
-  grid-template-columns: 80px 100px 130px 130px 130px 120px 120px 120px 120px 120px 60px 40px;
 }
 
 .col-date { color: #555; white-space: nowrap; font-size: 11px; }
