@@ -236,6 +236,56 @@ const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; retu
 const getValueClass = (val, widgetKey) => { const num = Number(val) || 0; if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'white-text'; if (num < 0) return 'red-text'; return 'white-text'; };
 const getDeltaClass = (val, widgetKey) => { const num = Number(val) || 0; if (num === 0) return 'white-text'; if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'green-text'; return num > 0 ? 'green-text' : 'red-text'; };
 
+// ===== Sticky footer totals for Contractors/Projects/Individuals/Categories (Mobile Fullscreen) =====
+const isTotalsWidget = computed(() => {
+  const k = activeWidgetKey.value;
+  return ['contractors', 'projects', 'individuals', 'categories'].includes(k);
+});
+
+const _sumBySign = (list, getter, sign) => {
+  if (!Array.isArray(list) || !list.length) return 0;
+  let total = 0;
+  for (const item of list) {
+    const v = Number(getter(item)) || 0;
+    if (sign === 'pos') {
+      if (v > 0) total += v;
+    } else {
+      if (v < 0) total += Math.abs(v);
+    }
+  }
+  return total;
+};
+
+const _getFactVal = (item) => {
+  const v = (item && item.currentBalance !== undefined) ? item.currentBalance : (item?.balance);
+  return Number(v) || 0;
+};
+
+const _getPlanVal = (item) => {
+  // Prefer delta (futureChange). Fallback to (futureBalance - currentBalance) if available.
+  if (item && item.futureChange !== undefined) return Number(item.futureChange) || 0;
+  const fb = Number(item?.futureBalance);
+  const cb = Number((item && item.currentBalance !== undefined) ? item.currentBalance : item?.balance);
+  if (!Number.isNaN(fb) && !Number.isNaN(cb)) return fb - cb;
+  return 0;
+};
+
+const widgetFooterTotals = computed(() => {
+  if (!isTotalsWidget.value) return null;
+  const list = activeWidgetItems.value || [];
+  return {
+    factExpense: _sumBySign(list, _getFactVal, 'neg'),
+    factIncome: _sumBySign(list, _getFactVal, 'pos'),
+    planExpense: _sumBySign(list, _getPlanVal, 'neg'),
+    planIncome: _sumBySign(list, _getPlanVal, 'pos'),
+  };
+});
+
+const formatSignedFooter = (amount, sign) => {
+  const num = Math.abs(Number(amount) || 0);
+  return `${sign} ${formatNumber(num)} ₸`;
+};
+
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
   if (!isListWidget.value) {
@@ -431,7 +481,49 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                     </div>
                 </div>
             </div>
-            <div class="fs-footer"><button class="btn-back" @click="handleWidgetBack">Назад</button></div>
+            <div class="fs-footer">
+              <div v-if="isTotalsWidget" class="fs-totals">
+                <template v-if="activeWidgetKey === 'projects'">
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Прибыль по проектам</div>
+                    <div class="fs-total-value green-text">{{ formatSignedFooter(widgetFooterTotals?.factIncome ?? 0, '+') }}</div>
+                  </div>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Расходы по проектам</div>
+                    <div class="fs-total-value red-text">{{ formatSignedFooter(widgetFooterTotals?.factExpense ?? 0, '-') }}</div>
+                  </div>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Планируемая прибыль</div>
+                    <div class="fs-total-value green-text">{{ formatSignedFooter(widgetFooterTotals?.planIncome ?? 0, '+') }}</div>
+                  </div>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Планируемый расход</div>
+                    <div class="fs-total-value red-text">{{ formatSignedFooter(widgetFooterTotals?.planExpense ?? 0, '-') }}</div>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Фактические доходы</div>
+                    <div class="fs-total-value green-text">{{ formatSignedFooter(widgetFooterTotals?.factIncome ?? 0, '+') }}</div>
+                  </div>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Фактические расходы</div>
+                    <div class="fs-total-value red-text">{{ formatSignedFooter(widgetFooterTotals?.factExpense ?? 0, '-') }}</div>
+                  </div>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Планируемые доходы</div>
+                    <div class="fs-total-value green-text">{{ formatSignedFooter(widgetFooterTotals?.planIncome ?? 0, '+') }}</div>
+                  </div>
+                  <div class="fs-total-item">
+                    <div class="fs-total-label">Планируемые расходы</div>
+                    <div class="fs-total-value red-text">{{ formatSignedFooter(widgetFooterTotals?.planExpense ?? 0, '-') }}</div>
+                  </div>
+                </template>
+              </div>
+
+              <button class="btn-back" @click="handleWidgetBack">Назад</button>
+            </div>
             <Teleport to="body"><div v-if="isFilterOpen" class="filter-dropdown-fixed" :style="filterPos" ref="filterDropdownRef" @mousedown.stop @click.stop><div class="filter-group"><div class="filter-group-title">Сортировка</div><ul><li :class="{ active: sortMode === 'desc' }" @click="setSortMode('desc')"><span>По убыванию</span></li><li :class="{ active: sortMode === 'asc' }" @click="setSortMode('asc')"><span>По возрастанию</span></li></ul></div><div class="filter-group"><div class="filter-group-title">Фильтр</div><ul><li :class="{ active: filterMode === 'all' }" @click="setFilterMode('all')">Все</li><li :class="{ active: filterMode === 'nonZero' }" @click="setFilterMode('nonZero')">Скрыть 0</li><li :class="{ active: filterMode === 'positive' }" @click="setFilterMode('positive')">Только (+)</li><li :class="{ active: filterMode === 'negative' }" @click="setFilterMode('negative')">Только (-)</li></ul></div></div></Teleport>
         </div>
 
@@ -561,8 +653,80 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 .green-text { color: #34c759 !important; }
 .white-text { color: #fff !important; }
 .fs-empty { text-align: center; color: #666; margin-top: 50px; }
-.fs-footer { padding: 15px 20px; background-color: var(--color-background, #1a1a1a); border-top: 1px solid var(--color-border, #444); }
-.btn-back { width: 100%; height: 48px; background: #333; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.fs-footer {
+  padding: 12px 16px;
+  background-color: var(--color-background, #1a1a1a);
+  border-top: 1px solid var(--color-border, #444);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fs-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fs-total-item {
+  min-width: 0;
+  padding: 0 10px;
+}
+
+/* left column (items 1 and 3) */
+.fs-total-item:nth-child(2n+1) {
+  padding-left: 0;
+  border-right: 1px solid var(--color-border, #444);
+}
+
+/* right column (items 2 and 4) */
+.fs-total-item:nth-child(2n) {
+  padding-right: 0;
+}
+
+/* first row spacing */
+.fs-total-item:nth-child(-n+2) {
+  padding-bottom: 8px;
+}
+
+/* second row divider + spacing */
+.fs-total-item:nth-child(n+3) {
+  border-top: 1px solid var(--color-border, #444);
+  padding-top: 8px;
+}
+
+.fs-total-label {
+  font-size: 10px;
+  color: #777;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.05;
+}
+
+.fs-total-value {
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+  line-height: 1.15;
+  margin-top: 3px;
+}
+
+.btn-back {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, #444);
+  background: var(--color-background-soft, #282828);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-back:active {
+  transform: scale(0.98);
+}
 .main-content-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; width: 100%; height: 100%; }
 .fixed-header, .fixed-footer { flex-shrink: 0; }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; position: relative; }
