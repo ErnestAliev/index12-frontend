@@ -217,11 +217,58 @@ const formatDelta = (val) => {
   const formatted = formatNumber(Math.abs(num));
   return num > 0 ? `+ ${formatted}` : `- ${formatted}`;
 };
+
+const isFullscreen = computed(() => props.widgetIndex < 0);
+
+const isTotalsWidget = computed(() => {
+  return props.widgetKey === 'contractors'
+      || props.widgetKey === 'projects'
+      || props.widgetKey === 'individuals'
+      || props.widgetKey === 'categories';
+});
+
+const _sumListByFieldSign = (list, field, sign) => {
+  if (!Array.isArray(list) || !list.length) return 0;
+
+  let total = 0;
+  for (const item of list) {
+    const v = Number(item?.[field]) || 0;
+
+    if (sign === 'pos') {
+      if (v > 0) total += v;
+    } else {
+      if (v < 0) total += Math.abs(v);
+    }
+  }
+
+  return total;
+};
+
+const summaryTotals = computed(() => {
+  if (!isTotalsWidget.value) return null;
+
+  // Totals must be calculated ONLY from the list inside this widget (what you see here),
+  // not from operations in mainStore.
+  const list = processedItems.value || [];
+
+  return {
+    factExpense: _sumListByFieldSign(list, 'balance', 'neg'),
+    factIncome: _sumListByFieldSign(list, 'balance', 'pos'),
+    planExpense: _sumListByFieldSign(list, 'futureBalance', 'neg'),
+    planIncome: _sumListByFieldSign(list, 'futureBalance', 'pos'),
+  };
+});
+
+const formatSignedMoney = (amount, sign) => {
+  const num = Math.abs(Number(amount) || 0);
+  const formatted = formatNumber(num);
+  return `${sign} ${formatted}`;
+};
 </script>
 
 <template>
   <!-- 🟢 Убрал .stop чтобы клик прошел вверх к TheHeader для Fullscreen -->
-  <div class="dashboard-card" @click="isFilterOpen = false">
+  <div class="dashboard-card" :class="{ 'is-fullscreen': isFullscreen }" @click="isFilterOpen = false">
     
     <div class="card-title-container">
       <div class="card-title">{{ props.title }}</div>
@@ -333,6 +380,28 @@ const formatDelta = (val) => {
       </div>
       <p v-if="!processedItems.length" class="card-item-empty">{{ props.emptyText }}</p>
     </div>
+
+    <div v-if="isTotalsWidget && isFullscreen" class="card-summary-footer fullscreen">
+      <div class="summary-grid" :class="{ 'one-line': isFullscreen }">
+        <div class="summary-item">
+          <div class="summary-label">Факт Расход</div>
+          <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factExpense ?? 0, '-') }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Факт Доход</div>
+          <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factIncome ?? 0, '+') }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">План Расход</div>
+          <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planExpense ?? 0, '-') }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">План Доход</div>
+          <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planIncome ?? 0, '+') }}</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -447,6 +516,72 @@ const formatDelta = (val) => {
 .income { color: var(--color-primary) !important; }
 .single-balance { color: var(--color-text); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .single-balance.expense { color: var(--color-danger) !important; font-weight: var(--fw-medium); }
+
+/* 🟢 SUMMARY FOOTER (for Contractors / Projects / Individuals / Categories) */
+.dashboard-card.is-fullscreen {
+  border-right: none;
+  padding-right: 0;
+}
+
+.card-summary-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.summary-grid.one-line {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+
+.summary-grid.one-line .summary-item {
+  padding: 0 10px;
+}
+
+.summary-grid.one-line .summary-item:first-child {
+  padding-left: 0;
+}
+
+.summary-grid.one-line .summary-item:last-child {
+  padding-right: 0;
+}
+
+.summary-grid.one-line .summary-item:not(:last-child) {
+  border-right: 1px solid var(--color-border);
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.summary-label {
+  font-size: var(--font-xs);
+  color: var(--text-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.05;
+  transform: translateY(-1px);
+}
+
+.summary-value {
+  font-weight: var(--fw-semi);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  line-height: 1.15;
+  margin-top: 3px;
+  font-size: calc(var(--font-sm) * 1.05);
+}
 
 @media (max-height: 900px) {
   .dashboard-card { padding-right: 1rem; }
