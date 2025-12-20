@@ -177,11 +177,14 @@ export const useMainStore = defineStore('mainStore', () => {
       };
 
       if (op.accountId && isExcludedId(op.accountId)) return false;
-      
-      if (op.isTransfer || op.type === 'transfer') {
-          if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
-          if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
-      }
+
+      // IMPORTANT: some ops (prepayments/deals/legacy) may carry account routing in from/to fields
+      // even when they are NOT marked as transfer. If any related account is excluded, hide the op.
+      if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
+      if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
+
+      // Fallback for older payloads
+      if (op.account && isExcludedId(op.account)) return false;
 
       if (op.relatedEventId && !op.accountId) {
           const parentId = typeof op.relatedEventId === 'object' ? String(op.relatedEventId._id) : String(op.relatedEventId);
@@ -190,9 +193,10 @@ export const useMainStore = defineStore('mainStore', () => {
              parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
           }
           if (parent) {
-             if (parent.accountId && isExcludedId(parent.accountId)) {
-                 return false; 
-             }
+             if (parent.accountId && isExcludedId(parent.accountId)) return false;
+             if (parent.fromAccountId && isExcludedId(parent.fromAccountId)) return false;
+             if (parent.toAccountId && isExcludedId(parent.toAccountId)) return false;
+             if (parent.account && isExcludedId(parent.account)) return false;
           }
       }
 
