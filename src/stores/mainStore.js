@@ -167,41 +167,45 @@ export const useMainStore = defineStore('mainStore', () => {
   });
 
   const _isOpVisible = (op) => {
-      if (includeExcludedInTotal.value) return true;
-      if (!op) return false;
-      
-      const isExcludedId = (id) => {
-          if (!id) return false;
-          const idStr = typeof id === 'object' ? String(id._id) : String(id);
-          return excludedAccountIds.value.has(idStr);
-      };
+    if (includeExcludedInTotal.value) return true;
+    if (!op) return false;
 
-      if (op.accountId && isExcludedId(op.accountId)) return false;
+    const isExcludedId = (id) => {
+        if (!id) return false;
+        const idStr = typeof id === 'object' ? String(id._id) : String(id);
+        return excludedAccountIds.value.has(idStr);
+    };
 
-      // IMPORTANT: some ops (prepayments/deals/legacy) may carry account routing in from/to fields
-      // even when they are NOT marked as transfer. If any related account is excluded, hide the op.
-      if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
-      if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
+    if (op.accountId && isExcludedId(op.accountId)) return false;
 
-      // Fallback for older payloads
-      if (op.account && isExcludedId(op.account)) return false;
+    // IMPORTANT: some ops (prepayments/deals/legacy) may carry account routing in from/to fields
+    // even when they are NOT marked as transfer. If any related account is excluded, hide the op.
+    if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
+    if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
 
-      if (op.relatedEventId && !op.accountId) {
-          const parentId = typeof op.relatedEventId === 'object' ? String(op.relatedEventId._id) : String(op.relatedEventId);
-          let parent = allOpsMap.value.get(parentId);
-          if (!parent) {
-             parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
-          }
-          if (parent) {
-             if (parent.accountId && isExcludedId(parent.accountId)) return false;
-             if (parent.fromAccountId && isExcludedId(parent.fromAccountId)) return false;
-             if (parent.toAccountId && isExcludedId(parent.toAccountId)) return false;
-             if (parent.account && isExcludedId(parent.account)) return false;
-          }
-      }
+    // Fallback for older payloads
+    if (op.account && isExcludedId(op.account)) return false;
 
-      return true;
-  };
+    if (op.relatedEventId && !op.accountId) {
+        const parentId = typeof op.relatedEventId === 'object'
+            ? String(op.relatedEventId._id)
+            : String(op.relatedEventId);
+
+        let parent = allOpsMap.value.get(parentId);
+        if (!parent) {
+            parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
+        }
+
+        if (parent) {
+            if (parent.accountId && isExcludedId(parent.accountId)) return false;
+            if (parent.fromAccountId && isExcludedId(parent.fromAccountId)) return false;
+            if (parent.toAccountId && isExcludedId(parent.toAccountId)) return false;
+            if (parent.account && isExcludedId(parent.account)) return false;
+        }
+    }
+
+    return true;
+};
 
   const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
       const map = new Map();
