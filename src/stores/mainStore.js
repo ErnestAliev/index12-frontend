@@ -207,22 +207,31 @@ export const useMainStore = defineStore('mainStore', () => {
     return true;
 };
 
-  const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
-      const map = new Map();
-      ops.forEach(op => {
-          if (!_isOpVisible(op)) return; 
-          let key = null;
-          const rawKey = op[groupByField];
-          key = _toStr(rawKey);
-          if (!key) return;
-          if ((op.type === 'transfer' || op.isTransfer) && groupByField !== 'individualId') return;
-          const amt = Math.abs(op[sumField] || 0);
-          const sign = op.type === 'income' ? 1 : -1;
-          const value = amt * sign;
-          map.set(key, (map.get(key) || 0) + value);
-      });
-      return map;
-  };
+const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
+    const map = new Map();
+    ops.forEach(op => {
+        if (!op) return;
+
+        // 🔥 FIX: WorkAct is a marker op for deal closing, it must NOT affect balances
+        if (op.isWorkAct) return;
+
+        if (!_isOpVisible(op)) return;
+
+        let key = null;
+        const rawKey = op[groupByField];
+        key = _toStr(rawKey);
+        if (!key) return;
+
+        // transfers are handled separately (except individual grouping)
+        if ((op.type === 'transfer' || op.isTransfer) && groupByField !== 'individualId') return;
+
+        const amt = Math.abs(op[sumField] || 0);
+        const sign = op.type === 'income' ? 1 : -1;
+        const value = amt * sign;
+        map.set(key, (map.get(key) || 0) + value);
+    });
+    return map;
+};
 
   // --- Categories Logic ---
   const _isTransferCategory = (cat) => {
