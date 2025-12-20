@@ -383,22 +383,43 @@ const formatSignedMoney = (amount, sign) => {
 
     <div v-if="isTotalsWidget && isFullscreen" class="card-summary-footer fullscreen">
       <div class="summary-grid" :class="{ 'one-line': isFullscreen }">
-        <div class="summary-item">
-          <div class="summary-label">Факт Расход</div>
-          <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factExpense ?? 0, '-') }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">Факт Доход</div>
-          <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factIncome ?? 0, '+') }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">План Расход</div>
-          <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planExpense ?? 0, '-') }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">План Доход</div>
-          <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planIncome ?? 0, '+') }}</div>
-        </div>
+        <template v-if="props.widgetKey === 'projects'">
+          <div class="summary-item">
+            <div class="summary-label">Прибыль по проектам</div>
+            <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factIncome ?? 0, '+') }}</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-label">Расходы по проектам</div>
+            <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factExpense ?? 0, '-') }}</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-label">Планируемая прибыль</div>
+            <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planIncome ?? 0, '+') }}</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-label">Планируемый расход</div>
+            <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planExpense ?? 0, '-') }}</div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="summary-item">
+            <div class="summary-label">Фактические доходы</div>
+            <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factIncome ?? 0, '+') }}</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-label">Фактические расходы</div>
+            <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factExpense ?? 0, '-') }}</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-label">Планируемые доходы</div>
+            <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planIncome ?? 0, '+') }}</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-label">Планируемые расходы</div>
+            <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planExpense ?? 0, '-') }}</div>
+          </div>
+        </template>
       </div>
     </div>
 
