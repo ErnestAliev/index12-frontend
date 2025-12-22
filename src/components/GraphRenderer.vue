@@ -72,6 +72,8 @@ const _clearTooltipHideTimer = () => {
 
 const ICON_COPY = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_EXPORT = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+const ICON_CHECK = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+let tooltipCopyFeedbackTimer = null;
 
 /**
  * * --- МЕТКА ВЕРСИИ: v60.2 - RENDER CRASH FIX ---
@@ -122,6 +124,31 @@ const externalTooltipHandler = (context) => {
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
     tooltipEl.id = 'chartjs-custom-tooltip';
+
+    // One-time CSS for tooltip buttons (hover + copy feedback)
+    let styleEl = document.getElementById('chartjs-custom-tooltip-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'chartjs-custom-tooltip-style';
+      styleEl.textContent = `
+        #chartjs-custom-tooltip .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;}
+        #chartjs-custom-tooltip .tt-btn:hover{border-color:rgba(52,199,89,.9)!important;background:rgba(52,199,89,.18)!important;}
+        #chartjs-custom-tooltip .tt-btn:active{transform:translateY(1px);}
+
+        #chartjs-custom-tooltip .tt-ico{display:flex;align-items:center;justify-content:center;}
+        #chartjs-custom-tooltip .tt-ico-check{display:none;}
+
+        /* When copy succeeded: show checkmark for a moment */
+        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="ok"] .tt-ico-copy{display:none;}
+        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="ok"] .tt-ico-check{display:flex;}
+        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="ok"] .tt-btn--copy{border-color:rgba(52,199,89,1)!important;background:rgba(52,199,89,.25)!important;}
+
+        /* When copy failed */
+        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="fail"] .tt-btn--copy{border-color:rgba(255,59,48,1)!important;background:rgba(255,59,48,.14)!important;}
+      `;
+      document.head.appendChild(styleEl);
+    }
+
     Object.assign(tooltipEl.style, {
       background: 'rgba(26, 26, 26, 0.95)',
       border: '1px solid #444',
@@ -154,7 +181,20 @@ const externalTooltipHandler = (context) => {
       if (btn.id === 'chartjs-tooltip-export-btn') {
         _downloadTextFile(lastTooltipExportText, lastTooltipExportFilename);
       } else if (btn.id === 'chartjs-tooltip-copy-btn') {
-        await _copyToClipboard(lastTooltipExportText);
+        const ok = await _copyToClipboard(lastTooltipExportText);
+
+        // UI feedback: swap icon to checkmark for ~1s (or red state on failure)
+        try {
+          tooltipEl.dataset.copied = '1';
+          tooltipEl.dataset.copyStatus = ok ? 'ok' : 'fail';
+          if (tooltipCopyFeedbackTimer) clearTimeout(tooltipCopyFeedbackTimer);
+          tooltipCopyFeedbackTimer = setTimeout(() => {
+            try {
+              delete tooltipEl.dataset.copied;
+              delete tooltipEl.dataset.copyStatus;
+            } catch (e) {}
+          }, 1000);
+        } catch (e) {}
       }
     });
 
@@ -229,8 +269,8 @@ const externalTooltipHandler = (context) => {
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px;">
             <div style="font-weight: 700; font-size: 15px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${line}</div>
             <div style="display:flex; gap:6px; flex: 0 0 auto;">
-              <button id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.06);">${ICON_COPY}</button>
-              <button id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.10);">${ICON_EXPORT}</button>
+              <button class="tt-btn tt-btn--copy" id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.06);"><span class="tt-ico tt-ico-copy">${ICON_COPY}</span><span class="tt-ico tt-ico-check">${ICON_CHECK}</span></button>
+              <button class="tt-btn tt-btn--export" id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.10);"><span class="tt-ico">${ICON_EXPORT}</span></button>
             </div>
           </div>
         `;
@@ -260,7 +300,19 @@ const externalTooltipHandler = (context) => {
   tooltipEl.style.left = left + 'px'; tooltipEl.style.top = top + 'px'; tooltipEl.style.opacity = 1;
 };
 
-onUnmounted(() => { const el = document.getElementById('chartjs-custom-tooltip'); if (el) el.remove(); });
+onUnmounted(() => {
+  const el = document.getElementById('chartjs-custom-tooltip');
+  if (el) el.remove();
+
+  const styleEl = document.getElementById('chartjs-custom-tooltip-style');
+  if (styleEl) styleEl.remove();
+
+  if (tooltipCopyFeedbackTimer) {
+    clearTimeout(tooltipCopyFeedbackTimer);
+    tooltipCopyFeedbackTimer = null;
+  }
+});
+
 const _getDayOfYear = (date) => { if (!date) return 0; const start = new Date(date.getFullYear(), 0, 0); const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000); return Math.floor(diff / 86400000); };
 const _getDateKey = (date) => { if (!date) return ''; const year = date.getFullYear(); const doy = _getDayOfYear(date); return `${year}-${doy}`; };
 
