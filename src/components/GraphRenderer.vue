@@ -5,7 +5,73 @@ import { formatNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js/auto';
 
+
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+
+// --- Tooltip copy/export helpers ---
+let lastTooltipExportText = '';
+let lastTooltipExportFilename = 'chart-tooltip.txt';
+
+const _downloadTextFile = (text, filename = 'chart-tooltip.txt') => {
+  try {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.warn('[GraphRenderer] tooltip export failed', e);
+  }
+};
+
+
+const _copyToClipboard = async (text) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {}
+
+  // Fallback
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+// --- Tooltip interaction (hover delay + click-to-pin) ---
+let tooltipPinned = false;
+let tooltipPinnedKey = '';
+let tooltipForceUpdate = false;
+let tooltipIsHovering = false;
+let tooltipHideTimer = null;
+const TOOLTIP_HIDE_DELAY_MS = 2500;
+
+const _clearTooltipHideTimer = () => {
+  if (tooltipHideTimer) {
+    clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = null;
+  }
+};
+
+const ICON_COPY = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const ICON_EXPORT = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v60.2 - RENDER CRASH FIX ---
@@ -56,23 +122,128 @@ const externalTooltipHandler = (context) => {
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
     tooltipEl.id = 'chartjs-custom-tooltip';
-    Object.assign(tooltipEl.style, { background: 'rgba(26, 26, 26, 0.95)', border: '1px solid #444', borderRadius: '8px', color: 'white', opacity: 0, pointerEvents: 'none', position: 'fixed', zIndex: 9999, fontSize: '12px', padding: '12px', lineHeight: '1.4', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', transition: 'opacity .15s ease', width: 'max-content', maxWidth: '100vw', boxSizing: 'border-box' });
+    Object.assign(tooltipEl.style, {
+      background: 'rgba(26, 26, 26, 0.95)',
+      border: '1px solid #444',
+      borderRadius: '8px',
+      color: 'white',
+      opacity: 0,
+      pointerEvents: 'auto',
+      position: 'fixed',
+      zIndex: 9999,
+      fontSize: '12px',
+      padding: '12px',
+      lineHeight: '1.4',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+      transition: 'opacity .15s ease',
+      width: 'max-content',
+      maxWidth: '100vw',
+      boxSizing: 'border-box'
+    });
     document.body.appendChild(tooltipEl);
+    tooltipEl.addEventListener('click', async (e) => {
+      const btn = e.target?.closest?.('#chartjs-tooltip-export-btn, #chartjs-tooltip-copy-btn');
+      if (!btn) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!lastTooltipExportText) return;
+
+      if (btn.id === 'chartjs-tooltip-export-btn') {
+        _downloadTextFile(lastTooltipExportText, lastTooltipExportFilename);
+      } else if (btn.id === 'chartjs-tooltip-copy-btn') {
+        await _copyToClipboard(lastTooltipExportText);
+      }
+    });
+
+    tooltipEl.addEventListener('mouseenter', () => {
+      tooltipIsHovering = true;
+      _clearTooltipHideTimer();
+    });
+
+    tooltipEl.addEventListener('mouseleave', () => {
+      tooltipIsHovering = false;
+      if (!tooltipPinned) {
+        _clearTooltipHideTimer();
+        tooltipHideTimer = setTimeout(() => {
+          if (!tooltipPinned && !tooltipIsHovering) tooltipEl.style.opacity = 0;
+        }, 150);
+      }
+    });
   }
   const tooltipModel = context.tooltip;
-  if (tooltipModel.opacity === 0) { tooltipEl.style.opacity = 0; return; }
+  if (tooltipModel.opacity === 0) {
+    // If the user is moving from chart to tooltip (to click buttons) or tooltip is pinned, keep it visible.
+    if (tooltipPinned || tooltipIsHovering) return;
+
+    // Otherwise hide with a small delay so the user can reach the tooltip.
+    _clearTooltipHideTimer();
+    tooltipHideTimer = setTimeout(() => {
+      if (!tooltipPinned && !tooltipIsHovering) tooltipEl.style.opacity = 0;
+    }, TOOLTIP_HIDE_DELAY_MS);
+    return;
+  }
+
+  // Tooltip is visible again; cancel any pending hide.
+  _clearTooltipHideTimer();
+
   if (tooltipModel.body) {
     const bodyLines = tooltipModel.body.map(b => b.lines).flat();
+
+    // If tooltip is pinned, ignore hover updates from other bars (prevents “мешаются”).
+    const dp = tooltipModel.dataPoints?.[0];
+    const activeKey = dp ? `${dp.datasetIndex}:${dp.dataIndex}` : '';
+    if (tooltipPinned && !tooltipForceUpdate && activeKey && activeKey !== tooltipPinnedKey) {
+      return;
+    }
+
+    // Save the exact visible tooltip content for WhatsApp (date + total + list)
+    // UI does not render empty lines, so we drop them here too.
+    lastTooltipExportText = bodyLines
+      .map(l => (l === '---' ? '----------------' : l))
+      .filter(l => l !== undefined && l !== null)
+      .filter(l => String(l).trim() !== '')
+      .join('\n');
+    lastTooltipExportFilename = 'chart-tooltip.txt';
+
     let innerHtml = '';
     bodyLines.forEach((line, i) => {
-       if (line === '---') { innerHtml += '<div style="height:1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>'; return; }
-       if (!line) return;
-       let style = 'color: #ddd; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'; 
-       if (i === 0) style = 'color: #888; margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;';
-       else if (i === 1) style = 'font-weight: 700; font-size: 15px; margin-bottom: 8px; color: #fff; white-space: nowrap;';
-       innerHtml += `<div style="${style}">${line}</div>`;
+      if (line === '---') {
+        innerHtml += '<div style="height:1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>';
+        return;
+      }
+      if (!line) return;
+
+      // 1) Date line (top)
+      if (i === 0) {
+        const style = 'color: #888; margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+        innerHtml += `<div style="${style}">${line}</div>`;
+        return;
+      }
+
+      // 2) Total line (second line) + actions on the right
+      if (i === 1) {
+        innerHtml += `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 15px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${line}</div>
+            <div style="display:flex; gap:6px; flex: 0 0 auto;">
+              <button id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.06);">${ICON_COPY}</button>
+              <button id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.10);">${ICON_EXPORT}</button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      // 3) Other lines
+      const style = 'color: #ddd; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+      innerHtml += `<div style="${style}">${line}</div>`;
     });
     tooltipEl.innerHTML = innerHtml;
+    // Allow next hover updates unless we are pinned.
+    tooltipForceUpdate = false;
   }
   const position = context.chart.canvas.getBoundingClientRect();
   const viewportX = position.left + tooltipModel.caretX;
@@ -81,9 +252,9 @@ const externalTooltipHandler = (context) => {
   const tooltipHeight = tooltipEl.offsetHeight;
   const screenWidth = window.innerWidth;
   let left = viewportX; let top = viewportY; let transformX = '-50%';
-  if (left < tooltipWidth / 2 + 10) { left = 10; transformX = '0%'; } 
+  if (left < tooltipWidth / 2 + 10) { left = 10; transformX = '0%'; }
   else if (left + tooltipWidth / 2 > screenWidth - 10) { left = screenWidth - 10; transformX = '-100%'; if (left - tooltipWidth < 0) { left = 0; transformX = '0%'; } }
-  top = top - 10; let transformY = '-100%'; 
+  top = top - 10; let transformY = '-100%';
   if (top - tooltipHeight < 10) { top = viewportY + 20; transformY = '0%'; }
   tooltipEl.style.transform = `translate(${transformX}, ${transformY})`;
   tooltipEl.style.left = left + 'px'; tooltipEl.style.top = top + 'px'; tooltipEl.style.opacity = 1;
@@ -342,6 +513,42 @@ const chartOptions = computed(() => {
   const yMax = axisMax.value;
   const options = {
     responsive: true, maintainAspectRatio: false,
+    onClick: (event, elements, chart) => {
+      const el = document.getElementById('chartjs-custom-tooltip');
+
+      // Click on empty space -> unpin and hide
+      if (!elements || elements.length === 0) {
+        tooltipPinned = false;
+        tooltipPinnedKey = '';
+        tooltipForceUpdate = false;
+        if (el && !tooltipIsHovering) el.style.opacity = 0;
+        return;
+      }
+
+      const e0 = elements[0];
+      const key = `${e0.datasetIndex}:${e0.index}`;
+
+      // Clicking the same bar toggles pin off
+      if (tooltipPinned && tooltipPinnedKey === key) {
+        tooltipPinned = false;
+        tooltipPinnedKey = '';
+        tooltipForceUpdate = false;
+        if (el && !tooltipIsHovering) el.style.opacity = 0;
+        return;
+      }
+
+      // Pin to clicked bar
+      tooltipPinned = true;
+      tooltipPinnedKey = key;
+      tooltipForceUpdate = true;
+
+      try {
+        const pos = { x: event?.x ?? event?.native?.offsetX, y: event?.y ?? event?.native?.offsetY };
+        chart.setActiveElements(elements);
+        if (chart.tooltip?.setActiveElements) chart.tooltip.setActiveElements(elements, pos);
+        chart.update('none');
+      } catch (e) {}
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -434,4 +641,4 @@ watch([chartData, chartOptions], async () => {
 .day-income { color: var(--color-primary); font-weight: 500; }
 .day-expense{ color: var(--color-danger);  font-weight: 500; }
 .day-balance{ color: #ccc; font-weight: 500; margin-top: 5px; }
-</style>
+</style> 
