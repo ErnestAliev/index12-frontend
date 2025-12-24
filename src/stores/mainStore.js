@@ -89,7 +89,9 @@ export const useMainStore = defineStore('mainStore', () => {
   const isTaxOpsLoading = ref(false);
   let taxOpsLoadPromise = null;
   
-  const accounts    = ref([]);
+  
+  const earliestEventDate = ref(null); // earliest operation date (from /auth/me)
+const accounts    = ref([]);
   const companies   = ref([]); 
   const contractors = ref([]);
   const projects    = ref([]);
@@ -634,14 +636,49 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
       if (taxOpsMaxDate.value && endDate.getTime() <= new Date(taxOpsMaxDate.value).getTime()) return;
     }
 
-    const startDate = taxOpsMaxDate.value
+      // Lower bound for “all-time” taxes history:
+  // - Prefer backend-provided earliest operation date (minEventDate)
+  // - Fallback to user createdAt
+  // - Fallback to min date already present in known ops (if any)
+  // - Final safety fallback: 5 years back (avoid loading from year 2000)
+  let hardMinDate = null;
+  if (earliestEventDate.value) {
+      hardMinDate = new Date(earliestEventDate.value);
+  } else if (user.value?.minEventDate || user.value?.createdAt) {
+      const raw = user.value.minEventDate || user.value.createdAt;
+      const d = new Date(raw);
+      if (!Number.isNaN(d.getTime())) hardMinDate = d;
+  } else {
+      const ops = (taxKnownOperations?.value || []).filter(o => o && o.date);
+      if (ops.length) {
+          let minT = null;
+          for (const o of ops) {
+              const dt = new Date(o.date);
+              if (Number.isNaN(dt.getTime())) continue;
+              const t = dt.getTime();
+              if (minT === null || t < minT) minT = t;
+          }
+          if (minT !== null) hardMinDate = new Date(minT);
+      }
+  }
+  if (!hardMinDate || Number.isNaN(hardMinDate.getTime())) {
+      hardMinDate = new Date(new Date().getFullYear() - 5, 0, 1);
+  }
+  hardMinDate.setHours(0, 0, 0, 0);
+
+const startDate = taxOpsMaxDate.value
       ? (() => {
           const d = new Date(taxOpsMaxDate.value);
           d.setDate(d.getDate() + 1);
           d.setHours(0, 0, 0, 0);
           return d;
         })()
-      : new Date(2000, 0, 1);
+      : hardMinDate;
+
+    // Safety clamp: never request earlier than hardMinDate
+    if (startDate.getTime() < hardMinDate.getTime()) {
+      startDate.setTime(hardMinDate.getTime());
+    }
 
     isTaxOpsLoading.value = true;
     taxOpsLoadPromise = (async () => {
@@ -2102,7 +2139,19 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
           isAuthLoading.value = true; 
           const res = await axios.get(`${API_BASE_URL}/auth/me`); 
           user.value = res.data;
-      } catch (error) { 
+      
+          // Capture user's earliest operation date (backend should provide `minEventDate`)
+          const minDateRaw = res.data?.minEventDate || res.data?.createdAt || null;
+          if (minDateRaw) {
+              const d = new Date(minDateRaw);
+              if (!Number.isNaN(d.getTime())) {
+                  d.setHours(0, 0, 0, 0);
+                  earliestEventDate.value = d;
+              }
+          } else {
+              earliestEventDate.value = null;
+          }
+} catch (error) { 
           user.value = null; 
       } finally { 
           isAuthLoading.value = false; 
@@ -2542,12 +2591,7 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
     _idsMatch,
 
     accounts, companies, contractors, projects, categories, individuals, 
-    credits, taxes,
-
-    // --- Taxes widget (all-time cache) ---
-    taxOpsCache,
-    taxOpsMaxDate,
-    taxKnownOperations, 
+    credits, taxes, 
     visibleCategories, visibleContractors, 
     operationsCache: displayCache, displayCache, calculationCache,
     
