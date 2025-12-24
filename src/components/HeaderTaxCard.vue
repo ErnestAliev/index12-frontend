@@ -32,35 +32,22 @@ const getSafeId = (val) => {
 // Расчет налогов
 const taxItems = computed(() => {
     // 🟢 1. Триггер реактивности:
-    // ВАЖНО: налоги считаются по ВСЕЙ истории (tax cache), а не по диапазону.
-    // Поэтому пересчёт должен срабатывать не только при изменении allOperationsFlat (диапазон),
-    // но и при догрузке full-history tax ops.
-    const _taxTrigger = (
-        // prefer full-history source if it exists in store
-        (Array.isArray(mainStore.taxKnownOperations) ? mainStore.taxKnownOperations.length : null) ??
-        (Array.isArray(mainStore.taxOpsCache) ? mainStore.taxOpsCache.length : null) ??
-        // fallback to range cache
-        (Array.isArray(mainStore.allOperationsFlat) ? mainStore.allOperationsFlat.length : 0)
-    );
-    // also touch maxDate/version to ensure recompute when history extends
-    const _taxMaxDate = mainStore.taxOpsMaxDate;
+    // Налоги должны считаться по ВСЕЙ истории (taxOpsCache), а не по диапазону projection.
+    // Если taxOpsCache догружается пачками — пересчет должен срабатывать на каждом обновлении.
+    const _taxOpsTrigger = (mainStore.taxOpsCache?.length || 0);
+    const _taxesTrigger = (mainStore.taxes?.length || 0);
+    const _companiesTrigger = (companies.value?.length || 0);
 
-    const now = new Date();
-
-    // 🟢 2. Получаем актуальную дату конца диапазона (для ПРОГНОЗА)
-    // Если диапазон еще не инициализирован, по умолчанию прогноз считаем до today
-    const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-
+    // 🟢 2. Актуальный конец диапазона ПРОГНОЗА (если он вообще включен)
+    // Если projection.rangeEndDate еще не задан (на старте) — считаем прогноз до "сейчас", чтобы дельта была 0.
+    const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date();
+    
     // Устанавливаем конец дня для корректного сравнения
     if (rangeEndDate) {
         rangeEndDate.setHours(23, 59, 59, 999);
     }
 
-    const forecastEndDate = rangeEndDate ? rangeEndDate : (() => {
-        const d = new Date(now);
-        d.setHours(23, 59, 59, 999);
-        return d;
-    })();
+    const now = new Date();
 
     return companies.value.map(comp => {
         // --- А. РАСЧЕТ ТЕКУЩИЙ (Факт на сегодня) ---
@@ -79,9 +66,9 @@ const taxItems = computed(() => {
         const currentDebt = Math.max(0, currentCalc.tax - paidCurrent);
 
         // --- Б. РАСЧЕТ ПРОГНОЗА (С учетом диапазона) ---
-        // Передаем forecastEndDate. Если диапазон сузился (1мес -> 12д), forecastEndDate станет ближе,
+        // Передаем rangeEndDate. Если диапазон сузился (1мес -> 12д), rangeEndDate станет ближе,
         // и calculateTaxForPeriod отсечет будущие операции.
-        const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, forecastEndDate);
+        const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
         
         // Оплачено всего (включая будущие платежи, если они попадают в выбранный диапазон)
         const paidTotal = mainStore.taxes
@@ -89,7 +76,7 @@ const taxItems = computed(() => {
                 const tCompId = getSafeId(t.companyId);
                 const tDate = t.date ? new Date(t.date) : new Date(0);
                 // Учитываем платежи, которые попадают в выбранный диапазон
-                const isInRange = tDate <= forecastEndDate;
+                const isInRange = rangeEndDate ? tDate <= rangeEndDate : true;
                 return tCompId === comp._id && t.status === 'paid' && isInRange;
             })
             .reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -99,6 +86,8 @@ const taxItems = computed(() => {
 
         // --- В. ДЕЛЬТА (Изменение за период) ---
         // Разница между долгом на конец периода и текущим долгом.
+        // Если будущих доходов нет -> futureDiff = 0.
+        // Если есть доход 300к -> futureDiff = 9000.
         const futureDiff = totalDebt - currentDebt;
         
         return {
@@ -110,7 +99,7 @@ const taxItems = computed(() => {
             // Данные для отображения (положительные числа, знак добавим в шаблоне)
             currentDebt: currentDebt,
             futureDebt: futureDiff, // Изменение (+ сколько добавится долга)
-            totalFutureDebt: totalDebt,
+            totalFutureDebt: totalDebt, // Итоговый долг в будущем (не используем в отображении, но храним)
             
             // Для совместимости
             income: currentCalc.income,
@@ -122,19 +111,25 @@ const taxItems = computed(() => {
 // Форматирование
 const formatMoney = (val) => formatNumber(Math.floor(Math.abs(val || 0)));
 
-// Форматтер для дельты
+// 🟢 NEW: Форматтер для дельты (плана)
+// Если > 0, значит долг растет (плохо, expense-text) -> "- 9 000"
+// Если < 0, значит долг уменьшается (платеж, good) -> "+ 1 000"
 const formatDelta = (val) => {
     const num = Math.floor(val || 0);
     if (num === 0) return '0';
+    
+    // Если число положительное (долг вырос), ставим минус
     if (num > 0) return `- ${formatNumber(num)}`;
+    
+    // Если число отрицательное (долг уменьшился), ставим плюс
     return `+ ${formatNumber(Math.abs(num))}`;
 };
 
-// Класс цвета для дельты
+// 🟢 NEW: Класс цвета для дельты
 const getDeltaClass = (val) => {
     if (val === 0) return 'zero-tax';
-    if (val > 0) return 'expense-text';
-    return 'income-text';
+    if (val > 0) return 'expense-text'; // Долг растет -> Красный
+    return 'income-text'; // Долг падает -> Зеленый
 };
 
 </script>
@@ -142,9 +137,12 @@ const getDeltaClass = (val) => {
 <template>
   <div class="dashboard-card">
     <div class="card-title-container card-drag-handle">
+      <!-- Заголовок -->
       <div class="card-title">{{ title }}</div>
       
       <div class="card-actions" @mousedown.stop @touchstart.stop @pointerdown.stop>
+        
+        <!-- Кнопка Прогноз -->
         <button 
           class="action-square-btn" 
           :class="{ 'active': showFutureBalance }" 
@@ -168,26 +166,35 @@ const getDeltaClass = (val) => {
 
     <div class="card-items-list" :class="{ 'forecast-mode': showFutureBalance }">
       <div v-for="item in taxItems" :key="item._id" class="card-item tax-grid">
+        <!-- Название компании -->
         <span class="name-cell" :title="item.name">{{ item.name }}</span>
         
+        <!-- Режим и процент -->
         <span class="regime-cell">
             <span class="badge" :class="item.regime === 'УПР' ? 'badge-upr' : 'badge-our'">
                 {{ item.regime }} {{ item.percent }}%
             </span>
         </span>
 
+        <!-- Сумма налога (Логика отображения) -->
         <span class="amount-cell-wrapper">
+            <!-- Режим ФАКТ -->
+            <!-- 🟢 Всегда красный (расход), всегда с минусом -->
             <span v-if="!showFutureBalance" class="amount-single expense-text" :class="{ 'zero-tax': item.currentDebt === 0 }">
                 <span class="currency">₸</span> - {{ formatMoney(item.currentDebt) }}
             </span>
 
+            <!-- Режим ПРОГНОЗ -->
             <span v-else class="forecast-display">
+                <!-- Текущий долг -->
                 <span class="current-val expense-text" :class="{ 'zero-tax': item.currentDebt === 0 }">
                     - {{ formatMoney(item.currentDebt) }}
                 </span>
                 
                 <span class="arrow">></span>
                 
+                <!-- 🟢 Будущий долг (ДЕЛЬТА) -->
+                <!-- Отображаем только изменение за период -->
                 <span class="future-val" :class="getDeltaClass(item.futureDebt)">
                     {{ formatDelta(item.futureDebt) }}
                 </span>
@@ -247,6 +254,7 @@ const getDeltaClass = (val) => {
 }
 .card-items-list::-webkit-scrollbar { display: none; }
 
+/* Сетка для строки налога */
 .tax-grid {
     display: grid;
     grid-template-columns: 1fr auto minmax(80px, auto);
@@ -280,6 +288,7 @@ const getDeltaClass = (val) => {
     white-space: nowrap;
 }
 
+/* 🟢 Стили сумм */
 .amount-single { 
     font-weight: var(--fw-medium); 
     font-variant-numeric: tabular-nums;
@@ -293,15 +302,15 @@ const getDeltaClass = (val) => {
     font-variant-numeric: tabular-nums;
 }
 
-.expense-text { color: var(--color-danger); }
-.income-text { color: var(--color-primary); }
+.expense-text { color: var(--color-danger); } /* Красный цвет */
+.income-text { color: var(--color-primary); } /* Зеленый цвет */
 
 .current-val { font-weight: 400; opacity: 0.9; }
 .future-val { font-weight: 600; }
 
 .arrow { color: var(--text-mute); font-size: 0.9em; }
 
-.zero-tax { color: var(--text-mute); opacity: 0.5; }
+.zero-tax { color: var(--text-mute); opacity: 0.5; } /* Если долг 0 - серый цвет */
 
 .currency { font-size: 0.85em; color: inherit; opacity: 0.7; font-weight: 400; margin-right: 2px; }
 .card-item-empty { font-size: var(--font-xs); color: #666; margin-top: 5px; font-style: italic; }
