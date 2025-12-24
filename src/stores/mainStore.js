@@ -81,6 +81,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
   const displayCache = ref({});
   const calculationCache = ref({});
+
+  // --- TAX OPS CACHE (ALL-TIME) ---
+  // Taxes widget must show cumulative fact for the whole history, independent of projection range.
+  const taxOpsCache = ref([]);            // full-history operations (merged transfers + populated)
+  const taxOpsMaxDate = ref(null);        // ISO string of the max loaded date
+  const isTaxOpsLoading = ref(false);
+  let taxOpsLoadPromise = null;
   
   const accounts    = ref([]);
   const companies   = ref([]); 
@@ -154,7 +161,7 @@ export const useMainStore = defineStore('mainStore', () => {
   const allKnownOperations = computed(() => {
       const uniqueMap = new Map();
       dealOperations.value.forEach(op => uniqueMap.set(op._id, op));
-      allOperationsFlat.value.forEach(op => {
+      taxKnownOperations.value.forEach(op => {
           if (!uniqueMap.has(op._id)) uniqueMap.set(op._id, op);
       });
       return Array.from(uniqueMap.values());
@@ -554,6 +561,124 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
     return allOps;
   });
 
+
+
+  // --- TAX CALC SOURCE OPS (ALL-TIME + currently loaded/optimistic) ---
+  // We merge:
+  // 1) taxOpsCache (all-time history loaded in background)
+  // 2) allOperationsFlat (current range + optimistic ops)
+  // 3) dealOperations (may include older ops outside current range)
+  // This guarantees calculateTaxForPeriod works even before the full history is loaded.
+  const taxKnownOperations = computed(() => {
+    const map = new Map();
+    (taxOpsCache.value || []).forEach(op => {
+      if (op && op._id) map.set(String(op._id), op);
+    });
+    (allOperationsFlat.value || []).forEach(op => {
+      if (op && op._id && !map.has(String(op._id))) map.set(String(op._id), op);
+    });
+    (dealOperations.value || []).forEach(op => {
+      if (op && op._id && !map.has(String(op._id))) map.set(String(op._id), op);
+    });
+    return Array.from(map.values());
+  });
+
+  async function _fetchOperationsListChunked(startDate, endDate, chunkDays = 120) {
+    const out = [];
+
+    const cursor = new Date(startDate);
+    cursor.setHours(0, 0, 0, 0);
+
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    while (cursor <= end) {
+      const chunkStart = new Date(cursor);
+      const chunkEnd = new Date(chunkStart);
+      chunkEnd.setDate(chunkEnd.getDate() + (chunkDays - 1));
+      if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+
+      const response = await axios.get(`${API_BASE_URL}/events`, {
+        params: {
+          startDate: chunkStart.toISOString(),
+          endDate: chunkEnd.toISOString()
+        }
+      });
+
+      const rawOps = Array.isArray(response.data) ? response.data : [];
+      const processedOps = _mergeTransfers(rawOps).map(op => {
+        const dk = op.dateKey || _getDateKey(new Date(op.date));
+        return _populateOp({ ...op, dateKey: dk });
+      });
+
+      out.push(...processedOps);
+
+      cursor.setDate(cursor.getDate() + chunkDays);
+    }
+
+    return out;
+  }
+
+  async function ensureTaxOpsUntil(endDateInput = null) {
+    if (!user.value) return;
+
+    const endDate = endDateInput ? new Date(endDateInput) : new Date();
+    endDate.setHours(23, 59, 59, 999);
+
+    // already covered
+    if (taxOpsMaxDate.value && endDate.getTime() <= new Date(taxOpsMaxDate.value).getTime()) return;
+
+    // if a load is in-flight, await it, then re-check
+    if (isTaxOpsLoading.value && taxOpsLoadPromise) {
+      await taxOpsLoadPromise;
+      if (taxOpsMaxDate.value && endDate.getTime() <= new Date(taxOpsMaxDate.value).getTime()) return;
+    }
+
+    const startDate = taxOpsMaxDate.value
+      ? (() => {
+          const d = new Date(taxOpsMaxDate.value);
+          d.setDate(d.getDate() + 1);
+          d.setHours(0, 0, 0, 0);
+          return d;
+        })()
+      : new Date(2000, 0, 1);
+
+    isTaxOpsLoading.value = true;
+    taxOpsLoadPromise = (async () => {
+      try {
+        const newOps = await _fetchOperationsListChunked(startDate, endDate);
+
+        const map = new Map();
+        (taxOpsCache.value || []).forEach(op => {
+          if (op && op._id) map.set(String(op._id), op);
+        });
+        newOps.forEach(op => {
+          if (op && op._id) map.set(String(op._id), op);
+        });
+
+        taxOpsCache.value = Array.from(map.values());
+        taxOpsMaxDate.value = endDate.toISOString();
+      } catch (e) {
+        console.error('[tax] ensureTaxOpsUntil failed:', e);
+      } finally {
+        isTaxOpsLoading.value = false;
+        taxOpsLoadPromise = null;
+      }
+    })();
+
+    await taxOpsLoadPromise;
+  }
+
+  // Keep tax cache extended when user changes projection range
+  watch(
+    () => projection.value?.rangeEndDate,
+    (d) => {
+      const end = d ? new Date(d) : new Date();
+      // do not block UI
+      void ensureTaxOpsUntil(end);
+    },
+    { immediate: true }
+  );
   const futureOps = computed(() => {
       const rawFuture = useProjectionStore().futureOps;
       return rawFuture.filter(op => _isOpVisible(op));
@@ -1579,7 +1704,10 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
       
       await ensureSystemEntities();
       await fetchSnapshot();
-      
+
+      // Preload full-history ops for Taxes widget (cumulative fact, independent of projection range)
+      void ensureTaxOpsUntil(projection.value?.rangeEndDate ? new Date(projection.value.rangeEndDate) : new Date());
+
       if (user.value) {
           useSocketStore().connect(user.value._id);
       }
@@ -2156,7 +2284,7 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
       
       const balances = new Map();
       
-      allOperationsFlat.value.forEach(op => {
+      taxKnownOperations.value.forEach(op => {
           const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
           if (!_idsMatch(indId, retailId)) return;
           
@@ -2218,7 +2346,7 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
       let effectiveStartDate = startDate ? new Date(startDate) : null;
       if (effectiveStartDate) effectiveStartDate.setHours(0, 0, 0, 0);
 
-      allOperationsFlat.value.forEach(op => {
+      taxKnownOperations.value.forEach(op => {
           const opDate = new Date(op.date);
           if (effectiveStartDate && opDate < effectiveStartDate) return;
           if (effectiveEndDate && opDate > effectiveEndDate) return;
