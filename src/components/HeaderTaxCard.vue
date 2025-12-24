@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
@@ -12,6 +12,28 @@ const props = defineProps({
 
 const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
+
+const isTaxWarmupDone = ref(false);
+
+const isLoading = computed(() => {
+  // Prefer store flag if present, but fallback to local warmup
+  const storeLoading = (mainStore && mainStore.isTaxOpsLoading === true);
+  return storeLoading || !isTaxWarmupDone.value;
+});
+
+onMounted(async () => {
+  try {
+    // If the store supports full-history warmup, wait for it once on mount
+    if (mainStore && typeof mainStore.ensureTaxOpsUntil === 'function') {
+      await mainStore.ensureTaxOpsUntil(new Date());
+    }
+  } catch (e) {
+    // Silent: taxes will still render from whatever data is available
+  } finally {
+    isTaxWarmupDone.value = true;
+  }
+});
+
 
 // Состояние прогноза (синхронизировано со стором)
 const showFutureBalance = computed({
@@ -32,15 +54,12 @@ const getSafeId = (val) => {
 // Расчет налогов
 const taxItems = computed(() => {
     // 🟢 1. Триггер реактивности:
-    // Налоги должны считаться по ВСЕЙ истории (taxOpsCache), а не по диапазону projection.
-    // Если taxOpsCache догружается пачками — пересчет должен срабатывать на каждом обновлении.
-    const _taxOpsTrigger = (mainStore.taxOpsCache?.length || 0);
-    const _taxesTrigger = (mainStore.taxes?.length || 0);
-    const _companiesTrigger = (companies.value?.length || 0);
-
-    // 🟢 2. Актуальный конец диапазона ПРОГНОЗА (если он вообще включен)
-    // Если projection.rangeEndDate еще не задан (на старте) — считаем прогноз до "сейчас", чтобы дельта была 0.
-    const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date();
+    // Обращаемся к массиву операций, чтобы пересчет срабатывал при подгрузке данных (при смене 12д -> 1мес)
+    const _opsTrigger = (mainStore.allOperationsFlat?.length || 0) + (mainStore.dealOperations?.length || 0) + (mainStore.taxKnownOperations?.length || 0) + (mainStore.taxOpsCache?.length || 0); 
+    
+    // 🟢 2. Получаем актуальную дату конца диапазона
+    // Если projection.rangeEndDate меняется (переключение в навигации), это свойство пересчитается
+    const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
     
     // Устанавливаем конец дня для корректного сравнения
     if (rangeEndDate) {
@@ -138,7 +157,10 @@ const getDeltaClass = (val) => {
   <div class="dashboard-card">
     <div class="card-title-container card-drag-handle">
       <!-- Заголовок -->
-      <div class="card-title">{{ title }}</div>
+      <div class="card-title">
+          {{ title }}
+          <span v-if="isLoading" class="tax-loading">обновляю…</span>
+        </div>
       
       <div class="card-actions" @mousedown.stop @touchstart.stop @pointerdown.stop>
         
@@ -231,6 +253,14 @@ const getDeltaClass = (val) => {
   color: var(--text-main); 
   font-weight: var(--fw-semi);
 }
+
+.tax-loading {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
+
 
 .card-actions { display: flex; gap: 6px; }
 
