@@ -32,19 +32,35 @@ const getSafeId = (val) => {
 // Расчет налогов
 const taxItems = computed(() => {
     // 🟢 1. Триггер реактивности:
-    // Обращаемся к массиву операций, чтобы пересчет срабатывал при подгрузке данных (при смене 12д -> 1мес)
-    const _opsTrigger = mainStore.allOperationsFlat.length; 
-    
-    // 🟢 2. Получаем актуальную дату конца диапазона
-    // Если projection.rangeEndDate меняется (переключение в навигации), это свойство пересчитается
+    // ВАЖНО: налоги считаются по ВСЕЙ истории (tax cache), а не по диапазону.
+    // Поэтому пересчёт должен срабатывать не только при изменении allOperationsFlat (диапазон),
+    // но и при догрузке full-history tax ops.
+    const _taxTrigger = (
+        // prefer full-history source if it exists in store
+        (Array.isArray(mainStore.taxKnownOperations) ? mainStore.taxKnownOperations.length : null) ??
+        (Array.isArray(mainStore.taxOpsCache) ? mainStore.taxOpsCache.length : null) ??
+        // fallback to range cache
+        (Array.isArray(mainStore.allOperationsFlat) ? mainStore.allOperationsFlat.length : 0)
+    );
+    // also touch maxDate/version to ensure recompute when history extends
+    const _taxMaxDate = mainStore.taxOpsMaxDate;
+
+    const now = new Date();
+
+    // 🟢 2. Получаем актуальную дату конца диапазона (для ПРОГНОЗА)
+    // Если диапазон еще не инициализирован, по умолчанию прогноз считаем до today
     const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-    
+
     // Устанавливаем конец дня для корректного сравнения
     if (rangeEndDate) {
         rangeEndDate.setHours(23, 59, 59, 999);
     }
 
-    const now = new Date();
+    const forecastEndDate = rangeEndDate ? rangeEndDate : (() => {
+        const d = new Date(now);
+        d.setHours(23, 59, 59, 999);
+        return d;
+    })();
 
     return companies.value.map(comp => {
         // --- А. РАСЧЕТ ТЕКУЩИЙ (Факт на сегодня) ---
@@ -63,9 +79,9 @@ const taxItems = computed(() => {
         const currentDebt = Math.max(0, currentCalc.tax - paidCurrent);
 
         // --- Б. РАСЧЕТ ПРОГНОЗА (С учетом диапазона) ---
-        // Передаем rangeEndDate. Если диапазон сузился (1мес -> 12д), rangeEndDate станет ближе,
+        // Передаем forecastEndDate. Если диапазон сузился (1мес -> 12д), forecastEndDate станет ближе,
         // и calculateTaxForPeriod отсечет будущие операции.
-        const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
+        const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, forecastEndDate);
         
         // Оплачено всего (включая будущие платежи, если они попадают в выбранный диапазон)
         const paidTotal = mainStore.taxes
@@ -73,7 +89,7 @@ const taxItems = computed(() => {
                 const tCompId = getSafeId(t.companyId);
                 const tDate = t.date ? new Date(t.date) : new Date(0);
                 // Учитываем платежи, которые попадают в выбранный диапазон
-                const isInRange = rangeEndDate ? tDate <= rangeEndDate : true;
+                const isInRange = tDate <= forecastEndDate;
                 return tCompId === comp._id && t.status === 'paid' && isInRange;
             })
             .reduce((acc, t) => acc + (t.amount || 0), 0);
