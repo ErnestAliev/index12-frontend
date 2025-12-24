@@ -583,7 +583,7 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
     return Array.from(map.values());
   });
 
-  async function _fetchOperationsListChunked(startDate, endDate, chunkDays = 120) {
+  async function _fetchOperationsListChunked(startDate, endDate, chunkDays = 365) {
     const out = [];
 
     const cursor = new Date(startDate);
@@ -669,13 +669,23 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
     await taxOpsLoadPromise;
   }
 
-  // Keep tax cache extended when user changes projection range
+  // Keep tax cache extended (tax fact must be all-time up to TODAY; also extend to projection end if it is in the future)
   watch(
-    () => projection.value?.rangeEndDate,
-    (d) => {
-      const end = d ? new Date(d) : new Date();
-      // do not block UI
-      void ensureTaxOpsUntil(end);
+    [() => projection.value?.rangeEndDate, () => user.value?._id],
+    ([d]) => {
+      if (!user.value) return;
+
+      const today = new Date();
+      // Always ensure history is loaded up to today (independent of projection range)
+      void ensureTaxOpsUntil(today);
+
+      // If projection end is in the future, also extend cache to that date (for future preview)
+      if (d) {
+        const projEnd = new Date(d);
+        if (projEnd.getTime() > today.getTime()) {
+          void ensureTaxOpsUntil(projEnd);
+        }
+      }
     },
     { immediate: true }
   );
@@ -1706,7 +1716,14 @@ const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => 
       await fetchSnapshot();
 
       // Preload full-history ops for Taxes widget (cumulative fact, independent of projection range)
-      void ensureTaxOpsUntil(projection.value?.rangeEndDate ? new Date(projection.value.rangeEndDate) : new Date());
+      const today = new Date();
+      void ensureTaxOpsUntil(today);
+      if (projection.value?.rangeEndDate) {
+          const projEnd = new Date(projection.value.rangeEndDate);
+          if (projEnd.getTime() > today.getTime()) {
+              void ensureTaxOpsUntil(projEnd);
+          }
+      }
 
       if (user.value) {
           useSocketStore().connect(user.value._id);
