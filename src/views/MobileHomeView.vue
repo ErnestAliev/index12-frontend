@@ -107,6 +107,11 @@ const startY = ref(0);
 const startHeight = ref(0);
 
 const onResizerStart = (e) => {
+    // If somehow we were left in resizing mode, reset first
+    if (isResizing.value) {
+        isResizing.value = false;
+    }
+
     isResizing.value = true;
 
     // TouchEvent vs Pointer/Mouse
@@ -114,16 +119,32 @@ const onResizerStart = (e) => {
     startY.value = y;
     startHeight.value = timelineHeight.value;
 
+    // Prevent page gestures while drag starts (only when cancelable)
+    if (e && e.cancelable) e.preventDefault();
+
+    // IMPORTANT (iOS standalone): capture pointer so we always receive pointerup
+    if (e && e.pointerId !== undefined && e.currentTarget && typeof e.currentTarget.setPointerCapture === 'function') {
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+
     document.body.style.userSelect = 'none';
 };
 
 const onResizerMove = (e) => {
     if (!isResizing.value) return;
 
+    // If touch ended/canceled but we missed the end event, unlock resizing
+    if (e && e.touches && e.touches.length === 0) {
+        onResizerEnd();
+        return;
+    }
+
     // Prevent scroll while resizing (only when cancelable)
     if (e && e.cancelable) e.preventDefault();
 
     const currentY = (e && e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    if (typeof currentY !== 'number') return;
+
     const delta = currentY - startY.value;
     const newHeight = startHeight.value + delta;
 
@@ -146,6 +167,10 @@ const onResizerEnd = () => {
         isResizing.value = false;
         document.body.style.userSelect = '';
     }
+};
+
+const forceEndResize = () => {
+    if (isResizing.value) onResizerEnd();
 };
 
 const initializeMobileView = async () => {
@@ -208,6 +233,10 @@ onMounted(async () => {
   window.addEventListener('pointermove', onResizerMove, { passive: false });
   window.addEventListener('pointerup', onResizerEnd);
   window.addEventListener('pointercancel', onResizerEnd);
+  // iOS standalone: force end resize on system interruptions
+  window.addEventListener('touchcancel', onResizerEnd);
+  window.addEventListener('blur', forceEndResize);
+  document.addEventListener('visibilitychange', forceEndResize);
 
   await initializeMobileView();
 });
@@ -222,6 +251,9 @@ onUnmounted(() => {
     window.removeEventListener('pointermove', onResizerMove);
     window.removeEventListener('pointerup', onResizerEnd);
     window.removeEventListener('pointercancel', onResizerEnd);
+    window.removeEventListener('touchcancel', onResizerEnd);
+    window.removeEventListener('blur', forceEndResize);
+    document.removeEventListener('visibilitychange', forceEndResize);
 });
 
 const activeWidgetKey = ref(null);
@@ -550,7 +582,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
               
-              <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @pointerdown.stop.prevent="onResizerStart" @touchstart.stop.prevent="onResizerStart">
+              <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @pointerdown.stop.prevent="onResizerStart" @touchstart.stop.prevent="onResizerStart" @touchcancel.stop="onResizerEnd">
                   <div class="resizer-handle"></div>
               </div>
 
@@ -616,7 +648,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   overflow: hidden; 
   
   /* 🟢 FIX: Запрещаем стандартные жесты браузера (зум, свайп назад) */
-  touch-action: none;
+  touch-action: manipulation;
 }
 .loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
 .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
