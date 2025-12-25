@@ -108,26 +108,32 @@ const startHeight = ref(0);
 
 const onResizerStart = (e) => {
     isResizing.value = true;
-    startY.value = e.touches[0].clientY;
+
+    // TouchEvent vs Pointer/Mouse
+    const y = (e && e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    startY.value = y;
     startHeight.value = timelineHeight.value;
-    document.body.style.userSelect = 'none'; 
+
+    document.body.style.userSelect = 'none';
 };
 
 const onResizerMove = (e) => {
     if (!isResizing.value) return;
-    if (e.cancelable) e.preventDefault(); 
 
-    const currentY = e.touches[0].clientY;
+    // Prevent scroll while resizing (only when cancelable)
+    if (e && e.cancelable) e.preventDefault();
+
+    const currentY = (e && e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
     const delta = currentY - startY.value;
     const newHeight = startHeight.value + delta;
 
     const MIN_HEIGHT = 100;
-    
-    let MAX_HEIGHT = 500; 
+
+    let MAX_HEIGHT = 500;
     if (layoutBodyRef.value) {
         const bodyH = layoutBodyRef.value.clientHeight;
         const widgetsH = document.querySelector('.section-widgets')?.clientHeight || 0;
-        MAX_HEIGHT = bodyH - widgetsH - 80; 
+        MAX_HEIGHT = bodyH - widgetsH - 80;
     }
 
     if (newHeight >= MIN_HEIGHT && newHeight <= MAX_HEIGHT) {
@@ -199,6 +205,9 @@ onMounted(async () => {
 
   window.addEventListener('touchmove', onResizerMove, { passive: false });
   window.addEventListener('touchend', onResizerEnd);
+  window.addEventListener('pointermove', onResizerMove, { passive: false });
+  window.addEventListener('pointerup', onResizerEnd);
+  window.addEventListener('pointercancel', onResizerEnd);
 
   await initializeMobileView();
 });
@@ -210,6 +219,9 @@ onUnmounted(() => {
     
     window.removeEventListener('touchmove', onResizerMove);
     window.removeEventListener('touchend', onResizerEnd);
+    window.removeEventListener('pointermove', onResizerMove);
+    window.removeEventListener('pointerup', onResizerEnd);
+    window.removeEventListener('pointercancel', onResizerEnd);
 });
 
 const activeWidgetKey = ref(null);
@@ -538,7 +550,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
               
-              <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @touchstart.stop.prevent="onResizerStart">
+              <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @pointerdown.stop.prevent="onResizerStart" @touchstart.stop.prevent="onResizerStart">
                   <div class="resizer-handle"></div>
               </div>
 
@@ -749,6 +761,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 }
 
 .timeline-resizer {
+    position: relative;
     height: 14px;
     background: var(--color-background-soft, #282828);
     border-top: 1px solid #444;
