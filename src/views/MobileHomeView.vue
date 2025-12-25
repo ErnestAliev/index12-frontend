@@ -787,6 +787,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   z-index: 200;
   background-color: var(--color-background, #1a1a1a);
   box-sizing: border-box;
+  
 }
 .fs-regime-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; text-transform: uppercase; margin-top: 3px; display: inline-block; width: fit-content; }
 .badge-upr { background-color: rgba(52, 199, 89, 0.15); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.3); }

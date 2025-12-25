@@ -128,6 +128,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 0 16px;
+  padding-bottom: 24px;
 }
 
 .nav-center { display: flex; align-items: center; gap: 20px; }
