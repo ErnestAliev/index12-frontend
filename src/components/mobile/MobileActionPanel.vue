@@ -123,7 +123,7 @@ onMounted(async () => {
 }
 
 .chart-controls-row {
-  height: 68px;
+  height: 78px;
   display: flex;
   justify-content: space-between;
   align-items: center;
