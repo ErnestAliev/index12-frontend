@@ -374,16 +374,9 @@ const summaries = computed(() => {
       runningBalance = (firstStoreData.closingBalance || 0) - dayNet;
   }
 
-  // Корректировка на скрытые счета
-  if (excludedAccountIds.value.size > 0 && Array.isArray(mainStore.accounts)) {
-      let excludedSum = 0;
-      mainStore.accounts.forEach(a => {
-          if (a && excludedAccountIds.value.has(String(a._id))) {
-              excludedSum += Number(a.balance) || 0;
-          }
-      });
-      runningBalance -= excludedSum;
-  }
+  // 🟢 FIX: Корректировка на скрытые счета теперь не нужна.
+  // Базовый баланс (initialBalance) для dailyChartData уже считает только видимые счета,
+  // поэтому дополнительное «вычитание» приводит к рассинхрону.
 
   return props.visibleDays.map(day => { 
     if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; 

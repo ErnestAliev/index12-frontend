@@ -198,7 +198,13 @@ export const useProjectionStore = defineStore('projection', () => {
     const prepayIdsSet = new Set(mainStore.getPrepaymentCategoryIds || []); 
     const retailId = mainStore.retailIndividualId;
     
-    const totalInitialBalance = (mainStore.accounts || []).reduce((s,a)=>s + Number(a.initialBalance||0), 0);
+    // 🟢 FIX: Учитываем скрытые (excluded) счета при расчёте базового баланса.
+    // Иначе initialBalance скрытых счетов продолжает попадать в накопительный итог,
+    // а операции по ним уже фильтруются — из-за этого «итоги дня / остаток» не сходятся.
+    const totalInitialBalance = (mainStore.accounts || []).reduce((s, a) => {
+      if (!mainStore.includeExcludedInTotal && a && a.isExcluded) return s;
+      return s + Number(a?.initialBalance || 0);
+    }, 0);
 
     const byDateKey = {};
     
