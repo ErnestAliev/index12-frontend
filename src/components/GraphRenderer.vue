@@ -687,6 +687,37 @@ const expenseFloatData = computed(() => {
   });
 });
 
+// Контур расхода «внутри дохода» (когда income >= expense):
+// Если за день был и доход, и расход, но итоговый баланс не упал ниже start,
+// мы показываем расход как красный КОНТУР в верхней зелёной зоне, чтобы было видно оба.
+const expenseCapData = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const arr = Array.isArray(summaries.value) ? summaries.value : [];
+  const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
+  const peakVals = peakBalanceValues.value || [];
+
+  return arr.map((s, i) => {
+    const inc = Math.abs(Number(s?.income) || 0);
+    const exp = Math.abs(Number(s?.expense) || 0);
+    if (!inc || !exp) return [0, 0];
+
+    const start = Math.max(0, Number(startVals[i]) || 0);
+    const end = Math.max(0, Number(endVals[i]) || 0);
+    const peak = Math.max(0, Number(peakVals[i]) || 0);
+
+    // Если баланс упал ниже start — этот кейс уже показан красным сегментом снизу (expenseFloatData)
+    if (end < start) return [0, 0];
+
+    // Расход «внутри дохода»: рисуем контур от (peak - exp) до peak, но не ниже start
+    const from = Math.max(start, peak - exp);
+    const to = peak;
+    if (to <= from) return [0, 0];
+
+    return [from, to];
+  });
+});
+
 const incomeFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
@@ -925,6 +956,19 @@ const chartData = computed(() => {
         borderSkipped: false,
         grouped: false,
         stack: 'stack1'
+      },
+      // 🔴 Расход (контур внутри дохода — когда income >= expense)
+      {
+        type: 'bar',
+        label: 'Расход (контур)',
+        data: (expenseCapData.value || []).slice(0, labels.length),
+        backgroundColor: 'rgba(0,0,0,0)',
+        borderColor: 'rgba(255,59,48,1)',
+        borderWidth: 2,
+        borderSkipped: false,
+        grouped: false,
+        stack: 'stack1',
+        order: 4
       }
     ]
   };
