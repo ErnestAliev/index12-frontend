@@ -41,6 +41,163 @@ const showImportModal = ref(false);
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
 
+// --- AI ассистент (Desktop MVP, read-only) ---
+const isAiDrawerOpen = ref(false);
+const aiInput = ref('');
+const aiMessages = ref([]); // { id, role: 'user'|'assistant', text, copied? }
+const aiLoading = ref(false);
+const aiPaywall = ref(false);
+const aiPaywallReason = ref('AI ассистент доступен по подписке.');
+const aiMessagesRef = ref(null);
+const aiInputRef = ref(null);
+
+// --- AI voice input (Browser SpeechRecognition MVP) ---
+const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
+const isAiRecording = ref(false);
+let aiRecognition = null;
+let aiSpeechFinalBuffer = '';
+
+const _ensureAiRecognition = () => {
+  if (aiRecognition) return aiRecognition;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+
+  const r = new SR();
+  r.lang = 'ru-RU';
+  r.interimResults = true;
+  r.continuous = false;
+
+  r.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const res = event.results[i];
+      const transcript = (res[0]?.transcript || '').trim();
+      if (!transcript) continue;
+      if (res.isFinal) {
+        aiSpeechFinalBuffer = (aiSpeechFinalBuffer + ' ' + transcript).trim();
+      } else {
+        interim = transcript;
+      }
+    }
+    aiInput.value = (aiSpeechFinalBuffer + (interim ? ' ' + interim : '')).trim();
+  };
+
+  r.onend = () => {
+    isAiRecording.value = false;
+  };
+
+  r.onerror = () => {
+    isAiRecording.value = false;
+  };
+
+  aiRecognition = r;
+  return aiRecognition;
+};
+
+const toggleAiRecording = () => {
+  if (!aiSpeechSupported.value) {
+    alert('Голосовой ввод не поддерживается этим браузером.');
+    return;
+  }
+  if (aiLoading.value) return;
+
+  const r = _ensureAiRecognition();
+  if (!r) {
+    alert('Голосовой ввод не поддерживается этим браузером.');
+    return;
+  }
+
+  if (isAiRecording.value) {
+    try { r.stop(); } catch(e) {}
+    isAiRecording.value = false;
+    return;
+  }
+
+  aiSpeechFinalBuffer = '';
+  isAiRecording.value = true;
+  try { r.start(); } catch(e) { isAiRecording.value = false; }
+};
+
+const stopAiRecordingIfNeeded = () => {
+  if (!isAiRecording.value) return;
+  try { aiRecognition?.stop?.(); } catch(e) {}
+  isAiRecording.value = false;
+};
+
+const _makeAiMsg = (role, text) => ({
+  id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+  role,
+  text,
+  copied: false,
+});
+
+const scrollAiToBottom = () => {
+  const el = aiMessagesRef.value;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+};
+
+const openAiDrawer = () => {
+  isAiDrawerOpen.value = true;
+  aiPaywall.value = false;
+  nextTick(() => {
+    aiInputRef.value?.focus?.();
+    scrollAiToBottom();
+  });
+};
+
+const closeAiDrawer = () => {
+  isAiDrawerOpen.value = false;
+};
+
+const useQuickPrompt = (promptText) => {
+  aiInput.value = promptText;
+  nextTick(() => aiInputRef.value?.focus?.());
+};
+
+const copyAiText = async (msg) => {
+  try {
+    await navigator.clipboard.writeText(msg.text || '');
+    msg.copied = true;
+    setTimeout(() => { msg.copied = false; }, 1000);
+  } catch (e) {
+    alert('Не удалось скопировать');
+  }
+};
+
+const requestAiAccess = () => {
+  alert('AI доступен по подписке. Пока платежи не подключены — напиши администратору.');
+};
+
+const sendAiMessage = async () => {
+  stopAiRecordingIfNeeded();
+  const text = (aiInput.value || '').trim();
+  if (!text || aiLoading.value) return;
+
+  aiMessages.value.push(_makeAiMsg('user', text));
+  aiInput.value = '';
+  aiLoading.value = true;
+
+  try {
+    // read-only запрос на сервер (ключ OpenAI хранится только на backend)
+    const res = await axios.post(`${API_BASE_URL}/ai/query`, { message: text });
+    const answer = (res?.data?.text || '').trim() || 'Нет ответа.';
+    aiMessages.value.push(_makeAiMsg('assistant', answer));
+  } catch (err) {
+    const status = err?.response?.status;
+    if (status === 402 || status === 403) {
+      aiPaywall.value = true;
+      aiPaywallReason.value = err?.response?.data?.message || 'AI ассистент доступен по подписке.';
+      aiMessages.value.push(_makeAiMsg('assistant', 'AI доступен по подписке. Открой доступ и попробуй снова.'));
+    } else {
+      aiMessages.value.push(_makeAiMsg('assistant', 'Ошибка. Повтори запрос.'));
+    }
+  } finally {
+    aiLoading.value = false;
+    nextTick(scrollAiToBottom);
+  }
+};
+
 // Состояние для Prepayment Modal (Сценарий 1)
 const isPrepaymentModalVisible = ref(false);
 const prepaymentData = ref({});
@@ -593,10 +750,148 @@ const handleRefundDelete = async (op) => {
         <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div class="vertical-resizer" ref="resizerRef"></div></div>
         <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
-      <aside class="home-right-panel">
-        <button class="icon-btn header-expand-btn" :class="{ 'active': mainStore.isHeaderExpanded }" @click="mainStore.toggleHeaderExpansion" :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></button>
-        <button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button><button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></button><button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button><div class="user-profile-widget"><button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu"><img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" /><div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div><span class="user-name">{{ mainStore.user.name }}</span></button></div></aside>
+            <aside class="home-right-panel">
+        <button
+          class="icon-btn header-expand-btn"
+          :class="{ 'active': mainStore.isHeaderExpanded }"
+          @click="mainStore.toggleHeaderExpansion"
+          :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+        </button>
+
+        <button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </button>
+
+        <button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </button>
+
+        <button
+          class="icon-btn ai-btn"
+          :class="{ 'active': isAiDrawerOpen }"
+          @click.stop="openAiDrawer"
+          title="AI ассистент"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
+              <path d="M5 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"></path>
+            </svg>
+        </button>
+
+        <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+        </button>
+
+        <div class="user-profile-widget">
+          <button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu">
+            <img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" />
+            <div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div>
+            <span class="user-name">{{ mainStore.user.name }}</span>
+          </button>
+        </div>
+      </aside>
     </div>
+        <!-- AI ассистент (Desktop drawer) -->
+    <div v-if="isAiDrawerOpen" class="ai-drawer-overlay" @click="closeAiDrawer">
+      <div class="ai-drawer" @click.stop>
+        <div class="ai-drawer-header">
+          <div class="ai-drawer-title">AI ассистент</div>
+          <button class="ai-drawer-close" @click="closeAiDrawer" title="Закрыть">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="aiPaywall" class="ai-paywall">
+          <div class="ai-paywall-title">Функция платная</div>
+          <div class="ai-paywall-text">{{ aiPaywallReason }}</div>
+          <button class="ai-paywall-btn" disabled title="Скоро">Оплатить (скоро)</button>
+          <button class="ai-paywall-link" @click="requestAiAccess">Запросить доступ</button>
+        </div>
+
+        <template v-else>
+          <div class="ai-quick">
+            <button class="ai-quick-btn" @click="useQuickPrompt('Что на счетах?')">Счета</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Топ расходов за 30 дней')">Топ 30д</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Отчет за 30 дней')">Отчет 30д</button>
+          </div>
+
+          <div class="ai-messages" ref="aiMessagesRef">
+            <div v-for="msg in aiMessages" :key="msg.id" class="ai-message" :class="msg.role">
+              <div class="ai-bubble">
+                <div class="ai-text">{{ msg.text }}</div>
+                <div class="ai-actions" v-if="msg.role === 'assistant'">
+                  <button class="ai-copy-btn" @click="copyAiText(msg)">{{ msg.copied ? '✅' : 'Копировать' }}</button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="aiLoading" class="ai-typing">Думаю...</div>
+          </div>
+
+          <div class="ai-input-row">
+            <input
+              ref="aiInputRef"
+              v-model="aiInput"
+              class="ai-input"
+              placeholder="Спроси: что на счетах? (Enter — отправить)"
+              @keydown.enter.prevent="sendAiMessage"
+            />
+
+            <button
+              class="ai-mic-btn"
+              :class="{ recording: isAiRecording }"
+              :disabled="aiLoading || !aiSpeechSupported"
+              @click="toggleAiRecording"
+              :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+                <path d="M19 11a7 7 0 0 1-14 0" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
+
+            <button
+              class="ai-send-btn"
+              :disabled="aiLoading || !(aiInput || '').trim()"
+              @click="sendAiMessage"
+              title="Отправить"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+
+          <div class="ai-hint">Только чтение данных. Ответ короткий, удобный для WhatsApp.</div>
+        </template>
+      </div>
+    </div>
+
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
     <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
     
@@ -715,6 +1010,11 @@ const handleRefundDelete = async (op) => {
 .graph-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
+.ai-btn { position: absolute; top: 128px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
+.ai-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+.ai-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
+.ai-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
 .about-btn { position: absolute; bottom: 64px; right: 0px; transform: translateX(-50%); z-index: 20; background: var(--color-primary); border: 1px solid var(--color-primary); color: #ffffff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.2s; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); }
 .about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
@@ -734,4 +1034,119 @@ const handleRefundDelete = async (op) => {
 .summaries-container { flex-shrink: 0; }
 .nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
 .divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); }
+/* --- AI Drawer (Desktop) --- */
+.ai-drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: 2600; display: flex; justify-content: flex-end; }
+.ai-drawer { width: 420px; max-width: calc(100vw - 20px); height: 100%; background: var(--color-background); border-left: 1px solid var(--color-border); box-shadow: -10px 0 30px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
+.ai-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-background-soft); }
+.ai-drawer-title { font-weight: 700; font-size: 14px; color: var(--color-heading); }
+.ai-drawer-close { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s, border-color 0.2s; }
+.ai-drawer-close:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+
+.ai-quick { padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--color-border); }
+.ai-quick-btn { padding: 6px 10px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font-size: 12px; }
+.ai-quick-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+
+.ai-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ai-message { display: flex; }
+.ai-message.user { justify-content: flex-end; }
+.ai-message.assistant { justify-content: flex-start; }
+.ai-bubble { max-width: 90%; border: 1px solid var(--color-border); background: var(--color-background-soft); border-radius: 14px; padding: 10px 10px; }
+.ai-message.user .ai-bubble { background: rgba(52, 199, 89, 0.10); border-color: rgba(52, 199, 89, 0.35); }
+.ai-text { white-space: pre-wrap; font-size: 13px; line-height: 1.35; color: var(--color-text); }
+.ai-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+.ai-copy-btn { border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); border-radius: 10px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.ai-copy-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+
+.ai-typing { color: var(--color-text-mute); font-size: 12px; padding: 4px 0 0 2px; }
+
+.ai-input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--color-border); background: var(--color-background-soft); }
+.ai-input { flex: 1; height: 36px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); padding: 0 10px; outline: none; }
+.ai-input:focus { border-color: var(--color-border-hover); }
+.ai-send-btn {
+  width: 40px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+  cursor: pointer;
+ 
+  place-items: center;
+  transition: background-color 0.2s, border-color 0.2s, transform 0.08s;
+}
+.ai-send-btn:hover {
+  background: #28a745;
+  border-color: #28a745;
+}
+.ai-send-btn:active {
+  transform: scale(0.98);
+}
+.ai-send-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--color-background-mute);
+  border-color: var(--color-border);
+  color: var(--color-text-mute);
+  transform: none;
+}
+
+.ai-mic-btn {
+  width: 40px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text);
+  cursor: pointer;
+  
+  place-items: center;
+  transition: background-color 0.2s, border-color 0.2s, transform 0.08s;
+}
+.ai-mic-btn:hover {
+  background: var(--color-background-mute);
+  border-color: var(--color-border-hover);
+}
+.ai-mic-btn:active {
+  transform: scale(0.98);
+}
+.ai-mic-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ai-mic-btn.recording {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: rgba(52, 199, 89, 0.10);
+  animation: aiPulse 1.1s ease-in-out infinite;
+}
+@keyframes aiPulse {
+  0% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
+  50% { box-shadow: 0 0 14px rgba(52, 199, 89, 0.35); }
+  100% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
+}
+
+.ai-send-btn svg,
+.ai-mic-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex: none;
+  min-width: 18px;
+  min-height: 18px;
+}
+
+.ai-send-btn svg * ,
+.ai-mic-btn svg * {
+  vector-effect: non-scaling-stroke;
+}
+
+.ai-hint { padding: 0 12px 12px; font-size: 11px; color: var(--color-text-mute); background: var(--color-background-soft); }
+
+.ai-paywall { padding: 14px 12px; }
+.ai-paywall-title { font-weight: 800; font-size: 14px; color: var(--color-heading); margin-bottom: 6px; }
+.ai-paywall-text { font-size: 12px; color: var(--color-text); opacity: 0.85; margin-bottom: 10px; }
+.ai-paywall-btn { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-mute); color: var(--color-text-mute); cursor: not-allowed; margin-bottom: 8px; }
+.ai-paywall-link { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; }
+.ai-paywall-link:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+
 </style>

@@ -2,7 +2,7 @@
 import { computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
-const emit = defineEmits(['action', 'open-graph']);
+const emit = defineEmits(['action', 'open-ai']);
 const mainStore = useMainStore();
 
 const viewModes = [
@@ -55,7 +55,7 @@ const switchViewMode = async (direction) => {
     await mainStore.loadCalculationData(newMode, targetDate);
 };
 
-const openGraph = () => emit('open-graph');
+const openAi = () => emit('open-ai');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
 onMounted(async () => {
@@ -72,9 +72,13 @@ onMounted(async () => {
 <template>
   <div class="mobile-action-panel-wrapper">
     <div class="chart-controls-row">
-      <!-- Левая кнопка: График -->
-      <button class="icon-circle clickable" @click="openGraph">
-         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect x="3" y="12" width="6" height="8"></rect><rect x="9" y="8" width="6" height="12"></rect><rect x="15" y="4" width="6" height="16"></rect></svg>
+      <!-- Левая кнопка: AI ассистент -->
+      <button class="icon-circle clickable" @click="openAi" title="AI ассистент">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2l1.2 4.2L17.4 8 13.2 9.2 12 13.4 10.8 9.2 6.6 8l4.2-1.8L12 2z" />
+          <path d="M19 10l.9 3.1L23 14l-3.1.9L19 18l-.9-3.1L15 14l3.1-.9L19 10z" />
+          <path d="M5 12l.8 2.6L8.4 15l-2.6.8L5 18.4l-.8-2.6L1.6 15l2.6-.8L5 12z" />
+        </svg>
       </button>
       
       <!-- Центр: Переключатель режимов -->
@@ -150,8 +154,9 @@ onMounted(async () => {
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,0.1);
   display: flex; align-items: center; justify-content: center;
-  color: #aaa; background: transparent; padding: 0; cursor: pointer;
+  color: var(--color-heading, #fff); background: transparent; padding: 0; cursor: pointer;
   transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
 }
 .icon-circle:active, .header-expand-btn:active { background-color: rgba(255,255,255,0.1); color: #fff; border-color: #fff; }
 
@@ -160,4 +165,6 @@ onMounted(async () => {
   border-color: var(--color-primary, #34c759);
   background: rgba(52, 199, 89, 0.1);
 }
+
+.icon-circle svg, .header-expand-btn svg { display: block; }
 </style>

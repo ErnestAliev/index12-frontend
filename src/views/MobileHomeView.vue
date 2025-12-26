@@ -18,7 +18,6 @@ import TransferPopup from '@/components/TransferPopup.vue';
 import WithdrawalPopup from '@/components/WithdrawalPopup.vue';
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
 import RefundPopup from '@/components/RefundPopup.vue';
-import MobileGraphModal from '@/components/mobile/MobileGraphModal.vue';
 import PrepaymentModal from '@/components/PrepaymentModal.vue';
 import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import InfoModal from '@/components/InfoModal.vue';
@@ -37,7 +36,6 @@ const timelineRef = ref(null);
 const chartRef = ref(null);
 const layoutBodyRef = ref(null); 
 
-const showGraphModal = ref(false);
 const isWidgetsLoading = ref(true); 
 const isTimelineLoading = ref(true);
 
@@ -68,6 +66,161 @@ const infoModalMessage = ref('');
 
 const isContextMenuVisible = ref(false);
 const contextMenuPosition = ref({ top: '0px', left: '0px' });
+
+// =================================================================
+// 🟣 AI ассистент (Mobile MVP, read-only)
+// =================================================================
+const showAiModal = ref(false);
+const aiInput = ref('');
+const aiMessages = ref([]); // { id, role: 'user'|'assistant', text, copied? }
+const aiLoading = ref(false);
+const aiPaywall = ref(false);
+const aiInputRef = ref(null);
+
+// Voice input (best-effort; works mostly in Chrome)
+const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
+const isAiRecording = ref(false);
+let aiRecognition = null;
+let aiSpeechFinalBuffer = '';
+
+const _ensureAiRecognition = () => {
+  if (aiRecognition) return aiRecognition;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+
+  const r = new SR();
+  r.lang = 'ru-RU';
+  r.interimResults = true;
+  r.continuous = false;
+
+  r.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const res = event.results[i];
+      const transcript = (res[0]?.transcript || '').trim();
+      if (!transcript) continue;
+      if (res.isFinal) {
+        aiSpeechFinalBuffer = (aiSpeechFinalBuffer + ' ' + transcript).trim();
+      } else {
+        interim = transcript;
+      }
+    }
+    aiInput.value = (aiSpeechFinalBuffer + (interim ? ' ' + interim : '')).trim();
+  };
+
+  r.onend = () => { isAiRecording.value = false; };
+  r.onerror = () => { isAiRecording.value = false; };
+
+  aiRecognition = r;
+  return aiRecognition;
+};
+
+const stopAiRecordingIfNeeded = () => {
+  if (!isAiRecording.value) return;
+  try { aiRecognition?.stop?.(); } catch (_) {}
+  isAiRecording.value = false;
+};
+
+const toggleAiRecording = () => {
+  if (!aiSpeechSupported.value) return;
+  if (aiLoading.value) return;
+
+  const r = _ensureAiRecognition();
+  if (!r) return;
+
+  if (isAiRecording.value) {
+    try { r.stop(); } catch (_) {}
+    isAiRecording.value = false;
+    return;
+  }
+
+  aiSpeechFinalBuffer = '';
+  isAiRecording.value = true;
+  try { r.start(); } catch (_) { isAiRecording.value = false; }
+};
+
+const openAiModal = async () => {
+  showAiModal.value = true;
+  try { document.body.style.overflow = 'hidden'; } catch (_) {}
+  await nextTick();
+  try { aiInputRef.value?.focus?.(); } catch (_) {}
+};
+
+const closeAiModal = () => {
+  stopAiRecordingIfNeeded();
+  try { document.body.style.overflow = ''; } catch (_) {}
+  showAiModal.value = false;
+};
+
+const pushAiMessage = (role, text) => {
+  aiMessages.value.push({
+    id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    role,
+    text: (text || '').toString(),
+    copied: false,
+  });
+  if (aiMessages.value.length > 50) aiMessages.value.splice(0, aiMessages.value.length - 50);
+};
+
+const copyAiText = async (msg) => {
+  try {
+    await navigator.clipboard.writeText(msg.text || '');
+    msg.copied = true;
+    setTimeout(() => { msg.copied = false; }, 1000);
+  } catch (_) {
+    alert('Не удалось скопировать');
+  }
+};
+
+const sendAiMessage = async () => {
+  const q = (aiInput.value || '').trim();
+  if (!q || aiLoading.value) return;
+
+  stopAiRecordingIfNeeded();
+  aiPaywall.value = false;
+
+  pushAiMessage('user', q);
+  aiInput.value = '';
+  aiLoading.value = true;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/ai/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ message: q }),
+    });
+
+    if (res.status === 402 || res.status === 403) {
+      aiPaywall.value = true;
+      pushAiMessage('assistant', 'AI не активирован.');
+      return;
+    }
+
+    if (!res.ok) {
+      pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
+      return;
+    }
+
+    const data = await res.json();
+    pushAiMessage('assistant', data?.text || 'Ок.');
+  } catch (_) {
+    pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
+  } finally {
+    aiLoading.value = false;
+    await nextTick();
+    try {
+      const box = document.querySelector('.ai-modal-messages');
+      if (box) box.scrollTop = box.scrollHeight;
+    } catch (_) {}
+  }
+};
+
+const runAiQuick = async (preset) => {
+  aiInput.value = preset;
+  await nextTick();
+  await sendAiMessage();
+};
 
 // --- Scroll Sync Logic ---
 let isTimelineScrolling = false;
@@ -593,7 +746,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             </div>
             
             <div class="fixed-footer">
-              <MobileActionPanel @action="handleAction" @open-graph="showGraphModal = true" />
+              <MobileActionPanel @action="handleAction" @open-ai="openAiModal" />
             </div>
         </div>
     </template>
@@ -602,7 +755,6 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
     <!-- Popups -->
     <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
-    <MobileGraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
     <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" />
     <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
@@ -612,6 +764,79 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
     <TaxPaymentDetailsPopup v-if="isTaxDetailsPopupVisible" :operation-to-edit="operationToEdit" @close="isTaxDetailsPopupVisible = false" @delete="handleTaxDelete" />
+
+    <!-- 🟣 AI ассистент (Mobile Fullscreen Overlay) -->
+    <Teleport to="body">
+      <div v-if="showAiModal" class="ai-modal-overlay" @click.self="closeAiModal">
+        <div class="ai-modal">
+          <div class="ai-modal-header">
+            <div class="ai-modal-title">AI ассистент</div>
+            <button class="ai-modal-close" @click="closeAiModal" title="Закрыть">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          <div class="ai-modal-chips">
+            <button class="ai-chip" @click="runAiQuick('что у нас на счетах')">Счета</button>
+            <button class="ai-chip" @click="runAiQuick('топ расходов за 30 дней')">Топ 30д</button>
+            <button class="ai-chip" @click="runAiQuick('отчет за 30 дней')">Отчет 30д</button>
+          </div>
+
+          <div class="ai-modal-body">
+            <div v-if="aiPaywall" class="ai-paywall">
+              <div class="ai-paywall-title">AI — платная функция</div>
+              <div class="ai-paywall-text">Оплата будет добавлена позже. Сейчас доступ включается вручную.</div>
+            </div>
+
+            <div v-else class="ai-modal-messages">
+              <div v-for="m in aiMessages" :key="m.id" class="ai-msg" :class="m.role">
+                <div class="ai-bubble">{{ m.text }}</div>
+                <button v-if="m.role === 'assistant'" class="ai-copy" @click="copyAiText(m)">
+                  {{ m.copied ? '✅' : 'Копировать' }}
+                </button>
+              </div>
+              <div v-if="aiLoading" class="ai-typing">Думаю…</div>
+            </div>
+          </div>
+
+          <div class="ai-modal-input">
+            <input
+              ref="aiInputRef"
+              v-model="aiInput"
+              class="ai-input"
+              placeholder="Спроси: что на счетах? (Enter — отправить)"
+              @keydown.enter.prevent="sendAiMessage"
+            />
+
+            <button
+              class="ai-btn ai-mic"
+              :class="{ recording: isAiRecording }"
+              :disabled="aiLoading || !aiSpeechSupported"
+              @click="toggleAiRecording"
+              :title="aiSpeechSupported ? (isAiRecording ? 'Стоп' : 'Голос') : 'Голос не поддерживается'"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+                <path d="M19 11a7 7 0 0 1-14 0" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
+
+            <button class="ai-btn ai-send" :disabled="aiLoading || !(aiInput || '').trim()" @click="sendAiMessage" title="Отправить">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </button>
+          </div>
+
+          <div class="ai-hint">Только чтение данных. Ответ короткий, удобный для WhatsApp.</div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -837,4 +1062,244 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 .fs-regime-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; text-transform: uppercase; margin-top: 3px; display: inline-block; width: fit-content; }
 .badge-upr { background-color: rgba(52, 199, 89, 0.15); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.3); }
 .badge-our { background-color: rgba(255, 157, 0, 0.15); color: #FF9D00; border: 1px solid rgba(255, 157, 0, 0.3); }
+/* =====================
+   🟣 AI modal (mobile)
+   ===================== */
+.ai-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 99999;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.ai-modal {
+  width: 100%;
+  height: 100dvh;
+  background: var(--color-background, #1a1a1a);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  border: 1px solid var(--color-border, #444);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ai-modal-header {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  background: var(--color-background-soft, #282828);
+  border-bottom: 1px solid var(--color-border, #444);
+}
+
+.ai-modal-title {
+  color: #fff;
+  font-weight: 900;
+  font-size: 15px;
+}
+
+.ai-modal-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, #444);
+  background: transparent;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-modal-close svg { display: block; }
+
+.ai-modal-chips {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ai-chip {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, #444);
+  background: var(--color-background-soft, #282828);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow: hidden;
+  display: flex;
+}
+
+.ai-modal-messages {
+  width: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.ai-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-msg.user {
+  align-items: flex-end;
+}
+
+.ai-msg.assistant {
+  align-items: flex-start;
+}
+
+.ai-bubble {
+  max-width: 88%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border, #444);
+  background: var(--color-background-soft, #282828);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: pre-line;
+}
+
+.ai-msg.user .ai-bubble {
+  background: rgba(52, 199, 89, 0.16);
+  border-color: rgba(52, 199, 89, 0.28);
+}
+
+.ai-copy {
+  border: 1px solid var(--color-border, #444);
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-typing {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  padding: 6px 2px;
+}
+
+.ai-paywall {
+  width: 100%;
+  border: 1px solid var(--color-border, #444);
+  background: var(--color-background-soft, #282828);
+  border-radius: 12px;
+  padding: 14px;
+  color: #fff;
+}
+
+.ai-paywall-title {
+  font-weight: 900;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.ai-paywall-text {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.ai-modal-input {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--color-border, #444);
+  align-items: center;
+}
+
+.ai-input {
+  flex: 1;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border, #444);
+  background: var(--color-background-soft, #282828);
+  color: #fff;
+  padding: 0 12px;
+  outline: none;
+}
+
+.ai-btn {
+  width: 40px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border, #444);
+  background: var(--color-background-soft, #282828);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ai-btn.ai-send {
+  border-color: rgba(52, 199, 89, 0.45);
+  background: rgba(52, 199, 89, 0.16);
+}
+
+.ai-btn.recording {
+  border-color: var(--color-primary, #34c759);
+  color: var(--color-primary, #34c759);
+  animation: aiPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
+  50% { box-shadow: 0 0 14px rgba(52, 199, 89, 0.35); }
+  100% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
+}
+
+.ai-btn svg { display: block; }
+
+.ai-hint {
+  padding: 8px 14px 12px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Ensure the modal is not constrained by any ancestor stacking/overflow */
+.ai-modal-overlay, .ai-modal {
+  pointer-events: auto;
+}
+
+.ai-modal {
+  position: relative;
+}
+
 </style>
