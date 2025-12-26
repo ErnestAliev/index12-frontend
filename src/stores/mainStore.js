@@ -1622,44 +1622,96 @@ const startDate = taxOpsMaxDate.value
     }
   }
 
-  async function fetchOperationsRange(startDate, endDate) {
+  async function fetchOperationsRange(startDate, endDate, options = {}) {
     try {
+      if (!startDate || !endDate) return;
+
+      const s0 = new Date(startDate);
+      const e0 = new Date(endDate);
+      if (Number.isNaN(s0.getTime()) || Number.isNaN(e0.getTime())) return;
+
+      // Normalize order
+      let start = s0;
+      let end = e0;
+      if (start.getTime() > end.getTime()) {
+        const t = start;
+        start = end;
+        end = t;
+      }
+
+      start = new Date(start);
+      end = new Date(end);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+
+      const dayCount = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+
+      // For very large history requests (years), DO NOT iterate day-by-day (it freezes UI).
+      // Also fetch in chunks to avoid backend/timeouts.
+      const chunkDays = Number(options?.chunkDays || 120);
+      const sparseOpt = options?.sparse;
+      const useSparse = (sparseOpt === true) || (sparseOpt !== false && dayCount > 200);
+
+      let processedOps = [];
+
+      if (dayCount > chunkDays) {
+        // Chunked fetch (safe for big histories)
+        processedOps = await _fetchOperationsListChunked(start, end, chunkDays);
+      } else {
+        // Small range: one request is OK
         const response = await axios.get(`${API_BASE_URL}/events`, {
-            params: {
-                startDate: startDate.toISOString(),
-                endDate: endDate.toISOString()
-            }
+          params: {
+            startDate: start.toISOString(),
+            endDate: end.toISOString()
+          }
         });
-        
+
         const rawOps = Array.isArray(response.data) ? response.data : [];
-        const processedOps = _mergeTransfers(rawOps);
-        
-        const fetchedMap = new Map();
-        processedOps.forEach(op => {
-            const dk = op.dateKey || _getDateKey(new Date(op.date));
-            if (!fetchedMap.has(dk)) fetchedMap.set(dk, []);
-            fetchedMap.get(dk).push(_populateOp({ ...op, dateKey: dk }));
+        processedOps = _mergeTransfers(rawOps).map(op => {
+          const dk = op.dateKey || _getDateKey(new Date(op.date));
+          return _populateOp({ ...op, dateKey: dk });
         });
+      }
 
-        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-            const dateKey = _getDateKey(d);
-            
-            const serverOps = fetchedMap.get(dateKey) || [];
-            
-            let existingOptimistic = [];
-            if (displayCache.value[dateKey]) {
-                existingOptimistic = displayCache.value[dateKey].filter(o => o.isOptimistic);
-            }
-            
-            const finalOps = [...existingOptimistic, ...serverOps].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
-            
-            displayCache.value[dateKey] = finalOps;
-            calculationCache.value[dateKey] = [...finalOps];
+      // Group by day key
+      const fetchedMap = new Map();
+      processedOps.forEach(op => {
+        if (!op) return;
+        const dk = op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : null);
+        if (!dk) return;
+        if (!fetchedMap.has(dk)) fetchedMap.set(dk, []);
+        fetchedMap.get(dk).push(op);
+      });
+
+      const applyDay = (dateKey, serverOps) => {
+        const existing = Array.isArray(displayCache.value[dateKey]) ? displayCache.value[dateKey] : [];
+        const existingOptimistic = existing.filter(o => o && o.isOptimistic);
+
+        const finalOps = [...existingOptimistic, ...(serverOps || [])]
+          .filter(o => o && typeof o === 'object')
+          .sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
+
+        displayCache.value[dateKey] = finalOps;
+        calculationCache.value[dateKey] = [...finalOps];
+      };
+
+      if (useSparse) {
+        // Large history preload: update ONLY days that actually have operations
+        fetchedMap.forEach((ops, dk) => {
+          applyDay(dk, ops);
+        });
+      } else {
+        // Small visible range: keep old behavior (fill every day) so UI shows empty days consistently
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const dateKey = _getDateKey(d);
+          const serverOps = fetchedMap.get(dateKey) || [];
+          applyDay(dateKey, serverOps);
         }
+      }
 
-    } catch (error) { 
-        if (error.response && error.response.status === 401) user.value = null; 
-        console.error("Bulk Fetch Error:", error);
+    } catch (error) {
+      if (error.response && error.response.status === 401) user.value = null;
+      console.error('Bulk Fetch Error:', error);
     }
   }
 

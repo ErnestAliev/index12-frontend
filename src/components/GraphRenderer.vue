@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, nextTick, onUnmounted } from 'vue';
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -114,6 +114,7 @@ const normalizedVisibleDays = computed(() => {
 const mainStore = useMainStore();
 
 const projectionStore = useProjectionStore();
+const historyLoadTick = ref(0);
 
 // Начальный баланс (сумма initialBalance по счетам), с учетом флага includeExcludedInTotal
 const initialTotalBalance = computed(() => {
@@ -159,6 +160,94 @@ const isOpVisible = (op) => {
   }
   return true;
 };
+
+// --- Ensure SummaryDay (summaries) does NOT depend on the visible range.
+// We must have all historical operations loaded; otherwise the first render (e.g. 12 days) will miss past ops.
+// This preloads operations once (shared across GraphModal + main chart instances).
+const __OPS_PRELOAD_STATE_KEY = '__index12_ops_preload_state_v1';
+const _getOpsPreloadState = () => {
+  const g = globalThis;
+  if (!g[__OPS_PRELOAD_STATE_KEY]) {
+    g[__OPS_PRELOAD_STATE_KEY] = { pending: null, start: null, end: null, loadedAt: 0 };
+  }
+  return g[__OPS_PRELOAD_STATE_KEY];
+};
+
+const _coerceDate = (v) => {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+};
+
+const _getUserMinEventDate = () => {
+  // mainStore.user may contain minEventDate (preferred) or createdAt (fallback)
+  const u = mainStore.user;
+  const d = _coerceDate(u?.minEventDate || u?.createdAt);
+  return d;
+};
+
+const _getHistoryEndDate = () => {
+  // Итоги/балансы считаем до текущего дня, а не до границы видимого окна (иначе при переключателе 12д -> 1м будут “скачки”)
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+};
+
+const ensureOpsHistoryForSummaries = async () => {
+  const start = _getUserMinEventDate();
+  if (!start) return;
+
+  // Use the history end date (today) as the end bound.
+  const end = _getHistoryEndDate();
+  if (!end) return;
+
+  const st = _getOpsPreloadState();
+
+  // Already loaded enough
+  if (st.start && st.end) {
+    const loadedStart = _coerceDate(st.start);
+    const loadedEnd = _coerceDate(st.end);
+    if (loadedStart && loadedEnd && loadedStart.getTime() <= start.getTime() && loadedEnd.getTime() >= end.getTime()) {
+      return;
+    }
+  }
+
+  if (st.pending) {
+    try { await st.pending; } catch (e) {}
+    return;
+  }
+
+  st.pending = (async () => {
+    try {
+      // Preload full past history once. Use sparse mode to avoid filling thousands of empty days.
+      await mainStore.fetchOperationsRange(start, end, { sparse: true });
+      st.start = start;
+      st.end = end;
+      st.loadedAt = (Number(st.loadedAt) || 0) + 1;
+    } finally {
+      st.pending = null;
+    }
+  })();
+
+  try { await st.pending; } catch (e) {}
+
+  // Force recompute in this component instance even if mainStore.cacheVersion wasn't bumped.
+  historyLoadTick.value = Number(st.loadedAt) || 0;
+};
+
+onMounted(() => {
+  // preload ASAP so the very first 12-day render has correct running balances
+  ensureOpsHistoryForSummaries();
+});
+
+watch(
+  [normalizedVisibleDays, () => mainStore.user?.minEventDate, () => mainStore.user?.createdAt],
+  () => {
+    ensureOpsHistoryForSummaries();
+  },
+  { immediate: true }
+);
 
 // ... (externalTooltipHandler logic) ...
 const externalTooltipHandler = (context) => {
@@ -564,87 +653,235 @@ watch(
 );
 
 // 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES)
-// Важно: НЕ якоримся к currentTotalBalance (текущему), иначе при смене диапазона/скролле
-// баланс в прошлом «прыгает». Якорь — initialTotalBalance + накопленный эффект операций по датам.
+// Ключевая цель: summaries НЕ должны зависеть от выбранного окна.
+// Мы считаем от начального баланса + ВСЕ операции, которые уже известны (и preloaded выше).
+
+const _cmpDateKey = (ka, kb) => {
+  const [y1, d1] = String(ka || '0-0').split('-').map(Number);
+  const [y2, d2] = String(kb || '0-0').split('-').map(Number);
+  return (y1 - y2) || (d1 - d2);
+};
+
+const _asArray = (v) => (Array.isArray(v) ? v : Array.isArray(v?.value) ? v.value : []);
+
+const _unrefAny = (v) => {
+  if (!v) return v;
+  if (typeof v === 'object' && 'value' in v) return v.value;
+  return v;
+};
+// Все операции, которые участвуют в расчёте баланса (объединяем источники и убираем дубли)
+const opsForSummaries = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const _h = historyLoadTick.value;
+
+  const seen = new Set();
+  const out = [];
+
+  const push = (op) => {
+    if (!op) return;
+    const id = op._id ? String(op._id) : null;
+    if (id) {
+      if (seen.has(id)) return;
+      seen.add(id);
+    }
+    out.push(op);
+  };
+
+  // Источник для SummaryDay должен включать ВСЮ историю, которую мы подгружаем через fetchOperationsRange.
+  // В mainStore это лежит в displayCache, и наружу (в store) обычно прокинуто как displayOperationsFlat.
+  // Если в вашем store его нет — строка безопасна (просто будет пустой массив).
+  _asArray(mainStore.allKnownOperations).forEach(push);
+  _asArray(mainStore.displayOperationsFlat).forEach(push);
+  _asArray(mainStore.currentOps).forEach(push);
+
+  const dc = _unrefAny(mainStore.displayCache);
+  if (dc && typeof dc === 'object') {
+    Object.values(dc).forEach((list) => {
+      _asArray(list).forEach(push);
+    });
+  }
+
+  const cc = _unrefAny(mainStore.calculationCache);
+  if (cc && typeof cc === 'object') {
+    Object.values(cc).forEach((list) => {
+      _asArray(list).forEach(push);
+    });
+  }
+
+  return out;
+});
+
+// Сводка операций по дням (для расчёта running balance)
+const dailyAggForSummaries = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const _h = historyLoadTick.value;
+
+  const ops = opsForSummaries.value;
+  const map = new Map();
+
+  const prepayIds = _asArray(mainStore.getPrepaymentCategoryIds);
+  const creditCatId = mainStore.creditCategoryId;
+  const retailId = mainStore.retailIndividualId;
+
+  const getRec = (key) => {
+    if (!map.has(key)) {
+      map.set(key, {
+        incomeMain: 0,
+        prepayment: 0,
+        expense: 0,
+        withdrawal: 0
+      });
+    }
+    return map.get(key);
+  };
+
+  for (const op of ops) {
+    if (!op) continue;
+    if (!isOpVisible(op)) continue;
+
+    // Игнорируем переводы (кроме вывода средств)
+    if (op.isTransfer && !op.isWithdrawal) continue;
+
+    const dt = _coerceDate(op.date);
+    if (!dt) continue;
+
+    const key = _getDateKey(dt);
+    const rec = getRec(key);
+
+    const amt = Number(op.amount) || 0;
+    const absAmt = Math.abs(amt);
+
+    if (op.isWithdrawal) {
+      rec.withdrawal += absAmt;
+      continue;
+    }
+
+    if (op.type === 'expense') {
+      // исключаем списания розницы, если так принято в UI
+      if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) continue;
+      if (mainStore._isInterCompanyOp && mainStore._isInterCompanyOp(op)) continue;
+      rec.expense += absAmt;
+      continue;
+    }
+
+    if (op.type === 'income') {
+      const catId = op.categoryId?._id || op.categoryId;
+      const prepId = op.prepaymentId?._id || op.prepaymentId;
+      const isCredit = creditCatId && String(catId) === String(creditCatId);
+
+      const isPrepayCategory =
+        (catId && prepayIds.includes(catId)) ||
+        (prepId && prepayIds.includes(prepId)) ||
+        (op.categoryId && op.categoryId.isPrepayment);
+
+      const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
+      const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+      const isRetailPrepay = retailId && String(indId) === String(retailId) && op.isClosed !== true;
+
+      if (!op.isClosed && !isCredit && (isTranche || isPrepayCategory || isRetailPrepay)) {
+        rec.prepayment += absAmt;
+      } else {
+        // Кредит и обычный доход — зелёная часть (incomeMain)
+        rec.incomeMain += absAmt;
+      }
+    }
+  }
+
+  return map;
+});
+
+// Хронология closing balance по всем известным дням
+const closingTimelineForSummaries = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const _h = historyLoadTick.value;
+
+  const agg = dailyAggForSummaries.value;
+  const keys = Array.from(agg.keys()).sort(_cmpDateKey);
+
+  let running = Math.max(0, Number(initialTotalBalance.value || 0));
+  const closingByKey = new Map();
+  const balances = [];
+
+  for (const k of keys) {
+    const rec = agg.get(k);
+    const inc = Math.abs(Number(rec?.incomeMain || 0)) + Math.abs(Number(rec?.prepayment || 0));
+    const exp = Math.abs(Number(rec?.expense || 0)) + Math.abs(Number(rec?.withdrawal || 0));
+    running = Math.max(0, running + inc - exp);
+    closingByKey.set(k, running);
+    balances.push(running);
+  }
+
+  return { keys, balances, closingByKey };
+});
+
+const _findLastKeyBefore = (sortedKeys, targetKey) => {
+  // returns index of last key < targetKey, or -1
+  let lo = 0;
+  let hi = sortedKeys.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const cmp = _cmpDateKey(sortedKeys[mid], targetKey);
+    if (cmp < 0) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return ans;
+};
+
 const summaries = computed(() => {
   const _v = mainStore.cacheVersion;
-
-  // зависимости (чтобы Vue пересчитывал при обновлении расчёта)
-  const chartMap = (projectionStore.dailyChartData instanceof Map)
-    ? projectionStore.dailyChartData
-    : projectionStore.dailyChartData?.value;
+  const _h = historyLoadTick.value;
 
   const daysSrc = normalizedVisibleDays.value;
   if (!Array.isArray(daysSrc) || daysSrc.length === 0) return [];
 
-  const days = [...daysSrc].filter(Boolean).sort((a, b) => {
-    const ta = a?.date instanceof Date ? a.date.getTime() : new Date(a?.date).getTime();
-    const tb = b?.date instanceof Date ? b.date.getTime() : new Date(b?.date).getTime();
-    return ta - tb;
-  });
+  const days = [...daysSrc]
+    .filter(Boolean)
+    .sort((a, b) => {
+      const ta = a?.date instanceof Date ? a.date.getTime() : new Date(a?.date).getTime();
+      const tb = b?.date instanceof Date ? b.date.getTime() : new Date(b?.date).getTime();
+      return ta - tb;
+    });
 
-  const map = chartMap instanceof Map ? chartMap : new Map();
+  const agg = dailyAggForSummaries.value;
+  const tl = closingTimelineForSummaries.value;
+  const tlKeys = Array.isArray(tl?.keys) ? tl.keys : [];
+  const tlBalances = Array.isArray(tl?.balances) ? tl.balances : [];
+  const closingByKey = tl?.closingByKey instanceof Map ? tl.closingByKey : new Map();
 
-  const _cmpDateKey = (ka, kb) => {
-    const [y1, d1] = String(ka || '0-0').split('-').map(Number);
-    const [y2, d2] = String(kb || '0-0').split('-').map(Number);
-    return (y1 - y2) || (d1 - d2);
-  };
+  const initial = Math.max(0, Number(initialTotalBalance.value || 0));
 
-  const sortedKeys = Array.from(map.keys()).sort(_cmpDateKey);
-
-  // 1) Стартовый running — начальный баланс по счетам
-  let running = Math.max(0, Number(initialTotalBalance.value || 0));
-
-  // 2) Если в кэше есть операции ДО первого дня окна — возьмём их closingBalance как реальный якорь
-  const firstKey = _getDateKey(days[0].date);
-  for (const k of sortedKeys) {
-    if (_cmpDateKey(k, firstKey) >= 0) break;
-    const rec = map.get(k);
-    const cb = rec?.closingBalance;
-    if (cb !== undefined && cb !== null) {
-      running = Math.max(0, Number(cb) || 0);
-    } else {
-      // fallback: если нет closingBalance, считаем через dayTotal
-      const inc = Number(rec?.income || 0) + Number(rec?.prepayment || 0);
-      const exp = Math.abs(Number(rec?.expense || 0)) + Math.abs(Number(rec?.withdrawal || 0));
-      running = Math.max(0, running + inc - exp);
-    }
-  }
-
-  // 3) Формируем summaries для каждого дня окна, даже если операций в этот день нет
   return days.map((day) => {
     const d = day.date instanceof Date ? day.date : new Date(day.date);
     const dateKey = _getDateKey(d);
-    const rec = map.get(dateKey);
 
-    let incMain = 0;      // обычный доход (зелёный)
-    let incPrepay = 0;    // предоплата/транш до закрытия (оранжевый)
-    let incTotal = 0;     // сумма (incMain + incPrepay)
-    let exp = 0;
+    // start balance = closing balance of the last known day before dateKey (or initial)
+    const prevIdx = _findLastKeyBefore(tlKeys, dateKey);
+    const startBalance = prevIdx >= 0 ? Math.max(0, Number(tlBalances[prevIdx]) || 0) : initial;
 
-    if (rec) {
-      incMain = Math.abs(Number(rec.income || 0));
-      incPrepay = Math.abs(Number(rec.prepayment || 0));
-      incTotal = incMain + incPrepay;
+    const rec = agg.get(dateKey);
 
-      exp = Math.abs(Number(rec.expense || 0)) + Math.abs(Number(rec.withdrawal || 0));
+    const incPrepay = Math.abs(Number(rec?.prepayment || 0));
+    const incMain = Math.abs(Number(rec?.incomeMain || 0));
+    const incTotal = incPrepay + incMain;
 
-      const cb = rec?.closingBalance;
-      if (cb !== undefined && cb !== null) {
-        running = Math.max(0, Number(cb) || 0);
-      } else {
-        running = Math.max(0, running + incTotal - exp);
-      }
-    }
+    const expTotal = Math.abs(Number(rec?.expense || 0)) + Math.abs(Number(rec?.withdrawal || 0));
+
+    const endBalance = closingByKey.has(dateKey)
+      ? Math.max(0, Number(closingByKey.get(dateKey)) || 0)
+      : startBalance;
 
     return {
       date: d.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: incTotal,
       incomeMain: incMain,
       prepayment: incPrepay,
-      expense: exp,
-      balance: Math.max(0, running)
+      expense: expTotal,
+      balance: endBalance
     };
   });
 });
