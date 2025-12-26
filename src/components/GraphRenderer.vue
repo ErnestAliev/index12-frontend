@@ -359,33 +359,14 @@ watch(yAxisTicks, (ticks) => { emit('update:yLabels', ticks); }, { immediate: tr
 const summaries = computed(() => { 
   const _v = mainStore.cacheVersion;
   if (!props.showSummaries || !Array.isArray(props.visibleDays) || props.visibleDays.length === 0) return []; 
-  
-  let runningBalance = 0;
-  const firstDay = props.visibleDays[0];
-  if (!firstDay) return [];
 
-  const firstDateKey = _getDateKey(firstDay.date);
-  const firstStoreData = mainStore.dailyChartData?.get(firstDateKey);
-
-  if (firstStoreData) {
-      const totalInc = (firstStoreData.income || 0) + (firstStoreData.prepayment || 0);
-      const totalExp = Math.abs(firstStoreData.expense || 0) + Math.abs(firstStoreData.withdrawal || 0);
-      const dayNet = totalInc - totalExp;
-      runningBalance = (firstStoreData.closingBalance || 0) - dayNet;
-  }
-
-  // 🟢 FIX: Корректировка на скрытые счета теперь не нужна.
-  // Базовый баланс (initialBalance) для dailyChartData уже считает только видимые счета,
-  // поэтому дополнительное «вычитание» приводит к рассинхрону.
-
-  return props.visibleDays.map(day => { 
-    if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; 
-    const dateKey = _getDateKey(day.date); 
+  const computeDayIncExp = (date) => {
+    const dateKey = _getDateKey(date); 
     const dayOps = mainStore.getOperationsForDay(dateKey) || [];
-    
+
     let inc = 0;
     let exp = 0;
-    
+
     dayOps.forEach(op => {
         if (!op) return; // Guard
         if (!isOpVisible(op)) return;
@@ -405,10 +386,36 @@ const summaries = computed(() => {
         }
     });
 
+    return { inc, exp };
+  };
+
+  // Base balance for the first visible day:
+  // we take the current all-time balance (snapshot) and subtract net for the visible past window up to today.
+  const cutoff = new Date();
+  cutoff.setHours(23, 59, 59, 999);
+
+  let netPastWindow = 0;
+  props.visibleDays.forEach(day => {
+      if (!day?.date) return;
+      const d = (day.date instanceof Date) ? day.date : new Date(day.date);
+      if (Number.isNaN(d.getTime())) return;
+      if (d.getTime() > cutoff.getTime()) return; // future days don't affect current balance
+      const { inc, exp } = computeDayIncExp(d);
+      netPastWindow += (inc - exp);
+  });
+
+  let runningBalance = Number(mainStore.currentTotalBalance || 0) - netPastWindow;
+
+  return props.visibleDays.map(day => { 
+    if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 }; 
+
+    const d = (day.date instanceof Date) ? day.date : new Date(day.date);
+    const { inc, exp } = computeDayIncExp(d);
+
     runningBalance += (inc - exp);
 
     return { 
-        date: day.date.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }), 
+        date: d.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }), 
         income: inc, 
         expense: exp, 
         balance: runningBalance 
