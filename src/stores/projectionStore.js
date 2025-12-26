@@ -11,7 +11,7 @@ const VIEW_MODE_DAYS = {
 };
 
 export const useProjectionStore = defineStore('projection', () => {
-  console.log('--- projectionStore.js v5.4 (FULL RESTORE + FULL-HISTORY dailyChartData) LOADED ---');
+  console.log('--- projectionStore.js v5.3 (FIX: FINAL Anchor Logic) LOADED ---');
 
   // --- 1. Date Helpers ---
   const _getDayOfYear = (date) => {
@@ -28,7 +28,7 @@ export const useProjectionStore = defineStore('projection', () => {
 
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-      return new Date();
+        return new Date(); 
     }
     const [year, doy] = dateKey.split('-').map(Number);
     const date = new Date(year, 0, 1);
@@ -39,23 +39,23 @@ export const useProjectionStore = defineStore('projection', () => {
   const _calculateDateRangeWithYear = (view, baseDate) => {
     const startDate = new Date(baseDate);
     const endDate = new Date(baseDate);
-
+    
     const modeInfo = VIEW_MODE_DAYS[view] || VIEW_MODE_DAYS['12d'];
     const totalDays = modeInfo.total;
-
+    
     let todayIndex;
     if (view === '12d') {
-      todayIndex = 5;
+        todayIndex = 5;
     } else {
-      todayIndex = Math.floor(totalDays / 2);
+        todayIndex = Math.floor(totalDays / 2);
     }
 
-    const daysForward = (totalDays - 1) - todayIndex;
-    const daysBack = todayIndex;
+    const daysForward = (totalDays - 1) - todayIndex; 
+    const daysBack = todayIndex;                      
 
     startDate.setDate(startDate.getDate() - daysBack);
     endDate.setDate(endDate.getDate() + daysForward);
-
+    
     return { startDate, endDate };
   };
 
@@ -68,25 +68,25 @@ export const useProjectionStore = defineStore('projection', () => {
   const currentViewDate = ref(new Date());
   const currentYear = ref(new Date().getFullYear());
 
-  const calculationStatus = ref('idle');
-  const calculatedUntil = ref(null);
-  const globalProjectedBalance = ref(0);
+  const calculationStatus = ref('idle'); 
+  const calculatedUntil = ref(null);     
+  const globalProjectedBalance = ref(0); 
 
   const savedToday = localStorage.getItem('todayDayOfYear');
   if (savedToday) {
     todayDayOfYear.value = parseInt(savedToday);
   }
 
-  function setToday(d) {
-    todayDayOfYear.value = d;
+  function setToday(d){ 
+    todayDayOfYear.value = d; 
     localStorage.setItem('todayDayOfYear', d.toString());
   }
-
+  
   function setCurrentViewDate(date) {
-    if (!date) return;
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return;
-    currentViewDate.value = d;
+      if (!date) return;
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return;
+      currentViewDate.value = d;
   }
 
   // --- 3. Projection Settings ---
@@ -96,60 +96,56 @@ export const useProjectionStore = defineStore('projection', () => {
     futureIncomeSum: 0, futureExpenseSum: 0
   };
   const projection = ref(initialProjection);
-
+  
   watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
 
   // --- 4. Actions ---
-  function computeTotalDaysForMode(mode) {
-    return getViewModeInfo(mode).total;
+  function computeTotalDaysForMode(mode) { 
+      return getViewModeInfo(mode).total; 
   }
 
   function setCalculationStatus(status) {
-    calculationStatus.value = status;
+      calculationStatus.value = status;
   }
 
   function setGlobalProjectedBalance(amount, untilDate) {
-    globalProjectedBalance.value = amount;
-    calculatedUntil.value = untilDate ? new Date(untilDate) : null;
+      globalProjectedBalance.value = amount;
+      calculatedUntil.value = untilDate ? new Date(untilDate) : null;
   }
 
   function updateProjectionState(mode, today = new Date()) {
-    const base = new Date(today);
-    base.setHours(0, 0, 0, 0);
+    const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-
+    
     calculationStatus.value = 'idle';
 
-    projection.value = {
-      mode,
-      totalDays: computeTotalDaysForMode(mode),
-      rangeStartDate: startDate,
-      rangeEndDate: endDate,
-      futureIncomeSum: 0,
-      futureExpenseSum: 0
+    projection.value = { 
+        mode, 
+        totalDays: computeTotalDaysForMode(mode), 
+        rangeStartDate: startDate, 
+        rangeEndDate: endDate, 
+        futureIncomeSum: 0, 
+        futureExpenseSum: 0 
     };
   }
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
-    updateProjectionState(mode, today);
+     updateProjectionState(mode, today);
   }
 
-  async function updateFutureProjectionByMode(mode, today = new Date()) {
-    updateProjectionState(mode, today);
+  async function updateFutureProjectionByMode(mode, today = new Date()){
+     updateProjectionState(mode, today);
   }
 
-  function setProjectionRange(startDate, endDate) {
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
-    end.setHours(0, 0, 0, 0);
-
-    projection.value = {
-      mode: 'custom',
-      totalDays: Math.max(1, Math.floor((end - start) / 86400000) + 1),
-      rangeStartDate: start,
-      rangeEndDate: end,
-      futureIncomeSum: 0
+  function setProjectionRange(startDate, endDate){
+    const start = new Date(startDate); start.setHours(0,0,0,0);
+    const end   = new Date(endDate); end.setHours(0,0,0,0);
+    projection.value = { 
+        mode:'custom', 
+        totalDays: Math.max(1, Math.floor((end-start)/86400000)+1), 
+        rangeStartDate:start, 
+        rangeEndDate:end, 
+        futureIncomeSum: 0 
     };
   }
 
@@ -158,254 +154,249 @@ export const useProjectionStore = defineStore('projection', () => {
   const futureOps = computed(() => {
     const mainStore = useMainStore();
     // 🟢 REACTIVITY FIX: Trigger re-calc when operations change
-    const _version = mainStore.cacheVersion;
-
+    const _version = mainStore.cacheVersion; 
+    
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
     const cutOffTime = todayEnd.getTime();
 
     let endDate;
-    if (projection.value?.rangeEndDate) {
-      endDate = new Date(projection.value.rangeEndDate).getTime();
-      const d = new Date(endDate);
-      d.setHours(23, 59, 59, 999);
-      endDate = d.getTime();
-    } else {
-      endDate = Date.now() + 365 * 24 * 60 * 60 * 1000;
+    if (projection.value?.rangeEndDate) { 
+        endDate = new Date(projection.value.rangeEndDate).getTime(); 
+        const d = new Date(endDate); d.setHours(23, 59, 59, 999); endDate = d.getTime();
+    } else { 
+        endDate = Date.now() + 365*24*60*60*1000; 
     }
 
     const result = [];
-    const cache = mainStore.calculationCache || {};
+        const opsSourceRaw = Array.isArray(mainStore.getAllRelevantOps)
+          ? mainStore.getAllRelevantOps
+          : (Array.isArray(mainStore.allKnownOperations) ? mainStore.allKnownOperations : []);
 
-    for (const [, ops] of Object.entries(cache)) {
-      if (Array.isArray(ops)) {
-        for (const op of ops) {
-          if (!op.date) continue;
-          const opTime = new Date(op.date).getTime();
-          if (opTime > cutOffTime && opTime <= endDate) {
-            result.push(op);
+        // Local safe helpers (projectionStore must not depend on private helpers from mainStore)
+        const idsMatch = (a, b) => {
+          if (!a || !b) return false;
+          const aId = (typeof a === 'object' && a !== null) ? (a._id || a.id || a) : a;
+          const bId = (typeof b === 'object' && b !== null) ? (b._id || b.id || b) : b;
+          return String(aId) === String(bId);
+        };
+
+        const includeExcluded = !!mainStore.includeExcludedInTotal;
+        const excludedSet = (() => {
+          const s = new Set();
+          if (includeExcluded) return s;
+          const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+          for (const a of accs) {
+            if (a && a.isExcluded) s.add(String(a._id));
           }
-        }
-      }
-    }
+          return s;
+        })();
 
-    return result;
-  });
+        const isExcludedId = (id) => {
+          if (!id || includeExcluded) return false;
+          const v = (typeof id === 'object' && id !== null) ? (id._id || id) : id;
+          return excludedSet.has(String(v));
+        };
 
-  // 🟢 CORE: Расчет данных для графика (НЕ ЗАВИСИТ ОТ ОКНА 12д/1м/3м)
-  // Идея: дневные итоги считаем из full-history операций (allKnownOperations),
-  // а окно (projection.rangeStartDate/rangeEndDate) используем только для отображения.
-  // Якорим абсолютные значения по реальному текущему балансу (snapshot) через offset.
-  const dailyChartData = computed(() => {
-    const mainStore = useMainStore();
-
-    // 🟢 1. FORCE REACTIVITY
-    const _version = mainStore.cacheVersion;
-    const _balancesVersion = mainStore.currentAccountBalances ? mainStore.currentAccountBalances.map(a => a.balance).join('|') : '';
-
-    const prepayIdsSet = new Set(mainStore.getPrepaymentCategoryIds || []);
-    const retailId = mainStore.retailIndividualId;
-
-    const _keyToNum = (key) => {
-      if (!key || typeof key !== 'string' || !key.includes('-')) return NaN;
-      const [y, doy] = key.split('-').map(Number);
-      if (!Number.isFinite(y) || !Number.isFinite(doy)) return NaN;
-      return (y * 1000) + doy;
-    };
-
-    // 1) Диапазон отображения (только UI)
-    const base = new Date();
-    base.setHours(0, 0, 0, 0);
-    const modeForRange = projection.value?.mode || '12d';
-    const fb = _calculateDateRangeWithYear((modeForRange && modeForRange !== 'custom') ? modeForRange : '12d', base);
-
-    const rangeStart = projection.value?.rangeStartDate ? new Date(projection.value.rangeStartDate) : new Date(fb.startDate);
-    const rangeEnd = projection.value?.rangeEndDate ? new Date(projection.value.rangeEndDate) : new Date(fb.endDate);
-    rangeStart.setHours(0, 0, 0, 0);
-    rangeEnd.setHours(0, 0, 0, 0);
-
-    // 2) Источник операций: full-history
-    const opsSource = (() => {
-      const ak = mainStore.allKnownOperations;
-      if (Array.isArray(ak) && ak.length) return ak;
-
-      // Fallback: flatten calculationCache (если full-history пока не готов)
-      const flat = [];
-      const cacheObj = mainStore.calculationCache || {};
-      Object.values(cacheObj).forEach(v => {
-        if (Array.isArray(v)) flat.push(...v);
-      });
-      return flat;
-    })();
-
-    // 3) Подготовка дневных данных для ОТОБРАЖАЕМОГО диапазона
-    const byDateKey = {};
-    const rangeKeys = [];
-    for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
-      const dk = _getDateKey(d);
-      byDateKey[dk] = { income: 0, prepayment: 0, expense: 0, withdrawal: 0, dayTotal: 0 };
-      rangeKeys.push(dk);
-    }
-
-    if (rangeKeys.length === 0) return new Map();
-
-    // 4) Дневной net по ВСЕЙ истории (для стабильного anchor), и детализация в диапазоне
-    const netByKey = new Map();
-    const seen = new Set();
-
-    for (const op of (opsSource || [])) {
-      if (!op || !op.date) continue;
-
-      // дедуп по _id (allKnownOperations может пересекаться с currentOps)
-      if (op._id) {
-        const idStr = String(op._id);
-        if (seen.has(idStr)) continue;
-        seen.add(idStr);
-      }
-
-      const dk = op.dateKey || _getDateKey(new Date(op.date));
-      if (!dk) continue;
-
-      // Фильтр исключенных счетов (как было)
-      if (op.accountId && !mainStore.includeExcludedInTotal) {
-        const acc = (mainStore.accounts || []).find(a => mainStore._idsMatch && mainStore._idsMatch(a._id, op.accountId));
-        if (acc && acc.isExcluded) continue;
-      }
-
-      const isTransfer = !!op && (op.type === 'transfer' || op.isTransfer === true);
-      if (isTransfer) continue;
-      if (op.isWorkAct) continue;
-      if (!op.accountId) continue;
-
-      const amt = op.amount || 0;
-      const absAmt = Math.abs(amt);
-
-      let net = 0;
-
-      if (op.isWithdrawal) {
-        net = -absAmt;
-      } else if (op.type === 'expense') {
-        if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) continue;
-        net = -absAmt;
-      } else if (op.type === 'income') {
-        net = amt;
-      } else {
-        net = 0;
-      }
-
-      if (net !== 0) {
-        netByKey.set(dk, (netByKey.get(dk) || 0) + net);
-      } else {
-        if (!netByKey.has(dk)) netByKey.set(dk, 0);
-      }
-
-      // Детализация только в текущем UI-диапазоне
-      const dayRec = byDateKey[dk];
-      if (dayRec) {
-        if (op.isWithdrawal) {
-          dayRec.withdrawal += absAmt;
-          dayRec.dayTotal -= absAmt;
-        } else if (op.type === 'expense') {
-          if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) {
-            // already skipped above
-          } else {
-            dayRec.expense += absAmt;
-            dayRec.dayTotal -= absAmt;
+        // Fallback visibility filter (used only when getAllRelevantOps is not available)
+        // This mirrors mainStore._isOpVisible behavior for account exclusion.
+        const buildOpMap = (ops) => {
+          const m = new Map();
+          for (const o of ops) {
+            if (o && o._id) m.set(String(o._id), o);
           }
-        } else if (op.type === 'income') {
-          // 🔥 split: 🟠 prepayment + 🟢 income
-          const isClosed = op.isClosed === true;
-          let isPrepay = false;
+          return m;
+        };
 
-          if (!isClosed) {
-            const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
-            const isRetail = retailId && op.counterpartyIndividualId && mainStore._idsMatch && mainStore._idsMatch(op.counterpartyIndividualId, retailId);
-            const catId = op.categoryId?._id || op.categoryId;
-            const prepId = op.prepaymentId?._id || op.prepaymentId;
-            const isPrepayCat = (catId && prepayIdsSet.has(catId)) || (prepId && prepayIdsSet.has(prepId)) || (op.categoryId && op.categoryId.isPrepayment);
-            const explicitPrepay = op.isPrepayment === true;
+        const opMap = buildOpMap(opsSourceRaw);
 
-            if (isTranche || isRetail || isPrepayCat || explicitPrepay) {
-              isPrepay = true;
+        const isOpVisibleHere = (op) => {
+          if (!op) return false;
+          if (includeExcluded) return true;
+
+          if (op.accountId && isExcludedId(op.accountId)) return false;
+          if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
+          if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
+          if (op.account && isExcludedId(op.account)) return false;
+
+          // If this op is linked to a parent event, inherit exclusion from the parent
+          if (op.relatedEventId && !op.accountId) {
+            const parentId = (typeof op.relatedEventId === 'object' && op.relatedEventId !== null)
+              ? String(op.relatedEventId._id || op.relatedEventId)
+              : String(op.relatedEventId);
+
+            const parent = opMap.get(parentId);
+            if (parent) {
+              if (parent.accountId && isExcludedId(parent.accountId)) return false;
+              if (parent.fromAccountId && isExcludedId(parent.fromAccountId)) return false;
+              if (parent.toAccountId && isExcludedId(parent.toAccountId)) return false;
+              if (parent.account && isExcludedId(parent.account)) return false;
             }
           }
 
-          if (isPrepay) dayRec.prepayment += amt;
-          else dayRec.income += amt;
+          return true;
+        };
 
-          dayRec.dayTotal += amt;
+        // If we have getAllRelevantOps, it already respects account exclusion.
+        // If not, apply local visibility filter.
+        const opsSource = Array.isArray(mainStore.getAllRelevantOps)
+          ? opsSourceRaw
+          : opsSourceRaw.filter(isOpVisibleHere);
+
+        const prepayIdsSet = new Set(Array.isArray(mainStore.getPrepaymentCategoryIds) ? mainStore.getPrepaymentCategoryIds : []);
+        const retailId = mainStore.retailIndividualId ? String(mainStore.retailIndividualId._id || mainStore.retailIndividualId) : null;
+
+        const isRetailWriteOffHere = (op) => {
+          if (!op || op.type !== 'expense') return false;
+          // Retail write-off rule from mainStore: expense, no accountId, counterpartyIndividualId == retail individual
+          if (op.accountId) return false;
+          if (!retailId) return false;
+          return idsMatch(op.counterpartyIndividualId, retailId);
+        };
+
+        const byDateKey = {};
+
+        // Collect per-day totals from the canonical ops source
+        for (const op of opsSource) {
+          if (!op) continue;
+
+          const isTransfer = (op.type === 'transfer' || op.isTransfer === true);
+          if (isTransfer) continue;
+          if (op.isWorkAct) continue;
+
+          // For charting we only support ops that have an account routing.
+          // (This preserves previous behavior and avoids mixing in account-less system ops.)
+          if (!op.accountId) continue;
+
+          const dateKey = op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : null);
+          if (!dateKey) continue;
+
+          if (!byDateKey[dateKey]) byDateKey[dateKey] = { income:0, prepayment:0, expense:0, withdrawal:0, dayTotal:0 };
+          const dayRec = byDateKey[dateKey];
+
+          const amt = Number(op.amount) || 0;
+          const absAmt = Math.abs(amt);
+
+          if (op.isWithdrawal) {
+            dayRec.withdrawal += absAmt;
+            dayRec.dayTotal -= absAmt;
+            continue;
+          }
+
+          if (op.type === 'expense') {
+            if (isRetailWriteOffHere(op)) continue;
+            dayRec.expense += absAmt;
+            dayRec.dayTotal -= absAmt;
+            continue;
+          }
+
+          if (op.type === 'income') {
+            // 🟢 LOGIC SYNC: Strict match with HourCell.vue
+            const isClosed = op.isClosed === true;
+            let isPrepay = false;
+
+            if (!isClosed) {
+              const isTranche = op.isDealTranche === true || (Number(op.totalDealAmount) || 0) > 0;
+              const isRetail = retailId && op.counterpartyIndividualId && idsMatch(op.counterpartyIndividualId, retailId);
+              const catId = op.categoryId?._id || op.categoryId;
+              const prepId = op.prepaymentId?._id || op.prepaymentId;
+              const isPrepayCat = (catId && prepayIdsSet.has(String(catId))) || (prepId && prepayIdsSet.has(String(prepId))) || (op.categoryId && op.categoryId.isPrepayment);
+              const explicitPrepay = op.isPrepayment === true;
+
+              if (isTranche || isRetail || isPrepayCat || explicitPrepay) {
+                isPrepay = true;
+              }
+            }
+
+            if (isPrepay) {
+              dayRec.prepayment += amt;
+            } else {
+              dayRec.income += amt;
+            }
+            dayRec.dayTotal += amt;
+          }
         }
-      }
+// Сортировка дат
+    const sortedDateKeys = Object.keys(byDateKey).sort((a, b) => {
+      const [y1, d1] = a.split('-').map(Number);
+      const [y2, d2] = b.split('-').map(Number);
+      return (y1 - y2) || (d1 - d2);
+    });
+
+    if (sortedDateKeys.length === 0) return new Map();
+
+    // --- ЛОГИКА ЯКОРЯ (ANCHOR LOGIC) ---
+    // 1. Строим относительный график (форму кривой)
+    // Мы считаем изменения баланса день за днем.
+    let runningRelative = 0;
+    const relativeMap = new Map();
+    
+    for (const dateKey of sortedDateKeys) {
+      const rec = byDateKey[dateKey];
+      runningRelative += rec.dayTotal; 
+      
+      relativeMap.set(dateKey, {
+        ...rec,
+        relativeBalance: runningRelative 
+      });
     }
 
-    // 5) Гарантируем наличие todayKey для стабильного anchor
+    // 2. Получаем РЕАЛЬНЫЙ баланс на СЕГОДНЯ из виджетов (Snapshot)
     const todayKey = _getDateKey(new Date());
-    if (!netByKey.has(todayKey)) netByKey.set(todayKey, 0);
-
-    // 6) Сортируем все ключи истории и строим префикс-суммы
-    const allKeys = Array.from(netByKey.keys()).sort((a, b) => (_keyToNum(a) - _keyToNum(b)));
-
-    let running = 0;
-    const cumByKey = new Map();
-
-    for (const k of allKeys) {
-      const n = _keyToNum(k);
-      if (!Number.isFinite(n)) continue;
-      running += (netByKey.get(k) || 0);
-      cumByKey.set(k, running);
-    }
-
-    const _getRelativeAtOrBeforeNum = (targetNum) => {
-      if (!Number.isFinite(targetNum) || allKeys.length === 0) return 0;
-
-      let lo = 0;
-      let hi = allKeys.length - 1;
-      let ans = -1;
-
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        const mk = allKeys[mid];
-        const mn = _keyToNum(mk);
-        if (mn <= targetNum) {
-          ans = mid;
-          lo = mid + 1;
-        } else {
-          hi = mid - 1;
-        }
-      }
-
-      if (ans < 0) return 0;
-      const kk = allKeys[ans];
-      return cumByKey.get(kk) || 0;
-    };
-
-    // 7) Реальный баланс на сегодня (snapshot)
+    
     const realCurrentBalance = (mainStore.currentAccountBalances || []).reduce((sum, acc) => {
-      if (!mainStore.includeExcludedInTotal && acc.isExcluded) return sum;
-      return sum + (acc.balance || 0);
+        if (!mainStore.includeExcludedInTotal && acc.isExcluded) return sum;
+        return sum + (acc.balance || 0);
     }, 0);
 
-    // 8) Anchor offset считаем ВСЕГДА по full-history relative на today
-    const todayNum = _keyToNum(todayKey);
-    const relativeTodayVal = _getRelativeAtOrBeforeNum(todayNum);
-    const anchorOffset = realCurrentBalance - relativeTodayVal;
+    // 3. Вычисляем смещение (Anchor Offset)
+    let anchorOffset = 0;
+    
+    if (relativeMap.has(todayKey)) {
+        // СЦЕНАРИЙ А: "Сегодня" есть на графике.
+        // Мы берем "относительное" значение на сегодня и смотрим, насколько оно отличается от "реального".
+        // Offset = (Реальность) - (То, что насчитали с нуля)
+        const relativeTodayVal = relativeMap.get(todayKey).relativeBalance;
+        anchorOffset = realCurrentBalance - relativeTodayVal;
+    } else {
+        // СЦЕНАРИЙ Б: "Сегодня" нет на графике.
+        const firstKey = sortedDateKeys[0];
+        const [y1, d1] = firstKey.split('-').map(Number);
+        const [ty, td] = todayKey.split('-').map(Number);
+        
+        // Сравниваем год и день, чтобы понять, график в будущем или прошлом
+        const isFuture = y1 > ty || (y1 === ty && d1 > td);
 
-    // 9) Финальный chart (только для UI-диапазона)
+        if (isFuture) {
+             // Если график начинается в БУДУЩЕМ, то стартовая точка должна быть равна Текущему Балансу
+             // (плюс любые изменения, которые могли произойти между сегодня и началом графика, но мы их не знаем, 
+             // поэтому считаем их равными нулю для безопасности).
+             // То есть: Balance(Start) ~= RealBalance + Change(Start)
+             anchorOffset = realCurrentBalance;
+        } else {
+             // Если график в прошлом, привязываем КОНЕЦ графика к текущему балансу.
+             // Это приближение, но лучше, чем 0.
+             const lastKey = sortedDateKeys[sortedDateKeys.length - 1];
+             const lastVal = relativeMap.get(lastKey)?.relativeBalance || 0;
+             anchorOffset = realCurrentBalance - lastVal;
+        }
+    }
+
+    // 4. Формируем финальный Chart с правильными абсолютными числами
     const chart = new Map();
-
-    for (const dk of rangeKeys) {
-      const rec = byDateKey[dk] || { income: 0, prepayment: 0, expense: 0, withdrawal: 0, dayTotal: 0 };
-      const dn = _keyToNum(dk);
-      const rel = _getRelativeAtOrBeforeNum(dn);
-
-      chart.set(dk, {
-        income: rec.income,
-        prepayment: rec.prepayment,
-        expense: rec.expense,
-        withdrawal: rec.withdrawal,
-        closingBalance: rel + anchorOffset,
-        date: _parseDateKey(dk)
-      });
+    
+    for (const dateKey of sortedDateKeys) {
+        const item = relativeMap.get(dateKey);
+        
+        chart.set(dateKey, {
+            income: item.income,
+            prepayment: item.prepayment,
+            expense: item.expense,
+            withdrawal: item.withdrawal,
+            // Магия: Относительный баланс + Смещение = Точный баланс
+            closingBalance: item.relativeBalance + anchorOffset, 
+            date: _parseDateKey(dateKey)
+        });
     }
 
     return chart;
@@ -413,13 +404,13 @@ export const useProjectionStore = defineStore('projection', () => {
 
   return {
     todayDayOfYear, currentViewDate, currentYear, projection,
-    calculationStatus, calculatedUntil, globalProjectedBalance,
+    calculationStatus, calculatedUntil, globalProjectedBalance, 
     _getDateKey, _parseDateKey, _getDayOfYear, _calculateDateRangeWithYear, getViewModeInfo, computeTotalDaysForMode,
-    setToday, setCurrentViewDate,
+    setToday, setCurrentViewDate, 
     setCalculationStatus, setGlobalProjectedBalance,
     updateProjectionState,
-    updateProjectionFromCalculationData,
-    updateFutureProjectionByMode,
+    updateProjectionFromCalculationData, 
+    updateFutureProjectionByMode, 
     setProjectionRange,
     futureOps, dailyChartData
   };
