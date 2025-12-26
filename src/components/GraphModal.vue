@@ -1,12 +1,3 @@
-<!--
- * * --- МЕТКА ВЕРСИИ: v13.11 - RANGE TOTAL LOGIC FIX ---
- * * ВЕРСИЯ: 13.11 - Исправление расчета итогового баланса в графике
- * ДАТА: 2025-11-26
- *
- * ЧТО ИЗМЕНЕНО:
- * 1. (LOGIC) rangeTotal теперь ищет closingBalance (накопительный итог) на последний день периода из mainStore.dailyChartData.
- * Это учитывает все операции с начала времен, а не только за видимый период.
- -->
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -48,10 +39,10 @@ const rangeTotal = computed(() => {
   // Нам нужно найти запись, дата которой <= lastVisibleDate, но максимально близкая к ней.
   if (mainStore.dailyChartData && mainStore.dailyChartData.size > 0) {
       const entries = Array.from(mainStore.dailyChartData.values());
-      
+
       // Сортируем по дате (на всякий случай)
       entries.sort((a, b) => a.date - b.date);
-      
+
       // Идем с конца, чтобы найти последнюю актуальную запись
       for (let i = entries.length - 1; i >= 0; i--) {
           if (entries[i].date.getTime() <= lastVisibleTime) {
@@ -60,7 +51,7 @@ const rangeTotal = computed(() => {
           }
       }
   }
-  
+
   return total;
 });
 
@@ -70,7 +61,7 @@ const rangeTotalString = computed(() => {
   const absVal = Math.abs(val);
   const formatted = formatNumber(absVal);
   const currency = '₸'; 
-  
+
   if (val < 0) return `- ${currency} ${formatted}`;
   return `${currency} ${formatted}`;
 });
@@ -98,7 +89,7 @@ const generateVisibleDays = (mode) => {
   const modeDays = mainStore.computeTotalDaysForMode ? mainStore.computeTotalDaysForMode(mode, today.value) : 12;
   const baseDate = new Date(today.value);
   let startDate = new Date(baseDate);
-  
+
   switch (mode) {
     case '12d': startDate.setDate(startDate.getDate() - 5); break;
     case '1m':  startDate.setDate(startDate.getDate() - 15); break;
@@ -153,7 +144,7 @@ onMounted(() => {
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content graph-modal-content">
-      
+
       <div class="modal-header">
         <h2>
           <span class="header-subtitle">
@@ -166,7 +157,7 @@ onMounted(() => {
         </h2>
         <button class="close-btn" @click="$emit('close')">&times;</button>
       </div>
-      
+
       <div class="graph-modal-body">
         <aside class="modal-left-panel">
           <div class="nav-panel-container">
@@ -188,8 +179,8 @@ onMounted(() => {
               v-if="visibleDays.length"
               :visibleDays="visibleDays"
               @update:yLabels="yAxisLabels = $event"
-              :animate="true"
               :show-summaries="false"
+              :animate="true"
             />
           </div>
         </main>
@@ -216,17 +207,17 @@ onMounted(() => {
   padding: 15px 24px; border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
 }
-.modal-header h2 { 
-  margin: 0; 
-  font-size: 1.2rem; 
-  color: var(--color-heading); 
-  display: flex; 
-  align-items: baseline; 
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--color-heading);
+  display: flex;
+  align-items: baseline;
 }
 
 .header-subtitle {
   font-size: 0.85em;
-  margin-left: 0; 
+  margin-left: 0;
   font-weight: 400;
 }
 
@@ -260,7 +251,7 @@ onMounted(() => {
   border-right: 1px solid var(--color-border);
 }
 .nav-panel-container {
-  flex: 0 0 320px; 
+  flex: 0 0 320px;
   min-height: 320px;
   border-bottom: 1px solid var(--color-border);
   overflow: hidden;
@@ -280,8 +271,21 @@ onMounted(() => {
   overflow: hidden; position: relative;
 }
 .graph-wrapper {
-  flex-grow: 1; width: 100%; height: 100%;
-  padding: 0; box-sizing: border-box;
+  flex-grow: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+
+  /* Важно для кастомного tooltip в GraphRenderer:
+     tooltip монтируется внутрь контейнера графика и позиционируется absolute. */
+  position: relative;
+
+  /* НЕ режем содержимое графика */
+  overflow: visible;
+
+  /* В flex-контейнерах иначе иногда схлопывается высота */
+  min-height: 0;
 }
 
 .loading-indicator {
@@ -300,4 +304,8 @@ onMounted(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.graph-wrapper :deep(#chartjs-tooltip),
+.graph-wrapper :deep(#chartjs-custom-tooltip) {
+  z-index: 10;
+}
 </style>

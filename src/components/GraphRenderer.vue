@@ -520,7 +520,7 @@ watch(
 // 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES) - SAFE
 const summaries = computed(() => {
   const _v = mainStore.cacheVersion;
-  if (!props.showSummaries || !Array.isArray(props.visibleDays) || props.visibleDays.length === 0) return [];
+  if (!Array.isArray(props.visibleDays) || props.visibleDays.length === 0) return [];
 
   const computeDayIncExp = (date) => {
     const dateKey = _getDateKey(date);
