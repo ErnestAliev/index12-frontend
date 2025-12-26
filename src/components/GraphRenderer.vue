@@ -909,6 +909,7 @@ const chartData = computed(() => {
   const balanceBars = (balanceBarData.value || []).slice(0, labels.length);
   const balanceCols = (balanceColors.value || []).slice(0, labels.length);
 
+
   // Keep tooltip details accessible for tooltip callbacks
   tooltipDetails.value = {
     income: incomeDetails,
