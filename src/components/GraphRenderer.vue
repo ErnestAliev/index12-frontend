@@ -1,11 +1,24 @@
 <script setup>
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
-import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js/auto';
+import { Chart as ChartJS } from 'chart.js/auto';
 
-ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+// Unique tooltip element ids per component instance (GraphModal + main chart must not collide)
+const TOOLTIP_EL_ID = `chartjs-custom-tooltip-${Math.random().toString(36).slice(2)}`;
+const TOOLTIP_STYLE_ID = `${TOOLTIP_EL_ID}-style`;
+
+let tooltipAutoUnpinTimer = null;
+const TOOLTIP_PIN_AUTORELEASE_MS = 1800;
+
+const _clearTooltipAutoUnpinTimer = () => {
+  if (tooltipAutoUnpinTimer) {
+    clearTimeout(tooltipAutoUnpinTimer);
+    tooltipAutoUnpinTimer = null;
+  }
+};
 
 // --- Tooltip copy/export helpers ---
 let lastTooltipExportText = '';
@@ -60,7 +73,6 @@ let tooltipForceUpdate = false;
 let tooltipIsHovering = false;
 let tooltipHideTimer = null;
 let lastActiveKey = '';
-let tooltipPinnedByHover = false;
 const TOOLTIP_HIDE_DELAY_MS = 2500;
 
 const _clearTooltipHideTimer = () => {
@@ -85,7 +97,35 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:yLabels']);
 
+// Normalize visibleDays once so ALL calculations (labels, summaries, segments) use the same indexing.
+// This fixes “разрывы/асинхрон” when the range changes (1м/3м) and when some days come in as placeholders.
+const normalizedVisibleDays = computed(() => {
+  const src = Array.isArray(props.visibleDays) ? props.visibleDays : [];
+  return src
+    .map((d) => {
+      if (!d || !d.date) return null;
+      const dt = d.date instanceof Date ? d.date : new Date(d.date);
+      if (Number.isNaN(dt.getTime())) return null;
+      return { ...d, date: dt };
+    })
+    .filter(Boolean);
+});
+
 const mainStore = useMainStore();
+
+const projectionStore = useProjectionStore();
+
+// Начальный баланс (сумма initialBalance по счетам), с учетом флага includeExcludedInTotal
+const initialTotalBalance = computed(() => {
+  const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  let sum = 0;
+  for (const a of accs) {
+    if (!a) continue;
+    if (!mainStore.includeExcludedInTotal && a.isExcluded) continue;
+    sum += Number(a.initialBalance || 0);
+  }
+  return Math.max(0, sum);
+});
 
 // Храним детализацию операций по дням для Tooltips (вне chartData, чтобы callbacks могли читать)
 const tooltipDetails = ref({
@@ -122,31 +162,31 @@ const isOpVisible = (op) => {
 
 // ... (externalTooltipHandler logic) ...
 const externalTooltipHandler = (context) => {
-  let tooltipEl = document.getElementById('chartjs-custom-tooltip');
+  let tooltipEl = document.getElementById(TOOLTIP_EL_ID);
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
-    tooltipEl.id = 'chartjs-custom-tooltip';
+    tooltipEl.id = TOOLTIP_EL_ID;
 
     // One-time CSS for tooltip buttons (hover + copy feedback)
-    let styleEl = document.getElementById('chartjs-custom-tooltip-style');
+    let styleEl = document.getElementById(TOOLTIP_STYLE_ID);
     if (!styleEl) {
       styleEl = document.createElement('style');
-      styleEl.id = 'chartjs-custom-tooltip-style';
+      styleEl.id = TOOLTIP_STYLE_ID;
       styleEl.textContent = `
-        #chartjs-custom-tooltip .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;}
-        #chartjs-custom-tooltip .tt-btn:hover{border-color:rgba(52,199,89,.9)!important;background:rgba(52,199,89,.18)!important;}
-        #chartjs-custom-tooltip .tt-btn:active{transform:translateY(1px);}
+        #${TOOLTIP_EL_ID} .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;}
+        #${TOOLTIP_EL_ID} .tt-btn:hover{border-color:rgba(52,199,89,.9)!important;background:rgba(52,199,89,.18)!important;}
+        #${TOOLTIP_EL_ID} .tt-btn:active{transform:translateY(1px);}
 
-        #chartjs-custom-tooltip .tt-ico{display:flex;align-items:center;justify-content:center;}
-        #chartjs-custom-tooltip .tt-ico-check{display:none;}
+        #${TOOLTIP_EL_ID} .tt-ico{display:flex;align-items:center;justify-content:center;}
+        #${TOOLTIP_EL_ID} .tt-ico-check{display:none;}
 
         /* When copy succeeded: show checkmark for a moment */
-        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="ok"] .tt-ico-copy{display:none;}
-        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="ok"] .tt-ico-check{display:flex;}
-        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="ok"] .tt-btn--copy{border-color:rgba(52,199,89,1)!important;background:rgba(52,199,89,.25)!important;}
+        #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="ok"] .tt-ico-copy{display:none;}
+        #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="ok"] .tt-ico-check{display:flex;}
+        #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="ok"] .tt-btn--copy{border-color:rgba(52,199,89,1)!important;background:rgba(52,199,89,.25)!important;}
 
         /* When copy failed */
-        #chartjs-custom-tooltip[data-copied="1"][data-copy-status="fail"] .tt-btn--copy{border-color:rgba(255,59,48,1)!important;background:rgba(255,59,48,.14)!important;}
+        #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="fail"] .tt-btn--copy{border-color:rgba(255,59,48,1)!important;background:rgba(255,59,48,.14)!important;}
       `;
       document.head.appendChild(styleEl);
     }
@@ -207,25 +247,21 @@ const externalTooltipHandler = (context) => {
     tooltipEl.addEventListener('mouseenter', () => {
       tooltipIsHovering = true;
       _clearTooltipHideTimer();
-
-      // Временный pin по ховеру: чтобы tooltip не “убегал”, пока ты целишься в Copy/Export
-      if (!tooltipPinned) {
-        tooltipPinnedByHover = true;
-        tooltipPinned = true;
-        tooltipPinnedKey = lastActiveKey || tooltipPinnedKey;
-        tooltipForceUpdate = false;
-      }
+      _clearTooltipAutoUnpinTimer();
     });
 
     tooltipEl.addEventListener('mouseleave', () => {
       tooltipIsHovering = false;
 
-      // Снять временный pin (если его включили ховером)
-      if (tooltipPinnedByHover) {
-        tooltipPinnedByHover = false;
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
+      // if user pinned by tap/click, auto-release after a short delay (mobile-friendly)
+      _clearTooltipAutoUnpinTimer();
+      if (tooltipPinned) {
+        tooltipAutoUnpinTimer = setTimeout(() => {
+          tooltipPinned = false;
+          tooltipPinnedKey = '';
+          tooltipForceUpdate = false;
+          try { tooltipEl.style.opacity = 0; } catch (e) {}
+        }, TOOLTIP_PIN_AUTORELEASE_MS);
       }
 
       if (!tooltipPinned) {
@@ -238,6 +274,16 @@ const externalTooltipHandler = (context) => {
   }
 
   const tooltipModel = context.tooltip;
+  // If pinned on mobile by tap, don't let it stick forever
+  if (tooltipPinned && !tooltipIsHovering) {
+    _clearTooltipAutoUnpinTimer();
+    tooltipAutoUnpinTimer = setTimeout(() => {
+      tooltipPinned = false;
+      tooltipPinnedKey = '';
+      tooltipForceUpdate = false;
+      try { tooltipEl.style.opacity = 0; } catch (e) {}
+    }, TOOLTIP_PIN_AUTORELEASE_MS);
+  }
   // Tooltip должен быть кликабельным, пока он видим (иначе невозможно нажать Copy/Export)
   try {
     const visibleNow = Number(tooltipEl.style.opacity || 0) > 0;
@@ -412,11 +458,13 @@ const externalTooltipHandler = (context) => {
 };
 
 onUnmounted(() => {
-  const el = document.getElementById('chartjs-custom-tooltip');
+  const el = document.getElementById(TOOLTIP_EL_ID);
   if (el) el.remove();
 
-  const styleEl = document.getElementById('chartjs-custom-tooltip-style');
+  const styleEl = document.getElementById(TOOLTIP_STYLE_ID);
   if (styleEl) styleEl.remove();
+
+  _clearTooltipAutoUnpinTimer();
 
   if (tooltipCopyFeedbackTimer) {
     clearTimeout(tooltipCopyFeedbackTimer);
@@ -439,32 +487,30 @@ const _getDateKey = (date) => {
 
 const rawMaxY = computed(() => {
   const _v = mainStore.cacheVersion;
+
+  const days = normalizedVisibleDays.value;
+  if (!Array.isArray(days) || days.length === 0) return 1;
+
+  const map = (projectionStore.dailyChartData instanceof Map)
+    ? projectionStore.dailyChartData
+    : projectionStore.dailyChartData?.value;
+  if (!(map instanceof Map)) return 1;
+
   let max = 0;
+  for (const day of days) {
+    const key = _getDateKey(day.date);
+    const rec = map.get(key);
+    if (!rec) continue;
 
-  if (!Array.isArray(props.visibleDays)) return 1;
+    // учитываем предоплаты в доходах и вывод средств в расходах, чтобы шкала была адекватной
+    const inc =
+      Math.abs(Number(rec.income || 0)) +
+      Math.abs(Number(rec.prepayment || 0));
 
-  for (const day of props.visibleDays) {
-    if (!day || !day.date) continue;
-    const dateKey = _getDateKey(day.date);
-    const dayOps = mainStore.getOperationsForDay(dateKey) || [];
+    const exp = Math.abs(Number(rec.expense || 0)) + Math.abs(Number(rec.withdrawal || 0));
 
-    let dayIncome = 0;
-    let dayExpense = 0;
-
-    dayOps.forEach((op) => {
-      if (!op) return;
-      if (!isOpVisible(op)) return;
-      if (op.type === 'transfer' || op.isTransfer) return;
-      if (op.isWorkAct) return;
-
-      const amt = Math.abs(Number(op.amount) || 0);
-
-      if (op.type === 'income') dayIncome += amt;
-      else if (op.type === 'expense' || op.isWithdrawal) dayExpense += amt;
-    });
-
-    if (dayIncome > max) max = dayIncome;
-    if (dayExpense > max) max = dayExpense;
+    if (inc > max) max = inc;
+    if (exp > max) max = exp;
   }
 
   return max || 1;
@@ -517,68 +563,81 @@ watch(
   { immediate: true }
 );
 
-// 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES) - SAFE
+// 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES)
+// Важно: НЕ якоримся к currentTotalBalance (текущему), иначе при смене диапазона/скролле
+// баланс в прошлом «прыгает». Якорь — initialTotalBalance + накопленный эффект операций по датам.
 const summaries = computed(() => {
   const _v = mainStore.cacheVersion;
-  if (!Array.isArray(props.visibleDays) || props.visibleDays.length === 0) return [];
 
-  const computeDayIncExp = (date) => {
-    const dateKey = _getDateKey(date);
-    const dayOps = mainStore.getOperationsForDay(dateKey) || [];
+  // зависимости (чтобы Vue пересчитывал при обновлении расчёта)
+  const chartMap = (projectionStore.dailyChartData instanceof Map)
+    ? projectionStore.dailyChartData
+    : projectionStore.dailyChartData?.value;
+
+  const daysSrc = normalizedVisibleDays.value;
+  if (!Array.isArray(daysSrc) || daysSrc.length === 0) return [];
+
+  const days = [...daysSrc].filter(Boolean).sort((a, b) => {
+    const ta = a?.date instanceof Date ? a.date.getTime() : new Date(a?.date).getTime();
+    const tb = b?.date instanceof Date ? b.date.getTime() : new Date(b?.date).getTime();
+    return ta - tb;
+  });
+
+  const map = chartMap instanceof Map ? chartMap : new Map();
+
+  const _cmpDateKey = (ka, kb) => {
+    const [y1, d1] = String(ka || '0-0').split('-').map(Number);
+    const [y2, d2] = String(kb || '0-0').split('-').map(Number);
+    return (y1 - y2) || (d1 - d2);
+  };
+
+  const sortedKeys = Array.from(map.keys()).sort(_cmpDateKey);
+
+  // 1) Стартовый running — начальный баланс по счетам
+  let running = Math.max(0, Number(initialTotalBalance.value || 0));
+
+  // 2) Если в кэше есть операции ДО первого дня окна — возьмём их closingBalance как реальный якорь
+  const firstKey = _getDateKey(days[0].date);
+  for (const k of sortedKeys) {
+    if (_cmpDateKey(k, firstKey) >= 0) break;
+    const rec = map.get(k);
+    const cb = rec?.closingBalance;
+    if (cb !== undefined && cb !== null) {
+      running = Math.max(0, Number(cb) || 0);
+    } else {
+      // fallback: если нет closingBalance, считаем через dayTotal
+      const inc = Number(rec?.income || 0) + Number(rec?.prepayment || 0);
+      const exp = Math.abs(Number(rec?.expense || 0)) + Math.abs(Number(rec?.withdrawal || 0));
+      running = Math.max(0, running + inc - exp);
+    }
+  }
+
+  // 3) Формируем summaries для каждого дня окна, даже если операций в этот день нет
+  return days.map((day) => {
+    const d = day.date instanceof Date ? day.date : new Date(day.date);
+    const dateKey = _getDateKey(d);
+    const rec = map.get(dateKey);
 
     let inc = 0;
     let exp = 0;
 
-    dayOps.forEach((op) => {
-      if (!op) return;
-      if (!isOpVisible(op)) return;
-      if (op.type === 'transfer' || op.isTransfer) return;
-      if (op.isWorkAct) return;
-      if (!op.accountId) return;
+    if (rec) {
+      inc = Math.abs(Number(rec.income || 0)) + Math.abs(Number(rec.prepayment || 0));
+      exp = Math.abs(Number(rec.expense || 0)) + Math.abs(Number(rec.withdrawal || 0));
 
-      const amt = Math.abs(Number(op.amount) || 0);
-
-      if (op.isWithdrawal) {
-        exp += amt;
-      } else if (op.type === 'expense') {
-        if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) return;
-        exp += amt;
-      } else if (op.type === 'income') {
-        inc += amt;
+      const cb = rec?.closingBalance;
+      if (cb !== undefined && cb !== null) {
+        running = Math.max(0, Number(cb) || 0);
+      } else {
+        running = Math.max(0, running + inc - exp);
       }
-    });
-
-    return { inc, exp };
-  };
-
-  const cutoff = new Date();
-  cutoff.setHours(23, 59, 59, 999);
-
-  let netPastWindow = 0;
-  props.visibleDays.forEach((day) => {
-    if (!day?.date) return;
-    const d = day.date instanceof Date ? day.date : new Date(day.date);
-    if (Number.isNaN(d.getTime())) return;
-    if (d.getTime() > cutoff.getTime()) return;
-    const { inc, exp } = computeDayIncExp(d);
-    netPastWindow += inc - exp;
-  });
-
-  let runningBalance = Number(mainStore.currentTotalBalance || 0) - netPastWindow;
-
-  return props.visibleDays.map((day) => {
-    if (!day || !day.date) return { date: '', income: 0, expense: 0, balance: 0 };
-
-    const d = day.date instanceof Date ? day.date : new Date(day.date);
-    const { inc, exp } = computeDayIncExp(d);
-
-    runningBalance += inc - exp;
+    }
 
     return {
       date: d.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: inc,
       expense: exp,
-      balance: runningBalance
+      balance: Math.max(0, running)
     };
   });
 });
@@ -643,10 +702,10 @@ const balanceAxis = computed(() => {
   return { min: 0, max: max + pad };
 });
 
-// Серый столбик = баланс на конец дня (end)
+// Серый столбик = баланс на начало дня (start = остаток предыдущего дня)
 const balanceBarData = computed(() => {
   const _v = mainStore.cacheVersion;
-  const vals = endBalanceValues.value;
+  const vals = startBalanceValues.value;
   return (vals || []).map((v) => Math.max(0, Number(v) || 0));
 });
 
@@ -662,82 +721,45 @@ const balanceColors = computed(() => {
   });
 });
 
-// Плавающие сегменты расходов и доходов (чтобы видеть ОБА в один день)
-// Плавающий сегмент расхода: рисуем только ту часть, которая опустила баланс ниже start.
-// Это гарантирует, что доход (зелёный) всегда останется наверху и не будет перекрыт расходом.
-// - если end < start (расходов больше, чем перекрыл доход) -> красный = [end, start]
-// - если end >= start (доход перекрыл расходы) -> красный не рисуем (0)
+// 🟥/🟢 Пункт 7 (как ты просил):
+// - Серый = остаток предыдущего дня (start)
+// - Зелёный = доход всегда СВЕРХУ: [start, start+income]
+// - Красный = расход всегда СНИЗУ (под зелёным), чтобы НЕ перекрывать зелёный:
+//            [start-expense, start]
+// Это визуальная логика (не "математика водопада"), чтобы в один день было видно и доход, и расход.
+
+// 🟢 Доход (floating): [start, peak]
+const incomeFloatData = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const arr = Array.isArray(summaries.value) ? summaries.value : [];
+  const startVals = startBalanceValues.value || [];
+  const peakVals = peakBalanceValues.value || [];
+
+  return arr.map((s, i) => {
+    const inc = Math.abs(Number(s?.income) || 0);
+    if (!inc) return [0, 0];
+
+    const start = Math.max(0, Number(startVals[i]) || 0);
+    const peak = Math.max(0, Number(peakVals[i]) || 0);
+    if (peak <= start) return [0, 0];
+    return [start, peak];
+  });
+});
+
+// 🟥 Расход (floating): [start - expense, start]
 const expenseFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
-  const endVals = endBalanceValues.value || [];
   const startVals = startBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const exp = Math.abs(Number(s?.expense) || 0);
     if (!exp) return [0, 0];
 
-    const end = Math.max(0, Number(endVals[i]) || 0);
     const start = Math.max(0, Number(startVals[i]) || 0);
-
-    // Если расходы не опустили баланс ниже start — красный сегмент не нужен
-    if (end >= start) return [0, 0];
-
-    return [end, start];
-  });
-});
-
-// Контур расхода «внутри дохода» (когда income >= expense):
-// Если за день был и доход, и расход, но итоговый баланс не упал ниже start,
-// мы показываем расход как красный КОНТУР в верхней зелёной зоне, чтобы было видно оба.
-const expenseCapData = computed(() => {
-  const _v = mainStore.cacheVersion;
-  const arr = Array.isArray(summaries.value) ? summaries.value : [];
-  const startVals = startBalanceValues.value || [];
-  const endVals = endBalanceValues.value || [];
-  const peakVals = peakBalanceValues.value || [];
-
-  return arr.map((s, i) => {
-    const inc = Math.abs(Number(s?.income) || 0);
-    const exp = Math.abs(Number(s?.expense) || 0);
-    if (!inc || !exp) return [0, 0];
-
-    const start = Math.max(0, Number(startVals[i]) || 0);
-    const end = Math.max(0, Number(endVals[i]) || 0);
-    const peak = Math.max(0, Number(peakVals[i]) || 0);
-
-    // Если баланс упал ниже start — этот кейс уже показан красным сегментом снизу (expenseFloatData)
-    if (end < start) return [0, 0];
-
-    // Расход «внутри дохода»: рисуем контур от (peak - exp) до peak, но не ниже start
-    const from = Math.max(start, peak - exp);
-    const to = peak;
-    if (to <= from) return [0, 0];
-
-    return [from, to];
-  });
-});
-
-const incomeFloatData = computed(() => {
-  const _v = mainStore.cacheVersion;
-  const arr = Array.isArray(summaries.value) ? summaries.value : [];
-  const startVals = startBalanceValues.value || [];
-  const peakVals = peakBalanceValues.value || [];
-  return arr.map((s, i) => {
-    const inc = Math.abs(Number(s?.income) || 0);
-    if (!inc) return [0, 0];
-    const start = Math.max(0, Number(startVals[i]) || 0);
-    const peak = Math.max(0, Number(peakVals[i]) || 0);
-    return [start, peak];
-  });
-});
-
-const expenseFloatColors = computed(() => {
-  const _v = mainStore.cacheVersion;
-  const arr = Array.isArray(summaries.value) ? summaries.value : [];
-  return arr.map((s) => {
-    const exp = Math.abs(Number(s?.expense) || 0);
-    return exp ? 'rgba(255,59,48,1)' : 'rgba(0,0,0,0)';
+    const from = Math.max(0, start - exp);
+    if (start <= from) return [0, 0];
+    return [from, start];
   });
 });
 
@@ -747,6 +769,15 @@ const incomeFloatColors = computed(() => {
   return arr.map((s) => {
     const inc = Math.abs(Number(s?.income) || 0);
     return inc ? 'rgba(52,199,89,1)' : 'rgba(0,0,0,0)';
+  });
+});
+
+const expenseFloatColors = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const arr = Array.isArray(summaries.value) ? summaries.value : [];
+  return arr.map((s) => {
+    const exp = Math.abs(Number(s?.expense) || 0);
+    return exp ? 'rgba(255,59,48,1)' : 'rgba(0,0,0,0)';
   });
 });
 
@@ -828,13 +859,12 @@ const chartData = computed(() => {
   const expenseDetails = [];
   const withdrawalDetails = [];
 
-  const safeDays = Array.isArray(props.visibleDays) ? props.visibleDays : [];
+  const safeDays = normalizedVisibleDays.value;
   const prepayIds = mainStore.getPrepaymentCategoryIds || [];
   const creditCatId = mainStore.creditCategoryId;
   const retailId = mainStore.retailIndividualId;
 
   for (const day of safeDays) {
-    if (!day || !day.date) continue;
     const dateKey = _getDateKey(day.date);
     const dayOps = mainStore.getOperationsForDay(dateKey) || [];
 
@@ -922,7 +952,7 @@ const chartData = computed(() => {
   return {
     labels,
     datasets: [
-      // 🟢 Баланс (основание) — серый столбик по остатку в каждой колонке
+      // 🟢 Баланс (основание) — серый столбик по остатку на НАЧАЛО дня
       {
         type: 'bar',
         label: 'Баланс',
@@ -931,45 +961,35 @@ const chartData = computed(() => {
         yAxisID: 'yBalance',
         order: 0,
         grouped: false,
-        stack: 'stack1',
+        barPercentage: 0.92,
+        categoryPercentage: 1.0,
         borderSkipped: false
       },
-      // 🟢 Расход (floating segment)
+      // 🟥 Расход — всегда ВНИЗУ (под зелёным): [start-expense, start]
       {
         type: 'bar',
         label: 'Расход',
         data: (expenseFloatData.value || []).slice(0, labels.length),
         backgroundColor: (expenseFloatColors.value || []).slice(0, labels.length),
         yAxisID: 'yBalance',
-        order: 2,
+        order: 4000,
         borderSkipped: false,
         grouped: false,
-        stack: 'stack1'
+        barPercentage: 0.92,
+        categoryPercentage: 1.0
       },
-      // 🟢 Доход (floating segment)
+      // 🟢 Доход — всегда СВЕРХУ: [start, peak]
       {
         type: 'bar',
         label: 'Доход',
         data: (incomeFloatData.value || []).slice(0, labels.length),
         backgroundColor: (incomeFloatColors.value || []).slice(0, labels.length),
         yAxisID: 'yBalance',
-        order: 3,
+        order: 5000,
         borderSkipped: false,
         grouped: false,
-        stack: 'stack1'
-      },
-      // 🔴 Расход (контур внутри дохода — когда income >= expense)
-      {
-        type: 'bar',
-        label: 'Расход (контур)',
-        data: (expenseCapData.value || []).slice(0, labels.length),
-        backgroundColor: 'rgba(0,0,0,0)',
-        borderColor: 'rgba(255,59,48,1)',
-        borderWidth: 2,
-        borderSkipped: false,
-        grouped: false,
-        stack: 'stack1',
-        order: 4
+        barPercentage: 0.92,
+        categoryPercentage: 1.0
       }
     ]
   };
@@ -986,7 +1006,7 @@ const chartOptions = computed(() => {
       intersect: true
     },
     onClick: (event, elements, chart) => {
-      const el = document.getElementById('chartjs-custom-tooltip');
+      const el = document.getElementById(TOOLTIP_EL_ID);
 
       // Click on empty space -> unpin and hide
       if (!elements || elements.length === 0) {
@@ -1032,13 +1052,16 @@ const chartOptions = computed(() => {
         callbacks: {
           title: () => null,
           label: (context) => {
+            // Prevent duplicated tooltip body when Chart.js returns multiple items (income/expense/balance) for the same index.
+            // We render ONE unified tooltip based on the base (balance) dataset only.
+            if (context.datasetIndex !== 0) return '';
             const index = context.dataIndex;
             const dateLabel = context.chart.data.labels[index];
 
             const daySum = Array.isArray(summaries.value) ? summaries.value[index] : null;
             const dayIncome = Math.abs(Number(daySum?.income) || 0);
             const dayExpense = Math.abs(Number(daySum?.expense) || 0);
-            const dayBalance = Number(daySum?.balance) || 0;
+            const dayBalance = Math.max(0, Number(daySum?.balance) || 0);
 
             // Всегда: дата + баланс
             const lines = [`${dateLabel}`, `Баланс: ${formatNumber(dayBalance)} т`];
@@ -1165,7 +1188,7 @@ watch(
       <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
     </div>
 
-    <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${visibleDays.length}, 1fr)` }">
+    <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${summaries.length}, 1fr)` }">
       <div v-for="(day, index) in summaries" :key="index" class="day-summary">
         <div class="day-date">{{ day.date }}</div>
         <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
