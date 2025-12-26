@@ -618,24 +618,31 @@ const summaries = computed(() => {
     const dateKey = _getDateKey(d);
     const rec = map.get(dateKey);
 
-    let inc = 0;
+    let incMain = 0;      // обычный доход (зелёный)
+    let incPrepay = 0;    // предоплата/транш до закрытия (оранжевый)
+    let incTotal = 0;     // сумма (incMain + incPrepay)
     let exp = 0;
 
     if (rec) {
-      inc = Math.abs(Number(rec.income || 0)) + Math.abs(Number(rec.prepayment || 0));
+      incMain = Math.abs(Number(rec.income || 0));
+      incPrepay = Math.abs(Number(rec.prepayment || 0));
+      incTotal = incMain + incPrepay;
+
       exp = Math.abs(Number(rec.expense || 0)) + Math.abs(Number(rec.withdrawal || 0));
 
       const cb = rec?.closingBalance;
       if (cb !== undefined && cb !== null) {
         running = Math.max(0, Number(cb) || 0);
       } else {
-        running = Math.max(0, running + inc - exp);
+        running = Math.max(0, running + incTotal - exp);
       }
     }
 
     return {
       date: d.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
-      income: inc,
+      income: incTotal,
+      incomeMain: incMain,
+      prepayment: incPrepay,
       expense: exp,
       balance: Math.max(0, running)
     };
@@ -728,21 +735,39 @@ const balanceColors = computed(() => {
 //            [start-expense, start]
 // Это визуальная логика (не "математика водопада"), чтобы в один день было видно и доход, и расход.
 
-// 🟢 Доход (floating): [start, peak]
-const incomeFloatData = computed(() => {
+// 🟠 Предоплата/транш (floating): [start, start+prepayment]
+const prepaymentFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
-  const peakVals = peakBalanceValues.value || [];
 
   return arr.map((s, i) => {
-    const inc = Math.abs(Number(s?.income) || 0);
+    const p = Math.abs(Number(s?.prepayment) || 0);
+    if (!p) return [0, 0];
+
+    const start = Math.max(0, Number(startVals[i]) || 0);
+    const to = start + p;
+    if (to <= start) return [0, 0];
+    return [start, to];
+  });
+});
+
+// 🟢 Обычный доход (floating): [start+prepayment, start+prepayment+incomeMain]
+const incomeMainFloatData = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const arr = Array.isArray(summaries.value) ? summaries.value : [];
+  const startVals = startBalanceValues.value || [];
+
+  return arr.map((s, i) => {
+    const inc = Math.abs(Number(s?.incomeMain) || 0);
     if (!inc) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
-    const peak = Math.max(0, Number(peakVals[i]) || 0);
-    if (peak <= start) return [0, 0];
-    return [start, peak];
+    const p = Math.abs(Number(s?.prepayment) || 0);
+    const from = start + p;
+    const to = from + inc;
+    if (to <= from) return [0, 0];
+    return [from, to];
   });
 });
 
@@ -763,11 +788,20 @@ const expenseFloatData = computed(() => {
   });
 });
 
-const incomeFloatColors = computed(() => {
+const prepaymentFloatColors = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   return arr.map((s) => {
-    const inc = Math.abs(Number(s?.income) || 0);
+    const p = Math.abs(Number(s?.prepayment) || 0);
+    return p ? 'rgba(255,157,0,1)' : 'rgba(0,0,0,0)';
+  });
+});
+
+const incomeMainFloatColors = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const arr = Array.isArray(summaries.value) ? summaries.value : [];
+  return arr.map((s) => {
+    const inc = Math.abs(Number(s?.incomeMain) || 0);
     return inc ? 'rgba(52,199,89,1)' : 'rgba(0,0,0,0)';
   });
 });
@@ -978,12 +1012,25 @@ const chartData = computed(() => {
         barPercentage: 0.92,
         categoryPercentage: 1.0
       },
-      // 🟢 Доход — всегда СВЕРХУ: [start, peak]
+      // 🟠 Предоплата/транш — оранжевый сегмент над стартом дня
+      {
+        type: 'bar',
+        label: 'Предоплата',
+        data: (prepaymentFloatData.value || []).slice(0, labels.length),
+        backgroundColor: (prepaymentFloatColors.value || []).slice(0, labels.length),
+        yAxisID: 'yBalance',
+        order: 4500,
+        borderSkipped: false,
+        grouped: false,
+        barPercentage: 0.92,
+        categoryPercentage: 1.0
+      },
+      // 🟢 Доход — всегда СВЕРХУ (после предоплаты)
       {
         type: 'bar',
         label: 'Доход',
-        data: (incomeFloatData.value || []).slice(0, labels.length),
-        backgroundColor: (incomeFloatColors.value || []).slice(0, labels.length),
+        data: (incomeMainFloatData.value || []).slice(0, labels.length),
+        backgroundColor: (incomeMainFloatColors.value || []).slice(0, labels.length),
         yAxisID: 'yBalance',
         order: 5000,
         borderSkipped: false,
@@ -1243,7 +1290,7 @@ watch(
   overflow: hidden;
 }
 .day-date {
-  color: #aaa;
+  color: #aaaaaa;
   font-weight: bold;
   margin-bottom: 5px;
 }
@@ -1256,7 +1303,7 @@ watch(
   font-weight: 500;
 }
 .day-balance {
-  color: #ccc;
+  color: #e1fcff;
   font-weight: 500;
   margin-top: 5px;
 }
