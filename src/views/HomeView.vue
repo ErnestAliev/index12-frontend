@@ -179,19 +179,34 @@ const sendAiMessage = async () => {
   aiLoading.value = true;
 
   try {
-    // read-only запрос на сервер (ключ OpenAI хранится только на backend)
-    const res = await axios.post(`${API_BASE_URL}/ai/query`, { message: text });
+    // Передаем контекст периода и флаг скрытых счетов (read-only)
+    const asOf = mainStore?.projection?.rangeEndDate || null;
+    const includeHidden = !!(
+      mainStore?.showExcludedAccounts ??
+      mainStore?.includeHiddenAccounts ??
+      mainStore?.showHiddenAccounts ??
+      mainStore?.showHidden
+    );
+
+    const res = await axios.post(`${API_BASE_URL}/ai/query`, {
+      message: text,
+      asOf,
+      includeHidden,
+    });
     const answer = (res?.data?.text || '').trim() || 'Нет ответа.';
     aiMessages.value.push(_makeAiMsg('assistant', answer));
   } catch (err) {
     const status = err?.response?.status;
-    if (status === 402 || status === 403) {
+
+    // Paywall временно отключен (MVP). Код оставляем на будущее.
+    if (false && (status === 402 || status === 403)) {
       aiPaywall.value = true;
       aiPaywallReason.value = err?.response?.data?.message || 'AI ассистент доступен по подписке.';
       aiMessages.value.push(_makeAiMsg('assistant', 'AI доступен по подписке. Открой доступ и попробуй снова.'));
-    } else {
-      aiMessages.value.push(_makeAiMsg('assistant', 'Ошибка. Повтори запрос.'));
+      return;
     }
+
+    aiMessages.value.push(_makeAiMsg('assistant', 'Ошибка AI. Проверь backend / ключ / лимиты.'));
   } finally {
     aiLoading.value = false;
     nextTick(scrollAiToBottom);
@@ -823,7 +838,7 @@ const handleRefundDelete = async (op) => {
           </button>
         </div>
 
-        <div v-if="aiPaywall" class="ai-paywall">
+        <div v-if="false && aiPaywall" class="ai-paywall">
           <div class="ai-paywall-title">Функция платная</div>
           <div class="ai-paywall-text">{{ aiPaywallReason }}</div>
           <button class="ai-paywall-btn" disabled title="Скоро">Оплатить (скоро)</button>
@@ -833,8 +848,17 @@ const handleRefundDelete = async (op) => {
         <template v-else>
           <div class="ai-quick">
             <button class="ai-quick-btn" @click="useQuickPrompt('Что на счетах?')">Счета</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Топ расходов за 30 дней')">Топ 30д</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Счета включая скрытые')">Счета+скрытые</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Топ расходов за 30 дней')">Топ расход 30д</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('Отчет за 30 дней')">Отчет 30д</button>
+
+            <button class="ai-quick-btn" @click="useQuickPrompt('Проекты за 30 дней')">Проекты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Контрагенты за 30 дней')">Контрагенты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Категории за 30 дней')">Категории</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Налоги за 30 дней')">Налоги</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Переводы за 30 дней')">Переводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Выводы за 30 дней')">Выводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Кредиты')">Кредиты</button>
           </div>
 
           <div class="ai-messages" ref="aiMessagesRef">
@@ -1042,8 +1066,8 @@ const handleRefundDelete = async (op) => {
 .ai-drawer-close { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s, border-color 0.2s; }
 .ai-drawer-close:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
-.ai-quick { padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--color-border); }
-.ai-quick-btn { padding: 6px 10px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font-size: 12px; }
+.ai-quick { padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--color-border);  overflow: auto; }
+.ai-quick-btn { padding: 6px 9px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font-size: 12px; line-height: 1; }
 .ai-quick-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
 .ai-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
