@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue'
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import { buildAiContext } from '@/ai/aiContextBuilder.js';
 
 // Компоненты
 import IncomePopup from '@/components/IncomePopup.vue'; 
@@ -192,21 +193,61 @@ const sendAiMessage = async () => {
   aiLoading.value = true;
 
   try {
-    // Передаем контекст периода и флаг скрытых счетов (read-only)
+    // Контекст периода (read-only)
     const asOf = mainStore?.projection?.rangeEndDate || null;
-    const includeHidden = !!(
-      mainStore?.showExcludedAccounts ??
-      mainStore?.includeHiddenAccounts ??
-      mainStore?.showHiddenAccounts ??
-      mainStore?.showHidden
-    );
+
+    // Определяем, нужно ли включать скрытые счета по смыслу запроса.
+    // (Чтобы пользователь не зависел от UI-тумблера и не гадал про «скрытые счета».)
+    const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(text);
+    const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ых)?\b/i.test(text);
+    const includeHidden = wantsAccounts || wantsHidden;
+
+    // Если hidden не нужен — отправляем только видимые (не excluded/hidden) id.
+    // Если нужен — отправляем null, чтобы билдер включил все.
+    const visibleAccountIds = includeHidden
+      ? null
+      : (Array.isArray(mainStore?.accounts)
+          ? mainStore.accounts
+              .filter(a => {
+                const excluded = !!(a?.isExcluded ?? a?.excluded ?? a?.hidden ?? a?.isHidden);
+                return !excluded;
+              })
+              .map(a => a?._id)
+              .filter(Boolean)
+          : null);
+
+    const aiContext = buildAiContext(mainStore, {
+      viewMode: viewMode.value,
+      today: today.value,
+      ui: {
+        includeHidden,
+        visibleAccountIds,
+      },
+    });
 
     const res = await axios.post(`${API_BASE_URL}/ai/query`, {
       message: text,
       asOf,
       includeHidden,
+      aiContext,
     });
-    const answer = (res?.data?.text || '').trim() || 'Нет ответа.';
+    const rawAnswer = (res?.data?.text || '').trim() || 'Нет ответа.';
+
+    // Нормализация вывода: иногда год «2026» разбивается как «2 026» из-за форматирования чисел.
+    // Приводим даты к виду DD.MM.YY.
+    const normalizeAiText = (s) => {
+      if (!s) return s;
+      let out = String(s);
+      // Склеиваем разорванный год: "01.01.2 026" -> "01.01.2026"
+      out = out.replace(/(\b\d{2}\.\d{2}\.)\s*(\d)\s+(\d{3}\b)/g, '$1$2$3');
+      // Убираем пробел после точки перед годом: "01.01. 2026" -> "01.01.2026"
+      out = out.replace(/(\b\d{2}\.\d{2}\.)\s*(\d{4}\b)/g, '$1$2');
+      // Сокращаем год: "01.01.2026" -> "01.01.26"
+      out = out.replace(/(\b\d{2}\.\d{2}\.)\s*(\d{4}\b)/g, (m, p1, y) => `${p1}${String(y).slice(2)}`);
+      return out;
+    };
+
+    const answer = normalizeAiText(rawAnswer);
     aiMessages.value.push(_makeAiMsg('assistant', answer));
   } catch (err) {
     const status = err?.response?.status;
@@ -860,23 +901,23 @@ const handleRefundDelete = async (op) => {
 
         <template v-else>
           <div class="ai-quick">
-            <button class="ai-quick-btn" @click="useQuickPrompt('Что на счетах?')">Счета</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Счета включая скрытые')">Счета+скрытые</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи список физлиц')">Список физлиц</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи список контрагентов')">Список контрагентов</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи список проектов')">Список проектов</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи список категорий')">Список категорий</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Топ расходов за 30 дней')">Топ расход 30д</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Отчет за 30 дней')">Отчет 30д</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи счета: активные и скрытые отдельно. По каждому счету сумма и общий итог. Без лишних пояснений.')">Счета</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи доходы')">Доходы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи расходы')">Расходы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Что по налогам?')">Налоги</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи переводы')">Переводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи выводы')">Выводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи кредиты')">Кредиты</button>
 
-            <button class="ai-quick-btn" @click="useQuickPrompt('Проекты за 30 дней')">Проекты</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Контрагенты за 30 дней')">Контрагенты</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Категории за 30 дней')">Категории</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Налоги за 30 дней')">Налоги</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Переводы за 30 дней')">Переводы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выводы за 30 дней')">Выводы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Физлица за 30 дней')">Физлица</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Кредиты')">Кредиты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список проектов (все записи, без ограничения количества).')">Проекты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список категорий (все записи, без ограничения количества).')">Категории</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список контрагентов (все записи, без ограничения количества).')">Контрагенты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список физлиц (все записи, без ограничения количества).')">Физлица</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи предоплаты')">Предоплаты</button>
+
+            <button class="ai-quick-btn" @click="useQuickPrompt('Какой проект самый доходный?')">Топ доход проект</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Какой проект самый расходный?')">Топ расход проект</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Какая категория самая расходная?')">Топ расход категория</button>
           </div>
 
           <div class="ai-messages" ref="aiMessagesRef">
@@ -1084,11 +1125,59 @@ const handleRefundDelete = async (op) => {
 .ai-drawer-close { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s, border-color 0.2s; }
 .ai-drawer-close:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
-.ai-quick { padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--color-border);  overflow: auto; }
+.ai-quick {
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-border);
+  overflow: auto;
+  /* scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) transparent;
+}
+
+.ai-quick::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ai-quick::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ai-quick::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-hover);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
 .ai-quick-btn { padding: 6px 9px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font-size: 12px; line-height: 1; }
 .ai-quick-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
-.ai-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) transparent;
+}
+
+.ai-messages::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ai-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ai-messages::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-hover);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
 .ai-message { display: flex; }
 .ai-message.user { justify-content: flex-end; }
 .ai-message.assistant { justify-content: flex-start; }
@@ -1112,8 +1201,9 @@ const handleRefundDelete = async (op) => {
   background: var(--color-primary);
   color: #ffffff;
   cursor: pointer;
- 
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.2s, border-color 0.2s, transform 0.08s;
 }
 .ai-send-btn:hover {
@@ -1140,8 +1230,9 @@ const handleRefundDelete = async (op) => {
   background: var(--color-background);
   color: var(--color-text);
   cursor: pointer;
-  
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.2s, border-color 0.2s, transform 0.08s;
 }
 .ai-mic-btn:hover {
