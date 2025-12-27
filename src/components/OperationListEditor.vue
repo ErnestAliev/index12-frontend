@@ -57,7 +57,7 @@ const contractorOptions = computed(() => {
       filteredContractors.forEach(c => group.options.push({ value: `contr_${c._id}`, label: c.name }));
       opts.push(group);
   }
-  
+
   const filteredIndividuals = mainStore.individuals.filter(i => {
       const name = i.name.trim().toLowerCase();
       return name !== 'розничные клиенты' && name !== 'розница';
@@ -145,13 +145,13 @@ const getOwnerId = (compId, indId) => {
 
 const loadOperations = () => {
   const allOps = mainStore.allOperationsFlat;
-  
+
   const targetOps = allOps.filter(op => {
     if (op.type !== props.type) return false; 
     if (op.isTransfer || op.isWithdrawal) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     if (mainStore._isRetailWriteOff(op)) return false;
-    
+
     return true;
   });
 
@@ -168,7 +168,7 @@ const loadOperations = () => {
           }
       }
       const ownerId = getOwnerId(cId, iId);
-      
+
       let contrVal = null;
       const contrId = op.contractorId?._id || op.contractorId;
       const indContrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
@@ -206,10 +206,10 @@ const filteredItems = computed(() => {
     if (to && item.date > to) return false;
 
     if (filters.value.amount && !String(item.amount).includes(filters.value.amount.replace(/\s/g, ''))) return false;
-    
+
     if (filters.value.owner && item.ownerId !== filters.value.owner) return false;
     if (filters.value.account && item.accountId !== filters.value.account) return false;
-    
+
     if (filters.value.contractorValue && item.contractorValue !== filters.value.contractorValue) return false;
     if (filters.value.category && item.categoryId !== filters.value.category) return false;
     if (filters.value.project && item.projectId !== filters.value.project) return false;
@@ -217,6 +217,15 @@ const filteredItems = computed(() => {
     return true;
   });
 });
+
+// SUMMARY BAR (reactive totals for current filtered list)
+const filteredCount = computed(() => filteredItems.value.length);
+
+const filteredTotal = computed(() => {
+  return filteredItems.value.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0);
+});
+
+const filteredTotalText = computed(() => `${formatNumber(filteredTotal.value)} KZT`);
 
 // ACTIONS
 const openCreatePopup = () => { isCreatePopupVisible.value = true; };
@@ -249,12 +258,22 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     <div class="popup-content wide-editor">
-      <div class="popup-header"><h3>{{ title }}</h3></div>
+      <div class="popup-header">
+        <div class="header-row">
+          <h3>{{ title }}</h3>
+
+          <div class="summary-bar" :title="`Операций: ${filteredCount}`">
+            <span class="summary-label">Итого:</span>
+            <span class="summary-value">{{ filteredTotalText }}</span>
+            <span class="summary-count">({{ filteredCount }})</span>
+          </div>
+        </div>
+      </div>
 
       <!-- FILTERS (Остаются инпутами для поиска) -->
       <div class="filters-row">
         <div class="filter-col col-date"><DateRangePicker v-model="filters.dateRange" placeholder="Период" /></div>
-        
+
         <div class="filter-col col-owner">
             <select v-model="filters.owner" class="filter-input filter-select">
                 <option value="">Владелец</option>
@@ -263,28 +282,28 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
             </select>
         </div>
         <div class="filter-col col-acc"><select v-model="filters.account" class="filter-input filter-select"><option value="">Счет</option><option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option></select></div>
-        
+
         <div class="filter-col col-amount"><input type="text" v-model="filters.amount" class="filter-input" placeholder="Сумма" /></div>
-        
+
         <div class="filter-col col-contr">
             <select v-model="filters.contractorValue" class="filter-input filter-select"><option value="">Контрагент</option><optgroup v-for="g in contractorOptions" :key="g.label" :label="g.label"><option v-for="o in g.options" :key="o.value" :value="o.value">{{ o.label }}</option></optgroup></select>
         </div>
         <div class="filter-col col-cat"><select v-model="filters.category" class="filter-input filter-select"><option value="">Категория</option><option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option></select></div>
         <div class="filter-col col-proj"><select v-model="filters.project" class="filter-input filter-select"><option value="">Проект</option><option v-for="p in projects" :key="p._id" :value="p._id">{{ p.name }}</option></select></div>
-        
+
         <div class="filter-col col-trash"></div>
       </div>
-      
+
       <!-- LIST (Теперь только текст) -->
       <div class="list-scroll">
         <div v-if="filteredItems.length === 0" class="empty-state">Операций не найдено.</div>
-        
+
         <div v-for="item in filteredItems" :key="item._id" class="grid-row">
             <!-- Дата -->
             <div class="col-date">
                 <span class="text-cell">{{ formatDateDisplay(item.date) }}</span>
             </div>
-            
+
             <!-- Владелец -->
             <div class="col-owner">
                 <span class="text-cell" :title="getOwnerName(item.ownerId)">{{ getOwnerName(item.ownerId) }}</span>
@@ -299,7 +318,7 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
             <div class="col-amount">
                 <span class="text-cell amount-text">{{ item.amountFormatted }}</span>
             </div>
-            
+
             <!-- Контрагент -->
             <div class="col-contr">
                 <span class="text-cell" :title="getContractorName(item.contractorValue)">{{ getContractorName(item.contractorValue) }}</span>
@@ -349,7 +368,7 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
         @close="isCreatePopupVisible = false" 
         @save="handleSave" 
     />
-    
+
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="showDeleteConfirm = false"><div class="delete-confirm-box"><h4>Удалить операцию?</h4><p class="confirm-text">Вы действительно хотите удалить эту операцию? Это действие необратимо.</p><div class="delete-actions"><button class="btn-delete-confirm" @click="confirmDelete">Да, удалить</button><button class="btn-cancel" @click="showDeleteConfirm = false">Отмена</button></div></div></div>
   </div>
 </template>
@@ -359,6 +378,51 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
 .popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid #ddd; }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacing: -0.02em; }
+
+.header-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #E0E0E0;
+  border-radius: 10px;
+  padding: 6px 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  white-space: nowrap;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.summary-value {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-count {
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 
 /* GRID LAYOUTS */
 .filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; margin-top: 15px;}
