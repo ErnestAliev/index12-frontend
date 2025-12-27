@@ -3,7 +3,7 @@ import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue'
 import axios from 'axios';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
-import { buildAiContext } from '@/ai/aiContextBuilder.js';
+
 
 // Компоненты
 import IncomePopup from '@/components/IncomePopup.vue'; 
