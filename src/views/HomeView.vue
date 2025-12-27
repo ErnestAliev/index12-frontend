@@ -134,7 +134,10 @@ const _makeAiMsg = (role, text) => ({
 const scrollAiToBottom = () => {
   const el = aiMessagesRef.value;
   if (!el) return;
-  el.scrollTop = el.scrollHeight;
+  // requestAnimationFrame помогает дождаться реального пересчета высоты после рендера
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+  });
 };
 
 const openAiDrawer = () => {
@@ -145,6 +148,15 @@ const openAiDrawer = () => {
     scrollAiToBottom();
   });
 };
+
+// Автоскролл: всегда держим чат внизу при новых сообщениях
+watch(
+  () => aiMessages.value.length,
+  async () => {
+    await nextTick();
+    scrollAiToBottom();
+  }
+);
 
 const closeAiDrawer = () => {
   isAiDrawerOpen.value = false;
@@ -175,6 +187,7 @@ const sendAiMessage = async () => {
   if (!text || aiLoading.value) return;
 
   aiMessages.value.push(_makeAiMsg('user', text));
+  nextTick(scrollAiToBottom);
   aiInput.value = '';
   aiLoading.value = true;
 
@@ -858,6 +871,7 @@ const handleRefundDelete = async (op) => {
             <button class="ai-quick-btn" @click="useQuickPrompt('Налоги за 30 дней')">Налоги</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('Переводы за 30 дней')">Переводы</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('Выводы за 30 дней')">Выводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('Физлица за 30 дней')">Физлица</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('Кредиты')">Кредиты</button>
           </div>
 

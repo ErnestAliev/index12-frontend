@@ -77,6 +77,16 @@ const aiLoading = ref(false);
 const aiPaywall = ref(false);
 const aiInputRef = ref(null);
 
+const aiMessagesBoxRef = ref(null);
+
+const scrollAiToBottom = () => {
+  const el = aiMessagesBoxRef.value;
+  if (!el) return;
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+  });
+};
+
 // Voice input (best-effort; works mostly in Chrome)
 const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
 const isAiRecording = ref(false);
@@ -160,6 +170,7 @@ const pushAiMessage = (role, text) => {
     copied: false,
   });
   if (aiMessages.value.length > 50) aiMessages.value.splice(0, aiMessages.value.length - 50);
+  nextTick(scrollAiToBottom);
 };
 
 const copyAiText = async (msg) => {
@@ -209,10 +220,7 @@ const sendAiMessage = async () => {
   } finally {
     aiLoading.value = false;
     await nextTick();
-    try {
-      const box = document.querySelector('.ai-modal-messages');
-      if (box) box.scrollTop = box.scrollHeight;
-    } catch (_) {}
+    scrollAiToBottom();
   }
 };
 
@@ -221,6 +229,24 @@ const runAiQuick = async (preset) => {
   await nextTick();
   await sendAiMessage();
 };
+
+// Автоскролл: держим чат внизу при новых сообщениях и при открытии окна
+watch(
+  () => aiMessages.value.length,
+  async () => {
+    await nextTick();
+    scrollAiToBottom();
+  }
+);
+
+watch(
+  () => showAiModal.value,
+  async (isOpen) => {
+    if (!isOpen) return;
+    await nextTick();
+    scrollAiToBottom();
+  }
+);
 
 // --- Scroll Sync Logic ---
 let isTimelineScrolling = false;
@@ -791,6 +817,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             <button class="ai-chip" @click="runAiQuick('налоги за 30 дней')">Налоги</button>
             <button class="ai-chip" @click="runAiQuick('переводы за 30 дней')">Переводы</button>
             <button class="ai-chip" @click="runAiQuick('выводы за 30 дней')">Выводы</button>
+            <button class="ai-chip" @click="runAiQuick('физлица за 30 дней')">Физлица</button>
             <button class="ai-chip" @click="runAiQuick('кредиты')">Кредиты</button>
           </div>
 
@@ -800,7 +827,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
               <div class="ai-paywall-text">Оплата будет добавлена позже. Сейчас доступ включается вручную.</div>
             </div>
 
-            <div v-else class="ai-modal-messages">
+            <div v-else class="ai-modal-messages" ref="aiMessagesBoxRef">
               <div v-for="m in aiMessages" :key="m.id" class="ai-msg" :class="m.role">
                 <div class="ai-bubble">{{ m.text }}</div>
                 <button v-if="m.role === 'assistant'" class="ai-copy" @click="copyAiText(m)">
