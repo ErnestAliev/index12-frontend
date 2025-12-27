@@ -817,7 +817,8 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             <button class="ai-chip" @click="runAiQuick('налоги за 30 дней')">Налоги</button>
             <button class="ai-chip" @click="runAiQuick('переводы за 30 дней')">Переводы</button>
             <button class="ai-chip" @click="runAiQuick('выводы за 30 дней')">Выводы</button>
-            <button class="ai-chip" @click="runAiQuick('физлица за 30 дней')">Физлица</button>
+            <button class="ai-chip" @click="runAiQuick('список физлиц')">Физлица</button>
+            <button class="ai-chip" @click="runAiQuick('физлица расходы за 30 дней')">Физлица 30д</button>
             <button class="ai-chip" @click="runAiQuick('кредиты')">Кредиты</button>
           </div>
 
