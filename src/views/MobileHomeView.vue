@@ -195,11 +195,18 @@ const sendAiMessage = async () => {
   aiLoading.value = true;
 
   try {
+    const asOf = mainStore?.projection?.rangeEndDate || null;
+
+    // По смыслу запроса: если человек спрашивает про счета/кассу или явно пишет про скрытые — включаем скрытые.
+    const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(q);
+    const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ых)?\b/i.test(q);
+    const includeHidden = wantsAccounts || wantsHidden;
+
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ message: q }),
+      body: JSON.stringify({ message: q, asOf, includeHidden }),
     });
 
     if (res.status === 402 || res.status === 403) {
@@ -209,14 +216,24 @@ const sendAiMessage = async () => {
     }
 
     if (!res.ok) {
-      pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
+      let serverMsg = '';
+      try {
+        const errData = await res.json();
+        serverMsg = errData?.message || errData?.error || errData?.text || '';
+      } catch (_) {
+        // ignore
+      }
+      pushAiMessage('assistant', `Ошибка AI (${res.status || 'no-status'}): ${serverMsg || 'Повтори запрос.'}`);
       return;
     }
 
     const data = await res.json();
     pushAiMessage('assistant', data?.text || 'Ок.');
-  } catch (_) {
-    pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
+  } catch (err) {
+    const status = err?.response?.status;
+    const serverMsg = err?.response?.data?.message || err?.response?.data?.error || err?.response?.data?.text;
+    const msg = serverMsg || err?.message || 'Unknown error';
+    pushAiMessage('assistant', `Ошибка AI (${status || 'no-status'}): ${msg}`);
   } finally {
     aiLoading.value = false;
     await nextTick();

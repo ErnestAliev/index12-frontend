@@ -216,20 +216,10 @@ const sendAiMessage = async () => {
               .filter(Boolean)
           : null);
 
-    const aiContext = buildAiContext(mainStore, {
-      viewMode: viewMode.value,
-      today: today.value,
-      ui: {
-        includeHidden,
-        visibleAccountIds,
-      },
-    });
-
     const res = await axios.post(`${API_BASE_URL}/ai/query`, {
       message: text,
       asOf,
       includeHidden,
-      aiContext,
     });
     const rawAnswer = (res?.data?.text || '').trim() || 'Нет ответа.';
 
@@ -260,7 +250,9 @@ const sendAiMessage = async () => {
       return;
     }
 
-    aiMessages.value.push(_makeAiMsg('assistant', 'Ошибка AI. Проверь backend / ключ / лимиты.'));
+    const serverMsg = err?.response?.data?.message || err?.response?.data?.error || err?.response?.data?.text;
+    const msg = serverMsg || err?.message || 'Unknown error';
+    aiMessages.value.push(_makeAiMsg('assistant', `Ошибка AI (${status || 'no-status'}): ${msg}`));
   } finally {
     aiLoading.value = false;
     nextTick(scrollAiToBottom);
