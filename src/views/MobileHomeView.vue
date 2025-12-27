@@ -512,7 +512,35 @@ const formatSignedFooter = (amount, sign) => {
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
   if (!isListWidget.value) {
-      const items = getWidgetItems(k, showFutureBalance.value);
+      // Accounts on mobile: always show ALL accounts (including excluded/hidden), like desktop.
+      // The eye button still controls inclusion in totals, not visibility.
+      let items = [];
+      if (k === 'accounts') {
+        const src = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+        items = src.map((a) => {
+          const cb = (a && a.currentBalance !== undefined) ? a.currentBalance : (a?.balance);
+          const fbRaw = (a && a.futureBalance !== undefined) ? a.futureBalance : (a?.forecastBalance);
+          const fb = (fbRaw !== undefined && fbRaw !== null) ? fbRaw : cb;
+          const cbNum = Number(cb) || 0;
+          const fbNum = Number(fb) || 0;
+          return {
+            _id: a?._id,
+            name: a?.name || 'Счет',
+            // keep compat fields used by fullscreen UI
+            currentBalance: cbNum,
+            futureBalance: fbNum,
+            futureChange: (a && a.futureChange !== undefined) ? (Number(a.futureChange) || 0) : (fbNum - cbNum),
+            isExcluded: !!(a?.isExcluded || a?.excludeFromTotal),
+            isLinked: !!a?.isLinked,
+            linkTooltip: a?.linkTooltip || '',
+            linkMarkerColor: a?.linkMarkerColor,
+            regime: a?.regime,
+            percent: a?.percent,
+          };
+        });
+      } else {
+        items = getWidgetItems(k, showFutureBalance.value);
+      }
       let filtered = [...items];
       const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
       if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); 
