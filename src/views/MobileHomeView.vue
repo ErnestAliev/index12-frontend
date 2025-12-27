@@ -842,20 +842,21 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
           </div>
 
           <div class="ai-modal-chips">
-            <button class="ai-chip" @click="runAiQuick('что у нас на счетах')">Счета</button>
-            <button class="ai-chip" @click="runAiQuick('счета включая скрытые')">Счета+скрытые</button>
-            <button class="ai-chip" @click="runAiQuick('топ расходов за 30 дней')">Топ расход 30д</button>
-            <button class="ai-chip" @click="runAiQuick('отчет за 30 дней')">Отчет 30д</button>
+            <button class="ai-chip" @click="runAiQuick('покажи счета')">Счета</button>
+            <button class="ai-chip" @click="runAiQuick('покажи счета включая скрытые')">Счета+скрытые</button>
 
-            <button class="ai-chip" @click="runAiQuick('проекты за 30 дней')">Проекты</button>
-            <button class="ai-chip" @click="runAiQuick('контрагенты за 30 дней')">Контрагенты</button>
-            <button class="ai-chip" @click="runAiQuick('категории за 30 дней')">Категории</button>
-            <button class="ai-chip" @click="runAiQuick('налоги за 30 дней')">Налоги</button>
-            <button class="ai-chip" @click="runAiQuick('переводы за 30 дней')">Переводы</button>
-            <button class="ai-chip" @click="runAiQuick('выводы за 30 дней')">Выводы</button>
-            <button class="ai-chip" @click="runAiQuick('список физлиц')">Физлица</button>
-            <button class="ai-chip" @click="runAiQuick('физлица расходы за 30 дней')">Физлица 30д</button>
-            <button class="ai-chip" @click="runAiQuick('кредиты')">Кредиты</button>
+            <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы (факт)</button>
+            <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы (факт)</button>
+            <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы (факт)</button>
+            <button class="ai-chip" @click="runAiQuick('покажи налоги')">Налоги (факт)</button>
+
+            <button class="ai-chip" @click="runAiQuick('покажи ближайшие доходы')">Ближайшие доходы</button>
+            <button class="ai-chip" @click="runAiQuick('покажи ближайшие расходы')">Ближайшие расходы</button>
+
+            <button class="ai-chip" @click="runAiQuick('покажи проекты')">Проекты</button>
+            <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
+            <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
+            <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
           </div>
 
           <div class="ai-modal-body">
@@ -880,7 +881,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
               ref="aiInputRef"
               v-model="aiInput"
               class="ai-input"
-              placeholder="Спроси: что на счетах? (Enter — отправить)"
+              placeholder="Спроси: покажи доходы / расходы / счета (Enter — отправить)"
               @keydown.enter.prevent="sendAiMessage"
             />
 

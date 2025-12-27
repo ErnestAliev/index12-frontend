@@ -28,11 +28,16 @@ import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const mainStore = useMainStore();
 
 // --- CONSTANTS ---
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// ВАЖНО: в проде не должно падать на localhost.
+// Если VITE_API_BASE_URL не задан — идем на тот же домен: https://<site>/api
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || (isLocalhost ? 'http://localhost:3000/api' : `${window.location.origin}/api`);
+
 const baseUrlCalculated = API_BASE_URL.replace(/\/api$/, '');
 const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
 const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
@@ -163,9 +168,51 @@ const closeAiDrawer = () => {
   isAiDrawerOpen.value = false;
 };
 
+
 const useQuickPrompt = (promptText) => {
   aiInput.value = promptText;
   nextTick(() => aiInputRef.value?.focus?.());
+};
+
+// Минимальный контекст для backend (read-only). Нужен, чтобы backend мог понимать период/режим и (опционально) баланс.
+const buildAiContext = (store, { viewMode, today, ui } = {}) => {
+  const safeIso = (d) => {
+    if (!d) return null;
+    try {
+      if (d instanceof Date) return d.toISOString();
+      if (typeof d === 'string') return d;
+    } catch (e) {}
+    return null;
+  };
+
+  const proj = store?.projection || {};
+  const accounts = Array.isArray(store?.accounts) ? store.accounts : [];
+
+  // Балансы — best-effort. Если в объекте счета нет balance/currentBalance, отправим null.
+  const balances = accounts
+    .map(a => ({
+      id: a?._id || null,
+      name: a?.name || a?.title || a?.bankName || a?.label || 'Счет',
+      excluded: !!(a?.isExcluded ?? a?.excluded ?? a?.hidden ?? a?.isHidden),
+      balance:
+        (typeof a?.balance === 'number') ? a.balance :
+        (typeof a?.currentBalance === 'number') ? a.currentBalance :
+        null,
+    }))
+    .filter(x => x.id);
+
+  return {
+    meta: {
+      viewMode: viewMode || null,
+      today: safeIso(today) || null,
+      projection: {
+        rangeStartDate: proj?.rangeStartDate || null,
+        rangeEndDate: proj?.rangeEndDate || null,
+      },
+    },
+    ui: ui || null,
+    balances: { accounts: balances },
+  };
 };
 
 const copyAiText = async (msg) => {
@@ -239,12 +286,22 @@ const sendAiMessage = async () => {
       },
     });
 
-    const res = await axios.post(`${API_BASE_URL}/ai/query`, {
-      message: text,
-      asOf,
-      includeHidden,
-      aiContext,
-    });
+    const res = await axios.post(
+      `${API_BASE_URL}/ai/query`,
+      {
+        message: text,
+        asOf,
+        includeHidden,
+        // ВАЖНО: чтобы суммы совпадали с виджетами (фильтрация по видимым счетам)
+        visibleAccountIds,
+        aiContext,
+      },
+      {
+        // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.
+        withCredentials: true,
+        timeout: 20000,
+      }
+    );
     const rawAnswer = (res?.data?.text || '').trim() || 'Нет ответа.';
 
     // Нормализация вывода: иногда год «2026» разбивается как «2 026» из-за форматирования чисел.
@@ -274,7 +331,18 @@ const sendAiMessage = async () => {
       return;
     }
 
-    aiMessages.value.push(_makeAiMsg('assistant', 'Ошибка AI. Проверь backend / ключ / лимиты.'));
+    console.error('AI Desktop error:', {
+      message: err?.message,
+      status: err?.response?.status,
+      data: err?.response?.data,
+    });
+
+    const serverText = (err?.response?.data?.text || err?.response?.data?.message || '').toString().trim();
+    const clientText = (err?.message || '').toString().trim();
+    const statusLabel = err?.response?.status ? `HTTP ${err.response.status}` : '';
+    const msg = serverText || clientText || 'Ошибка AI. Проверь backend / ключ / лимиты.';
+
+    aiMessages.value.push(_makeAiMsg('assistant', `${statusLabel ? statusLabel + ': ' : ''}${msg}`));
   } finally {
     aiLoading.value = false;
     nextTick(scrollAiToBottom);
@@ -915,23 +983,18 @@ const handleRefundDelete = async (op) => {
 
         <template v-else>
           <div class="ai-quick">
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи счета: активные и скрытые отдельно. По каждому счету сумма и общий итог. Без лишних пояснений.')">Счета</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи доходы')">Доходы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи расходы')">Расходы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Что по налогам?')">Налоги</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи переводы')">Переводы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи выводы')">Выводы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи кредиты')">Кредиты</button>
-
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список проектов (все записи, без ограничения количества).')">Проекты</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список категорий (все записи, без ограничения количества).')">Категории</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список контрагентов (все записи, без ограничения количества).')">Контрагенты</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Выведи полный список физлиц (все записи, без ограничения количества).')">Физлица</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Покажи предоплаты')">Предоплаты</button>
-
-            <button class="ai-quick-btn" @click="useQuickPrompt('Какой проект самый доходный?')">Топ доход проект</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Какой проект самый расходный?')">Топ расход проект</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('Какая категория самая расходная?')">Топ расход категория</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи счета')">Счета</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи доходы')">Доходы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи расходы')">Расходы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи переводы')">Переводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи налоги')">Налоги</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи выводы')">Выводы</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи кредиты')">Кредиты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи предоплаты')">Предоплаты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи проекты')">Проекты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи контрагентов')">Контрагенты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи категории')">Категории</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('покажи физлица')">Физлица</button>
           </div>
 
           <div class="ai-messages" ref="aiMessagesRef">
