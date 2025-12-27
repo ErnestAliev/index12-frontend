@@ -194,7 +194,21 @@ const sendAiMessage = async () => {
 
   try {
     // Контекст периода (read-only)
-    const asOf = mainStore?.projection?.rangeEndDate || null;
+    // Контекст периода (read-only)
+    // Важно: отправляем локальную дату/время пользователя (с offset), а не UTC.
+    // Иначе около полуночи UTC может увести «сегодня» на вчера.
+    const _localIsoNow = () => {
+      const d = new Date();
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const ms = String(d.getMilliseconds()).padStart(3, '0');
+      const tzMin = -d.getTimezoneOffset(); // minutes east of UTC
+      const sign = tzMin >= 0 ? '+' : '-';
+      const hh = pad2(Math.floor(Math.abs(tzMin) / 60));
+      const mm = pad2(Math.abs(tzMin) % 60);
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${ms}${sign}${hh}:${mm}`;
+    };
+
+    const asOf = _localIsoNow();
 
     // Определяем, нужно ли включать скрытые счета по смыслу запроса.
     // (Чтобы пользователь не зависел от UI-тумблера и не гадал про «скрытые счета».)
@@ -216,10 +230,20 @@ const sendAiMessage = async () => {
               .filter(Boolean)
           : null);
 
+    const aiContext = buildAiContext(mainStore, {
+      viewMode: viewMode.value,
+      today: today.value,
+      ui: {
+        includeHidden,
+        visibleAccountIds,
+      },
+    });
+
     const res = await axios.post(`${API_BASE_URL}/ai/query`, {
       message: text,
       asOf,
       includeHidden,
+      aiContext,
     });
     const rawAnswer = (res?.data?.text || '').trim() || 'Нет ответа.';
 
@@ -250,9 +274,7 @@ const sendAiMessage = async () => {
       return;
     }
 
-    const serverMsg = err?.response?.data?.message || err?.response?.data?.error || err?.response?.data?.text;
-    const msg = serverMsg || err?.message || 'Unknown error';
-    aiMessages.value.push(_makeAiMsg('assistant', `Ошибка AI (${status || 'no-status'}): ${msg}`));
+    aiMessages.value.push(_makeAiMsg('assistant', 'Ошибка AI. Проверь backend / ключ / лимиты.'));
   } finally {
     aiLoading.value = false;
     nextTick(scrollAiToBottom);

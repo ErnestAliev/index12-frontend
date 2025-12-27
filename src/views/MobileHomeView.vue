@@ -195,18 +195,47 @@ const sendAiMessage = async () => {
   aiLoading.value = true;
 
   try {
-    const asOf = mainStore?.projection?.rangeEndDate || null;
+    // Контекст периода (read-only)
+    // Важно: отправляем локальную дату/время пользователя (с offset), а не UTC.
+    // Иначе около полуночи UTC может увести «сегодня» на вчера.
+    const _localIsoNow = () => {
+      const d = new Date();
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const ms = String(d.getMilliseconds()).padStart(3, '0');
+      const tzMin = -d.getTimezoneOffset(); // minutes east of UTC
+      const sign = tzMin >= 0 ? '+' : '-';
+      const hh = pad2(Math.floor(Math.abs(tzMin) / 60));
+      const mm = pad2(Math.abs(tzMin) % 60);
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${ms}${sign}${hh}:${mm}`;
+    };
 
-    // По смыслу запроса: если человек спрашивает про счета/кассу или явно пишет про скрытые — включаем скрытые.
+    const asOf = _localIsoNow();
+
+    // Нужно ли включать скрытые счета по смыслу запроса
     const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(q);
     const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ых)?\b/i.test(q);
     const includeHidden = wantsAccounts || wantsHidden;
+
+    // Если hidden не нужен — отправляем только видимые (не excluded/hidden) id.
+    // Если нужен — отправляем null, чтобы билдер включил все.
+    const visibleAccountIds = includeHidden
+      ? null
+      : (Array.isArray(mainStore?.accounts)
+          ? mainStore.accounts
+              .filter(a => {
+                const excluded = !!(a?.isExcluded ?? a?.excluded ?? a?.hidden ?? a?.isHidden);
+                return !excluded;
+              })
+              .map(a => a?._id)
+              .filter(Boolean)
+          : null);
+
 
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ message: q, asOf, includeHidden }),
+      body: JSON.stringify({ message: q, asOf, includeHidden, visibleAccountIds }),
     });
 
     if (res.status === 402 || res.status === 403) {
@@ -216,24 +245,14 @@ const sendAiMessage = async () => {
     }
 
     if (!res.ok) {
-      let serverMsg = '';
-      try {
-        const errData = await res.json();
-        serverMsg = errData?.message || errData?.error || errData?.text || '';
-      } catch (_) {
-        // ignore
-      }
-      pushAiMessage('assistant', `Ошибка AI (${res.status || 'no-status'}): ${serverMsg || 'Повтори запрос.'}`);
+      pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
       return;
     }
 
     const data = await res.json();
     pushAiMessage('assistant', data?.text || 'Ок.');
-  } catch (err) {
-    const status = err?.response?.status;
-    const serverMsg = err?.response?.data?.message || err?.response?.data?.error || err?.response?.data?.text;
-    const msg = serverMsg || err?.message || 'Unknown error';
-    pushAiMessage('assistant', `Ошибка AI (${status || 'no-status'}): ${msg}`);
+  } catch (_) {
+    pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
   } finally {
     aiLoading.value = false;
     await nextTick();
