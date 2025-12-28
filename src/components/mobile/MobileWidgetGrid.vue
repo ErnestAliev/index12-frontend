@@ -1,11 +1,64 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useWidgetData } from '@/composables/useWidgetData.js';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 import MobileWidgetCard from './MobileWidgetCard.vue';
 
 const emit = defineEmits(['widget-click', 'widget-add', 'widget-edit']);
 const mainStore = useMainStore();
+const { getWidgetItems } = useWidgetData();
+
+// --- Snapshot support for AI (mobile)
+// We keep refs to rendered widget cards so we can ask them for snapshots.
+const widgetRefMap = new Map();
+
+const captureWidgetRef = (key, el) => {
+  if (el) widgetRefMap.set(key, el);
+  else widgetRefMap.delete(key);
+};
+
+const buildWidgetSnapshot = (key) => {
+  const inst = widgetRefMap.get(key);
+  // Prefer the widget card's own snapshot if it exposes one.
+  const fromComponent = (typeof inst?.getSnapshot === 'function') ? inst.getSnapshot() : null;
+  if (fromComponent) return fromComponent;
+
+  // Fallback: include the widget key and its computed items (if available).
+  // This keeps AI functional even if a specific widget card doesn't expose getSnapshot yet.
+  let items = null;
+  try {
+    items = getWidgetItems(key);
+  } catch (e) {
+    items = null;
+  }
+
+  return {
+    key,
+    items
+  };
+};
+
+const getSnapshot = () => {
+  const ts = new Date().toISOString();
+  const keys = Array.isArray(gridWidgets.value) ? gridWidgets.value : [];
+
+  return {
+    v: 1,
+    ts,
+    meta: {
+      source: 'MobileWidgetGrid',
+      platform: 'mobile',
+      headerExpanded: Boolean(mainStore.isHeaderExpanded)
+    },
+    ui: {
+      isHeaderExpanded: Boolean(mainStore.isHeaderExpanded)
+    },
+    widgets: keys.map(buildWidgetSnapshot).filter(Boolean)
+  };
+};
+
+defineExpose({ getSnapshot });
 
 const gridWidgets = computed({
   get: () => {
@@ -55,8 +108,9 @@ const handleWidgetClick = (key) => {
     >
       <template #item="{ element }">
         <div class="grid-item">
-          <MobileWidgetCard 
-             :widget-key="element" 
+          <MobileWidgetCard
+             :ref="(el) => captureWidgetRef(element, el)"
+             :widget-key="element"
              @click="handleWidgetClick"
              @add="emit('widget-add', element)"
              @edit="emit('widget-edit', element)"

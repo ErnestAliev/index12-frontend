@@ -9,8 +9,31 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['click', 'add', 'edit']);
+
 const mainStore = useMainStore();
 const { getWidgetItems } = useWidgetData();
+
+// Robust number parser for values that may be formatted as strings like "2 400 000 ₸".
+const toNum = (v) => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    if (typeof v === 'boolean') return v ? 1 : 0;
+
+    let s = String(v)
+        .replace(/\u00A0/g, ' ')            // NBSP
+        .replace(/[\s\u2009\u202F]/g, '') // spaces / thin spaces
+        .trim();
+    if (!s) return 0;
+
+    // Keep digits and minus only
+    s = s.replace(/[^0-9-]/g, '');
+    // Allow only one leading minus
+    s = s.replace(/(?!^)-/g, '');
+    if (s === '' || s === '-') return 0;
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+};
 
 const widgetInfo = computed(() => {
   const w = mainStore.allWidgets.find(x => x.key === props.widgetKey);
@@ -70,10 +93,12 @@ const liabilitiesData = computed(() => {
 
 function filterAndSort(originalList) {
     let list = [...(originalList || [])];
-    
+
     const getFilterValue = (item) => {
-        if (isForecastActive.value && item.totalForecast !== undefined) return item.totalForecast;
-        return item.balance !== undefined ? item.balance : item.currentBalance;
+        if (!item) return 0;
+        if (isForecastActive.value && item.totalForecast !== undefined) return toNum(item.totalForecast);
+        if (item.balance !== undefined) return toNum(item.balance);
+        return toNum(item.currentBalance);
     };
 
     if (filterMode.value === 'positive') list = list.filter(i => getFilterValue(i) > 0);
@@ -95,7 +120,7 @@ const isEmpty = computed(() => {
 
 // 🟢 ИЗМЕНЕНО: Принудительный минус для расходов
 const formatVal = (val) => {
-    const num = Number(val) || 0; 
+    const num = toNum(val);
     const formatted = formatNumber(Math.abs(num));
     
     // Если это виджет расходов - всегда ставим минус (кроме 0)
@@ -110,8 +135,8 @@ const formatVal = (val) => {
 
 // 🟢 ЛЕВАЯ КОЛОНКА (Факт): Строго Серый/Стандартный для Доходов
 const getFactValueClass = (item) => {
-    const val = item.currentBalance || item.balance;
-    const num = Number(val) || 0;
+    const val = (item?.currentBalance ?? item?.balance ?? 0);
+    const num = toNum(val);
     
     // Если это виджет расходов - всегда красный цвет
     if (props.widgetKey === 'expenseList') return 'red-text';
@@ -129,16 +154,16 @@ const getFactValueClass = (item) => {
 
 const getRightValue = (item) => {
     if (isBalanceWidget.value) {
-        return item.currentBalance + (item.futureChange || 0);
+        return toNum(item.currentBalance) + toNum(item.futureChange);
     } 
     else {
-        return item.futureChange || 0;
+        return toNum(item.futureChange);
     }
 };
 
 const getRightValueFormatted = (item) => {
     const val = getRightValue(item);
-    const num = Math.abs(Number(val) || 0);
+    const num = Math.abs(toNum(val));
     const formatted = formatNumber(num);
 
     if (isBalanceWidget.value) return `${formatted} ₸`;
@@ -147,7 +172,7 @@ const getRightValueFormatted = (item) => {
     if (isTransferWidget.value) return `${formatted} ₸`;
 
     // ⚡️ ПЛАН/ПРОГНОЗ: Всегда с плюсом для положительных значений
-    if (val > 0) return `+ ${formatted} ₸`;
+    if (toNum(val) > 0) return `+ ${formatted} ₸`;
     return `- ${formatted} ₸`;
 };
 
@@ -155,7 +180,7 @@ const getRightValueFormatted = (item) => {
 const getRightValueClass = (item) => {
     // 🟢 Спец. логика для Счетов и Компаний
     if (isBalanceWidget.value) {
-        const change = item.futureChange || 0;
+        const change = toNum(item?.futureChange);
         // Рост -> Зеленый
         if (change > 0) return 'green-text';
         // Падение -> Красный
@@ -166,29 +191,29 @@ const getRightValueClass = (item) => {
 
     // Логика для остальных (Обороты, Налоги и т.д.)
     const val = getRightValue(item);
-    const num = Number(val) || 0;
+    const num = toNum(val);
 
     if (num === 0) return 'white-text';
     if (isAlwaysNegativeWidget.value) return 'red-text';
     if (isTransferWidget.value) return 'white-text';
 
     if (props.widgetKey === 'taxes') {
-        return val < 0 ? 'red-text' : 'green-text';
+        return num < 0 ? 'red-text' : 'green-text';
     }
     
     // ⚡️ ДЛЯ СПИСКОВ (IncomeList и др.): Положительный прогноз -> Зеленый
-    return val >= 0 ? 'green-text' : 'red-text';
+    return num >= 0 ? 'green-text' : 'red-text';
 };
 
 const formatLiabilitiesPlan = (val) => {
-    const num = Number(val) || 0;
+    const num = toNum(val);
     const formatted = formatNumber(Math.abs(num));
     if (num === 0) return `${formatted} ₸`;
-    return val >= 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
+    return num >= 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
 };
 
 const getLiabilitiesPlanClass = (val, defaultClass) => {
-    const num = Number(val) || 0;
+    const num = toNum(val);
     if (num === 0) return 'white-text';
     return defaultClass;
 };
@@ -215,7 +240,7 @@ const cardStyleClass = computed(() => {
 // UI snapshot (screen = truth)
 // =========================
 const _formatPlanSum = (val) => {
-  const num = Math.abs(Number(val) || 0);
+  const num = Math.abs(toNum(val));
   const formatted = formatNumber(num);
 
   // Balance widgets show future TOTAL (no +/- sign)
@@ -231,7 +256,7 @@ const _formatPlanSum = (val) => {
   if (isTransferWidget.value) return `${formatted} ₸`;
 
   // Default: positive with plus, negative with minus
-  const raw = Number(val) || 0;
+  const raw = toNum(val);
   if (raw > 0) return `+ ${formatted} ₸`;
   return `- ${formatted} ₸`;
 };
@@ -243,10 +268,10 @@ function getSnapshot() {
 
   // LIABILITIES (custom layout)
   if (isLiabilitiesWidget.value) {
-    const weOweCurrent = Number(liabilitiesData.value.weOwe || 0);
-    const theyOweCurrent = Number(liabilitiesData.value.theyOwe || 0);
-    const weOweFuture = Number(liabilitiesData.value.weOweFuture || 0);
-    const theyOweFuture = Number(liabilitiesData.value.theyOweFuture || 0);
+    const weOweCurrent = toNum(liabilitiesData.value.weOwe);
+    const theyOweCurrent = toNum(liabilitiesData.value.theyOwe);
+    const weOweFuture = toNum(liabilitiesData.value.weOweFuture);
+    const theyOweFuture = toNum(liabilitiesData.value.theyOweFuture);
 
     return {
       key,
@@ -278,24 +303,24 @@ function getSnapshot() {
 
   const factSum = list.reduce((s, it) => {
     const v = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
-    return s + (Number(v) || 0);
+    return s + toNum(v);
   }, 0);
 
   const planSum = list.reduce((s, it) => {
     if (!forecastActive) return s;
-    return s + (Number(getRightValue(it)) || 0);
+    return s + toNum(getRightValue(it));
   }, 0);
 
   // Compact summary widgets (income/expense/withdrawals/transfers)
   if (isListWidget.value) {
     const detailItems = list.slice(0, 50).map((it) => {
       const factVal = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
-      const planVal = forecastActive ? (Number(getRightValue(it)) || 0) : 0;
+      const planVal = forecastActive ? toNum(getRightValue(it)) : 0;
 
       return {
         id: it?._id ?? null,
         name: it?.name ?? '',
-        fact: Number(factVal) || 0,
+        fact: toNum(factVal),
         factText: formatVal(factVal),
         plan: planVal,
         planText: forecastActive ? getRightValueFormatted(it) : '',
@@ -314,9 +339,9 @@ function getSnapshot() {
       // For backend summary answers
       rows: [
         {
-          current: Number(factSum) || 0,
+          current: toNum(factSum),
           currentText: formatVal(factSum),
-          future: Number(planSum) || 0,
+          future: toNum(planSum),
           futureText: _formatPlanSum(planSum),
         }
       ],
@@ -330,12 +355,12 @@ function getSnapshot() {
   // Standard list widgets (accounts/companies/projects/contractors/categories/individuals/credits/taxes/etc.)
   const rows = list.slice(0, 50).map((it) => {
     const factVal = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
-    const planVal = forecastActive ? (Number(getRightValue(it)) || 0) : 0;
+    const planVal = forecastActive ? toNum(getRightValue(it)) : 0;
 
     return {
       id: it?._id ?? null,
       name: it?.name ?? '',
-      fact: Number(factVal) || 0,
+      fact: toNum(factVal),
       factText: formatVal(factVal),
       plan: planVal,
       planText: forecastActive ? getRightValueFormatted(it) : '',

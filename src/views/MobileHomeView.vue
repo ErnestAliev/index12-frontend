@@ -45,6 +45,7 @@ const { getWidgetItems } = useWidgetData();
 const timelineRef = ref(null);
 const chartRef = ref(null);
 const layoutBodyRef = ref(null); 
+const widgetGridRef = ref(null);
 
 const isWidgetsLoading = ref(true); 
 const isTimelineLoading = ref(true);
@@ -197,6 +198,12 @@ const sendAiMessage = async () => {
   const q = (aiInput.value || '').trim();
   if (!q || aiLoading.value) return;
 
+  // Guard: do not send AI snapshot while data is still loading (prevents zeros)
+  if (isWidgetsLoading.value || isTimelineLoading.value) {
+    pushAiMessage('assistant', 'Данные ещё загружаются — повтори запрос через пару секунд.');
+    return;
+  }
+
   stopAiRecordingIfNeeded();
   aiPaywall.value = false;
 
@@ -205,7 +212,6 @@ const sendAiMessage = async () => {
   aiLoading.value = true;
 
   try {
-    // Контекст периода (read-only)
     // Важно: отправляем локальную дату/время пользователя (с offset), а не UTC.
     // Иначе около полуночи UTC может увести «сегодня» на вчера.
     const _localIsoNow = () => {
@@ -221,31 +227,112 @@ const sendAiMessage = async () => {
 
     const asOf = _localIsoNow();
 
-    // Нужно ли включать скрытые счета по смыслу запроса
-    const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(q);
-    const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ых)?\b/i.test(q);
-    const includeHidden = wantsAccounts || wantsHidden;
+        // UI snapshot (read-only).
+    // IMPORTANT: use the SAME snapshot generator as desktop so totals/keys match.
+    const _parseDateAny = (raw) => {
+      if (!raw) return null;
+      if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
+      const d1 = new Date(raw);
+      if (!Number.isNaN(d1.getTime())) return d1;
+      const s = String(raw).trim();
+      const m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
+      if (m) {
+        const dd = Number(m[1]);
+        const mm = Number(m[2]);
+        let yy = Number(m[3]);
+        if (yy < 100) yy += 2000;
+        const d2 = new Date(yy, mm - 1, dd);
+        return Number.isNaN(d2.getTime()) ? null : d2;
+      }
+      const m2 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+      if (m2) {
+        const d3 = new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
+        return Number.isNaN(d3.getTime()) ? null : d3;
+      }
+      return null;
+    };
 
-    // Если hidden не нужен — отправляем только видимые (не excluded/hidden) id.
-    // Если нужен — отправляем null, чтобы билдер включил все.
-    const visibleAccountIds = includeHidden
-      ? null
-      : (Array.isArray(mainStore?.accounts)
-          ? mainStore.accounts
-              .filter(a => {
-                const excluded = !!(a?.isExcluded ?? a?.excluded ?? a?.hidden ?? a?.isHidden);
-                return !excluded;
-              })
-              .map(a => a?._id)
-              .filter(Boolean)
-          : null);
+    const todayObj = new Date(asOf);
+    const futureObj = (() => {
+      const p = mainStore?.projection || {};
+      const raw =
+        p?.rangeEndDate ||
+        p?.toDate || p?.to || p?.endDate || p?.until || p?.toDateKey ||
+        mainStore?.forecastToDate ||
+        mainStore?.forecastToDateKey;
+      const d = _parseDateAny(raw);
+      return d || todayObj;
+    })();
 
+    let uiSnapshot = null;
+    try {
+      // Mobile: snapshot comes from MobileWidgetGrid (not from mainStore)
+      uiSnapshot = (typeof widgetGridRef.value?.getSnapshot === 'function')
+        ? (widgetGridRef.value.getSnapshot() || null)
+        : null;
+    } catch (e) {
+      console.error('AI: widgetGridRef.getSnapshot failed (mobile)', e);
+      uiSnapshot = null;
+    }
 
-    const res = await fetch(`${API_BASE_URL}/ai/query`, {
+    // Hard guarantee: never send null/undefined
+    if (!uiSnapshot || typeof uiSnapshot !== 'object') {
+      uiSnapshot = { v: 1, meta: {}, ui: {}, widgets: [] };
+    }
+
+    // Normalize minimal contract
+    uiSnapshot.v = (uiSnapshot.v === undefined || uiSnapshot.v === null) ? 1 : uiSnapshot.v;
+    uiSnapshot.meta = (uiSnapshot.meta && typeof uiSnapshot.meta === 'object') ? uiSnapshot.meta : {};
+    uiSnapshot.ui = (uiSnapshot.ui && typeof uiSnapshot.ui === 'object') ? uiSnapshot.ui : {};
+
+    // Ensure dates are consistent with the mobile range end the UI uses
+    const _fmtRu = (d) => {
+      try {
+        const dd = new Date(d);
+        if (Number.isNaN(dd.getTime())) return '';
+        return dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      } catch (_) {
+        return '';
+      }
+    };
+
+    uiSnapshot.meta.todayIso = uiSnapshot.meta.todayIso || asOf;
+    uiSnapshot.meta.todayStr = uiSnapshot.meta.todayStr || _fmtRu(todayObj);
+    uiSnapshot.meta.futureUntilIso = uiSnapshot.meta.futureUntilIso || futureObj.toISOString();
+    uiSnapshot.meta.futureUntilStr = uiSnapshot.meta.futureUntilStr || _fmtRu(futureObj);
+
+    // Keep the same flag that affects account totals
+    uiSnapshot.ui.includeExcludedInTotal = Boolean(mainStore?.includeExcludedInTotal);
+
+    // --- Accounts visibility contract (desktop parity)
+    const _qLower = String(q || '').toLowerCase();
+    const includeHidden = /скрыт|скрытые|сч[её]т|касс|account|баланс/.test(_qLower);
+
+    const visibleAccountIds = (() => {
+      try {
+        const accs = Array.isArray(mainStore?.accounts) ? mainStore.accounts : [];
+        if (!accs.length) return [];
+
+        // If user enabled "include excluded in total" – treat all accounts as visible.
+        if (Boolean(mainStore?.includeExcludedInTotal)) {
+          return accs.map(a => a?._id).filter(Boolean);
+        }
+
+        // Otherwise: only accounts that are not excluded/hidden.
+        return accs
+          .filter(a => !(a?.isExcluded || a?.excluded || a?.excludedFromTotal || a?.excludeFromTotal))
+          .map(a => a?._id)
+          .filter(Boolean);
+      } catch (_) {
+        return [];
+      }
+    })();
+
+const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ message: q, asOf, includeHidden, visibleAccountIds }),
+      body: JSON.stringify({ message: q, uiSnapshot, includeHidden, visibleAccountIds }),
     });
 
     if (res.status === 402 || res.status === 403) {
@@ -259,10 +346,22 @@ const sendAiMessage = async () => {
       if (status === 401) {
         pushAiMessage('assistant', 'Не авторизован. Перезайди в аккаунт.');
       } else if (status === 403 || status === 402) {
-        // paywall handled above, but keep fallback
         pushAiMessage('assistant', 'AI не активирован.');
       } else {
-        pushAiMessage('assistant', `Ошибка (${status}). Повтори запрос.`);
+        // Try to show backend reason (helps debug 400 quickly)
+        let detail = '';
+        try {
+          const ct = (res.headers.get('content-type') || '').toLowerCase();
+          if (ct.includes('application/json')) {
+            const j = await res.json();
+            detail = j?.error || j?.message || (typeof j?.text === 'string' ? j.text : '');
+          } else {
+            detail = (await res.text()) || '';
+          }
+        } catch (_) {}
+
+        if (detail) pushAiMessage('assistant', `Ошибка (${status}). ${detail}`);
+        else pushAiMessage('assistant', `Ошибка (${status}). Повтори запрос.`);
       }
       return;
     }
@@ -808,7 +907,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             <MobileHeaderTotals class="fixed-header" />
             
             <div class="layout-body" ref="layoutBodyRef">
-              <MobileWidgetGrid class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
+              <MobileWidgetGrid ref="widgetGridRef" class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
               
               <div class="section-timeline" v-show="!mainStore.isHeaderExpanded" :style="{ height: timelineHeight + 'px', flexShrink: 0 }">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>

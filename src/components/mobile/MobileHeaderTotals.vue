@@ -5,6 +5,13 @@ import { formatNumber } from '@/utils/formatters.js';
 
 const mainStore = useMainStore();
 
+const _toYmd = (d) => {
+  const dd = new Date(d);
+  if (Number.isNaN(dd.getTime())) return '';
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return `${dd.getFullYear()}-${pad2(dd.getMonth() + 1)}-${pad2(dd.getDate())}`;
+};
+
 // Получаем данные из стора
 const currentTotal = computed(() => mainStore.currentTotalBalance);
 const futureTotal = computed(() => mainStore.futureTotalBalance);
@@ -35,6 +42,8 @@ function getSnapshot() {
     title: 'Mobile totals',
 
     // Meta
+    today: _toYmd(new Date()),
+    future: _toYmd(mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date()),
     todayStr: todayStr.value,
     futureUntilStr: futureDateStr.value,
 
