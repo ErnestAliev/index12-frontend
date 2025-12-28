@@ -157,6 +157,105 @@ const localWidgets = computed({
   }
 });
 
+// ===============================
+// 🟢 UI SNAPSHOT (screen = truth)
+// ===============================
+const gridWidgetRefMap = new Map();
+const fullscreenWidgetRefMap = new Map();
+
+const registerGridWidgetRef = (key, el) => {
+  if (!key || String(key).startsWith('placeholder_')) return;
+  if (el) gridWidgetRefMap.set(key, el);
+  else gridWidgetRefMap.delete(key);
+};
+
+const registerFullscreenWidgetRef = (key, el) => {
+  if (!key || String(key).startsWith('placeholder_')) return;
+  if (el) fullscreenWidgetRefMap.set(key, el);
+  else fullscreenWidgetRefMap.delete(key);
+};
+
+// When header is not expanded, only the first row is visible (6 desktop, 5 tablet grid)
+const getVisibleGridWidgetKeys = () => {
+  const keys = (localWidgets.value || []).filter(k => !String(k).startsWith('placeholder_'));
+  if (mainStore.isHeaderExpanded) return keys;
+  const rowSize = isTabletGrid.value ? 5 : 6;
+  return keys.slice(0, rowSize);
+};
+
+const getSnapshot = () => {
+  const ts = new Date().toISOString();
+
+  const visibleKeys = getVisibleGridWidgetKeys();
+  const fsKey = fullscreenWidgetKey.value && !String(fullscreenWidgetKey.value).startsWith('placeholder_')
+    ? fullscreenWidgetKey.value
+    : null;
+
+  const keys = Array.from(new Set([...visibleKeys, ...(fsKey ? [fsKey] : [])]));
+
+  const widgets = keys.map((key) => {
+    const inst = (fsKey === key)
+      ? (fullscreenWidgetRefMap.get(key) || gridWidgetRefMap.get(key))
+      : gridWidgetRefMap.get(key);
+
+    if (inst && typeof inst.getSnapshot === 'function') {
+      try { return inst.getSnapshot(); } catch (e) { /* ignore */ }
+    }
+
+    // Safe fallbacks for total cards
+    if (key === 'currentTotal') {
+      return {
+        key,
+        title: 'Всего на счетах\nна текущий момент',
+        type: 'total',
+        totalBalance: Number(loggedCurrentTotal.value) || 0,
+        subtitlePrefix: `Всего на ${mainStore.currentAccountBalances.length} счетах`,
+        subtitleDate: `до ${todayStr.value}`
+      };
+    }
+    if (key === 'futureTotal') {
+      return {
+        key,
+        title: 'Всего на счетах\nс учетом будущих',
+        type: 'total',
+        totalBalance: Number(loggedFutureTotal.value) || 0,
+        subtitlePrefix: `Всего на ${mainStore.accounts.length} счетах`,
+        subtitleDate: `до ${futureUntilStr.value}`
+      };
+    }
+
+    return { key, type: 'unknown' };
+  }).filter(Boolean);
+
+  return {
+    v: 1,
+    ts,
+    meta: {
+      today: new Date().toISOString(),
+      todayStr: todayStr.value,
+      futureUntilStr: futureUntilStr.value,
+      projection: {
+        mode: mainStore.projection?.mode ?? null,
+        totalDays: mainStore.projection?.totalDays ?? null,
+        rangeStartDate: mainStore.projection?.rangeStartDate ?? null,
+        rangeEndDate: mainStore.projection?.rangeEndDate ?? null
+      }
+    },
+    ui: {
+      isHeaderExpanded: Boolean(mainStore.isHeaderExpanded),
+      includeExcludedInTotal: Boolean(mainStore.includeExcludedInTotal),
+      widgetSortMode: mainStore.widgetSortMode ?? null,
+      widgetFilterMode: mainStore.widgetFilterMode ?? null,
+      dashboardLayout: Array.isArray(mainStore.dashboardLayout) ? [...mainStore.dashboardLayout] : [],
+      dashboardForecastState: mainStore.dashboardForecastState ? { ...mainStore.dashboardForecastState } : {},
+      fullscreenWidgetKey: fullscreenWidgetKey.value ?? null
+    },
+    widgets
+  };
+};
+
+defineExpose({ getSnapshot });
+
 // ... states ...
 const isTransferPopupVisible = ref(false);
 const isTransferEditorVisible = ref(false);
@@ -390,6 +489,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
              
              <HeaderTotalCard
                 v-if="fullscreenWidgetKey === 'currentTotal'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="'Всего на счетах\nна текущий момент'"
                 :totalBalance="loggedCurrentTotal" 
                 :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
@@ -434,6 +534,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'accounts'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Счета/Кассы"
                 :items="loggedAccountBalances" emptyText="...счетов нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
@@ -444,6 +545,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'companies'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Мои компании"
                 :items="mergedCompanyBalances" emptyText="...компаний нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
@@ -454,6 +556,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'contractors'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Мои контрагенты"
                 :items="mergedContractorBalances" emptyText="...контрагентов нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
@@ -464,6 +567,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'projects'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Мои проекты"
                 :items="mergedProjectBalances" emptyText="...проектов нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
@@ -474,6 +578,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'individuals'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Физлица"
                 :items="mergedIndividualBalances" emptyText="...физлиц нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
@@ -484,6 +589,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'categories'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Категории"
                 :items="mergedCategoryBalances" emptyText="...категорий нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
@@ -494,6 +600,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderTotalCard
                 v-else-if="fullscreenWidgetKey === 'futureTotal'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="'Всего на счетах\nс учетом будущих'"
                 :totalBalance="loggedFutureTotal" 
                 :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
@@ -504,6 +611,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
              <HeaderCategoryCard
                 v-else-if="fullscreenWidgetKey === 'transfers' || fullscreenWidgetKey.startsWith('cat_') || fullscreenWidgetKey === 'incomeList' || fullscreenWidgetKey === 'expenseList' || fullscreenWidgetKey === 'withdrawalList'"
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="getWidgetByKey(fullscreenWidgetKey)?.name || '...'"
                 :widgetKey="fullscreenWidgetKey"
                 :widgetIndex="-1"
@@ -531,6 +639,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           :title="'Всего на счетах\nна текущий момент'"
           :totalBalance="loggedCurrentTotal" 
           :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
@@ -578,6 +687,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Счета/Кассы"
           :items="loggedAccountBalances" emptyText="...счетов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
@@ -589,6 +699,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'companies'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Мои компании"
           :items="mergedCompanyBalances" emptyText="...компаний нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
@@ -600,6 +711,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'contractors'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Мои контрагенты"
           :items="mergedContractorBalances" emptyText="...контрагентов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
@@ -611,6 +723,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'projects'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Мои проекты"
           :items="mergedProjectBalances" emptyText="...проектов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
@@ -622,6 +735,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'individuals'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Физлица"
           :items="mergedIndividualBalances" emptyText="...физлиц нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
@@ -633,6 +747,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'categories'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Категории"
           :items="mergedCategoryBalances" emptyText="...категорий нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
@@ -644,6 +759,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderTotalCard
           v-else-if="widgetKey === 'futureTotal'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           :title="'Всего на счетах\nс учетом будущих'"
           :totalBalance="loggedFutureTotal" 
           :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
@@ -655,6 +771,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
         <HeaderCategoryCard
           v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           :title="getWidgetByKey(widgetKey)?.name || '...'"
           :widgetKey="widgetKey"
           :widgetIndex="index"

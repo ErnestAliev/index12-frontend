@@ -264,6 +264,75 @@ const formatSignedMoney = (amount, sign) => {
   const formatted = formatNumber(num);
   return `${sign} ${formatted}`;
 };
+
+// Expose a UI-accurate snapshot of what is currently visible in this widget.
+// This is used by the AI layer to answer strictly from the screen state.
+const getSnapshot = () => {
+  const list = processedItems.value || [];
+
+  const rows = list.map((item) => {
+    const bal = Number(item?.balance) || 0;
+    const fut = Number(item?.futureBalance) || 0;
+
+    return {
+      id: item?._id ?? getId(item) ?? item?.id ?? null,
+      name: item?.name ?? '',
+      order: item?.order ?? 0,
+      isExcluded: Boolean(item?.isExcluded),
+
+      // Raw numbers (for calculations if needed)
+      balance: bal,
+      futureBalance: fut,
+
+      // Exactly as shown in UI
+      balanceText: formatBalance(bal),
+      futureText: props.isDeltaMode ? formatDelta(fut) : formatBalance(fut),
+      futureColor: props.isDeltaMode
+        ? (fut > 0 ? 'income' : (fut < 0 ? 'expense' : ''))
+        : getFutureColor({ balance: bal, futureBalance: fut }),
+
+      // UI markers
+      linkMarkerColor: item?.linkMarkerColor ?? null,
+      isLinked: Boolean(item?.isLinked),
+      linkTooltip: item?.linkTooltip ?? '',
+    };
+  });
+
+  const totals = summaryTotals.value
+    ? {
+        factExpense: Number(summaryTotals.value.factExpense) || 0,
+        factIncome: Number(summaryTotals.value.factIncome) || 0,
+        planExpense: Number(summaryTotals.value.planExpense) || 0,
+        planIncome: Number(summaryTotals.value.planIncome) || 0,
+
+        // Text versions as used in the footer
+        factExpenseText: formatSignedMoney(summaryTotals.value.factExpense ?? 0, '-'),
+        factIncomeText: formatSignedMoney(summaryTotals.value.factIncome ?? 0, '+'),
+        planExpenseText: formatSignedMoney(summaryTotals.value.planExpense ?? 0, '-'),
+        planIncomeText: formatSignedMoney(summaryTotals.value.planIncome ?? 0, '+'),
+      }
+    : null;
+
+  return {
+    key: props.widgetKey,
+    title: props.title,
+    widgetIndex: props.widgetIndex,
+    isFullscreen: isFullscreen.value,
+
+    // UI state that affects what user sees
+    showFutureBalance: Boolean(showFutureBalance.value),
+    isDeltaMode: Boolean(props.isDeltaMode),
+    sortMode: sortMode.value,
+    filterMode: filterMode.value,
+    includeExcludedInTotal: Boolean(mainStore.includeExcludedInTotal),
+
+    // Visible data
+    rows,
+    totals,
+  };
+};
+
+defineExpose({ getSnapshot });
 </script>
 
 <template>

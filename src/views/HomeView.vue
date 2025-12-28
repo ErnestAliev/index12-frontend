@@ -56,6 +56,8 @@ const aiPaywall = ref(false);
 const aiPaywallReason = ref('AI ассистент доступен по подписке.');
 const aiMessagesRef = ref(null);
 const aiInputRef = ref(null);
+// UI snapshot source (screen = truth)
+const theHeaderRef = ref(null);
 
 // --- AI voice input (Browser SpeechRecognition MVP) ---
 const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
@@ -277,6 +279,9 @@ const sendAiMessage = async () => {
               .filter(Boolean)
           : null);
 
+    // Screen-snapshot context (source of truth): what user sees in header widgets
+    const uiSnapshot = theHeaderRef.value?.getSnapshot?.() || null;
+
     const aiContext = buildAiContext(mainStore, {
       viewMode: viewMode.value,
       today: today.value,
@@ -295,6 +300,7 @@ const sendAiMessage = async () => {
         // ВАЖНО: чтобы суммы совпадали с виджетами (фильтрация по видимым счетам)
         visibleAccountIds,
         aiContext,
+        uiSnapshot,
       },
       {
         // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.
@@ -892,7 +898,7 @@ const handleRefundDelete = async (op) => {
   <div v-if="mainStore.isAuthLoading" class="loading-screen"><div class="spinner"></div><p>Проверка сессии...</p></div>
   <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко INDEX12.COM</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
   <div v-else class="home-layout" @click="closeAllMenus">
-    <header class="home-header" ref="homeHeaderRef"><TheHeader /></header>
+    <header class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
     <div class="header-resizer" ref="headerResizerRef"></div>
     <div class="home-body">
       <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
