@@ -210,6 +210,152 @@ const cardStyleClass = computed(() => {
   if (k === 'taxes') return 'style-red'; 
   return 'style-gray';
 });
+
+// =========================
+// UI snapshot (screen = truth)
+// =========================
+const _formatPlanSum = (val) => {
+  const num = Math.abs(Number(val) || 0);
+  const formatted = formatNumber(num);
+
+  // Balance widgets show future TOTAL (no +/- sign)
+  if (isBalanceWidget.value) return `${formatted} ₸`;
+
+  // 0 always without sign
+  if (num === 0) return `${formatted} ₸`;
+
+  // Always-negative widgets always show minus
+  if (isAlwaysNegativeWidget.value) return `- ${formatted} ₸`;
+
+  // Transfers show without sign
+  if (isTransferWidget.value) return `${formatted} ₸`;
+
+  // Default: positive with plus, negative with minus
+  const raw = Number(val) || 0;
+  if (raw > 0) return `+ ${formatted} ₸`;
+  return `- ${formatted} ₸`;
+};
+
+function getSnapshot() {
+  const key = props.widgetKey;
+  const title = widgetInfo.value;
+  const forecastActive = Boolean(isForecastActive.value);
+
+  // LIABILITIES (custom layout)
+  if (isLiabilitiesWidget.value) {
+    const weOweCurrent = Number(liabilitiesData.value.weOwe || 0);
+    const theyOweCurrent = Number(liabilitiesData.value.theyOwe || 0);
+    const weOweFuture = Number(liabilitiesData.value.weOweFuture || 0);
+    const theyOweFuture = Number(liabilitiesData.value.theyOweFuture || 0);
+
+    return {
+      key,
+      title,
+      type: 'liabilities',
+      showFutureBalance: forecastActive,
+      rows: [
+        {
+          label: 'Должны отработать',
+          kind: 'weOwe',
+          current: weOweCurrent,
+          currentText: formatVal(weOweCurrent),
+          future: weOweFuture,
+          futureText: formatLiabilitiesPlan(weOweFuture),
+        },
+        {
+          label: 'Должны получить',
+          kind: 'theyOwe',
+          current: theyOweCurrent,
+          currentText: formatVal(theyOweCurrent),
+          future: theyOweFuture,
+          futureText: formatLiabilitiesPlan(theyOweFuture),
+        },
+      ]
+    };
+  }
+
+  const list = Array.isArray(items.value) ? items.value : [];
+
+  const factSum = list.reduce((s, it) => {
+    const v = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
+    return s + (Number(v) || 0);
+  }, 0);
+
+  const planSum = list.reduce((s, it) => {
+    if (!forecastActive) return s;
+    return s + (Number(getRightValue(it)) || 0);
+  }, 0);
+
+  // Compact summary widgets (income/expense/withdrawals/transfers)
+  if (isListWidget.value) {
+    const detailItems = list.slice(0, 50).map((it) => {
+      const factVal = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
+      const planVal = forecastActive ? (Number(getRightValue(it)) || 0) : 0;
+
+      return {
+        id: it?._id ?? null,
+        name: it?.name ?? '',
+        fact: Number(factVal) || 0,
+        factText: formatVal(factVal),
+        plan: planVal,
+        planText: forecastActive ? getRightValueFormatted(it) : '',
+        isExcluded: Boolean(it?.isExcluded),
+        isLinked: Boolean(it?.isLinked),
+        linkMarkerColor: it?.linkMarkerColor ?? null,
+      };
+    });
+
+    return {
+      key,
+      title,
+      type: 'summary',
+      showFutureBalance: forecastActive,
+
+      // For backend summary answers
+      rows: [
+        {
+          current: Number(factSum) || 0,
+          currentText: formatVal(factSum),
+          future: Number(planSum) || 0,
+          futureText: _formatPlanSum(planSum),
+        }
+      ],
+
+      // Optional: UI list details (what user sees)
+      items: detailItems,
+      totalItems: list.length,
+    };
+  }
+
+  // Standard list widgets (accounts/companies/projects/contractors/categories/individuals/credits/taxes/etc.)
+  const rows = list.slice(0, 50).map((it) => {
+    const factVal = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
+    const planVal = forecastActive ? (Number(getRightValue(it)) || 0) : 0;
+
+    return {
+      id: it?._id ?? null,
+      name: it?.name ?? '',
+      fact: Number(factVal) || 0,
+      factText: formatVal(factVal),
+      plan: planVal,
+      planText: forecastActive ? getRightValueFormatted(it) : '',
+      isExcluded: Boolean(it?.isExcluded),
+      isLinked: Boolean(it?.isLinked),
+      linkMarkerColor: it?.linkMarkerColor ?? null,
+    };
+  });
+
+  return {
+    key,
+    title,
+    type: 'list',
+    showFutureBalance: forecastActive,
+    rows,
+    totalItems: list.length,
+  };
+}
+
+defineExpose({ getSnapshot });
 </script>
 
 <template>

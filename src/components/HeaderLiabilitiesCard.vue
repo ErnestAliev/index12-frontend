@@ -33,6 +33,51 @@ const displayTheyOwe = computed(() => {
     return `${formatCurrency(props.theyOweAmount)} > ${formatCurrency(props.theyOweAmountFuture)}`;
 });
 
+// =========================
+// UI snapshot (screen = truth)
+// =========================
+function getSnapshot() {
+  const weOweCurrent = Number(props.weOweAmount || 0);
+  const theyOweCurrent = Number(props.theyOweAmount || 0);
+  const weOweFuture = Number(props.weOweAmountFuture || 0);
+  const theyOweFuture = Number(props.theyOweAmountFuture || 0);
+
+  return {
+    key: props.widgetKey,
+    title: props.title,
+    type: 'liabilities',
+    showFutureBalance: Boolean(showFutureBalance.value),
+    rows: [
+      {
+        label: 'Должны отработать',
+        kind: 'weOwe',
+        current: weOweCurrent,
+        currentText: formatCurrency(weOweCurrent),
+        future: weOweFuture,
+        futureText: formatCurrency(weOweFuture),
+        displayText: displayWeOwe.value,
+      },
+      {
+        label: 'Должны получить',
+        kind: 'theyOwe',
+        current: theyOweCurrent,
+        currentText: formatCurrency(theyOweCurrent),
+        future: theyOweFuture,
+        futureText: formatCurrency(theyOweFuture),
+        displayText: displayTheyOwe.value,
+      },
+    ],
+    totals: {
+      totalCurrent: weOweCurrent + theyOweCurrent,
+      totalCurrentText: formatCurrency(weOweCurrent + theyOweCurrent),
+      totalFuture: weOweFuture + theyOweFuture,
+      totalFutureText: formatCurrency(weOweFuture + theyOweFuture),
+    }
+  };
+}
+
+defineExpose({ getSnapshot });
+
 const openRetailTab = () => { emit('open-tab', 'retail'); };
 const openClientsTab = () => { emit('open-tab', 'clients'); };
 </script>

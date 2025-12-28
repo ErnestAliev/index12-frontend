@@ -20,6 +20,38 @@ const futureDateStr = computed(() => {
   const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date();
   return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' }).format(d);
 });
+
+// =========================
+// UI snapshot (screen = truth)
+// =========================
+function getSnapshot() {
+  const cur = Number(currentTotal.value || 0);
+  const fut = Number(futureTotal.value || 0);
+  const cnt = Number(accountsCount.value || 0);
+
+  return {
+    key: 'mobileHeaderTotals',
+    type: 'mobileTotals',
+    title: 'Mobile totals',
+
+    // Meta
+    todayStr: todayStr.value,
+    futureUntilStr: futureDateStr.value,
+
+    // Values (raw)
+    currentTotal: cur,
+    futureTotal: fut,
+    accountsCount: cnt,
+
+    // Values (UI-like text)
+    currentText: `₸ ${formatNumber(cur)}`,
+    futureText: `${formatNumber(fut)} ₸`,
+    subtitleCurrent: `Всего на ${cnt} счетах • до ${todayStr.value}`,
+    subtitleFuture: `Всего на ${cnt} счетах • до ${futureDateStr.value}`,
+  };
+}
+
+defineExpose({ getSnapshot });
 </script>
 
 <template>

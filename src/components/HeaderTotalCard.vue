@@ -15,6 +15,33 @@ const props = defineProps({
 const isFuture = computed(() => props.widgetKey === 'futureTotal');
 const formattedValue = computed(() => formatNumber(Math.abs(props.totalBalance)));
 const sign = computed(() => props.totalBalance < 0 ? '-' : '');
+
+// =========================
+// UI snapshot (screen = truth)
+// =========================
+function getSnapshot() {
+  // Keep both raw number and UI-like text
+  const valueAbs = Number(Math.abs(props.totalBalance || 0));
+  const signStr = (props.totalBalance || 0) < 0 ? '-' : '';
+
+  // Match how this card shows money (with currency symbol)
+  const totalText = isFuture.value
+    ? `${signStr}${formatNumber(valueAbs)} ₸`
+    : `₸ ${signStr}${formatNumber(valueAbs)}`;
+
+  return {
+    key: props.widgetKey,
+    title: props.title,
+    type: 'total',
+    isFuture: Boolean(isFuture.value),
+    totalBalance: Number(props.totalBalance || 0),
+    totalText,
+    subtitlePrefix: props.subtitlePrefix,
+    subtitleDate: props.subtitleDate,
+  };
+}
+
+defineExpose({ getSnapshot });
 </script>
 
 <template>

@@ -62,6 +62,44 @@ const processedItems = computed(() => {
 
 const setSortMode = (mode) => { sortMode.value = mode; };
 const formatMoney = (val) => formatNumber(Math.abs(val || 0));
+
+// =========================
+// UI snapshot (screen = truth)
+// =========================
+function getSnapshot() {
+  const rows = (processedItems.value || []).map((item) => {
+    const cur = Number(item?.balance) || 0;
+    const fut = Number(item?.futureBalance) || 0;
+    return {
+      id: item?._id ?? null,
+      name: item?.name ?? '',
+      current: cur,
+      currentText: `₸ ${formatMoney(cur)}`,
+      future: fut,
+      futureText: `${formatMoney(fut)}`,
+    };
+  });
+
+  const totalCurrent = rows.reduce((s, r) => s + (Number(r.current) || 0), 0);
+  const totalFuture = rows.reduce((s, r) => s + (Number(r.future) || 0), 0);
+
+  return {
+    key: props.widgetKey,
+    title: props.title,
+    type: 'credits',
+    showFutureBalance: Boolean(showFutureBalance.value),
+    sortMode: sortMode.value,
+    rows,
+    totals: {
+      totalCurrent,
+      totalCurrentText: `₸ ${formatMoney(totalCurrent)}`,
+      totalFuture,
+      totalFutureText: `${formatMoney(totalFuture)}`,
+    }
+  };
+}
+
+defineExpose({ getSnapshot });
 </script>
 
 <template>

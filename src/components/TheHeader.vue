@@ -499,6 +499,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
              />
 
              <HeaderTaxCard
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 v-else-if="fullscreenWidgetKey === 'taxes'"
                 title="Мои налоги"
                 :widgetKey="fullscreenWidgetKey"
@@ -508,6 +509,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
              />
 
              <HeaderLiabilitiesCard
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 v-else-if="fullscreenWidgetKey === 'liabilities'"
                 title="Мои предоплаты" 
                 :weOweAmount="mainStore.liabilitiesWeOwe"
@@ -522,6 +524,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
              />
 
              <HeaderCreditCard
+                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 v-else-if="fullscreenWidgetKey === 'credits'"
                 title="Мои кредиты"
                 :items="mergedCreditBalances"
@@ -650,6 +653,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         />
         
         <HeaderTaxCard
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           v-else-if="widgetKey === 'taxes'"
           title="Мои налоги"
           :widgetKey="widgetKey"
@@ -659,6 +663,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         />
         
         <HeaderLiabilitiesCard
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           v-else-if="widgetKey === 'liabilities'"
           title="Мои предоплаты" 
           :weOweAmount="mainStore.liabilitiesWeOwe"
@@ -674,6 +679,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         />
 
         <HeaderCreditCard
+          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           v-else-if="widgetKey === 'credits'"
           title="Мои кредиты"
           :items="mergedCreditBalances"

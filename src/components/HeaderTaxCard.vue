@@ -144,12 +144,61 @@ const formatDelta = (val) => {
     return `+ ${formatNumber(Math.abs(num))}`;
 };
 
+
 // 🟢 NEW: Класс цвета для дельты
 const getDeltaClass = (val) => {
     if (val === 0) return 'zero-tax';
     if (val > 0) return 'expense-text'; // Долг растет -> Красный
     return 'income-text'; // Долг падает -> Зеленый
 };
+
+
+// =========================
+// UI snapshot (screen = truth)
+// =========================
+function getSnapshot() {
+  const rows = (taxItems.value || []).map((item) => {
+    const currentDebt = Number(item?.currentDebt) || 0;
+    const futureDelta = Number(item?.futureDebt) || 0; // delta shown in UI in forecast mode
+
+    // Match UI text exactly
+    const currentText = `- ${formatMoney(currentDebt)} ₸`;
+    const futureDeltaText = `${formatDelta(futureDelta)} ₸`;
+
+    return {
+      id: item?._id ?? null,
+      name: item?.name ?? '',
+      regime: item?.regime ?? null,
+      percent: item?.percent ?? null,
+
+      currentDebt,
+      currentText,
+
+      futureDelta,
+      futureDeltaText,
+
+      // Optional: available for deeper answers if needed later
+      totalFutureDebt: Number(item?.totalFutureDebt) || 0,
+    };
+  });
+
+  const totalCurrentDebt = rows.reduce((s, r) => s + (Number(r.currentDebt) || 0), 0);
+
+  return {
+    key: props.widgetKey,
+    title: props.title,
+    type: 'taxes',
+    showFutureBalance: Boolean(showFutureBalance.value),
+    isLoading: Boolean(isLoading.value),
+    rows,
+    totals: {
+      totalCurrentDebt,
+      totalCurrentDebtText: `- ${formatMoney(totalCurrentDebt)} ₸`,
+    }
+  };
+}
+
+defineExpose({ getSnapshot });
 
 </script>
 

@@ -24,9 +24,19 @@ import InfoModal from '@/components/InfoModal.vue';
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-const googleAuthUrl = `${API_BASE_URL.replace(/\/api\/?$/, '')}/auth/google`;
+// IMPORTANT: API_BASE_URL must always point to the API prefix and MUST end with `/api`.
+// In prod we must not fall back to localhost.
+const _envApiBaseRaw = (import.meta.env.VITE_API_BASE_URL || '').trim();
+const _envApiBase = _envApiBaseRaw.replace(/\/+$/, '');
+
+const API_BASE_URL = _envApiBase
+  ? (_envApiBase.endsWith('/api') ? _envApiBase : `${_envApiBase}/api`)
+  : (isLocalhost ? 'http://localhost:3000/api' : `${window.location.origin.replace(/\/+$/, '')}/api`);
+
+const baseUrlCalculated = API_BASE_URL.replace(/\/api\/?$/, '');
+const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
 
 const mainStore = useMainStore();
 const { getWidgetItems } = useWidgetData();
@@ -245,7 +255,15 @@ const sendAiMessage = async () => {
     }
 
     if (!res.ok) {
-      pushAiMessage('assistant', 'Ошибка. Повтори запрос.');
+      const status = res.status;
+      if (status === 401) {
+        pushAiMessage('assistant', 'Не авторизован. Перезайди в аккаунт.');
+      } else if (status === 403 || status === 402) {
+        // paywall handled above, but keep fallback
+        pushAiMessage('assistant', 'AI не активирован.');
+      } else {
+        pushAiMessage('assistant', `Ошибка (${status}). Повтори запрос.`);
+      }
       return;
     }
 
@@ -843,16 +861,14 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
           <div class="ai-modal-chips">
             <button class="ai-chip" @click="runAiQuick('покажи счета')">Счета</button>
-            <button class="ai-chip" @click="runAiQuick('покажи счета включая скрытые')">Счета+скрытые</button>
-
-            <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы (факт)</button>
-            <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы (факт)</button>
-            <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы (факт)</button>
-            <button class="ai-chip" @click="runAiQuick('покажи налоги')">Налоги (факт)</button>
-
-            <button class="ai-chip" @click="runAiQuick('покажи ближайшие доходы')">Ближайшие доходы</button>
-            <button class="ai-chip" @click="runAiQuick('покажи ближайшие расходы')">Ближайшие расходы</button>
-
+            <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы</button>
+            <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы</button>
+            <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы</button>
+            <button class="ai-chip" @click="runAiQuick('покажи налоги')">Налоги</button>
+            <button class="ai-chip" @click="runAiQuick('покажи выводы')">Выводы</button>
+            <button class="ai-chip" @click="runAiQuick('покажи кредиты')">Кредиты</button>
+            <button class="ai-chip" @click="runAiQuick('покажи предоплаты')">Предоплаты</button>
+            <button class="ai-chip" @click="runAiQuick('покажи компании')">Компании</button>
             <button class="ai-chip" @click="runAiQuick('покажи проекты')">Проекты</button>
             <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
             <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
@@ -881,7 +897,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
               ref="aiInputRef"
               v-model="aiInput"
               class="ai-input"
-              placeholder="Спроси: покажи доходы / расходы / счета (Enter — отправить)"
+              placeholder="Спроси: что на счетах? (Enter — отправить)"
               @keydown.enter.prevent="sendAiMessage"
             />
 
