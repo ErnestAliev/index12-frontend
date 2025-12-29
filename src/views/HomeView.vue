@@ -1377,7 +1377,19 @@ const handleRefundDelete = async (op) => {
 .ai-drawer { width: 420px; max-width: calc(100vw - 20px); height: 100%; background: var(--color-background); border-left: 1px solid var(--color-border); box-shadow: -10px 0 30px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
 .ai-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-background-soft); }
 .ai-drawer-title { font-weight: 700; font-size: 14px; color: var(--color-heading); }
-.ai-drawer-close { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s, border-color 0.2s; }
+.ai-drawer-close {   width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, #444);
+  background: transparent;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+}
 .ai-drawer-close:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
 .ai-quick {
