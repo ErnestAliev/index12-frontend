@@ -24,18 +24,83 @@ const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 
 const mainStore = useMainStore();
 
+// --- AI snapshot helpers (timeline) ---
+const _pickName = (v) => {
+  if (!v) return null;
+  if (typeof v === 'string') return v;
+  return v?.name || v?.title || v?.label || v?.displayName || null;
+};
+
+const _normalizeOpForAi = (op) => {
+  if (!op || typeof op !== 'object') return null;
+
+  const amount = (typeof op.amount === 'number') ? op.amount : (typeof op.sum === 'number' ? op.sum : null);
+
+  // Prefer explicit date on op; fallback to the column day date
+  const d = op.date ? new Date(op.date) : new Date(props.date);
+  const dateIso = (!isNaN(d.getTime())) ? d.toISOString().slice(0, 10) : null;
+
+  const n = Number(amount || 0);
+  const isTransfer = !!(op.isTransfer || op.type === 'transfer');
+  const isWithdrawal = !!(op.isWithdrawal || op.type === 'withdrawal');
+  const isTax = !!(op.isTax || op.isTaxPayment || op.type === 'tax');
+
+  // AI-friendly kind: income/expense/transfer/withdrawal/tax/unknown
+  let aiKind = 'unknown';
+  if (isTransfer) aiKind = 'transfer';
+  else if (isWithdrawal) aiKind = 'withdrawal';
+  else if (isTax) aiKind = 'tax';
+  else if (Number.isFinite(n) && n > 0) aiKind = 'income';
+  else if (Number.isFinite(n) && n < 0) aiKind = 'expense';
+
+  return {
+    id: op._id || op.id || null,
+    type: op.type || null,
+    aiKind,
+    dateKey: props.dateKey,
+    date: dateIso,
+    cellIndex: (op.cellIndex ?? null),
+    amount: Number.isFinite(n) ? n : null,
+    contractor: _pickName(op.contractorId) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
+    category: _pickName(op.categoryId) || _pickName(op.category) || _pickName(op.categoryName) || null,
+    project: _pickName(op.projectId) || _pickName(op.project) || _pickName(op.projectName) || null,
+    company: _pickName(op.companyId) || _pickName(op.company) || _pickName(op.companyName) || null,
+    comment: op.comment || op.note || null,
+    isTransfer,
+    isWithdrawal,
+    isTax,
+  };
+};
+
 const operations = computed(() => {
   return mainStore.getOperationsForDay(props.dateKey);
+});
+
+// Expose timeline operations so the desktop AI snapshot builder can pull them
+// without relying on any expanded/collapsed widget UI.
+const getAiSnapshot = () => {
+  const ops = operations.value || [];
+  return {
+    kind: 'timelineDay',
+    dateKey: props.dateKey,
+    date: props.date?.toISOString?.().slice(0, 10) || null,
+    isToday: !!props.isToday,
+    operations: ops.map(_normalizeOpForAi).filter(Boolean)
+  };
+};
+
+defineExpose({
+  getAiSnapshot
 });
 
 const cells = computed(() => {
   const cellArray = [];
   const ops = operations.value;
-  
+
   for (let i = 0; i < 24; i++) {
     cellArray.push({
       id: i,
-      operation: ops.find(op => op.cellIndex === i) || null 
+      operation: ops.find(op => op.cellIndex === i) || null
     });
   }
   return cellArray;
@@ -52,7 +117,7 @@ const onEdit = (operation) => {
 };
 
 const onAdd = (event, cellIndex) => {
-  emit('add-operation', event, cellIndex); 
+  emit('add-operation', event, cellIndex);
 };
 
 // =================================================================
@@ -60,7 +125,7 @@ const onAdd = (event, cellIndex) => {
 // =================================================================
 const onDrop = (dropDataFromHourCell) => {
   // dropDataFromHourCell = { operation, toCellIndex }
-  
+
   let targetDate;
 
   if (props.isToday) {
@@ -89,7 +154,7 @@ const onDrop = (dropDataFromHourCell) => {
     <div class="column-header">
       {{ formattedDate }}
     </div>
-    
+
     <div class="column-body">
       <HourCell
         v-for="cell in cells"

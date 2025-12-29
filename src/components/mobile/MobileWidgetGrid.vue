@@ -38,10 +38,28 @@ const buildWidgetSnapshot = (key) => {
     items
   };
 };
+// IMPORTANT: AI snapshot must NOT depend on headerExpanded.
+// Even when widgets are collapsed, we still include all widget keys in the snapshot
+// and fall back to store/composable data (getWidgetItems).
+const getAllWidgetKeysForSnapshot = () => {
+  let layout = [...mainStore.dashboardLayout];
+  const allKeys = (mainStore.allWidgets || []).map(w => w.key);
+
+  allKeys.forEach((key) => {
+    if (!layout.includes(key)) layout.push(key);
+  });
+
+  // Same filtering rules as the grid UI (no totals, no placeholders)
+  layout = layout.filter(
+    key => key !== 'currentTotal' && key !== 'futureTotal' && !String(key).startsWith('placeholder_')
+  );
+
+  return layout;
+};
 
 const getSnapshot = () => {
   const ts = new Date().toISOString();
-  const keys = Array.isArray(gridWidgets.value) ? gridWidgets.value : [];
+  const keys = getAllWidgetKeysForSnapshot();
 
   return {
     v: 1,

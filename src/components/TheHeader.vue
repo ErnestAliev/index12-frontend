@@ -187,11 +187,17 @@ const getSnapshot = () => {
   const ts = new Date().toISOString();
 
   const visibleKeys = getVisibleGridWidgetKeys();
+
+  // IMPORTANT: AI snapshot must not depend on Expand state.
+  // Even when header is collapsed, hidden widgets are still mounted (CSS hides them),
+  // so we can safely include ALL widget keys here.
+  const allGridKeys = (localWidgets.value || []).filter(k => !String(k).startsWith('placeholder_'));
+
   const fsKey = fullscreenWidgetKey.value && !String(fullscreenWidgetKey.value).startsWith('placeholder_')
     ? fullscreenWidgetKey.value
     : null;
 
-  const keys = Array.from(new Set([...visibleKeys, ...(fsKey ? [fsKey] : [])]));
+  const keys = Array.from(new Set([...allGridKeys, ...(fsKey ? [fsKey] : [])]));
 
   const widgets = keys.map((key) => {
     const inst = (fsKey === key)

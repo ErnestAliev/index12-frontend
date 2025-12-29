@@ -44,10 +44,11 @@ const { getWidgetItems } = useWidgetData();
 // --- Refs & State ---
 const timelineRef = ref(null);
 const chartRef = ref(null);
-const layoutBodyRef = ref(null); 
+const layoutBodyRef = ref(null);
 const widgetGridRef = ref(null);
+const headerTotalsRef = ref(null);
 
-const isWidgetsLoading = ref(true); 
+const isWidgetsLoading = ref(true);
 const isTimelineLoading = ref(true);
 
 // Состояния попапов
@@ -194,8 +195,22 @@ const copyAiText = async (msg) => {
   }
 };
 
-const sendAiMessage = async () => {
-  const q = (aiInput.value || '').trim();
+const sendAiMessage = async (forcedMsg = null, opts = {}) => {
+  // Vue passes the DOM event object into handlers like @click="sendAiMessage".
+  // If we stringify it, we get "[object PointerEvent]" and send garbage to the backend.
+  const _isDomEvent = (x) => {
+    if (!x || typeof x !== 'object') return false;
+    // Most common events we see here: PointerEvent / KeyboardEvent
+    return Boolean(x?.type && x?.target);
+  };
+
+  const msg = _isDomEvent(forcedMsg)
+    ? (aiInput.value || '')
+    : (forcedMsg != null ? forcedMsg : (aiInput.value || ''));
+
+  const q = String(msg).trim();
+  const source = String(opts.source || 'chat');
+  const quickKey = (opts.quickKey != null) ? String(opts.quickKey) : '';
   if (!q || aiLoading.value) return;
 
   // Guard: do not send AI snapshot while data is still loading (prevents zeros)
@@ -227,7 +242,7 @@ const sendAiMessage = async () => {
 
     const asOf = _localIsoNow();
 
-        // UI snapshot (read-only).
+    // UI snapshot (read-only).
     // IMPORTANT: use the SAME snapshot generator as desktop so totals/keys match.
     const _parseDateAny = (raw) => {
       if (!raw) return null;
@@ -266,7 +281,7 @@ const sendAiMessage = async () => {
 
     let uiSnapshot = null;
     try {
-      // Mobile: snapshot comes from MobileWidgetGrid (not from mainStore)
+      // Mobile: snapshot comes primarily from MobileWidgetGrid (totals widgets)
       uiSnapshot = (typeof widgetGridRef.value?.getSnapshot === 'function')
         ? (widgetGridRef.value.getSnapshot() || null)
         : null;
@@ -279,6 +294,140 @@ const sendAiMessage = async () => {
     if (!uiSnapshot || typeof uiSnapshot !== 'object') {
       uiSnapshot = { v: 1, meta: {}, ui: {}, widgets: [] };
     }
+
+    // Ensure widgets array exists
+    if (!Array.isArray(uiSnapshot.widgets)) uiSnapshot.widgets = [];
+
+    // Add header totals snapshot if available
+    try {
+      const ht = (typeof headerTotalsRef.value?.getSnapshot === 'function')
+        ? headerTotalsRef.value.getSnapshot()
+        : null;
+      if (ht) {
+        if (Array.isArray(ht.widgets)) uiSnapshot.widgets.push(...ht.widgets);
+        else if (ht.key) uiSnapshot.widgets.push(ht);
+      }
+    } catch (e) {
+      console.warn('AI: headerTotalsRef.getSnapshot failed', e);
+    }
+
+    // ---- CRITICAL for "ближайший доход/расход" on mobile
+    // Totals widgets do not contain dated rows; operations are stored in cells.
+    // We inject lists with dates from the store so backend can sort upcoming ops.
+
+    const _fmtYmd = (d) => {
+      try {
+        const dd = (d instanceof Date) ? d : new Date(d);
+        if (Number.isNaN(dd.getTime())) return null;
+        const pad2 = (n) => String(n).padStart(2, '0');
+        return `${dd.getFullYear()}-${pad2(dd.getMonth() + 1)}-${pad2(dd.getDate())}`;
+      } catch (_) {
+        return null;
+      }
+    };
+
+    const _resolveOpDate = (op) => {
+      // 1) if op.date exists
+      const d1 = _parseDateAny(op?.date);
+      if (d1) return d1;
+
+      // 2) if dateKey exists (common for "cells" ops)
+      const dk = op?.dateKey;
+      if (dk) {
+        // Prefer store parser if present
+        try {
+          if (typeof mainStore?._parseDateKey === 'function') {
+            const d2 = mainStore._parseDateKey(dk);
+            const dd = new Date(d2);
+            if (!Number.isNaN(dd.getTime())) return dd;
+          }
+        } catch (_) {}
+
+        // Fallback: YYYYMMDD
+        const s = String(dk).trim();
+        const m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+        if (m) {
+          const d3 = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+          if (!Number.isNaN(d3.getTime())) return d3;
+        }
+      }
+
+      return null;
+    };
+
+    const _opToRow = (op, fallbackName) => {
+      if (!op) return null;
+
+      const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name || op.contractorName || '';
+      const project = op.projectId?.name || op.projectName || '';
+      const category = op.categoryId?.name || op.categoryName || '';
+
+      // Transfer meta
+      const fromAccId = op.fromAccountId?._id || op.fromAccountId || null;
+      const toAccId = op.toAccountId?._id || op.toAccountId || null;
+      const fromAcc = fromAccId ? (mainStore.accounts || []).find(a => String(a?._id) === String(fromAccId)) : null;
+      const toAcc = toAccId ? (mainStore.accounts || []).find(a => String(a?._id) === String(toAccId)) : null;
+      const fromAccountName = fromAcc?.name || op.fromAccountName || '';
+      const toAccountName = toAcc?.name || op.toAccountName || '';
+
+      const dateObj = _resolveOpDate(op);
+      const dateYmd = dateObj ? _fmtYmd(dateObj) : null;
+
+      const t = (op.type === 'transfer' || op.isTransfer) ? 'transfer'
+        : (op.isWithdrawal || op.type === 'withdrawal') ? 'withdrawal'
+        : (op.type === 'income' || op.isIncome) ? 'income'
+        : 'expense';
+
+      const baseName = (op.description || op.comment || category || contractor || project || fallbackName || 'Операция');
+
+      const name = (t === 'transfer' && (fromAccountName || toAccountName))
+        ? `Перевод: ${fromAccountName || '?'} → ${toAccountName || '?'}`
+        : (t === 'withdrawal' && (op.destination || op.withdrawalDestination))
+          ? `Вывод: ${op.destination || op.withdrawalDestination}`
+          : baseName;
+
+      return {
+        id: op._id || op.id || null,
+        // IMPORTANT: date must be resolvable even when only dateKey exists
+        date: dateYmd || op.date || null,
+        dateKey: op.dateKey || null,
+        cellIndex: (op.cellIndex !== undefined ? op.cellIndex : null),
+        type: t,
+        amount: op.amount,
+        contractorName: contractor || null,
+        projectName: project || null,
+        categoryName: category || null,
+        fromAccountName: fromAccountName || null,
+        toAccountName: toAccountName || null,
+        name,
+      };
+    };
+
+    const _pushListWidget = (key, title, ops, fallbackName) => {
+      try {
+        const arr = Array.isArray(ops) ? ops : [];
+        if (!arr.length) return;
+        const rows = [];
+        for (const op of arr.slice(0, 250)) {
+          const r = _opToRow(op, fallbackName);
+          if (r && (r.date || r.dateKey) && r.amount !== undefined && r.amount !== null) rows.push(r);
+        }
+        if (!rows.length) return;
+        uiSnapshot.widgets.push({ key, title, rows });
+      } catch (_) {}
+    };
+
+    // Prefer future lists (they are exactly what "ближайшие" means)
+    _pushListWidget('incomeList', 'Доходы (список)', mainStore.futureIncomes, 'Доход');
+    _pushListWidget('expenseList', 'Расходы (список)', mainStore.futureExpenses, 'Расход');
+    _pushListWidget('withdrawalList', 'Выводы (список)', mainStore.futureWithdrawals, 'Вывод');
+    _pushListWidget('transfers', 'Переводы (список)', mainStore.futureTransfers, 'Перевод');
+
+    // Also inject current lists (useful for "сегодня" / "за период")
+    _pushListWidget('incomeListCurrent', 'Доходы (текущие)', mainStore.currentIncomes, 'Доход');
+    _pushListWidget('expenseListCurrent', 'Расходы (текущие)', mainStore.currentExpenses, 'Расход');
+    _pushListWidget('withdrawalListCurrent', 'Выводы (текущие)', mainStore.currentWithdrawals, 'Вывод');
+    _pushListWidget('transfersCurrent', 'Переводы (текущие)', mainStore.currentTransfers, 'Перевод');
 
     // Normalize minimal contract
     uiSnapshot.v = (uiSnapshot.v === undefined || uiSnapshot.v === null) ? 1 : uiSnapshot.v;
@@ -328,11 +477,11 @@ const sendAiMessage = async () => {
       }
     })();
 
-const res = await fetch(`${API_BASE_URL}/ai/query`, {
+    const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ message: q, uiSnapshot, includeHidden, visibleAccountIds }),
+      body: JSON.stringify({ message: q, source, quickKey, uiSnapshot, includeHidden, visibleAccountIds }),
     });
 
     if (res.status === 402 || res.status === 403) {
@@ -380,7 +529,7 @@ const res = await fetch(`${API_BASE_URL}/ai/query`, {
 const runAiQuick = async (preset) => {
   aiInput.value = preset;
   await nextTick();
-  await sendAiMessage();
+  await sendAiMessage(preset, { source: 'quick_button' });
 };
 
 // Автоскролл: держим чат внизу при новых сообщениях и при открытии окна
@@ -424,9 +573,9 @@ const onChartScroll = (left) => {
 const initScrollSync = () => {
     if (!timelineRef.value) return;
     const el = timelineRef.value.$el.querySelector('.timeline-scroll-area');
-    if (el) { 
-        el.removeEventListener('scroll', onTimelineScroll); 
-        el.addEventListener('scroll', onTimelineScroll, { passive: true }); 
+    if (el) {
+        el.removeEventListener('scroll', onTimelineScroll);
+        el.addEventListener('scroll', onTimelineScroll, { passive: true });
     }
 };
 
@@ -527,29 +676,29 @@ const initializeMobileView = async () => {
         } else {
             console.error("Critical: mainStore.fetchAllEntities is not a function. Check store initialization.");
         }
-    } catch (e) { 
-        console.error("Widgets Load Error:", e); 
-    } finally { 
-        isWidgetsLoading.value = false; 
+    } catch (e) {
+        console.error("Widgets Load Error:", e);
+    } finally {
+        isWidgetsLoading.value = false;
     }
 
     // 4. Загрузка Таймлайна
     isTimelineLoading.value = true;
     try {
-        if (!mainStore.projection?.mode) { 
-            await mainStore.updateFutureProjectionByMode('12d', today); 
+        if (!mainStore.projection?.mode) {
+            await mainStore.updateFutureProjectionByMode('12d', today);
         }
         const modeToLoad = mainStore.projection.mode || '12d';
-        
+
         if (typeof mainStore.loadCalculationData === 'function') {
             await mainStore.loadCalculationData(modeToLoad, today);
         }
-    } catch (e) { 
-        console.error("Timeline Load Error:", e); 
+    } catch (e) {
+        console.error("Timeline Load Error:", e);
     } finally {
         isTimelineLoading.value = false;
-        nextTick(() => { 
-            initScrollSync(); 
+        nextTick(() => {
+            initScrollSync();
         });
     }
 };
@@ -577,7 +726,7 @@ onUnmounted(() => {
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
     if (el) el.removeEventListener('scroll', onTimelineScroll);
     document.removeEventListener('mousedown', handleFilterClickOutside);
-    
+
     window.removeEventListener('touchmove', onResizerMove);
     window.removeEventListener('touchend', onResizerEnd);
     window.removeEventListener('pointermove', onResizerMove);
@@ -592,19 +741,19 @@ const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
 
 watch(isWidgetFullscreen, (isOpen) => {
-    if (isOpen) { document.body.style.overflow = 'hidden'; } 
+    if (isOpen) { document.body.style.overflow = 'hidden'; }
     else { document.body.style.overflow = ''; nextTick(() => { setTimeout(() => { initScrollSync(); }, 150); }); }
 });
 
 const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
-const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' }); 
-const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode); 
+const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' });
+const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode);
 
 const updateFilterPosition = () => { if (filterBtnRef.value) { const rect = filterBtnRef.value.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } };
 const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { nextTick(() => updateFilterPosition()); } isFilterOpen.value = true; } };
 const handleFilterClickOutside = (event) => { const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target); const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target); if (!insideTrigger && !insideDropdown) { isFilterOpen.value = false; } };
 watch(isFilterOpen, (isOpen) => { if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('mousedown', handleFilterClickOutside); window.addEventListener('scroll', updateFilterPosition, true); }); } else { document.removeEventListener('mousedown', handleFilterClickOutside); window.removeEventListener('scroll', updateFilterPosition, true); } });
-const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; }; 
+const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; };
 const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
@@ -668,12 +817,12 @@ const activeWidgetItems = computed(() => {
       const items = getWidgetItems(k, showFutureBalance.value);
       let filtered = [...items];
       const getFilterVal = (i) => { if (showFutureBalance.value && i.totalForecast !== undefined) return i.totalForecast; return i.balance !== undefined ? i.balance : i.currentBalance; };
-      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0); 
-      else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0); 
+      if (filterMode.value === 'positive') filtered = filtered.filter(i => getFilterVal(i) > 0);
+      else if (filterMode.value === 'negative') filtered = filtered.filter(i => getFilterVal(i) < 0);
       else if (filterMode.value === 'nonZero') filtered = filtered.filter(i => getFilterVal(i) !== 0);
       if (k === 'companies') { filtered = filtered.map(i => ({ ...i, subName: i.linkTooltip ? i.linkTooltip.replace('Счета: ', '') : '' })); }
       const getSortVal = (i) => getFilterVal(i);
-      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a)); 
+      if (sortMode.value === 'desc') filtered.sort((a, b) => getSortVal(b) - getSortVal(a));
       else if (sortMode.value === 'asc') filtered.sort((a, b) => getSortVal(a) - getSortVal(b));
       return filtered;
   } else {
@@ -682,35 +831,36 @@ const activeWidgetItems = computed(() => {
       mappedList.sort((a, b) => new Date(b.date) - new Date(a.date)); return mappedList;
   }
 });
-const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; }; const onWidgetClick = (key) => { activeWidgetKey.value = key; };
+const handleWidgetBack = () => { activeWidgetKey.value = null; isFilterOpen.value = false; };
+const onWidgetClick = (key) => { activeWidgetKey.value = key; };
 const formatVal = (val) => { const num = Number(val) || 0; const formatted = formatNumber(Math.abs(num)); if (num === 0) return `${formatted} ₸`; if (num < 0) return `- ${formatted} ₸`; return `₸ ${formatted}`; };
 const formatDelta = (val) => { const num = Number(val) || 0; if (num === 0) return '0 ₸'; const formatted = formatNumber(Math.abs(num)); if (num > 0) return `+ ${formatted} ₸`; return `- ${formatted} ₸`; };
 const formatDateShort = (date) => { if (!date) return ''; const d = new Date(date); return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }); };
 
-const handleShowMenu = (payload) => { 
-    if (payload.operation) { 
+const handleShowMenu = (payload) => {
+    if (payload.operation) {
         handleEditOperation(payload.operation);
-    } else { 
-        selectedDate.value = payload.date || new Date(); 
-        selectedCellIndex.value = payload.cellIndex || 0; 
-        
+    } else {
+        selectedDate.value = payload.date || new Date();
+        selectedCellIndex.value = payload.cellIndex || 0;
+
         const e = payload.event;
-        let topStyle = '30%'; 
+        let topStyle = '30%';
         if (e) {
             const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
-            let top = clientY - 150; 
+            let top = clientY - 150;
             if (top < 50) top = clientY + 30;
             topStyle = `${top}px`;
-        } 
-        contextMenuPosition.value = { 
-            top: topStyle, 
-            left: '50%', 
-            transform: 'translateX(-50%)', 
-            position: 'fixed', 
+        }
+        contextMenuPosition.value = {
+            top: topStyle,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            position: 'fixed',
             zIndex: '9999'
         };
         isContextMenuVisible.value = true;
-    } 
+    }
 };
 
 const handleEditOperation = (operation) => {
@@ -741,7 +891,7 @@ const handleEditOperation = (operation) => {
   if (operation.type === 'transfer' || operation.isTransfer) {
     isTransferPopupVisible.value = true;
     return;
-  } 
+  }
 
   if (operation.isWithdrawal) {
     isWithdrawalPopupVisible.value = true;
@@ -753,12 +903,12 @@ const handleEditOperation = (operation) => {
     return;
   }
 
-  isExpensePopupVisible.value = true; 
+  isExpensePopupVisible.value = true;
 };
 
 const handleContextMenuSelect = (type) => {
     isContextMenuVisible.value = false;
-    operationToEdit.value = null; 
+    operationToEdit.value = null;
     if (type === 'income') isIncomePopupVisible.value = true;
     else if (type === 'expense') isExpensePopupVisible.value = true;
     else if (type === 'transfer') isTransferPopupVisible.value = true;
@@ -778,12 +928,12 @@ const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Da
 const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
 const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
-const handleItemClick = (item) => { 
-    if (item.isList && item.originalOp) { 
-        handleEditOperation(item.originalOp); 
-    } else if (!item.isList && item.isLinked && item.linkTooltip) { 
-        infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true; 
-    } 
+const handleItemClick = (item) => {
+    if (item.isList && item.originalOp) {
+        handleEditOperation(item.originalOp);
+    } else if (!item.isList && item.isLinked && item.linkTooltip) {
+        infoModalTitle.value = 'Связь'; infoModalMessage.value = item.linkTooltip; showInfoModal.value = true;
+    }
 };
 
 const handleTaxDelete = async (operation) => { isTaxDetailsPopupVisible.value = false; if (!operation) return; try { await mainStore.deleteOperation(operation); await mainStore.fetchAllEntities(); } catch(e) { alert("Ошибка удаления налога: " + e.message); } };
@@ -795,7 +945,7 @@ const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; t
 const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; };
 const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
 const handleWithdrawalSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isWithdrawalPopupVisible.value = false; } catch (e) { console.error("Mobile Withdrawal Save Error", e); alert("Ошибка сохранения"); } };
-const handleAction = () => {}; 
+const handleAction = () => {};
 const handleOperationDelete = async (op) => {
     if (!op) return;
     try {
@@ -810,7 +960,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
 <template>
   <div class="mobile-layout" @click="isContextMenuVisible = false">
-    
+
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>
       <p>Загрузка...</p>
@@ -904,16 +1054,16 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
         </div>
 
         <div class="main-content-view">
-            <MobileHeaderTotals class="fixed-header" />
-            
+            <MobileHeaderTotals ref="headerTotalsRef" class="fixed-header" />
+
             <div class="layout-body" ref="layoutBodyRef">
               <MobileWidgetGrid ref="widgetGridRef" class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
-              
+
               <div class="section-timeline" v-show="!mainStore.isHeaderExpanded" :style="{ height: timelineHeight + 'px', flexShrink: 0 }">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
-              
+
               <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @pointerdown.stop.prevent="onResizerStart" @touchstart.stop.prevent="onResizerStart" @touchcancel.stop="onResizerEnd">
                   <div class="resizer-handle"></div>
               </div>
@@ -923,7 +1073,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                 <MobileChartSection v-else ref="chartRef" @scroll="onChartScroll" />
               </div>
             </div>
-            
+
             <div class="fixed-footer">
               <MobileActionPanel @action="handleAction" @open-ai="openAiModal" />
             </div>
@@ -997,7 +1147,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
               v-model="aiInput"
               class="ai-input"
               placeholder="Спроси: что на счетах? (Enter — отправить)"
-              @keydown.enter.prevent="sendAiMessage"
+              @keydown.enter.prevent="sendAiMessage()"
             />
 
             <button
@@ -1015,7 +1165,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
               </svg>
             </button>
 
-            <button class="ai-btn ai-send" :disabled="aiLoading || !(aiInput || '').trim()" @click="sendAiMessage" title="Отправить">
+            <button class="ai-btn ai-send" :disabled="aiLoading || !(aiInput || '').trim()" @click="sendAiMessage()" title="Отправить">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
@@ -1034,14 +1184,14 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 /* Принудительный размер шрифта 16px для всех полей ввода. */
 /* Это отключает авто-зум в Safari и других мобильных браузерах. */
 @media (max-width: 768px) {
-  input[type="text"], 
-  input[type="number"], 
-  input[type="email"], 
-  input[type="password"], 
-  input[type="search"], 
-  input[type="tel"], 
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
   input[type="url"],
-  select, 
+  select,
   textarea,
   .real-input,
   .form-input,
@@ -1052,15 +1202,15 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 </style>
 
 <style scoped>
-.mobile-layout { 
-  height: 100vh; 
-  height: 100dvh; 
-  width: 100vw; 
-  background-color: var(--color-background, #1a1a1a); 
-  display: flex; 
-  flex-direction: column; 
-  overflow: hidden; 
-  
+.mobile-layout {
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  background-color: var(--color-background, #1a1a1a);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
   /* 🟢 FIX: Запрещаем стандартные жесты браузера (зум, свайп назад) */
   touch-action: manipulation;
 }
@@ -1193,16 +1343,16 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 :deep(.widgets-grid) { align-content: start !important; min-height: min-content; }
 .section-widgets::-webkit-scrollbar { display: none; }
 
-.section-timeline { 
-    flex-shrink: 0; 
-    border-top: 1px solid var(--color-border, #444); 
+.section-timeline {
+    flex-shrink: 0;
+    border-top: 1px solid var(--color-border, #444);
     overflow: hidden;
 }
 
-.section-chart { 
-    flex-grow: 1; 
-    min-height: 50px; 
-    border-top: 1px solid var(--color-border, #444); 
+.section-chart {
+    flex-grow: 1;
+    min-height: 50px;
+    border-top: 1px solid var(--color-border, #444);
     overflow: hidden;
 }
 
@@ -1246,7 +1396,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   z-index: 200;
   background-color: var(--color-background, #1a1a1a);
   box-sizing: border-box;
-  
+
 }
 .fs-regime-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; text-transform: uppercase; margin-top: 3px; display: inline-block; width: fit-content; }
 .badge-upr { background-color: rgba(52, 199, 89, 0.15); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.3); }

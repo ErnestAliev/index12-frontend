@@ -59,6 +59,162 @@ const aiInputRef = ref(null);
 // UI snapshot source (screen = truth)
 const theHeaderRef = ref(null);
 
+// --- Desktop UI snapshot builder (must NOT depend on collapsed/expanded DOM) ---
+const _isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+
+const _pickName = (v) => {
+  if (!v) return null;
+  if (typeof v === 'string') return v;
+  return v?.name || v?.title || v?.label || v?.displayName || null;
+};
+
+const _normalizeOp = (op) => {
+  if (!op || typeof op !== 'object') return null;
+  const amount = (typeof op.amount === 'number') ? op.amount : (typeof op.sum === 'number' ? op.sum : null);
+  const date = op.date ? new Date(op.date) : null;
+  const dateIso = (date && !isNaN(date.getTime())) ? date.toISOString().slice(0, 10) : null;
+
+  return {
+    id: op._id || op.id || null,
+    type: op.type || (op.isTransfer ? 'transfer' : (op.isWithdrawal ? 'withdrawal' : null)),
+    amount,
+    currency: op.currency || 'KZT',
+    dateKey: op.dateKey || null,
+    date: dateIso,
+    cellIndex: (op.cellIndex ?? null),
+    project: _pickName(op.projectId) || _pickName(op.project) || _pickName(op.projectName) || null,
+    contractor: _pickName(op.contractorId) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
+    category: _pickName(op.categoryId) || _pickName(op.category) || _pickName(op.categoryName) || null,
+    company: _pickName(op.companyId) || _pickName(op.company) || _pickName(op.companyName) || null,
+    isTransfer: !!(op.isTransfer || op.type === 'transfer'),
+    isWithdrawal: !!(op.isWithdrawal),
+    isTax: !!(op.isTax || op.isTaxPayment),
+    isRefund: !!(op.isRefund),
+    isPrepayment: !!(op.isPrepayment),
+  };
+};
+
+const _getOpsForDateKeyBestEffort = (dateKey) => {
+  if (!dateKey) return [];
+
+  const candidates = [
+    // ✅ Main source of truth for timeline ops in desktop store (cached per dateKey)
+    mainStore?.displayCache?.value?.[dateKey],
+    mainStore?.displayCache?.[dateKey],
+
+    // Legacy / alternative locations (older store versions)
+    mainStore?.operationsByDateKey?.[dateKey],
+    mainStore?.opsByDateKey?.[dateKey],
+    mainStore?.operationsByDayKey?.[dateKey],
+    mainStore?.dayOperations?.[dateKey],
+  ];
+
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+    if (c && Array.isArray(c.operations)) return c.operations;
+    if (c && Array.isArray(c.items)) return c.items;
+  }
+
+  // As a last resort, try a getter function if it exists.
+  const getter = mainStore?.getOperationsForDateKey || mainStore?.getOpsForDateKey;
+  if (typeof getter === 'function') {
+    try {
+      const res = getter.call(mainStore, dateKey);
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.operations)) return res.operations;
+    } catch (e) {}
+  }
+
+  return [];
+};
+
+const buildDesktopUiSnapshot = () => {
+  // 1) Header snapshot (what user sees) — best effort
+  const headerSnap = theHeaderRef.value?.getSnapshot?.() || null;
+
+  // 2) Store widgets snapshot (MUST NOT override headerSnap.widgets used by quick buttons)
+  const storeWidgets = Array.isArray(mainStore?.allWidgets)
+    ? mainStore.allWidgets.map(w => ({
+        key: w?.key || w?.id || w?.name || w?.title || null,
+        title: w?.title || w?.name || null,
+        fact: (typeof w?.fact === 'number') ? w.fact : (typeof w?.factValue === 'number' ? w.factValue : null),
+        forecast: (typeof w?.forecast === 'number') ? w.forecast : (typeof w?.forecastValue === 'number' ? w.forecastValue : null),
+      }))
+    : null;
+
+  // 3) Timeline snapshot
+  // ВАЖНО: не зависим от DOM (свернут/развернут хедер). Берём операции из mainStore.displayCache.
+  // Это даёт AI доступ к истории/будущему в рамках текущего диапазона проекции.
+
+  // (a) Visible columns meta (what user is currently looking at)
+  const daysVisible = Array.isArray(visibleDays.value)
+    ? visibleDays.value
+        .map(d => ({
+          dateKey: d?.dateKey || null,
+          date: (d?.date instanceof Date) ? d.date.toISOString().slice(0, 10) : null,
+          isToday: !!d?.isToday,
+        }))
+        .filter(x => x.dateKey)
+    : [];
+
+  // (b) Cached days from store (can include much more than 12 visible columns)
+  const cacheMap = (mainStore?.displayCache?.value && typeof mainStore.displayCache.value === 'object')
+    ? mainStore.displayCache.value
+    : (_isPlainObject(mainStore?.displayCache) ? mainStore.displayCache : {});
+
+  const cacheDateKeys = Object.keys(cacheMap || {}).filter(Boolean);
+
+  // Safety cap: keep payload reasonable
+  const MAX_OPS = 2000;
+  let totalOps = 0;
+  const opsByDay = {};
+  let truncated = false;
+
+  for (const dk of cacheDateKeys) {
+    if (totalOps >= MAX_OPS) { truncated = true; break; }
+    const rawOps = _getOpsForDateKeyBestEffort(dk);
+    const normalized = rawOps.map(_normalizeOp).filter(Boolean);
+    if (!normalized.length) continue;
+
+    if (totalOps + normalized.length > MAX_OPS) {
+      opsByDay[dk] = normalized.slice(0, Math.max(0, MAX_OPS - totalOps));
+      totalOps = MAX_OPS;
+      truncated = true;
+      break;
+    }
+
+    opsByDay[dk] = normalized;
+    totalOps += normalized.length;
+  }
+
+  // Backward-compatible: keep `days` key name used elsewhere
+  const days = daysVisible;
+
+  const extra = {
+    _source: 'desktop',
+    headerExpanded: !!mainStore?.isHeaderExpanded,
+    viewMode: viewMode.value,
+    projection: {
+      rangeStartDate: mainStore?.projection?.rangeStartDate || null,
+      rangeEndDate: mainStore?.projection?.rangeEndDate || null,
+    },
+    storeWidgets,
+    storeTimeline: {
+      daysVisible: days,
+      cachedDaysCount: cacheDateKeys.length,
+      opsByDay,
+      opsCount: totalOps,
+      truncated,
+      note: 'ops taken from mainStore.displayCache (store cache), not from expanded widgets/DOM',
+    },
+  };
+
+  // Keep backward compatibility: if header snapshot is a plain object, merge into it.
+  if (_isPlainObject(headerSnap)) return { ...headerSnap, ...extra };
+  return { header: headerSnap, ...extra };
+};
+
+
 // --- AI voice input (Browser SpeechRecognition MVP) ---
 const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
 const isAiRecording = ref(false);
@@ -279,8 +435,22 @@ const sendAiMessage = async () => {
               .filter(Boolean)
           : null);
 
+    // ✅ If user asks about ops (income/expense/transfers/etc) — ensure we have timeline cache for current projection range
+    // so AI can answer независимо от того, раскрыт хедер/виджеты или нет.
+    const wantsOpsTimeline = /\b(доход|расход|перевод|вывод|операц|налог|предоплат)\b/i.test(text);
+    if (wantsOpsTimeline && typeof mainStore?.fetchOperationsRange === 'function') {
+      const rs = mainStore?.projection?.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null;
+      const re = mainStore?.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
+      if (rs && re && !isNaN(rs.getTime()) && !isNaN(re.getTime())) {
+        try {
+          await mainStore.fetchOperationsRange(rs, re, { force: false, sparse: true });
+        } catch (e) {}
+      }
+    }
+
     // Screen-snapshot context (source of truth): what user sees in header widgets
-    const uiSnapshot = theHeaderRef.value?.getSnapshot?.() || null;
+        // Desktop snapshot must not depend on expanded/collapsed UI
+    const uiSnapshot = buildDesktopUiSnapshot();
 
     const aiContext = buildAiContext(mainStore, {
       viewMode: viewMode.value,
