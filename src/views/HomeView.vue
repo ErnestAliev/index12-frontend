@@ -1167,6 +1167,7 @@ const handleRefundDelete = async (op) => {
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи выводы')">Выводы</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи кредиты')">Кредиты</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи предоплаты')">Предоплаты</button>
+            <button class="ai-quick-btn" @click="useQuickPrompt('диагностика')">Диагностика</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи компании')">Компании</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи проекты')">Проекты</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи контрагентов')">Контрагенты</button>

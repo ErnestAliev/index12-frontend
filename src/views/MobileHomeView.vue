@@ -1122,6 +1122,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
             <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
             <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
+            <button class="ai-chip" @click="runAiQuick('диагностика')">Диагностика</button>
           </div>
 
           <div class="ai-modal-body">
