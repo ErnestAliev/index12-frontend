@@ -158,6 +158,7 @@ const stopAiRecordingIfNeeded = () => {
   if (!isAiRecording.value) return;
   try { aiRecognition?.stop?.(); } catch (_) {}
   isAiRecording.value = false;
+  aiVoiceConfirmedText = ''; // Reset voice buffer
 };
 
 const toggleAiRecording = () => {
