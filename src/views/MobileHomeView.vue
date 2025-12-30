@@ -111,26 +111,35 @@ const _ensureAiRecognition = () => {
 
   const r = new SR();
   r.lang = 'ru-RU';
-  r.interimResults = false; // Disable interim results for cleaner input
+  r.interimResults = true; // Enable interim results for real-time text display
   r.continuous = true; // Enable continuous mode to prevent 5-second timeout
 
+  // Store confirmed text separately from interim
+  let confirmedText = '';
+
   r.onresult = (event) => {
-    // Only process final results
+    let interimText = '';
+    
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
+      const transcript = (res[0]?.transcript || '').trim();
+      
       if (res.isFinal) {
-        const transcript = (res[0]?.transcript || '').trim();
-        if (transcript) {
-          // Add to existing input with space separator
-          const currentText = aiInput.value.trim();
-          aiInput.value = currentText ? `${currentText} ${transcript}` : transcript;
-        }
+        // Add confirmed text
+        confirmedText = (confirmedText + ' ' + transcript).trim();
+      } else {
+        // Collect interim text
+        interimText = transcript;
       }
     }
+    
+    // Show confirmed text + interim text in input
+    aiInput.value = (confirmedText + (interimText ? ' ' + interimText : '')).trim();
   };
 
   r.onend = () => {
     isAiRecording.value = false;
+    confirmedText = ''; // Reset for next recording
     // Focus input field so user can edit the recognized text
     nextTick(() => aiInputRef.value?.focus?.());
   };
@@ -138,6 +147,7 @@ const _ensureAiRecognition = () => {
   r.onerror = (event) => {
     console.error('Speech recognition error:', event.error);
     isAiRecording.value = false;
+    confirmedText = '';
   };
 
   aiRecognition = r;
@@ -1172,39 +1182,57 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             </div>
           </div>
 
-          <div class="ai-modal-input">
-            <textarea
-              ref="aiInputRef"
-              v-model="aiInput"
-              class="ai-input"
-              placeholder="Спросите AI"
-              @keydown.enter="handleAiInputKeydown"
-              rows="1"
-            ></textarea>
+          <!-- GPT-style input area -->
+          <div class="ai-input-container">
+            <div class="ai-input-wrapper">
+              <!-- File attachment placeholder (left) -->
+              <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                </svg>
+              </button>
 
-            <button
-              class="ai-btn ai-mic"
-              :class="{ recording: isAiRecording }"
-              :disabled="aiLoading || !aiSpeechSupported"
-              @click="toggleAiRecording"
-              :title="aiSpeechSupported ? (isAiRecording ? 'Стоп' : 'Голос') : 'Голос не поддерживается'"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-                <path d="M19 11a7 7 0 0 1-14 0" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-            </button>
+              <!-- Textarea (center, expands) -->
+              <textarea
+                ref="aiInputRef"
+                v-model="aiInput"
+                class="ai-input"
+                placeholder="Спросите AI..."
+                @keydown.enter="handleAiInputKeydown"
+                rows="1"
+              ></textarea>
 
-            <button class="ai-btn ai-send" :disabled="aiLoading || !(aiInput || '').trim()" @click="sendAiMessage()" title="Отправить">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            </button>
+              <!-- Buttons (right) -->
+              <div class="ai-input-buttons">
+                <button
+                  class="ai-mic-btn"
+                  :class="{ recording: isAiRecording }"
+                  :disabled="aiLoading || !aiSpeechSupported"
+                  @click="toggleAiRecording"
+                  :title="aiSpeechSupported ? (isAiRecording ? 'Стоп' : 'Голос') : 'Голос не поддерживается'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+                    <path d="M19 11a7 7 0 0 1-14 0" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                </button>
+
+                <button
+                  class="ai-send-btn"
+                  :disabled="aiLoading || !(aiInput || '').trim()"
+                  @click="sendAiMessage()"
+                  title="Отправить"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
-
-          <div class="ai-hint">Только чтение данных. Ответ короткий, удобный для WhatsApp.</div>
         </div>
       </div>
     </Teleport>
@@ -1600,69 +1628,148 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   line-height: 1.25;
 }
 
-.ai-modal-input {
-  display: flex;
-  gap: 8px;
-  padding: 12px 14px;
+/* GPT-style input area */
+.ai-input-container {
+  
   border-top: 1px solid var(--color-border, #444);
-  align-items: center;
+  background: var(--color-background-soft, #282828);
+  flex-shrink: 0;
 }
 
-.ai-input {
-  flex: 1;
-  height: 38px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border, #444);
-  background: var(--color-background-soft, #282828);
-  color: #fff;
-  padding: 0 12px;
-  outline: none;
-}
-
-.ai-btn {
-  width: 40px;
-  height: 38px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border, #444);
-  background: var(--color-background-soft, #282828);
-  color: #fff;
+.ai-input-wrapper {
   display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--color-background, #1a1a1a);
+  border: 1px solid var(--color-border, #444);
+ 
+  padding: 8px 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ai-input-wrapper:focus-within {
+  border-color: var(--color-primary, #34c759);
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.15);
+}
+
+.ai-attach-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-mute, rgba(255,255,255,0.5));
+  cursor: not-allowed;
+  display: grid;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  padding: 0;
+  place-items: center;
+  flex-shrink: 0;
+  opacity: 0.5;
   -webkit-tap-highlight-color: transparent;
 }
 
-.ai-btn:disabled {
-  opacity: 0.55;
+.ai-input { 
+  flex: 1; 
+  min-height: 24px; 
+  max-height: 120px;
+  border: none;
+  background: transparent; 
+  color: #fff; 
+  padding: 6px 0;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 16px; /* Prevent zoom on iOS */
+  line-height: 1.5;
+}
+
+.ai-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.ai-input-buttons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.ai-mic-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  place-items: center;
+  transition: background-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-mic-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ai-mic-btn:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.ai-btn.ai-send {
-  border-color: rgba(52, 199, 89, 0.45);
-  background: rgba(52, 199, 89, 0.16);
-}
-
-.ai-btn.recording {
-  border-color: var(--color-primary, #34c759);
-  color: var(--color-primary, #34c759);
-  animation: aiPulse 1.1s ease-in-out infinite;
+.ai-mic-btn.recording {
+  color: #fff;
+  background: var(--color-primary, #34c759);
+  animation: aiPulse 1.5s ease-in-out infinite, aiWave 2s ease-in-out infinite;
 }
 
 @keyframes aiPulse {
-  0% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
-  50% { box-shadow: 0 0 14px rgba(52, 199, 89, 0.35); }
-  100% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
 }
 
-.ai-btn svg { display: block; }
+@keyframes aiWave {
+  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.6); }
+  50% { box-shadow: 0 0 0 12px rgba(52, 199, 89, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
+}
 
-.ai-hint {
-  padding: 8px 14px 12px;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+.ai-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: var(--color-primary, #34c759);
+  color: #ffffff;
+  cursor: pointer;
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  place-items: center;
+  transition: background-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-send-btn:active {
+  background: #28a745;
+}
+
+.ai-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ai-mic-btn svg,
+.ai-send-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 /* Ensure the modal is not constrained by any ancestor stacking/overflow */

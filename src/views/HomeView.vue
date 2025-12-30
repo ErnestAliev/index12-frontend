@@ -244,26 +244,35 @@ const _ensureAiRecognition = () => {
 
   const r = new SR();
   r.lang = 'ru-RU';
-  r.interimResults = false; // Disable interim results for cleaner input
+  r.interimResults = true; // Enable interim results for real-time text display
   r.continuous = true; // Enable continuous mode to prevent 5-second timeout
 
+  // Store confirmed text separately from interim
+  let confirmedText = '';
+
   r.onresult = (event) => {
-    // Only process final results
+    let interimText = '';
+    
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
+      const transcript = (res[0]?.transcript || '').trim();
+      
       if (res.isFinal) {
-        const transcript = (res[0]?.transcript || '').trim();
-        if (transcript) {
-          // Add to existing input with space separator
-          const currentText = aiInput.value.trim();
-          aiInput.value = currentText ? `${currentText} ${transcript}` : transcript;
-        }
+        // Add confirmed text
+        confirmedText = (confirmedText + ' ' + transcript).trim();
+      } else {
+        // Collect interim text
+        interimText = transcript;
       }
     }
+    
+    // Show confirmed text + interim text in input
+    aiInput.value = (confirmedText + (interimText ? ' ' + interimText : '')).trim();
   };
 
   r.onend = () => {
     isAiRecording.value = false;
+    confirmedText = ''; // Reset for next recording
     // Focus input field so user can edit the recognized text
     nextTick(() => aiInputRef.value?.focus?.());
   };
@@ -271,6 +280,7 @@ const _ensureAiRecognition = () => {
   r.onerror = (event) => {
     console.error('Speech recognition error:', event.error);
     isAiRecording.value = false;
+    confirmedText = '';
   };
 
   aiRecognition = r;
@@ -1181,12 +1191,12 @@ const handleRefundDelete = async (op) => {
         </div>
       </aside>
     </div>
-        <!-- AI ассистент (Desktop drawer) -->
-    <div v-if="isAiDrawerOpen" class="ai-drawer-overlay" @click="closeAiDrawer">
-      <div class="ai-drawer" @click.stop>
-        <div class="ai-drawer-header">
-          <div class="ai-drawer-title">AI ассистент</div>
-          <button class="ai-drawer-close" @click="closeAiDrawer" title="Закрыть">
+        <!-- AI ассистент (Desktop modal) -->
+    <div v-if="isAiDrawerOpen" class="ai-modal-overlay" @click="closeAiDrawer">
+      <div class="ai-modal" @click.stop>
+        <div class="ai-modal-header">
+          <div class="ai-modal-title">AI ассистент</div>
+          <button class="ai-modal-close" @click="closeAiDrawer" title="Закрыть">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1232,45 +1242,57 @@ const handleRefundDelete = async (op) => {
             <div v-if="aiLoading" class="ai-typing">Думаю...</div>
           </div>
 
-          <div class="ai-input-row">
-            <textarea
-              ref="aiInputRef"
-              v-model="aiInput"
-              class="ai-input"
-              placeholder="Спросите AI"
-              @keydown.enter="handleAiInputKeydown"
-              rows="1"
-            ></textarea>
+          <!-- GPT-style input area -->
+          <div class="ai-input-container">
+            <div class="ai-input-wrapper">
+              <!-- File attachment placeholder (left) -->
+              <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                </svg>
+              </button>
 
-            <button
-              class="ai-mic-btn"
-              :class="{ recording: isAiRecording }"
-              :disabled="aiLoading || !aiSpeechSupported"
-              @click="toggleAiRecording"
-              :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-                <path d="M19 11a7 7 0 0 1-14 0" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-            </button>
+              <!-- Textarea (center, expands) -->
+              <textarea
+                ref="aiInputRef"
+                v-model="aiInput"
+                class="ai-input"
+                placeholder="Спросите AI..."
+                @keydown.enter="handleAiInputKeydown"
+                rows="1"
+              ></textarea>
 
-            <button
-              class="ai-send-btn"
-              :disabled="aiLoading || !(aiInput || '').trim()"
-              @click="sendAiMessage"
-              title="Отправить"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            </button>
+              <!-- Buttons (right) -->
+              <div class="ai-input-buttons">
+                <button
+                  class="ai-mic-btn"
+                  :class="{ recording: isAiRecording }"
+                  :disabled="aiLoading || !aiSpeechSupported"
+                  @click="toggleAiRecording"
+                  :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+                    <path d="M19 11a7 7 0 0 1-14 0" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                </button>
+
+                <button
+                  class="ai-send-btn"
+                  :disabled="aiLoading || !(aiInput || '').trim()"
+                  @click="sendAiMessage"
+                  title="Отправить"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
-
-          <div class="ai-hint">Только чтение данных. Ответ короткий, удобный для WhatsApp.</div>
         </template>
       </div>
     </div>
@@ -1417,200 +1439,294 @@ const handleRefundDelete = async (op) => {
 .summaries-container { flex-shrink: 0; }
 .nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
 .divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); }
-/* --- AI Drawer (Desktop) --- */
-.ai-drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: 2600; display: flex; justify-content: flex-end; }
-.ai-drawer { width: 420px; max-width: calc(100vw - 20px); height: 100%; background: var(--color-background); border-left: 1px solid var(--color-border); box-shadow: -10px 0 30px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
-.ai-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-background-soft); }
-.ai-drawer-title { font-weight: 700; font-size: 14px; color: var(--color-heading); }
-.ai-drawer-close {   width: 36px;
+/* --- AI Modal (Desktop) --- */
+.ai-modal-overlay { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(0, 0, 0, 0.6); 
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 2600; 
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ai-modal { 
+  width: 80vw; 
+  min-width: 400px;
+  max-width: 1280px;
+  height: 90vh;
+  max-height: calc(100vh - 40px);
+  background: var(--color-background); 
+  border: 1px solid var(--color-border); 
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex; 
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ai-modal-header { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  padding: 16px 20px; 
+  border-bottom: 1px solid var(--color-border); 
+  background: var(--color-background-soft);
+  flex-shrink: 0;
+}
+
+.ai-modal-title { 
+  font-weight: 700; 
+  font-size: 16px; 
+  color: var(--color-heading); 
+}
+
+.ai-modal-close {
+  width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid var(--color-border, #444);
+  border: 1px solid var(--color-border);
   background: transparent;
-  color: #fff;
+  color: var(--color-text);
   display: grid;
   place-items: center;
   cursor: pointer;
   padding: 0;
-  line-height: 0;
-  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, border-color 0.15s;
 }
-.ai-drawer-close:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
+.ai-modal-close:hover { 
+  background: var(--color-background-mute); 
+  border-color: var(--color-border-hover); 
+}
 
 .ai-quick {
-  padding: 10px 12px;
+  padding: 12px 20px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--color-border);
   overflow: auto;
-  /* scrollbar styling */
+  flex-shrink: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-hover) transparent;
 }
 
-.ai-quick::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.ai-quick::-webkit-scrollbar { width: 6px; height: 6px; }
+.ai-quick::-webkit-scrollbar-track { background: transparent; }
+.ai-quick::-webkit-scrollbar-thumb { background-color: var(--color-border-hover); border-radius: 10px; }
+
+.ai-quick-btn { 
+  padding: 6px 10px; 
+  border-radius: 8px; 
+  border: 1px solid var(--color-border); 
+  background: var(--color-background-soft); 
+  color: var(--color-text); 
+  cursor: pointer; 
+  font-size: 12px; 
+  transition: background 0.15s, border-color 0.15s;
 }
-.ai-quick::-webkit-scrollbar-track {
-  background: transparent;
+.ai-quick-btn:hover { 
+  background: var(--color-background-mute); 
+  border-color: var(--color-border-hover); 
 }
-.ai-quick::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-hover);
-  border-radius: 10px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-.ai-quick-btn { padding: 6px 9px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font-size: 12px; line-height: 1; }
-.ai-quick-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
 .ai-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  /* scrollbar styling */
+  gap: 12px;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-hover) transparent;
 }
 
-.ai-messages::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.ai-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-.ai-messages::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-hover);
-  border-radius: 10px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
+.ai-messages::-webkit-scrollbar { width: 6px; }
+.ai-messages::-webkit-scrollbar-track { background: transparent; }
+.ai-messages::-webkit-scrollbar-thumb { background-color: var(--color-border-hover); border-radius: 10px; }
+
 .ai-message { display: flex; }
 .ai-message.user { justify-content: flex-end; }
 .ai-message.assistant { justify-content: flex-start; }
-.ai-bubble { max-width: 90%; border: 1px solid var(--color-border); background: var(--color-background-soft); border-radius: 14px; padding: 10px 10px; }
-.ai-message.user .ai-bubble { background: rgba(52, 199, 89, 0.10); border-color: rgba(52, 199, 89, 0.35); }
-.ai-text { white-space: pre-wrap; font-size: 13px; line-height: 1.35; color: var(--color-text); }
+.ai-bubble { 
+  max-width: 85%; 
+  border: 1px solid var(--color-border); 
+  background: var(--color-background-soft); 
+  border-radius: 16px; 
+  padding: 12px 14px; 
+}
+.ai-message.user .ai-bubble { 
+  background: rgba(52, 199, 89, 0.12); 
+  border-color: rgba(52, 199, 89, 0.35); 
+}
+.ai-text { 
+  white-space: pre-wrap; 
+  font-size: 14px; 
+  line-height: 1.45; 
+  color: var(--color-text); 
+}
 .ai-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
-.ai-copy-btn { border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); border-radius: 10px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
-.ai-copy-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
-
-.ai-typing { color: var(--color-text-mute); font-size: 12px; padding: 4px 0 0 2px; }
-
-.ai-input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--color-border); background: var(--color-background-soft); }
-.ai-input { 
-  flex: 1; 
-  min-height: 36px; 
-  max-height: 200px;
-  border-radius: 10px; 
+.ai-copy-btn { 
   border: 1px solid var(--color-border); 
   background: var(--color-background); 
   color: var(--color-text); 
-  padding: 8px 10px; 
+  border-radius: 8px; 
+  padding: 5px 10px; 
+  cursor: pointer; 
+  font-size: 12px; 
+  transition: background 0.15s;
+}
+.ai-copy-btn:hover { background: var(--color-background-mute); }
+
+.ai-typing { color: var(--color-text-mute); font-size: 13px; padding: 4px 0; }
+
+/* GPT-style input area */
+.ai-input-container {
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  flex-shrink: 0;
+}
+
+.ai-input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 8px 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ai-input-wrapper:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.15);
+}
+
+.ai-attach-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-mute);
+  cursor: not-allowed;
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.ai-input { 
+  flex: 1; 
+  min-height: 24px; 
+  max-height: 150px;
+  border: none;
+  background: transparent; 
+  color: var(--color-text); 
+  padding: 6px 0;
   outline: none;
   resize: none;
   overflow-y: auto;
   font-family: inherit;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
-.ai-input:focus { border-color: var(--color-border-hover); }
+
+.ai-input::placeholder {
+  color: var(--color-text-mute);
+}
+
+.ai-input-buttons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
 .ai-send-btn {
-  width: 40px;
+  width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid var(--color-primary);
+  border: none;
   background: var(--color-primary);
   color: #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s, border-color 0.2s, transform 0.08s;
+  transition: background-color 0.15s, transform 0.08s;
 }
 .ai-send-btn:hover {
   background: #28a745;
-  border-color: #28a745;
 }
 .ai-send-btn:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 .ai-send-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.4;
   cursor: not-allowed;
   background: var(--color-background-mute);
-  border-color: var(--color-border);
   color: var(--color-text-mute);
   transform: none;
 }
 
 .ai-mic-btn {
-  width: 40px;
+  width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background);
+  border: none;
+  background: transparent;
   color: var(--color-text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s, border-color 0.2s, transform 0.08s;
+  transition: background-color 0.15s, transform 0.08s;
 }
 .ai-mic-btn:hover {
   background: var(--color-background-mute);
-  border-color: var(--color-border-hover);
 }
 .ai-mic-btn:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 .ai-mic-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 .ai-mic-btn.recording {
   color: #fff;
-  border-color: var(--color-primary);
   background: var(--color-primary);
   animation: aiPulse 1.5s ease-in-out infinite, aiWave 2s ease-in-out infinite;
 }
 @keyframes aiPulse {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  50% { transform: scale(1.08); }
 }
 @keyframes aiWave {
-  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.7); }
-  50% { box-shadow: 0 0 0 10px rgba(52, 199, 89, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.6); }
+  50% { box-shadow: 0 0 0 12px rgba(52, 199, 89, 0); }
   100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
 }
 
 .ai-send-btn svg,
 .ai-mic-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   display: block;
   flex: none;
-  min-width: 18px;
-  min-height: 18px;
 }
 
-.ai-send-btn svg * ,
-.ai-mic-btn svg * {
-  vector-effect: non-scaling-stroke;
-}
-
-.ai-hint { padding: 0 12px 12px; font-size: 11px; color: var(--color-text-mute); background: var(--color-background-soft); }
-
-.ai-paywall { padding: 14px 12px; }
+.ai-paywall { padding: 14px 20px; }
 .ai-paywall-title { font-weight: 800; font-size: 14px; color: var(--color-heading); margin-bottom: 6px; }
-.ai-paywall-text { font-size: 12px; color: var(--color-text); opacity: 0.85; margin-bottom: 10px; }
-.ai-paywall-btn { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-mute); color: var(--color-text-mute); cursor: not-allowed; margin-bottom: 8px; }
-.ai-paywall-link { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; }
+.ai-paywall-text { font-size: 13px; color: var(--color-text); opacity: 0.85; margin-bottom: 12px; }
+.ai-paywall-btn { width: 100%; height: 40px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-mute); color: var(--color-text-mute); cursor: not-allowed; margin-bottom: 8px; }
+.ai-paywall-link { width: 100%; height: 40px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; }
 .ai-paywall-link:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 
 </style>
