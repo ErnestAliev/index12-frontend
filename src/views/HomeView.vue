@@ -236,7 +236,6 @@ const buildDesktopUiSnapshot = () => {
 const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
 const isAiRecording = ref(false);
 let aiRecognition = null;
-let aiSpeechFinalBuffer = '';
 
 const _ensureAiRecognition = () => {
   if (aiRecognition) return aiRecognition;
@@ -245,29 +244,32 @@ const _ensureAiRecognition = () => {
 
   const r = new SR();
   r.lang = 'ru-RU';
-  r.interimResults = true;
-  r.continuous = false;
+  r.interimResults = false; // Disable interim results for cleaner input
+  r.continuous = true; // Enable continuous mode to prevent 5-second timeout
 
   r.onresult = (event) => {
-    let interim = '';
+    // Only process final results
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
-      const transcript = (res[0]?.transcript || '').trim();
-      if (!transcript) continue;
       if (res.isFinal) {
-        aiSpeechFinalBuffer = (aiSpeechFinalBuffer + ' ' + transcript).trim();
-      } else {
-        interim = transcript;
+        const transcript = (res[0]?.transcript || '').trim();
+        if (transcript) {
+          // Add to existing input with space separator
+          const currentText = aiInput.value.trim();
+          aiInput.value = currentText ? `${currentText} ${transcript}` : transcript;
+        }
       }
     }
-    aiInput.value = (aiSpeechFinalBuffer + (interim ? ' ' + interim : '')).trim();
   };
 
   r.onend = () => {
     isAiRecording.value = false;
+    // Focus input field so user can edit the recognized text
+    nextTick(() => aiInputRef.value?.focus?.());
   };
 
-  r.onerror = () => {
+  r.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
     isAiRecording.value = false;
   };
 
@@ -294,7 +296,6 @@ const toggleAiRecording = () => {
     return;
   }
 
-  aiSpeechFinalBuffer = '';
   isAiRecording.value = true;
   try { r.start(); } catch(e) { isAiRecording.value = false; }
 };
@@ -339,6 +340,19 @@ watch(
   }
 );
 
+// Auto-resize textarea based on content
+watch(
+  () => aiInput.value,
+  async () => {
+    await nextTick();
+    const textarea = aiInputRef.value;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    }
+  }
+);
+
 const closeAiDrawer = () => {
   isAiDrawerOpen.value = false;
 };
@@ -346,7 +360,9 @@ const closeAiDrawer = () => {
 
 const useQuickPrompt = (promptText) => {
   aiInput.value = promptText;
-  nextTick(() => aiInputRef.value?.focus?.());
+  nextTick(() => {
+    sendAiMessage(); // Automatically send the message
+  });
 };
 
 // Минимальный контекст для backend (read-only). Нужен, чтобы backend мог понимать период/режим и (опционально) баланс.
@@ -402,6 +418,17 @@ const copyAiText = async (msg) => {
 
 const requestAiAccess = () => {
   alert('AI доступен по подписке. Пока платежи не подключены — напиши администратору.');
+};
+
+const handleAiInputKeydown = (event) => {
+  // Shift+Enter: allow new line (default behavior)
+  if (event.shiftKey) {
+    return; // Let the default behavior add a new line
+  }
+  
+  // Enter without Shift: send message
+  event.preventDefault();
+  sendAiMessage();
 };
 
 const sendAiMessage = async () => {
@@ -1206,13 +1233,14 @@ const handleRefundDelete = async (op) => {
           </div>
 
           <div class="ai-input-row">
-            <input
+            <textarea
               ref="aiInputRef"
               v-model="aiInput"
               class="ai-input"
-              placeholder="Спроси: что на счетах? (Enter — отправить)"
-              @keydown.enter.prevent="sendAiMessage"
-            />
+              placeholder="Спросите AI"
+              @keydown.enter="handleAiInputKeydown"
+              rows="1"
+            ></textarea>
 
             <button
               class="ai-mic-btn"
@@ -1475,7 +1503,22 @@ const handleRefundDelete = async (op) => {
 .ai-typing { color: var(--color-text-mute); font-size: 12px; padding: 4px 0 0 2px; }
 
 .ai-input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--color-border); background: var(--color-background-soft); }
-.ai-input { flex: 1; height: 36px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); padding: 0 10px; outline: none; }
+.ai-input { 
+  flex: 1; 
+  min-height: 36px; 
+  max-height: 200px;
+  border-radius: 10px; 
+  border: 1px solid var(--color-border); 
+  background: var(--color-background); 
+  color: var(--color-text); 
+  padding: 8px 10px; 
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
 .ai-input:focus { border-color: var(--color-border-hover); }
 .ai-send-btn {
   width: 40px;
@@ -1531,15 +1574,19 @@ const handleRefundDelete = async (op) => {
   cursor: not-allowed;
 }
 .ai-mic-btn.recording {
-  color: var(--color-primary);
+  color: #fff;
   border-color: var(--color-primary);
-  background: rgba(52, 199, 89, 0.10);
-  animation: aiPulse 1.1s ease-in-out infinite;
+  background: var(--color-primary);
+  animation: aiPulse 1.5s ease-in-out infinite, aiWave 2s ease-in-out infinite;
 }
 @keyframes aiPulse {
-  0% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
-  50% { box-shadow: 0 0 14px rgba(52, 199, 89, 0.35); }
-  100% { box-shadow: 0 0 0 rgba(52, 199, 89, 0.0); }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+@keyframes aiWave {
+  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.7); }
+  50% { box-shadow: 0 0 0 10px rgba(52, 199, 89, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
 }
 
 .ai-send-btn svg,
