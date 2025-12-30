@@ -308,7 +308,11 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         mainStore?.forecastToDate ||
         mainStore?.forecastToDateKey;
       const d = _parseDateAny(raw);
-      return d || todayObj;
+      if (d) return d;
+      // Default to 6 months ahead if no forecast date provided
+      const defaultFuture = new Date(todayObj);
+      defaultFuture.setMonth(defaultFuture.getMonth() + 6);
+      return defaultFuture;
     })();
 
     let uiSnapshot = null;
@@ -1686,8 +1690,9 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   resize: none;
   overflow-y: auto;
   font-family: inherit;
-  font-size: 16px; /* Prevent zoom on iOS */
+  font-size: 12px !important;
   line-height: 1.5;
+
 }
 
 .ai-input::placeholder {
