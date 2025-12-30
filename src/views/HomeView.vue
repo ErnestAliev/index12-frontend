@@ -491,16 +491,20 @@ const sendAiMessage = async () => {
               .filter(Boolean)
           : null);
 
-    // ✅ If user asks about ops (income/expense/transfers/etc) — ensure we have timeline cache for current projection range
+    // ✅ If user asks about ops — ensure we have timeline cache including future operations
     // so AI can answer независимо от того, раскрыт хедер/виджеты или нет.
-    const wantsOpsTimeline = /\b(доход|расход|перевод|вывод|операц|налог|предоплат)\b/i.test(text);
+    const wantsOpsTimeline = /\b(доход|расход|перевод|вывод|операц|налог|предоплат|будущ|прогноз|план)\b/i.test(text);
     if (wantsOpsTimeline && typeof mainStore?.fetchOperationsRange === 'function') {
-      const rs = mainStore?.projection?.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null;
-      const re = mainStore?.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-      if (rs && re && !isNaN(rs.getTime()) && !isNaN(re.getTime())) {
-        try {
-          await mainStore.fetchOperationsRange(rs, re, { force: false, sparse: true });
-        } catch (e) {}
+      const today = new Date();
+      // Always fetch 3 months back and 3 months forward for AI queries
+      const rs = new Date(today);
+      rs.setMonth(rs.getMonth() - 3);
+      const re = new Date(today);
+      re.setMonth(re.getMonth() + 3);
+      try {
+        await mainStore.fetchOperationsRange(rs, re, { force: false, sparse: true });
+      } catch (e) {
+        console.error('AI: Failed to prefetch operations', e);
       }
     }
 

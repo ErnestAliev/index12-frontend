@@ -258,6 +258,21 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   aiVoiceConfirmedText = ''; // Reset voice confirmed text
   aiLoading.value = true;
 
+  // ✅ Prefetch future operations for AI queries
+  const wantsOps = /\b(доход|расход|перевод|вывод|операц|налог|предоплат|будущ|прогноз|план)\b/i.test(q);
+  if (wantsOps && typeof mainStore?.fetchOperationsRange === 'function') {
+    const today = new Date();
+    const rs = new Date(today);
+    rs.setMonth(rs.getMonth() - 3);
+    const re = new Date(today);
+    re.setMonth(re.getMonth() + 3);
+    try {
+      await mainStore.fetchOperationsRange(rs, re, { force: false, sparse: true });
+    } catch (e) {
+      console.error('AI Mobile: Failed to prefetch ops', e);
+    }
+  }
+
   try {
     // Важно: отправляем локальную дату/время пользователя (с offset), а не UTC.
     // Иначе около полуночи UTC может увести «сегодня» на вчера.
