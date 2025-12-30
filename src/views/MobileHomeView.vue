@@ -104,6 +104,9 @@ const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeech
 const isAiRecording = ref(false);
 let aiRecognition = null;
 
+// Store confirmed voice text at module level so it can be reset on send
+let aiVoiceConfirmedText = '';
+
 const _ensureAiRecognition = () => {
   if (aiRecognition) return aiRecognition;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -114,9 +117,6 @@ const _ensureAiRecognition = () => {
   r.interimResults = true; // Enable interim results for real-time text display
   r.continuous = true; // Enable continuous mode to prevent 5-second timeout
 
-  // Store confirmed text separately from interim
-  let confirmedText = '';
-
   r.onresult = (event) => {
     let interimText = '';
     
@@ -126,7 +126,7 @@ const _ensureAiRecognition = () => {
       
       if (res.isFinal) {
         // Add confirmed text
-        confirmedText = (confirmedText + ' ' + transcript).trim();
+        aiVoiceConfirmedText = (aiVoiceConfirmedText + ' ' + transcript).trim();
       } else {
         // Collect interim text
         interimText = transcript;
@@ -134,12 +134,12 @@ const _ensureAiRecognition = () => {
     }
     
     // Show confirmed text + interim text in input
-    aiInput.value = (confirmedText + (interimText ? ' ' + interimText : '')).trim();
+    aiInput.value = (aiVoiceConfirmedText + (interimText ? ' ' + interimText : '')).trim();
   };
 
   r.onend = () => {
     isAiRecording.value = false;
-    confirmedText = ''; // Reset for next recording
+    aiVoiceConfirmedText = ''; // Reset for next recording
     // Focus input field so user can edit the recognized text
     nextTick(() => aiInputRef.value?.focus?.());
   };
@@ -147,7 +147,7 @@ const _ensureAiRecognition = () => {
   r.onerror = (event) => {
     console.error('Speech recognition error:', event.error);
     isAiRecording.value = false;
-    confirmedText = '';
+    aiVoiceConfirmedText = '';
   };
 
   aiRecognition = r;
@@ -251,6 +251,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 
   pushAiMessage('user', q);
   aiInput.value = '';
+  aiVoiceConfirmedText = ''; // Reset voice confirmed text
   aiLoading.value = true;
 
   try {
@@ -1630,7 +1631,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
 /* GPT-style input area */
 .ai-input-container {
-  
+  padding-bottom: 22px;
   border-top: 1px solid var(--color-border, #444);
   background: var(--color-background-soft, #282828);
   flex-shrink: 0;
