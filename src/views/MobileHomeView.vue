@@ -118,6 +118,9 @@ const _ensureAiRecognition = () => {
   r.continuous = true; // Enable continuous mode to prevent 5-second timeout
 
   r.onresult = (event) => {
+    // CRITICAL: Don't update input if we're not recording anymore (prevents race condition)
+    if (!isAiRecording.value) return;
+    
     let interimText = '';
     
     for (let i = event.resultIndex; i < event.results.length; i++) {
