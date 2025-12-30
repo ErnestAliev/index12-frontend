@@ -141,7 +141,7 @@ const _ensureAiRecognition = () => {
     isAiRecording.value = false;
     aiVoiceConfirmedText = ''; // Reset for next recording
     // Focus input field so user can edit the recognized text
-    nextTick(() => aiInputRef.value?.focus?.());
+    // Don't auto-focus on mobile to prevent keyboard from opening
   };
 
   r.onerror = (event) => {
@@ -182,7 +182,7 @@ const openAiModal = async () => {
   showAiModal.value = true;
   try { document.body.style.overflow = 'hidden'; } catch (_) {}
   await nextTick();
-  try { aiInputRef.value?.focus?.(); } catch (_) {}
+  // Don't auto-focus on mobile to prevent keyboard from opening
 };
 
 const closeAiModal = () => {
