@@ -97,12 +97,23 @@ const _normalizeOp = (op) => {
 const _getOpsForDateKeyBestEffort = (dateKey) => {
   if (!dateKey) return [];
 
-  const candidates = [
-    // ✅ Main source of truth for timeline ops in desktop store (cached per dateKey)
-    mainStore?.displayCache?.value?.[dateKey],
-    mainStore?.displayCache?.[dateKey],
+  // ✅ PRIORITY 1: Use mainStore.getOperationsForDay which has proper filtering (!isDeleted, !isWorkAct)
+  if (typeof mainStore?.getOperationsForDay === 'function') {
+    try {
+      const ops = mainStore.getOperationsForDay(dateKey);
+      if (Array.isArray(ops) && ops.length > 0) return ops;
+    } catch (e) {}
+  }
 
-    // Legacy / alternative locations (older store versions)
+  // ✅ PRIORITY 2: Direct access to displayCache with manual filtering
+  const directCache = mainStore?.displayCache?.value?.[dateKey] || mainStore?.displayCache?.[dateKey];
+  if (Array.isArray(directCache)) {
+    // Apply same filters as getOperationsForDay
+    return directCache.filter(op => op && !op.isWorkAct && !op.isDeleted);
+  }
+
+  // Legacy / alternative locations (older store versions) - also filter
+  const candidates = [
     mainStore?.operationsByDateKey?.[dateKey],
     mainStore?.opsByDateKey?.[dateKey],
     mainStore?.operationsByDayKey?.[dateKey],
@@ -110,9 +121,15 @@ const _getOpsForDateKeyBestEffort = (dateKey) => {
   ];
 
   for (const c of candidates) {
-    if (Array.isArray(c)) return c;
-    if (c && Array.isArray(c.operations)) return c.operations;
-    if (c && Array.isArray(c.items)) return c.items;
+    if (Array.isArray(c)) {
+      return c.filter(op => op && !op.isWorkAct && !op.isDeleted);
+    }
+    if (c && Array.isArray(c.operations)) {
+      return c.operations.filter(op => op && !op.isWorkAct && !op.isDeleted);
+    }
+    if (c && Array.isArray(c.items)) {
+      return c.items.filter(op => op && !op.isWorkAct && !op.isDeleted);
+    }
   }
 
   // As a last resort, try a getter function if it exists.
@@ -120,8 +137,8 @@ const _getOpsForDateKeyBestEffort = (dateKey) => {
   if (typeof getter === 'function') {
     try {
       const res = getter.call(mainStore, dateKey);
-      if (Array.isArray(res)) return res;
-      if (res && Array.isArray(res.operations)) return res.operations;
+      if (Array.isArray(res)) return res.filter(op => op && !op.isWorkAct && !op.isDeleted);
+      if (res && Array.isArray(res.operations)) return res.operations.filter(op => op && !op.isWorkAct && !op.isDeleted);
     } catch (e) {}
   }
 
