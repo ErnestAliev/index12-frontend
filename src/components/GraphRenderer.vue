@@ -901,82 +901,75 @@ const accountBalancesByDateKey = computed(() => {
     .filter(Boolean);
   allDateKeys.sort(_cmpDateKey);
   
-  // Find today's index in the sorted array
-  const todayIdx = allDateKeys.indexOf(todayKey);
-  
   const result = new Map();
   
-  // Calculate balances for each day using today as anchor
-  // Approach: store today's balance, then for past dates: walk backward subtracting that day's delta
-  // For future dates: walk forward adding that day's delta
+  // SIMPLIFIED APPROACH:
+  // Start from current balance and walk through ALL visible dates forward
+  // For each date, apply that day's delta (if any)
+  // This works whether we're looking at past, present, or future dates
   
-  // Initialize running balances with today's actual balance
+  // Initialize with current balance (today's actual balance)
   const runningBalance = {};
   for (const accId of Object.keys(accountsById)) {
     runningBalance[accId] = accountsById[accId].currentBalance;
   }
   
-  // First, store today's balances
-  if (todayIdx >= 0) {
+  // First, find deltas for operations BETWEEN today and first visible date
+  // If viewing future: apply all deltas from today+1 to firstVisibleDate-1
+  // If viewing past: we need to REVERSE deltas from lastVisibleDate+1 to today
+  
+  const todayKeyNum = (() => {
+    const parts = todayKey.split('-');
+    return parseInt(parts[0]) * 1000 + parseInt(parts[1]);
+  })();
+  
+  const firstVisibleKeyNum = (() => {
+    if (!allDateKeys[0]) return 0;
+    const parts = allDateKeys[0].split('-');
+    return parseInt(parts[0]) * 1000 + parseInt(parts[1]);
+  })();
+  
+  // Apply deltas from all dates in deltasByDay that fall between today and first visible
+  const allDeltaKeys = Object.keys(deltasByDay).sort(_cmpDateKey);
+  
+  for (const deltaKey of allDeltaKeys) {
+    const deltaKeyNum = (() => {
+      const parts = deltaKey.split('-');
+      return parseInt(parts[0]) * 1000 + parseInt(parts[1]);
+    })();
+    
+    // If this delta is after today and before first visible date, apply it
+    if (deltaKeyNum > todayKeyNum && deltaKeyNum < firstVisibleKeyNum) {
+      const dayDelta = deltasByDay[deltaKey] || {};
+      for (const accId of Object.keys(dayDelta)) {
+        if (runningBalance[accId] !== undefined) {
+          runningBalance[accId] = Math.max(0, runningBalance[accId] + dayDelta[accId]);
+        }
+      }
+    }
+  }
+  
+  // Now iterate through visible dates and apply deltas cumulatively
+  for (let i = 0; i < allDateKeys.length; i++) {
+    const dateKey = allDateKeys[i];
+    
+    // Apply this day's delta BEFORE storing
+    const dayDelta = deltasByDay[dateKey] || {};
+    for (const accId of Object.keys(dayDelta)) {
+      if (runningBalance[accId] !== undefined) {
+        runningBalance[accId] = Math.max(0, runningBalance[accId] + dayDelta[accId]);
+      }
+    }
+    
+    // Store snapshot for this date
     const snapshot = {};
     for (const accId of Object.keys(accountsById)) {
       snapshot[accId] = { name: accountsById[accId].name, balance: runningBalance[accId] };
     }
-    result.set(todayKey, snapshot);
-  }
-  
-  // Calculate PAST dates (walk backward from today)
-  const pastBalance = {};
-  for (const accId of Object.keys(accountsById)) {
-    pastBalance[accId] = accountsById[accId].currentBalance;
-  }
-  
-  for (let i = (todayIdx >= 0 ? todayIdx : allDateKeys.length) - 1; i >= 0; i--) {
-    const dateKey = allDateKeys[i];
-    if (dateKey === todayKey) continue; // Already stored
-    
-    // For past dates: balance at end of dateKey = balance at start of next day
-    // So we need to REVERSE the delta: if we had income, subtract it; if expense, add it
-    const nextDayKey = allDateKeys[i + 1];
-    const nextDayDelta = deltasByDay[nextDayKey] || {};
-    
-    for (const accId of Object.keys(nextDayDelta)) {
-      if (pastBalance[accId] !== undefined) {
-        // Reverse the delta from the NEXT day to get this day's end balance
-        pastBalance[accId] = Math.max(0, pastBalance[accId] - nextDayDelta[accId]);
-      }
-    }
-    
-    const snapshot = {};
-    for (const accId of Object.keys(accountsById)) {
-      snapshot[accId] = { name: accountsById[accId].name, balance: pastBalance[accId] };
-    }
     result.set(dateKey, snapshot);
   }
   
-  // Calculate FUTURE dates (walk forward from today)
-  const futureBalance = {};
-  for (const accId of Object.keys(accountsById)) {
-    futureBalance[accId] = accountsById[accId].currentBalance;
-  }
-  
-  for (let i = (todayIdx >= 0 ? todayIdx : 0) + 1; i < allDateKeys.length; i++) {
-    const dateKey = allDateKeys[i];
-    
-    // For future dates: apply the delta for THIS day
-    const dayDelta = deltasByDay[dateKey] || {};
-    for (const accId of Object.keys(dayDelta)) {
-      if (futureBalance[accId] !== undefined) {
-        futureBalance[accId] = Math.max(0, futureBalance[accId] + dayDelta[accId]);
-      }
-    }
-    
-    const snapshot = {};
-    for (const accId of Object.keys(accountsById)) {
-      snapshot[accId] = { name: accountsById[accId].name, balance: futureBalance[accId] };
-    }
-    result.set(dateKey, snapshot);
-  }
+  console.log(`📊 accountBalancesByDateKey: result has ${result.size} dates, first date balance:`, result.get(allDateKeys[0]));
   
   return result;
 });
