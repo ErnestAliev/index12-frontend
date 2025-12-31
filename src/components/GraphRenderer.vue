@@ -75,6 +75,14 @@ let tooltipHideTimer = null;
 let lastActiveKey = '';
 const TOOLTIP_HIDE_DELAY_MS = 2500;
 
+// --- Mobile tap detection (to distinguish tap from scroll) ---
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+let isTapAllowed = true;
+const TAP_THRESHOLD_PX = 15;  // Max movement to consider a tap
+const TAP_THRESHOLD_MS = 300; // Max duration to consider a tap
+
 const _clearTooltipHideTimer = () => {
   if (tooltipHideTimer) {
     clearTimeout(tooltipHideTimer);
@@ -393,6 +401,40 @@ const externalTooltipHandler = (context) => {
       if (host && host.appendChild) host.appendChild(tooltipEl);
       else document.body.appendChild(tooltipEl);
     }
+    
+    // Add touch event listeners for tap detection (mobile only)
+    const chartCanvas = context?.chart?.canvas;
+    if (chartCanvas && !chartCanvas.__tapListenersAdded) {
+      chartCanvas.__tapListenersAdded = true;
+      
+      chartCanvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+          touchStartTime = Date.now();
+          isTapAllowed = true;
+        }
+      }, { passive: true });
+      
+      chartCanvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && isTapAllowed) {
+          const dx = Math.abs(e.touches[0].clientX - touchStartX);
+          const dy = Math.abs(e.touches[0].clientY - touchStartY);
+          if (dx > TAP_THRESHOLD_PX || dy > TAP_THRESHOLD_PX) {
+            isTapAllowed = false;
+          }
+        }
+      }, { passive: true });
+      
+      chartCanvas.addEventListener('touchend', () => {
+        const duration = Date.now() - touchStartTime;
+        if (duration > TAP_THRESHOLD_MS) {
+          isTapAllowed = false;
+        }
+        // Reset after a brief delay to allow Chart.js processing
+        setTimeout(() => { isTapAllowed = true; }, 50);
+      }, { passive: true });
+    }
 
     tooltipEl.addEventListener('click', async (e) => {
       const btn = e.target?.closest?.('#chartjs-tooltip-export-btn, #chartjs-tooltip-copy-btn');
@@ -453,6 +495,13 @@ const externalTooltipHandler = (context) => {
   }
 
   const tooltipModel = context.tooltip;
+  
+  // On mobile, only show tooltip on genuine tap (not scroll)
+  const isMobileTouch = window.innerWidth <= 768;
+  if (isMobileTouch && !isTapAllowed && tooltipModel.opacity > 0) {
+    // This is a scroll gesture, not a tap - don't show tooltip
+    return;
+  }
   // If pinned on mobile by tap, don't let it stick forever
   if (tooltipPinned && !tooltipIsHovering) {
     _clearTooltipAutoUnpinTimer();
