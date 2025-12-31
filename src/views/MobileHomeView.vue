@@ -258,9 +258,8 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   aiVoiceConfirmedText = ''; // Reset voice confirmed text
   aiLoading.value = true;
 
-  // ✅ Prefetch future operations for AI queries
-  const wantsOps = /\b(доход|расход|перевод|вывод|операц|налог|предоплат|будущ|прогноз|план)\b/i.test(q);
-  if (wantsOps && typeof mainStore?.fetchOperationsRange === 'function') {
+  // ✅ Always prefetch operations so AI sees future data (Desktop-parity)
+  if (typeof mainStore?.fetchOperationsRange === 'function') {
     const today = new Date();
     const rs = new Date(today);
     rs.setMonth(rs.getMonth() - 3);
@@ -268,6 +267,8 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     re.setMonth(re.getMonth() + 3);
     try {
       await mainStore.fetchOperationsRange(rs, re, { force: false, sparse: true });
+      // Wait for Vue reactivity to propagate cache updates
+      await nextTick();
     } catch (e) {
       console.error('AI Mobile: Failed to prefetch ops', e);
     }
@@ -530,7 +531,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 
     // ✅ Inject storeTimeline (Desktop-parity) so AI sees all cached operations, not just current view widgets.
     // This allows identifying future ops/balances even if the mobile view doesn't show them.
-    if (wantsOps) {
+    {
       const cacheMap = mainStore?.displayCache?.value || mainStore?.displayCache || {};
       const cacheDateKeys = Object.keys(cacheMap).filter(Boolean);
       
