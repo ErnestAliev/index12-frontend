@@ -206,9 +206,10 @@ const ensureOpsHistoryForSummaries = async () => {
   const start = _getUserMinEventDate();
   if (!start) return;
 
-  // Use the history end date (today) as the end bound.
-  const end = _getHistoryEndDate();
-  if (!end) return;
+  // Use today + 6 months as the end bound to include future operations
+  const end = new Date();
+  end.setMonth(end.getMonth() + 6);
+  end.setHours(23, 59, 59, 999);
 
   const st = _getOpsPreloadState();
 
@@ -228,7 +229,7 @@ const ensureOpsHistoryForSummaries = async () => {
 
   st.pending = (async () => {
     try {
-      // Preload full past history once. Use sparse mode to avoid filling thousands of empty days.
+      // Preload full history (past + future 6 months). Use sparse mode to avoid filling thousands of empty days.
       await mainStore.fetchOperationsRange(start, end, { sparse: true });
       st.start = start;
       st.end = end;
@@ -998,9 +999,8 @@ const accountBalancesByDateKey = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
 
-  // Use getAllRelevantOps - a dedicated computed that returns all visible operations
-  // This should be consistent between mobile and desktop
-  const ops = mainStore.getAllRelevantOps || [];
+  // Use opsForSummaries which now includes future operations thanks to extended preload
+  const ops = opsForSummaries.value;
   
   // Get today's actual balances per account (anchor point)
   const currentBalances = mainStore.currentAccountBalances || [];
