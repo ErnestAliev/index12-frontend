@@ -82,6 +82,7 @@ const _normalizeOp = (op) => {
     dateKey: op.dateKey || null,
     date: dateIso,
     cellIndex: (op.cellIndex ?? null),
+    account: _pickName(op.accountId) || _pickName(op.account) || _pickName(op.accountName) || null,
     project: _pickName(op.projectId) || _pickName(op.project) || _pickName(op.projectName) || null,
     contractor: _pickName(op.contractorId) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
     category: _pickName(op.categoryId) || _pickName(op.category) || _pickName(op.categoryName) || null,

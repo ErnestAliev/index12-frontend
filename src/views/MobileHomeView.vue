@@ -539,19 +539,29 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       let totalOps = 0;
       const opsByDay = {};
       
+      const _pickName = (v) => {
+        if (!v) return null;
+        if (typeof v === 'string') return v;
+        return v?.name || v?.title || v?.label || v?.displayName || null;
+      };
+
       const _normalizeOp = (op) => {
          if (!op) return null;
+         const date = op.date ? new Date(op.date) : null;
+         const dateIso = (date && !isNaN(date.getTime())) ? date.toISOString().slice(0, 10) : null;
+         
          return {
            _id: op._id,
-           date: op.date,
+           date: dateIso,
            dateKey: op.dateKey,
            amount: op.amount,
            type: op.type,
            isWithdrawal: op.isWithdrawal,
            isTransfer: op.isTransfer,
-           projectId: op.projectId,
-           categoryId: op.categoryId,
-           contractorId: op.contractorId,
+           account: _pickName(op.accountId) || _pickName(op.account) || _pickName(op.accountName) || null,
+           project: _pickName(op.projectId) || _pickName(op.project) || _pickName(op.projectName) || null,
+           contractor: _pickName(op.contractorId) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
+           category: _pickName(op.categoryId) || _pickName(op.category) || _pickName(op.categoryName) || null,
            description: op.description
          };
       };
