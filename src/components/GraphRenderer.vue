@@ -277,19 +277,69 @@ const externalTooltipHandler = (context) => {
         /* When copy failed */
         #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="fail"] .tt-btn--copy{border-color:rgba(255,59,48,1)!important;background:rgba(255,59,48,.14)!important;}
 
-        /* Mobile-responsive tooltip */
+        /* Mobile overlay mode */
         @media (max-width: 768px) {
           #${TOOLTIP_EL_ID} {
-            font-size: 10px !important;
-            padding: 8px !important;
-            max-width: calc(100vw - 24px) !important;
-            max-height: 60vh !important;
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            width: calc(100vw - 32px) !important;
+            max-width: 400px !important;
+            max-height: 70vh !important;
             overflow-y: auto !important;
-            line-height: 1.3 !important;
+            font-size: 11px !important;
+            padding: 16px !important;
+            padding-bottom: 60px !important;
+            line-height: 1.35 !important;
+            border-radius: 12px !important;
+            z-index: 10001 !important;
           }
           #${TOOLTIP_EL_ID} .tt-btn {
-            width: 22px !important;
-            height: 22px !important;
+            width: 28px !important;
+            height: 28px !important;
+          }
+          /* Mobile back button */
+          #${TOOLTIP_EL_ID} .tt-mobile-back {
+            position: absolute;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(60, 60, 60, 0.9);
+            border: 1px solid #555;
+            border-radius: 8px;
+            color: #fff;
+            padding: 10px 32px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s;
+          }
+          #${TOOLTIP_EL_ID} .tt-mobile-back:active {
+            background: rgba(80, 80, 80, 1);
+          }
+        }
+        /* Mobile backdrop */
+        #${TOOLTIP_EL_ID}-backdrop {
+          display: none;
+        }
+        @media (max-width: 768px) {
+          #${TOOLTIP_EL_ID}-backdrop {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+          }
+          #${TOOLTIP_EL_ID}-backdrop.visible {
+            opacity: 1;
+            pointer-events: auto;
           }
         }
       `;
@@ -315,10 +365,34 @@ const externalTooltipHandler = (context) => {
       maxWidth: 'calc(100% - 20px)',
       boxSizing: 'border-box'
     });
-    // Монтируем tooltip внутрь контейнера canvas, если есть
-    const host = context?.chart?.canvas?.parentNode;
-    if (host && host.appendChild) host.appendChild(tooltipEl);
-    else document.body.appendChild(tooltipEl);
+    
+    // Create backdrop for mobile overlay
+    let backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+    if (!backdropEl) {
+      backdropEl = document.createElement('div');
+      backdropEl.id = `${TOOLTIP_EL_ID}-backdrop`;
+      document.body.appendChild(backdropEl);
+      
+      // Click on backdrop dismisses tooltip
+      backdropEl.addEventListener('click', () => {
+        tooltipPinned = false;
+        tooltipPinnedKey = '';
+        tooltipForceUpdate = false;
+        tooltipEl.style.opacity = 0;
+        backdropEl.classList.remove('visible');
+      });
+    }
+    
+    // On mobile, mount tooltip to body for fixed positioning
+    const isMobile = window.innerWidth <= 768;
+    if (isMobile) {
+      document.body.appendChild(tooltipEl);
+    } else {
+      // Монтируем tooltip внутрь контейнера canvas, если есть
+      const host = context?.chart?.canvas?.parentNode;
+      if (host && host.appendChild) host.appendChild(tooltipEl);
+      else document.body.appendChild(tooltipEl);
+    }
 
     tooltipEl.addEventListener('click', async (e) => {
       const btn = e.target?.closest?.('#chartjs-tooltip-export-btn, #chartjs-tooltip-copy-btn');
@@ -506,8 +580,29 @@ const externalTooltipHandler = (context) => {
       innerHtml += `<div style="${style}">${_escapeHtml(line)}</div>`;
     });
 
+    // Add mobile back button
+    const isMobileNow = window.innerWidth <= 768;
+    if (isMobileNow) {
+      innerHtml += `<button class="tt-mobile-back" id="chartjs-tooltip-back-btn">Назад</button>`;
+    }
+
     tooltipEl.innerHTML = innerHtml;
     tooltipForceUpdate = false;
+    
+    // Add back button click handler
+    const backBtn = tooltipEl.querySelector('#chartjs-tooltip-back-btn');
+    if (backBtn) {
+      backBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        tooltipPinned = false;
+        tooltipPinnedKey = '';
+        tooltipForceUpdate = false;
+        tooltipEl.style.opacity = 0;
+        const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+        if (backdrop) backdrop.classList.remove('visible');
+      };
+    }
   }
 
   // Новое позиционирование: всегда внутри области графика (canvas/chart-wrapper)
@@ -556,10 +651,23 @@ const externalTooltipHandler = (context) => {
     transformY = '-100%';
   }
 
-  tooltipEl.style.transform = `translate(${transformX}, ${transformY})`;
-  tooltipEl.style.left = left + 'px';
-  tooltipEl.style.top = top + 'px';
-  tooltipEl.style.opacity = 1;
+  // Check if mobile
+  const isMobileDevice = window.innerWidth <= 768;
+  const backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+  
+  if (isMobileDevice) {
+    // On mobile, CSS handles centering via fixed position
+    // Just set opacity and show backdrop
+    tooltipEl.style.opacity = 1;
+    if (backdropEl) backdropEl.classList.add('visible');
+  } else {
+    // Desktop positioning
+    tooltipEl.style.transform = `translate(${transformX}, ${transformY})`;
+    tooltipEl.style.left = left + 'px';
+    tooltipEl.style.top = top + 'px';
+    tooltipEl.style.opacity = 1;
+    if (backdropEl) backdropEl.classList.remove('visible');
+  }
 };
 
 onUnmounted(() => {
