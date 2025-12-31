@@ -83,6 +83,10 @@ let totalTouchMovement = 0;  // accumulated movement during touch
 let pendingTooltipData = null; // store tooltip data to show after touchend
 const SCROLL_THRESHOLD_PX = 10; // movement above this = scroll
 
+// --- Range update suppression ---
+let isRangeUpdating = false;
+let rangeUpdateTimer = null;
+
 const _clearTooltipHideTimer = () => {
   if (tooltipHideTimer) {
     clearTimeout(tooltipHideTimer);
@@ -254,6 +258,15 @@ watch(
   [normalizedVisibleDays, () => mainStore.user?.minEventDate, () => mainStore.user?.createdAt],
   () => {
     ensureOpsHistoryForSummaries();
+    
+    // On mobile, suppress tooltips briefly when range changes (e.g., switching 12d -> 1m)
+    if (window.innerWidth <= 768) {
+      isRangeUpdating = true;
+      if (rangeUpdateTimer) clearTimeout(rangeUpdateTimer);
+      rangeUpdateTimer = setTimeout(() => {
+        isRangeUpdating = false;
+      }, 500);
+    }
   },
   { immediate: true }
 );
@@ -668,6 +681,11 @@ const externalTooltipHandler = (context) => {
   const backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
   
   if (isMobileDevice) {
+    // Don't show tooltip if range is being updated (e.g., switching periods)
+    if (isRangeUpdating) {
+      return;
+    }
+    
     // On mobile, defer showing tooltip until touchend confirms it's a tap
     if (isTouching) {
       // Store pending tooltip data - touchend will show it if movement was low
