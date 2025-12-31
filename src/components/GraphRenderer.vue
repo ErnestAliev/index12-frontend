@@ -830,95 +830,139 @@ const closingTimelineForSummaries = computed(() => {
   return { keys, balances, closingByKey };
 });
 
-// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate running balance for each account on each day
-// Uses same date keys and iteration as closingTimelineForSummaries for consistency
+// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate historical/future balance for each account
+// Uses currentAccountBalances as anchor (today's balance), then applies operation deltas
 const accountBalancesByDateKey = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
 
   const ops = opsForSummaries.value;
-  const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
   
-  // Initialize running balances with initialBalance for each visible account
-  const runningByAccount = {};
-  for (const acc of accs) {
+  // Get today's actual balances per account (anchor point)
+  const currentBalances = mainStore.currentAccountBalances || [];
+  const todayKey = _getDateKey(new Date());
+  
+  // Build map of account ID -> { name, currentBalance }
+  const accountsById = {};
+  for (const acc of currentBalances) {
     if (!acc) continue;
     if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
-    runningByAccount[String(acc._id)] = {
+    accountsById[String(acc._id)] = {
       name: acc.name || 'Счет',
-      balance: Number(acc.initialBalance || 0)
+      currentBalance: Number(acc.balance) || 0
     };
   }
   
-  // Build daily deltas per account (Map<dateKey, Map<accId, delta>>)
-  const deltasByDay = {};
+  // Build daily deltas per account
+  const deltasByDay = {}; // dateKey -> { accId -> delta }
   for (const op of ops) {
     if (!op) continue;
     if (!isOpVisible(op)) continue;
-    
-    // Skip transfers (they don't change net balance per account for display purposes)
-    // But DO include withdrawals
     if (op.isTransfer && !op.isWithdrawal) continue;
     
     const dt = _coerceDate(op.date);
     if (!dt) continue;
     const dateKey = _getDateKey(dt);
     
-    // Get account ID
-    let accId = null;
-    if (op.accountId) {
-      accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-    }
+    let accId = op.accountId;
     if (!accId) continue;
+    accId = typeof accId === 'object' ? accId._id : accId;
     accId = String(accId);
     
-    // Only track accounts we're showing
-    if (!runningByAccount[accId]) continue;
+    if (!accountsById[accId]) continue;
     
     if (!deltasByDay[dateKey]) deltasByDay[dateKey] = {};
     if (!deltasByDay[dateKey][accId]) deltasByDay[dateKey][accId] = 0;
     
-    const amt = Number(op.amount) || 0;
-    const absAmt = Math.abs(amt);
+    const absAmt = Math.abs(Number(op.amount) || 0);
     
     if (op.isWithdrawal || op.type === 'expense') {
       deltasByDay[dateKey][accId] -= absAmt;
     } else if (op.type === 'income') {
-      // Income amount should be positive, add it
       deltasByDay[dateKey][accId] += absAmt;
     }
   }
   
-  // Get ALL date keys from normalizedVisibleDays (all days shown on chart)
-  // This ensures we have balances for every visible day, not just days with operations
+  // Get ALL visible date keys, sorted chronologically
   const visibleDays = normalizedVisibleDays.value;
   const allDateKeys = visibleDays
     .map(d => d?.date ? _getDateKey(d.date) : null)
     .filter(Boolean);
-  
-  // Sort by date key to ensure correct chronological order for running balance
   allDateKeys.sort(_cmpDateKey);
   
-  // Calculate running balances for each date
+  // Find today's index in the sorted array
+  const todayIdx = allDateKeys.indexOf(todayKey);
+  
   const result = new Map();
   
-  for (const dateKey of allDateKeys) {
-    const dayDeltas = deltasByDay[dateKey] || {};
+  // Calculate balances for each day using today as anchor
+  // Approach: store today's balance, then for past dates: walk backward subtracting that day's delta
+  // For future dates: walk forward adding that day's delta
+  
+  // Initialize running balances with today's actual balance
+  const runningBalance = {};
+  for (const accId of Object.keys(accountsById)) {
+    runningBalance[accId] = accountsById[accId].currentBalance;
+  }
+  
+  // First, store today's balances
+  if (todayIdx >= 0) {
+    const snapshot = {};
+    for (const accId of Object.keys(accountsById)) {
+      snapshot[accId] = { name: accountsById[accId].name, balance: runningBalance[accId] };
+    }
+    result.set(todayKey, snapshot);
+  }
+  
+  // Calculate PAST dates (walk backward from today)
+  const pastBalance = {};
+  for (const accId of Object.keys(accountsById)) {
+    pastBalance[accId] = accountsById[accId].currentBalance;
+  }
+  
+  for (let i = (todayIdx >= 0 ? todayIdx : allDateKeys.length) - 1; i >= 0; i--) {
+    const dateKey = allDateKeys[i];
+    if (dateKey === todayKey) continue; // Already stored
     
-    // Apply this day's deltas to running balances
-    for (const accId of Object.keys(dayDeltas)) {
-      if (runningByAccount[accId] !== undefined) {
-        runningByAccount[accId].balance = Math.max(0, runningByAccount[accId].balance + dayDeltas[accId]);
+    // For past dates: balance at end of dateKey = balance at start of next day
+    // So we need to REVERSE the delta: if we had income, subtract it; if expense, add it
+    const nextDayKey = allDateKeys[i + 1];
+    const nextDayDelta = deltasByDay[nextDayKey] || {};
+    
+    for (const accId of Object.keys(nextDayDelta)) {
+      if (pastBalance[accId] !== undefined) {
+        // Reverse the delta from the NEXT day to get this day's end balance
+        pastBalance[accId] = Math.max(0, pastBalance[accId] - nextDayDelta[accId]);
       }
     }
     
-    // Store snapshot for this date (deep copy) - stores for EVERY visible day
     const snapshot = {};
-    for (const accId of Object.keys(runningByAccount)) {
-      snapshot[accId] = {
-        name: runningByAccount[accId].name,
-        balance: runningByAccount[accId].balance
-      };
+    for (const accId of Object.keys(accountsById)) {
+      snapshot[accId] = { name: accountsById[accId].name, balance: pastBalance[accId] };
+    }
+    result.set(dateKey, snapshot);
+  }
+  
+  // Calculate FUTURE dates (walk forward from today)
+  const futureBalance = {};
+  for (const accId of Object.keys(accountsById)) {
+    futureBalance[accId] = accountsById[accId].currentBalance;
+  }
+  
+  for (let i = (todayIdx >= 0 ? todayIdx : 0) + 1; i < allDateKeys.length; i++) {
+    const dateKey = allDateKeys[i];
+    
+    // For future dates: apply the delta for THIS day
+    const dayDelta = deltasByDay[dateKey] || {};
+    for (const accId of Object.keys(dayDelta)) {
+      if (futureBalance[accId] !== undefined) {
+        futureBalance[accId] = Math.max(0, futureBalance[accId] + dayDelta[accId]);
+      }
+    }
+    
+    const snapshot = {};
+    for (const accId of Object.keys(accountsById)) {
+      snapshot[accId] = { name: accountsById[accId].name, balance: futureBalance[accId] };
     }
     result.set(dateKey, snapshot);
   }
