@@ -545,6 +545,19 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         return v?.name || v?.title || v?.label || v?.displayName || null;
       };
 
+      // Resolve entity name: try populated object first, then lookup by ID in store
+      const _resolveEntityName = (idOrObj, storeList) => {
+        const directName = _pickName(idOrObj);
+        if (directName && typeof idOrObj === 'object') return directName;
+        
+        if (!idOrObj || !storeList) return null;
+        const idStr = typeof idOrObj === 'object' ? (idOrObj._id || idOrObj.id) : idOrObj;
+        if (!idStr) return null;
+        
+        const found = storeList.find(e => e && (String(e._id) === String(idStr) || String(e.id) === String(idStr)));
+        return found?.name || found?.title || null;
+      };
+
       const _normalizeOp = (op) => {
          if (!op) return null;
          const date = op.date ? new Date(op.date) : null;
@@ -558,10 +571,10 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
            type: op.type,
            isWithdrawal: op.isWithdrawal,
            isTransfer: op.isTransfer,
-           account: _pickName(op.accountId) || _pickName(op.account) || _pickName(op.accountName) || null,
-           project: _pickName(op.projectId) || _pickName(op.project) || _pickName(op.projectName) || null,
-           contractor: _pickName(op.contractorId) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
-           category: _pickName(op.categoryId) || _pickName(op.category) || _pickName(op.categoryName) || null,
+           account: _resolveEntityName(op.accountId, mainStore?.accounts) || _pickName(op.account) || null,
+           project: _resolveEntityName(op.projectId, mainStore?.projects) || _pickName(op.project) || null,
+           contractor: _resolveEntityName(op.contractorId, mainStore?.contractors) || _pickName(op.contractor) || null,
+           category: _resolveEntityName(op.categoryId, mainStore?.categories) || _pickName(op.category) || null,
            description: op.description
          };
       };

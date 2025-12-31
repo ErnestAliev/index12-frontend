@@ -68,6 +68,21 @@ const _pickName = (v) => {
   return v?.name || v?.title || v?.label || v?.displayName || null;
 };
 
+// Resolve entity name: try populated object first, then lookup by ID in store
+const _resolveEntityName = (idOrObj, storeList) => {
+  // If it's already an object with a name, return it
+  const directName = _pickName(idOrObj);
+  if (directName && typeof idOrObj === 'object') return directName;
+  
+  // If it's a string ID, find in store
+  if (!idOrObj || !storeList) return null;
+  const idStr = typeof idOrObj === 'object' ? (idOrObj._id || idOrObj.id) : idOrObj;
+  if (!idStr) return null;
+  
+  const found = storeList.find(e => e && (String(e._id) === String(idStr) || String(e.id) === String(idStr)));
+  return found?.name || found?.title || null;
+};
+
 const _normalizeOp = (op) => {
   if (!op || typeof op !== 'object') return null;
   const amount = (typeof op.amount === 'number') ? op.amount : (typeof op.sum === 'number' ? op.sum : null);
@@ -82,11 +97,11 @@ const _normalizeOp = (op) => {
     dateKey: op.dateKey || null,
     date: dateIso,
     cellIndex: (op.cellIndex ?? null),
-    account: _pickName(op.accountId) || _pickName(op.account) || _pickName(op.accountName) || null,
-    project: _pickName(op.projectId) || _pickName(op.project) || _pickName(op.projectName) || null,
-    contractor: _pickName(op.contractorId) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
-    category: _pickName(op.categoryId) || _pickName(op.category) || _pickName(op.categoryName) || null,
-    company: _pickName(op.companyId) || _pickName(op.company) || _pickName(op.companyName) || null,
+    account: _resolveEntityName(op.accountId, mainStore?.accounts) || _pickName(op.account) || _pickName(op.accountName) || null,
+    project: _resolveEntityName(op.projectId, mainStore?.projects) || _pickName(op.project) || _pickName(op.projectName) || null,
+    contractor: _resolveEntityName(op.contractorId, mainStore?.contractors) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
+    category: _resolveEntityName(op.categoryId, mainStore?.categories) || _pickName(op.category) || _pickName(op.categoryName) || null,
+    company: _resolveEntityName(op.companyId, mainStore?.companies) || _pickName(op.company) || _pickName(op.companyName) || null,
     isTransfer: !!(op.isTransfer || op.type === 'transfer'),
     isWithdrawal: !!(op.isWithdrawal),
     isTax: !!(op.isTax || op.isTaxPayment),
