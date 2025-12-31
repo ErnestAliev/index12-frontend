@@ -528,6 +528,58 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       }
     })();
 
+    // ✅ Inject storeTimeline (Desktop-parity) so AI sees all cached operations, not just current view widgets.
+    // This allows identifying future ops/balances even if the mobile view doesn't show them.
+    if (wantsOps) {
+      const cacheMap = mainStore?.displayCache?.value || mainStore?.displayCache || {};
+      const cacheDateKeys = Object.keys(cacheMap).filter(Boolean);
+      
+      const MAX_OPS = 3000;
+      let totalOps = 0;
+      const opsByDay = {};
+      
+      const _normalizeOp = (op) => {
+         if (!op) return null;
+         return {
+           _id: op._id,
+           date: op.date,
+           dateKey: op.dateKey,
+           amount: op.amount,
+           type: op.type,
+           isWithdrawal: op.isWithdrawal,
+           isTransfer: op.isTransfer,
+           projectId: op.projectId,
+           categoryId: op.categoryId,
+           contractorId: op.contractorId,
+           description: op.description
+         };
+      };
+
+      for (const dk of cacheDateKeys) {
+        if (totalOps >= MAX_OPS) break;
+        const rawOps = Array.isArray(cacheMap[dk]) ? cacheMap[dk] : [];
+        const normalized = rawOps.map(_normalizeOp).filter(Boolean);
+        if (!normalized.length) continue;
+
+        if (totalOps + normalized.length > MAX_OPS) {
+          opsByDay[dk] = normalized.slice(0, Math.max(0, MAX_OPS - totalOps));
+          totalOps = MAX_OPS;
+          break;
+        }
+
+        opsByDay[dk] = normalized;
+        totalOps += normalized.length;
+      }
+
+      uiSnapshot.storeTimeline = {
+        daysVisible: [], // Mobile doesn't have visible columns concept like desktop
+        cachedDaysCount: cacheDateKeys.length,
+        opsByDay,
+        opsCount: totalOps,
+        note: 'injected from mobile displayCache'
+      };
+    }
+
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
