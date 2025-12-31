@@ -403,43 +403,7 @@ const externalTooltipHandler = (context) => {
       else document.body.appendChild(tooltipEl);
     }
     
-    // Add touch event listeners for tap detection (mobile only)
-    const chartCanvas = context?.chart?.canvas;
-    if (chartCanvas && !chartCanvas.__tapListenersAdded) {
-      chartCanvas.__tapListenersAdded = true;
-      
-      chartCanvas.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 1) {
-          touchStartX = e.touches[0].clientX;
-          touchStartY = e.touches[0].clientY;
-          isTouching = true;
-          totalTouchMovement = 0;
-          pendingTooltipData = null;
-        }
-      }, { passive: true });
-      
-      chartCanvas.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 1 && isTouching) {
-          const dx = Math.abs(e.touches[0].clientX - touchStartX);
-          const dy = Math.abs(e.touches[0].clientY - touchStartY);
-          totalTouchMovement = Math.max(dx, dy);
-        }
-      }, { passive: true });
-      
-      chartCanvas.addEventListener('touchend', () => {
-        isTouching = false;
-        
-        // If it was a tap (minimal movement), show pending tooltip
-        if (totalTouchMovement < SCROLL_THRESHOLD_PX && pendingTooltipData) {
-          const { tooltipEl, backdropEl } = pendingTooltipData;
-          if (tooltipEl) {
-            tooltipEl.style.opacity = 1;
-            if (backdropEl) backdropEl.classList.add('visible');
-          }
-        }
-        pendingTooltipData = null;
-      }, { passive: true });
-    }
+    // NOTE: Removed touch event listeners that were interfering with scroll/clicks
 
     tooltipEl.addEventListener('click', async (e) => {
       const btn = e.target?.closest?.('#chartjs-tooltip-export-btn, #chartjs-tooltip-copy-btn');
