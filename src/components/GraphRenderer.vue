@@ -975,168 +975,8 @@ const closingTimelineForSummaries = computed(() => {
   return { keys, balances, closingByKey };
 });
 
-// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate historical/future balance for each account
-// Uses currentAccountBalances as anchor (today's balance), then applies operation deltas
-const accountBalancesByDateKey = computed(() => {
-  const _v = mainStore.cacheVersion;
-  const _h = historyLoadTick.value;
 
-  // Use opsForSummaries which now includes future operations thanks to extended preload
-  const ops = opsForSummaries.value;
-  
-  // Get today's actual balances per account (anchor point)
-  const currentBalances = mainStore.currentAccountBalances || [];
-  const todayKey = _getDateKey(new Date());
-  
-  // Build map of account ID -> { name, currentBalance }
-  const accountsById = {};
-  for (const acc of currentBalances) {
-    if (!acc) continue;
-    if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
-    accountsById[String(acc._id)] = {
-      name: acc.name || 'Счет',
-      currentBalance: Number(acc.balance) || 0
-    };
-  }
-  
-  // DEBUG: Log what we're working with
-  console.log('🔍 DEBUG accountBalancesByDateKey:');
-  console.log('  - Total ops:', ops.length);
-  console.log('  - Account IDs tracked:', Object.keys(accountsById));
-  console.log('  - Account balances:', Object.entries(accountsById).map(([id, a]) => `${a.name}: ${a.currentBalance}`));
-  if (ops.length > 0) {
-    const sampleOp = ops.find(o => o?.type === 'expense' || o?.type === 'income');
-    if (sampleOp) {
-      console.log('  - Sample op:', {
-        type: sampleOp.type,
-        amount: sampleOp.amount,
-        date: sampleOp.date,
-        accountId: sampleOp.accountId,
-        accIdType: typeof sampleOp.accountId,
-        accIdStr: String(typeof sampleOp.accountId === 'object' ? sampleOp.accountId?._id : sampleOp.accountId)
-      });
-    }
-  }
-  
-  // Build daily deltas per account
-  // NOTE: Don't filter by isOpVisible - we need ALL ops for balance calculation
-  const deltasByDay = {}; // dateKey -> { accId -> delta }
-  let opsProcessed = 0;
-  
-  for (const op of ops) {
-    if (!op) continue;
-    // Skip transfers (except withdrawals) and work acts
-    if (op.isTransfer && !op.isWithdrawal) continue;
-    if (op.isWorkAct || op.isDeleted) continue;
-    
-    const dt = _coerceDate(op.date);
-    if (!dt) continue;
-    const dateKey = _getDateKey(dt);
-    
-    let accId = op.accountId;
-    if (!accId) continue;
-    accId = typeof accId === 'object' ? (accId._id || accId) : accId;
-    accId = String(accId);
-    
-    // Skip if we don't have this account in our list
-    if (!accountsById[accId]) continue;
-    
-    if (!deltasByDay[dateKey]) deltasByDay[dateKey] = {};
-    if (!deltasByDay[dateKey][accId]) deltasByDay[dateKey][accId] = 0;
-    
-    const absAmt = Math.abs(Number(op.amount) || 0);
-    
-    if (op.isWithdrawal || op.type === 'expense') {
-      deltasByDay[dateKey][accId] -= absAmt;
-      opsProcessed++;
-    } else if (op.type === 'income') {
-      deltasByDay[dateKey][accId] += absAmt;
-      opsProcessed++;
-    }
-  }
-  
-  // Debug: log if we have any deltas
-  console.log(`📊 accountBalancesByDateKey: processed ${opsProcessed} ops, dates with deltas:`, Object.keys(deltasByDay).length);
-  
-  // Get ALL visible date keys, sorted chronologically
-  const visibleDays = normalizedVisibleDays.value;
-  const allDateKeys = visibleDays
-    .map(d => d?.date ? _getDateKey(d.date) : null)
-    .filter(Boolean);
-  allDateKeys.sort(_cmpDateKey);
-  
-  const result = new Map();
-  
-  // SIMPLIFIED APPROACH:
-  // Start from current balance and walk through ALL visible dates forward
-  // For each date, apply that day's delta (if any)
-  // This works whether we're looking at past, present, or future dates
-  
-  // Initialize with current balance (today's actual balance)
-  const runningBalance = {};
-  for (const accId of Object.keys(accountsById)) {
-    runningBalance[accId] = accountsById[accId].currentBalance;
-  }
-  
-  // First, find deltas for operations BETWEEN today and first visible date
-  // If viewing future: apply all deltas from today+1 to firstVisibleDate-1
-  // If viewing past: we need to REVERSE deltas from lastVisibleDate+1 to today
-  
-  const todayKeyNum = (() => {
-    const parts = todayKey.split('-');
-    return parseInt(parts[0]) * 1000 + parseInt(parts[1]);
-  })();
-  
-  const firstVisibleKeyNum = (() => {
-    if (!allDateKeys[0]) return 0;
-    const parts = allDateKeys[0].split('-');
-    return parseInt(parts[0]) * 1000 + parseInt(parts[1]);
-  })();
-  
-  // Apply deltas from all dates in deltasByDay that fall between today and first visible
-  const allDeltaKeys = Object.keys(deltasByDay).sort(_cmpDateKey);
-  
-  for (const deltaKey of allDeltaKeys) {
-    const deltaKeyNum = (() => {
-      const parts = deltaKey.split('-');
-      return parseInt(parts[0]) * 1000 + parseInt(parts[1]);
-    })();
-    
-    // If this delta is after today and before first visible date, apply it
-    if (deltaKeyNum > todayKeyNum && deltaKeyNum < firstVisibleKeyNum) {
-      const dayDelta = deltasByDay[deltaKey] || {};
-      for (const accId of Object.keys(dayDelta)) {
-        if (runningBalance[accId] !== undefined) {
-          runningBalance[accId] = Math.max(0, runningBalance[accId] + dayDelta[accId]);
-        }
-      }
-    }
-  }
-  
-  // Now iterate through visible dates and apply deltas cumulatively
-  for (let i = 0; i < allDateKeys.length; i++) {
-    const dateKey = allDateKeys[i];
-    
-    // Apply this day's delta BEFORE storing
-    const dayDelta = deltasByDay[dateKey] || {};
-    for (const accId of Object.keys(dayDelta)) {
-      if (runningBalance[accId] !== undefined) {
-        runningBalance[accId] = Math.max(0, runningBalance[accId] + dayDelta[accId]);
-      }
-    }
-    
-    // Store snapshot for this date
-    const snapshot = {};
-    for (const accId of Object.keys(accountsById)) {
-      snapshot[accId] = { name: accountsById[accId].name, balance: runningBalance[accId] };
-    }
-    result.set(dateKey, snapshot);
-  }
-  
-  console.log(`📊 accountBalancesByDateKey: result has ${result.size} dates, first date balance:`, result.get(allDateKeys[0]));
-  
-  return result;
-});
+// NOTE: accountBalancesByDateKey removed - now showing current balances with label instead
 
 const _findLastKeyBefore = (sortedKeys, targetKey) => {
   // returns index of last key < targetKey, or -1
@@ -1673,40 +1513,23 @@ const chartOptions = computed(() => {
             // === HEADER: Дата + Общий баланс ===
             const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
 
-            // === ОСТАТКИ ПО СЧЕТАМ НА ЭТУ ДАТУ ===
-            // Get dateKey from the visible days array
-            const visibleDay = normalizedVisibleDays.value[index];
-            const dateKey = visibleDay?.date ? _getDateKey(visibleDay.date) : null;
+            // === ОСТАТКИ ПО СЧЕТАМ (ТЕКУЩИЕ) ===
+            // Showing current balances instead of historical due to calculation complexity
+            const accs = mainStore?.currentAccountBalances || [];
+            const visibleAccs = accs.filter(a => {
+              if (!a) return false;
+              if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
+              return true;
+            });
             
-            // Get historical account balances for this date
-            const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
-            
-            if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
+            if (visibleAccs.length > 0) {
               lines.push('---');
-              lines.push('Остатки на счетах:');
-              Object.values(dateAccountBalances).forEach(acc => {
+              lines.push('Остатки на счетах (текущие):');
+              visibleAccs.forEach(acc => {
                 const bal = Number(acc.balance) || 0;
                 const name = acc.name || 'Счет';
                 lines.push(`${name} — ${formatNumber(bal)} т`);
               });
-            } else {
-              // Fallback to current balances if no historical data
-              const accs = mainStore?.currentAccountBalances || [];
-              const visibleAccs = accs.filter(a => {
-                if (!a) return false;
-                if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
-                return true;
-              });
-              
-              if (visibleAccs.length > 0) {
-                lines.push('---');
-                lines.push('Остатки на счетах:');
-                visibleAccs.forEach(acc => {
-                  const bal = Number(acc.balance) || 0;
-                  const name = acc.name || 'Счет';
-                  lines.push(`${name} — ${formatNumber(bal)} т`);
-                });
-              }
             }
 
             // === СВОДКА ДОХОД/РАСХОД ===
