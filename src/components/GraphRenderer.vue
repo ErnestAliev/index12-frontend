@@ -78,10 +78,10 @@ const TOOLTIP_HIDE_DELAY_MS = 2500;
 // --- Mobile tap detection (to distinguish tap from scroll) ---
 let touchStartX = 0;
 let touchStartY = 0;
-let touchStartTime = 0;
-let isTapAllowed = true;
-const TAP_THRESHOLD_PX = 15;  // Max movement to consider a tap
-const TAP_THRESHOLD_MS = 300; // Max duration to consider a tap
+let isTouching = false;      // true while finger is on screen
+let totalTouchMovement = 0;  // accumulated movement during touch
+let pendingTooltipData = null; // store tooltip data to show after touchend
+const SCROLL_THRESHOLD_PX = 10; // movement above this = scroll
 
 const _clearTooltipHideTimer = () => {
   if (tooltipHideTimer) {
@@ -411,28 +411,32 @@ const externalTooltipHandler = (context) => {
         if (e.touches.length === 1) {
           touchStartX = e.touches[0].clientX;
           touchStartY = e.touches[0].clientY;
-          touchStartTime = Date.now();
-          isTapAllowed = true;
+          isTouching = true;
+          totalTouchMovement = 0;
+          pendingTooltipData = null;
         }
       }, { passive: true });
       
       chartCanvas.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 1 && isTapAllowed) {
+        if (e.touches.length === 1 && isTouching) {
           const dx = Math.abs(e.touches[0].clientX - touchStartX);
           const dy = Math.abs(e.touches[0].clientY - touchStartY);
-          if (dx > TAP_THRESHOLD_PX || dy > TAP_THRESHOLD_PX) {
-            isTapAllowed = false;
-          }
+          totalTouchMovement = Math.max(dx, dy);
         }
       }, { passive: true });
       
       chartCanvas.addEventListener('touchend', () => {
-        const duration = Date.now() - touchStartTime;
-        if (duration > TAP_THRESHOLD_MS) {
-          isTapAllowed = false;
+        isTouching = false;
+        
+        // If it was a tap (minimal movement), show pending tooltip
+        if (totalTouchMovement < SCROLL_THRESHOLD_PX && pendingTooltipData) {
+          const { tooltipEl, backdropEl } = pendingTooltipData;
+          if (tooltipEl) {
+            tooltipEl.style.opacity = 1;
+            if (backdropEl) backdropEl.classList.add('visible');
+          }
         }
-        // Reset after a brief delay to allow Chart.js processing
-        setTimeout(() => { isTapAllowed = true; }, 50);
+        pendingTooltipData = null;
       }, { passive: true });
     }
 
@@ -496,12 +500,6 @@ const externalTooltipHandler = (context) => {
 
   const tooltipModel = context.tooltip;
   
-  // On mobile, only show tooltip on genuine tap (not scroll)
-  const isMobileTouch = window.innerWidth <= 768;
-  if (isMobileTouch && !isTapAllowed && tooltipModel.opacity > 0) {
-    // This is a scroll gesture, not a tap - don't show tooltip
-    return;
-  }
   // If pinned on mobile by tap, don't let it stick forever
   if (tooltipPinned && !tooltipIsHovering) {
     _clearTooltipAutoUnpinTimer();
@@ -705,10 +703,17 @@ const externalTooltipHandler = (context) => {
   const backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
   
   if (isMobileDevice) {
-    // On mobile, CSS handles centering via fixed position
-    // Just set opacity and show backdrop
-    tooltipEl.style.opacity = 1;
-    if (backdropEl) backdropEl.classList.add('visible');
+    // On mobile, defer showing tooltip until touchend confirms it's a tap
+    if (isTouching) {
+      // Store pending tooltip data - touchend will show it if movement was low
+      pendingTooltipData = { tooltipEl, backdropEl };
+      // Don't show yet - wait for touchend
+      return;
+    } else {
+      // Touch already ended (or this is a mouse/desktop event)
+      tooltipEl.style.opacity = 1;
+      if (backdropEl) backdropEl.classList.add('visible');
+    }
   } else {
     // Desktop positioning
     tooltipEl.style.transform = `translate(${transformX}, ${transformY})`;
