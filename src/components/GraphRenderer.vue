@@ -889,9 +889,15 @@ const accountBalancesByDateKey = computed(() => {
     }
   }
   
-  // Get sorted date keys from dailyAggForSummaries (same as used for total balance)
-  const agg = dailyAggForSummaries.value;
-  const allDateKeys = Array.from(agg.keys()).sort(_cmpDateKey);
+  // Get ALL date keys from normalizedVisibleDays (all days shown on chart)
+  // This ensures we have balances for every visible day, not just days with operations
+  const visibleDays = normalizedVisibleDays.value;
+  const allDateKeys = visibleDays
+    .map(d => d?.date ? _getDateKey(d.date) : null)
+    .filter(Boolean);
+  
+  // Sort by date key to ensure correct chronological order for running balance
+  allDateKeys.sort(_cmpDateKey);
   
   // Calculate running balances for each date
   const result = new Map();
@@ -906,7 +912,7 @@ const accountBalancesByDateKey = computed(() => {
       }
     }
     
-    // Store snapshot for this date (deep copy)
+    // Store snapshot for this date (deep copy) - stores for EVERY visible day
     const snapshot = {};
     for (const accId of Object.keys(runningByAccount)) {
       snapshot[accId] = {
