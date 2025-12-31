@@ -276,6 +276,22 @@ const externalTooltipHandler = (context) => {
 
         /* When copy failed */
         #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="fail"] .tt-btn--copy{border-color:rgba(255,59,48,1)!important;background:rgba(255,59,48,.14)!important;}
+
+        /* Mobile-responsive tooltip */
+        @media (max-width: 768px) {
+          #${TOOLTIP_EL_ID} {
+            font-size: 10px !important;
+            padding: 8px !important;
+            max-width: calc(100vw - 24px) !important;
+            max-height: 60vh !important;
+            overflow-y: auto !important;
+            line-height: 1.3 !important;
+          }
+          #${TOOLTIP_EL_ID} .tt-btn {
+            width: 22px !important;
+            height: 22px !important;
+          }
+        }
       `;
       document.head.appendChild(styleEl);
     }
@@ -814,6 +830,96 @@ const closingTimelineForSummaries = computed(() => {
   return { keys, balances, closingByKey };
 });
 
+// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate running balance for each account on each day
+const accountBalancesByDateKey = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const _h = historyLoadTick.value;
+
+  const ops = opsForSummaries.value;
+  const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  
+  // Map: dateKey -> { accountId -> balance }
+  const result = new Map();
+  
+  // Get all date keys from ops, sorted
+  const dateKeysSet = new Set();
+  for (const op of ops) {
+    if (!op) continue;
+    const dt = _coerceDate(op.date);
+    if (!dt) continue;
+    dateKeysSet.add(_getDateKey(dt));
+  }
+  const allDateKeys = Array.from(dateKeysSet).sort(_cmpDateKey);
+  
+  // Initialize running balances with initialBalance for each account
+  const runningByAccount = new Map();
+  for (const acc of accs) {
+    if (!acc) continue;
+    if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
+    runningByAccount.set(String(acc._id), {
+      name: acc.name || 'Счет',
+      balance: Number(acc.initialBalance || 0),
+      isExcluded: acc.isExcluded
+    });
+  }
+  
+  // Build daily deltas per account
+  const deltasByDay = new Map(); // dateKey -> { accountId -> delta }
+  for (const op of ops) {
+    if (!op) continue;
+    if (!isOpVisible(op)) continue;
+    if (op.isTransfer && !op.isWithdrawal) continue; // transfers don't affect account balances except withdrawal
+    
+    const dt = _coerceDate(op.date);
+    if (!dt) continue;
+    const dateKey = _getDateKey(dt);
+    
+    if (!deltasByDay.has(dateKey)) deltasByDay.set(dateKey, new Map());
+    const dayDeltas = deltasByDay.get(dateKey);
+    
+    const amt = Number(op.amount) || 0;
+    const absAmt = Math.abs(amt);
+    
+    // Get account ID
+    let accId = null;
+    if (op.accountId) {
+      accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+    }
+    if (!accId) continue;
+    accId = String(accId);
+    
+    if (!dayDeltas.has(accId)) dayDeltas.set(accId, 0);
+    
+    if (op.isWithdrawal || op.type === 'expense') {
+      dayDeltas.set(accId, dayDeltas.get(accId) - absAmt);
+    } else if (op.type === 'income') {
+      dayDeltas.set(accId, dayDeltas.get(accId) + amt);
+    }
+  }
+  
+  // Calculate running balances for each date
+  for (const dateKey of allDateKeys) {
+    const dayDeltas = deltasByDay.get(dateKey) || new Map();
+    
+    // Apply deltas
+    for (const [accId, delta] of dayDeltas) {
+      if (runningByAccount.has(accId)) {
+        const acc = runningByAccount.get(accId);
+        acc.balance = Math.max(0, acc.balance + delta);
+      }
+    }
+    
+    // Store snapshot for this date
+    const snapshot = {};
+    for (const [accId, data] of runningByAccount) {
+      snapshot[accId] = { name: data.name, balance: data.balance };
+    }
+    result.set(dateKey, snapshot);
+  }
+  
+  return result;
+});
+
 const _findLastKeyBefore = (sortedKeys, targetKey) => {
   // returns index of last key < targetKey, or -1
   let lo = 0;
@@ -1336,7 +1442,6 @@ const chartOptions = computed(() => {
         callbacks: {
           title: () => null,
           label: (context) => {
-            // Prevent duplicated tooltip body when Chart.js returns multiple items (income/expense/balance) for the same index.
             // We render ONE unified tooltip based on the base (balance) dataset only.
             if (context.datasetIndex !== 0) return '';
             const index = context.dataIndex;
@@ -1347,10 +1452,46 @@ const chartOptions = computed(() => {
             const dayExpense = Math.abs(Number(daySum?.expense) || 0);
             const dayBalance = Math.max(0, Number(daySum?.balance) || 0);
 
-            // Всегда: дата + баланс
-            const lines = [`${dateLabel}`, `Баланс: ${formatNumber(dayBalance)} т`];
+            // === HEADER: Дата + Общий баланс ===
+            const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
 
-            // Если есть операции — покажем сводку (цвета зададим в externalTooltipHandler)
+            // === ОСТАТКИ ПО СЧЕТАМ НА ЭТУ ДАТУ ===
+            // Get dateKey from the visible days array
+            const visibleDay = normalizedVisibleDays.value[index];
+            const dateKey = visibleDay?.date ? _getDateKey(visibleDay.date) : null;
+            
+            // Get historical account balances for this date
+            const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
+            
+            if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
+              lines.push('---');
+              lines.push('Остатки на счетах:');
+              Object.values(dateAccountBalances).forEach(acc => {
+                const bal = Number(acc.balance) || 0;
+                const name = acc.name || 'Счет';
+                lines.push(`${name} — ${formatNumber(bal)} т`);
+              });
+            } else {
+              // Fallback to current balances if no historical data
+              const accs = mainStore?.currentAccountBalances || [];
+              const visibleAccs = accs.filter(a => {
+                if (!a) return false;
+                if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
+                return true;
+              });
+              
+              if (visibleAccs.length > 0) {
+                lines.push('---');
+                lines.push('Остатки на счетах:');
+                visibleAccs.forEach(acc => {
+                  const bal = Number(acc.balance) || 0;
+                  const name = acc.name || 'Счет';
+                  lines.push(`${name} — ${formatNumber(bal)} т`);
+                });
+              }
+            }
+
+            // === СВОДКА ДОХОД/РАСХОД ===
             if (dayIncome || dayExpense) {
               lines.push('---');
               if (dayIncome) lines.push(`Доход: +${formatNumber(dayIncome)} т`);
@@ -1381,14 +1522,13 @@ const chartOptions = computed(() => {
               lines.push('ДОХОДЫ');
               incomeDetails.forEach((op) => {
                 const amountStr = `+${formatNumber(Math.abs(op?.amount || 0))} т`;
-                const acc = op?.accName || '???';
-                const cont = op?.contName || '---';
-                const proj = op?.projName || '---';
-                const cat = op?.catName || 'Без кат.';
+                const acc = op?.accName || '—';
+                const cont = op?.contName || '—';
+                const proj = op?.projName || '—';
+                const cat = op?.catName || '—';
 
                 if (op?.isTax) {
                   lines.push(`${amountStr} > Налог: ${op?.compName || 'Компания'}`);
-                  if (op?.desc) lines.push(`(${op.desc})`);
                 } else {
                   lines.push(`${amountStr} < ${acc} < ${cont} < ${proj} < ${cat}`);
                 }
@@ -1400,17 +1540,17 @@ const chartOptions = computed(() => {
               lines.push('РАСХОДЫ');
               expenseDetails.forEach((op) => {
                 const amountStr = `-${formatNumber(Math.abs(op?.amount || 0))} т`;
-                const acc = op?.accName || '???';
-                const cont = op?.contName || '---';
-                const proj = op?.projName || '---';
-                const cat = op?.catName || 'Без кат.';
+                const acc = op?.accName || '—';
+                const cont = op?.contName || '—';
+                const proj = op?.projName || '—';
+                const cat = op?.catName || '—';
 
                 if (op?.isTax) {
                   lines.push(`${amountStr} > Налог: ${op?.compName || 'Компания'}`);
-                  if (op?.desc) lines.push(`(${op.desc})`);
+                } else if (op?.isWithdrawal) {
+                  lines.push(`${amountStr} > ${acc} (Вывод средств)`);
                 } else {
-                  if (op?.isWithdrawal) lines.push(`${amountStr} > ${acc} (Вывод средств)`);
-                  else lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
+                  lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
                 }
               });
             }
