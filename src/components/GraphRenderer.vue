@@ -831,6 +831,7 @@ const closingTimelineForSummaries = computed(() => {
 });
 
 // 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate running balance for each account on each day
+// Uses same date keys and iteration as closingTimelineForSummaries for consistency
 const accountBalancesByDateKey = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
@@ -838,47 +839,30 @@ const accountBalancesByDateKey = computed(() => {
   const ops = opsForSummaries.value;
   const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
   
-  // Map: dateKey -> { accountId -> balance }
-  const result = new Map();
-  
-  // Get all date keys from ops, sorted
-  const dateKeysSet = new Set();
-  for (const op of ops) {
-    if (!op) continue;
-    const dt = _coerceDate(op.date);
-    if (!dt) continue;
-    dateKeysSet.add(_getDateKey(dt));
-  }
-  const allDateKeys = Array.from(dateKeysSet).sort(_cmpDateKey);
-  
-  // Initialize running balances with initialBalance for each account
-  const runningByAccount = new Map();
+  // Initialize running balances with initialBalance for each visible account
+  const runningByAccount = {};
   for (const acc of accs) {
     if (!acc) continue;
     if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
-    runningByAccount.set(String(acc._id), {
+    runningByAccount[String(acc._id)] = {
       name: acc.name || 'Счет',
-      balance: Number(acc.initialBalance || 0),
-      isExcluded: acc.isExcluded
-    });
+      balance: Number(acc.initialBalance || 0)
+    };
   }
   
-  // Build daily deltas per account
-  const deltasByDay = new Map(); // dateKey -> { accountId -> delta }
+  // Build daily deltas per account (Map<dateKey, Map<accId, delta>>)
+  const deltasByDay = {};
   for (const op of ops) {
     if (!op) continue;
     if (!isOpVisible(op)) continue;
-    if (op.isTransfer && !op.isWithdrawal) continue; // transfers don't affect account balances except withdrawal
+    
+    // Skip transfers (they don't change net balance per account for display purposes)
+    // But DO include withdrawals
+    if (op.isTransfer && !op.isWithdrawal) continue;
     
     const dt = _coerceDate(op.date);
     if (!dt) continue;
     const dateKey = _getDateKey(dt);
-    
-    if (!deltasByDay.has(dateKey)) deltasByDay.set(dateKey, new Map());
-    const dayDeltas = deltasByDay.get(dateKey);
-    
-    const amt = Number(op.amount) || 0;
-    const absAmt = Math.abs(amt);
     
     // Get account ID
     let accId = null;
@@ -888,31 +872,47 @@ const accountBalancesByDateKey = computed(() => {
     if (!accId) continue;
     accId = String(accId);
     
-    if (!dayDeltas.has(accId)) dayDeltas.set(accId, 0);
+    // Only track accounts we're showing
+    if (!runningByAccount[accId]) continue;
+    
+    if (!deltasByDay[dateKey]) deltasByDay[dateKey] = {};
+    if (!deltasByDay[dateKey][accId]) deltasByDay[dateKey][accId] = 0;
+    
+    const amt = Number(op.amount) || 0;
+    const absAmt = Math.abs(amt);
     
     if (op.isWithdrawal || op.type === 'expense') {
-      dayDeltas.set(accId, dayDeltas.get(accId) - absAmt);
+      deltasByDay[dateKey][accId] -= absAmt;
     } else if (op.type === 'income') {
-      dayDeltas.set(accId, dayDeltas.get(accId) + amt);
+      // Income amount should be positive, add it
+      deltasByDay[dateKey][accId] += absAmt;
     }
   }
   
+  // Get sorted date keys from dailyAggForSummaries (same as used for total balance)
+  const agg = dailyAggForSummaries.value;
+  const allDateKeys = Array.from(agg.keys()).sort(_cmpDateKey);
+  
   // Calculate running balances for each date
+  const result = new Map();
+  
   for (const dateKey of allDateKeys) {
-    const dayDeltas = deltasByDay.get(dateKey) || new Map();
+    const dayDeltas = deltasByDay[dateKey] || {};
     
-    // Apply deltas
-    for (const [accId, delta] of dayDeltas) {
-      if (runningByAccount.has(accId)) {
-        const acc = runningByAccount.get(accId);
-        acc.balance = Math.max(0, acc.balance + delta);
+    // Apply this day's deltas to running balances
+    for (const accId of Object.keys(dayDeltas)) {
+      if (runningByAccount[accId] !== undefined) {
+        runningByAccount[accId].balance = Math.max(0, runningByAccount[accId].balance + dayDeltas[accId]);
       }
     }
     
-    // Store snapshot for this date
+    // Store snapshot for this date (deep copy)
     const snapshot = {};
-    for (const [accId, data] of runningByAccount) {
-      snapshot[accId] = { name: data.name, balance: data.balance };
+    for (const accId of Object.keys(runningByAccount)) {
+      snapshot[accId] = {
+        name: runningByAccount[accId].name,
+        balance: runningByAccount[accId].balance
+      };
     }
     result.set(dateKey, snapshot);
   }
