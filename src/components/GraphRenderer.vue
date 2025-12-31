@@ -836,7 +836,8 @@ const accountBalancesByDateKey = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
 
-  const ops = opsForSummaries.value;
+  // Use allKnownOperations instead of opsForSummaries to include ops outside visible range
+  const ops = mainStore.allKnownOperations || [];
   
   // Get today's actual balances per account (anchor point)
   const currentBalances = mainStore.currentAccountBalances || [];
