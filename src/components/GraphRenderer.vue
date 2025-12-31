@@ -836,9 +836,9 @@ const accountBalancesByDateKey = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
 
-  // Use opsForSummaries which collects from multiple sources (getAllRelevantOps, displayCache, calculationCache)
-  // allKnownOperations was empty in production
-  const ops = opsForSummaries.value;
+  // Use getAllRelevantOps - a dedicated computed that returns all visible operations
+  // This should be consistent between mobile and desktop
+  const ops = mainStore.getAllRelevantOps || [];
   
   // Get today's actual balances per account (anchor point)
   const currentBalances = mainStore.currentAccountBalances || [];
