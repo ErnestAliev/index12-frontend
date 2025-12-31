@@ -854,6 +854,25 @@ const accountBalancesByDateKey = computed(() => {
     };
   }
   
+  // DEBUG: Log what we're working with
+  console.log('🔍 DEBUG accountBalancesByDateKey:');
+  console.log('  - Total ops:', ops.length);
+  console.log('  - Account IDs tracked:', Object.keys(accountsById));
+  console.log('  - Account balances:', Object.entries(accountsById).map(([id, a]) => `${a.name}: ${a.currentBalance}`));
+  if (ops.length > 0) {
+    const sampleOp = ops.find(o => o?.type === 'expense' || o?.type === 'income');
+    if (sampleOp) {
+      console.log('  - Sample op:', {
+        type: sampleOp.type,
+        amount: sampleOp.amount,
+        date: sampleOp.date,
+        accountId: sampleOp.accountId,
+        accIdType: typeof sampleOp.accountId,
+        accIdStr: String(typeof sampleOp.accountId === 'object' ? sampleOp.accountId?._id : sampleOp.accountId)
+      });
+    }
+  }
+  
   // Build daily deltas per account
   // NOTE: Don't filter by isOpVisible - we need ALL ops for balance calculation
   const deltasByDay = {}; // dateKey -> { accId -> delta }
