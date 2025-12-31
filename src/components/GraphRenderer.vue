@@ -855,11 +855,15 @@ const accountBalancesByDateKey = computed(() => {
   }
   
   // Build daily deltas per account
+  // NOTE: Don't filter by isOpVisible - we need ALL ops for balance calculation
   const deltasByDay = {}; // dateKey -> { accId -> delta }
+  let opsProcessed = 0;
+  
   for (const op of ops) {
     if (!op) continue;
-    if (!isOpVisible(op)) continue;
+    // Skip transfers (except withdrawals) and work acts
     if (op.isTransfer && !op.isWithdrawal) continue;
+    if (op.isWorkAct || op.isDeleted) continue;
     
     const dt = _coerceDate(op.date);
     if (!dt) continue;
@@ -867,9 +871,10 @@ const accountBalancesByDateKey = computed(() => {
     
     let accId = op.accountId;
     if (!accId) continue;
-    accId = typeof accId === 'object' ? accId._id : accId;
+    accId = typeof accId === 'object' ? (accId._id || accId) : accId;
     accId = String(accId);
     
+    // Skip if we don't have this account in our list
     if (!accountsById[accId]) continue;
     
     if (!deltasByDay[dateKey]) deltasByDay[dateKey] = {};
@@ -879,10 +884,15 @@ const accountBalancesByDateKey = computed(() => {
     
     if (op.isWithdrawal || op.type === 'expense') {
       deltasByDay[dateKey][accId] -= absAmt;
+      opsProcessed++;
     } else if (op.type === 'income') {
       deltasByDay[dateKey][accId] += absAmt;
+      opsProcessed++;
     }
   }
+  
+  // Debug: log if we have any deltas
+  console.log(`📊 accountBalancesByDateKey: processed ${opsProcessed} ops, dates with deltas:`, Object.keys(deltasByDay).length);
   
   // Get ALL visible date keys, sorted chronologically
   const visibleDays = normalizedVisibleDays.value;
