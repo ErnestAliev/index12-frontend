@@ -91,6 +91,17 @@ const tooltipDetails = ref({
   withdrawal: []
 });
 
+// Touch tracking for scroll detection
+let touchStartY = 0;
+let touchStartX = 0;
+let touchMoveDistance = 0;
+let isScrolling = false;
+let scrollEndTimer = null;
+
+// Block tooltips during range updates
+let isRangeUpdating = false;
+let rangeUpdateTimer = null;
+
 // 🟢 1. Получаем список ID исключенных счетов (SAFE)
 const excludedAccountIds = computed(() => {
   if (mainStore.includeExcludedInTotal) return new Set();
@@ -253,6 +264,18 @@ watch(
     ensureOpsHistoryForSummaries();
   },
   { immediate: true }
+);
+
+// Watch for range changes to block tooltips temporarily
+watch(
+  () => props.visibleDays?.length,
+  () => {
+    if (rangeUpdateTimer) clearTimeout(rangeUpdateTimer);
+    isRangeUpdating = true;
+    rangeUpdateTimer = setTimeout(() => {
+      isRangeUpdating = false;
+    }, 800); // Block tooltips for 800ms after range change
+  }
 );
 
 // ... (externalTooltipHandler logic) ...
@@ -438,6 +461,16 @@ const externalTooltipHandler = (context) => {
   // Mobile: tooltip always clickable when visible
   if (tooltipEl.style.opacity && Number(tooltipEl.style.opacity) > 0) {
     tooltipEl.style.pointerEvents = 'auto';
+  }
+  
+  // Block tooltips during range updates
+  if (isRangeUpdating) {
+    return;
+  }
+  
+  // Block tooltips during scrolling
+  if (isScrolling) {
+    return;
   }
 
   if (tooltipModel.opacity === 0) {
@@ -671,6 +704,57 @@ watch(
     emit('update:yLabels', ticks);
   },
   { immediate: true }
+);
+
+// Add touch event listeners to chart canvas to detect scrolling
+watch(
+  () => chartRef.value?.chart,
+  (chart) => {
+    if (!chart) return;
+    const canvas = chart.canvas;
+    if (!canvas) return;
+    
+    const handleTouchStart = (e) => {
+      const touch = e.touches[0];
+      touchStartY = touch.clientY;
+      touchStartX = touch.clientX;
+      touchMoveDistance = 0;
+      isScrolling = false;
+      if (scrollEndTimer) clearTimeout(scrollEndTimer);
+    };
+    
+    const handleTouchMove = (e) => {
+      if (!e.touches[0]) return;
+      const touch = e.touches[0];
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+      const deltaX = Math.abs(touch.clientX - touchStartX);
+      touchMoveDistance = Math.max(deltaY, deltaX);
+      
+      // If moved more than 10px, consider it scrolling
+      if (touchMoveDistance > 10) {
+        isScrolling = true;
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      if (scrollEndTimer) clearTimeout(scrollEndTimer);
+      // Wait 300ms after touch end before allowing tooltips again
+      scrollEndTimer = setTimeout(() => {
+        isScrolling = false;
+      }, 300);
+    };
+    
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: true });
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: true });
+    
+    // Cleanup when chart changes
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+      canvas.removeEventListener('touchend', handleTouchEnd);
+    };
+  }
 );
 
 // 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES)
