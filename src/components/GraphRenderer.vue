@@ -250,7 +250,7 @@ const externalTooltipHandler = (context) => {
       opacity: 0,
       pointerEvents: 'auto',
       position: 'absolute',
-      zIndex: 9999,
+      zIndex: 1999,
       fontSize: '12px',
       padding: '12px',
       lineHeight: '1.4',
@@ -1490,7 +1490,7 @@ const chartOptions = computed(() => {
               lines.push('---');
               lines.push('РАСХОДЫ');
               expenseDetails.forEach((op) => {
-                const amountStr = `-${formatNumber(Math.abs(op?.amount) || 0))} т`;
+                const amountStr = `-${formatNumber(Math.abs(op?.amount) || 0)} т`;
                 const acc = op?.accName || '—';
                 const cont = op?.contName || '—';
                 const proj = op?.projName || '—';

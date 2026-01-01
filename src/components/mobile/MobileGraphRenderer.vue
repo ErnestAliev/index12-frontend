@@ -314,7 +314,7 @@ const externalTooltipHandler = (context) => {
       opacity: 0,
       pointerEvents: 'auto',
       position: 'absolute',
-      zIndex: 9999,
+      zIndex: 1999,
       fontSize: '12px',
       padding: '12px',
       lineHeight: '1.4',
