@@ -890,18 +890,41 @@ const accountBalancesByDateKey = computed(() => {
         const opDate = _coerceDate(op.date);
         if (!opDate || opDate.getTime() > dayEndTime.getTime()) continue;
         
-        // Skip transfers (except withdrawals) as they don't affect account balance
-        if (op.isTransfer && !op.isWithdrawal) continue;
+        const amt = Number(op.amount) || 0;
+        const absAmt = Math.abs(amt);
         
-        // Check if this operation belongs to this account
+        // Handle transfers
+        if (op.isTransfer) {
+          // Transfer FROM this account (decreases balance)
+          let fromAccId = null;
+          if (op.fromAccountId) {
+            fromAccId = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
+          }
+          if (fromAccId && String(fromAccId) === accId) {
+            balance -= absAmt;
+            continue;
+          }
+          
+          // Transfer TO this account (increases balance)
+          let toAccId = null;
+          if (op.toAccountId) {
+            toAccId = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
+          }
+          if (toAccId && String(toAccId) === accId) {
+            balance += absAmt;
+            continue;
+          }
+          
+          // Not related to this account
+          continue;
+        }
+        
+        // Handle regular operations (income/expense/withdrawal)
         let opAccId = null;
         if (op.accountId) {
           opAccId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
         }
         if (!opAccId || String(opAccId) !== accId) continue;
-        
-        const amt = Number(op.amount) || 0;
-        const absAmt = Math.abs(amt);
         
         if (op.isWithdrawal || op.type === 'expense') {
           balance -= absAmt;
@@ -1158,6 +1181,7 @@ const chartData = computed(() => {
   const prepaymentDetails = [];
   const expenseDetails = [];
   const withdrawalDetails = [];
+  const transferDetails = [];
 
   const safeDays = normalizedVisibleDays.value;
   const prepayIds = mainStore.getPrepaymentCategoryIds || [];
@@ -1173,6 +1197,7 @@ const chartData = computed(() => {
     const prepayOps = [];
     const expenseOps = [];
     const withdrawalOps = [];
+    const transferOps = [];
 
     let dayIncomeSum = 0;
     let dayCreditSum = 0;
@@ -1187,7 +1212,9 @@ const chartData = computed(() => {
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
 
-      if (op.isWithdrawal) {
+      if (op.isTransfer) {
+        transferOps.push(op);
+      } else if (op.isWithdrawal) {
         withdrawalOps.push(op);
         dayWithdrawalSum += absAmt;
       } else if (op.type === 'expense') {
@@ -1225,6 +1252,7 @@ const chartData = computed(() => {
     prepaymentDetails.push(getTooltipOperationList(prepayOps));
     expenseDetails.push(getTooltipOperationList(expenseOps));
     withdrawalDetails.push(getTooltipOperationList(withdrawalOps));
+    transferDetails.push(getTooltipOperationList(transferOps));
 
     const labelDate = day.date.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     labels.push(labelDate);
@@ -1246,7 +1274,8 @@ const chartData = computed(() => {
     credit: creditIncomeDetails,
     prepayment: prepaymentDetails,
     expense: expenseDetails,
-    withdrawal: withdrawalDetails
+    withdrawal: withdrawalDetails,
+    transfer: transferDetails
   };
 
   return {
@@ -1421,7 +1450,7 @@ const chartOptions = computed(() => {
             // Если операций нет — просто баланс
             if (!dayIncome && !dayExpense) return lines;
 
-            // Собираем детализацию (всегда общий tooltip): сначала доходы, потом расходы
+            // Собираем детализацию (всегда общий tooltip): сначала доходы, потом расходы, потом переводы
             const safeGet = (key) => {
               const arr = tooltipDetails.value?.[key];
               return Array.isArray(arr) && Array.isArray(arr[index]) ? arr[index] : [];
@@ -1429,12 +1458,14 @@ const chartOptions = computed(() => {
 
             let incomeDetails = [...safeGet('prepayment'), ...safeGet('credit'), ...safeGet('income')];
             let expenseDetails = [...safeGet('expense'), ...safeGet('withdrawal')];
+            let transferDetails = safeGet('transfer');
 
             const sortByAbs = (a, b) => Math.abs(Number(b?.amount) || 0) - Math.abs(Number(a?.amount) || 0);
             incomeDetails = [...incomeDetails].sort(sortByAbs);
             expenseDetails = [...expenseDetails].sort(sortByAbs);
+            transferDetails = [...transferDetails].sort(sortByAbs);
 
-            if (!incomeDetails.length && !expenseDetails.length) return lines;
+            if (!incomeDetails.length && !expenseDetails.length && !transferDetails.length) return lines;
 
             lines.push('---');
 
@@ -1459,7 +1490,7 @@ const chartOptions = computed(() => {
               lines.push('---');
               lines.push('РАСХОДЫ');
               expenseDetails.forEach((op) => {
-                const amountStr = `-${formatNumber(Math.abs(op?.amount || 0))} т`;
+                const amountStr = `-${formatNumber(Math.abs(op?.amount) || 0))} т`;
                 const acc = op?.accName || '—';
                 const cont = op?.contName || '—';
                 const proj = op?.projName || '—';
@@ -1472,6 +1503,17 @@ const chartOptions = computed(() => {
                 } else {
                   lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
                 }
+              });
+            }
+            
+            if (transferDetails.length) {
+              lines.push('---');
+              lines.push('ПЕРЕВОДЫ');
+              transferDetails.forEach((op) => {
+                const amountStr = `${formatNumber(Math.abs(op?.amount || 0))} т`;
+                const fromAcc = op?.fromAccName || '—';
+                const toAcc = op?.toAccName || '—';
+                lines.push(`${amountStr}: ${fromAcc} → ${toAcc}`);
               });
             }
 

@@ -907,18 +907,41 @@ const accountBalancesByDateKey = computed(() => {
         const opDate = _coerceDate(op.date);
         if (!opDate || opDate.getTime() > dayEndTime.getTime()) continue;
         
-        // Skip transfers (except withdrawals) as they don't affect account balance
-        if (op.isTransfer && !op.isWithdrawal) continue;
+        const amt = Number(op.amount) || 0;
+        const absAmt = Math.abs(amt);
         
-        // Check if this operation belongs to this account
+        // Handle transfers
+        if (op.isTransfer) {
+          // Transfer FROM this account (decreases balance)
+          let fromAccId = null;
+          if (op.fromAccountId) {
+            fromAccId = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
+          }
+          if (fromAccId && String(fromAccId) === accId) {
+            balance -= absAmt;
+            continue;
+          }
+          
+          // Transfer TO this account (increases balance)
+          let toAccId = null;
+          if (op.toAccountId) {
+            toAccId = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
+          }
+          if (toAccId && String(toAccId) === accId) {
+            balance += absAmt;
+            continue;
+          }
+          
+          // Not related to this account
+          continue;
+        }
+        
+        // Handle regular operations (income/expense/withdrawal)
         let opAccId = null;
         if (op.accountId) {
           opAccId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
         }
         if (!opAccId || String(opAccId) !== accId) continue;
-        
-        const amt = Number(op.amount) || 0;
-        const absAmt = Math.abs(amt);
         
         if (op.isWithdrawal || op.type === 'expense') {
           balance -= absAmt;
