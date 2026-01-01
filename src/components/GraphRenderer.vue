@@ -852,120 +852,71 @@ const endBalanceValues = computed(() => {
   return arr.map((s) => Number(s?.balance) || 0);
 });
 
-// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate running balance for each account on each day
+// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate balance for each account on each visible day
 const accountBalancesByDateKey = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
 
   const ops = opsForSummaries.value;
   const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  const days = normalizedVisibleDays.value;
   
-  // Map: dateKey -> { accountId -> balance }
+  // Map: dateKey -> { accountId -> {name, balance} }
   const result = new Map();
   
-  // Get all date keys from normalizedVisibleDays (not just from ops!)
-  // This ensures we have balance snapshots for ALL visible days, even those without operations
-  const dateKeysSet = new Set();
-  for (const day of normalizedVisibleDays.value) {
+  // For each visible day, calculate balance of each account at END of that day
+  for (const day of days) {
     if (!day?.date) continue;
     const dt = day.date instanceof Date ? day.date : new Date(day.date);
-    dateKeysSet.add(_getDateKey(dt));
-  }
-  
-  // Also add dates from ops to catch any operations outside visible range
-  for (const op of ops) {
-    if (!op) continue;
-    const dt = _coerceDate(op.date);
-    if (!dt) continue;
-    dateKeysSet.add(_getDateKey(dt));
-  }
-  
-  const allDateKeys = Array.from(dateKeysSet).sort(_cmpDateKey);
-  
-  // Initialize running balances with initialBalance for each account
-  const runningByAccount = new Map();
-  for (const acc of accs) {
-    if (!acc) continue;
-    if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
-    runningByAccount.set(String(acc._id), {
-      name: acc.name || 'Счет',
-      balance: Number(acc.initialBalance || 0),
-      isExcluded: acc.isExcluded
-    });
-  }
-  
-  // Build daily deltas per account
-  const deltasByDay = new Map(); // dateKey -> { accountId -> delta }
-  for (const op of ops) {
-    if (!op) continue;
-    if (!isOpVisible(op)) continue;
-    if (op.isTransfer && !op.isWithdrawal) continue; // transfers don't affect account balances except withdrawal
-    
-    const dt = _coerceDate(op.date);
-    if (!dt) continue;
     const dateKey = _getDateKey(dt);
+    const dayEndTime = new Date(dt);
+    dayEndTime.setHours(23, 59, 59, 999);
     
-    if (!deltasByDay.has(dateKey)) deltasByDay.set(dateKey, new Map());
-    const dayDeltas = deltasByDay.get(dateKey);
+    const balancesByAccount = {};
     
-    const amt = Number(op.amount) || 0;
-    const absAmt = Math.abs(amt);
-    
-    // Get account ID
-    let accId = null;
-    if (op.accountId) {
-      accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-    }
-    if (!accId) continue;
-    accId = String(accId);
-    
-    if (!dayDeltas.has(accId)) dayDeltas.set(accId, 0);
-    
-    if (op.isWithdrawal || op.type === 'expense') {
-      dayDeltas.set(accId, dayDeltas.get(accId) - absAmt);
-    } else if (op.type === 'income') {
-      dayDeltas.set(accId, dayDeltas.get(accId) + amt);
-    }
-  }
-  
-  // Calculate running balances for each date
-  for (const dateKey of allDateKeys) {
-    // Debug logging for January 2026 (days 1-31)
-    const isJan2026 = dateKey.startsWith('2026-') && parseInt(dateKey.split('-')[1]) <= 31;
-    if (isJan2026) {
-      console.log(`[accountBalancesByDateKey] ${dateKey} START:`, 
-        Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
-    }
-    
-    // Apply deltas for this day first
-    const dayDeltas = deltasByDay.get(dateKey) || new Map();
-    
-    if (isJan2026) {
-      console.log(`[accountBalancesByDateKey] ${dateKey} DELTAS:`, 
-        Array.from(dayDeltas.entries()).map(([id, delta]) => {
-          const acc = accs.find(a => String(a._id) === id);
-          return `${acc?.name || id}: ${delta}`;
-        }));
-    }
-    
-    for (const [accId, delta] of dayDeltas) {
-      if (runningByAccount.has(accId)) {
-        const acc = runningByAccount.get(accId);
-        acc.balance = Math.max(0, acc.balance + delta);
+    // For each account, sum all operations up to and including this day
+    for (const acc of accs) {
+      if (!acc) continue;
+      if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
+      
+      const accId = String(acc._id);
+      let balance = Number(acc.initialBalance || 0);
+      
+      // Add/subtract all operations for this account up to end of this day
+      for (const op of ops) {
+        if (!op) continue;
+        if (!isOpVisible(op)) continue;
+        
+        const opDate = _coerceDate(op.date);
+        if (!opDate || opDate.getTime() > dayEndTime.getTime()) continue;
+        
+        // Skip transfers (except withdrawals) as they don't affect account balance
+        if (op.isTransfer && !op.isWithdrawal) continue;
+        
+        // Check if this operation belongs to this account
+        let opAccId = null;
+        if (op.accountId) {
+          opAccId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+        }
+        if (!opAccId || String(opAccId) !== accId) continue;
+        
+        const amt = Number(op.amount) || 0;
+        const absAmt = Math.abs(amt);
+        
+        if (op.isWithdrawal || op.type === 'expense') {
+          balance -= absAmt;
+        } else if (op.type === 'income') {
+          balance += amt;
+        }
       }
+      
+      balancesByAccount[accId] = {
+        name: acc.name || 'Счет',
+        balance: Math.max(0, balance)
+      };
     }
     
-    // Store snapshot AFTER applying deltas (balance at END of day)
-    const snapshot = {};
-    for (const [accId, data] of runningByAccount) {
-      snapshot[accId] = { name: data.name, balance: data.balance };
-    }
-    result.set(dateKey, snapshot);
-    
-    if (isJan2026) {
-      console.log(`[accountBalancesByDateKey] ${dateKey} END:`, 
-        Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
-    }
+    result.set(dateKey, balancesByAccount);
   }
   
   return result;
