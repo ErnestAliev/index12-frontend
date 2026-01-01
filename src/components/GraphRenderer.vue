@@ -863,14 +863,23 @@ const accountBalancesByDateKey = computed(() => {
   // Map: dateKey -> { accountId -> balance }
   const result = new Map();
   
-  // Get all date keys from ops, sorted
+  // Get all date keys from normalizedVisibleDays (not just from ops!)
+  // This ensures we have balance snapshots for ALL visible days, even those without operations
   const dateKeysSet = new Set();
+  for (const day of normalizedVisibleDays.value) {
+    if (!day?.date) continue;
+    const dt = day.date instanceof Date ? day.date : new Date(day.date);
+    dateKeysSet.add(_getDateKey(dt));
+  }
+  
+  // Also add dates from ops to catch any operations outside visible range
   for (const op of ops) {
     if (!op) continue;
     const dt = _coerceDate(op.date);
     if (!dt) continue;
     dateKeysSet.add(_getDateKey(dt));
   }
+  
   const allDateKeys = Array.from(dateKeysSet).sort(_cmpDateKey);
   
   // Initialize running balances with initialBalance for each account
