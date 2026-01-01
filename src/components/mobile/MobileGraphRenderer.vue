@@ -199,6 +199,29 @@ const ensureOpsHistoryForSummaries = async () => {
 onMounted(() => {
   // preload ASAP so the very first 12-day render has correct running balances
   ensureOpsHistoryForSummaries();
+  
+  // Watch for modal overlays appearing and hide tooltip
+  const observer = new MutationObserver(() => {
+    const modalOverlay = document.querySelector('.modal-overlay');
+    if (modalOverlay) {
+      // Modal opened - force hide tooltip
+      const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+      if (tooltipEl) {
+        tooltipEl.style.opacity = 0;
+        tooltipEl.style.pointerEvents = 'none';
+      }
+    }
+  });
+  
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Cleanup observer on unmount
+  onUnmounted(() => {
+    observer.disconnect();
+  });
 });
 
 watch(
@@ -1208,6 +1231,7 @@ const chartData = computed(() => {
   const prepaymentDetails = [];
   const expenseDetails = [];
   const withdrawalDetails = [];
+  const transferDetails = [];
 
   const safeDays = normalizedVisibleDays.value;
   const prepayIds = mainStore.getPrepaymentCategoryIds || [];
@@ -1223,6 +1247,7 @@ const chartData = computed(() => {
     const prepayOps = [];
     const expenseOps = [];
     const withdrawalOps = [];
+    const transferOps = [];
 
     let dayIncomeSum = 0;
     let dayCreditSum = 0;
@@ -1237,7 +1262,9 @@ const chartData = computed(() => {
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
 
-      if (op.isWithdrawal) {
+      if (op.isTransfer) {
+        transferOps.push(op);
+      } else if (op.isWithdrawal) {
         withdrawalOps.push(op);
         dayWithdrawalSum += absAmt;
       } else if (op.type === 'expense') {
@@ -1275,6 +1302,7 @@ const chartData = computed(() => {
     prepaymentDetails.push(getTooltipOperationList(prepayOps));
     expenseDetails.push(getTooltipOperationList(expenseOps));
     withdrawalDetails.push(getTooltipOperationList(withdrawalOps));
+    transferDetails.push(getTooltipOperationList(transferOps));
 
     const labelDate = day.date.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     labels.push(labelDate);
@@ -1296,7 +1324,8 @@ const chartData = computed(() => {
     credit: creditIncomeDetails,
     prepayment: prepaymentDetails,
     expense: expenseDetails,
-    withdrawal: withdrawalDetails
+    withdrawal: withdrawalDetails,
+    transfer: transferDetails
   };
 
   return {
@@ -1471,7 +1500,7 @@ const chartOptions = computed(() => {
             // Если операций нет — просто баланс
             if (!dayIncome && !dayExpense) return lines;
 
-            // Собираем детализацию (всегда общий tooltip): сначала доходы, потом расходы
+            // Собираем детализацию (всегда общий tooltip): сначала доходы, потом расходы, потом переводы
             const safeGet = (key) => {
               const arr = tooltipDetails.value?.[key];
               return Array.isArray(arr) && Array.isArray(arr[index]) ? arr[index] : [];
@@ -1479,12 +1508,14 @@ const chartOptions = computed(() => {
 
             let incomeDetails = [...safeGet('prepayment'), ...safeGet('credit'), ...safeGet('income')];
             let expenseDetails = [...safeGet('expense'), ...safeGet('withdrawal')];
+            let transferDetails = safeGet('transfer');
 
             const sortByAbs = (a, b) => Math.abs(Number(b?.amount) || 0) - Math.abs(Number(a?.amount) || 0);
             incomeDetails = [...incomeDetails].sort(sortByAbs);
             expenseDetails = [...expenseDetails].sort(sortByAbs);
+            transferDetails = [...transferDetails].sort(sortByAbs);
 
-            if (!incomeDetails.length && !expenseDetails.length) return lines;
+            if (!incomeDetails.length && !expenseDetails.length && !transferDetails.length) return lines;
 
             lines.push('---');
 
@@ -1522,6 +1553,17 @@ const chartOptions = computed(() => {
                 } else {
                   lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
                 }
+              });
+            }
+            
+            if (transferDetails.length) {
+              lines.push('---');
+              lines.push('ПЕРЕВОДЫ');
+              transferDetails.forEach((op) => {
+                const amountStr = `${formatNumber(Math.abs(op?.amount || 0))} т`;
+                const fromAcc = op?.fromAccName || '—';
+                const toAcc = op?.toAccName || '—';
+                lines.push(`${amountStr}: ${fromAcc} → ${toAcc}`);
               });
             }
 
