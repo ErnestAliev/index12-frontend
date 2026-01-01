@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import GraphRenderer from '@/components/GraphRenderer.vue';
+import MobileGraphRenderer from '@/components/mobile/MobileGraphRenderer.vue';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v54.0 - EXACT WIDTH MATCH ---
@@ -69,7 +69,7 @@ const chartWidthStyle = computed(() => ({
     <div class="chart-scroll-area scroll-touch" ref="scrollContainer" @scroll="onScroll">
       <!-- Контейнер графика с точной шириной -->
       <div class="chart-wide-wrapper" :style="chartWidthStyle">
-        <GraphRenderer 
+        <MobileGraphRenderer 
           v-if="visibleDays.length"
           :visibleDays="visibleDays"
           :animate="false"

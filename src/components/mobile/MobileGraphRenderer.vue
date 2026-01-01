@@ -18,7 +18,6 @@ import {
 const TOOLTIP_EL_ID = `chartjs-custom-tooltip-${Math.random().toString(36).slice(2)}`;
 const TOOLTIP_STYLE_ID = `${TOOLTIP_EL_ID}-style`;
 
-
 let tooltipAutoUnpinTimer = null;
 const TOOLTIP_PIN_AUTORELEASE_MS = 1800;
 
@@ -29,27 +28,21 @@ const _clearTooltipAutoUnpinTimer = () => {
   }
 };
 
-// --- Tooltip copy/export helpers ---
-let lastTooltipExportText = '';
-let lastTooltipExportFilename = 'chart-tooltip.txt';
-
-// --- Tooltip interaction (hover delay + click-to-pin) - DESKTOP ONLY ---
+// Mobile-specific tooltip state
 let tooltipPinned = false;
 let tooltipPinnedKey = '';
 let tooltipForceUpdate = false;
-let tooltipIsHovering = false;
-let tooltipHideTimer = null;
-let lastActiveKey = '';
-const TOOLTIP_HIDE_DELAY_MS = 2500;
-
-const _clearTooltipHideTimer = () => {
-  if (tooltipHideTimer) {
-    clearTimeout(tooltipHideTimer);
-    tooltipHideTimer = null;
-  }
-};
-
+let lastTooltipExportText = '';
+let lastTooltipExportFilename = 'chart-tooltip.txt';
 let tooltipCopyFeedbackTimer = null;
+
+// Tooltip state
+let tooltipIsHovering = false;
+let lastActiveKey = '';
+
+// Mobile tap detection
+let isTouching = false;
+let pendingTooltipData = null;
 
 const props = defineProps({
   visibleDays: { type: Array, required: true, default: () => [] },
@@ -156,46 +149,51 @@ const _getHistoryEndDate = () => {
 };
 
 const ensureOpsHistoryForSummaries = async () => {
-  const start = _getUserMinEventDate();
-  if (!start) return;
+  try {
+    const start = _getUserMinEventDate();
+    if (!start) return;
 
-  // Use today + 6 months as the end bound to include future operations
-  const end = new Date();
-  end.setMonth(end.getMonth() + 6);
-  end.setHours(23, 59, 59, 999);
+    // Use today + 6 months as the end bound to include future operations
+    const end = new Date();
+    end.setMonth(end.getMonth() + 6);
+    end.setHours(23, 59, 59, 999);
 
-  const st = _getOpsPreloadState();
+    const st = _getOpsPreloadState();
 
-  // Already loaded enough
-  if (st.start && st.end) {
-    const loadedStart = _coerceDate(st.start);
-    const loadedEnd = _coerceDate(st.end);
-    if (loadedStart && loadedEnd && loadedStart.getTime() <= start.getTime() && loadedEnd.getTime() >= end.getTime()) {
+    // Already loaded enough
+    if (st.start && st.end) {
+      const loadedStart = _coerceDate(st.start);
+      const loadedEnd = _coerceDate(st.end);
+      if (loadedStart && loadedEnd && loadedStart.getTime() <= start.getTime() && loadedEnd.getTime() >= end.getTime()) {
+        return;
+      }
+    }
+
+    if (st.pending) {
+      try { await st.pending; } catch (e) {}
       return;
     }
-  }
 
-  if (st.pending) {
+    st.pending = (async () => {
+      try {
+        // Preload full history (past + future 6 months). Use sparse mode to avoid filling thousands of empty days.
+        await mainStore.fetchOperationsRange(start, end, { sparse: true });
+        st.start = start;
+        st.end = end;
+        st.loadedAt = (Number(st.loadedAt) || 0) + 1;
+      } finally {
+        st.pending = null;
+      }
+    })();
+
     try { await st.pending; } catch (e) {}
-    return;
+
+    // Force recompute in this component instance even if mainStore.cacheVersion wasn't bumped.
+    historyLoadTick.value = Number(st.loadedAt) || 0;
+  } catch (e) {
+    // Prevent any uncaught errors from crashing the app
+    console.warn('[MobileGraphRenderer] ensureOpsHistoryForSummaries error:', e);
   }
-
-  st.pending = (async () => {
-    try {
-      // Preload full history (past + future 6 months). Use sparse mode to avoid filling thousands of empty days.
-      await mainStore.fetchOperationsRange(start, end, { sparse: true });
-      st.start = start;
-      st.end = end;
-      st.loadedAt = (Number(st.loadedAt) || 0) + 1;
-    } finally {
-      st.pending = null;
-    }
-  })();
-
-  try { await st.pending; } catch (e) {}
-
-  // Force recompute in this component instance even if mainStore.cacheVersion wasn't bumped.
-  historyLoadTick.value = Number(st.loadedAt) || 0;
 };
 
 onMounted(() => {
@@ -238,6 +236,72 @@ const externalTooltipHandler = (context) => {
 
         /* When copy failed */
         #${TOOLTIP_EL_ID}[data-copied="1"][data-copy-status="fail"] .tt-btn--copy{border-color:rgba(255,59,48,1)!important;background:rgba(255,59,48,.14)!important;}
+
+        /* Mobile overlay mode */
+        @media (max-width: 768px) {
+          #${TOOLTIP_EL_ID} {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            width: calc(100vw - 32px) !important;
+            max-width: 400px !important;
+            max-height: 70vh !important;
+            overflow-y: auto !important;
+            font-size: 11px !important;
+            padding: 16px !important;
+            padding-bottom: 60px !important;
+            line-height: 1.35 !important;
+            border-radius: 12px !important;
+            z-index: 10001 !important;
+          }
+          #${TOOLTIP_EL_ID} .tt-btn {
+            width: 28px !important;
+            height: 28px !important;
+          }
+          /* Mobile back button */
+          #${TOOLTIP_EL_ID} .tt-mobile-back {
+            position: absolute;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(60, 60, 60, 0.9);
+            border: 1px solid #555;
+            border-radius: 8px;
+            color: #fff;
+            padding: 10px 32px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s;
+          }
+          #${TOOLTIP_EL_ID} .tt-mobile-back:active {
+            background: rgba(80, 80, 80, 1);
+          }
+        }
+        /* Mobile backdrop */
+        #${TOOLTIP_EL_ID}-backdrop {
+          display: none;
+        }
+        @media (max-width: 768px) {
+          #${TOOLTIP_EL_ID}-backdrop {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+          }
+          #${TOOLTIP_EL_ID}-backdrop.visible {
+            opacity: 1;
+            pointer-events: auto;
+          }
+        }
       `;
       document.head.appendChild(styleEl);
     }
@@ -258,13 +322,39 @@ const externalTooltipHandler = (context) => {
       boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
       transition: 'opacity .15s ease',
       width: 'max-content',
+      maxWidth: 'calc(100% - 20px)',
       boxSizing: 'border-box'
     });
     
-    // Mount tooltip to canvas parent (desktop only)
-    const host = context?.chart?.canvas?.parentNode;
-    if (host && host.appendChild) host.appendChild(tooltipEl);
-    else document.body.appendChild(tooltipEl);
+    // Create backdrop for mobile overlay
+    let backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+    if (!backdropEl) {
+      backdropEl = document.createElement('div');
+      backdropEl.id = `${TOOLTIP_EL_ID}-backdrop`;
+      document.body.appendChild(backdropEl);
+      
+      // Click on backdrop dismisses tooltip
+      backdropEl.addEventListener('click', () => {
+        tooltipPinned = false;
+        tooltipPinnedKey = '';
+        tooltipForceUpdate = false;
+        tooltipEl.style.opacity = 0;
+        backdropEl.classList.remove('visible');
+      });
+    }
+    
+    // On mobile, mount tooltip to body for fixed positioning
+    const isMobile = window.innerWidth <= 768;
+    if (isMobile) {
+      document.body.appendChild(tooltipEl);
+    } else {
+      // Монтируем tooltip внутрь контейнера canvas, если есть
+      const host = context?.chart?.canvas?.parentNode;
+      if (host && host.appendChild) host.appendChild(tooltipEl);
+      else document.body.appendChild(tooltipEl);
+    }
+    
+    // NOTE: Removed touch event listeners that were interfering with scroll/clicks
 
     tooltipEl.addEventListener('click', async (e) => {
       const btn = e.target?.closest?.('#chartjs-tooltip-export-btn, #chartjs-tooltip-copy-btn');
@@ -294,68 +384,19 @@ const externalTooltipHandler = (context) => {
         } catch (e) {}
       }
     });
-
-    tooltipEl.addEventListener('mouseenter', () => {
-      tooltipIsHovering = true;
-      _clearTooltipHideTimer();
-      _clearTooltipAutoUnpinTimer();
-    });
-
-    tooltipEl.addEventListener('mouseleave', () => {
-      tooltipIsHovering = false;
-
-      // if user pinned by tap/click, auto-release after a short delay (mobile-friendly)
-      _clearTooltipAutoUnpinTimer();
-      if (tooltipPinned) {
-        tooltipAutoUnpinTimer = setTimeout(() => {
-          tooltipPinned = false;
-          tooltipPinnedKey = '';
-          tooltipForceUpdate = false;
-          try { tooltipEl.style.opacity = 0; } catch (e) {}
-        }, TOOLTIP_PIN_AUTORELEASE_MS);
-      }
-
-      if (!tooltipPinned) {
-        _clearTooltipHideTimer();
-        tooltipHideTimer = setTimeout(() => {
-          if (!tooltipPinned && !tooltipIsHovering) tooltipEl.style.opacity = 0;
-        }, 150);
-      }
-    });
   }
 
   const tooltipModel = context.tooltip;
-  
-  // If pinned on mobile by tap, don't let it stick forever
-  if (tooltipPinned && !tooltipIsHovering) {
-    _clearTooltipAutoUnpinTimer();
-    tooltipAutoUnpinTimer = setTimeout(() => {
-      tooltipPinned = false;
-      tooltipPinnedKey = '';
-      tooltipForceUpdate = false;
-      try { tooltipEl.style.opacity = 0; } catch (e) {}
-    }, TOOLTIP_PIN_AUTORELEASE_MS);
+
+  // Mobile: tooltip always clickable when visible
+  if (tooltipEl.style.opacity && Number(tooltipEl.style.opacity) > 0) {
+    tooltipEl.style.pointerEvents = 'auto';
   }
-  // Tooltip должен быть кликабельным, пока он видим (иначе невозможно нажать Copy/Export)
-  try {
-    const visibleNow = Number(tooltipEl.style.opacity || 0) > 0;
-    tooltipEl.style.pointerEvents = (tooltipPinned || tooltipIsHovering || visibleNow) ? 'auto' : 'none';
-  } catch (e) {}
 
   if (tooltipModel.opacity === 0) {
-    // If the user is moving from chart to tooltip (to click buttons) or tooltip is pinned, keep it visible.
-    if (tooltipPinned || tooltipIsHovering) return;
-
-    // Otherwise hide with a small delay so the user can reach the tooltip.
-    _clearTooltipHideTimer();
-    tooltipHideTimer = setTimeout(() => {
-      if (!tooltipPinned && !tooltipIsHovering) tooltipEl.style.opacity = 0;
-    }, TOOLTIP_HIDE_DELAY_MS);
+    // Chart.js wants to hide - but on mobile we let user dismiss via back button/backdrop
     return;
   }
-
-  // Tooltip is visible again; cancel any pending hide.
-  _clearTooltipHideTimer();
 
   if (tooltipModel.body) {
     const bodyLines = tooltipModel.body.map((b) => b.lines).flat();
@@ -445,61 +486,37 @@ const externalTooltipHandler = (context) => {
       innerHtml += `<div style="${style}">${escapeHtml(line)}</div>`;
     });
 
+    // Add mobile back button
+    const isMobileNow = window.innerWidth <= 768;
+    if (isMobileNow) {
+      innerHtml += `<button class="tt-mobile-back" id="chartjs-tooltip-back-btn">Назад</button>`;
+    }
+
     tooltipEl.innerHTML = innerHtml;
     tooltipForceUpdate = false;
+    
+    // Add back button click handler
+    const backBtn = tooltipEl.querySelector('#chartjs-tooltip-back-btn');
+    if (backBtn) {
+      backBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        tooltipPinned = false;
+        tooltipPinnedKey = '';
+        tooltipForceUpdate = false;
+        tooltipEl.style.opacity = 0;
+        const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+        if (backdrop) backdrop.classList.remove('visible');
+      };
+    }
   }
 
-  // Новое позиционирование: всегда внутри области графика (canvas/chart-wrapper)
-  const canvas = context.chart.canvas;
-  const host = canvas?.parentNode;
-
-  // Позиционируем относительно host (chart-wrapper), чтобы tooltip НЕ выходил за область графика.
-  const canvasRect = canvas.getBoundingClientRect();
-  const hostRect = host?.getBoundingClientRect?.() || canvasRect;
-
-  const hostW = host?.clientWidth || hostRect.width || 0;
-  const hostH = host?.clientHeight || hostRect.height || 0;
-
-  const tooltipWidth = tooltipEl.offsetWidth;
-  const tooltipHeight = tooltipEl.offsetHeight;
-
-  // caretX/Y идут в координатах canvas, переведём в координаты host
-  const caretX = (tooltipModel.caretX || 0) + (canvasRect.left - hostRect.left);
-  const caretY = (tooltipModel.caretY || 0) + (canvasRect.top - hostRect.top);
-
-  const M = 10; // margin внутри области графика
-
-  let left = caretX;
-  let top = caretY;
-
-  // Горизонталь: стараемся быть по центру, но если упираемся в край — прыгаем влево/вправо
-  let transformX = '-50%';
-  if (left - tooltipWidth / 2 < M) {
-    left = M;
-    transformX = '0%';
-  } else if (left + tooltipWidth / 2 > hostW - M) {
-    left = hostW - M;
-    transformX = '-100%';
-  }
-
-  // Вертикаль: по умолчанию показываем над курсором, но если не влезает — снизу
-  top = top - 10;
-  let transformY = '-100%';
-  if (top - tooltipHeight < M) {
-    top = caretY + 18;
-    transformY = '0%';
-  }
-  // Если снизу тоже не влезает — зажимаем внутри
-  if (transformY === '0%' && top + tooltipHeight > hostH - M) {
-    top = Math.max(M, hostH - M);
-    transformY = '-100%';
-  }
-
-  // Desktop positioning (always)
-  tooltipEl.style.transform = `translate(${transformX}, ${transformY})`;
-  tooltipEl.style.left = left + 'px';
-  tooltipEl.style.top = top + 'px';
+  // Mobile overlay positioning - always show centered overlay
+  const backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+  
+  // Mobile: show overlay with backdrop
   tooltipEl.style.opacity = 1;
+  if (backdropEl) backdropEl.classList.add('visible');
 };
 
 onUnmounted(() => {
