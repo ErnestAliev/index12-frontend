@@ -928,8 +928,9 @@ const accountBalancesByDateKey = computed(() => {
     }
     result.set(dateKey, snapshot);
     
-    // Debug logging for specific dates
-    if (dateKey.includes('2026-5') || dateKey.includes('2026-4')) {
+    // Debug logging for January 2026 (days 1-31)
+    const isJan2026 = dateKey.startsWith('2026-') && parseInt(dateKey.split('-')[1]) <= 31;
+    if (isJan2026) {
       console.log(`[accountBalancesByDateKey] ${dateKey} START:`, 
         Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
     }
@@ -937,7 +938,7 @@ const accountBalancesByDateKey = computed(() => {
     // Apply deltas for this day (updates running balance for next day)
     const dayDeltas = deltasByDay.get(dateKey) || new Map();
     
-    if (dateKey.includes('2026-5') || dateKey.includes('2026-4')) {
+    if (isJan2026) {
       console.log(`[accountBalancesByDateKey] ${dateKey} DELTAS:`, 
         Array.from(dayDeltas.entries()).map(([id, delta]) => {
           const acc = accs.find(a => String(a._id) === id);
@@ -952,7 +953,7 @@ const accountBalancesByDateKey = computed(() => {
       }
     }
     
-    if (dateKey.includes('2026-5') || dateKey.includes('2026-4')) {
+    if (isJan2026) {
       console.log(`[accountBalancesByDateKey] ${dateKey} END:`, 
         Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
     }
