@@ -930,13 +930,6 @@ const accountBalancesByDateKey = computed(() => {
   
   // Calculate running balances for each date
   for (const dateKey of allDateKeys) {
-    // Store snapshot BEFORE applying deltas (balance at START of day)
-    const snapshot = {};
-    for (const [accId, data] of runningByAccount) {
-      snapshot[accId] = { name: data.name, balance: data.balance };
-    }
-    result.set(dateKey, snapshot);
-    
     // Debug logging for January 2026 (days 1-31)
     const isJan2026 = dateKey.startsWith('2026-') && parseInt(dateKey.split('-')[1]) <= 31;
     if (isJan2026) {
@@ -944,7 +937,7 @@ const accountBalancesByDateKey = computed(() => {
         Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
     }
     
-    // Apply deltas for this day (updates running balance for next day)
+    // Apply deltas for this day first
     const dayDeltas = deltasByDay.get(dateKey) || new Map();
     
     if (isJan2026) {
@@ -961,6 +954,13 @@ const accountBalancesByDateKey = computed(() => {
         acc.balance = Math.max(0, acc.balance + delta);
       }
     }
+    
+    // Store snapshot AFTER applying deltas (balance at END of day)
+    const snapshot = {};
+    for (const [accId, data] of runningByAccount) {
+      snapshot[accId] = { name: data.name, balance: data.balance };
+    }
+    result.set(dateKey, snapshot);
     
     if (isJan2026) {
       console.log(`[accountBalancesByDateKey] ${dateKey} END:`, 

@@ -947,14 +947,7 @@ const accountBalancesByDateKey = computed(() => {
   
   // Calculate running balances for each date
   for (const dateKey of allDateKeys) {
-    // Store snapshot BEFORE applying deltas (balance at START of day)
-    const snapshot = {};
-    for (const [accId, data] of runningByAccount) {
-      snapshot[accId] = { name: data.name, balance: data.balance };
-    }
-    result.set(dateKey, snapshot);
-    
-    // Apply deltas for this day (updates running balance for next day)
+    // Apply deltas for this day first
     const dayDeltas = deltasByDay.get(dateKey) || new Map();
     for (const [accId, delta] of dayDeltas) {
       if (runningByAccount.has(accId)) {
@@ -962,6 +955,13 @@ const accountBalancesByDateKey = computed(() => {
         acc.balance = Math.max(0, acc.balance + delta);
       }
     }
+    
+    // Store snapshot AFTER applying deltas (balance at END of day)
+    const snapshot = {};
+    for (const [accId, data] of runningByAccount) {
+      snapshot[accId] = { name: data.name, balance: data.balance };
+    }
+    result.set(dateKey, snapshot);
   }
   
   return result;
