@@ -236,12 +236,43 @@ onMounted(() => {
     }
   };
   
+  // Add global mousemove listener to hide tooltip when cursor leaves canvas
+  const globalMouseMoveHandler = (e) => {
+    const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+    if (!tooltipEl) return;
+    
+    // Get the chart canvas
+    const canvas = chartRef.value?.chart?.canvas;
+    if (!canvas) return;
+    
+    // Check if tooltip is currently visible
+    const isVisible = tooltipEl.style.opacity && Number(tooltipEl.style.opacity) > 0;
+    if (!isVisible) return;
+    
+    // Get canvas bounding rect
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+    
+    // Check if mouse is outside canvas
+    const isOutside = mouseX < rect.left || mouseX > rect.right || 
+                     mouseY < rect.top || mouseY > rect.bottom;
+    
+    // If mouse is outside canvas and not hovering tooltip, hide it
+    if (isOutside && !tooltipEl.contains(e.target)) {
+      tooltipEl.style.opacity = 0;
+      tooltipEl.style.pointerEvents = 'none';
+    }
+  };
+  
   document.addEventListener('click', globalClickHandler, true);
+  document.addEventListener('mousemove', globalMouseMoveHandler);
   
   // Cleanup observer and listener on unmount
   onUnmounted(() => {
     observer.disconnect();
     document.removeEventListener('click', globalClickHandler, true);
+    document.removeEventListener('mousemove', globalMouseMoveHandler);
   });
 });
 
