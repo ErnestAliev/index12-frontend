@@ -210,6 +210,8 @@ onMounted(() => {
         tooltipEl.style.opacity = 0;
         tooltipEl.style.pointerEvents = 'none';
       }
+      const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+      if (backdrop) backdrop.classList.remove('visible');
     }
   });
   
@@ -218,9 +220,30 @@ onMounted(() => {
     subtree: true
   });
   
-  // Cleanup observer on unmount
+  // Also add global click listener to hide tooltip when clicking on modals
+  const globalClickHandler = (e) => {
+    const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+    if (!tooltipEl) return;
+    
+    // If clicking on modal overlay or modal content, hide tooltip
+    const isModalClick = e.target.classList.contains('modal-overlay') || 
+                        e.target.closest('.modal-content') ||
+                        e.target.closest('.modal-overlay');
+    
+    if (isModalClick) {
+      tooltipEl.style.opacity = 0;
+      tooltipEl.style.pointerEvents = 'none';
+      const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+      if (backdrop) backdrop.classList.remove('visible');
+    }
+  };
+  
+  document.addEventListener('click', globalClickHandler, true);
+  
+  // Cleanup observer and listener on unmount
   onUnmounted(() => {
     observer.disconnect();
+    document.removeEventListener('click', globalClickHandler, true);
   });
 });
 
@@ -362,6 +385,7 @@ const externalTooltipHandler = (context) => {
         tooltipPinnedKey = '';
         tooltipForceUpdate = false;
         tooltipEl.style.opacity = 0;
+        tooltipEl.style.pointerEvents = 'none';
         backdropEl.classList.remove('visible');
       });
     }
@@ -528,6 +552,7 @@ const externalTooltipHandler = (context) => {
         tooltipPinnedKey = '';
         tooltipForceUpdate = false;
         tooltipEl.style.opacity = 0;
+        tooltipEl.style.pointerEvents = 'none';
         const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
         if (backdrop) backdrop.classList.remove('visible');
       };
