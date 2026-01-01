@@ -1128,7 +1128,17 @@ const getTooltipOperationList = (ops) => {
   return sortedOps
     .map((op) => {
       if (!op) return null;
-      if (op.isTransfer && !op.isWithdrawal) return null;
+      
+      // Handle transfers separately
+      if (op.isTransfer && !op.isWithdrawal) {
+        return {
+          isTransfer: true,
+          fromAccName: op.fromAccountId?.name || '???',
+          toAccName: op.toAccountId?.name || '???',
+          amount: op.amount,
+          desc: op.description
+        };
+      }
 
       const isTax = mainStore._isTaxPayment ? mainStore._isTaxPayment(op) : false;
       const isCredit = mainStore._isCreditIncome ? mainStore._isCreditIncome(op) : false;
