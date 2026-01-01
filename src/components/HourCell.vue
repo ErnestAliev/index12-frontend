@@ -106,8 +106,16 @@ const isPrepaymentOp = computed(() => {
     return false;
 });
 
+const isWorkActOp = computed(() => {
+    const op = props.operation;
+    return op && op.isWorkAct === true; 
+});
+
 const isTechnicalOp = computed(() => {
     const op = props.operation;
+    // Акты выполненных работ - отдельная категория
+    if (isWorkActOp.value) return false;
+    // Остальные технические операции (без счета, не акт, не вывод)
     return op && op.type === 'expense' && !op.accountId && !op.isWithdrawal; 
 });
 
@@ -154,7 +162,9 @@ const chipLabel = computed(() => {
       return op.description && op.description.includes('транш') ? cleanDescription(op.description) : 'Предоплата';
   }
   
-  if (isTechnicalOp.value) return op.description || 'Отработали';
+  if (isWorkActOp.value) return 'Отработано';
+  
+  if (isTechnicalOp.value) return op.description || 'Техническая операция';
   
   return op.categoryId?.name || 'Без категории';
 });
@@ -205,8 +215,9 @@ const onDrop = (event) => {
          'closed-deal': isClosedDealOp,
          
          withdrawal: isWithdrawalOp,
-         technical: isTechnicalOp, 
-         'credit-income': isCreditIncomeOp 
+          'work-act': isWorkActOp,
+          technical: isTechnicalOp, 
+          'credit-income': isCreditIncomeOp 
       }"
       draggable="true"
       @dragstart="onDragStart" @dragend="onDragEnd"
@@ -219,6 +230,10 @@ const onDrop = (event) => {
       <template v-else-if="isWithdrawalOp">
         <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
         <span class="op-meta">{{ operation.destination || 'Вывод' }}</span>
+      </template>
+      <template v-else-if="isWorkActOp">
+        <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="op-meta">{{ chipLabel }}</span>
       </template>
       <template v-else-if="isTechnicalOp">
         <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
@@ -276,6 +291,14 @@ const onDrop = (event) => {
 .technical { background: #383838; border: 1px solid #444; }
 .technical .op-amount { color: #E6C845; } 
 .technical .op-meta { color: #B0B090; }
+
+/* 🟢 АКТ ВЫПОЛНЕННЫХ РАБОТ - Серый с зеленоватым акцентом */
+.work-act { 
+  background: rgba(80, 80, 80, 0.2); 
+  border: 1px solid rgba(100, 100, 100, 0.4); 
+}
+.work-act .op-amount { color: #90c990 !important; } 
+.work-act .op-meta { color: #a0a0a0; }
 
 .withdrawal { background: #2F3340; }
 .withdrawal .op-amount { color: #DE8FFF; }

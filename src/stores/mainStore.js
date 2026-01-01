@@ -1602,6 +1602,11 @@ export const useMainStore = defineStore('mainStore', () => {
                 await reopenDealScope(operation);
             }
 
+            // 🟢 NEW: Reopen deal when deleting a closed income operation (tranche)
+            if (operation.isClosed && operation.type === 'income' && !operation.isWorkAct) {
+                await reopenDealScope(operation);
+            }
+
             if (isTransfer(operation) && operation._id2) {
                 await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
             } else {
@@ -1819,8 +1824,9 @@ export const useMainStore = defineStore('mainStore', () => {
     function getOperationsForDay(dateKey) {
         const ops = displayCache.value[dateKey];
         if (!Array.isArray(ops)) return []; // Safety check
-        // Filter out work acts, deleted operations, and null/undefined entries
-        return ops.filter(op => op && !op.isWorkAct && !op.isDeleted);
+        // Filter out deleted operations and null/undefined entries
+        // Work acts are now visible on timeline with special styling
+        return ops.filter(op => op && !op.isDeleted);
     }
 
     function _mergeTransfers(list) {
@@ -2327,54 +2333,31 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function closePrepaymentDeal(originalOp) {
         try {
-            const amount = Math.abs(Number(originalOp.amount));
-            const opData = {
-                type: 'expense',
-                amount: -amount,
-                accountId: null,
-                companyId: originalOp.companyId,
-                individualId: originalOp.individualId,
-                contractorId: originalOp.contractorId,
-                counterpartyIndividualId: originalOp.counterpartyIndividualId,
-                categoryId: originalOp.categoryId,
-                projectId: originalOp.projectId,
-                date: new Date(),
-                description: `Закрытие сделки по предоплате от ${new Date(originalOp.date).toLocaleDateString()}`
-            };
-
-            await createEvent(opData);
-
-            // 🟢 Close all related tranches
-            await closeDealScope(originalOp.projectId, originalOp.categoryId, originalOp.contractorId, originalOp.counterpartyIndividualId);
-
+            // 🟢 NEW: Просто закрываем операции без создания расхода
+            // Расчеты теперь используют isClosed флаг
+            await closeDealScope(
+                originalOp.projectId,
+                originalOp.categoryId,
+                originalOp.contractorId,
+                originalOp.counterpartyIndividualId
+            );
         } catch (e) { throw e; }
     }
 
-    // 🟢 Updated: Auto-close scope when Act is created
+    // 🟢 NEW: Simplified - only close scope, no work act creation
     async function createWorkAct(projectId, categoryId, contractorId, counterpartyIndividualId, amount, date, opIdToClose, skipFetch = false, companyId = null, individualId = null) {
         try {
-            const opData = {
-                type: 'expense',
-                amount: -Math.abs(Number(amount)),
-                accountId: null,
-                projectId: projectId,
-                categoryId: categoryId,
-                contractorId: contractorId,
-                counterpartyIndividualId: counterpartyIndividualId,
-                companyId: companyId,
-                individualId: individualId,
-                date: date,
-                description: 'Акт выполненных работ / Отработали',
-                isWorkAct: true,
-                relatedEventId: opIdToClose
-            };
+            // 🟢 Закрываем ВСЕ операции сделки (включая финальный транш)
+            // Больше не исключаем текущую операцию, т.к. акт не создается
+            await closeDealScope(
+                projectId,
+                categoryId,
+                contractorId,
+                counterpartyIndividualId,
+                null  // ← Закрываем ВСЕ без исключений
+            );
 
-            const newOp = await createEvent(opData);
-
-            // 🟢 SMART CLOSING: Mark matching income ops as Closed (excluding the new one)
-            await closeDealScope(projectId, categoryId, contractorId, counterpartyIndividualId, newOp._id);
-
-            return newOp;
+            return null; // Больше не создаем операцию
         } catch (e) {
             throw e;
         }

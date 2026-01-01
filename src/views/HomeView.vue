@@ -113,7 +113,7 @@ const _normalizeOp = (op) => {
 const _getOpsForDateKeyBestEffort = (dateKey) => {
   if (!dateKey) return [];
 
-  // ✅ PRIORITY 1: Use mainStore.getOperationsForDay which has proper filtering (!isDeleted, !isWorkAct)
+  // ✅ PRIORITY 1: Use mainStore.getOperationsForDay which has proper filtering (!isDeleted)
   if (typeof mainStore?.getOperationsForDay === 'function') {
     try {
       const ops = mainStore.getOperationsForDay(dateKey);
@@ -125,7 +125,7 @@ const _getOpsForDateKeyBestEffort = (dateKey) => {
   const directCache = mainStore?.displayCache?.value?.[dateKey] || mainStore?.displayCache?.[dateKey];
   if (Array.isArray(directCache)) {
     // Apply same filters as getOperationsForDay
-    return directCache.filter(op => op && !op.isWorkAct && !op.isDeleted);
+    return directCache.filter(op => op && !op.isDeleted);
   }
 
   // Legacy / alternative locations (older store versions) - also filter
@@ -138,13 +138,13 @@ const _getOpsForDateKeyBestEffort = (dateKey) => {
 
   for (const c of candidates) {
     if (Array.isArray(c)) {
-      return c.filter(op => op && !op.isWorkAct && !op.isDeleted);
+      return c.filter(op => op && !op.isDeleted);
     }
     if (c && Array.isArray(c.operations)) {
-      return c.operations.filter(op => op && !op.isWorkAct && !op.isDeleted);
+      return c.operations.filter(op => op && !op.isDeleted);
     }
     if (c && Array.isArray(c.items)) {
-      return c.items.filter(op => op && !op.isWorkAct && !op.isDeleted);
+      return c.items.filter(op => op && !op.isDeleted);
     }
   }
 
@@ -153,8 +153,8 @@ const _getOpsForDateKeyBestEffort = (dateKey) => {
   if (typeof getter === 'function') {
     try {
       const res = getter.call(mainStore, dateKey);
-      if (Array.isArray(res)) return res.filter(op => op && !op.isWorkAct && !op.isDeleted);
-      if (res && Array.isArray(res.operations)) return res.operations.filter(op => op && !op.isWorkAct && !op.isDeleted);
+      if (Array.isArray(res)) return res.filter(op => op && !op.isDeleted);
+      if (res && Array.isArray(res.operations)) return res.operations.filter(op => op && !op.isDeleted);
     } catch (e) {}
   }
 

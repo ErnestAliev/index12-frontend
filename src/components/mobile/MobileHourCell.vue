@@ -90,8 +90,14 @@ const isPrepaymentOp = computed(() => {
     return false;
 });
 
+const isWorkActOp = computed(() => {
+    const op = props.operation;
+    return op && op.isWorkAct === true; 
+});
+
 const isTechnicalOp = computed(() => {
     const op = props.operation;
+    if (isWorkActOp.value) return false;
     return op && op.type === 'expense' && !op.accountId && !op.isWithdrawal; 
 });
 
@@ -122,7 +128,8 @@ const chipLabel = computed(() => {
       if (isRetailClient.value) return 'Предоплата (Розница)';
       return op.description && op.description.includes('транш') ? op.description : 'Предоплата';
   }
-  if (isTechnicalOp.value) return op.description || 'Отработали';
+  if (isWorkActOp.value) return 'Отработано';
+  if (isTechnicalOp.value) return op.description || 'Техническая';
   return op.categoryId?.name || 'Без категории';
 });
 
@@ -260,6 +267,7 @@ const onTouchEnd = (e) => {
          expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
          prepayment: isPrepaymentOp,
          'closed-deal': isClosedDealOp,
+         'work-act': isWorkActOp,
          withdrawal: isWithdrawalOp,
          writeoff: isRetailWriteOffOp,
          'credit-income': isCreditIncomeOp 
@@ -282,6 +290,11 @@ const onTouchEnd = (e) => {
       <template v-else-if="isRetailWriteOffOp">
         <span class="amt">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
         <span class="desc">Списание</span>
+      </template>
+
+      <template v-else-if="isWorkActOp">
+        <span class="amt">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="desc">Отработано</span>
       </template>
 
       <template v-else-if="isCreditIncomeOp">
@@ -362,4 +375,9 @@ const onTouchEnd = (e) => {
 .transfer { background: #2F3340; }
 .transfer .amt { color: #d4d8e3; }
 .transfer .desc { color: #98a2b3; }
+
+/* 🟢 АКТ ВЫПОЛНЕННЫХ РАБОТ */
+.work-act { background: rgba(80, 80, 80, 0.15); }
+.work-act .amt { color: #90c990; }
+.work-act .desc { color: #a0a0a0; }
 </style>
