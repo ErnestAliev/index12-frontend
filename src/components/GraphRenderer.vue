@@ -928,13 +928,33 @@ const accountBalancesByDateKey = computed(() => {
     }
     result.set(dateKey, snapshot);
     
+    // Debug logging for specific dates
+    if (dateKey.includes('2026-5') || dateKey.includes('2026-4')) {
+      console.log(`[accountBalancesByDateKey] ${dateKey} START:`, 
+        Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
+    }
+    
     // Apply deltas for this day (updates running balance for next day)
     const dayDeltas = deltasByDay.get(dateKey) || new Map();
+    
+    if (dateKey.includes('2026-5') || dateKey.includes('2026-4')) {
+      console.log(`[accountBalancesByDateKey] ${dateKey} DELTAS:`, 
+        Array.from(dayDeltas.entries()).map(([id, delta]) => {
+          const acc = accs.find(a => String(a._id) === id);
+          return `${acc?.name || id}: ${delta}`;
+        }));
+    }
+    
     for (const [accId, delta] of dayDeltas) {
       if (runningByAccount.has(accId)) {
         const acc = runningByAccount.get(accId);
         acc.balance = Math.max(0, acc.balance + delta);
       }
+    }
+    
+    if (dateKey.includes('2026-5') || dateKey.includes('2026-4')) {
+      console.log(`[accountBalancesByDateKey] ${dateKey} END:`, 
+        Array.from(runningByAccount.entries()).map(([id, data]) => `${data.name}: ${data.balance}`));
     }
   }
   
