@@ -869,6 +869,96 @@ const endBalanceValues = computed(() => {
   return arr.map((s) => Number(s?.balance) || 0);
 });
 
+// 🟢 PER-ACCOUNT BALANCES BY DATE: Calculate running balance for each account on each day
+const accountBalancesByDateKey = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const _h = historyLoadTick.value;
+
+  const ops = opsForSummaries.value;
+  const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  
+  // Map: dateKey -> { accountId -> balance }
+  const result = new Map();
+  
+  // Get all date keys from ops, sorted
+  const dateKeysSet = new Set();
+  for (const op of ops) {
+    if (!op) continue;
+    const dt = _coerceDate(op.date);
+    if (!dt) continue;
+    dateKeysSet.add(_getDateKey(dt));
+  }
+  const allDateKeys = Array.from(dateKeysSet).sort(_cmpDateKey);
+  
+  // Initialize running balances with initialBalance for each account
+  const runningByAccount = new Map();
+  for (const acc of accs) {
+    if (!acc) continue;
+    if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
+    runningByAccount.set(String(acc._id), {
+      name: acc.name || 'Счет',
+      balance: Number(acc.initialBalance || 0),
+      isExcluded: acc.isExcluded
+    });
+  }
+  
+  // Build daily deltas per account
+  const deltasByDay = new Map(); // dateKey -> { accountId -> delta }
+  for (const op of ops) {
+    if (!op) continue;
+    if (!isOpVisible(op)) continue;
+    if (op.isTransfer && !op.isWithdrawal) continue; // transfers don't affect account balances except withdrawal
+    
+    const dt = _coerceDate(op.date);
+    if (!dt) continue;
+    const dateKey = _getDateKey(dt);
+    
+    if (!deltasByDay.has(dateKey)) deltasByDay.set(dateKey, new Map());
+    const dayDeltas = deltasByDay.get(dateKey);
+    
+    const amt = Number(op.amount) || 0;
+    const absAmt = Math.abs(amt);
+    
+    // Get account ID
+    let accId = null;
+    if (op.accountId) {
+      accId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+    }
+    if (!accId) continue;
+    accId = String(accId);
+    
+    if (!dayDeltas.has(accId)) dayDeltas.set(accId, 0);
+    
+    if (op.isWithdrawal || op.type === 'expense') {
+      dayDeltas.set(accId, dayDeltas.get(accId) - absAmt);
+    } else if (op.type === 'income') {
+      dayDeltas.set(accId, dayDeltas.get(accId) + amt);
+    }
+  }
+  
+  // Calculate running balances for each date
+  for (const dateKey of allDateKeys) {
+    const dayDeltas = deltasByDay.get(dateKey) || new Map();
+    
+    // Apply deltas
+    for (const [accId, delta] of dayDeltas) {
+      if (runningByAccount.has(accId)) {
+        const acc = runningByAccount.get(accId);
+        acc.balance = Math.max(0, acc.balance + delta);
+      }
+    }
+    
+    // Store snapshot for this date
+    const snapshot = {};
+    for (const [accId, data] of runningByAccount) {
+      snapshot[accId] = { name: data.name, balance: data.balance };
+    }
+    result.set(dateKey, snapshot);
+  }
+  
+  return result;
+});
+
 // Баланс на начало дня (вчерашний итог): start = end - income + expense
 const startBalanceValues = computed(() => {
   const _v = mainStore.cacheVersion;
@@ -1325,23 +1415,37 @@ const chartOptions = computed(() => {
             // === HEADER: Дата + Общий баланс ===
             const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
 
-            // === ОСТАТКИ ПО СЧЕТАМ (ТЕКУЩИЕ) ===
-            // Showing current balances instead of historical due to calculation complexity
-            const accs = mainStore?.currentAccountBalances || [];
-            const visibleAccs = accs.filter(a => {
-              if (!a) return false;
-              if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
-              return true;
-            });
+            // === ОСТАТКИ ПО СЧЕТАМ (ИСТОРИЧЕСКИЕ) ===
+            const day = normalizedVisibleDays.value[index];
+            const dateKey = day ? _getDateKey(day.date) : null;
+            const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
             
-            if (visibleAccs.length > 0) {
+            if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
               lines.push('---');
-              lines.push('Остатки на счетах (текущие):');
-              visibleAccs.forEach(acc => {
+              lines.push('Остатки на счетах:');
+              Object.values(dateAccountBalances).forEach(acc => {
                 const bal = Number(acc.balance) || 0;
                 const name = acc.name || 'Счет';
                 lines.push(`${name} — ${formatNumber(bal)} т`);
               });
+            } else {
+              // Fallback to current balances if no historical data
+              const accs = mainStore?.currentAccountBalances || [];
+              const visibleAccs = accs.filter(a => {
+                if (!a) return false;
+                if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
+                return true;
+              });
+              
+              if (visibleAccs.length > 0) {
+                lines.push('---');
+                lines.push('Остатки на счетах (текущие):');
+                visibleAccs.forEach(acc => {
+                  const bal = Number(acc.balance) || 0;
+                  const name = acc.name || 'Счет';
+                  lines.push(`${name} — ${formatNumber(bal)} т`);
+                });
+              }
             }
 
             // === СВОДКА ДОХОД/РАСХОД ===
