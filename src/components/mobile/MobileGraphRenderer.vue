@@ -215,11 +215,13 @@ onMounted(() => {
   // preload ASAP so the very first 12-day render has correct running balances
   ensureOpsHistoryForSummaries();
   
-  // Watch for modal overlays appearing and hide tooltip
+  // Watch for modal overlays and fullscreen widgets appearing and hide tooltip
   const observer = new MutationObserver(() => {
     const modalOverlay = document.querySelector('.modal-overlay');
-    if (modalOverlay) {
-      // Modal opened - force hide tooltip
+    const fullscreenOverlay = document.querySelector('.fullscreen-widget-overlay');
+    
+    if (modalOverlay || fullscreenOverlay) {
+      // Modal or fullscreen widget opened - force hide tooltip
       const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
       if (tooltipEl) {
         tooltipEl.style.opacity = 0;
@@ -487,6 +489,12 @@ const externalTooltipHandler = (context) => {
   // Mobile: tooltip always clickable when visible
   if (tooltipEl.style.opacity && Number(tooltipEl.style.opacity) > 0) {
     tooltipEl.style.pointerEvents = 'auto';
+  }
+  
+  // Block tooltips when in fullscreen widget mode
+  const fullscreenOverlay = document.querySelector('.fullscreen-widget-overlay');
+  if (fullscreenOverlay) {
+    return;
   }
   
   // Block tooltips during range updates
