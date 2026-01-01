@@ -201,6 +201,29 @@ const ensureOpsHistoryForSummaries = async () => {
 onMounted(() => {
   // preload ASAP so the very first 12-day render has correct running balances
   ensureOpsHistoryForSummaries();
+  
+  // Watch for modal overlays appearing and hide tooltip
+  const observer = new MutationObserver(() => {
+    const modalOverlay = document.querySelector('.modal-overlay');
+    if (modalOverlay) {
+      // Modal opened - force hide tooltip
+      const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+      if (tooltipEl) {
+        tooltipEl.style.opacity = 0;
+        tooltipEl.style.pointerEvents = 'none';
+      }
+    }
+  });
+  
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Cleanup observer on unmount
+  onUnmounted(() => {
+    observer.disconnect();
+  });
 });
 
 watch(
@@ -336,6 +359,21 @@ const externalTooltipHandler = (context) => {
       try { tooltipEl.style.opacity = 0; } catch (e) {}
     }, TOOLTIP_PIN_AUTORELEASE_MS);
   }
+  
+  // Force hide tooltip function (for modals, etc)
+  const forceHideTooltip = () => {
+    const el = document.getElementById(TOOLTIP_EL_ID);
+    if (el) {
+      el.style.opacity = 0;
+      el.style.pointerEvents = 'none';
+    }
+    tooltipPinned = false;
+    tooltipPinnedKey = '';
+    tooltipForceUpdate = false;
+    tooltipIsHovering = false;
+    _clearTooltipHideTimer();
+  };
+  
   // Tooltip должен быть кликабельным, пока он видим (иначе невозможно нажать Copy/Export)
   try {
     const visibleNow = Number(tooltipEl.style.opacity || 0) > 0;
@@ -349,7 +387,10 @@ const externalTooltipHandler = (context) => {
     // Otherwise hide with a small delay so the user can reach the tooltip.
     _clearTooltipHideTimer();
     tooltipHideTimer = setTimeout(() => {
-      if (!tooltipPinned && !tooltipIsHovering) tooltipEl.style.opacity = 0;
+      if (!tooltipPinned && !tooltipIsHovering) {
+        tooltipEl.style.opacity = 0;
+        tooltipEl.style.pointerEvents = 'none';
+      }
     }, TOOLTIP_HIDE_DELAY_MS);
     return;
   }
@@ -1111,7 +1152,17 @@ const getTooltipOperationList = (ops) => {
   return sortedOps
     .map((op) => {
       if (!op) return null;
-      if (op.isTransfer && !op.isWithdrawal) return null;
+      
+      // Handle transfers separately
+      if (op.isTransfer && !op.isWithdrawal) {
+        return {
+          isTransfer: true,
+          fromAccName: op.fromAccountId?.name || '???',
+          toAccName: op.toAccountId?.name || '???',
+          amount: op.amount,
+          desc: op.description
+        };
+      }
 
       const isTax = mainStore._isTaxPayment ? mainStore._isTaxPayment(op) : false;
       const isCredit = mainStore._isCreditIncome ? mainStore._isCreditIncome(op) : false;
