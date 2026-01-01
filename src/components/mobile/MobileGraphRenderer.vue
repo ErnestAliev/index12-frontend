@@ -102,6 +102,10 @@ let scrollEndTimer = null;
 let isRangeUpdating = false;
 let rangeUpdateTimer = null;
 
+// Block tooltips during resize
+let isResizing = false;
+let resizeTimer = null;
+
 // 🟢 1. Получаем список ID исключенных счетов (SAFE)
 const excludedAccountIds = computed(() => {
   if (mainStore.includeExcludedInTotal) return new Set();
@@ -251,10 +255,32 @@ onMounted(() => {
   
   document.addEventListener('click', globalClickHandler, true);
   
+  // Add resize listener to block tooltips during resize
+  const resizeHandler = () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    isResizing = true;
+    // Hide tooltip immediately
+    const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+    if (tooltipEl) {
+      tooltipEl.style.opacity = 0;
+      tooltipEl.style.pointerEvents = 'none';
+    }
+    const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+    if (backdrop) backdrop.classList.remove('visible');
+    
+    // Block tooltips for 500ms after resize ends
+    resizeTimer = setTimeout(() => {
+      isResizing = false;
+    }, 500);
+  };
+  
+  window.addEventListener('resize', resizeHandler);
+  
   // Cleanup observer and listener on unmount
   onUnmounted(() => {
     observer.disconnect();
     document.removeEventListener('click', globalClickHandler, true);
+    window.removeEventListener('resize', resizeHandler);
   });
 });
 
@@ -470,6 +496,11 @@ const externalTooltipHandler = (context) => {
   
   // Block tooltips during scrolling
   if (isScrolling) {
+    return;
+  }
+  
+  // Block tooltips during resize
+  if (isResizing) {
     return;
   }
 
