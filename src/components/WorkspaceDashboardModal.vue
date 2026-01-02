@@ -667,6 +667,28 @@ async function revokeInvite(inviteId, workspaceId) {
 
 // Update user role in workspace
 async function updateUserRole(workspaceId, userId, newRole) {
+  const workspace = workspaces.value.find(w => w._id === workspaceId);
+  const share = workspace?.sharedWith?.find(s => s.userId === userId);
+  
+  if (!share) return;
+  
+  const roleLabels = {
+    analyst: 'Аналитик',
+    manager: 'Менеджер',
+    admin: 'Администратор'
+  };
+  
+  // Show confirmation dialog
+  const confirmed = confirm(
+    `Изменить роль пользователя ${share.email} с "${roleLabels[share.role]}" на "${roleLabels[newRole]}"?`
+  );
+  
+  if (!confirmed) {
+    // Reload to revert select UI
+    await loadWorkspaces();
+    return;
+  }
+  
   try {
     await axios.patch(
       `${API_BASE_URL}/workspaces/${workspaceId}/members/${userId}/role`,
@@ -675,14 +697,7 @@ async function updateUserRole(workspaceId, userId, newRole) {
     );
 
     // Update local state
-    const workspace = workspaces.value.find(w => w._id === workspaceId);
-    if (workspace && workspace.sharedWith) {
-      const share = workspace.sharedWith.find(s => s.userId === userId);
-      if (share) {
-        share.role = newRole;
-      }
-    }
-
+    share.role = newRole;
     console.log('✅ Role updated successfully');
   } catch (err) {
     console.error('Failed to update role:', err);
