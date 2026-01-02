@@ -389,11 +389,9 @@ async function saveCurrentWorkspaceScreenshot() {
   }
 }
 
-onMounted(async () => {
-  // 🟢 Save screenshot of current workspace FIRST (before modal shows)
-  await saveCurrentWorkspaceScreenshot();
-  
-  // Then load workspaces list
+onMounted(() => {
+  // Just load workspaces list
+  // Screenshot will be captured in background by HomeView
   loadWorkspaces();
 });
 </script>
