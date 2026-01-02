@@ -206,6 +206,10 @@ onMounted(() => {
   const observer = new MutationObserver(() => {
     const modalOverlay = document.querySelector('.modal-overlay');
     if (modalOverlay) {
+      // 🟢 FIX: Don't hide tooltips if this is the GraphModal
+      const isGraphModal = modalOverlay.querySelector('.graph-modal-content');
+      if (isGraphModal) return; // Allow tooltips in GraphModal
+      
       // Modal opened - force hide tooltip
       const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
       if (tooltipEl) {
@@ -224,6 +228,10 @@ onMounted(() => {
   const globalClickHandler = (e) => {
     const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
     if (!tooltipEl) return;
+    
+    // 🟢 FIX: Don't hide if clicking inside GraphModal
+    const isGraphModalClick = e.target.closest('.graph-modal-content');
+    if (isGraphModalClick) return; // Allow tooltips in GraphModal
     
     // If clicking on modal overlay or modal content, hide tooltip
     const isModalClick = e.target.classList.contains('modal-overlay') || 
