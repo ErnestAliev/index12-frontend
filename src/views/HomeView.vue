@@ -25,6 +25,8 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
 // 🟢 1. Импорт нового попапа
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
+// 🟢 2. Импорт модала приглашения сотрудников
+import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
@@ -46,6 +48,7 @@ const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
+const showInviteModal = ref(false); // 🟢 NEW: Invite employee modal
 
 // --- AI ассистент (Desktop MVP, read-only) ---
 const isAiDrawerOpen = ref(false);
@@ -1144,17 +1147,22 @@ const handleRefundDelete = async (op) => {
   <div v-if="mainStore.isAuthLoading" class="loading-screen"><div class="spinner"></div><p>Проверка сессии...</p></div>
   <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко INDEX12.COM</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
   <div v-else class="home-layout" @click="closeAllMenus">
-    <header class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
-    <div class="header-resizer" ref="headerResizerRef"></div>
+    <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
+    <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
+    <div class="header-resizer" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body">
       <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
         <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
-        <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div class="vertical-resizer" ref="resizerRef"></div></div>
-        <div class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
+        <!-- 🟢 UPDATED: Hide vertical resizer for timeline-only, keep scroll track -->
+        <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" ref="resizerRef"></div></div>
+        <!-- 🟢 NEW: Hide graphs for timeline-only users -->
+        <div v-if="!mainStore.isTimelineOnly" class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
             <aside class="home-right-panel">
+        <!-- 🟢 NEW: Hide expand button for timeline-only -->
         <button
+          v-if="!mainStore.isTimelineOnly"
           class="icon-btn header-expand-btn"
           :class="{ 'active': mainStore.isHeaderExpanded }"
           @click="mainStore.toggleHeaderExpansion"
@@ -1168,7 +1176,8 @@ const handleRefundDelete = async (op) => {
           </svg>
         </button>
 
-        <button class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт">
+        <!-- 🟢 NEW: Hide import/export for timeline-only -->
+        <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/>
@@ -1176,7 +1185,8 @@ const handleRefundDelete = async (op) => {
           </svg>
         </button>
 
-        <button class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
+        <!-- 🟢 NEW: Hide graph button for timeline-only -->
+        <button v-if="!mainStore.isTimelineOnly" class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -1184,7 +1194,9 @@ const handleRefundDelete = async (op) => {
           </svg>
         </button>
 
+        <!-- 🟢 UPDATED: Hide AI button for timeline-only -->
         <button
+          v-if="!mainStore.isTimelineOnly"
           class="icon-btn ai-btn"
           :class="{ 'active': isAiDrawerOpen }"
           @click.stop="openAiDrawer"
@@ -1212,6 +1224,21 @@ const handleRefundDelete = async (op) => {
           </button>
         </div>
       </aside>
+      
+      <!-- 🟢 NEW: Invite Employee Button (Admin only, absolute position) -->
+      <button
+        v-if="mainStore.canInvite"
+        class="invite-employee-btn"
+        @click="showInviteModal = true"
+        title="Пригласить сотрудника"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <line x1="19" y1="8" x2="19" y2="14"></line>
+          <line x1="22" y1="11" x2="16" y2="11"></line>
+        </svg>
+      </button>
     </div>
         <!-- AI ассистент (Desktop modal) -->
     <div v-if="isAiDrawerOpen" class="ai-modal-overlay" @click="closeAiDrawer">
@@ -1386,6 +1413,9 @@ const handleRefundDelete = async (op) => {
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
+    
+    <!-- 🟢 NEW: Invite Employee Modal -->
+    <InviteEmployeeModal v-if="showInviteModal" :visible="showInviteModal" @close="showInviteModal = false" />
   </div>
 </template>
 
@@ -1427,6 +1457,31 @@ const handleRefundDelete = async (op) => {
 .header-expand-btn { position: absolute; top: 8px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
 .header-expand-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
 .header-expand-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
+
+/* 🟢 NEW: Invite Employee Button (absolute position) */
+.invite-employee-btn { 
+  position: absolute; 
+  top: 168px;
+  right: 15px; 
+  z-index: 20; 
+  background: var(--color-background-soft); 
+  border: 1px solid var(--color-border); 
+  border-radius: 50%; 
+  width: 32px; 
+  height: 32px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  cursor: pointer; 
+  color: var(--color-text); 
+  padding: 0; 
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.invite-employee-btn:hover { 
+  background: var(--color-background-mute); 
+  border-color: var(--color-border-hover);
+}
+.invite-employee-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 .header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
 .import-export-btn { position: absolute; top: 48px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
@@ -1447,6 +1502,13 @@ const handleRefundDelete = async (op) => {
 .about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
 .timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; }
+
+/* 🟢 NEW: Full height timeline for timeline-only users */
+.home-main-content:has(.graph-area-wrapper[style*="display: none"]) .timeline-grid-wrapper,
+.home-main-content:not(:has(.graph-area-wrapper)) .timeline-grid-wrapper {
+  height: 100%;
+  flex: 1;
+}
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
 .timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
 .divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); position: relative; display: flex; align-items: center; }

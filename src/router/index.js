@@ -20,6 +20,11 @@ const router = createRouter({
       // Ленивая загрузка мобильной версии
       component: () => import('../views/MobileHomeView.vue'),
     },
+    {
+      path: '/invite/:token',
+      name: 'invite',
+      component: () => import('../views/InvitePage.vue'),
+    },
   ],
 })
 
@@ -29,7 +34,7 @@ router.beforeEach((to, from, next) => {
   // или наличие ключевых слов в User-Agent
   const isSmallScreen = window.innerWidth < 1024;
   const isMobileAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
+
   const shouldBeMobile = isSmallScreen || isMobileAgent;
 
   // 1. Если пользователь на телефоне, но пытается открыть Десктоп (Home)

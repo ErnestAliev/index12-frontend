@@ -21,6 +21,19 @@ export const useMainStore = defineStore('mainStore', () => {
     const widgetStore = useWidgetStore();
 
     const user = ref(null);
+
+    // 🟢 NEW: Role-based access computed properties
+    const userRole = computed(() => user.value?.role || 'admin');
+    const isAdmin = computed(() => userRole.value === 'admin');
+    const isFullAccess = computed(() => userRole.value === 'full_access');
+    const isTimelineOnly = computed(() => userRole.value === 'timeline_only');
+    const canDelete = computed(() => isAdmin.value || isFullAccess.value);
+    const canEdit = computed(() => isAdmin.value || isFullAccess.value);
+    const canInvite = computed(() => isAdmin.value);
+
+    // 🟢 NEW: Effective user ID (for employees, use admin's ID to access data)
+    const effectiveUserId = computed(() => user.value?.effectiveUserId || user.value?.id || user.value?._id);
+
     const isAuthLoading = ref(true);
 
     // 🟢 CACHE VERSIONING (Для принудительного обновления графиков)
@@ -1500,6 +1513,11 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     async function updateOperation(opId, opData) {
+        // 🟢 NEW: Check edit permission
+        if (!canEdit.value) {
+            throw new Error('У вас нет прав на редактирование операций');
+        }
+
         let oldOp = null;
         let oldDateKey = null;
 
@@ -1577,7 +1595,13 @@ export const useMainStore = defineStore('mainStore', () => {
         }
     }
 
-    async function deleteOperation(operation) {
+    const deleteOperation = async (operation) => {
+        // 🟢 NEW: Check delete permission
+        if (!canDelete.value) {
+            throw new Error('У вас нет прав на удаление операций');
+        }
+
+        const opId = operation._id || operation.id;
         const dateKey = operation.dateKey;
         if (!dateKey) return;
 
@@ -2643,6 +2667,8 @@ export const useMainStore = defineStore('mainStore', () => {
         projection,
 
         user, isAuthLoading,
+        // 🟢 NEW: Role-based access
+        userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
         currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
         currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns,

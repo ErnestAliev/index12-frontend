@@ -97,7 +97,7 @@ const cells = computed(() => {
   const cellArray = [];
   const ops = operations.value;
 
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 32; i++) { // 🟢 UPDATED: 28 -> 32 rows
     cellArray.push({
       id: i,
       operation: ops.find(op => op.cellIndex === i) || null
