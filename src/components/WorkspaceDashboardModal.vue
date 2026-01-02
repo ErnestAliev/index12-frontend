@@ -180,81 +180,32 @@
     <!-- Share Dialog -->
     <div v-if="showShareDialog" class="create-dialog-overlay" @click.self="closeShareDialog">
       <div class="create-dialog share-dialog">
-        <div class="share-header">
-          <div class="header-icon">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="18" cy="5" r="3"></circle>
-              <circle cx="6" cy="12" r="3"></circle>
-              <circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-            </svg>
-          </div>
-          <div>
-            <h3>Поделиться проектом</h3>
-            <p class="dialog-subtitle">{{ workspaceToShare?.name }}</p>
-          </div>
-        </div>
+        <h3>Поделиться проектом</h3>
+        <p class="dialog-subtitle">{{ workspaceToShare?.name }}</p>
         
         <div class="form-group">
-          <label>Уровень доступа</label>
-          <div class="role-selector">
-            <div 
-              v-for="role in roleOptions" 
-              :key="role.value"
-              class="role-option"
-              :class="{ selected: shareRole === role.value }"
-              @click="shareRole = role.value"
-            >
-              <div class="role-icon" :class="`role-${role.value}`">
-                <component :is="role.icon" />
-              </div>
-              <div class="role-info">
-                <div class="role-name">{{ role.label }}</div>
-                <div class="role-desc">{{ role.description }}</div>
-              </div>
-              <div class="role-check">
-                <svg v-if="shareRole === role.value" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-            </div>
-          </div>
+          <label>Роль доступа</label>
+          <select v-model="shareRole" class="share-role-select">
+            <option value="analyst">Аналитик (просмотр)</option>
+            <option value="manager">Менеджер (таймлайн)</option>
+            <option value="admin">Администратор (полный)</option>
+          </select>
         </div>
 
-        <button class="btn-generate" @click="generateShareLink" :disabled="isGeneratingLink">
-          <svg v-if="!isGeneratingLink" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-          </svg>
-          <div v-else class="btn-spinner"></div>
-          {{ isGeneratingLink ? 'Создание ссылки...' : 'Создать ссылку приглашения' }}
+        <button class="btn-create" @click="generateShareLink" :disabled="isGeneratingLink">
+          {{ isGeneratingLink ? 'Создание ссылки...' : 'Создать ссылку' }}
         </button>
 
         <!-- Generated link display -->
         <div v-if="generatedLink" class="link-display">
-          <label>Ссылка для приглашения</label>
+          <label>Ссылка для приглашения:</label>
           <div class="link-container">
             <input :value="generatedLink" readonly class="link-input" ref="linkInput" @click="$event.target.select()" />
-            <button class="btn-copy" @click="copyLink" :class="{ copied: linkCopied }">
-              <svg v-if="!linkCopied" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-              <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
+            <button class="btn-copy" @click="copyLink">
               {{ linkCopied ? 'Скопировано!' : 'Копировать' }}
             </button>
           </div>
-          <p class="link-hint">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
-            Отправьте эту ссылку пользователю для предоставления доступа
-          </p>
+          <p class="link-hint">Отправьте эту ссылку пользователю для предоставления доступа</p>
         </div>
 
         <div class="dialog-actions">
@@ -1220,174 +1171,6 @@ onMounted(async () => {
   font-weight: 500;
 }
 
-/* Share Dialog Enhancements */
-.share-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.header-icon {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary) 0%, #FF9D00 100%);
-  border-radius: 12px;
-  color: white;
-  flex-shrink: 0;
-}
-
-.share-header h3 {
-  margin: 0 0 4px 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.share-header .dialog-subtitle {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--color-text-mute);
-}
-
-/* Role Selector */
-.role-selector {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.role-option {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: var(--color-background-soft);
-  border: 2px solid var(--color-border);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.role-option:hover {
-  border-color: var(--color-primary);
-  background: var(--color-background);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.role-option.selected {
-  border-color: var(--color-primary);
-  background: rgba(255, 157, 0, 0.05);
-  box-shadow: 0 0 0 1px var(--color-primary);
-}
-
-.role-icon {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  flex-shrink: 0;
-  background: var(--color-background-mute);
-  transition: all 0.2s;
-}
-
-.role-option:hover .role-icon,
-.role-option.selected .role-icon {
-  transform: scale(1.1);
-}
-
-.role-analyst {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.role-manager {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  color: white;
-}
-
-.role-admin {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  color: white;
-}
-
-.role-info {
-  flex: 1;
-}
-
-.role-name {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--color-text);
-  margin-bottom: 4px;
-}
-
-.role-desc {
-  font-size: 0.875rem;
-  color: var(--color-text-mute);
-  line-height: 1.4;
-}
-
-.role-check {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-primary);
-  flex-shrink: 0;
-}
-
-/* Generate Button */
-.btn-generate {
-  width: 100%;
-  padding: 14px 24px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, #FF9D00 100%);
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-shadow: 0 4px 12px rgba(255, 157, 0, 0.3);
-}
-
-.btn-generate:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 157, 0, 0.4);
-}
-
-.btn-generate:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.btn-generate:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
 .form-group {
   margin-bottom: 20px;
 }
@@ -1398,6 +1181,21 @@ onMounted(async () => {
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--color-text);
+}
+
+.share-role-select {
+  width: 100%;
+  padding: 12px;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.share-role-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
 }
 
 .role-select {
@@ -1416,113 +1214,57 @@ onMounted(async () => {
 }
 
 .link-display {
-  margin-top: 24px;
-  padding: 20px;
-  background: linear-gradient(135deg, rgba(255, 157, 0, 0.05) 0%, rgba(255, 157, 0, 0.02) 100%);
-  border: 1px solid rgba(255, 157, 0, 0.2);
-  border-radius: 12px;
-  animation: fadeInUp 0.3s ease-out;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
 }
 
 .link-display label {
   display: block;
-  margin-bottom: 12px;
-  font-size: 0.95rem;
-  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
   color: var(--color-text);
 }
 
 .link-container {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .link-input {
   flex: 1;
-  padding: 12px 16px;
+  padding: 10px 12px;
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--color-text);
   font-size: 0.9rem;
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.link-input:hover {
-  border-color: var(--color-primary);
-  background: var(--color-background-soft);
-}
-
-.link-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(255, 157, 0, 0.1);
+  font-family: monospace;
 }
 
 .btn-copy {
-  padding: 12px 20px;
-  background: var(--color-background-soft);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  padding: 10px 20px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
   font-size: 0.9rem;
-  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s;
   white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .btn-copy:hover {
-  background: var(--color-primary);
-  color: white;
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(255, 157, 0, 0.2);
-}
-
-.btn-copy.copied {
-  background: #34C759;
-  color: white;
-  border-color: #34C759;
-}
-
-.btn-copy svg {
-  transition: transform 0.2s;
-}
-
-.btn-copy:hover svg {
-  transform: scale(1.1);
+  background: var(--color-primary-hover);
 }
 
 .link-hint {
-  margin: 14px 0 0 0;
+  margin: 12px 0 0 0;
   font-size: 0.85rem;
   color: var(--color-text-mute);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  line-height: 1.5;
-}
-
-.link-hint svg {
-  flex-shrink: 0;
-  opacity: 0.6;
 }
 
 .dialog-actions {
