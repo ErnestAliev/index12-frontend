@@ -17,6 +17,27 @@
         <button class="btn-back" @click="goHome">На главную</button>
       </div>
 
+      <!-- Not logged in state -->
+      <div v-else-if="needsAuth" class="invite-card">
+        <svg class="invite-icon auth-icon" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+          <polyline points="10 17 15 12 10 7"></polyline>
+          <line x1="15" y1="12" x2="3" y2="12"></line>
+        </svg>
+
+        <h2>Требуется вход в систему</h2>
+        <p class="auth-message">Для принятия приглашения в проект необходимо войти в систему</p>
+        <p class="workspace-name">{{ workspace?.name }}</p>
+        
+        <div class="invite-actions">
+          <button class="btn-accept" @click="goToLogin">
+            Войти в систему
+          </button>
+          <button class="btn-decline" @click="goHome">Отмена</button>
+        </div>
+      </div>
+
+      <!-- Logged in - ready to accept -->
       <div v-else class="invite-card">
         <svg class="invite-icon" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2"></rect>
@@ -47,9 +68,11 @@ import axios from 'axios';
 const route = useRoute();
 const router = useRouter();
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || 'http://localhost:5173';
 
 const isLoading = ref(true);
 const isAccepting = ref(false);
+const needsAuth = ref(false);
 const error = ref('');
 const workspace = ref(null);
 const role = ref('');
@@ -57,12 +80,31 @@ const role = ref('');
 onMounted(async () => {
   try {
     const token = route.params.token;
-    const res = await axios.get(`${API_BASE_URL}/workspace-invite/${token}`);
+    
+    // Try to get invite info
+    const res = await axios.get(`${API_BASE_URL}/workspace-invite/${token}`, {
+      withCredentials: true
+    });
     
     workspace.value = res.data.workspace;
     role.value = res.data.role;
+    
+    // Check if user is authenticated
+    try {
+      await axios.get(`${API_BASE_URL}/auth/me`, { withCredentials: true });
+      needsAuth.value = false;
+    } catch (authErr) {
+      // Not authenticated
+      needsAuth.value = true;
+    }
+    
   } catch (err) {
-    error.value = err.response?.data?.message || 'Ошибка загрузки приглашения';
+    if (err.response?.status === 401) {
+      // Unauthorized - need to login
+      needsAuth.value = true;
+    } else {
+      error.value = err.response?.data?.message || 'Ошибка загрузки приглашения';
+    }
   } finally {
     isLoading.value = false;
   }
@@ -73,18 +115,30 @@ async function acceptInvite() {
     isAccepting.value = true;
     const token = route.params.token;
     
-    await axios.post(
+    const response = await axios.post(
       `${API_BASE_URL}/workspace-invite/${token}/accept`,
       {},
       { withCredentials: true }
     );
     
+    // Successfully accepted - redirect to home
+    // The backend will have set this as the current workspace
     router.push('/');
+    
   } catch (err) {
     const errorMsg = err.response?.data?.message || 'Не удалось принять приглашение';
     error.value = errorMsg;
     isAccepting.value = false;
   }
+}
+
+function goToLogin() {
+  // Save the invite token to session storage
+  const token = route.params.token;
+  sessionStorage.setItem('pendingInviteToken', token);
+  
+  // Redirect to login (Google OAuth)
+  window.location.href = `${API_BASE_URL.replace('/api', '')}/auth/google`;
 }
 
 function goHome() {
@@ -193,11 +247,22 @@ function getRoleLabel(roleValue) {
   margin-bottom: 24px;
 }
 
+.auth-icon {
+  color: var(--color-text-mute);
+}
+
 .invite-card h2 {
   margin: 0 0 16px 0;
   color: var(--color-text);
   font-size: 2rem;
   font-weight: 600;
+}
+
+.auth-message {
+  margin: 0 0 20px 0;
+  color: var(--color-text-mute);
+  font-size: 1rem;
+  line-height: 1.5;
 }
 
 .workspace-name {

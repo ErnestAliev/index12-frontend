@@ -114,11 +114,19 @@
             
             <!-- Shared with users -->
             <div v-if="workspace.sharedWith && workspace.sharedWith.length > 0" class="shared-list">
-              <h4>Доступ предоставлен:</h4>
+              <h4>Участники проекта:</h4>
               <div v-for="share in workspace.sharedWith" :key="share.userId" class="share-item">
                 <div class="share-info">
                   <span class="share-email">{{ share.email }}</span>
-                  <span class="share-role">{{ getRoleLabel(share.role) }}</span>
+                  <select 
+                    class="share-role-select" 
+                    :value="share.role" 
+                    @change="updateUserRole(workspace._id, share.userId, $event.target.value)"
+                  >
+                    <option value="analyst">Аналитик</option>
+                    <option value="manager">Менеджер</option>
+                    <option value="admin">Администратор</option>
+                  </select>
                   <span class="share-date">{{ formatDate(share.sharedAt) }}</span>
                 </div>
                 <button class="btn-revoke" @click="revokeAccess(workspace._id, share.userId)">
@@ -657,6 +665,33 @@ async function revokeInvite(inviteId, workspaceId) {
   }
 }
 
+// Update user role in workspace
+async function updateUserRole(workspaceId, userId, newRole) {
+  try {
+    await axios.patch(
+      `${API_BASE_URL}/workspaces/${workspaceId}/members/${userId}/role`,
+      { role: newRole },
+      { withCredentials: true }
+    );
+
+    // Update local state
+    const workspace = workspaces.value.find(w => w._id === workspaceId);
+    if (workspace && workspace.sharedWith) {
+      const share = workspace.sharedWith.find(s => s.userId === userId);
+      if (share) {
+        share.role = newRole;
+      }
+    }
+
+    console.log('✅ Role updated successfully');
+  } catch (err) {
+    console.error('Failed to update role:', err);
+    alert('Ошибка изменения роли');
+    // Reload to revert UI
+    await loadWorkspaces();
+  }
+}
+
 onMounted(async () => {
   await loadWorkspaces();
   
@@ -1067,12 +1102,28 @@ onMounted(async () => {
 }
 
 .share-role,
+.share-role-select,
 .invite-role {
   padding: 4px 10px;
   background: var(--color-background-mute);
   border-radius: 4px;
   font-size: 0.85rem;
   color: var(--color-text-mute);
+}
+
+.share-role-select {
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.share-role-select:hover {
+  border-color: var(--color-primary);
+}
+
+.share-role-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
 }
 
 .share-date,

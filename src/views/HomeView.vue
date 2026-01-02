@@ -1110,6 +1110,31 @@ onMounted(async () => {
     dayChangeCheckerInterval = setInterval(checkDayChange, 60000); 
     await mainStore.checkAuth(); 
     if (mainStore.isAuthLoading || !mainStore.user) return; 
+    
+    // 🟢 Auto-accept pending invite after login
+    const pendingInviteToken = sessionStorage.getItem('pendingInviteToken');
+    if (pendingInviteToken) {
+        try {
+            console.log('🔗 Auto-accepting pending invite...');
+            sessionStorage.removeItem('pendingInviteToken');
+            
+            // Accept the invite
+            await axios.post(
+                `${API_BASE_URL}/workspace-invite/${pendingInviteToken}/accept`,
+                {},
+                { withCredentials: true }
+            );
+            
+            console.log('✅ Invite accepted, reloading to switch workspace...');
+            // Reload to switch to the shared workspace
+            window.location.reload();
+            return; // Stop initialization, reload will handle it
+        } catch (err) {
+            console.error('Failed to auto-accept invite:', err);
+            // Continue with normal initialization
+        }
+    }
+    
     mainStore.startAutoRefresh(); 
     await nextTick(); 
     await mainStore.fetchAllEntities(); 
