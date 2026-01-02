@@ -173,14 +173,30 @@ async function loadWorkspaces() {
   try {
     isLoading.value = true;
     
-    // Load in parallel for speed
-    const [workspacesRes, userRes] = await Promise.all([
-      axios.get(`${API_BASE_URL}/workspaces`, { withCredentials: true }),
-      axios.get(`${API_BASE_URL}/auth/me`, { withCredentials: true })
-    ]);
+    // 🟢 NEW: Capture screenshot of CURRENT workspace before loading list
+    // This ensures we always have an up-to-date thumbnail
+    const userRes = await axios.get(`${API_BASE_URL}/auth/me`, { withCredentials: true });
+    const currentWsId = userRes.data.currentWorkspaceId;
+    
+    if (currentWsId) {
+      // Small delay to ensure UI is stable
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const thumbnail = await captureScreenshot();
+      if (thumbnail) {
+        await axios.post(
+          `${API_BASE_URL}/workspaces/${currentWsId}/thumbnail`,
+          { thumbnail },
+          { withCredentials: true }
+        ).catch(err => console.error('Failed to save current workspace thumbnail:', err));
+      }
+    }
+    
+    // Load workspaces list
+    const workspacesRes = await axios.get(`${API_BASE_URL}/workspaces`, { withCredentials: true });
     
     workspaces.value = workspacesRes.data;
-    currentWorkspaceId.value = userRes.data.currentWorkspaceId;
+    currentWorkspaceId.value = currentWsId;
   } catch (err) {
     console.error('Failed to load workspaces:', err);
   } finally {
