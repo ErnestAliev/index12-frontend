@@ -174,6 +174,11 @@ const isProtectedMode = computed(() => {
     return false;
 });
 
+// 🟢 PERMISSIONS
+const canEdit = computed(() => mainStore.canEdit);
+const canDelete = computed(() => mainStore.canDelete);
+const isReadOnly = computed(() => !canEdit.value);
+
 const title = computed(() => {
     if (isCloneMode.value) return 'Копия: Доход';
     if (isProtectedMode.value) return 'Редактировать сделку';
@@ -847,16 +852,17 @@ const handleMainAction = () => {
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
         <div class="input-inner-content">
            <span v-if="amount" class="floating-label">Сумма дохода, ₸</span>
-           <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isProtectedMode" />
+           <span v-if="amount" class="floating-label">Сумма дохода, ₸</span>
+           <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isProtectedMode || isReadOnly" />
         </div>
       </div>
 
       <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
         
         <!-- СЧЕТ -->
-        <div v-if="!isCreatingAccount" class="input-spacing">
-            <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange">
-                <template #action-item>
+        <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+            <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
+                <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
                         <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
                         <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
@@ -896,8 +902,9 @@ const handleMainAction = () => {
         </div>
 
         <!-- ПРОЕКТ -->
-        <div v-if="!isCreatingProject" class="input-spacing">
-            <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" />
+        <!-- ПРОЕКТ -->
+        <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+            <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
         </div>
         <div v-else class="inline-create-form input-spacing">
             <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -917,8 +924,8 @@ const handleMainAction = () => {
         </div>
 
         <template v-if="!isProtectedMode && !isEditMode && !isDealDetected">
-            <div class="input-spacing">
-                <BaseSelect v-model="operationStatus" :options="statusOptions" label="Статус денег" placeholder="Статус денег" />
+            <div class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+                <BaseSelect v-model="operationStatus" :options="statusOptions" label="Статус денег" placeholder="Статус денег" :disabled="isReadOnly" />
             </div>
         </template>
         
@@ -932,21 +939,22 @@ const handleMainAction = () => {
                        {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                    </span>
 
-                    <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isProtectedMode" />
+                    <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
                     <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                 </div>
             </div>
         </div>
         
         <div class="popup-actions-row">
-            <button v-if="!isProtectedMode" class="btn-submit save-wide" :class="mainButtonClass" @click="handleMainAction" :disabled="isSaving || isInlineSaving">
+            <button v-if="!isProtectedMode && canEdit" class="btn-submit save-wide" :class="mainButtonClass" @click="handleMainAction" :disabled="isSaving || isInlineSaving">
                 {{ mainButtonText }}
             </button>
+            <div v-else-if="!canEdit" class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
             <div v-else class="read-only-info">Только чтение</div>
             
             <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
-                <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
-                <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+                <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+                <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
             </div>
         </div>
       </template>

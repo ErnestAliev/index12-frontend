@@ -311,6 +311,11 @@ const categoryOptions = computed(() => {
 
 const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
 
+// 🟢 PERMISSIONS
+const canEdit = computed(() => mainStore.canEdit);
+const canDelete = computed(() => mainStore.canDelete);
+const isReadOnly = computed(() => !canEdit.value);
+
 // 🟢 ДИНАМИЧЕСКИЙ ЗАГОЛОВОК
 const title = computed(() => {
     if (isCloneMode.value) return 'Копия: Расход';
@@ -652,7 +657,7 @@ onMounted(async () => {
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма расхода, ₸</span>
-             <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" />
+             <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isReadOnly" />
           </div>
       </div>
       
@@ -663,10 +668,10 @@ onMounted(async () => {
 
       <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
           <!-- СЧЕТ -->
-          <div v-if="!isCreatingAccount" class="input-spacing">
-              <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Счет списания" label="Счет списания" @change="handleAccountChange">
+          <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+              <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Счет списания" label="Счет списания" @change="handleAccountChange" :disabled="isReadOnly">
                   <!-- 🟢 Slot for Dual Create Buttons -->
-                  <template #action-item>
+                  <template #action-item v-if="canEdit">
                       <div class="dual-action-row">
                           <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
                           <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
@@ -682,9 +687,9 @@ onMounted(async () => {
           </div>
 
           <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
-          <div v-if="isOwnerSelectVisible" class="input-spacing">
-              <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Кто платит" label="Кто платит (Владелец)">
-                  <template #action-item>
+          <div v-if="isOwnerSelectVisible" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+              <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Кто платит" label="Кто платит (Владелец)" :disabled="isReadOnly">
+                  <template #action-item v-if="canEdit">
                       <div class="dual-action-row">
                           <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
                           <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
@@ -694,9 +699,9 @@ onMounted(async () => {
           </div>
 
           <!-- КОНТРАГЕНТ (Кому) -->
-          <div class="input-spacing">
-              <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)">
-                  <template #action-item>
+          <div class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+              <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly">
+                  <template #action-item v-if="canEdit">
                       <div class="dual-action-row">
                           <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
                           <button @click="openCreateContractorModal('individual')" class="btn-dual-action right">+ Созд. физлицо</button>
@@ -706,8 +711,8 @@ onMounted(async () => {
           </div>
 
           <!-- ПРОЕКТ -->
-          <div v-if="!isCreatingProject" class="input-spacing">
-              <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" />
+          <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+              <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
           </div>
           <div v-else class="inline-create-form input-spacing">
               <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -716,8 +721,8 @@ onMounted(async () => {
           </div>
 
           <!-- КАТЕГОРИЯ -->
-          <div v-if="!isCreatingCategory" class="input-spacing">
-              <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" />
+          <div v-if="!isCreatingCategory" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+              <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
           </div>
           <div v-else class="inline-create-form input-spacing relative">
               <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
@@ -738,7 +743,7 @@ onMounted(async () => {
                        {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                    </span>
 
-                   <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" />
+                   <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isReadOnly" />
                    
                    <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                 </div>
@@ -749,13 +754,14 @@ onMounted(async () => {
 
           <!-- НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ -->
           <div class="popup-actions-row">
-              <button class="btn-submit btn-expense save-wide" @click="handleSave" :disabled="isSaving || isInlineSaving || (validationResult && !validationResult.isValid)">
+              <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="handleSave" :disabled="isSaving || isInlineSaving || (validationResult && !validationResult.isValid)">
                   {{ buttonText }}
               </button>
+              <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
               
               <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
-                  <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
-                  <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+                  <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+                  <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
               </div>
           </div>
       </template>

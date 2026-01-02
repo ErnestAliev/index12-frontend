@@ -125,6 +125,11 @@ const isFutureDate = computed(() => {
     return false;
 });
 
+// 🟢 PERMISSIONS
+const canEdit = computed(() => mainStore.canEdit);
+const canDelete = computed(() => mainStore.canDelete);
+const isReadOnly = computed(() => !canEdit.value);
+
 // 🟢 ВАЛИДАЦИЯ (Check Balance)
 const validationResult = computed(() => {
     if (!fromAccountId.value) return { isValid: true };
@@ -603,7 +608,7 @@ const closePopup = () => { emit('close'); };
         <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма, ₸</span>
-             <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" />
+             <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" :disabled="isReadOnly" />
           </div>
       </div>
       
@@ -613,8 +618,8 @@ const closePopup = () => { emit('close'); };
       </div>
         
         <!-- СЧЕТ ОТПРАВИТЕЛЯ (с динамическим балансом) -->
-        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange">
-            <template #action-item>
+        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
+            <template #action-item v-if="canEdit">
                 <div class="dual-action-row">
                     <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
                     <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
@@ -632,8 +637,8 @@ const closePopup = () => { emit('close'); };
 
         <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
         <div v-if="isFromOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" @change="handleFromOwnerChange">
-                <template #action-item>
+            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" @change="handleFromOwnerChange" :disabled="isReadOnly">
+                <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
                         <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
                         <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
@@ -643,8 +648,8 @@ const closePopup = () => { emit('close'); };
         </div>
 
         <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
-        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange">
-            <template #action-item>
+        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
+            <template #action-item v-if="canEdit">
                 <div class="dual-action-row">
                     <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
                     <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
@@ -662,8 +667,8 @@ const closePopup = () => { emit('close'); };
 
         <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
         <div v-if="isToOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" @change="handleToOwnerChange">
-                <template #action-item>
+            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" @change="handleToOwnerChange" :disabled="isReadOnly">
+                <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
                         <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
                         <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
@@ -673,7 +678,7 @@ const closePopup = () => { emit('close'); };
         </div>
 
         <div class="input-spacing">
-            <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" />
+            <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
         </div>
 
         <div class="tax-info-box" v-if="taxCalculation">
@@ -697,20 +702,21 @@ const closePopup = () => { emit('close'); };
                        {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                    </span>
 
-                 <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" />
+                 <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" :disabled="isReadOnly" />
                  <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
               </div>
            </div>
         </div>
 
         <div class="popup-actions-row">
-          <button @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving || (validationResult && !validationResult.isValid)">
+          <button v-if="canEdit" @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving || (validationResult && !validationResult.isValid)">
             {{ buttonText }}
           </button>
+          <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
 
           <div v-if="props.transferToEdit && !isCloneMode" class="icon-actions">
-            <button class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
-            <button class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+            <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+            <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
           </div>
         </div>
       </template>

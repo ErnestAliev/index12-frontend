@@ -25,6 +25,11 @@ const router = createRouter({
       name: 'invite',
       component: () => import('../views/InvitePage.vue'),
     },
+    {
+      path: '/workspace-invite/:token',
+      name: 'workspace-invite',
+      component: () => import('../views/WorkspaceInvitePage.vue'),
+    },
   ],
 })
 

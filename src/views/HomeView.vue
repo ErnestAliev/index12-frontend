@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
+import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
@@ -49,8 +50,8 @@ const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
-const showInviteModal = ref(false);
-const showWorkspaceModal = ref(false); // 🟢 NEW: Invite employee modal
+
+const showWorkspaceModal = ref(false); // 🟢 NEW: Unified workspace/project modal
 
 // --- AI ассистент (Desktop MVP, read-only) ---
 const isAiDrawerOpen = ref(false);
@@ -909,6 +910,9 @@ watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
 
 const openContextMenu = (day, event, cellIndex) => {
   event.stopPropagation();
+  // 🟢 PERMISSION CHECK
+  if (!mainStore.canEdit) return;
+
   selectedDay.value = day; selectedCellIndex.value = cellIndex;
   const menuWidth = 260; 
   const clickX = event.clientX; const clickY = event.clientY;
@@ -1060,7 +1064,78 @@ const onWindowResize = () => { applyHeaderHeight(clampHeaderHeight(headerHeightP
 const checkDayChange = () => { const currentToday = initializeToday(); if (!sameDay(currentToday, today.value)) { today.value = currentToday; const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); if (mainStore.user && !mainStore.isAuthLoading) { centerToday(); recalcProjectionForCurrentView(); } } };
 let dayChangeCheckerInterval = null;
 let resizeObserver = null;
-onMounted(async () => { checkDayChange(); dayChangeCheckerInterval = setInterval(checkDayChange, 60000); await mainStore.checkAuth(); if (mainStore.isAuthLoading || !mainStore.user) return; mainStore.startAutoRefresh(); await nextTick(); await mainStore.fetchAllEntities(); const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); generateVisibleDays(); await nextTick(); centerToday(); await nextTick(); applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; applyHeights(clampTimelineHeight(initialTop)); if (resizerRef.value) { resizerRef.value.addEventListener('mousedown', initResize); resizerRef.value.addEventListener('touchstart', initResize, { passive: false }); } if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } if (timelineGridRef.value) { timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); } resizeObserver = new ResizeObserver(() => { applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); }); if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); window.addEventListener('resize', onWindowResize); updateScrollbarMetrics(); await recalcProjectionForCurrentView(); });
+const captureBackgroundScreenshot = async () => {
+    // Only capture if we are in a workspace context (simple check)
+    // and if auth is valid.
+    if (!mainStore.user) return;
+
+    try {
+        await nextTick();
+        const homeLayout = document.querySelector('.home-layout');
+        if (!homeLayout) return;
+
+        // Capture logic
+        const canvas = await html2canvas(homeLayout, {
+             scale: 0.3, // Low res is fine for thumbnail
+             useCORS: true,
+             allowTaint: true,
+             backgroundColor: '#1a1a1a', 
+             ignoreElements: (element) => {
+                 // Ignore modals if they happen to be open (though we run on mount mostly)
+                 if (element.classList.contains('ai-modal-overlay')) return true;
+                 if (element.classList.contains('create-dialog-overlay')) return true;
+                 // Don't capture the workspace modal itself if it happens to be open
+                 if (element.classList.contains('workspace-dashboard-modal')) return true;
+                 return false;
+             }
+        });
+
+        const thumbnail = canvas.toDataURL('image/jpeg', 0.6);
+        const wsId = mainStore.user.currentWorkspaceId;
+        
+        if (wsId && thumbnail) {
+             await axios.post(`${API_BASE_URL}/workspaces/${wsId}/thumbnail`, 
+                { thumbnail }, 
+                { withCredentials: true }
+             );
+             // console.log('Background thumbnail captured');
+        }
+    } catch (e) {
+        console.error('Background thumbnail capture failed', e);
+    }
+};
+
+onMounted(async () => { 
+    checkDayChange(); 
+    dayChangeCheckerInterval = setInterval(checkDayChange, 60000); 
+    await mainStore.checkAuth(); 
+    if (mainStore.isAuthLoading || !mainStore.user) return; 
+    mainStore.startAutoRefresh(); 
+    await nextTick(); 
+    await mainStore.fetchAllEntities(); 
+    const todayDay = getDayOfYear(today.value); 
+    mainStore.setToday(todayDay); 
+    generateVisibleDays(); 
+    await nextTick(); 
+    centerToday(); 
+    await nextTick(); 
+    applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
+    const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; 
+    applyHeights(clampTimelineHeight(initialTop)); 
+    if (resizerRef.value) { resizerRef.value.addEventListener('mousedown', initResize); resizerRef.value.addEventListener('touchstart', initResize, { passive: false }); } 
+    if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } 
+    if (timelineGridRef.value) { timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); } 
+    resizeObserver = new ResizeObserver(() => { applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); }); 
+    if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); 
+    window.addEventListener('resize', onWindowResize); 
+    updateScrollbarMetrics(); 
+    await recalcProjectionForCurrentView();
+
+    // 🟢 Delay background snapshot significantly to let UI settle
+    setTimeout(() => {
+        captureBackgroundScreenshot();
+    }, 2000);
+});
 onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); } window.removeEventListener('resize', onWindowResize); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
 
 // --- Transfer, Retail, Refund Handlers ---
@@ -1210,6 +1285,18 @@ const handleRefundDelete = async (op) => {
             </svg>
         </button>
 
+        <!-- 🟢 NEW: Unified Workspace/Project Dashboard Button (Admin only) -->
+        <button
+          v-if="mainStore.isAdmin"
+          class="icon-btn workspace-dashboard-btn"
+          @click="showWorkspaceModal = true"
+          title="Проекты"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </button>
+
         <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
@@ -1227,32 +1314,8 @@ const handleRefundDelete = async (op) => {
         </div>
       </aside>
       
-      <!-- 🟢 NEW: Invite Employee Button (Admin only, absolute position) -->
-      <button
-        v-if="mainStore.canInvite"
-        class="invite-employee-btn"
-        @click="showInviteModal = true"
-        title="Пригласить сотрудника"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-          <circle cx="9" cy="7" r="4"></circle>
-          <line x1="19" y1="8" x2="19" y2="14"></line>
-          <line x1="22" y1="11" x2="16" y2="11"></line>
-        </svg>
-      </button>
       
-      <!-- 🟢 NEW: Workspace Dashboard Button (Admin only, absolute position) -->
-      <button
-        v-if="mainStore.isAdmin"
-        class="workspace-dashboard-btn"
-        @click="showWorkspaceModal = true"
-        title="Проекты"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-        </svg>
-      </button>
+
     </div>
         <!-- AI ассистент (Desktop modal) -->
     <div v-if="isAiDrawerOpen" class="ai-modal-overlay" @click="closeAiDrawer">
@@ -1427,9 +1490,7 @@ const handleRefundDelete = async (op) => {
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
-    
-    <!-- 🟢 NEW: Invite Employee Modal -->
-    <InviteEmployeeModal v-if="showInviteModal" :visible="showInviteModal" @close="showInviteModal = false" />
+    <!-- 🟢 Unified Workspace/Project Dashboard Modal -->
     <WorkspaceDashboardModal v-if="showWorkspaceModal" @close="showWorkspaceModal = false" />
   </div>
 </template>
@@ -1500,7 +1561,7 @@ const handleRefundDelete = async (op) => {
 
 .workspace-dashboard-btn { 
   position: absolute; 
-  top: 208px;
+  top: 168px; /* 128px (ai-btn) + 40px spacing */
   right: 15px; 
   z-index: 20; 
   background: var(--color-background-soft); 
@@ -1521,6 +1582,30 @@ const handleRefundDelete = async (op) => {
   border-color: var(--color-border-hover);
 }
 .workspace-dashboard-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
+.project-management-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 80px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 1000;
+}
+.project-management-btn:hover {
+  background: var(--color-background-mute);
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+.project-management-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
 .header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 

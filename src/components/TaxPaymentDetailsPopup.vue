@@ -67,6 +67,8 @@ const displayData = computed(() => {
     };
 });
 
+const canDelete = computed(() => mainStore.canDelete);
+
 const askDelete = () => { showDeleteConfirm.value = true; };
 
 const confirmDelete = () => {
@@ -80,7 +82,7 @@ const confirmDelete = () => {
     <div class="popup-content">
       <div class="header-row">
          <h3>Налоговый платеж</h3>
-         <button class="btn-icon-delete" @click="askDelete" title="Удалить платеж">
+         <button v-if="canDelete" class="btn-icon-delete" @click="askDelete" title="Удалить платеж">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
          </button>
       </div>

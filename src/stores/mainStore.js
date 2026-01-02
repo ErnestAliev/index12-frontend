@@ -23,13 +23,27 @@ export const useMainStore = defineStore('mainStore', () => {
     const user = ref(null);
 
     // 🟢 NEW: Role-based access computed properties
-    const userRole = computed(() => user.value?.role || 'admin');
-    const isAdmin = computed(() => userRole.value === 'admin');
-    const isFullAccess = computed(() => userRole.value === 'full_access');
-    const isTimelineOnly = computed(() => userRole.value === 'timeline_only');
-    const canDelete = computed(() => isAdmin.value || isFullAccess.value);
-    const canEdit = computed(() => isAdmin.value || isFullAccess.value);
-    const canInvite = computed(() => isAdmin.value);
+    // 🟢 NEW: Role-based access using Workspace Role
+    // workspaceRole comes from GET /api/auth/me
+    const workspaceRole = computed(() => user.value?.workspaceRole || 'admin');
+
+    // Global admin or workspace admin
+    const isGlobalAdmin = computed(() => user.value?.role === 'admin');
+    const isWorkspaceAdmin = computed(() => workspaceRole.value === 'admin');
+    const isManager = computed(() => workspaceRole.value === 'manager');
+    const isAnalyst = computed(() => workspaceRole.value === 'analyst');
+
+    // Permissions
+    const canEdit = computed(() => isWorkspaceAdmin.value || isManager.value || isGlobalAdmin.value);
+    const canDelete = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value); // Manager cannot delete
+    const canManageWorkspace = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value);
+    const canInvite = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value);
+
+    // 🟢 Aliases for UI/Export compatibility
+    const userRole = workspaceRole;
+    const isAdmin = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value);
+    const isFullAccess = isAdmin;
+    const isTimelineOnly = isManager;
 
     // 🟢 NEW: Effective user ID (for employees, use admin's ID to access data)
     const effectiveUserId = computed(() => user.value?.effectiveUserId || user.value?.id || user.value?._id);
@@ -2643,6 +2657,8 @@ export const useMainStore = defineStore('mainStore', () => {
         };
     }
 
+
+
     // 🟢 EXPORT ALL
     return {
         cacheVersion,
@@ -2763,6 +2779,80 @@ export const useMainStore = defineStore('mainStore', () => {
         onSocketEntityAdded,
         onSocketEntityDeleted,
         onSocketEntityListUpdated,
+
+        // 🟢 NEW: Project Management Methods
+        async createProject(projectData) {
+            try {
+                const response = await axios.post(`${API_BASE_URL}/projects`, projectData, {
+                    withCredentials: true
+                });
+
+                const newProject = response.data;
+                projects.value = [...projects.value, newProject];
+
+                return newProject;
+            } catch (error) {
+                console.error('Failed to create project:', error);
+                throw error;
+            }
+        },
+
+        async updateProject(projectId, updates) {
+            try {
+                const response = await axios.put(
+                    `${API_BASE_URL}/projects/${projectId}`,
+                    updates,
+                    { withCredentials: true }
+                );
+
+                const updatedProject = response.data;
+                const index = projects.value.findIndex(p => p._id === projectId);
+
+                if (index !== -1) {
+                    projects.value[index] = updatedProject;
+                    projects.value = [...projects.value]; // Trigger reactivity
+                }
+
+                return updatedProject;
+            } catch (error) {
+                console.error('Failed to update project:', error);
+                throw error;
+            }
+        },
+
+        async deleteProject(projectId) {
+            try {
+                await axios.delete(`${API_BASE_URL}/projects/${projectId}`, {
+                    withCredentials: true
+                });
+
+                projects.value = projects.value.filter(p => p._id !== projectId);
+            } catch (error) {
+                console.error('Failed to delete project:', error);
+                throw error;
+            }
+        },
+
+        async reorderProjects(projectsWithOrder) {
+            try {
+                await axios.post(
+                    `${API_BASE_URL}/projects/reorder`,
+                    { projects: projectsWithOrder },
+                    { withCredentials: true }
+                );
+
+                // Update local state
+                projectsWithOrder.forEach(({ _id, order }) => {
+                    const project = projects.value.find(p => p._id === _id);
+                    if (project) project.order = order;
+                });
+
+                projects.value = [...projects.value]; // Trigger reactivity
+            } catch (error) {
+                console.error('Failed to reorder projects:', error);
+                throw error;
+            }
+        },
 
         // 🟢 NEW: Workspace switching
         async resetStore() {
