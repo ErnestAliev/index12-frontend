@@ -480,17 +480,6 @@ async function switchWorkspace(workspaceId) {
     loadingMessage.value = 'Загружаем проект...';
     isCreating.value = true;
     
-    if (currentWorkspaceId.value && currentWorkspaceId.value !== workspaceId) {
-      const thumbnail = await captureScreenshot();
-      if (thumbnail) {
-        await axios.post(
-          `${API_BASE_URL}/workspaces/${currentWorkspaceId.value}/thumbnail`,
-          { thumbnail },
-          { withCredentials: true }
-        ).catch(err => console.error('Failed to save thumbnail:', err));
-      }
-    }
-    
     await axios.post(`${API_BASE_URL}/workspaces/${workspaceId}/switch`, {}, { withCredentials: true });
     
     sessionStorage.clear();
