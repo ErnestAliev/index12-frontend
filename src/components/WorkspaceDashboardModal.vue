@@ -173,30 +173,14 @@ async function loadWorkspaces() {
   try {
     isLoading.value = true;
     
-    // 🟢 NEW: Capture screenshot of CURRENT workspace before loading list
-    // This ensures we always have an up-to-date thumbnail
-    const userRes = await axios.get(`${API_BASE_URL}/auth/me`, { withCredentials: true });
-    const currentWsId = userRes.data.currentWorkspaceId;
-    
-    if (currentWsId) {
-      // Small delay to ensure UI is stable
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const thumbnail = await captureScreenshot();
-      if (thumbnail) {
-        await axios.post(
-          `${API_BASE_URL}/workspaces/${currentWsId}/thumbnail`,
-          { thumbnail },
-          { withCredentials: true }
-        ).catch(err => console.error('Failed to save current workspace thumbnail:', err));
-      }
-    }
-    
-    // Load workspaces list
-    const workspacesRes = await axios.get(`${API_BASE_URL}/workspaces`, { withCredentials: true });
+    // Load user and workspaces in parallel
+    const [workspacesRes, userRes] = await Promise.all([
+      axios.get(`${API_BASE_URL}/workspaces`, { withCredentials: true }),
+      axios.get(`${API_BASE_URL}/auth/me`, { withCredentials: true })
+    ]);
     
     workspaces.value = workspacesRes.data;
-    currentWorkspaceId.value = currentWsId;
+    currentWorkspaceId.value = userRes.data.currentWorkspaceId;
   } catch (err) {
     console.error('Failed to load workspaces:', err);
   } finally {
@@ -381,7 +365,35 @@ function cancelRename() {
   editingName.value = '';
 }
 
-onMounted(() => {
+// 🟢 NEW: Save screenshot of current workspace (called BEFORE modal opens)
+async function saveCurrentWorkspaceScreenshot() {
+  try {
+    const userRes = await axios.get(`${API_BASE_URL}/auth/me`, { withCredentials: true });
+    const currentWsId = userRes.data.currentWorkspaceId;
+    
+    if (currentWsId) {
+      // Small delay to ensure UI is stable
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const thumbnail = await captureScreenshot();
+      if (thumbnail) {
+        await axios.post(
+          `${API_BASE_URL}/workspaces/${currentWsId}/thumbnail`,
+          { thumbnail },
+          { withCredentials: true }
+        ).catch(err => console.error('Failed to save workspace thumbnail:', err));
+      }
+    }
+  } catch (err) {
+    console.error('Failed to save screenshot:', err);
+  }
+}
+
+onMounted(async () => {
+  // 🟢 Save screenshot of current workspace FIRST (before modal shows)
+  await saveCurrentWorkspaceScreenshot();
+  
+  // Then load workspaces list
   loadWorkspaces();
 });
 </script>
