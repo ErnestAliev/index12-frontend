@@ -27,6 +27,7 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 // 🟢 2. Импорт модала приглашения сотрудников
 import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
+import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
@@ -48,7 +49,8 @@ const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
 const showAboutModal = ref(false);
-const showInviteModal = ref(false); // 🟢 NEW: Invite employee modal
+const showInviteModal = ref(false);
+const showWorkspaceModal = ref(false); // 🟢 NEW: Invite employee modal
 
 // --- AI ассистент (Desktop MVP, read-only) ---
 const isAiDrawerOpen = ref(false);
@@ -1239,6 +1241,18 @@ const handleRefundDelete = async (op) => {
           <line x1="22" y1="11" x2="16" y2="11"></line>
         </svg>
       </button>
+      
+      <!-- 🟢 NEW: Workspace Dashboard Button (Admin only, absolute position) -->
+      <button
+        v-if="mainStore.isAdmin"
+        class="workspace-dashboard-btn"
+        @click="showWorkspaceModal = true"
+        title="Проекты"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </button>
     </div>
         <!-- AI ассистент (Desktop modal) -->
     <div v-if="isAiDrawerOpen" class="ai-modal-overlay" @click="closeAiDrawer">
@@ -1416,6 +1430,7 @@ const handleRefundDelete = async (op) => {
     
     <!-- 🟢 NEW: Invite Employee Modal -->
     <InviteEmployeeModal v-if="showInviteModal" :visible="showInviteModal" @close="showInviteModal = false" />
+    <WorkspaceDashboardModal v-if="showWorkspaceModal" @close="showWorkspaceModal = false" />
   </div>
 </template>
 
@@ -1482,6 +1497,31 @@ const handleRefundDelete = async (op) => {
   border-color: var(--color-border-hover);
 }
 .invite-employee-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
+.workspace-dashboard-btn { 
+  position: absolute; 
+  top: 208px;
+  right: 15px; 
+  z-index: 20; 
+  background: var(--color-background-soft); 
+  border: 1px solid var(--color-border); 
+  border-radius: 50%; 
+  width: 32px; 
+  height: 32px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  cursor: pointer; 
+  color: var(--color-text); 
+  padding: 0; 
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.workspace-dashboard-btn:hover { 
+  background: var(--color-background-mute); 
+  border-color: var(--color-border-hover);
+}
+.workspace-dashboard-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+
 .header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
 .import-export-btn { position: absolute; top: 48px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }

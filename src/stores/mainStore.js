@@ -2762,6 +2762,47 @@ export const useMainStore = defineStore('mainStore', () => {
         onSocketOperationDeleted,
         onSocketEntityAdded,
         onSocketEntityDeleted,
-        onSocketEntityListUpdated
+        onSocketEntityListUpdated,
+
+        // 🟢 NEW: Workspace switching
+        async resetStore() {
+            allEvents.value = [];
+            accounts.value = [];
+            companies.value = [];
+            contractors.value = [];
+            projects.value = [];
+            individuals.value = [];
+            categories.value = [];
+            prepayments.value = [];
+            credits.value = [];
+            deals.value = [];
+
+            snapshot.value = {
+                timestamp: null,
+                totalBalance: 0,
+                accountBalances: {},
+                companyBalances: {},
+                individualBalances: {},
+                contractorBalances: {},
+                projectBalances: {},
+                categoryTotals: {}
+            };
+        },
+
+        async reloadWorkspace() {
+            await this.resetStore();
+            await fetchUser();
+            await fetchAllEntities();
+
+            const today = new Date();
+            const year = today.getFullYear();
+            const dayOfYear = getDayOfYear(today);
+
+            currentYear.value = year;
+            currentDayOfYear.value = dayOfYear;
+
+            await loadEventsForDay(year, dayOfYear);
+            await loadSnapshot();
+        }
     };
 });
