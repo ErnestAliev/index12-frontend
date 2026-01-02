@@ -261,11 +261,23 @@
       <p>{{ loadingMessage }}</p>
     </div>
   </div>
+
+  <!-- Custom Confirm Dialog -->
+  <ConfirmDialog
+    :show="showConfirmDialog"
+    :title="confirmDialogData.title"
+    :message="confirmDialogData.message"
+    :confirmText="confirmDialogData.confirmText || 'Подтвердить'"
+    :cancelText="confirmDialogData.cancelText || 'Отмена'"
+    @confirm="handleConfirm"
+    @cancel="showConfirmDialog = false"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue';
 import axios from 'axios';
+import ConfirmDialog from './ConfirmDialog.vue';
 import html2canvas from 'html2canvas';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -298,6 +310,10 @@ const linkInput = ref(null);
 
 // Settings tab state
 const workspaceInvites = ref({});
+
+// Confirm dialog state
+const showConfirmDialog = ref(false);
+const confirmDialogData = ref({ title: '', message: '', onConfirm: null });
 
 // Rename dialog state
 const showRenameDialog = ref(false);
@@ -620,49 +636,72 @@ async function copyLink() {
   }
 }
 
-async function revokeAccess(workspaceId, userId) {
-  if (!confirm('Отозвать доступ для этого пользователя?')) return;
-
-  try {
-    await axios.delete(
-      `${API_BASE_URL}/workspaces/${workspaceId}/share/${userId}`,
-      { withCredentials: true }
-    );
-
-    // Update local state
-    const workspace = workspaces.value.find(w => w._id === workspaceId);
-    if (workspace && workspace.sharedWith) {
-      workspace.sharedWith = workspace.sharedWith.filter(s => s.userId !== userId);
-    }
-
-    alert('Доступ отозван');
-  } catch (err) {
-    console.error('Failed to revoke access:', err);
-    alert('Ошибка отзыва доступа');
+// Handle Confirm Dialog
+function handleConfirm() {
+  if (confirmDialogData.value.onConfirm) {
+    confirmDialogData.value.onConfirm();
   }
+  showConfirmDialog.value = false;
+}
+
+function showConfirm(title, message, onConfirm, confirmText = 'Подтвердить', cancelText = 'Отмена') {
+  confirmDialogData.value = { title, message, onConfirm, confirmText, cancelText };
+  showConfirmDialog.value = true;
+}
+
+async function revokeAccess(workspaceId, userId) {
+  showConfirm(
+    'Отозвать доступ',
+    'Вы уверены, что хотите отозвать доступ для этого пользователя?',
+    async () => {
+      try {
+        await axios.delete(
+          `${API_BASE_URL}/workspaces/${workspaceId}/share/${userId}`,
+          { withCredentials: true }
+        );
+
+        // Update local state
+        const workspace = workspaces.value.find(w => w._id === workspaceId);
+        if (workspace && workspace.sharedWith) {
+          workspace.sharedWith = workspace.sharedWith.filter(s => s.userId !== userId);
+        }
+
+        showConfirm('Готово', 'Доступ успешно отозван', () => {}, 'ОК');
+      } catch (err) {
+        console.error('Failed to revoke access:', err);
+        showConfirm('Ошибка', 'Не удалось отозвать доступ', () => {}, 'ОК');
+      }
+    },
+    'Отозвать'
+  );
 }
 
 async function revokeInvite(inviteId, workspaceId) {
-  if (!confirm('Отозвать эту ссылку? Она станет недействительной.')) return;
+  showConfirm(
+    'Отозвать ссылку',
+    'Эта ссылка станет недействительной. Продолжить?',
+    async () => {
+      try {
+        await axios.delete(
+          `${API_BASE_URL}/workspace-invites/${inviteId}`,
+          { withCredentials: true }
+        );
 
-  try {
-    await axios.delete(
-      `${API_BASE_URL}/workspace-invites/${inviteId}`,
-      { withCredentials: true }
-    );
+        // Remove from local state
+        if (workspaceInvites.value[workspaceId]) {
+          workspaceInvites.value[workspaceId] = workspaceInvites.value[workspaceId].filter(
+            inv => inv._id !== inviteId
+          );
+        }
 
-    // Remove from local state
-    if (workspaceInvites.value[workspaceId]) {
-      workspaceInvites.value[workspaceId] = workspaceInvites.value[workspaceId].filter(
-        inv => inv._id !== inviteId
-      );
-    }
-
-    alert('Ссылка отозвана');
-  } catch (err) {
-    console.error('Failed to revoke invite:', err);
-    alert('Ошибка отзыва ссылки');
-  }
+        showConfirm('Готово', 'Ссылка успешно отозвана', () => {}, 'ОК');
+      } catch (err) {
+        console.error('Failed to revoke invite:', err);
+        showConfirm('Ошибка', 'Не удалось отозвать ссылку', () => {}, 'ОК');
+      }
+    },
+    'Отозвать'
+  );
 }
 
 // Update user role in workspace
@@ -679,32 +718,33 @@ async function updateUserRole(workspaceId, userId, newRole) {
   };
   
   // Show confirmation dialog
-  const confirmed = confirm(
-    `Изменить роль пользователя ${share.email} с "${roleLabels[share.role]}" на "${roleLabels[newRole]}"?`
+  showConfirm(
+    'Изменить роль',
+    `Изменить роль пользователя ${share.email} с "${roleLabels[share.role]}" на "${roleLabels[newRole]}"?`,
+    async () => {
+      try {
+        await axios.patch(
+          `${API_BASE_URL}/workspaces/${workspaceId}/members/${userId}/role`,
+          { role: newRole },
+          { withCredentials: true }
+        );
+
+        // Update local state
+        share.role = newRole;
+        console.log('✅ Role updated successfully');
+      } catch (err) {
+        console.error('Failed to update role:', err);
+        showConfirm('Ошибка', 'Не удалось изменить роль', () => {}, 'ОК');
+        // Reload to revert UI
+        await loadWorkspaces();
+      }
+    },
+    'Изменить',
+    'Отмена'
   );
   
-  if (!confirmed) {
-    // Reload to revert select UI
-    await loadWorkspaces();
-    return;
-  }
-  
-  try {
-    await axios.patch(
-      `${API_BASE_URL}/workspaces/${workspaceId}/members/${userId}/role`,
-      { role: newRole },
-      { withCredentials: true }
-    );
-
-    // Update local state
-    share.role = newRole;
-    console.log('✅ Role updated successfully');
-  } catch (err) {
-    console.error('Failed to update role:', err);
-    alert('Ошибка изменения роли');
-    // Reload to revert UI
-    await loadWorkspaces();
-  }
+  // If user cancels, reload to revert select UI
+  // This will happen automatically when dialog is closed without confirm
 }
 
 onMounted(async () => {
