@@ -2688,6 +2688,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         user, isAuthLoading,
         // 🟢 NEW: Role-based access
+        workspaceRole, isWorkspaceAdmin, isManager, isAnalyst, // Export role and role checks
         userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
         currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,

@@ -16,9 +16,9 @@ import { useMainStore } from '@/stores/mainStore';
 export function usePermissions() {
     const mainStore = useMainStore();
 
-    // Get current workspace role
-    // CRITICAL: Access .value because mainStore.workspaceRole is a computed ref
-    const role = computed(() => mainStore.workspaceRole?.value ?? mainStore.workspaceRole);
+    // Get current workspace role - mainStore.workspaceRole is already a computed ref
+    // Vue auto-unwraps it in computed context
+    const role = computed(() => mainStore.workspaceRole);
 
     // Role checks
     const isAnalyst = computed(() => role.value === 'analyst');
