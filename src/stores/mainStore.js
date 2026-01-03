@@ -982,30 +982,17 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const currentContractorBalances = computed(() => {
         if (includeExcludedInTotal.value) {
-            const result = contractors.value.map(c => ({
+            return contractors.value.map(c => ({
                 ...c,
                 balance: snapshot.value.contractorBalances[c._id] || 0
             }));
-            console.log('🔍 currentContractorBalances (snapshot mode):', {
-                contractorsCount: contractors.value.length,
-                snapshotKeys: Object.keys(snapshot.value.contractorBalances || {}).length,
-                result: result.map(c => ({ name: c.name, balance: c.balance }))
-            });
-            return result;
         }
 
         const aggregated = _calculateAggregatedBalance(currentOps.value, 'contractorId');
-        const result = contractors.value.map(c => ({
+        return contractors.value.map(c => ({
             ...c,
             balance: aggregated.get(String(c._id)) || 0
         }));
-        console.log('🔍 currentContractorBalances (aggregated mode):', {
-            contractorsCount: contractors.value.length,
-            currentOpsCount: currentOps.value.length,
-            aggregatedSize: aggregated.size,
-            result: result.map(c => ({ name: c.name, balance: c.balance }))
-        });
-        return result;
     });
 
     const futureContractorBalances = computed(() => {
@@ -1859,8 +1846,6 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     async function fetchAllEntities() {
-        console.log('[mainStore] fetchAllEntities called');
-
         if (!user.value) return;
         try {
             const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes, dealsRes, taxesRes] = await Promise.all([
@@ -1908,14 +1893,10 @@ export const useMainStore = defineStore('mainStore', () => {
             startDate.setHours(0, 0, 0, 0);
 
             try {
-                console.log('[mainStore] 🔄 Loading ALL historical operations into taxKnownOperations');
-
                 // Call ensureTaxOpsUntil which loads into taxKnownOperations (allKnownOperations source)
                 await ensureTaxOpsUntil(today);
-
-                console.log('[mainStore] ✅ Historical operations loaded, allKnown count:', allKnownOperations.value.length);
             } catch (err) {
-                console.error('[mainStore] ❌ Failed to load historical operations:', err);
+                console.error('[mainStore] Failed to load historical operations:', err);
             }
 
             // Preload full-history ops for Taxes widget (cumulative fact, independent of projection range)
