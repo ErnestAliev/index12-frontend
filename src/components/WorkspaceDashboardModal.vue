@@ -145,13 +145,8 @@
                   <span class="invite-expires">Истекает: {{ formatDate(invite.expiresAt) }}</span>
                 </div>
                 <button class="btn-revoke" @click="revokeInvite(invite._id, workspace._id)">
-                  Отозвать ссылку
                 </button>
               </div>
-            </div>
-
-            <div v-if="(!workspace.sharedWith || workspace.sharedWith.length === 0) && (!workspaceInvites[workspace._id] || workspaceInvites[workspace._id].length === 0)" class="no-shares">
-              <p>Проект не поделен ни с кем</p>
             </div>
           </div>
         </div>
