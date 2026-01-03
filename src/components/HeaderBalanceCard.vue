@@ -343,8 +343,9 @@ defineExpose({ getSnapshot });
       <div class="card-title">{{ props.title }}</div>
 
       <div class="card-actions">
+        <!-- Only owner (no workspaceRole) can toggle excluded accounts visibility -->
         <button 
-            v-if="props.widgetKey === 'accounts'" 
+            v-if="props.widgetKey === 'accounts' && !mainStore.workspaceRole" 
             class="action-square-btn" 
             :class="{ active: mainStore.includeExcludedInTotal }" 
             @click.stop="mainStore.toggleExcludedInclusion()" 

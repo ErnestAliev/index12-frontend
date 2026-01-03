@@ -64,11 +64,31 @@ export const useMainStore = defineStore('mainStore', () => {
     });
     const toggleHeaderExpansion = () => uiStore.toggleHeaderExpansion();
 
+    // 🔥 CRITICAL: Excluded accounts MUST be hidden from invited users
+    // Only owner (no workspaceRole) can toggle visibility
     const includeExcludedInTotal = computed({
-        get: () => uiStore.includeExcludedInTotal,
-        set: (v) => uiStore.includeExcludedInTotal = v
+        get: () => {
+            // Invited users (those with workspaceRole) NEVER see excluded accounts
+            if (workspaceRole.value !== null) {
+                return false; // Force hidden for admin/analyst/manager
+            }
+            // Owner can toggle
+            return uiStore.includeExcludedInTotal;
+        },
+        set: (v) => {
+            // Only owner can change this setting
+            if (workspaceRole.value === null) {
+                uiStore.includeExcludedInTotal = v;
+            }
+            // Invited users: setting is ignored
+        }
     });
-    const toggleExcludedInclusion = () => uiStore.toggleExcludedInclusion();
+    const toggleExcludedInclusion = () => {
+        // Only owner can toggle
+        if (workspaceRole.value === null) {
+            uiStore.toggleExcludedInclusion();
+        }
+    };
 
     // --- 2. WIDGET STORE BRIDGES ---
     const dashboardLayout = computed({
@@ -1840,6 +1860,26 @@ export const useMainStore = defineStore('mainStore', () => {
 
             await ensureSystemEntities();
             await fetchSnapshot();
+
+            // 🔥 CRITICAL: Load ALL historical operations from first event to today
+            // This ensures data is available immediately without needing to switch views
+            if (user.value?.minEventDate) {
+                try {
+                    const firstEventDate = new Date(user.value.minEventDate);
+                    firstEventDate.setHours(0, 0, 0, 0);
+                    const today = new Date();
+                    today.setHours(23, 59, 59, 999);
+
+                    console.log('[mainStore] Loading ALL historical operations:', {
+                        from: firstEventDate.toISOString(),
+                        to: today.toISOString()
+                    });
+
+                    await fetchOperationsRange(firstEventDate, today, { silent: true });
+                } catch (err) {
+                    console.error('[mainStore] Failed to load historical operations:', err);
+                }
+            }
 
             // Preload full-history ops for Taxes widget (cumulative fact, independent of projection range)
             void ensureTaxOpsUntil(projection.value?.rangeEndDate ? new Date(projection.value.rangeEndDate) : new Date());
