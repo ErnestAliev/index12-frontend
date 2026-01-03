@@ -34,6 +34,9 @@ import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 
 const mainStore = useMainStore();
 
+// 🔍 DEBUG: Check workspace role for NavigationPanel visibility
+console.log('🔍 HomeView workspaceRole:', mainStore.workspaceRole);
+
 // --- CONSTANTS ---
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
