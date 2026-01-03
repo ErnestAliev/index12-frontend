@@ -38,8 +38,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const isAnalyst = computed(() => workspaceRole.value === 'analyst');
 
     // Permissions
+    // Workspace admin has FULL access (same as global admin)
     const canEdit = computed(() => isWorkspaceAdmin.value || isManager.value || isGlobalAdmin.value);
-    const canDelete = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value); // Manager cannot delete
+    const canDelete = computed(() => isWorkspaceAdmin.value || isManager.value || isGlobalAdmin.value); // Admin can delete, Manager can delete own
     const canManageWorkspace = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value);
     const canInvite = computed(() => isWorkspaceAdmin.value || isGlobalAdmin.value);
 
