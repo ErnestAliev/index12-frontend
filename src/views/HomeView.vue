@@ -1254,9 +1254,12 @@ const handleRefundDelete = async (op) => {
     <div class="header-resizer" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body">
       <aside class="home-left-panel">
-        <!-- DEBUG: Show current role -->
-        <div style="position: absolute; top: 10px; left: 10px; background: red; color: white; padding: 5px; z-index: 9999; font-size: 12px;">
-          ROLE: {{ mainStore.workspaceRole || 'undefined' }}
+        <!-- DEBUG: Show current role and workspace -->
+        <div style="position: absolute; top: 10px; left: 10px; background: red; color: white; padding: 5px; z-index: 9999; font-size: 10px; max-width: 200px; word-break: break-all;">
+          <div>ROLE: {{ mainStore.workspaceRole || 'undefined' }}</div>
+          <div>User ID: {{ mainStore.user?.id?.slice(-6) }}</div>
+          <div>WS ID: {{ mainStore.currentWorkspaceId?.toString().slice(-6) }}</div>
+          <div>WS Name: {{ mainStore.currentWorkspaceName }}</div>
         </div>
         <div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel v-show="mainStore.workspaceRole !== 'manager'" @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
