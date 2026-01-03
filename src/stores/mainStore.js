@@ -1908,14 +1908,12 @@ export const useMainStore = defineStore('mainStore', () => {
             startDate.setHours(0, 0, 0, 0);
 
             try {
-                console.log('[mainStore] 🔄 Loading ALL historical operations:', {
-                    from: startDate.toISOString(),
-                    to: today.toISOString(),
-                    source: earliestEventDate.value ? 'earliestEventDate' : (user.value?.createdAt ? 'userCreatedAt' : 'fallback')
-                });
+                console.log('[mainStore] 🔄 Loading ALL historical operations into taxKnownOperations');
 
-                await fetchOperationsRange(startDate, today);
-                console.log('[mainStore] ✅ Historical operations loaded successfully');
+                // Call ensureTaxOpsUntil which loads into taxKnownOperations (allKnownOperations source)
+                await ensureTaxOpsUntil(today);
+
+                console.log('[mainStore] ✅ Historical operations loaded, allKnown count:', allKnownOperations.value.length);
             } catch (err) {
                 console.error('[mainStore] ❌ Failed to load historical operations:', err);
             }
