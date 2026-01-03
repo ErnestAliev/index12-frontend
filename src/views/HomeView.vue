@@ -1672,7 +1672,7 @@ const handleRefundDelete = async (op) => {
 .graph-area-wrapper { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .graph-renderer-content { flex-grow: 1; }
 .summaries-container { flex-shrink: 0; }
-.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: #1a1a1a;}
+.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: #282828;}
 .divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); }
 /* --- AI Modal (Desktop) --- */
 .ai-modal-overlay { 
