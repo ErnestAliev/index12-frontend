@@ -1154,6 +1154,12 @@ onMounted(async () => {
     if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); 
     window.addEventListener('resize', onWindowResize); 
     updateScrollbarMetrics(); 
+    
+    // 🔥 CRITICAL: Preload ALL historical data (1 year) to populate allKnownOperations
+    console.log('[HomeView] 🔄 Preloading 1 year of historical data...');
+    await mainStore.loadCalculationData('1y', new Date());
+    console.log('[HomeView] ✅ Historical data preloaded, allKnown:', mainStore.allKnownOperations?.length);
+    
     await recalcProjectionForCurrentView();
 
     // 🟢 Delay background snapshot significantly to let UI settle
