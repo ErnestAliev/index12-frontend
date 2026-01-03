@@ -1097,7 +1097,7 @@ onMounted(async () => {
 
 /* Settings tab */
 .settings-content {
-  max-width: 900px;
+ 
 }
 
 .settings-section {

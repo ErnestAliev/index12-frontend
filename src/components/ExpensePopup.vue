@@ -219,6 +219,7 @@ const getOwnerName = (acc) => {
 const accountOptions = computed(() => {
   const targetDate = createSmartDate(editableDate.value);
   const isFuture = isFutureDate.value;
+  const isManager = mainStore.workspaceRole === 'manager';
 
   const opts = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -229,15 +230,18 @@ const accountOptions = computed(() => {
         displayBalance = mainStore.getBalanceAtDate(acc._id, targetDate);
     }
     
-    return {
+    const option = {
         value: acc._id,
         label: acc.name, 
         subLabel: owner, 
-        // Если будущее - показываем сколько БУДЕТ. Округляем до целых.
-        rightText: `${formatNumber(Math.round(displayBalance))} ₸`, 
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
+    // Hide balance for manager role
+    if (!isManager) {
+        option.rightText = `${formatNumber(Math.round(displayBalance))} ₸`;
+    }
+    return option;
   });
   opts.push({ isActionRow: true }); 
   return opts;
@@ -245,10 +249,16 @@ const accountOptions = computed(() => {
 
 const ownerOptions = computed(() => {
   const opts = [];
+  const isManager = mainStore.workspaceRole === 'manager';
+  
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
       mainStore.currentCompanyBalances.forEach(c => { 
-          opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatNumber(Math.abs(c.balance || 0))} ₸` }); 
+          const option = { value: `company-${c._id}`, label: c.name };
+          if (!isManager) {
+              option.rightText = `${formatNumber(Math.abs(c.balance || 0))} ₸`;
+          }
+          opts.push(option); 
       });
   }
   if (mainStore.currentIndividualBalances.length) {
@@ -256,7 +266,11 @@ const ownerOptions = computed(() => {
       mainStore.currentIndividualBalances.forEach(i => { 
           const nameLower = i.name.trim().toLowerCase();
           if (nameLower === 'розничные клиенты' || nameLower === 'розница') return;
-          opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatNumber(Math.abs(i.balance || 0))} ₸` }); 
+          const option = { value: `individual-${i._id}`, label: i.name };
+          if (!isManager) {
+              option.rightText = `${formatNumber(Math.abs(i.balance || 0))} ₸`;
+          }
+          opts.push(option); 
       });
   }
   opts.push({ isActionRow: true }); 

@@ -195,6 +195,7 @@ const getOwnerName = (acc) => {
 const fromAccountOptions = computed(() => {
   const targetDate = createSmartDate(editableDate.value);
   const isFuture = isFutureDate.value;
+  const isManager = mainStore.workspaceRole === 'manager';
 
   const options = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -205,14 +206,18 @@ const fromAccountOptions = computed(() => {
         displayBalance = mainStore.getBalanceAtDate(acc._id, targetDate);
     }
 
-    return {
+    const option = {
         value: acc._id,
         label: acc.name,
         subLabel: owner,
-        rightText: `${formatBalance(Math.round(displayBalance))} ₸`,
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
+    // Hide balance for manager role
+    if (!isManager) {
+        option.rightText = `${formatBalance(Math.round(displayBalance))} ₸`;
+    }
+    return option;
   });
   options.push({ isActionRow: true });
   return options;
@@ -220,16 +225,22 @@ const fromAccountOptions = computed(() => {
 
 // Список счетов получателя (Обычный баланс, т.к. нас интересует куда упадет, а не есть ли там деньги)
 const toAccountOptions = computed(() => {
+  const isManager = mainStore.workspaceRole === 'manager';
+  
   const options = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
-    return {
+    const option = {
         value: acc._id,
         label: acc.name,
         subLabel: owner,
-        rightText: `${formatBalance(Math.abs(acc.balance))} ₸`,
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
+    // Hide balance for manager role
+    if (!isManager) {
+        option.rightText = `${formatBalance(Math.abs(acc.balance))} ₸`;
+    }
+    return option;
   });
   options.push({ isActionRow: true });
   return options;
@@ -237,13 +248,27 @@ const toAccountOptions = computed(() => {
 
 const ownerOptions = computed(() => {
   const opts = [];
+  const isManager = mainStore.workspaceRole === 'manager';
+  
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
-      mainStore.currentCompanyBalances.forEach(c => { opts.push({ value: `company-${c._id}`, label: c.name, rightText: `${formatBalance(Math.abs(c.balance || 0))} ₸`, isSpecial: false }); });
+      mainStore.currentCompanyBalances.forEach(c => { 
+          const option = { value: `company-${c._id}`, label: c.name, isSpecial: false };
+          if (!isManager) {
+              option.rightText = `${formatBalance(Math.abs(c.balance || 0))} ₸`;
+          }
+          opts.push(option); 
+      });
   }
   if (mainStore.currentIndividualBalances.length) {
       opts.push({ label: 'Физлица', isHeader: true });
-      mainStore.currentIndividualBalances.forEach(i => { opts.push({ value: `individual-${i._id}`, label: i.name, rightText: `${formatBalance(Math.abs(i.balance || 0))} ₸`, isSpecial: false }); });
+      mainStore.currentIndividualBalances.forEach(i => { 
+          const option = { value: `individual-${i._id}`, label: i.name, isSpecial: false };
+          if (!isManager) {
+              option.rightText = `${formatBalance(Math.abs(i.balance || 0))} ₸`;
+          }
+          opts.push(option); 
+      });
   }
   opts.push({ isActionRow: true }); // Для кнопок "Создать..."
   return opts;
