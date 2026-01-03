@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
 
 export const useMainStore = defineStore('mainStore', () => {
-    console.log('--- mainStore.js v138.0 (FIX: Reactive Prepayments) LOADED ---');
+
 
     // 🟢 CONNECT SUB-STORES
     const uiStore = useUiStore();
@@ -797,12 +797,6 @@ export const useMainStore = defineStore('mainStore', () => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
             return _isEffectivelyPastOrToday(op.date);
-        });
-
-        console.log('🔍 currentOps:', {
-            allKnownCount: allKnownOperations.value.length,
-            currentCount: result.length,
-            snapshotTimestamp: snapshot.value.timestamp
         });
 
         return result;
@@ -2269,7 +2263,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     function startAutoRefresh(intervalMs = 30000) {
-        console.log('startAutoRefresh is deprecated. Sockets are active.');
+
     }
     function stopAutoRefresh() { }
 
