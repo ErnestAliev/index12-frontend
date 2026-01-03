@@ -1,4 +1,7 @@
 <script setup>
+import { usePermissions } from '@/composables/usePermissions';
+
+const permissions = usePermissions();
 const emit = defineEmits(['select']);
 </script>
 
@@ -10,7 +13,7 @@ const emit = defineEmits(['select']);
     <button class="btn-expense" @click="emit('select', 'expense')">
       - Расход
     </button>
-    <button class="btn-transfer" @click="emit('select', 'transfer')">
+    <button v-if="permissions.canCreateTransfer.value" class="btn-transfer" @click="emit('select', 'transfer')">
       Перевод
     </button>
   </div>
