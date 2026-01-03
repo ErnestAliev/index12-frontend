@@ -19,8 +19,6 @@ import { accountSuggestions } from '@/data/accountSuggestions.js';
  * 4. (FIX) Устранена возможная ошибка дублирования переменных.
  */
 
-const mainStore = useMainStore();
-
 const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
