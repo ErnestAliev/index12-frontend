@@ -17,7 +17,8 @@ export function usePermissions() {
     const mainStore = useMainStore();
 
     // Get current workspace role
-    const role = computed(() => mainStore.workspaceRole);
+    // CRITICAL: Access .value because mainStore.workspaceRole is a computed ref
+    const role = computed(() => mainStore.workspaceRole?.value ?? mainStore.workspaceRole);
 
     // Role checks
     const isAnalyst = computed(() => role.value === 'analyst');
