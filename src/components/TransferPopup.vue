@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
@@ -28,7 +29,10 @@ const props = defineProps({
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save']);
+const emit = defineEmits(['close', 'save', 'operation-deleted']);
+
+const mainStore = useMainStore();
+const permissions = usePermissions();
 
 // --- ДАННЫЕ ФОРМЫ ---
 const amount = ref('');
@@ -195,12 +199,10 @@ const getOwnerName = (acc) => {
 const fromAccountOptions = computed(() => {
   const targetDate = createSmartDate(editableDate.value);
   const isFuture = isFutureDate.value;
-  const isManager = mainStore.workspaceRole === 'manager';
 
   const options = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
     
-    // Если будущее - берем прогнозируемый баланс
     let displayBalance = acc.balance || 0;
     if (isFuture && mainStore.getBalanceAtDate) {
         displayBalance = mainStore.getBalanceAtDate(acc._id, targetDate);
@@ -213,8 +215,7 @@ const fromAccountOptions = computed(() => {
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
-    // Hide balance for manager role
-    if (!isManager) {
+    if (permissions.shouldShowBalance.value) {
         option.rightText = `${formatBalance(Math.round(displayBalance))} ₸`;
     }
     return option;
@@ -223,9 +224,7 @@ const fromAccountOptions = computed(() => {
   return options;
 });
 
-// Список счетов получателя (Обычный баланс, т.к. нас интересует куда упадет, а не есть ли там деньги)
 const toAccountOptions = computed(() => {
-  const isManager = mainStore.workspaceRole === 'manager';
   
   const options = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -236,8 +235,7 @@ const toAccountOptions = computed(() => {
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
-    // Hide balance for manager role
-    if (!isManager) {
+    if (permissions.shouldShowBalance.value) {
         option.rightText = `${formatBalance(Math.abs(acc.balance))} ₸`;
     }
     return option;
@@ -248,13 +246,12 @@ const toAccountOptions = computed(() => {
 
 const ownerOptions = computed(() => {
   const opts = [];
-  const isManager = mainStore.workspaceRole === 'manager';
   
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
       mainStore.currentCompanyBalances.forEach(c => { 
           const option = { value: `company-${c._id}`, label: c.name, isSpecial: false };
-          if (!isManager) {
+          if (permissions.shouldShowBalance.value) {
               option.rightText = `${formatBalance(Math.abs(c.balance || 0))} ₸`;
           }
           opts.push(option); 
@@ -264,13 +261,13 @@ const ownerOptions = computed(() => {
       opts.push({ label: 'Физлица', isHeader: true });
       mainStore.currentIndividualBalances.forEach(i => { 
           const option = { value: `individual-${i._id}`, label: i.name, isSpecial: false };
-          if (!isManager) {
+          if (permissions.shouldShowBalance.value) {
               option.rightText = `${formatBalance(Math.abs(i.balance || 0))} ₸`;
           }
           opts.push(option); 
       });
   }
-  opts.push({ isActionRow: true }); // Для кнопок "Создать..."
+  opts.push({ isActionRow: true });
   return opts;
 });
 

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
@@ -31,6 +32,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment', 'trigger-smart-deal']);
 
 const mainStore = useMainStore();
+const permissions = usePermissions();
 
 // --- ДАННЫЕ ---
 const amount = ref('');
@@ -285,7 +287,6 @@ const getOwnerName = (acc) => {
 const accountOptions = computed(() => {
   const targetDate = createSmartDate(editableDate.value);
   const isFuture = isFutureDate.value;
-  const isManager = mainStore.workspaceRole === 'manager';
 
   const opts = mainStore.currentAccountBalances.map(acc => {
     const owner = getOwnerName(acc);
@@ -300,8 +301,8 @@ const accountOptions = computed(() => {
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
-    // Hide balance for manager role
-    if (!isManager) {
+    // Show balance only if allowed by permissions
+    if (permissions.shouldShowBalance.value) {
         option.rightText = `${formatNumber(Math.round(displayBalance))} ₸`;
     }
     return option;
@@ -312,14 +313,13 @@ const accountOptions = computed(() => {
 
 const ownerOptions = computed(() => {
   const opts = [];
-  const isManager = mainStore.workspaceRole === 'manager';
   
   if (mainStore.currentCompanyBalances.length) {
       opts.push({ label: 'Компании', isHeader: true });
       mainStore.currentCompanyBalances.forEach(c => { 
           const option = { value: `company-${c._id}`, label: c.name };
-          // Hide balance for manager role
-          if (!isManager) {
+          // Show balance only if allowed by permissions
+          if (permissions.shouldShowBalance.value) {
               option.rightText = `${formatNumber(Math.abs(c.balance || 0))} ₸`;
           }
           opts.push(option); 
@@ -331,8 +331,8 @@ const ownerOptions = computed(() => {
           const nameLower = i.name.trim().toLowerCase();
           if (nameLower === 'розничные клиенты' || nameLower === 'розница') return;
           const option = { value: `individual-${i._id}`, label: i.name };
-          // Hide balance for manager role
-          if (!isManager) {
+          // Show balance only if allowed by permissions
+          if (permissions.shouldShowBalance.value) {
               option.rightText = `${formatNumber(Math.abs(i.balance || 0))} ₸`;
           }
           opts.push(option); 
