@@ -162,8 +162,9 @@ export function usePermissions() {
     /**
      * Should show 12M (year view) toggle?
      * Manager should only see current month
+     * Show by default if role is not set (loading state)
      */
-    const shouldShow12MToggle = computed(() => !isManager.value);
+    const shouldShow12MToggle = computed(() => role.value !== 'manager');
 
     // ==========================================
     // PERMISSION SUMMARY
