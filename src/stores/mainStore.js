@@ -1863,22 +1863,33 @@ export const useMainStore = defineStore('mainStore', () => {
 
             // 🔥 CRITICAL: Load ALL historical operations from first event to today
             // This ensures data is available immediately without needing to switch views
-            if (user.value?.minEventDate) {
-                try {
-                    const firstEventDate = new Date(user.value.minEventDate);
-                    firstEventDate.setHours(0, 0, 0, 0);
-                    const today = new Date();
-                    today.setHours(23, 59, 59, 999);
+            const today = new Date();
+            today.setHours(23, 59, 59, 999);
 
-                    console.log('[mainStore] Loading ALL historical operations:', {
-                        from: firstEventDate.toISOString(),
-                        to: today.toISOString()
-                    });
+            let startDate = null;
+            if (earliestEventDate.value) {
+                startDate = new Date(earliestEventDate.value);
+            } else if (user.value?.createdAt) {
+                // Fallback to user creation date
+                startDate = new Date(user.value.createdAt);
+            } else {
+                // Final fallback: load from 1 year ago
+                startDate = new Date();
+                startDate.setFullYear(startDate.getFullYear() - 1);
+            }
+            startDate.setHours(0, 0, 0, 0);
 
-                    await fetchOperationsRange(firstEventDate, today, { silent: true });
-                } catch (err) {
-                    console.error('[mainStore] Failed to load historical operations:', err);
-                }
+            try {
+                console.log('[mainStore] 🔄 Loading ALL historical operations:', {
+                    from: startDate.toISOString(),
+                    to: today.toISOString(),
+                    source: earliestEventDate.value ? 'earliestEventDate' : (user.value?.createdAt ? 'userCreatedAt' : 'fallback')
+                });
+
+                await fetchOperationsRange(startDate, today);
+                console.log('[mainStore] ✅ Historical operations loaded successfully');
+            } catch (err) {
+                console.error('[mainStore] ❌ Failed to load historical operations:', err);
             }
 
             // Preload full-history ops for Taxes widget (cumulative fact, independent of projection range)
