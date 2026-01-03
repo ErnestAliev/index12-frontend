@@ -876,7 +876,6 @@ const handleMainAction = () => {
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
         <div class="input-inner-content">
            <span v-if="amount" class="floating-label">Сумма дохода, ₸</span>
-           <span v-if="amount" class="floating-label">Сумма дохода, ₸</span>
            <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isProtectedMode || isReadOnly" />
         </div>
       </div>
