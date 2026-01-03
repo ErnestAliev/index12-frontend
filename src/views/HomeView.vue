@@ -1253,7 +1253,12 @@ const handleRefundDelete = async (op) => {
     <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
     <div class="header-resizer" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body">
-      <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel v-show="mainStore.workspaceRole !== 'manager'" @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
+      <aside class="home-left-panel">
+        <!-- DEBUG: Show current role -->
+        <div style="position: absolute; top: 10px; left: 10px; background: red; color: white; padding: 5px; z-index: 9999; font-size: 12px;">
+          ROLE: {{ mainStore.workspaceRole || 'undefined' }}
+        </div>
+        <div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel v-show="mainStore.workspaceRole !== 'manager'" @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
         <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
         <!-- 🟢 UPDATED: Hide vertical resizer for timeline-only, keep scroll track -->
