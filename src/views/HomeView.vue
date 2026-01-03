@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue'
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
+import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
 
 
@@ -33,6 +34,7 @@ import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
 const mainStore = useMainStore();
+const permissions = usePermissions();
 
 // --- CONSTANTS ---
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -1253,7 +1255,7 @@ const handleRefundDelete = async (op) => {
     <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
     <div class="header-resizer" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body">
-      <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
+      <aside class="home-left-panel"><div class="nav-panel-wrapper" ref="navPanelWrapperRef" v-if="permissions.shouldShow12MToggle.value"><NavigationPanel @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
         <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
         <!-- 🟢 UPDATED: Hide vertical resizer for timeline-only, keep scroll track -->

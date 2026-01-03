@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { usePermissions } from '@/composables/usePermissions';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v1.3-FIXED-EMIT ---
@@ -18,13 +19,25 @@ import { ref, computed, onMounted } from 'vue';
 
 const emit = defineEmits(['change-view']);
 
-const views = [
+const permissions = usePermissions();
+
+const allViews = [
   { key: '12d', num: '12', unit: 'ДНЕЙ' },
   { key: '1m',  num: '1',  unit: 'МЕС' },
   { key: '3m',  num: '3',  unit: 'МЕС' },
   { key: '6m',  num: '6',  unit: 'МЕС' },
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
+
+// Filter views based on permissions (manager cannot see 12 month view)
+const views = computed(() => {
+  if (permissions.shouldShow12MToggle.value) {
+    return allViews; // Admin/Analyst see all options
+  } else {
+    return allViews.filter(v => v.key !== '1y'); // Manager: hide 1 year view
+  }
+});
+
 const currentIndex = ref(0); // Стартуем с '12d'
 
 const currentView = computed(() => views[currentIndex.value]);
@@ -34,7 +47,7 @@ const changeView = (direction) => {
   const newIndex = currentIndex.value + direction;
   
   // Проверяем, что не вышли за границы массива
-  if (newIndex >= 0 && newIndex < views.length) {
+  if (newIndex >= 0 && newIndex < views.value.length) {
     currentIndex.value = newIndex;
     
     // --- ИСПРАВЛЕНИЕ ---
@@ -42,7 +55,7 @@ const changeView = (direction) => {
     // (Это отправляло СТАРОЕ значение, т.к. computed 'currentView' еще не обновился)
     
     // СТАЛО: Мы берем ключ напрямую из нового индекса
-    const newKey = views[newIndex].key;
+    const newKey = views.value[newIndex].key;
     
     // --- !!! ЛОГ !!! ---
     const logDir = direction > 0 ? '⬆️' : '⬇️';
