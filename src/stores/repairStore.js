@@ -8,12 +8,12 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 
 // 🟢 ВЕРСИЯ ДАННЫХ
 // Измените это число (+1), когда делаете обновление, требующее пересчета данных у всех пользователей.
-const DATA_VERSION = 1; 
+const DATA_VERSION = 1;
 
 export const useRepairStore = defineStore('repairStore', () => {
     const mainStore = useMainStore();
     const dealStore = useDealStore();
-    
+
     const isRepairing = ref(false);
     const progress = ref(0);
     const repairLog = ref([]);
@@ -41,14 +41,14 @@ export const useRepairStore = defineStore('repairStore', () => {
         isRepairing.value = true;
         progress.value = 0;
         repairLog.value = [];
-        
+
         try {
             log('Запуск полного восстановления данных...');
 
             // 1. Сначала загружаем данные (БЕЗ очистки кэша, чтобы не ломать UI при ошибке)
             const startDate = '2000-01-01';
             const endDate = '2100-01-01';
-            
+
             log(`Запрос данных с сервера: ${startDate} - ${endDate}`);
 
             // Адаптивная загрузка
@@ -62,7 +62,7 @@ export const useRepairStore = defineStore('repairStore', () => {
 
             let rawOps = response.data;
             if (!Array.isArray(rawOps)) rawOps = [];
-            
+
             log(`Загружено ${rawOps.length} операций. Начинаем пересчет...`);
             progress.value = 50;
 
@@ -70,7 +70,7 @@ export const useRepairStore = defineStore('repairStore', () => {
             mainStore.displayCache = {};
             mainStore.calculationCache = {};
             mainStore.dealOperations = []; // Сброс сделок
-            
+
             // 3. Структурирование данных (Re-indexing)
             const newSnapshot = {
                 totalBalance: 0,
@@ -91,12 +91,12 @@ export const useRepairStore = defineStore('repairStore', () => {
             for (const op of rawOps) {
                 // Подготовка для кэша
                 const dateKey = mainStore._getDateKey(new Date(op.date));
-                const richOp = { 
-                    ...op, 
-                    date: new Date(op.date), 
-                    dateKey 
+                const richOp = {
+                    ...op,
+                    date: new Date(op.date),
+                    dateKey
                 };
-                
+
                 // Заполнение displayCache
                 if (!mainStore.displayCache[dateKey]) {
                     mainStore.displayCache[dateKey] = [];
@@ -104,7 +104,7 @@ export const useRepairStore = defineStore('repairStore', () => {
                 }
                 mainStore.displayCache[dateKey].push(richOp);
                 mainStore.calculationCache[dateKey].push(richOp);
-                
+
                 processedOps.push(richOp);
 
                 // --- МАТЕМАТИКА СНАПШОТА ---
@@ -120,26 +120,26 @@ export const useRepairStore = defineStore('repairStore', () => {
                     updateBalance(newSnapshot.accountBalances, richOp.fromAccountId, -absAmt);
                     updateBalance(newSnapshot.companyBalances, richOp.fromCompanyId, -absAmt);
                     updateBalance(newSnapshot.individualBalances, richOp.fromIndividualId, -absAmt);
-                    
+
                     // Начислили
                     updateBalance(newSnapshot.accountBalances, richOp.toAccountId, absAmt);
                     updateBalance(newSnapshot.companyBalances, richOp.toCompanyId, absAmt);
                     updateBalance(newSnapshot.individualBalances, richOp.toIndividualId, absAmt);
-                } 
+                }
                 // Доход/Расход
                 else {
-                    const isRetailWriteOff = !richOp.accountId && 
-                                             richOp.counterpartyIndividualId === mainStore.retailIndividualId &&
-                                             type === 'expense';
+                    const isRetailWriteOff = !richOp.accountId &&
+                        richOp.counterpartyIndividualId === mainStore.retailIndividualId &&
+                        type === 'expense';
 
                     const effectiveAmount = isIncome ? absAmt : -absAmt;
 
                     if (richOp.accountId) {
                         updateBalance(newSnapshot.accountBalances, richOp.accountId, effectiveAmount);
                     }
-                    
+
                     if (!isRetailWriteOff) {
-                       updateBalance(newSnapshot.companyBalances, richOp.companyId, effectiveAmount);
+                        updateBalance(newSnapshot.companyBalances, richOp.companyId, effectiveAmount);
                     }
 
                     updateBalance(newSnapshot.individualBalances, richOp.individualId, effectiveAmount);
@@ -170,19 +170,19 @@ export const useRepairStore = defineStore('repairStore', () => {
 
             // 4. Применение результатов
             mainStore.snapshot = newSnapshot;
-            
+
             // Обновляем список для сделок
-            mainStore.dealOperations = processedOps.filter(op => 
-                (op.totalDealAmount > 0) || 
-                op.isDealTranche || 
-                op.isWorkAct || 
+            mainStore.dealOperations = processedOps.filter(op =>
+                (op.totalDealAmount > 0) ||
+                op.isDealTranche ||
+                op.isWorkAct ||
                 mainStore.getPrepaymentCategoryIds.includes(String(op.categoryId))
             );
 
             log('Снапшот и сделки обновлены.');
             progress.value = 100;
             log('Готово! Система синхронизирована.');
-            
+
             return true; // Успех
 
         } catch (e) {
@@ -201,23 +201,23 @@ export const useRepairStore = defineStore('repairStore', () => {
     const checkAndRunAutoRepair = async () => {
         const STORAGE_KEY = 'app_data_version';
         const lastVersion = parseInt(localStorage.getItem(STORAGE_KEY) || '0');
-        
-        console.log(`[Repair] Проверка версий. Текущая (код): ${DATA_VERSION}, Сохраненная (юзер): ${lastVersion}`);
+
+
 
         // Если версия в коде больше, чем у юзера -> Запускаем лечение
         if (DATA_VERSION > lastVersion) {
-            console.warn('[Repair] Обнаружено обновление логики данных. Запуск авто-восстановления...');
-            
+
+
             const success = await runFullRepair();
-            
+
             if (success) {
                 localStorage.setItem(STORAGE_KEY, DATA_VERSION.toString());
-                console.log(`[Repair] Версия данных обновлена до ${DATA_VERSION}.`);
+
             } else {
                 console.error('[Repair] Не удалось обновить данные. Повторная попытка будет при следующем запуске.');
             }
         } else {
-            console.log('[Repair] Данные актуальны. Восстановление не требуется.');
+
         }
     };
 

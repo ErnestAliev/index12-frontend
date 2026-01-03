@@ -4,7 +4,7 @@ import { useMainStore } from './mainStore';
 
 export const useDealStore = defineStore('dealStore', () => {
     const mainStore = useMainStore();
-    console.log('--- dealStore.js v142.0 (FIX: Auto-Reset Deal Cycle) LOADED ---');
+
 
     const _toStr = (val) => {
         if (!val) return '';

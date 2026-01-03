@@ -4,14 +4,14 @@ import { useMainStore } from './mainStore';
 
 const VIEW_MODE_DAYS = {
   '12d': { total: 12 },
-  '1m':  { total: 30 },
-  '3m':  { total: 90 },
-  '6m':  { total: 180 },
-  '1y':  { total: 365 }
+  '1m': { total: 30 },
+  '3m': { total: 90 },
+  '6m': { total: 180 },
+  '1y': { total: 365 }
 };
 
 export const useProjectionStore = defineStore('projection', () => {
-  console.log('--- projectionStore.js v5.3 (FIX: FINAL Anchor Logic) LOADED ---');
+
 
   // --- 1. Date Helpers ---
   const _getDayOfYear = (date) => {
@@ -28,7 +28,7 @@ export const useProjectionStore = defineStore('projection', () => {
 
   const _parseDateKey = (dateKey) => {
     if (typeof dateKey !== 'string' || !dateKey.includes('-')) {
-        return new Date(); 
+      return new Date();
     }
     const [year, doy] = dateKey.split('-').map(Number);
     const date = new Date(year, 0, 1);
@@ -39,23 +39,23 @@ export const useProjectionStore = defineStore('projection', () => {
   const _calculateDateRangeWithYear = (view, baseDate) => {
     const startDate = new Date(baseDate);
     const endDate = new Date(baseDate);
-    
+
     const modeInfo = VIEW_MODE_DAYS[view] || VIEW_MODE_DAYS['12d'];
     const totalDays = modeInfo.total;
-    
+
     let todayIndex;
     if (view === '12d') {
-        todayIndex = 5;
+      todayIndex = 5;
     } else {
-        todayIndex = Math.floor(totalDays / 2);
+      todayIndex = Math.floor(totalDays / 2);
     }
 
-    const daysForward = (totalDays - 1) - todayIndex; 
-    const daysBack = todayIndex;                      
+    const daysForward = (totalDays - 1) - todayIndex;
+    const daysBack = todayIndex;
 
     startDate.setDate(startDate.getDate() - daysBack);
     endDate.setDate(endDate.getDate() + daysForward);
-    
+
     return { startDate, endDate };
   };
 
@@ -68,25 +68,25 @@ export const useProjectionStore = defineStore('projection', () => {
   const currentViewDate = ref(new Date());
   const currentYear = ref(new Date().getFullYear());
 
-  const calculationStatus = ref('idle'); 
-  const calculatedUntil = ref(null);     
-  const globalProjectedBalance = ref(0); 
+  const calculationStatus = ref('idle');
+  const calculatedUntil = ref(null);
+  const globalProjectedBalance = ref(0);
 
   const savedToday = localStorage.getItem('todayDayOfYear');
   if (savedToday) {
     todayDayOfYear.value = parseInt(savedToday);
   }
 
-  function setToday(d){ 
-    todayDayOfYear.value = d; 
+  function setToday(d) {
+    todayDayOfYear.value = d;
     localStorage.setItem('todayDayOfYear', d.toString());
   }
-  
+
   function setCurrentViewDate(date) {
-      if (!date) return;
-      const d = new Date(date);
-      if (isNaN(d.getTime())) return;
-      currentViewDate.value = d;
+    if (!date) return;
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return;
+    currentViewDate.value = d;
   }
 
   // --- 3. Projection Settings ---
@@ -96,56 +96,56 @@ export const useProjectionStore = defineStore('projection', () => {
     futureIncomeSum: 0, futureExpenseSum: 0
   };
   const projection = ref(initialProjection);
-  
+
   watch(projection, (n) => localStorage.setItem('projection', JSON.stringify(n)), { deep: true });
 
   // --- 4. Actions ---
-  function computeTotalDaysForMode(mode) { 
-      return getViewModeInfo(mode).total; 
+  function computeTotalDaysForMode(mode) {
+    return getViewModeInfo(mode).total;
   }
 
   function setCalculationStatus(status) {
-      calculationStatus.value = status;
+    calculationStatus.value = status;
   }
 
   function setGlobalProjectedBalance(amount, untilDate) {
-      globalProjectedBalance.value = amount;
-      calculatedUntil.value = untilDate ? new Date(untilDate) : null;
+    globalProjectedBalance.value = amount;
+    calculatedUntil.value = untilDate ? new Date(untilDate) : null;
   }
 
   function updateProjectionState(mode, today = new Date()) {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
-    
+
     calculationStatus.value = 'idle';
 
-    projection.value = { 
-        mode, 
-        totalDays: computeTotalDaysForMode(mode), 
-        rangeStartDate: startDate, 
-        rangeEndDate: endDate, 
-        futureIncomeSum: 0, 
-        futureExpenseSum: 0 
+    projection.value = {
+      mode,
+      totalDays: computeTotalDaysForMode(mode),
+      rangeStartDate: startDate,
+      rangeEndDate: endDate,
+      futureIncomeSum: 0,
+      futureExpenseSum: 0
     };
   }
 
   async function updateProjectionFromCalculationData(mode, today = new Date()) {
-     updateProjectionState(mode, today);
+    updateProjectionState(mode, today);
   }
 
-  async function updateFutureProjectionByMode(mode, today = new Date()){
-     updateProjectionState(mode, today);
+  async function updateFutureProjectionByMode(mode, today = new Date()) {
+    updateProjectionState(mode, today);
   }
 
-  function setProjectionRange(startDate, endDate){
-    const start = new Date(startDate); start.setHours(0,0,0,0);
-    const end   = new Date(endDate); end.setHours(0,0,0,0);
-    projection.value = { 
-        mode:'custom', 
-        totalDays: Math.max(1, Math.floor((end-start)/86400000)+1), 
-        rangeStartDate:start, 
-        rangeEndDate:end, 
-        futureIncomeSum: 0 
+  function setProjectionRange(startDate, endDate) {
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate); end.setHours(0, 0, 0, 0);
+    projection.value = {
+      mode: 'custom',
+      totalDays: Math.max(1, Math.floor((end - start) / 86400000) + 1),
+      rangeStartDate: start,
+      rangeEndDate: end,
+      futureIncomeSum: 0
     };
   }
 
@@ -435,13 +435,13 @@ export const useProjectionStore = defineStore('projection', () => {
 
   return {
     todayDayOfYear, currentViewDate, currentYear, projection,
-    calculationStatus, calculatedUntil, globalProjectedBalance, 
+    calculationStatus, calculatedUntil, globalProjectedBalance,
     _getDateKey, _parseDateKey, _getDayOfYear, _calculateDateRangeWithYear, getViewModeInfo, computeTotalDaysForMode,
-    setToday, setCurrentViewDate, 
+    setToday, setCurrentViewDate,
     setCalculationStatus, setGlobalProjectedBalance,
     updateProjectionState,
-    updateProjectionFromCalculationData, 
-    updateFutureProjectionByMode, 
+    updateProjectionFromCalculationData,
+    updateFutureProjectionByMode,
     setProjectionRange,
     futureOps, dailyChartData
   };

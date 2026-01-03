@@ -11,7 +11,7 @@ import { useDealStore } from './dealStore'; // 🟢 Integration
 axios.defaults.withCredentials = true;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
-console.log(`[mainStore] Configured API_BASE_URL: ${API_BASE_URL}`);
+
 
 export const useMainStore = defineStore('mainStore', () => {
 

@@ -14,57 +14,57 @@ const debounce = (fn, delay) => {
 };
 
 export const useWidgetStore = defineStore('widget', () => {
-  console.log('--- widgetStore.js v1.0 (NEW) LOADED ---');
+
 
   // --- 1. Конфигурация Виджетов (Static Definitions) ---
   const staticWidgets = ref([
-    { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' }, 
-    { key: 'accounts',     name: 'Счета/Кассы' }, 
-    { key: 'companies',    name: 'Мои компании' },
-    { key: 'taxes',        name: 'Мои налоги' }, 
-    { key: 'credits',      name: 'Мои кредиты' }, 
-    { key: 'contractors',  name: 'Мои контрагенты' },
-    { key: 'projects',     name: 'Мои проекты' },
-    { key: 'futureTotal',  name: 'Всего на счетах\nс учетом будущих' }, 
-    { key: 'liabilities',  name: 'Мои предоплаты' },
-    { key: 'incomeList',   name: 'Мои доходы' },
-    { key: 'expenseList',  name: 'Мои расходы' },
+    { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' },
+    { key: 'accounts', name: 'Счета/Кассы' },
+    { key: 'companies', name: 'Мои компании' },
+    { key: 'taxes', name: 'Мои налоги' },
+    { key: 'credits', name: 'Мои кредиты' },
+    { key: 'contractors', name: 'Мои контрагенты' },
+    { key: 'projects', name: 'Мои проекты' },
+    { key: 'futureTotal', name: 'Всего на счетах\nс учетом будущих' },
+    { key: 'liabilities', name: 'Мои предоплаты' },
+    { key: 'incomeList', name: 'Мои доходы' },
+    { key: 'expenseList', name: 'Мои расходы' },
     { key: 'withdrawalList', name: 'Мои выводы' },
-    { key: 'transfers',    name: 'Мои переводы' }, 
-    { key: 'individuals',  name: 'Физлица' },
-    { key: 'categories',   name: 'Категории' },
+    { key: 'transfers', name: 'Мои переводы' },
+    { key: 'individuals', name: 'Физлица' },
+    { key: 'categories', name: 'Категории' },
   ]);
 
   // --- 2. Dashboard Layout (Расположение) ---
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors', 'projects', 'futureTotal', 
+    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors', 'projects', 'futureTotal',
     'transfers'
   ]);
-  const originalDashboardLayout = ref([]); 
+  const originalDashboardLayout = ref([]);
 
   // Сохранение на сервер
   const saveLayoutToServer = debounce(async (newLayout) => {
-      try {
-          await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
-          console.log('[widgetStore] Layout saved to server');
-      } catch (e) {
-          if (e.response && e.response.status !== 401) {
-              console.error('[widgetStore] Failed to save layout:', e);
-          }
+    try {
+      await axios.put(`${API_BASE_URL}/user/layout`, { layout: newLayout });
+      console.log('[widgetStore] Layout saved to server');
+    } catch (e) {
+      if (e.response && e.response.status !== 401) {
+        console.error('[widgetStore] Failed to save layout:', e);
       }
+    }
   }, 1000);
 
   watch(dashboardLayout, (n) => {
-      localStorage.setItem('dashboardLayout', JSON.stringify(n));
-      saveLayoutToServer(n);
+    localStorage.setItem('dashboardLayout', JSON.stringify(n));
+    saveLayoutToServer(n);
   }, { deep: true });
 
-  function replaceWidget(i, key){ 
+  function replaceWidget(i, key) {
     if (i >= 0 && i < dashboardLayout.value.length) {
-        if (!dashboardLayout.value.includes(key)) {
-            dashboardLayout.value[i] = key; 
-        }
+      if (!dashboardLayout.value.includes(key)) {
+        dashboardLayout.value[i] = key;
+      }
     }
   }
 
@@ -73,7 +73,7 @@ export const useWidgetStore = defineStore('widget', () => {
   }
 
   // --- 3. Настройки внутри виджетов (Сортировка/Фильтрация) ---
-  const widgetSortMode = ref('default'); 
+  const widgetSortMode = ref('default');
   const widgetFilterMode = ref('all');
 
   function setWidgetSortMode(mode) { widgetSortMode.value = mode; }
@@ -82,9 +82,9 @@ export const useWidgetStore = defineStore('widget', () => {
   // --- 4. Состояние "Прогноз/Факт" (Глазик) ---
   const savedForecastState = localStorage.getItem('dashboardForecastState');
   const dashboardForecastState = ref(savedForecastState ? JSON.parse(savedForecastState) : {});
-  
+
   watch(dashboardForecastState, (n) => {
-      localStorage.setItem('dashboardForecastState', JSON.stringify(n));
+    localStorage.setItem('dashboardForecastState', JSON.stringify(n));
   }, { deep: true });
 
   function setForecastState(widgetKey, value) {
@@ -92,9 +92,9 @@ export const useWidgetStore = defineStore('widget', () => {
   }
 
   function toggleForecastState(widgetKey) {
-      if (widgetKey) {
-          dashboardForecastState.value[widgetKey] = !dashboardForecastState.value[widgetKey];
-      }
+    if (widgetKey) {
+      dashboardForecastState.value[widgetKey] = !dashboardForecastState.value[widgetKey];
+    }
   }
 
   return {
