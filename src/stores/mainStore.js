@@ -793,11 +793,19 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const currentOps = computed(() => {
         const _tick = snapshot.value.timestamp;
-        return allKnownOperations.value.filter(op => {
+        const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
             return _isEffectivelyPastOrToday(op.date);
         });
+
+        console.log('🔍 currentOps:', {
+            allKnownCount: allKnownOperations.value.length,
+            currentCount: result.length,
+            snapshotTimestamp: snapshot.value.timestamp
+        });
+
+        return result;
     });
 
     async function fetchSnapshot() {
@@ -974,17 +982,30 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const currentContractorBalances = computed(() => {
         if (includeExcludedInTotal.value) {
-            return contractors.value.map(c => ({
+            const result = contractors.value.map(c => ({
                 ...c,
                 balance: snapshot.value.contractorBalances[c._id] || 0
             }));
+            console.log('🔍 currentContractorBalances (snapshot mode):', {
+                contractorsCount: contractors.value.length,
+                snapshotKeys: Object.keys(snapshot.value.contractorBalances || {}).length,
+                result: result.map(c => ({ name: c.name, balance: c.balance }))
+            });
+            return result;
         }
 
         const aggregated = _calculateAggregatedBalance(currentOps.value, 'contractorId');
-        return contractors.value.map(c => ({
+        const result = contractors.value.map(c => ({
             ...c,
             balance: aggregated.get(String(c._id)) || 0
         }));
+        console.log('🔍 currentContractorBalances (aggregated mode):', {
+            contractorsCount: contractors.value.length,
+            currentOpsCount: currentOps.value.length,
+            aggregatedSize: aggregated.size,
+            result: result.map(c => ({ name: c.name, balance: c.balance }))
+        });
+        return result;
     });
 
     const futureContractorBalances = computed(() => {
