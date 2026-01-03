@@ -33,6 +33,13 @@ export const useMainStore = defineStore('mainStore', () => {
     // Global admin or workspace admin
     const isGlobalAdmin = computed(() => user.value?.role === 'admin');
     const isWorkspaceAdmin = computed(() => workspaceRole.value === 'admin');
+    const isWorkspaceOwner = computed(() => {
+        // Check if user owns the current workspace (not just invited as admin)
+        if (!user.value?.currentWorkspaceId) return true; // No workspace = owner of default
+        // If workspace has userId field and it matches user's ID = owner
+        // This will be set by backend based on workspace.userId === req.user.id
+        return user.value?.isWorkspaceOwner === true;
+    });
     const isManager = computed(() => workspaceRole.value === 'manager');
     const isAnalyst = computed(() => workspaceRole.value === 'analyst');
 
@@ -2739,7 +2746,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         user, isAuthLoading,
         // 🟢 NEW: Role-based access
-        workspaceRole, isWorkspaceAdmin, isManager, isAnalyst, // Export role and role checks
+        workspaceRole, isWorkspaceAdmin, isWorkspaceOwner, isManager, isAnalyst, // Export role and role checks
         userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
         currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
