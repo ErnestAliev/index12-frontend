@@ -25,7 +25,11 @@ export const useMainStore = defineStore('mainStore', () => {
     // 🟢 NEW: Role-based access computed properties
     // 🟢 NEW: Role-based access using Workspace Role
     // workspaceRole comes from GET /api/auth/me
-    const workspaceRole = computed(() => user.value?.workspaceRole || 'admin');
+    const workspaceRole = computed(() => {
+        const role = user.value?.workspaceRole;
+        console.log('🔍 mainStore workspaceRole:', { userValue: user.value, workspaceRole: role });
+        return role || null; // Return null instead of 'admin' as default to properly detect missing role
+    });
 
     // Global admin or workspace admin
     const isGlobalAdmin = computed(() => user.value?.role === 'admin');
