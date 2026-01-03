@@ -13,7 +13,8 @@ const emit = defineEmits(['select']);
     <button class="btn-expense" @click="emit('select', 'expense')">
       - Расход
     </button>
-    <button v-if="permissions.canCreateTransfer.value" class="btn-transfer" @click="emit('select', 'transfer')">
+    <!-- Show Transfer for everyone EXCEPT manager (safe default) -->
+    <button v-if="!permissions.isManager.value" class="btn-transfer" @click="emit('select', 'transfer')">
       Перевод
     </button>
   </div>

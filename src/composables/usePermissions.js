@@ -67,7 +67,16 @@ export function usePermissions() {
      * - Manager: NO (HIDDEN for security)
      * - Admin: YES
      */
-    const canSeeBalances = computed(() => !isManager.value && !isAnalyst.value);
+    const canSeeBalances = computed(() => {
+        const result = !isManager.value && !isAnalyst.value;
+        console.log('🔍 canSeeBalances:', {
+            role: role.value,
+            isManager: isManager.value,
+            isAnalyst: isAnalyst.value,
+            result
+        });
+        return result;
+    });
 
     /**
      * Can create transfer operations
