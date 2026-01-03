@@ -34,13 +34,6 @@ const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepaym
 const mainStore = useMainStore();
 const permissions = usePermissions();
 
-// DEBUG: Check if shouldShowBalance works
-console.log('🔍 IncomePopup permissions:', {
-    workspaceRole: mainStore.workspaceRole,
-    shouldShowBalance: permissions.shouldShowBalance.value,
-    isManager: permissions.isManager.value
-});
-
 // --- ДАННЫЕ ---
 const amount = ref('');
 const amountInput = ref(null);

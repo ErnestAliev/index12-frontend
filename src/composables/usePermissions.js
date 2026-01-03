@@ -65,18 +65,9 @@ export function usePermissions() {
      * Can see account balances in popups and selects
      * - Analyst: NO
      * - Manager: NO (HIDDEN for security)
-     * - Admin: YES
+     * - Admin: YES (full access)
      */
-    const canSeeBalances = computed(() => {
-        const result = !isManager.value && !isAnalyst.value;
-        console.log('🔍 canSeeBalances:', {
-            role: role.value,
-            isManager: isManager.value,
-            isAnalyst: isAnalyst.value,
-            result
-        });
-        return result;
-    });
+    const canSeeBalances = computed(() => !isManager.value && !isAnalyst.value);
 
     /**
      * Can create transfer operations

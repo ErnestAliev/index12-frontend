@@ -1256,7 +1256,7 @@ const handleRefundDelete = async (op) => {
       <aside class="home-left-panel">
         <div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel v-show="mainStore.workspaceRole !== 'manager'" @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
-        <div class="timeline-grid-wrapper" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
+        <div class="timeline-grid-wrapper" :class="{ 'analyst-readonly': mainStore.workspaceRole === 'analyst' }" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
         <!-- 🟢 UPDATED: Hide vertical resizer for timeline-only, keep scroll track -->
         <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" ref="resizerRef"></div></div>
         <!-- 🟢 NEW: Hide graphs for timeline-only users -->
@@ -1661,6 +1661,17 @@ const handleRefundDelete = async (op) => {
   flex: 1;
 }
 .timeline-grid-wrapper::-webkit-scrollbar { display: none; }
+
+/* Analyst read-only mode: prevent all interactions on timeline */
+.timeline-grid-wrapper.analyst-readonly {
+  pointer-events: none;
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+.timeline-grid-wrapper.analyst-readonly * {
+  cursor: not-allowed !important;
+}
+
 .timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
 .divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); position: relative; display: flex; align-items: center; }
 .custom-scrollbar-track { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: #2a2a2a; cursor: pointer; z-index: 10; }

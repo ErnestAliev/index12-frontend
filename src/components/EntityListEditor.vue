@@ -473,7 +473,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
                         <optgroup label="Компании"><option v-for="c in companiesList" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
                         <optgroup label="Физлица"><option v-for="i in individualsList" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
                     </select>
-                    <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" :disabled="!permissions.shouldShowBalance.value" />
+                    <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" />
                   </template>
                   
                   <template v-if="isContractorEditor">

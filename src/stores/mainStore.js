@@ -27,8 +27,7 @@ export const useMainStore = defineStore('mainStore', () => {
     // workspaceRole comes from GET /api/auth/me
     const workspaceRole = computed(() => {
         const role = user.value?.workspaceRole;
-        console.log('🔍 mainStore workspaceRole:', { userValue: user.value, workspaceRole: role });
-        return role || null; // Return null instead of 'admin' as default to properly detect missing role
+        return role || null; // Return null instead of 'admin' as default
     });
 
     // Global admin or workspace admin
