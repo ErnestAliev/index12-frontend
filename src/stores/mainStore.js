@@ -11,9 +11,7 @@ import { useDealStore } from './dealStore'; // 🟢 Integration
 axios.defaults.withCredentials = true;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
-// 🟢 FIX: Delay before refetching snapshot to allow server aggregation to complete
-// This prevents balance widgets from disappearing on new accounts when operations are created
-const SNAPSHOT_REFETCH_DELAY = 500; // milliseconds
+
 
 export const useMainStore = defineStore('mainStore', () => {
 
@@ -825,14 +823,9 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function fetchSnapshot() {
         try {
-            console.log('🔍 [fetchSnapshot] CALLED FROM:', new Error().stack);
             const clientDate = new Date().toISOString();
             const res = await axios.get(`${API_BASE_URL}/snapshot`, {
                 params: { date: clientDate }
-            });
-            console.log('🔍 [fetchSnapshot] Received snapshot:', {
-                accountBalances: Object.keys(res.data.accountBalances || {}).length,
-                accountBalancesData: res.data.accountBalances
             });
             snapshot.value = res.data;
         } catch (e) {
@@ -954,31 +947,16 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentAccountBalances = computed(() => {
-        const result = accounts.value.reduce((acc, a) => {
+        return accounts.value.reduce((acc, a) => {
             if (!includeExcludedInTotal.value && a.isExcluded) {
                 return acc;
             }
-            const snapshotBalance = snapshot.value.accountBalances[a._id] || 0;
-            const initialBalance = a.initialBalance || 0;
-            const totalBalance = Number(snapshotBalance) + Number(initialBalance);
-
-            console.log(`🔍 [currentAccountBalances] Account ${a.name}:`, {
-                accountId: a._id,
-                snapshotBalance,
-                initialBalance,
-                totalBalance,
-                hasSnapshotData: a._id in (snapshot.value.accountBalances || {})
-            });
-
             acc.push({
                 ...a,
-                balance: totalBalance
+                balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0)
             });
             return acc;
         }, []);
-
-        console.log('🔍 [currentAccountBalances] Total accounts:', result.length);
-        return result;
     });
 
     const futureAccountBalances = computed(() => {
@@ -1589,16 +1567,14 @@ export const useMainStore = defineStore('mainStore', () => {
                 dealOperations.value = newDeals;
             }
 
-            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances from backend
-            // Optimistic update works correctly, no need to refetch immediately
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+
+            await fetchSnapshot();
 
             return serverOp;
         } catch (error) {
             console.error("Create Event Error (Optimistic):", error);
             if (eventData.dateKey) refreshDay(eventData.dateKey);
-            // 🔴 REMOVED: On error, refresh day is enough
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            fetchSnapshot();
             throw error;
         }
     }
@@ -1622,8 +1598,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!oldOp) {
             const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
             await refreshDay(res.data.dateKey);
-            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            await fetchSnapshot();
             return res.data;
         }
 
@@ -1676,16 +1651,13 @@ export const useMainStore = defineStore('mainStore', () => {
                 }
             }
 
-            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances from backend
-            // Optimistic update works correctly, no need to refetch immediately
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            await fetchSnapshot();
 
             return serverOp;
         } catch (e) {
             console.error("Optimistic Update Failed:", e);
             refreshDay(oldDateKey);
-            // 🔴 REMOVED: On error, refresh day is enough
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            fetchSnapshot();
             throw e;
         }
     }
@@ -1732,8 +1704,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
             }
 
-            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            await fetchSnapshot();
 
         } catch (e) {
             if (e.response && (e.response.status === 404 || e.response.status === 200)) {
@@ -1741,8 +1712,7 @@ export const useMainStore = defineStore('mainStore', () => {
             }
             console.error("Delete Failed:", e);
             refreshDay(dateKey);
-            // 🔴 REMOVED: On error, refresh day is enough
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            fetchSnapshot();
             const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
             taxes.value = taxesRes.data;
         }
@@ -1858,14 +1828,6 @@ export const useMainStore = defineStore('mainStore', () => {
         try {
             const anchorDate = new Date(date);
             const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, anchorDate);
-
-            console.log('🔍 [loadCalculationData] Fetching operations:', {
-                mode,
-                startDate: startDate.toISOString(),
-                endDate: endDate.toISOString(),
-                user: user.value?.email,
-                workspaceRole: user.value?.workspaceRole
-            });
 
             await fetchOperationsRange(startDate, endDate);
 
@@ -2117,8 +2079,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 .catch(() => {
                     refreshDay(oldDateKey);
                     refreshDay(newDateKey);
-                    // 🔴 REMOVED: On error, refresh days is enough
-                    // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+                    fetchSnapshot();
                 });
         }
     }
@@ -2212,8 +2173,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
             await refreshDay(dateKey);
 
-            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            await fetchSnapshot();
 
             return data;
         } catch (error) {
@@ -2239,8 +2199,7 @@ export const useMainStore = defineStore('mainStore', () => {
             await refreshDay(newDateKey);
             _triggerProjectionUpdate();
 
-            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
-            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            await fetchSnapshot();
 
             return response.data;
         } catch (error) { throw error; }
