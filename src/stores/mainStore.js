@@ -2341,11 +2341,44 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     async function logout() {
-        axios.post(`${API_BASE_URL}/auth/logout`).then(() => { }).catch(error => { });
+        try {
+            await axios.post(`${API_BASE_URL}/auth/logout`, {}, { withCredentials: true });
+        } catch (error) {
+            console.error('Logout error:', error);
+        }
+
+        // Clear user data
         user.value = null;
+
+        // Disconnect socket
         useSocketStore().disconnect();
+
+        // Clear all caches
         displayCache.value = {};
         calculationCache.value = {};
+
+        // 🟢 FIX: Clear all workspace and entity data to prevent conflicts between accounts
+        accounts.value = [];
+        companies.value = [];
+        individuals.value = [];
+        contractors.value = [];
+        categories.value = [];
+        projects.value = [];
+        credits.value = [];
+        operations.value = [];
+        events.value = [];
+        taxes.value = [];
+
+        // Clear workspace state
+        currentWorkspaceId.value = null;
+        workspaceRole.value = null;
+
+        // Clear localStorage
+        localStorage.removeItem('currentWorkspaceId');
+        localStorage.removeItem('workspaceRole');
+
+        // Clear projection
+        projection.value = null;
     }
 
     async function ensureSystemEntities() {
