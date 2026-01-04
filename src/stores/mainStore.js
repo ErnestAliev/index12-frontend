@@ -11,7 +11,9 @@ import { useDealStore } from './dealStore'; // 🟢 Integration
 axios.defaults.withCredentials = true;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
-
+// 🟢 FIX: Delay before refetching snapshot to allow server aggregation to complete
+// This prevents balance widgets from disappearing on new accounts when operations are created
+const SNAPSHOT_REFETCH_DELAY = 500; // milliseconds
 
 export const useMainStore = defineStore('mainStore', () => {
 
@@ -1567,13 +1569,13 @@ export const useMainStore = defineStore('mainStore', () => {
                 dealOperations.value = newDeals;
             }
 
-            await fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return serverOp;
         } catch (error) {
             console.error("Create Event Error (Optimistic):", error);
             if (eventData.dateKey) refreshDay(eventData.dateKey);
-            fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             throw error;
         }
     }
@@ -1597,7 +1599,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!oldOp) {
             const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
             await refreshDay(res.data.dateKey);
-            await fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             return res.data;
         }
 
@@ -1650,13 +1652,13 @@ export const useMainStore = defineStore('mainStore', () => {
                 }
             }
 
-            await fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return serverOp;
         } catch (e) {
             console.error("Optimistic Update Failed:", e);
             refreshDay(oldDateKey);
-            fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             throw e;
         }
     }
@@ -1703,7 +1705,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
             }
 
-            await fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
         } catch (e) {
             if (e.response && (e.response.status === 404 || e.response.status === 200)) {
@@ -1711,7 +1713,7 @@ export const useMainStore = defineStore('mainStore', () => {
             }
             console.error("Delete Failed:", e);
             refreshDay(dateKey);
-            fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
             taxes.value = taxesRes.data;
         }
@@ -2086,7 +2088,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 .catch(() => {
                     refreshDay(oldDateKey);
                     refreshDay(newDateKey);
-                    fetchSnapshot();
+                    setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
                 });
         }
     }
@@ -2180,7 +2182,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
             await refreshDay(dateKey);
 
-            await fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return data;
         } catch (error) {
@@ -2206,7 +2208,7 @@ export const useMainStore = defineStore('mainStore', () => {
             await refreshDay(newDateKey);
             _triggerProjectionUpdate();
 
-            await fetchSnapshot();
+            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return response.data;
         } catch (error) { throw error; }
