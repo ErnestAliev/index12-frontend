@@ -1245,15 +1245,19 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
         </div>
 
         <div class="main-content-view">
-            <MobileHeaderTotals ref="headerTotalsRef" class="fixed-header" />
+            <!-- Hide balance card for manager -->
+            <MobileHeaderTotals v-if="mainStore.workspaceRole !== 'manager'" ref="headerTotalsRef" class="fixed-header" />
 
             <div class="layout-body" ref="layoutBodyRef">
               <MobileWidgetGrid ref="widgetGridRef" class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
 
-              <!-- Timeline with role-based readonly for analyst -->
+              <!-- Timeline with role-based readonly for analyst, fullscreen for manager -->
               <div 
                 class="section-timeline" 
-                :class="{ 'analyst-readonly': mainStore.workspaceRole === 'analyst' }"
+                :class="{ 
+                  'analyst-readonly': mainStore.workspaceRole === 'analyst',
+                  'manager-fullscreen': mainStore.workspaceRole === 'manager'
+                }"
                 v-show="!mainStore.isHeaderExpanded" 
                 :style="{ height: timelineHeight + 'px', flexShrink: 0 }"
               >
@@ -1261,7 +1265,9 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
 
+              <!-- Hide resizer for manager (no charts to resize) -->
               <div 
+                v-if="mainStore.workspaceRole !== 'manager'"
                 class="timeline-resizer" 
                 v-show="!mainStore.isHeaderExpanded" 
                 @pointerdown.stop.prevent="onResizerStart" 
@@ -1271,7 +1277,8 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                   <div class="resizer-handle"></div>
               </div>
 
-              <div class="section-chart" v-show="!mainStore.isHeaderExpanded">
+              <!-- Hide charts for manager -->
+              <div v-if="mainStore.workspaceRole !== 'manager'" class="section-chart" v-show="!mainStore.isHeaderExpanded">
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
                 <MobileChartSection v-else ref="chartRef" @scroll="onChartScroll" />
               </div>
@@ -1591,6 +1598,13 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
 .section-timeline.analyst-readonly * {
   cursor: not-allowed !important;
+}
+
+/* Manager role: timeline takes full available space */
+.section-timeline.manager-fullscreen {
+  flex-grow: 1 !important;
+  height: auto !important;
+  min-height: 0 !important;
 }
 
 .section-chart {
