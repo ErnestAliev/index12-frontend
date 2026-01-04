@@ -75,26 +75,27 @@ export const useMainStore = defineStore('mainStore', () => {
     // Only owner (no workspaceRole) can toggle visibility
     const includeExcludedInTotal = computed({
         get: () => {
-            // Invited users (those with workspaceRole) NEVER see excluded accounts
-            if (workspaceRole.value !== null) {
-                return false; // Force hidden for admin/analyst/manager
+            // Invited users NEVER see excluded accounts, only workspace owner can
+            if (!isWorkspaceOwner.value) {
+                return false; // Force hidden for invited users
             }
             // Owner can toggle
             return uiStore.includeExcludedInTotal;
         },
         set: (v) => {
             // Only owner can change this setting
-            if (workspaceRole.value === null) {
+            if (isWorkspaceOwner.value) {
                 uiStore.includeExcludedInTotal = v;
             }
             // Invited users: setting is ignored
         }
     });
     const toggleExcludedInclusion = () => {
-        // Only owner can toggle
-        if (workspaceRole.value === null) {
+        // Only workspace owner can toggle
+        if (isWorkspaceOwner.value) {
             uiStore.toggleExcludedInclusion();
         }
+        // Invited users: no-op
     };
 
     // --- 2. WIDGET STORE BRIDGES ---
