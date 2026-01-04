@@ -1598,7 +1598,8 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!oldOp) {
             const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
             await refreshDay(res.data.dateKey);
-            await fetchSnapshot();
+            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
+            // await fetchSnapshot();
             return res.data;
         }
 
@@ -1651,7 +1652,9 @@ export const useMainStore = defineStore('mainStore', () => {
                 }
             }
 
-            await fetchSnapshot();
+            // 🔴 REMOVED: fetchSnapshot() returns empty data before MongoDB aggregation completes
+            // Optimistic updates work correctly, socket events provide sync after 4-6 sec
+            // await fetchSnapshot();
 
             return serverOp;
         } catch (e) {
@@ -1704,7 +1707,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
             }
 
-            await fetchSnapshot();
+            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
+            // await fetchSnapshot();
 
         } catch (e) {
             if (e.response && (e.response.status === 404 || e.response.status === 200)) {
@@ -2173,7 +2177,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
             await refreshDay(dateKey);
 
-            await fetchSnapshot();
+            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
+            // await fetchSnapshot();
 
             return data;
         } catch (error) {
@@ -2199,7 +2204,8 @@ export const useMainStore = defineStore('mainStore', () => {
             await refreshDay(newDateKey);
             _triggerProjectionUpdate();
 
-            await fetchSnapshot();
+            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
+            // await fetchSnapshot();
 
             return response.data;
         } catch (error) { throw error; }
