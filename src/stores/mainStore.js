@@ -829,6 +829,10 @@ export const useMainStore = defineStore('mainStore', () => {
             const res = await axios.get(`${API_BASE_URL}/snapshot`, {
                 params: { date: clientDate }
             });
+            console.log('🔍 [fetchSnapshot] Received snapshot:', {
+                accountBalances: Object.keys(res.data.accountBalances || {}).length,
+                accountBalancesData: res.data.accountBalances
+            });
             snapshot.value = res.data;
         } catch (e) {
             console.error('Failed to fetch snapshot:', e);
@@ -949,16 +953,31 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentAccountBalances = computed(() => {
-        return accounts.value.reduce((acc, a) => {
+        const result = accounts.value.reduce((acc, a) => {
             if (!includeExcludedInTotal.value && a.isExcluded) {
                 return acc;
             }
+            const snapshotBalance = snapshot.value.accountBalances[a._id] || 0;
+            const initialBalance = a.initialBalance || 0;
+            const totalBalance = Number(snapshotBalance) + Number(initialBalance);
+
+            console.log(`🔍 [currentAccountBalances] Account ${a.name}:`, {
+                accountId: a._id,
+                snapshotBalance,
+                initialBalance,
+                totalBalance,
+                hasSnapshotData: a._id in (snapshot.value.accountBalances || {})
+            });
+
             acc.push({
                 ...a,
-                balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0)
+                balance: totalBalance
             });
             return acc;
         }, []);
+
+        console.log('🔍 [currentAccountBalances] Total accounts:', result.length);
+        return result;
     });
 
     const futureAccountBalances = computed(() => {
