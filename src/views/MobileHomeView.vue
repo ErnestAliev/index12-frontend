@@ -10,6 +10,8 @@ import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
 import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
 import MobileActionPanel from '@/components/mobile/MobileActionPanel.vue';
+import MobileProjectSwitcher from '@/components/mobile/MobileProjectSwitcher.vue';
+import MobileUserMenu from '@/components/mobile/MobileUserMenu.vue';
 
 // Попапы
 import IncomePopup from '@/components/IncomePopup.vue';
@@ -23,6 +25,7 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import InfoModal from '@/components/InfoModal.vue';
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
+import AboutModal from '@/components/AboutModal.vue';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -192,6 +195,44 @@ const closeAiModal = () => {
   stopAiRecordingIfNeeded();
   try { document.body.style.overflow = ''; } catch (_) {}
   showAiModal.value = false;
+};
+
+// Mobile modals
+const showProjectsModal = ref(false);
+const showUserMenuModal = ref(false);
+const showAboutModal = ref(false);
+
+const openProjectsModal = () => {
+  showProjectsModal.value = true;
+  try { document.body.style.overflow = 'hidden'; } catch (_) {}
+};
+
+const closeProjectsModal = () => {
+  showProjectsModal.value = false;
+  try { document.body.style.overflow = ''; } catch (_) {}
+};
+
+const openUserMenuModal = () => {
+  showUserMenuModal.value = true;
+  try { document.body.style.overflow = 'hidden'; } catch (_) {}
+};
+
+const closeUserMenuModal = () => {
+  showUserMenuModal.value = false;
+  if (!showAboutModal.value && !showProjectsModal.value) {
+    try { document.body.style.overflow = ''; } catch (_) {}
+  }
+};
+
+const openAboutModal = () => {
+  showUserMenuModal.value = false; // Ensure menu is closed
+  showAboutModal.value = true;
+  try { document.body.style.overflow = 'hidden'; } catch (_) {}
+};
+
+const closeAboutModal = () => {
+  showAboutModal.value = false;
+  try { document.body.style.overflow = ''; } catch (_) {}
 };
 
 const pushAiMessage = (role, text) => {
@@ -830,8 +871,18 @@ const initializeMobileView = async () => {
         }
         const modeToLoad = mainStore.projection.mode || '12d';
 
+        // 🟢 CRITICAL: Load historical data FIRST (1 year back) to populate allKnownOperations
+        console.log('📊 [Mobile] Loading historical data (1y)...');
+        if (typeof mainStore.loadCalculationData === 'function') {
+            await mainStore.loadCalculationData('1y', today);
+            console.log('✅ [Mobile] Historical data loaded. allKnownOperations:', mainStore.allKnownOperations?.length || 0);
+        }
+
+        // Then load data for current view mode
+        console.log(`📊 [Mobile] Loading current view data (${modeToLoad})...`);
         if (typeof mainStore.loadCalculationData === 'function') {
             await mainStore.loadCalculationData(modeToLoad, today);
+            console.log('✅ [Mobile] Current view data loaded');
         }
     } catch (e) {
         console.error("Timeline Load Error:", e);
@@ -1215,7 +1266,12 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             </div>
 
             <div class="fixed-footer">
-              <MobileActionPanel @action="handleAction" @open-ai="openAiModal" />
+              <MobileActionPanel 
+                @action="handleAction" 
+                @open-ai="openAiModal"
+                @open-projects="openProjectsModal"
+                @open-user-menu="openUserMenuModal"
+              />
             </div>
         </div>
     </template>
@@ -1233,6 +1289,11 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
     <TaxPaymentDetailsPopup v-if="isTaxDetailsPopupVisible" :operation-to-edit="operationToEdit" @close="isTaxDetailsPopupVisible = false" @delete="handleTaxDelete" />
+
+    <!-- Mobile Modals -->
+    <MobileProjectSwitcher v-if="showProjectsModal" @close="closeProjectsModal" />
+    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" />
+    <AboutModal v-if="showAboutModal" @close="closeAboutModal" />
 
     <!-- 🟣 AI ассистент (Mobile Fullscreen Overlay) -->
     <Teleport to="body">

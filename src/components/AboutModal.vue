@@ -116,8 +116,8 @@ function close() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
-  backdrop-filter: blur(2px);
+  z-index: 10000;
+  backdrop-filter: blur(4px);
 }
 
 .modal-content {

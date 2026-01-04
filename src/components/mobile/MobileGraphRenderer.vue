@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS } from 'chart.js/auto';
@@ -66,8 +65,6 @@ const normalizedVisibleDays = computed(() => {
 });
 
 const mainStore = useMainStore();
-
-const projectionStore = useProjectionStore();
 const historyLoadTick = ref(0);
 
 // Начальный баланс (сумма initialBalance по счетам), с учетом флага includeExcludedInTotal
@@ -673,9 +670,14 @@ const rawMaxY = computed(() => {
   const days = normalizedVisibleDays.value;
   if (!Array.isArray(days) || days.length === 0) return 1;
 
-  const map = (projectionStore.dailyChartData instanceof Map)
-    ? projectionStore.dailyChartData
-    : projectionStore.dailyChartData?.value;
+  // 🔧 FIX: Use mainStore.dailyChartData to avoid circular dependency with projectionStore
+  // (projectionStore is minified to 'pt' in production, causing TDZ errors)
+  const chartData = mainStore.dailyChartData;
+  if (!chartData) return 1;
+
+  const map = (chartData instanceof Map)
+    ? chartData
+    : chartData?.value;
   if (!(map instanceof Map)) return 1;
 
   let max = 0;
@@ -745,56 +747,7 @@ watch(
   { immediate: true }
 );
 
-// Add touch event listeners to chart canvas to detect scrolling
-watch(
-  () => chartRef.value?.chart,
-  (chart) => {
-    if (!chart) return;
-    const canvas = chart.canvas;
-    if (!canvas) return;
-    
-    const handleTouchStart = (e) => {
-      const touch = e.touches[0];
-      touchStartY = touch.clientY;
-      touchStartX = touch.clientX;
-      touchMoveDistance = 0;
-      isScrolling = false;
-      if (scrollEndTimer) clearTimeout(scrollEndTimer);
-    };
-    
-    const handleTouchMove = (e) => {
-      if (!e.touches[0]) return;
-      const touch = e.touches[0];
-      const deltaY = Math.abs(touch.clientY - touchStartY);
-      const deltaX = Math.abs(touch.clientX - touchStartX);
-      touchMoveDistance = Math.max(deltaY, deltaX);
-      
-      // If moved more than 10px, consider it scrolling
-      if (touchMoveDistance > 10) {
-        isScrolling = true;
-      }
-    };
-    
-    const handleTouchEnd = () => {
-      if (scrollEndTimer) clearTimeout(scrollEndTimer);
-      // Wait 300ms after touch end before allowing tooltips again
-      scrollEndTimer = setTimeout(() => {
-        isScrolling = false;
-      }, 300);
-    };
-    
-    canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
-    canvas.addEventListener('touchmove', handleTouchMove, { passive: true });
-    canvas.addEventListener('touchend', handleTouchEnd, { passive: true });
-    
-    // Cleanup when chart changes
-    return () => {
-      canvas.removeEventListener('touchstart', handleTouchStart);
-      canvas.removeEventListener('touchmove', handleTouchMove);
-      canvas.removeEventListener('touchend', handleTouchEnd);
-    };
-  }
-);
+
 
 // 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES)
 // Ключевая цель: summaries НЕ должны зависеть от выбранного окна.

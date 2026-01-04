@@ -221,10 +221,28 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const allKnownOperations = computed(() => {
         const uniqueMap = new Map();
-        dealOperations.value.forEach(op => uniqueMap.set(op._id, op));
-        taxKnownOperations.value.forEach(op => {
-            if (!uniqueMap.has(op._id)) uniqueMap.set(op._id, op);
+
+        // Include operations from displayCache (loaded via fetchOperationsRange)
+        Object.values(displayCache.value).forEach(dayOps => {
+            if (Array.isArray(dayOps)) {
+                dayOps.forEach(op => {
+                    if (op && op._id) uniqueMap.set(String(op._id), op);
+                });
+            }
         });
+
+        // Include deal operations
+        dealOperations.value.forEach(op => {
+            if (op && op._id) uniqueMap.set(String(op._id), op);
+        });
+
+        // Include tax operations
+        taxKnownOperations.value.forEach(op => {
+            if (op && op._id && !uniqueMap.has(String(op._id))) {
+                uniqueMap.set(String(op._id), op);
+            }
+        });
+
         return Array.from(uniqueMap.values());
     });
 
@@ -1810,7 +1828,17 @@ export const useMainStore = defineStore('mainStore', () => {
             const anchorDate = new Date(date);
             const { startDate, endDate } = ps._calculateDateRangeWithYear(mode, anchorDate);
 
+            console.log('🔍 [loadCalculationData] Fetching operations:', {
+                mode,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                user: user.value?.email,
+                workspaceRole: user.value?.workspaceRole
+            });
+
             await fetchOperationsRange(startDate, endDate);
+
+            console.log('✅ [loadCalculationData] Fetch complete. Cache keys:', Object.keys(displayCache.value).length);
 
             ps.updateProjectionState(mode, anchorDate);
             recalculateGlobalBalance(endDate);

@@ -2,7 +2,7 @@
 import { computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
-const emit = defineEmits(['action', 'open-ai']);
+const emit = defineEmits(['action', 'open-ai', 'open-projects', 'open-user-menu']);
 const mainStore = useMainStore();
 
 const viewModes = [
@@ -56,6 +56,8 @@ const switchViewMode = async (direction) => {
 };
 
 const openAi = () => emit('open-ai');
+const openProjects = () => emit('open-projects');
+const openUserMenu = () => emit('open-user-menu');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
 onMounted(async () => {
@@ -72,8 +74,8 @@ onMounted(async () => {
 <template>
   <div class="mobile-action-panel-wrapper">
     <div class="chart-controls-row">
-      <!-- Левая кнопка: AI ассистент -->
-      <button class="icon-circle clickable" @click="openAi" title="AI ассистент">
+      <!-- 1. AI ассистент -->
+      <button class="icon-circle" @click="openAi" title="AI ассистент">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2l1.2 4.2L17.4 8 13.2 9.2 12 13.4 10.8 9.2 6.6 8l4.2-1.8L12 2z" />
           <path d="M19 10l.9 3.1L23 14l-3.1.9L19 18l-.9-3.1L15 14l3.1-.9L19 10z" />
@@ -81,30 +83,46 @@ onMounted(async () => {
         </svg>
       </button>
       
-      <!-- Центр: Переключатель режимов -->
+      <!-- 2. Проекты -->
+      <button class="icon-circle" @click="openProjects" title="Проекты">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </button>
+      
+      <!-- 3. Переключатель режимов (уменьшенный) -->
       <div class="nav-center">
         <button class="arrow-btn" @click="switchViewMode(-1)">
-           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
-        <!-- Клик по тексту тоже переключает вперед -->
         <div class="period-label" @click="switchViewMode(1)">
           <span class="days-num">{{ currentDisplay.num }}</span>
           <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
         </div>
         
         <button class="arrow-btn" @click="switchViewMode(1)">
-           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
 
-      <!-- Правая кнопка: Виджеты -->
+      <!-- 4. Аватар пользователя -->
+      <button class="icon-circle user-avatar" @click="openUserMenu" title="Профиль">
+        <img v-if="mainStore.user?.picture" :src="mainStore.user.picture" alt="Avatar" class="avatar-img" />
+        <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+      </button>
+
+      <!-- 5. Виджеты -->
       <button 
-        class="header-expand-btn" 
+        class="icon-circle header-expand-btn" 
         :class="{ 'active': mainStore.isHeaderExpanded }"
         @click="toggleWidgets"
+        title="Виджеты"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"></rect>
             <rect x="14" y="3" width="7" height="7"></rect>
             <rect x="14" y="14" width="7" height="7"></rect>
@@ -131,34 +149,66 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 12px;
   padding-bottom: 24px;
+  gap: 8px;
 }
 
-.nav-center { display: flex; align-items: center; gap: 20px; }
+/* Уменьшенный центральный переключатель */
+.nav-center { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px;
+  flex-shrink: 0;
+}
+
 .arrow-btn { 
-    background: none; border: none; padding: 10px;
-    cursor: pointer; display: flex; align-items: center; justify-content: center; 
+  background: none; 
+  border: none; 
+  padding: 6px;
+  cursor: pointer; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
 }
 .arrow-btn:active { opacity: 0.7; transform: scale(0.95); }
 
 .period-label { 
-    display: flex; flex-direction: column; align-items: center; 
-    cursor: pointer; line-height: 1; user-select: none; width: 70px;
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  cursor: pointer; 
+  line-height: 1; 
+  user-select: none; 
+  width: 60px;
+  flex-shrink: 0;
 }
-.days-num { font-size: 20px; font-weight: 700; color: #fff; }
-.days-text { font-size: 9px; color: #888; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
+.days-num { font-size: 18px; font-weight: 700; color: #fff; }
+.days-text { font-size: 8px; color: #888; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
 
+/* Кнопки (AI, Projects, Avatar, Widgets) */
 .icon-circle, .header-expand-btn {
-  width: 36px; height: 36px;
+  width: 36px; 
+  height: 36px;
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,0.1);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--color-heading, #fff); background: transparent; padding: 0; cursor: pointer;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  color: var(--color-heading, #fff); 
+  background: transparent; 
+  padding: 0; 
+  cursor: pointer;
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
 }
-.icon-circle:active, .header-expand-btn:active { background-color: rgba(255,255,255,0.1); color: #fff; border-color: #fff; }
+
+.icon-circle:active, .header-expand-btn:active { 
+  background-color: rgba(255,255,255,0.1); 
+  color: #fff; 
+  border-color: #fff; 
+}
 
 .header-expand-btn.active {
   color: var(--color-primary, #34c759);
@@ -167,4 +217,17 @@ onMounted(async () => {
 }
 
 .icon-circle svg, .header-expand-btn svg { display: block; }
+
+/* Avatar styling */
+.user-avatar {
+  overflow: hidden;
+  padding: 0;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
 </style>
