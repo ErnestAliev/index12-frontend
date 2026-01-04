@@ -825,6 +825,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function fetchSnapshot() {
         try {
+            console.log('🔍 [fetchSnapshot] CALLED FROM:', new Error().stack);
             const clientDate = new Date().toISOString();
             const res = await axios.get(`${API_BASE_URL}/snapshot`, {
                 params: { date: clientDate }
