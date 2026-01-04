@@ -15,7 +15,7 @@
         <!-- User info -->
         <div class="user-info">
           <div class="avatar">
-            <img v-if="mainStore.user?.picture" :src="mainStore.user.picture" alt="Avatar" />
+            <img v-if="mainStore.user?.avatarUrl" :src="mainStore.user.avatarUrl" alt="Avatar" />
             <div v-else class="avatar-placeholder">
               {{ (mainStore.user?.name || '?')[0].toUpperCase() }}
             </div>
