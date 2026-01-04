@@ -153,6 +153,67 @@
       <p>Переключение проекта...</p>
     </div>
   </div>
+
+  <!-- Share Dialog (Link Generation) -->
+  <div v-if="showShareDialog" class="share-dialog-overlay" @click="closeShareDialog">
+    <div class="share-dialog" @click.stop>
+      <div class="share-header">
+        <h3>Пригласить в проект</h3>
+        <button class="btn-close" @click="closeShareDialog">✕</button>
+      </div>
+
+      <div class="share-body">
+        <p class="project-name">{{ workspaceToShare?.name }}</p>
+
+        <!-- Role Selection -->
+        <div class="role-selection">
+          <label class="role-label">Выберите роль:</label>
+          <div class="role-options">
+            <label class="role-option">
+              <input type="radio" v-model="shareRole" value="analyst" />
+              <span>Аналитик</span>
+            </label>
+            <label class="role-option">
+              <input type="radio" v-model="shareRole" value="manager" />
+              <span>Менеджер</span>
+            </label>
+            <label class="role-option">
+              <input type="radio" v-model="shareRole" value="admin" />
+              <span>Администратор</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Generate Link Button -->
+        <button 
+          v-if="!generatedLink" 
+          class="btn-generate" 
+          :disabled="isGeneratingLink"
+          @click="generateShareLink"
+        >
+          {{ isGeneratingLink ? 'Создаем...' : 'Создать ссылку' }}
+        </button>
+
+        <!-- Generated Link Display -->
+        <div v-if="generatedLink" class="link-container">
+          <input 
+            type="text" 
+            :value="generatedLink" 
+            readonly 
+            class="link-input"
+            @click="$event.target.select()"
+          />
+          <button 
+            class="btn-copy" 
+            :class="{ 'copied': linkCopied }"
+            @click="copyLink"
+          >
+            {{ linkCopied ? '✓ Скопировано' : 'Копировать' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -167,6 +228,14 @@ const currentId = ref(null);
 const isLoading = ref(false);
 const isSwitching = ref(false);
 const activeTab = ref('my');
+
+// Share dialog state (link generation)
+const showShareDialog = ref(false);
+const workspaceToShare = ref(null);
+const shareRole = ref('analyst');
+const generatedLink = ref('');
+const isGeneratingLink = ref(false);
+const linkCopied = ref(false);
 
 const ownedProjects = computed(() => projects.value.filter(p => !p.isShared));
 const sharedProjects = computed(() => projects.value.filter(p => p.isShared));
@@ -230,22 +299,53 @@ async function createNewProject() {
   }
 }
 
-async function openShareDialog(project) {
-  const email = prompt(`Приглас ить в проект "${project.name}".\nВведите email:`);
-  if (!email || !email.trim()) return;
+// Share dialog management (link generation)
+function openShareDialog(project) {
+  workspaceToShare.value = project;
+  shareRole.value = 'analyst';
+  generatedLink.value = '';
+  linkCopied.value = false;
+  showShareDialog.value = true;
+}
 
-  const role = prompt('Роль (analyst/manager/admin):') || 'analyst';
+function closeShareDialog() {
+  showShareDialog.value = false;
+  workspaceToShare.value = null;
+  generatedLink.value = '';
+  linkCopied.value = false;
+  shareRole.value = 'analyst';
+}
 
+async function generateShareLink() {
+  if (!workspaceToShare.value) return;
+  
   try {
-    await axios.post(`${API_BASE_URL}/workspaces/${project._id}/share`, 
-      { email: email.trim(), role }, 
+    isGeneratingLink.value = true;
+    const res = await axios.post(
+      `${API_BASE_URL}/workspaces/${workspaceToShare.value._id}/generate-invite`,
+      { role: shareRole.value },
       { withCredentials: true }
     );
-    alert('Приглашение отправлено!');
-    await loadProjects();
+    
+    generatedLink.value = res.data.inviteUrl || '';
   } catch (err) {
-    console.error('Failed to share:', err);
-    alert('Ошибка отправки приглашения');
+    console.error('Failed to generate link:', err);
+    alert('Ошибка создания ссылки');
+  } finally {
+    isGeneratingLink.value = false;
+  }
+}
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(generatedLink.value);
+    linkCopied.value = true;
+    setTimeout(() => {
+      linkCopied.value = false;
+    }, 2000);
+  } catch (err) {
+    console.error('Failed to copy:', err);
+    alert('Не удалось скопировать ссылку');
   }
 }
 
@@ -607,5 +707,179 @@ onMounted(loadProjects);
   color: #fff;
   font-size: 16px;
   margin: 0;
+}
+
+/* Share Dialog Styles */
+.share-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+}
+
+.share-dialog {
+  background: var(--color-background, #1a1a1a);
+  border-radius: 16px;
+  max-width: 400px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.share-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--color-border, #444);
+}
+
+.share-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--color-text, #fff);
+}
+
+.btn-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-close:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.share-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.project-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text, #fff);
+  margin: 0;
+  text-align: center;
+}
+
+.role-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text, #fff);
+}
+
+.role-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.role-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--color-background-soft, #282828);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.role-option:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.role-option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.role-option span {
+  font-size: 14px;
+  color: var(--color-text, #fff);
+}
+
+.btn-generate {
+  width: 100%;
+  padding: 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary, #34c759);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-generate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-generate:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.link-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.link-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-border, #444);
+  border-radius: 8px;
+  background: var(--color-background-soft, #282828);
+  color: var(--color-text, #fff);
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+}
+
+.btn-copy {
+  width: 100%;
+  padding: 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary, #34c759);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-copy.copied {
+  background: #888;
+}
+
+.btn-copy:active {
+  transform: scale(0.98);
 }
 </style>
