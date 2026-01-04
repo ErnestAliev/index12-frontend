@@ -74,8 +74,13 @@ onMounted(async () => {
 <template>
   <div class="mobile-action-panel-wrapper">
     <div class="chart-controls-row">
-      <!-- 1. AI ассистент -->
-      <button class="icon-circle" @click="openAi" title="AI ассистент">
+      <!-- 1. AI ассистент (disabled for manager) -->
+      <button 
+        class="icon-circle" 
+        :disabled="mainStore.workspaceRole === 'manager'"
+        @click="openAi" 
+        title="AI ассистент"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2l1.2 4.2L17.4 8 13.2 9.2 12 13.4 10.8 9.2 6.6 8l4.2-1.8L12 2z" />
           <path d="M19 10l.9 3.1L23 14l-3.1.9L19 18l-.9-3.1L15 14l3.1-.9L19 10z" />
@@ -83,30 +88,42 @@ onMounted(async () => {
         </svg>
       </button>
       
-      <!-- 2. Проекты -->
+      <!-- 2. Проекты (always active) -->
       <button class="icon-circle" @click="openProjects" title="Проекты">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
         </svg>
       </button>
       
-      <!-- 3. Переключатель режимов (уменьшенный) -->
-      <div class="nav-center">
-        <button class="arrow-btn" @click="switchViewMode(-1)">
+      <!-- 3. Переключатель режимов (disabled for manager) -->
+      <div class="nav-center" :class="{ 'disabled': mainStore.workspaceRole === 'manager' }">
+        <button 
+          class="arrow-btn" 
+          :disabled="mainStore.workspaceRole === 'manager'"
+          @click="switchViewMode(-1)"
+        >
            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         
-        <div class="period-label" @click="switchViewMode(1)">
+        <div 
+          class="period-label" 
+          :class="{ 'disabled': mainStore.workspaceRole === 'manager' }"
+          @click="mainStore.workspaceRole !== 'manager' && switchViewMode(1)"
+        >
           <span class="days-num">{{ currentDisplay.num }}</span>
           <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
         </div>
         
-        <button class="arrow-btn" @click="switchViewMode(1)">
+        <button 
+          class="arrow-btn" 
+          :disabled="mainStore.workspaceRole === 'manager'"
+          @click="switchViewMode(1)"
+        >
            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
 
-      <!-- 4. Аватар пользователя -->
+      <!-- 4. Аватар пользователя (always active) -->
       <button class="icon-circle user-avatar" @click="openUserMenu" title="Профиль">
         <img v-if="mainStore.user?.picture" :src="mainStore.user.picture" alt="Avatar" class="avatar-img" />
         <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -115,10 +132,11 @@ onMounted(async () => {
         </svg>
       </button>
 
-      <!-- 5. Виджеты -->
+      <!-- 5. Виджеты (disabled for manager) -->
       <button 
         class="icon-circle header-expand-btn" 
         :class="{ 'active': mainStore.isHeaderExpanded }"
+        :disabled="mainStore.workspaceRole === 'manager'"
         @click="toggleWidgets"
         title="Виджеты"
       >
@@ -214,6 +232,25 @@ onMounted(async () => {
   color: var(--color-primary, #34c759);
   border-color: var(--color-primary, #34c759);
   background: rgba(52, 199, 89, 0.1);
+}
+
+/* Disabled state for buttons (manager role) */
+.icon-circle:disabled, 
+.header-expand-btn:disabled,
+.arrow-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Disabled state for nav-center container */
+.nav-center.disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.nav-center.disabled .period-label {
+  cursor: not-allowed;
 }
 
 .icon-circle svg, .header-expand-btn svg { display: block; }

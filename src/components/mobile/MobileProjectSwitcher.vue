@@ -116,10 +116,21 @@
                 <div v-for="share in p.sharedWith" :key="share.userId" class="participant-item">
                   <div class="participant-info">
                     <span class="participant-email">{{ share.email }}</span>
-                    <span class="participant-role">{{ getRoleLabel(share.role) }}</span>
+                    <select 
+                      class="role-select" 
+                      :value="share.role" 
+                      @change="updateUserRole(p._id, share.userId, $event.target.value)"
+                    >
+                      <option value="analyst">Аналитик</option>
+                      <option value="manager">Менеджер</option>
+                      <option value="admin">Администратор</option>
+                    </select>
                   </div>
                   <button class="btn-revoke" @click="revokeAccess(p._id, share.userId)">
-                    Удалить
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -235,6 +246,20 @@ async function openShareDialog(project) {
   } catch (err) {
     console.error('Failed to share:', err);
     alert('Ошибка отправки приглашения');
+  }
+}
+
+async function updateUserRole(workspaceId, userId, newRole) {
+  try {
+    await axios.patch(
+      `${API_BASE_URL}/workspaces/${workspaceId}/share/${userId}`, 
+      { role: newRole }, 
+      { withCredentials: true }
+    );
+    await loadProjects();
+  } catch (err) {
+    console.error('Failed to update role:', err);
+    alert('Ошибка изменения роли');
   }
 }
 
@@ -483,7 +508,7 @@ onMounted(loadProjects);
 .participant-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
 }
@@ -501,8 +526,30 @@ onMounted(loadProjects);
   color: #888;
 }
 
-.btn-revoke,  
+.role-select {
+  padding: 6px 10px;
+  background: var(--color-background, #1a1a1a);
+  border: 1px solid var(--color-border, #444);
+  border-radius: 6px;
+  color: var(--color-text, #fff);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.role-select:focus {
+  border-color: var(--color-primary, #34c759);
+}
+
+.role-select option {
+  background: var(--color-background, #1a1a1a);
+  color: var(--color-text, #fff);
+}
+
 .btn-invite {
+  width: 100%;
   padding: 8px 16px;
   border-radius: 8px;
   border: none;
@@ -510,21 +557,28 @@ onMounted(loadProjects);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  background: var(--color-primary, #34c759);
+  color: white;
 }
 
 .btn-revoke {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: rgba(255, 59, 48, 0.1);
   color: #ff3b30;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .btn-revoke:active {
   background: rgba(255, 59, 48, 0.2);
-}
-
-.btn-invite {
-  width: 100%;
-  background: var(--color-primary, #34c759);
-  color: white;
 }
 
 .btn-invite:active {

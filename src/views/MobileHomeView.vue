@@ -1250,12 +1250,24 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
             <div class="layout-body" ref="layoutBodyRef">
               <MobileWidgetGrid ref="widgetGridRef" class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
 
-              <div class="section-timeline" v-show="!mainStore.isHeaderExpanded" :style="{ height: timelineHeight + 'px', flexShrink: 0 }">
+              <!-- Timeline with role-based readonly for analyst -->
+              <div 
+                class="section-timeline" 
+                :class="{ 'analyst-readonly': mainStore.workspaceRole === 'analyst' }"
+                v-show="!mainStore.isHeaderExpanded" 
+                :style="{ height: timelineHeight + 'px', flexShrink: 0 }"
+              >
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
                 <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
               </div>
 
-              <div class="timeline-resizer" v-show="!mainStore.isHeaderExpanded" @pointerdown.stop.prevent="onResizerStart" @touchstart.stop.prevent="onResizerStart" @touchcancel.stop="onResizerEnd">
+              <div 
+                class="timeline-resizer" 
+                v-show="!mainStore.isHeaderExpanded" 
+                @pointerdown.stop.prevent="onResizerStart" 
+                @touchstart.stop.prevent="onResizerStart" 
+                @touchcancel.stop="onResizerEnd"
+              >
                   <div class="resizer-handle"></div>
               </div>
 
@@ -1568,6 +1580,17 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     flex-shrink: 0;
     border-top: 1px solid var(--color-border, #444);
     overflow: hidden;
+}
+
+/* Analyst role: readonly timeline */
+.section-timeline.analyst-readonly {
+  pointer-events: none;
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+.section-timeline.analyst-readonly * {
+  cursor: not-allowed !important;
 }
 
 .section-chart {
