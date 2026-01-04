@@ -1589,13 +1589,16 @@ export const useMainStore = defineStore('mainStore', () => {
                 dealOperations.value = newDeals;
             }
 
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances from backend
+            // Optimistic update works correctly, no need to refetch immediately
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return serverOp;
         } catch (error) {
             console.error("Create Event Error (Optimistic):", error);
             if (eventData.dateKey) refreshDay(eventData.dateKey);
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: On error, refresh day is enough
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             throw error;
         }
     }
@@ -1619,7 +1622,8 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!oldOp) {
             const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
             await refreshDay(res.data.dateKey);
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             return res.data;
         }
 
@@ -1672,13 +1676,16 @@ export const useMainStore = defineStore('mainStore', () => {
                 }
             }
 
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances from backend
+            // Optimistic update works correctly, no need to refetch immediately
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return serverOp;
         } catch (e) {
             console.error("Optimistic Update Failed:", e);
             refreshDay(oldDateKey);
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: On error, refresh day is enough
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             throw e;
         }
     }
@@ -1725,7 +1732,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
             }
 
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
         } catch (e) {
             if (e.response && (e.response.status === 404 || e.response.status === 200)) {
@@ -1733,7 +1741,8 @@ export const useMainStore = defineStore('mainStore', () => {
             }
             console.error("Delete Failed:", e);
             refreshDay(dateKey);
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: On error, refresh day is enough
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
             const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
             taxes.value = taxesRes.data;
         }
@@ -2108,7 +2117,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 .catch(() => {
                     refreshDay(oldDateKey);
                     refreshDay(newDateKey);
-                    setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+                    // 🔴 REMOVED: On error, refresh days is enough
+                    // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
                 });
         }
     }
@@ -2202,7 +2212,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
             await refreshDay(dateKey);
 
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return data;
         } catch (error) {
@@ -2228,7 +2239,8 @@ export const useMainStore = defineStore('mainStore', () => {
             await refreshDay(newDateKey);
             _triggerProjectionUpdate();
 
-            setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
+            // 🔴 REMOVED: fetchSnapshot() returns empty accountBalances
+            // setTimeout(() => fetchSnapshot(), SNAPSHOT_REFETCH_DELAY);
 
             return response.data;
         } catch (error) { throw error; }
