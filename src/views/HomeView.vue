@@ -1453,7 +1453,7 @@ const handleRefundDelete = async (op) => {
     </div>
 
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
-    <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
+    <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button></div>
     
     <!-- 🟢 FIX: Передаем $event (объект операции) в обработчик удаления, так как переменная operationToEdit может быть уже очищена событием close -->
     <IncomePopup 
