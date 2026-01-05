@@ -1689,6 +1689,43 @@ export const useMainStore = defineStore('mainStore', () => {
                 calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
             }
 
+            // 🟢 Recalculate snapshot locally after delete
+            // This ensures widgets update immediately without waiting for backend
+            const allOps = Object.values(displayCache.value).flat();
+            const newSnapshot = {
+                timestamp: new Date().toISOString(),
+                accountBalances: {},
+                companyBalances: {},
+                individualBalances: {},
+                contractorBalances: {},
+                projectBalances: {},
+                categoryTotals: {}
+            };
+
+            // Recalculate balances from remaining operations
+            allOps.forEach(op => {
+                if (op.isWorkAct || _isRetailWriteOff(op)) return;
+                const absAmt = Math.abs(Number(op.amount) || 0);
+                const isIncome = op.type === 'income';
+                const signedAmt = isIncome ? absAmt : -absAmt;
+
+                if (op.accountId) {
+                    const accId = (typeof op.accountId === 'object' ? op.accountId._id : op.accountId).toString();
+                    newSnapshot.accountBalances[accId] = (newSnapshot.accountBalances[accId] || 0) + signedAmt;
+                }
+            });
+
+            snapshot.value = newSnapshot;
+            console.log('🔍 [DELETE] Recalculated snapshot:', {
+                totalOps: allOps.length,
+                accountBalances: newSnapshot.accountBalances,
+                deletedOp: {
+                    _id: operation._id,
+                    amount: operation.amount,
+                    accountId: operation.accountId
+                }
+            });
+
             _updateDealCache(operation, 'delete');
             _triggerProjectionUpdate();
 
@@ -1707,7 +1744,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
             }
 
-            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
+            // 🔴 REMOVED: fetchSnapshot() returns stale data, optimistic update works correctly
             // await fetchSnapshot();
 
         } catch (e) {
