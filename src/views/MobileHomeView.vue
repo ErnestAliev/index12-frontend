@@ -907,7 +907,7 @@ onMounted(async () => {
 onUnmounted(() => {
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
     if (el) el.removeEventListener('scroll', onTimelineScroll);
-    document.removeEventListener('mousedown', handleFilterClickOutside);
+    document.removeEventListener('click', handleFilterClickOutside, true);
 
     window.removeEventListener('touchmove', onResizerMove);
     window.removeEventListener('touchend', onResizerEnd);
@@ -929,14 +929,21 @@ watch(isWidgetFullscreen, (isOpen) => {
 
 const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
 const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' });
-const sortMode = computed(() => mainStore.widgetSortMode); const filterMode = computed(() => mainStore.widgetFilterMode);
+const sortMode = computed(() => mainStore.widgetSortMode); 
+const filterMode = computed(() => mainStore.widgetFilterMode);
 
 const updateFilterPosition = () => { if (filterBtnRef.value) { const rect = filterBtnRef.value.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } };
 const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { nextTick(() => updateFilterPosition()); } isFilterOpen.value = true; } };
 const handleFilterClickOutside = (event) => { const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target); const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target); if (!insideTrigger && !insideDropdown) { isFilterOpen.value = false; } };
-watch(isFilterOpen, (isOpen) => { if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('mousedown', handleFilterClickOutside); window.addEventListener('scroll', updateFilterPosition, true); }); } else { document.removeEventListener('mousedown', handleFilterClickOutside); window.removeEventListener('scroll', updateFilterPosition, true); } });
-const setSortMode = (mode) => { mainStore.setWidgetSortMode(mode); isFilterOpen.value = false; };
-const setFilterMode = (mode) => { mainStore.setWidgetFilterMode(mode); isFilterOpen.value = false; };
+watch(isFilterOpen, (isOpen) => { if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('click', handleFilterClickOutside, true); window.addEventListener('scroll', updateFilterPosition, true); }); } else { document.removeEventListener('click', handleFilterClickOutside, true); window.removeEventListener('scroll', updateFilterPosition, true); } });
+const setSortMode = (mode) => { 
+    mainStore.setWidgetSortMode(mode); 
+    isFilterOpen.value = false; 
+};
+const setFilterMode = (mode) => { 
+    mainStore.setWidgetFilterMode(mode); 
+    isFilterOpen.value = false; 
+};
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
 const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });

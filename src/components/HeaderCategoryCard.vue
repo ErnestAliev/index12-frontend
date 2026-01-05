@@ -144,7 +144,10 @@ const handleFilterClickOutside = (event) => {
   if (!insideTrigger && !insideDropdown) isFilterOpen.value = false;
 };
 
-const setFilterMode = (mode) => { filterMode.value = mode; };
+const setFilterMode = (mode) => { 
+    filterMode.value = mode; 
+    isFilterOpen.value = false; 
+};
 </script>
 
 <template>

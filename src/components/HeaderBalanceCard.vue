@@ -181,8 +181,14 @@ const processedItems = computed(() => {
   });
 });
 
-const setSortMode = (mode) => { sortMode.value = mode; };
-const setFilterMode = (mode) => { filterMode.value = mode; };
+const setSortMode = (mode) => { 
+    sortMode.value = mode; 
+    isFilterOpen.value = false; 
+};
+const setFilterMode = (mode) => { 
+    filterMode.value = mode; 
+    isFilterOpen.value = false; 
+};
 
 watch(isFilterOpen, async (isOpen) => {
   if (isOpen) {
