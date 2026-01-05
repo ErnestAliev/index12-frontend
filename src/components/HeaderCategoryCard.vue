@@ -1,8 +1,8 @@
 <script setup>
 import { ref, watch, computed, nextTick } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
+import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
-import filterIcon from '@/assets/filter-edit.svg';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v59.1 - STYLING FIX ---
@@ -20,6 +20,7 @@ const props = defineProps({
 
 const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
+const uiStore = useUiStore();
 
 const isTransferWidget = computed(() => {
   return props.widgetKey === 'transfers' || 
@@ -115,7 +116,17 @@ const isFilterOpen = ref(false);
 const filterBtnRef = ref(null);
 const filterDropdownRef = ref(null);
 const filterPos = ref({ top: '0px', left: '0px' });
-const filterMode = ref('all');
+
+// Use uiStore for persistent filter state
+const filterMode = computed({
+  get: () => uiStore.getWidgetFilterMode(props.widgetKey),
+  set: (val) => uiStore.setWidgetFilterMode(props.widgetKey, val)
+});
+
+// Show green button when filter is not default
+const isFilterActive = computed(() => {
+  return filterMode.value !== 'all';
+});
 
 const updateFilterPosition = () => {
   if (filterBtnRef.value) {
@@ -161,8 +172,10 @@ const setFilterMode = (mode) => {
 
       <div class="card-actions">
         <!-- Фильтр -->
-        <button v-if="!isSummaryWidget" class="action-square-btn" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
-          <img :src="filterIcon" alt="Filter" class="icon-svg" />
+        <button v-if="!isSummaryWidget" class="action-square-btn" :class="{ active: isFilterActive }" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
         </button>
         
         <!-- Прогноз -->

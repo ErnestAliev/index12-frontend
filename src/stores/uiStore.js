@@ -25,14 +25,44 @@ export const useUiStore = defineStore('ui', () => {
     localStorage.setItem('includeExcludedInTotal', String(includeExcludedInTotal.value));
   }
 
+  // Widget filters state (per widget key)
+  const widgetFilters = ref({});
+
+  function setWidgetSortMode(widgetKey, mode) {
+    if (!widgetFilters.value[widgetKey]) {
+      widgetFilters.value[widgetKey] = { sortMode: 'default', filterMode: 'all' };
+    }
+    widgetFilters.value[widgetKey].sortMode = mode;
+  }
+
+  function setWidgetFilterMode(widgetKey, mode) {
+    if (!widgetFilters.value[widgetKey]) {
+      widgetFilters.value[widgetKey] = { sortMode: 'default', filterMode: 'all' };
+    }
+    widgetFilters.value[widgetKey].filterMode = mode;
+  }
+
+  function getWidgetSortMode(widgetKey) {
+    return widgetFilters.value[widgetKey]?.sortMode || 'default';
+  }
+
+  function getWidgetFilterMode(widgetKey) {
+    return widgetFilters.value[widgetKey]?.filterMode || 'all';
+  }
+
   return {
     // State
     isHeaderExpanded,
     showCreditWizard,
     includeExcludedInTotal,
+    widgetFilters,
 
     // Actions
     toggleHeaderExpansion,
-    toggleExcludedInclusion
+    toggleExcludedInclusion,
+    setWidgetSortMode,
+    setWidgetFilterMode,
+    getWidgetSortMode,
+    getWidgetFilterMode
   };
 });

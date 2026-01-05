@@ -1,8 +1,8 @@
 <script setup>
 import { ref, watch, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
-import filterIcon from '@/assets/filter-edit.svg';
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -15,6 +15,7 @@ const props = defineProps({
 
 const emit = defineEmits(['add', 'edit']);
 const mainStore = useMainStore();
+const uiStore = useUiStore();
 
 const showFutureBalance = computed({
   get: () => mainStore.dashboardForecastState[props.widgetKey] ?? false,
@@ -26,8 +27,22 @@ const isFilterOpen = ref(false);
 const filterBtnRef = ref(null);
 const filterDropdownRef = ref(null);
 const filterPos = ref({ top: '0px', left: '0px' });
-const sortMode = ref('default'); 
-const filterMode = ref('all');
+
+// Use uiStore for persistent filter state
+const sortMode = computed({
+  get: () => uiStore.getWidgetSortMode(props.widgetKey),
+  set: (val) => uiStore.setWidgetSortMode(props.widgetKey, val)
+});
+
+const filterMode = computed({
+  get: () => uiStore.getWidgetFilterMode(props.widgetKey),
+  set: (val) => uiStore.setWidgetFilterMode(props.widgetKey, val)
+});
+
+// Show green button when filters are not default
+const isFilterActive = computed(() => {
+  return sortMode.value !== 'default' || filterMode.value !== 'all';
+});
 
 const updateFilterPosition = () => {
   if (filterBtnRef.value) {
@@ -367,8 +382,10 @@ defineExpose({ getSnapshot });
             </svg>
         </button>
 
-        <button class="action-square-btn" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
-          <img :src="filterIcon" alt="Filter" class="icon-svg" />
+        <button class="action-square-btn" :class="{ active: isFilterActive }" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
         </button>
         <button class="action-square-btn" :class="{ 'active': showFutureBalance }" @click.stop="showFutureBalance = !showFutureBalance" title="Прогноз">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>

@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { useWidgetData } from '@/composables/useWidgetData.js';
 
@@ -42,6 +43,7 @@ const baseUrlCalculated = API_BASE_URL.replace(/\/api\/?$/, '');
 const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
 
 const mainStore = useMainStore();
+const uiStore = useUiStore();
 const { getWidgetItems } = useWidgetData();
 
 // --- Refs & State ---
@@ -929,19 +931,22 @@ watch(isWidgetFullscreen, (isOpen) => {
 
 const activeWidgetTitle = computed(() => { if (!activeWidgetKey.value) return ''; const w = mainStore.allWidgets.find(x => x.key === activeWidgetKey.value); return w ? w.name : 'Виджет'; });
 const isFilterOpen = ref(false); const filterBtnRef = ref(null); const filterDropdownRef = ref(null); const filterPos = ref({ top: '0px', right: '16px' });
-const sortMode = computed(() => mainStore.widgetSortMode); 
-const filterMode = computed(() => mainStore.widgetFilterMode);
+
+// Use uiStore for persistent filter state (per widget)
+const sortMode = computed(() => activeWidgetKey.value ? uiStore.getWidgetSortMode(activeWidgetKey.value) : 'default'); 
+const filterMode = computed(() => activeWidgetKey.value ? uiStore.getWidgetFilterMode(activeWidgetKey.value) : 'all');
+const isFilterActive = computed(() => sortMode.value !== 'default' || filterMode.value !== 'all');
 
 const updateFilterPosition = () => { if (filterBtnRef.value) { const rect = filterBtnRef.value.getBoundingClientRect(); filterPos.value = { top: `${rect.bottom + 5}px`, left: `${Math.min(rect.left, window.innerWidth - 170)}px` }; } };
 const toggleFilter = (event) => { if (isFilterOpen.value) { isFilterOpen.value = false; } else { if (event && event.currentTarget) { nextTick(() => updateFilterPosition()); } isFilterOpen.value = true; } };
 const handleFilterClickOutside = (event) => { const insideTrigger = filterBtnRef.value && filterBtnRef.value.contains(event.target); const insideDropdown = filterDropdownRef.value && filterDropdownRef.value.contains(event.target); if (!insideTrigger && !insideDropdown) { isFilterOpen.value = false; } };
 watch(isFilterOpen, (isOpen) => { if (isOpen) { nextTick(() => { updateFilterPosition(); document.addEventListener('click', handleFilterClickOutside, true); window.addEventListener('scroll', updateFilterPosition, true); }); } else { document.removeEventListener('click', handleFilterClickOutside, true); window.removeEventListener('scroll', updateFilterPosition, true); } });
 const setSortMode = (mode) => { 
-    mainStore.setWidgetSortMode(mode); 
+    if (activeWidgetKey.value) uiStore.setWidgetSortMode(activeWidgetKey.value, mode); 
     isFilterOpen.value = false; 
 };
 const setFilterMode = (mode) => { 
-    mainStore.setWidgetFilterMode(mode); 
+    if (activeWidgetKey.value) uiStore.setWidgetFilterMode(activeWidgetKey.value, mode); 
     isFilterOpen.value = false; 
 };
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
@@ -1172,7 +1177,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
                         <svg v-if="mainStore.includeExcludedInTotal" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                     </button>
-                    <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterOpen || filterMode !== 'all' || sortMode !== 'default' }" @click.stop="toggleFilter" title="Фильтр"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
+                    <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterActive }" @click.stop="toggleFilter" title="Фильтр"><svg width="14" height="14" viewBox="0 0 24 24" :fill="isFilterActive ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>
                 </div>
             </div>
