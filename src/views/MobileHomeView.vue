@@ -871,18 +871,9 @@ const initializeMobileView = async () => {
         }
         const modeToLoad = mainStore.projection.mode || '12d';
 
-        // 🟢 CRITICAL: Load historical data FIRST (1 year back) to populate allKnownOperations
-        console.log('📊 [Mobile] Loading historical data (1y)...');
-        if (typeof mainStore.loadCalculationData === 'function') {
-            await mainStore.loadCalculationData('1y', today);
-            console.log('✅ [Mobile] Historical data loaded. allKnownOperations:', mainStore.allKnownOperations?.length || 0);
-        }
-
-        // Then load data for current view mode
-        console.log(`📊 [Mobile] Loading current view data (${modeToLoad})...`);
+        // Load data for current view mode only (no double loading)
         if (typeof mainStore.loadCalculationData === 'function') {
             await mainStore.loadCalculationData(modeToLoad, today);
-            console.log('✅ [Mobile] Current view data loaded');
         }
     } catch (e) {
         console.error("Timeline Load Error:", e);

@@ -954,10 +954,6 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentAccountBalances = computed(() => {
-        console.log('🔍 [currentAccountBalances] snapshot.accountBalances:', snapshot.value.accountBalances);
-        console.log('🔍 [currentAccountBalances] accounts.value:', accounts.value.map(a => ({ _id: a._id, name: a.name, isExcluded: a.isExcluded })));
-        console.log('🔍 [currentAccountBalances] includeExcludedInTotal:', includeExcludedInTotal.value);
-
         return accounts.value.reduce((acc, a) => {
             if (!includeExcludedInTotal.value && a.isExcluded) {
                 return acc;
@@ -1727,15 +1723,6 @@ export const useMainStore = defineStore('mainStore', () => {
             });
 
             snapshot.value = newSnapshot;
-            console.log('🔍 [DELETE] Recalculated snapshot:', {
-                totalOps: allOps.length,
-                accountBalances: newSnapshot.accountBalances,
-                deletedOp: {
-                    _id: operation._id,
-                    amount: operation.amount,
-                    accountId: operation.accountId
-                }
-            });
 
             _updateDealCache(operation, 'delete');
             _triggerProjectionUpdate();
