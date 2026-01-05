@@ -345,7 +345,7 @@ defineExpose({ getSnapshot });
       <div class="card-actions">
         <!-- Only workspace OWNER can toggle excluded accounts visibility (invited users always hide) -->
         <button 
-            v-if="props.widgetKey === 'accounts' && (!mainStore.workspaceRole || mainStore.isWorkspaceOwner)" 
+            v-if="props.widgetKey === 'accounts' && (!mainStore.workspaceRole || mainStore.isWorkspaceOwner || mainStore.isWorkspaceAdmin)"
             class="action-square-btn" 
             :class="{ active: mainStore.includeExcludedInTotal }" 
             @click.stop="mainStore.toggleExcludedInclusion()" 

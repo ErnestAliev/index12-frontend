@@ -72,27 +72,27 @@ export const useMainStore = defineStore('mainStore', () => {
     const toggleHeaderExpansion = () => uiStore.toggleHeaderExpansion();
 
     // 🔥 CRITICAL: Excluded accounts MUST be hidden from invited users
-    // Only owner (no workspaceRole) can toggle visibility
+    // Only owner or admin can toggle visibility
     const includeExcludedInTotal = computed({
         get: () => {
-            // Invited users NEVER see excluded accounts, only workspace owner can
-            if (!isWorkspaceOwner.value) {
+            // Invited users NEVER see excluded accounts, only workspace owner or admin can
+            if (!isWorkspaceOwner.value && !isWorkspaceAdmin.value) {
                 return false; // Force hidden for invited users
             }
-            // Owner can toggle
+            // Owner or admin can toggle
             return uiStore.includeExcludedInTotal;
         },
         set: (v) => {
-            // Only owner can change this setting
-            if (isWorkspaceOwner.value) {
+            // Only owner or admin can change this setting
+            if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
                 uiStore.includeExcludedInTotal = v;
             }
             // Invited users: setting is ignored
         }
     });
     const toggleExcludedInclusion = () => {
-        // Only workspace owner can toggle
-        if (isWorkspaceOwner.value) {
+        // Only workspace owner or admin can toggle
+        if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
             uiStore.toggleExcludedInclusion();
         }
         // Invited users: no-op
@@ -944,6 +944,13 @@ export const useMainStore = defineStore('mainStore', () => {
         const widgetMap = {};
         Object.keys(map).forEach(id => { widgetMap[`cat_${id}`] = map[id]; });
         return widgetMap;
+    });
+
+    const canToggleAccountVisibility = computed(() => {
+        if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
+            return true;
+        }
+        return false;
     });
 
     const currentAccountBalances = computed(() => {
