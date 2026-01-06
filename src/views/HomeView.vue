@@ -1618,7 +1618,7 @@ const handleRefundDelete = async (op) => {
 .home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; transition: height 0.3s ease; }
 .header-resizer { flex-shrink: 0; height: 15px; background: var(--header-resizer-bg); border-top: 1px solid var(--header-resizer-border); border-bottom: 1px solid var(--header-resizer-border); cursor: row-resize; position: relative; z-index: 50; display: flex; align-items: center; justify-content: center; }
 .header-resizer:hover { border-top: 1px solid var(--header-resizer-border-hover); }
-.header-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: var(--header-resizer-dot-bg); border-radius: 50%; border: 1px solid var(--header-resizer-dot-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+.header-resizer::before { content: ''; display: block; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 12px solid var(--header-resizer-dot-bg); opacity: 0.6; transition: opacity 0.2s, transform 0.2s; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
 .header-resizer:hover::before { opacity: 1; transform: scale(1.2); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
 .home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -1737,7 +1737,7 @@ const handleRefundDelete = async (op) => {
 .custom-scrollbar-thumb { position: absolute; top: 2px; bottom: 2px; background-color: var(--scrollbar-thumb-bg); border-radius: 6px; cursor: grab; }
 .custom-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-bg-active); cursor: grabbing; }
 .vertical-resizer { position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: row-resize; z-index: 20; display: flex; align-items: center; justify-content: center; }
-.vertical-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: var(--vertical-resizer-dot-bg); border-radius: 50%; border: 1px solid var(--vertical-resizer-dot-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+.vertical-resizer::before { content: ''; display: block; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-top: 12px solid var(--vertical-resizer-dot-bg); opacity: 0.6; transition: opacity 0.2s, transform 0.2s; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
 .vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
 .graph-area-wrapper { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .graph-renderer-content { flex-grow: 1; }
