@@ -166,9 +166,9 @@
     /* Фон предоплаты - ЯРКИЙ */
     --op-prepay-border: rgba(255, 157, 0, 1);
     /* Граница - насыщенная */
-    --op-prepay-color: #1a1a1a;
+    --op-prepay-color: #ffffff;
     /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-prepay-meta: #1a1a1a;
+    --op-prepay-meta: #ffffff;
     /* Цвет метки - нейтральная */
 
     /* Операция: Закрытая сделка (Closed Deal) - Зеленый */
@@ -188,7 +188,7 @@
     /* Граница */
     --op-transfer-color: #f5f5f5;
     /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-transfer-meta: #666666;
+    --op-transfer-meta: #ffffff;
     /* Цвет метки - нейтральная */
 
     /* Операция: Вывод (Withdrawal) - Фиолетовый */
@@ -198,7 +198,7 @@
     /* Граница */
     --op-withdrawal-color: #1a1a1a;
     /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-withdrawal-meta: #666666;
+    --op-withdrawal-meta: #ffffff;
     /* Цвет метки - нейтральная */
 
     /* Операция: Кредит (Credit Income) - Голубой */
@@ -228,7 +228,7 @@
     /* Граница */
     --op-technical-color: #1a1a1a;
     /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-technical-meta: #666666;
+    --op-technical-meta: #ffffff;
     /* Цвет метки - нейтральная */
 
     /* ===================================================

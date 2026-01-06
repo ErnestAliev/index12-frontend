@@ -332,6 +332,7 @@ const onDrop = (event) => {
   border: 1px solid var(--op-prepay-border);
 }
 .prepayment .op-amount { color: var(--op-prepay-color) !important; }
+.prepayment .op-meta { color: var(--op-prepay-meta); }
 
 /* Закрытая сделка (Closed Deal) - Зеленый */
 .closed-deal { 
