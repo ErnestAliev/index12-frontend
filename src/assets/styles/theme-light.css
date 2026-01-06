@@ -481,4 +481,7 @@
     --filter-dropdown-item-hover: rgba(0, 0, 0, 0.05);
     --filter-dropdown-item-active-color: #34c759;
     --filter-dropdown-item-active-bg: rgba(52, 199, 89, 0.1);
+
+    /* Modal range-total */
+    --range-total-color: #1a1a1a;
 }

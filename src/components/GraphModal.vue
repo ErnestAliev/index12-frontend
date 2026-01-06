@@ -226,7 +226,7 @@ onMounted(() => {
 .separator { margin: 0 4px; }
 
 .range-total {
-  color: #FFFFFF;
+  color: var(--range-total-color);
   font-weight: 700;
   font-size: 1.3em;
   margin: 0 4px;
