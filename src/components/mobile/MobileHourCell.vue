@@ -322,7 +322,7 @@ const onTouchEnd = (e) => {
 .mobile-cell {
   width: 100%;
   height: 28px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--cell-border, rgba(255,255,255,0.05));
   padding: 2px 4px;
   box-sizing: border-box;
 }

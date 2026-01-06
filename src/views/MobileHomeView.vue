@@ -1697,23 +1697,22 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 }
 
 .ai-modal-title {
-  color: #fff;
-  font-weight: 900;
-  font-size: 15px;
+  color: var(--color-text, #fff);
+  font-weight: 700;
+  font-size: 18px;
 }
 
 .ai-modal-close {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border, #444);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
   background: transparent;
-  color: #fff;
+  color: var(--color-text, #fff);
+  cursor: pointer;
   display: grid;
   place-items: center;
-  cursor: pointer;
-  padding: 0;
-  line-height: 0;
+  transition: background 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1731,9 +1730,9 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  border: 1px solid var(--color-border, #444);
-  background: var(--color-background-soft, #282828);
-  color: #fff;
+  border: 1px solid var(--widget-border, #444);
+  background: var(--widget-background, #ffffff);
+  color: var(--color-text, #fff);
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
@@ -1768,37 +1767,49 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   align-items: flex-end;
 }
 
+.ai-msg.user {
+  justify-content: flex-end;
+}
+
 .ai-msg.assistant {
   align-items: flex-start;
 }
 
 .ai-bubble {
-  max-width: 88%;
+  max-width: 75%;
   padding: 10px 12px;
   border-radius: 12px;
-  border: 1px solid var(--color-border, #444);
-  background: var(--color-background-soft, #282828);
-  color: #fff;
+  background: var(--widget-background, #2c2c2c);
+  color: var(--color-text, #e0e0e0);
   font-size: 13px;
-  line-height: 1.25;
-  white-space: pre-line;
+  line-height: 1.4;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 .ai-msg.user .ai-bubble {
-  background: rgba(52, 199, 89, 0.16);
-  border-color: rgba(52, 199, 89, 0.28);
+  background: rgba(52, 199, 89, 0.15);
+  color: var(--color-text, #fff);
+  border: 1px solid rgba(52, 199, 89, 0.3);
 }
 
 .ai-copy {
-  border: 1px solid var(--color-border, #444);
-  background: transparent;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  padding: 6px 10px;
-  border-radius: 10px;
+  margin-top: 4px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--widget-background, #333);
+  color: var(--text-mute, #888);
+  border: 1px solid var(--widget-border, #444);
+  border-radius: 6px;
   cursor: pointer;
+  transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
+}
+
+.ai-copy:active {
+  background: rgba(135,189,233,0.1);
 }
 
 .ai-typing {
@@ -1830,26 +1841,24 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
 /* GPT-style input area */
 .ai-input-container {
-  padding-bottom: 22px;
-  border-top: 1px solid var(--color-border, #444);
-  background: var(--color-background-soft, #282828);
-  flex-shrink: 0;
+  padding: 12px 14px;
+  background: var(--widget-background, #1e1e1e);
+  border-top: 1px solid var(--widget-border, #333);
 }
 
 .ai-input-wrapper {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
-  background: var(--color-background, #1a1a1a);
-  border: 1px solid var(--color-border, #444);
- 
-  padding: 8px 12px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  padding: 8px 10px;
+  background: var(--color-background, #2a2a2a);
+  border: 1px solid var(--widget-border, #444);
+  border-radius: 20px;
+  transition: border-color 0.2s;
 }
 
 .ai-input-wrapper:focus-within {
-  border-color: var(--color-primary, #34c759);
-  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.15);
+  border-color: rgba(135,189,233,0.5);
 }
 
 .ai-attach-btn {
@@ -1858,7 +1867,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   border-radius: 10px;
   border: none;
   background: transparent;
-  color: var(--color-text-mute, rgba(255,255,255,0.5));
+  color: var(--text-mute, rgba(255,255,255,0.5));
   cursor: not-allowed;
   display: grid;
   align-items: center;
@@ -1869,32 +1878,28 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   -webkit-tap-highlight-color: transparent;
 }
 
-.ai-input { 
-  flex: 1; 
-  min-height: 24px; 
-  max-height: 120px;
+.ai-input {
+  flex: 1;
+  background: transparent;
   border: none;
-  background: transparent; 
-  color: #fff; 
-  padding: 6px 0;
   outline: none;
+  color: var(--color-text, #fff);
+  font-size: 14px;
   resize: none;
-  overflow-y: auto;
+  max-height: 100px;
   font-family: inherit;
-  font-size: 12px !important;
-  line-height: 1.5;
-
+  line-height: 1.4;
 }
 
 .ai-input::placeholder {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-mute, #666);
 }
 
 .ai-input-buttons {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
-  align-items: flex-end;
+  align-items: center;
 }
 
 .ai-mic-btn {
@@ -1915,7 +1920,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 .fullscreen-close-btn { background: none; border: none; font-size: 28px; color: var(--color-text, #fff); cursor: pointer; padding: 0; line-height: 1; }
 
 .ai-mic-btn:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(135,189,233,0.15);
 }
 
 .ai-mic-btn:disabled {
@@ -1939,39 +1944,45 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   50% { box-shadow: 0 0 0 12px rgba(52, 199, 89, 0); }
   100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
 }
-
+.ai-mic-btn,
 .ai-send-btn {
   width: 36px;
   height: 36px;
   border-radius: 10px;
   border: none;
-  background: var(--color-primary, #34c759);
-  color: #ffffff;
+  background: var(--widget-background, #333);
+  color: var(--color-text, rgba(255,255,255,0.8));
   cursor: pointer;
   display: grid;
-  align-items: center;
-  justify-content: center;
   place-items: center;
+  flex-shrink: 0;
   transition: background-color 0.15s;
   -webkit-tap-highlight-color: transparent;
+  justify-content: center;
 }
 
-.ai-send-btn:active {
-  background: #28a745;
+.ai-mic-btn:active {
+  background: rgba(135,189,233,0.15);
+}
+
+.ai-send-btn {
+  background: var(--color-primary, #34c759);
+  color: #fff;
 }
 
 .ai-send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.5);
 }
 
-.ai-mic-btn svg,
-.ai-send-btn svg {
-  width: 20px;
-  height: 20px;
-  display: block;
+.ai-send-btn:not(:disabled):active {
+  background: rgba(52, 199, 89, 0.85);
+}
+
+.ai-mic-btn.recording {
+  background: var(--color-danger, #ff3b30);
+  color: #fff;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
 /* Ensure the modal is not constrained by any ancestor stacking/overflow */

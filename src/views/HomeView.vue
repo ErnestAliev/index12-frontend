@@ -1759,7 +1759,7 @@ const handleRefundDelete = async (op) => {
 }
 
 .ai-modal { 
-  width: 80vw; 
+  width: 95vw; 
   min-width: 400px;
   max-width: 1280px;
   height: 90vh;

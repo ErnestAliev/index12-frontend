@@ -349,6 +349,10 @@
     --day-indicator-expense: #ff3b30;
     /* Индикатор расхода */
 
+    /* Cell: Border for timeline cells */
+    --cell-border: rgba(0, 0, 0, 0.08);
+    /* Border between cells in timeline */
+
     /* Widget: Border for mobile widgets */
     --widget-border: rgba(135, 189, 233, 0.3);
     /* Blue-tinted border for mobile widgets in light theme */

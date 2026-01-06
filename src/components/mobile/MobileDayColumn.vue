@@ -124,24 +124,24 @@ const handleShowMenu = (payload) => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  border-right: 1px solid var(--color-border, #444);
-  background-color: var(--color-background-soft, #282828);
+  border-right: 1px solid var(--day-column-border, #444);
+  background-color: var(--day-header-bg, #ffffff);
   min-width: 0; 
 }
 
 .day-header {
   text-align: center;
   font-size: 11px;
-  color: #888;
+  color: var(--day-header-text, #888);
   padding: 8px 4px;
-  border-bottom: 1px solid var(--color-border, #444);
-  background-color: var(--color-background, #1a1a1a);
+  border-bottom: 1px solid var(--day-column-border, #444);
+  background-color: var(--day-header-bg, #ffffff);
   font-weight: 500;
   text-transform: lowercase;
 }
 
 .mobile-day-col.today .day-header {
-  color: var(--color-primary, #34c759);
+  color: var(--day-header-today-text, #34c759);
   font-weight: 700;
 }
 
