@@ -215,12 +215,12 @@ onMounted(() => {
 }
 .nav-arrow {
     background: none; border: 1px solid #444; border-radius: 4px;
-    color: #fff; font-size: 18px; width: 30px; height: 30px;
+    color: var(--color-text, #fff); font-size: 18px; width: 30px; height: 30px;
     display: flex; align-items: center; justify-content: center;
     padding: 0; cursor: pointer;
 }
 .nav-current {
-    font-size: 13px; font-weight: 600; color: #fff; text-transform: uppercase;
+    font-size: 13px; font-weight: 600; color: var(--color-text, #fff); text-transform: uppercase;
 }
 
 .close-btn {
@@ -235,7 +235,7 @@ onMounted(() => {
     display: flex; align-items: baseline; gap: 10px;
     flex-shrink: 0;
 }
-.range-total { font-size: 20px; font-weight: 700; color: #fff; }
+.range-total { font-size: 20px; font-weight: 700; color: var(--color-text, #fff); }
 .date-info { font-size: 13px; color: var(--color-primary); }
 
 .graph-modal-body {

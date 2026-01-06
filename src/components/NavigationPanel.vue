@@ -85,19 +85,19 @@ onMounted(() => {
   justify-content: flex-start;
   padding-top: 1rem;
   box-sizing: border-box;
-  background-color: var(--color-background-soft);
-  border-right: 1px solid var(--color-border);
+  background-color: var(--nav-panel-bg);
+  border-right: 1px solid var(--nav-panel-border);
 }
 .nav-arrow {
   border: none;
   background: none;
-  color: #888;
+  color: var(--nav-arrow-color);
   font-size: 2em;
   cursor: pointer;
   transition: color 0.2s;
 }
 .nav-arrow:hover {
-  color: var(--color-text);
+  color: var(--nav-arrow-hover);
 }
 .nav-display {
   flex-grow: 1;
@@ -111,12 +111,12 @@ onMounted(() => {
 .nav-num {
   font-size: 2.5em;
   font-weight: bold;
-  color: var(--color-heading);
+  color: var(--nav-num-color);
   line-height: 1;
 }
 .nav-unit {
   font-size: 0.8em;
-  color: #888;
+  color: var(--nav-unit-color);
   letter-spacing: 0.1em;
 }
 </style>

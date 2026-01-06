@@ -62,6 +62,16 @@ const aiPaywall = ref(false);
 const aiPaywallReason = ref('AI ассистент доступен по подписке.');
 const aiMessagesRef = ref(null);
 const aiInputRef = ref(null);
+
+// --- Theme management ---
+const currentTheme = ref(localStorage.getItem('theme') || 'dark');
+
+const toggleTheme = () => {
+  currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', currentTheme.value);
+  localStorage.setItem('theme', currentTheme.value);
+};
+
 // UI snapshot source (screen = truth)
 const theHeaderRef = ref(null);
 
@@ -1106,6 +1116,9 @@ const captureBackgroundScreenshot = async () => {
 };
 
 onMounted(async () => { 
+    // Initialize theme
+    document.documentElement.setAttribute('data-theme', currentTheme.value);
+    
     checkDayChange(); 
     dayChangeCheckerInterval = setInterval(checkDayChange, 60000); 
     await mainStore.checkAuth(); 
@@ -1265,81 +1278,105 @@ const handleRefundDelete = async (op) => {
         <!-- 🟢 NEW: Hide graphs for timeline-only users -->
         <div v-if="!mainStore.isTimelineOnly" class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
-            <aside class="home-right-panel">
-        <!-- 🟢 NEW: Hide expand button for timeline-only -->
-        <button
-          v-if="!mainStore.isTimelineOnly"
-          class="icon-btn header-expand-btn"
-          :class="{ 'active': mainStore.isHeaderExpanded }"
-          @click="mainStore.toggleHeaderExpansion"
-          :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7"></rect>
-            <rect x="14" y="3" width="7" height="7"></rect>
-            <rect x="14" y="14" width="7" height="7"></rect>
-            <rect x="3" y="14" width="7" height="7"></rect>
-          </svg>
-        </button>
-
-        <!-- 🟢 NEW: Hide import/export for timeline-only -->
-        <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-        </button>
-
-        <!-- 🟢 NEW: Hide graph button for timeline-only -->
-        <button v-if="!mainStore.isTimelineOnly" class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="20" x2="18" y2="10"></line>
-            <line x1="12" y1="20" x2="12" y2="4"></line>
-            <line x1="6" y1="20" x2="6" y2="14"></line>
-          </svg>
-        </button>
-
-        <!-- 🟢 UPDATED: Hide AI button for timeline-only -->
-        <button
-          v-if="!mainStore.isTimelineOnly"
-          class="icon-btn ai-btn"
-          :class="{ 'active': isAiDrawerOpen }"
-          @click.stop="openAiDrawer"
-          title="AI ассистент"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
-              <path d="M5 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"></path>
+      <aside class="home-right-panel">
+        <!-- Top buttons group -->
+        <div class="right-panel-top">
+          <!-- 🟢 NEW: Hide expand button for timeline-only -->
+          <button
+            v-if="!mainStore.isTimelineOnly"
+            class="icon-btn header-expand-btn"
+            :class="{ 'active': mainStore.isHeaderExpanded }"
+            @click="mainStore.toggleHeaderExpansion"
+            :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
-        </button>
-
-        <!-- 🟢 NEW: Unified Workspace/Project Dashboard Button (Admin only) -->
-        <button
-          v-if="mainStore.isAdmin"
-          class="icon-btn workspace-dashboard-btn"
-          @click="showWorkspaceModal = true"
-          title="Проекты"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-          </svg>
-        </button>
-
-        <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-        </button>
-
-        <div class="user-profile-widget">
-          <button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu">
-            <img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" />
-            <div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div>
-            <span class="user-name">{{ mainStore.user.name }}</span>
           </button>
+
+          <!-- 🟢 NEW: Hide import/export for timeline-only -->
+          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </button>
+
+          <!-- 🟢 NEW: Hide graph button for timeline-only -->
+          <button v-if="!mainStore.isTimelineOnly" class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+          </button>
+
+          <!-- 🟢 UPDATED: Hide AI button for timeline-only -->
+          <button
+            v-if="!mainStore.isTimelineOnly"
+            class="icon-btn ai-btn"
+            :class="{ 'active': isAiDrawerOpen }"
+            @click.stop="openAiDrawer"
+            title="AI ассистент"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
+                <path d="M5 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"></path>
+              </svg>
+          </button>
+
+          <!-- 🟢 NEW: Unified Workspace/Project Dashboard Button (Admin only) -->
+          <button
+            v-if="mainStore.isAdmin"
+            class="icon-btn workspace-dashboard-btn"
+            @click="showWorkspaceModal = true"
+            title="Проекты"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </button>
+
+          <!-- 🆕 NEW: Theme Toggle Button -->
+          <button class="icon-btn theme-toggle-btn" @click="toggleTheme" :title="currentTheme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на темную тему'">
+            <svg v-if="currentTheme === 'dark'" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Bottom buttons group -->
+        <div class="right-panel-bottom">
+          <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </button>
+
+          <div class="user-profile-widget">
+            <button class="user-profile-button" ref="userButtonRef" @click="toggleUserMenu">
+              <img :src="mainStore.user.avatarUrl" alt="avatar" class="user-avatar" v-if="mainStore.user.avatarUrl" />
+              <div class="user-avatar-placeholder" v-else>{{ mainStore.user.name ? mainStore.user.name[0].toUpperCase() : '?' }}</div>
+              <span class="user-name">{{ mainStore.user.name }}</span>
+            </button>
+          </div>
         </div>
       </aside>
       
@@ -1537,12 +1574,41 @@ const handleRefundDelete = async (op) => {
 .google-login-button:hover { background-color: #f9f9f9; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 .dev-login-button { display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; background-color: #333; color: #fff; border: 1px solid #555; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: background-color 0.2s; margin-top: 10px; width: 100%; box-sizing: border-box; }
 .dev-login-button:hover { background-color: #444; }
-.user-profile-widget { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px; }
-.user-profile-button { display: flex; align-items: center; width: 100%; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; color: var(--color-text); text-align: left; }
+
+.user-profile-button { 
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--color-background-soft); 
+  border: 1px solid var(--color-border); 
+  border-radius: 50%; 
+  padding: 0;
+  cursor: pointer; 
+  transition: background-color 0.2s, border-color 0.2s; 
+  flex-shrink: 0;
+}
 .user-profile-button:hover { background-color: var(--color-background-mute); border-color: var(--color-border-hover); }
-.user-avatar { width: 28px; height: 28px; border-radius: 50%; right: 0px; object-fit: cover; border: 1px solid var(--color-border); }
-.user-avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; background-color: var(--color-primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
-.user-name { flex-grow: 1; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-avatar { 
+  width: 32px; 
+  height: 32px; 
+  border-radius: 50%; 
+  object-fit: cover; 
+}
+.user-avatar-placeholder { 
+  width: 32px; 
+  height: 32px; 
+  border-radius: 50%; 
+  background-color: var(--color-primary); 
+  color: #fff; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  font-weight: 600; 
+  font-size: 14px; 
+}
+.user-name { display: none; /* Скрыт в узкой панели */ }
 .user-menu { position: fixed; width: 180px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); z-index: 2000; overflow: hidden; }
 .user-menu-item { display: block; width: 100%; padding: 10px 12px; background: none; border: none; border-bottom: 1px solid var(--color-border); color: var(--color-text); cursor: pointer; text-align: left; font-size: 14px; }
 .user-menu-item:last-child { border-bottom: none; }
@@ -1550,110 +1616,100 @@ const handleRefundDelete = async (op) => {
 .user-menu-item:disabled { color: var(--color-text-mute); cursor: not-allowed; background: none; }
 .home-layout { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; overflow: hidden; background-color: var(--color-background); }
 .home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; transition: height 0.3s ease; }
-.header-resizer { flex-shrink: 0; height: 15px; background: var(--color-background-soft); border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: row-resize; position: relative; z-index: 50; display: flex; align-items: center; justify-content: center; }
-.header-resizer:hover { border-top: 1px solid #777; }
-.header-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: #ffffff; border-radius: 50%; border: 1px solid var(--color-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+.header-resizer { flex-shrink: 0; height: 15px; background: var(--header-resizer-bg); border-top: 1px solid var(--header-resizer-border); border-bottom: 1px solid var(--header-resizer-border); cursor: row-resize; position: relative; z-index: 50; display: flex; align-items: center; justify-content: center; }
+.header-resizer:hover { border-top: 1px solid var(--header-resizer-border-hover); }
+.header-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: var(--header-resizer-dot-bg); border-radius: 50%; border: 1px solid var(--header-resizer-dot-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
 .header-resizer:hover::before { opacity: 1; transform: scale(1.2); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
 .home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; }
-.home-right-panel { width: 60px; flex-shrink: 0; overflow-y: auto; background-color: var(--color-background-soft); border-left: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; position: relative; }
+.home-right-panel { 
+  width: 60px; 
+  flex-shrink: 0; 
+  background-color: var(--right-panel-bg); 
+  border-left: 1px solid var(--right-panel-border); 
+  scrollbar-width: none; 
+  -ms-overflow-style: none; 
+  
+  /* Flexbox layout */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 0;
+}
 .home-right-panel::-webkit-scrollbar { display: none; }
 
-.header-expand-btn { position: absolute; top: 8px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
-.header-expand-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
-.header-expand-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
-
-/* 🟢 NEW: Invite Employee Button (absolute position) */
-.invite-employee-btn { 
-  position: absolute; 
-  top: 168px;
-  right: 15px; 
-  z-index: 20; 
-  background: var(--color-background-soft); 
-  border: 1px solid var(--color-border); 
-  border-radius: 50%; 
-  width: 32px; 
-  height: 32px; 
-  display: flex; 
-  align-items: center; 
-  justify-content: center; 
-  cursor: pointer; 
-  color: var(--color-text); 
-  padding: 0; 
-  transition: background-color 0.2s, border-color 0.2s;
-}
-.invite-employee-btn:hover { 
-  background: var(--color-background-mute); 
-  border-color: var(--color-border-hover);
-}
-.invite-employee-btn svg { width: 18px; height: 18px; stroke: currentColor; }
-
-.workspace-dashboard-btn { 
-  position: absolute; 
-  top: 168px; /* 128px (ai-btn) + 40px spacing */
-  right: 15px; 
-  z-index: 20; 
-  background: var(--color-background-soft); 
-  border: 1px solid var(--color-border); 
-  border-radius: 50%; 
-  width: 32px; 
-  height: 32px; 
-  display: flex; 
-  align-items: center; 
-  justify-content: center; 
-  cursor: pointer; 
-  color: var(--color-text); 
-  padding: 0; 
-  transition: background-color 0.2s, border-color 0.2s;
-}
-.workspace-dashboard-btn:hover { 
-  background: var(--color-background-mute); 
-  border-color: var(--color-border-hover);
-}
-.workspace-dashboard-btn svg { width: 18px; height: 18px; stroke: currentColor; }
-
-.project-management-btn {
-  position: fixed;
-  bottom: 20px;
-  right: 80px;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background-soft);
-  color: var(--color-text);
-  cursor: pointer;
+/* Top buttons group */
+.right-panel-top {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  z-index: 1000;
+  gap: 8px;
+  padding: 0 14px;
 }
-.project-management-btn:hover {
-  background: var(--color-background-mute);
-  border-color: var(--color-primary);
-  transform: translateY(-2px);
+
+/* Bottom buttons group */
+.right-panel-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 8px 8px;
 }
-.project-management-btn svg { width: 18px; height: 18px; stroke: currentColor; }
 
-.header-expand-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+/* Base icon button styles */
+.icon-btn { 
+  background: var(--color-background-soft); 
+  border: 1px solid var(--color-border); 
+  border-radius: 50%; 
+  width: 32px; 
+  height: 32px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  cursor: pointer; 
+  color: var(--color-text); 
+  padding: 0; 
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
 
-.import-export-btn { position: absolute; top: 48px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
-.import-export-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
-.import-export-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+.icon-btn:hover { 
+  background: var(--color-background-mute); 
+  border-color: var(--color-border-hover);
+}
 
-.graph-btn { position: absolute; top: 88px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s; }
-.graph-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
-.graph-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+.icon-btn svg { 
+  width: 18px; 
+  height: 18px; 
+  stroke: currentColor; 
+}
 
-.ai-btn { position: absolute; top: 128px; right: 15px; z-index: 20; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text); padding: 0; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
-.ai-btn:hover { background: var(--color-background-mute); border-color: var(--color-border-hover); }
-.ai-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: rgba(52, 199, 89, 0.1); }
-.ai-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+/* Active state for expand and AI buttons */
+.header-expand-btn.active,
+.ai-btn.active { 
+  color: var(--color-primary); 
+  border-color: var(--color-primary); 
+  background: rgba(52, 199, 89, 0.1); 
+}
 
-.about-btn { position: absolute; bottom: 64px; right: 0px; transform: translateX(-50%); z-index: 20; background: var(--color-primary); border: 1px solid var(--color-primary); color: #ffffff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.2s; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); }
-.about-btn:hover { background: #28a745; border-color: #28a745; transform: translateX(-50%) scale(1.1); }
-.about-btn svg { width: 18px; height: 18px; stroke: currentColor; }
+/* About button special styling */
+.about-btn { 
+  background: var(--color-primary); 
+  border: 1px solid var(--color-primary); 
+  color: #ffffff; 
+  box-shadow: 0 4px 10px rgba(52, 199, 89, 0.4); 
+}
+
+.about-btn:hover { 
+  background: #28a745; 
+  border-color: #28a745; 
+}
+
+/* User profile widget */
+.user-profile-widget { 
+ 
+  padding: 0;
+}
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
 .timeline-grid-wrapper { height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; }
 
@@ -1676,18 +1732,18 @@ const handleRefundDelete = async (op) => {
 }
 
 .timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
-.divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); position: relative; display: flex; align-items: center; }
-.custom-scrollbar-track { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: #2a2a2a; cursor: pointer; z-index: 10; }
-.custom-scrollbar-thumb { position: absolute; top: 2px; bottom: 2px; background-color: #555; border-radius: 6px; cursor: grab; }
-.custom-scrollbar-thumb:active { background-color: #777; cursor: grabbing; }
-.vertical-resizer { position: absolute; top: -5px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: row-resize; z-index: 20; display: flex; align-items: center; justify-content: center; }
-.vertical-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: #ffffff; border-radius: 50%; border: 1px solid var(--color-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+.divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; }
+.custom-scrollbar-track { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: var(--scrollbar-track-bg); cursor: pointer; z-index: 10; }
+.custom-scrollbar-thumb { position: absolute; top: 2px; bottom: 2px; background-color: var(--scrollbar-thumb-bg); border-radius: 6px; cursor: grab; }
+.custom-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-bg-active); cursor: grabbing; }
+.vertical-resizer { position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: row-resize; z-index: 20; display: flex; align-items: center; justify-content: center; }
+.vertical-resizer::before { content: ''; display: block; width: 10px; height: 10px; background-color: var(--vertical-resizer-dot-bg); border-radius: 50%; border: 1px solid var(--vertical-resizer-dot-border); opacity: 0.5; transition: opacity 0.2s, transform 0.2s; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
 .vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
 .graph-area-wrapper { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .graph-renderer-content { flex-grow: 1; }
 .summaries-container { flex-shrink: 0; }
-.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: #282828;}
-.divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); }
+.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: var(--graph-bg-main);}
+.divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); }
 /* --- AI Modal (Desktop) --- */
 .ai-modal-overlay { 
   position: fixed; 

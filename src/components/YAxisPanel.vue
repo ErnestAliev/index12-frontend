@@ -60,8 +60,8 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
   height: 100%;
   overflow: hidden; 
   position: relative; 
-  background-color: var(--color-background-soft);
-  border-right: 1px solid var(--color-border);
+  background-color: var(--y-axis-panel-bg);
+  border-right: 1px solid var(--y-axis-panel-border);
   box-sizing: border-box;
 }
 
@@ -87,7 +87,7 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
 
 .y-label {
   font-size: 0.7em;
-  color: #777;
+  color: var(--y-axis-label-color);
   height: 15px;
   line-height: 15px;
   user-select: none;

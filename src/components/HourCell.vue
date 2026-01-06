@@ -259,59 +259,135 @@ const onDrop = (event) => {
 </template>
 
 <style scoped>
-.hour-cell { width: 100%; height: 36px; border-bottom: 1px solid var(--color-border); display:flex; align-items:center; padding:4px 8px; box-sizing:border-box; flex-shrink:0; transition: background-color .12s ease-in-out; }
-.hour-cell.drag-over { background: rgba(255,255,255,.04); outline:1px dashed var(--color-border); }
+/* Используем переменные из theme.css */
+.hour-cell { 
+  width: 100%; 
+  height: 36px; 
+  border-bottom: 1px solid var(--cell-border); 
+  display:flex; 
+  align-items:center; 
+  padding:4px 8px; 
+  box-sizing:border-box; 
+  flex-shrink:0; 
+  transition: background-color .12s ease-in-out; 
+}
+.hour-cell.drag-over { 
+  background: var(--cell-bg-dragover); 
+  outline:1px dashed var(--cell-dragover-outline); 
+}
 .hour-cell:last-child { border-bottom:none; }
-.cell-empty-space { width:100%; height:100%; cursor:cell; border-radius:4px; }
-.cell-empty-space:hover { background: rgba(255,255,255,.05); }
-.operation-chip { background:#383838; border: 1px solid rgba(52, 199, 89, 0.3);  padding:4px 8px; width:100%; border-radius:4px; font-size: 12px; display:flex; justify-content:space-between; cursor:grab; overflow:hidden; user-select:none; }
+.cell-empty-space { 
+  width:100%; 
+  height:100%; 
+  cursor:cell; 
+  border-radius:4px; 
+}
+.cell-empty-space:hover { background: var(--cell-bg-hover); }
+
+.operation-chip { 
+  background: var(--op-default-bg); 
+  border: 1px solid var(--op-default-border);  
+  padding:4px 8px; 
+  width:100%; 
+  border-radius:4px; 
+  font-size: 12px; 
+  display:flex; 
+  justify-content:space-between; 
+  cursor:grab; 
+  overflow:hidden; 
+  user-select:none; 
+}
 .operation-chip:active { cursor:grabbing; }
-.operation-chip:hover { background:#4a4a4c; }
-.op-amount { font-weight:bold; margin-right:6px; white-space:nowrap; }
-.op-meta { color:#aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-.income .op-amount { color: var(--color-primary); }
-.expense .op-amount { color: var(--color-danger); }
+.op-amount { 
+  font-weight:bold; 
+  margin-right:6px; 
+  white-space:nowrap; 
+}
+.op-meta { 
+  white-space:nowrap; 
+  overflow:hidden; 
+  text-overflow:ellipsis; 
+}
 
-/* 🟢 ПРЕДОПЛАТА (ОТКРЫТАЯ) - Оранжевый фон и текст */
+/* Доход (Income) - Зеленый */
+.income {
+  background: var(--op-income-bg);
+  border: 1px solid var(--op-income-border);
+}
+.income .op-amount { color: var(--op-income-color); }
+.income .op-meta { color: var(--op-income-meta); }
+
+/* Расход (Expense) - Красный */
+.expense {
+  background: var(--op-expense-bg);
+  border: 1px solid var(--op-expense-border);
+}
+.expense .op-amount { color: var(--op-expense-color); }
+.expense .op-meta { color: var(--op-expense-meta); }
+
+/* Предоплата (Prepayment) - Оранжевый */
 .prepayment {
-  background: rgba(255, 157, 0, 0.15);
-  border: 1px solid rgba(255, 157, 0, 0.3);
+  background: var(--op-prepay-bg);
+  border: 1px solid var(--op-prepay-border);
 }
-.prepayment .op-amount { color: #FF9D00 !important; }
+.prepayment .op-amount { color: var(--op-prepay-color) !important; }
 
-/* 🟢 ЗАКРЫТАЯ СДЕЛКА (И ФАКТ РОЗНИЦЫ) - Зеленый фон и текст */
+/* Закрытая сделка (Closed Deal) - Зеленый */
 .closed-deal { 
-  background: rgba(52, 199, 89, 0.15); 
-  border: 1px solid rgba(52, 199, 89, 0.3); 
+  background: var(--op-closed-bg); 
+  border: 1px solid var(--op-closed-border); 
 }
-.closed-deal .op-amount { color: #34c759 !important; }
-.closed-deal .op-meta { color: #a3e6b1; }
+.closed-deal .op-amount { color: var(--op-closed-color) !important; }
+.closed-deal .op-meta { color: var(--op-closed-meta); }
 
-.technical { background: #383838; border: 1px solid #444; }
-.technical .op-amount { color: #E6C845; } 
-.technical .op-meta { color: #B0B090; }
+/* Техническая операция (Technical) - Желтый */
+.technical { 
+  background: var(--op-technical-bg); 
+  border: 1px solid var(--op-technical-border); 
+}
+.technical .op-amount { color: var(--op-technical-color); } 
+.technical .op-meta { color: var(--op-technical-meta); }
 
-/* 🟢 АКТ ВЫПОЛНЕННЫХ РАБОТ - Серый с зеленоватым акцентом */
+/* Акт выполненных работ (Work Act) - Серо-зеленый */
 .work-act { 
-  background: rgba(80, 80, 80, 0.2); 
-  border: 1px solid rgba(100, 100, 100, 0.4); 
+  background: var(--op-workact-bg); 
+  border: 1px solid var(--op-workact-border); 
 }
-.work-act .op-amount { color: #90c990 !important; } 
-.work-act .op-meta { color: #a0a0a0; }
+.work-act .op-amount { color: var(--op-workact-color) !important; } 
+.work-act .op-meta { color: var(--op-workact-meta); }
 
-.withdrawal { background: #2F3340; }
-.withdrawal .op-amount { color: #DE8FFF; }
-.withdrawal .op-meta { color: #B085D0; }
+/* Вывод (Withdrawal) - Фиолетовый */
+.withdrawal { 
+  background: var(--op-withdrawal-bg); 
+  border: 1px solid var(--op-withdrawal-border);
+}
+.withdrawal .op-amount { color: var(--op-withdrawal-color); }
+.withdrawal .op-meta { color: var(--op-withdrawal-meta); }
 
-.credit-income { background-color: #2F3340; }
-.credit-income .op-amount { color: #8FD4FF; }
-.credit-income .op-meta { color: #8FD4FF; opacity: 0.8; }
+/* Кредит (Credit Income) - Голубой */
+.credit-income { 
+  background-color: var(--op-credit-bg); 
+  border: 1px solid var(--op-credit-border);
+}
+.credit-income .op-amount { color: var(--op-credit-color); }
+.credit-income .op-meta { color: var(--op-credit-meta); opacity: 0.8; }
 
-.transfer { background:#2F3340; }
-.transfer .op-amount { color:#d4d8e3; } 
-.transfer .op-meta { color:#98a2b3; }
+/* Перевод (Transfer) - Серо-синий */
+.transfer { 
+  background: var(--op-transfer-bg); 
+  border: 1px solid var(--op-transfer-border);
+}
+.transfer .op-amount { color: var(--op-transfer-color); } 
+.transfer .op-meta { color: var(--op-transfer-meta); }
 
-@media (max-height: 900px) { .hour-cell { padding: 2px 4px; height: 28px; } .operation-chip { font-size: 0.7em; padding: 3px 6px; } }
-@media (max-width: 1200px) { .hour-cell { padding: 4px 6px; } .operation-chip { font-size: 0.7em; padding: 3px 6px; } }
+/* Адаптивные стили */
+@media (max-height: 900px) { 
+  .hour-cell { padding: 2px 4px; height: 28px; } 
+  .operation-chip { font-size: 0.7em; padding: 3px 6px; } 
+}
+@media (max-width: 1200px) { 
+  .hour-cell { padding: 4px 6px; } 
+  .operation-chip { font-size: 0.7em; padding: 3px 6px; } 
+}
 </style>

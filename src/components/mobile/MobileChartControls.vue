@@ -119,8 +119,8 @@ const toggleWidgets = () => {
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  background-color: var(--color-background-soft, #282828);
-  border-top: 1px solid var(--color-border, #444);
+  background-color: var(--widget-background, #ffffff);
+  border-top: 1px solid var(--widget-border, #e0e0e0);
 }
 
 .nav-center {
@@ -141,11 +141,11 @@ const toggleWidgets = () => {
 }
 
 .days-num {
-  font-size: 20px; font-weight: 700; color: #fff;
+  font-size: 20px; font-weight: 700; color: var(--color-text, #fff);
 }
 
 .days-text {
-  font-size: 9px; color: #888; font-weight: 600;
+  font-size: 9px; color: var(--text-mute, #888); font-weight: 600;
   text-transform: uppercase; margin-top: 2px;
 }
 

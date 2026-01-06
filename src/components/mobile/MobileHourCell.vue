@@ -342,42 +342,84 @@ const onTouchEnd = (e) => {
   padding: 0 6px;
   font-size: 10px;
   overflow: hidden;
-  background: #383838;
-  color: #fff;
+  background: var(--op-default-bg);
+  border: 1px solid var(--op-default-border);
   white-space: nowrap;
 }
 
 .amt { font-weight: 700; margin-right: 4px; }
 .desc { font-weight: 400; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; }
 
-/* Цвета */
-.income .amt { color: var(--color-primary, #34c759); }
-.expense .amt { color: var(--color-danger, #ff3b30); }
+/* Income - using desktop variables */
+.income {
+  background: var(--op-income-bg);
+  border: 1px solid var(--op-income-border);
+}
+.income .amt { color: var(--op-income-color); }
+.income .desc { color: var(--op-income-meta); }
 
-/* 🟢 Оранжевый */
-.prepayment { background: rgba(255, 157, 0, 0.1); }
-.prepayment .amt { color: #FF9D00; }
+/* Expense - using desktop variables */
+.expense {
+  background: var(--op-expense-bg);
+  border: 1px solid var(--op-expense-border);
+}
+.expense .amt { color: var(--op-expense-color); }
+.expense .desc { color: var(--op-expense-meta); }
 
-/* 🟢 Зеленый (Закрытые) */
-.closed-deal { background: rgba(52, 199, 89, 0.1); }
-.closed-deal .amt { color: #34c759; }
+/* Prepayment - using desktop variables */
+.prepayment {
+  background: var(--op-prepay-bg);
+  border: 1px solid var(--op-prepay-border);
+}
+.prepayment .amt { color: var(--op-prepay-color); }
+.prepayment .desc { color: var(--op-prepay-meta); }
 
-.withdrawal { background: #2F3340; }
-.withdrawal .amt { color: #DE8FFF; }
-.withdrawal .desc { color: #B085D0; }
+/* Closed deal - using desktop variables */
+.closed-deal {
+  background: var(--op-closed-bg);
+  border: 1px solid var(--op-closed-border);
+}
+.closed-deal .amt { color: var(--op-closed-color); }
+.closed-deal .desc { color: var(--op-closed-meta); }
 
-.writeoff .amt { color: #ef4444; }
+/* Withdrawal - using desktop variables */
+.withdrawal {
+  background: var(--op-withdrawal-bg);
+  border: 1px solid var(--op-withdrawal-border);
+}
+.withdrawal .amt { color: var(--op-withdrawal-color); }
+.withdrawal .desc { color: var(--op-withdrawal-meta); }
 
-.credit-income { background: #2F3340; }
-.credit-income .amt { color: #8FD4FF; }
-.credit-income .desc { color: #8FD4FF; opacity: 0.8; }
+/* Write-off */
+.writeoff {
+  background: var(--op-expense-bg);
+  border: 1px solid var(--op-expense-border);
+}
+.writeoff .amt { color: var(--op-expense-color); }
+.writeoff .desc { color: var(--op-expense-meta); }
 
-.transfer { background: #2F3340; }
-.transfer .amt { color: #d4d8e3; }
-.transfer .desc { color: #98a2b3; }
+/* Credit income - using desktop variables */
+.credit-income {
+  background: var(--op-credit-bg);
+  border: 1px solid var(--op-credit-border);
+}
+.credit-income .amt { color: var(--op-credit-color); }
+.credit-income .desc { color: var(--op-credit-meta); }
 
-/* 🟢 АКТ ВЫПОЛНЕННЫХ РАБОТ */
-.work-act { background: rgba(80, 80, 80, 0.15); }
-.work-act .amt { color: #90c990; }
-.work-act .desc { color: #a0a0a0; }
+/* Transfer - using desktop variables */
+.transfer {
+  background: var(--op-transfer-bg);
+  border: 1px solid var(--op-transfer-border);
+}
+.transfer .amt { color: var(--op-transfer-color); }
+.transfer .desc { color: var(--op-transfer-meta); }
+
+/* Work act - using desktop variables */
+.work-act {
+  background: var(--op-workact-bg);
+  border: 1px solid var(--op-workact-border);
+}
+.work-act .amt { color: var(--op-workact-color); }
+.work-act .desc { color: var(--op-workact-meta); }
 </style>
+```

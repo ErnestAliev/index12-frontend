@@ -827,14 +827,14 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 </template>
 
 <style scoped>
-.header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; padding: 1px; background-color: var(--color-border); border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
-.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--color-background-soft); min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); cursor: grab; transition: background-color 0.2s; }
+.header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--widget-grid-gap); padding: var(--widget-grid-padding); background-color: var(--widget-grid-color); border-radius: var(--widget-grid-border-radius); border: var(--widget-grid-border-width) solid var(--widget-grid-color); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
+.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; border-right: 1px solid var(--widget-border); border-bottom: 1px solid var(--widget-border); cursor: grab; transition: background-color 0.2s; }
 .dashboard-card-wrapper:active { cursor: grabbing; }
 
-/* 🟢 HOVER EFFECT */
+/* 🟢 HOVER EFFECT - используем переменные из theme.css */
 .dashboard-card-wrapper:hover {
-  background-color:  rgba(19, 19, 19, 0.7);  /* Slight highlight */
-  
+  background-color: var(--widget-bg-hover);
+  border-color: var(--widget-border-hover);
 }
 
 :deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
@@ -857,7 +857,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 .fullscreen-card-container {
   width: 100%; height: 100%;
-  background: var(--color-background-soft);
+  background: var(--widget-background);
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   border: 1px solid var(--color-border);

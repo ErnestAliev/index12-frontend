@@ -154,8 +154,8 @@ onMounted(async () => {
 .mobile-action-panel-wrapper {
   display: flex;
   flex-direction: column;
-  background-color: var(--color-background-soft, #282828);
-  border-top: 1px solid var(--color-border, #444);
+  background-color: var(--widget-background, #ffffff);
+  border-top: 1px solid var(--widget-border, #e0e0e0);
   flex-shrink: 0;
   z-index: 100;
   padding-bottom: env(safe-area-inset-bottom);
@@ -200,8 +200,8 @@ onMounted(async () => {
   width: 60px;
   flex-shrink: 0;
 }
-.days-num { font-size: 18px; font-weight: 700; color: #fff; }
-.days-text { font-size: 8px; color: #888; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
+.days-num { font-size: 18px; font-weight: 700; color: var(--color-text, #fff); }
+.days-text { font-size: 8px; color: var(--text-mute, #888); font-weight: 600; text-transform: uppercase; margin-top: 2px; }
 
 /* Кнопки (AI, Projects, Avatar, Widgets) */
 .icon-circle, .header-expand-btn {

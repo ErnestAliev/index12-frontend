@@ -546,18 +546,18 @@ defineExpose({ getSnapshot });
 }
 
 .card-actions { display: flex; gap: 6px; position: relative; z-index: 101; }
-
+/* Используем переменные из theme.css */
 .action-square-btn { 
   width: 18px; height: 18px; 
-  border: 1px solid transparent; border-radius: 4px; 
-  background-color: #3D3B3B; 
+  border: 1px solid var(--btn-widget-border); border-radius: 4px; 
+  background-color: var(--btn-widget-bg); 
   display: flex; align-items: center; justify-content: center; 
-  cursor: pointer; padding: 0; 
-  color: var(--text-mute); 
+  cursor: pointer; padding: 0; color: var(--btn-widget-color); 
   transition: all var(--trans-fast); 
 }
-.action-square-btn:hover { background-color: #555; color: #ccc; }
-.action-square-btn.active { background-color: var(--color-primary); color: #fff; border-color: transparent; }
+.action-square-btn:hover { background-color: var(--btn-widget-bg-hover); color: var(--btn-widget-color-hover); }
+.action-square-btn.active { background-color: var(--btn-widget-bg-active); color: var(--btn-widget-color-active); border-color: var(--btn-widget-border-active); }
+
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
 .card-items-list { 

@@ -29,7 +29,7 @@ const emit = defineEmits(['select']);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 6px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--context-menu-shadow);
   z-index: 1001;
   /* 🟢 FIX: Запрет переноса строк и сжатия */
   white-space: nowrap;

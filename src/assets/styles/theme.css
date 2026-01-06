@@ -1,0 +1,544 @@
+/* =====================================================
+   ЦЕНТРАЛИЗОВАННЫЙ ФАЙЛ ТЕМ INDEX12
+   
+   Здесь собраны ВСЕ цвета приложения для удобной настройки.
+   Каждая секция подписана на русском.
+   
+   Используйте этот файл для создания светлой/темной темы.
+===================================================== */
+
+:root {
+    /* ===================================================
+     1. ВИДЖЕТЫ (Header Cards) - Карточки в верхней панели
+     ================================================= */
+
+    /* Виджет: Фон и границы */
+    --widget-background: #1a1a1a;
+    /* Основной фон виджета */
+    --widget-border: #444;
+    /* Граница виджета */
+    --widget-border-right: #444;
+    /* Правая граница между виджетами */
+
+    /* Виджет: Текст */
+    --widget-title-color: #a5a5a5;
+    /* Заголовок виджета */
+    --widget-text-main: #ffffff;
+    /* Основной текст (суммы) */
+    --widget-text-soft: #a5a5a5;
+    /* Мягкий текст (названия счетов) */
+    --widget-text-mute: #a5a5a5;
+    /* Приглушенный текст (метки) */
+
+    /* Виджет: Цвета сумм */
+    --widget-income-color: #34c759;
+    /* Зеленый для доходов */
+    --widget-expense-color: #ff3b30;
+    /* Красный для расходов */
+    --widget-neutral-color: #a5a5a5;
+    /* Нейтральный цвет */
+
+    /* ===================================================
+     2. КНОПКИ УПРАВЛЕНИЯ В ВИДЖЕТАХ
+     ================================================= */
+
+    /* Кнопка: Normal (обычное состояние) */
+    --btn-widget-bg: #3D3B3B;
+    /* Фон кнопки */
+    --btn-widget-border: transparent;
+    /* Граница кнопки */
+    --btn-widget-color: #a5a5a5;
+    /* Цвет иконки */
+
+    /* Кнопка: Hover (при наведении) */
+    --btn-widget-bg-hover: #555;
+    /* Фон при наведении */
+    --btn-widget-color-hover: #ccc;
+    /* Цвет иконки при наведении */
+
+    /* Кнопка: Active (активная) */
+    --btn-widget-bg-active: #34c759;
+    /* Фон активной кнопки */
+    --btn-widget-color-active: #fff;
+    /* Цвет иконки активной кнопки */
+    --btn-widget-border-active: transparent;
+    /* Граница активной кнопки */
+
+    /* ===================================================
+     3. КНОПКИ ПРАВОЙ ПАНЕЛИ (Right Panel)
+     ================================================= */
+
+    /* Кнопка: Normal */
+    --btn-panel-bg: #282828;
+    /* Фон кнопки */
+    --btn-panel-border: #444;
+    /* Граница кнопки */
+    --btn-panel-color: #a5a5a5;
+    /* Цвет иконки */
+
+    /* Кнопка: Hover */
+    --btn-panel-bg-hover: #3a3a3a;
+    /* Фон при наведении */
+    --btn-panel-border-hover: #555;
+    /* Граница при наведении */
+
+    /* Кнопка: Active */
+    --btn-panel-bg-active: rgba(52, 199, 89, 0.1);
+    /* Фон активной */
+    --btn-panel-border-active: #34c759;
+    /* Граница активной */
+    --btn-panel-color-active: #34c759;
+    /* Цвет иконки активной */
+
+    /* Специальная кнопка "О сервисе" */
+    --btn-about-bg: #34c759;
+    /* Фон зеленой кнопки */
+    --btn-about-bg-hover: #28a745;
+    /* Фон при наведении */
+    --btn-about-shadow: 0 4px 10px rgba(52, 199, 89, 0.4);
+    /* Тень */
+
+    /* ===================================================
+     4. ТИПЫ ОПЕРАЦИЙ (Operation Types) - Цвета чипов
+     ================================================= */
+
+    /* Операция: Базовая (по умолчанию) */
+    --op-default-bg: #383838;
+    /* Фон операции */
+    --op-default-border: rgba(52, 199, 89, 0.3);
+    /* Граница */
+    --op-default-bg-hover: #4a4a4c;
+    /* Фон при наведении */
+
+    /* Операция: Доход (Income) - Зеленый */
+    --op-income-color: #34c759;
+    /* Цвет суммы */
+    --op-income-bg: #383838;
+    /* Фон */
+    --op-income-border: rgba(52, 199, 89, 0.3);
+    /* Граница */
+
+    /* Операция: Расход (Expense) - Красный */
+    --op-expense-color: #ff3b30;
+    /* Цвет суммы */
+    --op-expense-bg: #383838;
+    /* Фон */
+    --op-expense-border: rgba(52, 199, 89, 0.3);
+    /* Граница */
+
+    /* Операция: Предоплата (Prepayment) - Оранжевый */
+    --op-prepay-bg: rgba(255, 157, 0, 0.15);
+    /* Фон предоплаты */
+    --op-prepay-border: rgba(255, 157, 0, 0.3);
+    /* Граница */
+    --op-prepay-color: #FF9D00;
+    /* Цвет суммы */
+    --op-prepay-meta: #FF9D00;
+    /* Цвет метки */
+
+    /* Операция: Закрытая сделка (Closed Deal) - Зеленый */
+    --op-closed-bg: rgba(52, 199, 89, 0.15);
+    /* Фон закрытой сделки */
+    --op-closed-border: rgba(52, 199, 89, 0.3);
+    /* Граница */
+    --op-closed-color: #34c759;
+    /* Цвет суммы */
+    --op-closed-meta: #a3e6b1;
+    /* Цвет метки */
+
+    /* Операция: Перевод (Transfer) - Серо-синий */
+    --op-transfer-bg: #2F3340;
+    /* Фон перевода */
+    --op-transfer-border: #2F3340;
+    /* Граница */
+    --op-transfer-color: #d4d8e3;
+    /* Цвет суммы */
+    --op-transfer-meta: #98a2b3;
+    /* Цвет метки */
+
+    /* Операция: Вывод (Withdrawal) - Фиолетовый */
+    --op-withdrawal-bg: #2F3340;
+    /* Фон вывода */
+    --op-withdrawal-border: #2F3340;
+    /* Граница */
+    --op-withdrawal-color: #DE8FFF;
+    /* Цвет суммы */
+    --op-withdrawal-meta: #B085D0;
+    /* Цвет метки */
+
+    /* Операция: Кредит (Credit Income) - Голубой */
+    --op-credit-bg: #2F3340;
+    /* Фон кредита */
+    --op-credit-border: #2F3340;
+    /* Граница */
+    --op-credit-color: #8FD4FF;
+    /* Цвет суммы */
+    --op-credit-meta: #8FD4FF;
+    /* Цвет метки */
+
+    /* Операция: Акт выполненных работ (Work Act) - Серо-зеленый */
+    --op-workact-bg: rgba(80, 80, 80, 0.2);
+    /* Фон акта */
+    --op-workact-border: rgba(100, 100, 100, 0.4);
+    /* Граница */
+    --op-workact-color: #90c990;
+    /* Цвет суммы */
+    --op-workact-meta: #a0a0a0;
+    /* Цвет метки */
+
+    /* Операция: Техническая (Technical) - Желтый */
+    --op-technical-bg: #383838;
+    /* Фон технической */
+    --op-technical-border: #444;
+    /* Граница */
+    --op-technical-color: #E6C845;
+    /* Цвет суммы */
+    --op-technical-meta: #B0B090;
+    /* Цвет метки */
+
+    /* ===================================================
+     5. ОБЛАСТЬ ГРАФИКОВ (Graph Area)
+     ================================================= */
+
+    /* График: Фон */
+    --graph-bg-main: #1a1a1a;
+    /* Основной фон графика */
+    --graph-bg-soft: #282828;
+    /* Второстепенный фон */
+
+    /* График: Линии и сетка */
+    --graph-grid-color: #333;
+    /* Цвет сетки */
+    --graph-axis-color: #666;
+    /* Цвет осей */
+
+    /* График: Линии данных */
+    --graph-line-balance: #34c759;
+    /* Линия баланса (зеленая) */
+    --graph-line-income: #4CAF50;
+    /* Линия дохода */
+    --graph-line-expense: #ff3b30;
+    /* Линия расхода (красная) */
+    --graph-line-projection: #FFA726;
+    /* Линия прогноза (оранжевая) */
+
+    /* График: Точки */
+    --graph-point-fill: #fff;
+    /* Заливка точки */
+    --graph-point-stroke: #34c759;
+    /* Обводка точки */
+
+    /* График: Области (Area fills) */
+    --graph-area-income: rgba(76, 175, 80, 0.1);
+    /* Область дохода */
+    --graph-area-expense: rgba(255, 59, 48, 0.1);
+    /* Область расх ода */
+
+    /* ===================================================
+     6. ТУЛТИПЫ (Tooltips)
+     ================================================= */
+
+    /* Тултип: Фон и границы */
+    --tooltip-bg: #2a2a2a;
+    /* Фон тултипа */
+    --tooltip-border: #444;
+    /* Граница тултипа */
+    --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    /* Тень */
+
+    /* Тултип: Текст */
+    --tooltip-text-main: #ffffff;
+    /* Основной текст */
+    --tooltip-text-label: #999;
+    /* Метки */
+    --tooltip-text-value: #34c759;
+    /* Значения (цифры) */
+
+    /* ===================================================
+     7. DAY SUMMARY (Подытог дня)
+     ================================================= */
+
+    /* Day Summary: Фон */
+    --day-summary-bg: #282828;
+    /* Фон подытога */
+    --day-summary-border: #444;
+    /* Граница */
+
+    /* Day Summary: Текст */
+    --day-summary-text: #a5a5a5;
+    /* Основной текст */
+    --day-summary-income: #34c759;
+    /* Цвет дохода */
+    --day-summary-expense: #ff3b30;
+    /* Цвет расхода */
+    --day-summary-balance: #ffffff;
+    /* Цвет баланса */
+
+    /* ===================================================
+     8. ЯЧЕЙКИ TIMELINE (Hour Cells)
+     ================================================= */
+
+    /* Ячейка: Фон и границы */
+    --cell-border: #444;
+    /* Граница ячейки */
+    --cell-bg-hover: rgba(255, 255, 255, 0.05);
+    /* Фон при наведении */
+    --cell-bg-dragover: rgba(255, 255, 255, 0.04);
+    /* Фон при drag over */
+    --cell-dragover-outline: #444;
+    /* Обводка при drag over */
+
+    /* ===================================================
+     9. КОЛОНКА ДНЯ (Day Column)
+     ================================================= */
+
+    /* Day Column: Заголовок */
+    --day-header-bg: #282828;
+    /* Фон заголовка дня */
+    --day-header-text: #a5a5a5;
+    /* Текст даты */
+    --day-header-today-text: #34c759;
+    /* Текст для сегодняшнего дня */
+
+    /* Day Column: Индикаторы */
+    --day-indicator-income: #34c759;
+    /* Индикатор дохода */
+    --day-indicator-expense: #ff3b30;
+    /* Индикатор расхода */
+
+    /* ===================================================
+     10. ГЛОБАЛЬНЫЕ ЦВЕТА (используются везде)
+     ================================================= */
+
+    /* Основные цвета приложения */
+    --color-primary: #34c759;
+    /* Основной зеленый */
+    --color-danger: #ff3b30;
+    /* Красный (опасность) */
+    --color-warning: #ffcc00;
+    /* Желтый (предупреждение) */
+    --color-info: #007AFF;
+    /* Синий (информация) */
+
+    /* Фоны */
+    --color-background: #1a1a1a;
+    /* Основной фон */
+    --color-background-soft: #282828;
+    /* Мягкий фон */
+    --color-background-mute: #333;
+    /* Приглушенный фон */
+
+    /* Границы */
+    --color-border: #444;
+    /* Основная граница */
+    --color-border-hover: #555;
+    /* Граница при наведении */
+
+    /* Текст */
+    --color-text: #a5a5a5;
+    /* Основной текст */
+    --color-heading: #a5a5a5;
+    /* Заголовки */
+    --text-main: #ffffff;
+    /* Белый текст */
+    --text-soft: #a5a5a5;
+    /* Мягкий текст */
+    --text-mute: #666;
+    /* Приглушенный текст */
+}
+
+/* =====================================================
+   СВЕТЛАЯ ТЕМА (Light Theme)
+   Раскомментируйте и настройте по своему вкусу
+===================================================== */
+
+[data-theme="light"] {
+    /* ===================================================
+     1. ВИДЖЕТЫ (Header Cards)
+     ================================================= */
+
+    --widget-background: #ffffff;
+    --widget-border: #e0e0e0;
+    --widget-border-right: #e0e0e0;
+
+    --widget-title-color: #666666;
+    --widget-text-main: #1a1a1a;
+    --widget-text-soft: #666666;
+    --widget-text-mute: #999999;
+
+    --widget-income-color: #34c759;
+    --widget-expense-color: #ff3b30;
+    --widget-neutral-color: #666666;
+
+    /* ===================================================
+     2. КНОПКИ УПРАВЛЕНИЯ В ВИДЖЕТАХ
+     ================================================= */
+
+    --btn-widget-bg: #f5f5f5;
+    --btn-widget-border: transparent;
+    --btn-widget-color: #666666;
+
+    --btn-widget-bg-hover: #e0e0e0;
+    --btn-widget-color-hover: #333333;
+
+    --btn-widget-bg-active: #34c759;
+    --btn-widget-color-active: #fff;
+    --btn-widget-border-active: transparent;
+
+    /* ===================================================
+     3. КНОПКИ ПРАВОЙ ПАНЕЛИ
+     ================================================= */
+
+    --btn-panel-bg: #f5f5f5;
+    --btn-panel-border: #e0e0e0;
+    --btn-panel-color: #666666;
+
+    --btn-panel-bg-hover: #e0e0e0;
+    --btn-panel-border-hover: #cccccc;
+
+    --btn-panel-bg-active: rgba(52, 199, 89, 0.1);
+    --btn-panel-border-active: #34c759;
+    --btn-panel-color-active: #34c759;
+
+    --btn-about-bg: #34c759;
+    --btn-about-bg-hover: #28a745;
+    --btn-about-shadow: 0 4px 10px rgba(52, 199, 89, 0.3);
+
+    /* ===================================================
+     4. ТИПЫ ОПЕРАЦИЙ
+     ================================================= */
+
+    --op-default-bg: #f5f5f5;
+    --op-default-border: rgba(52, 199, 89, 0.2);
+    --op-default-bg-hover: #e8e8e8;
+
+    --op-income-color: #34c759;
+    --op-income-bg: #f5f5f5;
+    --op-income-border: rgba(52, 199, 89, 0.2);
+
+    --op-expense-color: #ff3b30;
+    --op-expense-bg: #f5f5f5;
+    --op-expense-border: rgba(255, 59, 48, 0.2);
+
+    --op-prepay-bg: rgba(255, 157, 0, 0.1);
+    --op-prepay-border: rgba(255, 157, 0, 0.3);
+    --op-prepay-color: #FF9D00;
+    --op-prepay-meta: #CC7E00;
+
+    --op-closed-bg: rgba(52, 199, 89, 0.1);
+    --op-closed-border: rgba(52, 199, 89, 0.3);
+    --op-closed-color: #28a745;
+    --op-closed-meta: #34c759;
+
+    --op-transfer-bg: #e8e8f0;
+    --op-transfer-border: #d0d0e0;
+    --op-transfer-color: #4a5568;
+    --op-transfer-meta: #718096;
+
+    --op-withdrawal-bg: #f0e8f5;
+    --op-withdrawal-border: #e0d0f0;
+    --op-withdrawal-color: #9333ea;
+    --op-withdrawal-meta: #a855f7;
+
+    --op-credit-bg: #e8f4fd;
+    --op-credit-border: #d0e7fa;
+    --op-credit-color: #0284c7;
+    --op-credit-meta: #0ea5e9;
+
+    --op-workact-bg: rgba(100, 100, 100, 0.05);
+    --op-workact-border: rgba(100, 100, 100, 0.2);
+    --op-workact-color: #22c55e;
+    --op-workact-meta: #666666;
+
+    --op-technical-bg: #fef3c7;
+    --op-technical-border: #fde68a;
+    --op-technical-color: #eab308;
+    --op-technical-meta: #a16207;
+
+    /* ===================================================
+     5. ОБЛАСТЬ ГРАФИКОВ
+     ================================================= */
+
+    --graph-bg-main: #ffffff;
+    --graph-bg-soft: #f5f5f5;
+
+    --graph-grid-color: #e0e0e0;
+    --graph-axis-color: #999999;
+
+    --graph-line-balance: #34c759;
+    --graph-line-income: #4CAF50;
+    --graph-line-expense: #ff3b30;
+    --graph-line-projection: #FFA726;
+
+    --graph-point-fill: #fff;
+    --graph-point-stroke: #34c759;
+
+    --graph-area-income: rgba(76, 175, 80, 0.05);
+    --graph-area-expense: rgba(255, 59, 48, 0.05);
+
+    /* ===================================================
+     6. ТУЛТИПЫ
+     ================================================= */
+
+    --tooltip-bg: #ffffff;
+    --tooltip-border: #e0e0e0;
+    --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+    --tooltip-text-main: #1a1a1a;
+    --tooltip-text-label: #666666;
+    --tooltip-text-value: #34c759;
+
+    /* ===================================================
+     7. DAY SUMMARY
+     ================================================= */
+
+    --day-summary-bg: #f5f5f5;
+    --day-summary-border: #e0e0e0;
+
+    --day-summary-text: #666666;
+    --day-summary-income: #34c759;
+    --day-summary-expense: #ff3b30;
+    --day-summary-balance: #1a1a1a;
+
+    /* ===================================================
+     8. ЯЧЕЙКИ TIMELINE
+     ================================================= */
+
+    --cell-border: #e0e0e0;
+    --cell-bg-hover: rgba(0, 0, 0, 0.02);
+    --cell-bg-dragover: rgba(0, 0, 0, 0.03);
+    --cell-dragover-outline: #cccccc;
+
+    /* ===================================================
+     9. КОЛОНКА ДНЯ
+     ================================================= */
+
+    --day-header-bg: #f5f5f5;
+    --day-header-text: #666666;
+    --day-header-today-text: #34c759;
+
+    --day-indicator-income: #34c759;
+    --day-indicator-expense: #ff3b30;
+
+    /* ===================================================
+     10. ГЛОБАЛЬНЫЕ ЦВЕТА
+     ================================================= */
+
+    --color-primary: #34c759;
+    --color-danger: #ff3b30;
+    --color-warning: #ffcc00;
+    --color-info: #007AFF;
+
+    --color-background: #ffffff;
+    --color-background-soft: #f5f5f5;
+    --color-background-mute: #e8e8e8;
+
+    --color-border: #e0e0e0;
+    --color-border-hover: #cccccc;
+
+    --color-text: #666666;
+    --color-heading: #1a1a1a;
+    --text-main: #1a1a1a;
+    --text-soft: #666666;
+    --text-mute: #999999;
+}

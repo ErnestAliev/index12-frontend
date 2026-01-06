@@ -97,8 +97,8 @@ defineExpose({ getSnapshot });
   display: flex;
   width: 100%;
   height: 120px;
-  background-color: var(--color-background-soft, #282828);
-  border-bottom: 1px solid var(--color-border, #444);
+  background-color: var(--widget-background, #ffffff);
+  border-bottom: 1px solid var(--widget-border, #e0e0e0);
   flex-shrink: 0;
 }
 
@@ -112,13 +112,13 @@ defineExpose({ getSnapshot });
 
 .divider {
   width: 1px;
-  background-color: var(--color-border, #444);
+  background-color: var(--widget-border, #e0e0e0);
   height: 100%;
 }
 
 .card-label {
   font-size: 10px;
-  color: #888;
+  color: var(--text-mute, #888);
   margin-bottom: 4px;
   line-height: 1.2;
 }
@@ -126,7 +126,7 @@ defineExpose({ getSnapshot });
 .card-value {
   font-size: 1.6em;
   font-weight: 700;
-  color: #fff;
+  color: var(--color-text, #fff);
   
   white-space: nowrap;
 }
@@ -139,7 +139,7 @@ defineExpose({ getSnapshot });
 
 .card-sub {
   font-size: 9px;
-  color: #666;
+  color: var(--text-mute, #666);
 }
 
 .green-text {

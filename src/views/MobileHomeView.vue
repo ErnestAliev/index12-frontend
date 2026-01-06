@@ -1469,45 +1469,47 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 .dev-login-button { display: block; width: 100%; padding: 12px; background: #333; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #444; }
 
 /* Fullscreen Styles */
-.fullscreen-widget-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-background, #1a1a1a); z-index: 2000; display: flex; flex-direction: column; }
-.fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--color-border, #444); background-color: var(--color-background-soft, #282828); }
-.fs-title { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+.fullscreen-widget-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--widget-background, #ffffff); z-index: 2000; display: flex; flex-direction: column; }
+.fs-header { height: 60px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--widget-border, #e0e0e0); background-color: var(--widget-background, #ffffff); }
+.fs-title { font-size: 18px; font-weight: 700; color: var(--color-text, #fff); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
 .fs-controls { display: flex; gap: 8px; }
-.action-square-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: #3D3B3B; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #888; transition: all 0.2s ease; }
-.action-square-btn:hover { background-color: #555; color: #ccc; }
+.action-square-btn { width: 32px; height: 32px; border: 1px solid var(--widget-border, #e0e0e0); border-radius: 6px; background-color: var(--widget-background, #ffffff); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: var(--text-mute, #888); transition: all 0.2s ease; }
+.action-square-btn:hover { background-color: rgba(135,189,233,0.1); color: var(--color-text, #333); }
 .action-square-btn.active { background-color: #34c759; color: #fff; border-color: transparent; }
-.fs-body { flex-grow: 1; overflow-y: auto; padding: 16px; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }
+.fs-body { flex-grow: 1; overflow-y: auto; padding: 16px; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; background-color: var(--color-background, #ffffff); }
 .fs-body::-webkit-scrollbar { display: none; }
 .fs-list { display: flex; flex-direction: column; gap: 8px; }
-.fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--color-background-soft, #282828); border: 1px solid var(--color-border, #444); border-radius: 8px; min-height: 44px;}
+.fullscreen-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: var(--widget-background, #ffffff); border-bottom: 1px solid var(--widget-border, #e0e0e0); flex-shrink: 0; }
+.fs-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--widget-background, #ffffff); border: 1px solid var(--widget-border, #e0e0e0); border-radius: 8px; min-height: 44px;}
 .fs-name-row { display: flex; align-items: center; overflow: hidden; width: 100%; }
 .fs-name-col { display: flex; flex-direction: column; overflow: hidden; flex: 1; justify-content: center; }
-.fs-name { font-size: 14px; color: #fff; font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-name { font-size: 14px; color: var(--color-text, #fff); font-weight: 600; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-val-block { display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px; }
-.fs-val { font-size: 14px; color: #fff; font-weight: 700; white-space: nowrap; }
+.fs-val { font-size: 14px; color: var(--color-text, #fff); font-weight: 700; white-space: nowrap; }
 .fs-val-forecast { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-.fs-curr { color: #ccc; font-weight: 500; }
+.fs-curr { color: var(--text-mute, #ccc); font-weight: 500; }
 .fs-arrow { color: #666; font-size: 12px; }
-.fs-fut { font-weight: 700; color: #fff; }
+.fs-fut { font-weight: 700; color: var(--color-text, #fff); }
 .fs-item-left { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; }
-.fs-date { color: #666; font-size: 11px; min-width: 32px; flex-shrink: 0; text-align: center; line-height: 1.2; }
+.fs-date { color: var(--text-mute, #666); font-size: 11px; min-width: 32px; flex-shrink: 0; text-align: center; line-height: 1.2; }
 .fs-info-col { display: flex; flex-direction: column; overflow: hidden; }
-.fs-name-text { font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fs-sub-text { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.fs-sub-text-small { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.fs-name-text { font-size: 14px; font-weight: 600; color: var(--color-text, #fff); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-sub-text { font-size: 11px; color: var(--text-mute, #888); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.fs-sub-text-small { font-size: 11px; color: var(--text-mute, #888); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-right: 8px; }
 .link-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #34c759; }
-.excluded-icon { display: inline-flex; align-items: center; opacity: 0.8; color: #888; transition: all 0.2s; }
+.excluded-icon { display: inline-flex; align-items: center; opacity: 0.8; color: var(--text-mute, #888); transition: all 0.2s; }
 .excluded-icon.included-now { color: #34c759; opacity: 1; text-shadow: 0 0 5px rgba(52, 199, 89, 0.4); }
 
 .red-text { color: #ff3b30 !important; }
 .green-text { color: #34c759 !important; }
-.white-text { color: #fff !important; }
-.fs-empty { text-align: center; color: #666; margin-top: 50px; }
+.white-text { color: var(--color-text, #fff) !important; }
+.fs-empty { text-align: center; color: var(--text-mute, #666); margin-top: 50px; }
+.fullscreen-body { flex-grow: 1; overflow-y: auto; padding: 12px; background-color: var(--color-background, #ffffff); }
 .fs-footer {
   padding: 12px 16px;
-  background-color: var(--color-background, #1a1a1a);
-  border-top: 1px solid var(--color-border, #444);
+  background-color: var(--widget-background, #ffffff);
+  border-top: 1px solid var(--widget-border, #e0e0e0);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1547,7 +1549,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
 .fs-total-label {
   font-size: 10px;
-  color: #777;
+  color: var(--text-mute, #777);
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -1567,9 +1569,9 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   width: 100%;
   height: 44px;
   border-radius: 10px;
-  border: 1px solid var(--color-border, #444);
-  background: var(--color-background-soft, #282828);
-  color: #fff;
+  border: 1px solid var(--widget-border, #e0e0e0);
+  background: var(--widget-background, #ffffff);
+  color: var(--color-text, #fff);
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
@@ -1588,7 +1590,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
 .section-timeline {
     flex-shrink: 0;
-    border-top: 1px solid var(--color-border, #444);
+    border-top: 1px solid var(--widget-border, #e0e0e0);
     overflow: hidden;
 }
 
@@ -1613,41 +1615,38 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 .section-chart {
     flex-grow: 1;
     min-height: 50px;
-    border-top: 1px solid var(--color-border, #444);
+    border-top: 1px solid var(--widget-border, #e0e0e0);
     overflow: hidden;
 }
 
 .timeline-resizer {
-    position: relative;
-    height: 14px;
-    background: var(--color-background-soft, #282828);
-    border-top: 1px solid #444;
-    border-bottom: 1px solid #444;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: row-resize;
-    z-index: 10;
-    touch-action: none;
-    flex-shrink: 0;
+  width: 100%;
+  height: 30px;
+  background-color: var(--widget-background, #ffffff);
+  border-top: 1px solid var(--widget-border, #e0e0e0);
+  border-bottom: 1px solid var(--widget-border, #e0e0e0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  position: relative;
 }
 
 .timeline-resizer::before {
-    content: '';
-    position: absolute;
-    top: -10px; bottom: -10px; left: 0; right: 0;
-    z-index: 11;
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 4px;
+  background-color: var(--widget-border, #e0e0e0);
+  border-radius: 2px;
 }
 
-.resizer-handle {
-    width: 36px;
-    height: 4px;
-    background: #666;
-    border-radius: 2px;
-    transition: background 0.2s;
-}
-
-.timeline-resizer:active .resizer-handle {
+.timeline-resizer:active::before {
     background: var(--color-primary, #34c759);
     height: 5px;
 }
@@ -1913,6 +1912,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   transition: background-color 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
+.fullscreen-close-btn { background: none; border: none; font-size: 28px; color: var(--color-text, #fff); cursor: pointer; padding: 0; line-height: 1; }
 
 .ai-mic-btn:active {
   background: rgba(255, 255, 255, 0.1);

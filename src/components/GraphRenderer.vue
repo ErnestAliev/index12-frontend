@@ -305,8 +305,8 @@ const externalTooltipHandler = (context) => {
       styleEl = document.createElement('style');
       styleEl.id = TOOLTIP_STYLE_ID;
       styleEl.textContent = `
-        #${TOOLTIP_EL_ID} .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;}
-        #${TOOLTIP_EL_ID} .tt-btn:hover{border-color:rgba(52,199,89,.9)!important;background:rgba(52,199,89,.18)!important;}
+        #${TOOLTIP_EL_ID} .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;color:#1a1a1a;}
+        #${TOOLTIP_EL_ID} .tt-btn:hover{border-color:rgba(135,189,233,.9)!important;background:rgba(135,189,233,.25)!important;}
         #${TOOLTIP_EL_ID} .tt-btn:active{transform:translateY(1px);}
 
         #${TOOLTIP_EL_ID} .tt-ico{display:flex;align-items:center;justify-content:center;}
@@ -324,10 +324,10 @@ const externalTooltipHandler = (context) => {
     }
 
     Object.assign(tooltipEl.style, {
-      background: 'rgba(26, 26, 26, 0.95)',
-      border: '1px solid #444',
+      background: 'rgba(255, 255, 255, 0.98)',
+      border: 'none',
       borderRadius: '8px',
-      color: 'white',
+      color: '#1a1a1a',
       opacity: 0,
       pointerEvents: 'auto',
       position: 'absolute',
@@ -336,7 +336,7 @@ const externalTooltipHandler = (context) => {
       padding: '12px',
       lineHeight: '1.4',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+      boxShadow: '0 6px 20px rgba(135, 189, 233, 0.25)',
       transition: 'opacity .15s ease',
       width: 'max-content',
       boxSizing: 'border-box'
@@ -494,10 +494,10 @@ const externalTooltipHandler = (context) => {
       if (i === 1) {
         innerHtml += `
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px;">
-            <div style="font-weight: 700; font-size: 15px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(line)}</div>
+            <div style="font-weight: 700; font-size: 15px; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(line)}</div>
             <div style="display:flex; gap:6px; flex: 0 0 auto;">
-              <button class="tt-btn tt-btn--copy" id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.06);"><span class="tt-ico tt-ico-copy">${ICON_COPY}</span><span class="tt-ico tt-ico-check">${ICON_CHECK}</span></button>
-              <button class="tt-btn tt-btn--export" id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.18); border-radius:6px; color:#fff; background:rgba(255,255,255,0.10);"><span class="tt-ico">${ICON_EXPORT}</span></button>
+              <button class="tt-btn tt-btn--copy" id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(135,189,233,0.3); border-radius:6px; color:#1a1a1a; background:rgba(135,189,233,0.08);"><span class="tt-ico tt-ico-copy">${ICON_COPY}</span><span class="tt-ico tt-ico-check">${ICON_CHECK}</span></button>
+              <button class="tt-btn tt-btn--export" id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(135,189,233,0.3); border-radius:6px; color:#1a1a1a; background:rgba(135,189,233,0.12);"><span class="tt-ico">${ICON_EXPORT}</span></button>
             </div>
           </div>
         `;
@@ -505,7 +505,7 @@ const externalTooltipHandler = (context) => {
       }
 
       // 3) Other lines with color rules
-      let color = '#ddd';
+      let color = '#333';
       let weight = 400;
 
       // Summary lines
@@ -1108,11 +1108,17 @@ const balanceBarData = computed(() => {
 const balanceColors = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
+  
+  // Получаем цвет из CSS переменной
+  const balanceColor = getComputedStyle(document.documentElement)
+    .getPropertyValue('--graph-line-balance').trim() || '#34c759';
+  
   return arr.map((s) => {
     const inc = Math.abs(Number(s?.income) || 0);
     const exp = Math.abs(Number(s?.expense) || 0);
     const hasOps = inc + exp > 0;
-    return hasOps ? 'rgba(160,160,160,0.22)' : 'rgba(160,160,160,0.12)';
+    // Используем CSS переменную с разной прозрачностью
+    return hasOps ? `${balanceColor}38` : `${balanceColor}1F`; // 38=0.22, 1F=0.12 в hex
   });
 });
 
@@ -1702,6 +1708,7 @@ watch(
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  /* Фон не нужен - область полностью заполнена chart-wrapper и summaries-wrapper */
 }
 .no-anim,
 .no-anim * {
@@ -1713,10 +1720,12 @@ watch(
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  background-color: var(--chart-wrapper-bg); /* Фон области графика */
 }
 .summaries-wrapper {
   flex: 0 0 90px;
   height: 90px;
+  background-color: var(--day-summary-bg);
   border-top: 1px solid var(--color-border);
   overflow: hidden;
   display: grid;
@@ -1738,7 +1747,7 @@ watch(
   overflow: hidden;
 }
 .day-date {
-  color: #aaaaaa;
+  color: var(--day-summary-date);
   font-weight: bold;
   margin-bottom: 5px;
 }
@@ -1751,7 +1760,7 @@ watch(
   font-weight: 500;
 }
 .day-balance {
-  color: #e1fcff;
+  color: var(--day-summary-balance-value);
   font-weight: 500;
   margin-top: 5px;
 }

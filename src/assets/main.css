@@ -1,4 +1,8 @@
 @import './styles/variables.css';
+@import './styles/theme-dark.css';
+/* Темная тема (по умолчанию) */
+@import './styles/theme-light.css';
+/* Светлая тема */
 @import './base.css';
 
 #app {
@@ -26,13 +30,15 @@ a,
 /* Используется через Teleport, поэтому должно быть глобальным */
 
 .filter-dropdown-fixed {
-  position: fixed; 
-  width: 160px;    
-  background-color: #282828; /* var(--bg-soft) */
-  border: 1px solid #444;    /* var(--color-border) */
+  position: fixed;
+  width: 160px;
+  background-color: #282828;
+  /* var(--bg-soft) */
+  border: 1px solid #444;
+  /* var(--color-border) */
   border-radius: 8px;
   box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
-  z-index: 9999;   
+  z-index: 9999;
   padding: 8px 0;
   display: flex;
   flex-direction: column;
@@ -63,7 +69,8 @@ a,
 .filter-dropdown-fixed li {
   padding: 8px 12px;
   font-size: 13px;
-  color: #ddd; /* var(--color-text) */
+  color: #ddd;
+  /* var(--color-text) */
   cursor: pointer;
   transition: background-color 0.2s;
   display: flex;
@@ -76,7 +83,8 @@ a,
 }
 
 .filter-dropdown-fixed li.active {
-  color: #34c759; /* var(--color-primary) */
+  color: #34c759;
+  /* var(--color-primary) */
   background-color: rgba(52, 199, 89, 0.1);
   font-weight: 500;
 }

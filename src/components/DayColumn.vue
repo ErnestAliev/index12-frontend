@@ -173,24 +173,24 @@ const onDrop = (dropDataFromHourCell) => {
 /* (Стили без изменений) */
 .day-column {
   flex: 1;
-  background-color: var(--color-background-soft);
-  border-left: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
+  background-color: var(--day-column-bg);
+  border-left: 1px solid var(--day-column-border);
+  border-right: 1px solid var(--day-column-border);
 }
 
 .column-header {
   padding: 8px;
   text-align: center;
   font-size: 0.9em;
-  color: #aaa;
-  border-bottom: 2px solid var(--color-border);
+  color: var(--day-header-text);
+  border-bottom: 2px solid var(--day-column-border);
   position: sticky;
   top: 0;
-  background-color: var(--color-background-soft);
+  background-color: var(--day-header-bg);
   z-index: 10;
 }
 .day-column.today .column-header {
-  color: var(--color-primary);
+  color: var(--day-header-today-text);
   font-weight: bold;
 }
 .column-body {
