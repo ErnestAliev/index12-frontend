@@ -463,4 +463,15 @@
     /* Мягкий текст */
     --text-mute: #666;
     /* Приглушенный текст */
+
+    /* Filter Dropdown */
+    --filter-dropdown-bg: #282828;
+    --filter-dropdown-border: #444;
+    --filter-dropdown-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+    --filter-dropdown-title-color: #888;
+    --filter-dropdown-text-color: #ddd;
+    --filter-dropdown-symbol-color: #666;
+    --filter-dropdown-item-hover: rgba(255, 255, 255, 0.05);
+    --filter-dropdown-item-active-color: #34c759;
+    --filter-dropdown-item-active-bg: rgba(52, 199, 89, 0.1);
 }
