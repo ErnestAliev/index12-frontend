@@ -925,6 +925,13 @@ const openContextMenu = (day, event, cellIndex) => {
   event.stopPropagation();
   // 🟢 PERMISSION CHECK
   if (!mainStore.canEdit) return;
+  
+  // 🟢 ZONE CHECK: Only allow context menu in timeline area
+  const clickTarget = event.target;
+  const timelineGrid = timelineGridRef.value;
+  if (!timelineGrid || !timelineGrid.contains(clickTarget)) {
+    return; // Click is outside timeline area, don't show menu
+  }
 
   selectedDay.value = day; selectedCellIndex.value = cellIndex;
   const menuWidth = 260; 
@@ -1166,6 +1173,34 @@ const onWindowResize = () => { applyHeaderHeight(clampHeaderHeight(headerHeightP
 const checkDayChange = () => { const currentToday = initializeToday(); if (!sameDay(currentToday, today.value)) { today.value = currentToday; const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); if (mainStore.user && !mainStore.isAuthLoading) { centerToday(); recalcProjectionForCurrentView(); } } };
 let dayChangeCheckerInterval = null;
 let resizeObserver = null;
+
+// Global click handler to close context menu when clicking outside
+const handleGlobalClick = (e) => {
+  if (isContextMenuVisible.value) {
+    const contextMenuEl = document.querySelector('.context-menu');
+    if (contextMenuEl && !contextMenuEl.contains(e.target)) {
+      isContextMenuVisible.value = false;
+    }
+  }
+};
+
+// Handler to close context menu when cursor leaves timeline area
+const handleTimelineMouseLeave = (e) => {
+  if (isContextMenuVisible.value) {
+    // Check if cursor is moving into widgets or graphs area
+    const relatedTarget = e.relatedTarget;
+    if (!relatedTarget) {
+      isContextMenuVisible.value = false;
+      return;
+    }
+    
+    // Close if moving to header (widgets), graphs, or anywhere outside timeline
+    const isMovingToTimeline = timelineGridRef.value?.contains(relatedTarget);
+    if (!isMovingToTimeline) {
+      isContextMenuVisible.value = false;
+    }
+  }
+};
 const captureBackgroundScreenshot = async () => {
     // Only capture if we are in a workspace context (simple check)
     // and if auth is valid.
@@ -1254,7 +1289,17 @@ onMounted(async () => {
     applyHeights(clampTimelineHeight(initialTop)); 
     if (resizerRef.value) { resizerRef.value.addEventListener('mousedown', initResize); resizerRef.value.addEventListener('touchstart', initResize, { passive: false }); } 
     if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } 
-    if (timelineGridRef.value) { timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); } 
+    if (timelineGridRef.value) { 
+      timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); 
+      timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); 
+      timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); 
+      timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); 
+      timelineGridRef.value.addEventListener('mouseleave', handleTimelineMouseLeave);
+    } 
+    
+    // Add global click listener to close context menu when clicking outside
+    document.addEventListener('click', handleGlobalClick);
+    
     resizeObserver = new ResizeObserver(() => { applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); }); 
     if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); 
     window.addEventListener('resize', onWindowResize); 
@@ -1269,7 +1314,7 @@ onMounted(async () => {
         captureBackgroundScreenshot();
     }, 2000);
 });
-onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); } window.removeEventListener('resize', onWindowResize); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
+onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave); } window.removeEventListener('resize', onWindowResize); document.removeEventListener('click', handleGlobalClick); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
 
 // --- Transfer, Retail, Refund Handlers ---
 const handleTransferSave = async ({ mode, id, data }) => { 
