@@ -777,6 +777,7 @@ const onResizerStart = (e) => {
     }
 
     isResizing.value = true;
+    document.body.classList.add('is-resizing');
 
     // TouchEvent vs Pointer/Mouse
     const y = (e && e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
@@ -829,6 +830,7 @@ const onResizerMove = (e) => {
 const onResizerEnd = () => {
     if (isResizing.value) {
         isResizing.value = false;
+        document.body.classList.remove('is-resizing');
         document.body.style.userSelect = '';
     }
 };
@@ -1640,10 +1642,19 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 40px;
-  height: 4px;
-  background-color: var(--widget-border, #e0e0e0);
-  border-radius: 2px;
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-top: 16px solid var(--ui-resizer-dot, #87bde9);
+  opacity: 0.7;
+  transition: opacity 0.2s, transform 0.2s;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+.timeline-resizer:active::before {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.1);
 }
 
 .timeline-resizer:active::before {

@@ -484,4 +484,8 @@
 
     /* Modal range-total */
     --range-total-color: #1a1a1a;
+
+    --cell-bg-odd: #F5F7F8;
+    /* Фон нечетных строк (zebra striping) */
+
 }

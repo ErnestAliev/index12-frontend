@@ -327,6 +327,12 @@ const onTouchEnd = (e) => {
   box-sizing: border-box;
 }
 
+
+.mobile-cell:nth-child(odd) {
+  background-color: var(--cell-bg-odd);
+}
+
+
 .empty-slot {
   width: 100%;
   height: 100%;

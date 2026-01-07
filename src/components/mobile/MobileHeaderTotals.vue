@@ -126,7 +126,7 @@ defineExpose({ getSnapshot });
 .card-value {
   font-size: 1.6em;
   font-weight: 700;
-  color: var(--color-text, #fff);
+  color: var(--text-main, #fff);
   
   white-space: nowrap;
 }

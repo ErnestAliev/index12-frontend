@@ -453,15 +453,15 @@
     /* Граница при наведении */
 
     /* Текст */
-    --color-text: #a5a5a5;
+    --color-text: #ffffff;
     /* Основной текст */
-    --color-heading: #a5a5a5;
+    --color-heading: #ffffff;
     /* Заголовки */
     --text-main: #ffffff;
     /* Белый текст */
-    --text-soft: #a5a5a5;
+    --text-soft: #ffffff;
     /* Мягкий текст */
-    --text-mute: #666;
+    --text-mute: #b9b9b9;
     /* Приглушенный текст */
 
     /* Filter Dropdown */
@@ -477,4 +477,8 @@
 
     /* Modal range-total */
     --range-total-color: #FFFFFF;
+
+
+    --cell-bg-odd: rgba(255, 255, 255, 0.02);
+    /* Фон нечетных строк (zebra striping) */
 }

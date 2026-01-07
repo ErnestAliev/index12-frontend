@@ -607,7 +607,7 @@ defineExpose({ getSnapshot });
 .excluded-icon.included-now { color: var(--color-primary); opacity: 1; text-shadow: 0 0 5px rgba(52, 199, 89, 0.4); }
 
 .current-cell { 
-  color: var(--color-text); 
+  color: var(--text-main); 
   font-weight: var(--fw-medium); 
   text-align: right; 
   white-space: nowrap; 
@@ -628,7 +628,7 @@ defineExpose({ getSnapshot });
 
 .expense { color: var(--color-danger) !important; }
 .income { color: var(--color-primary) !important; }
-.single-balance { color: var(--color-text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.single-balance { color: var(--text-main); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .single-balance.expense { color: var(--color-danger) !important; font-weight: var(--fw-medium); }
 
 /* 🟢 SUMMARY FOOTER (for Contractors / Projects / Individuals / Categories) */

@@ -271,6 +271,12 @@ const onDrop = (event) => {
   flex-shrink:0; 
   transition: background-color .12s ease-in-out; 
 }
+
+.hour-cell:nth-child(odd) {
+  background-color: var(--cell-bg-odd);
+}
+
+
 .hour-cell.drag-over { 
   background: var(--cell-bg-dragover); 
   outline:1px dashed var(--cell-dragover-outline); 

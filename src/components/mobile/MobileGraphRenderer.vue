@@ -316,7 +316,7 @@ const externalTooltipHandler = (context) => {
       styleEl = document.createElement('style');
       styleEl.id = TOOLTIP_STYLE_ID;
       styleEl.textContent = `
-        #${TOOLTIP_EL_ID} .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;color:#1a1a1a;}
+        #${TOOLTIP_EL_ID} .tt-btn{transition:background .12s ease,border-color .12s ease,transform .04s ease;color:var(--tooltip-text-main);}
         #${TOOLTIP_EL_ID} .tt-btn:hover{border-color:rgba(135,189,233,.9)!important;background:rgba(135,189,233,.25)!important;}
         #${TOOLTIP_EL_ID} .tt-btn:active{transform:translateY(1px);}
 
@@ -401,10 +401,10 @@ const externalTooltipHandler = (context) => {
     }
 
     Object.assign(tooltipEl.style, {
-      background: 'rgba(255, 255, 255, 0.98)',
+      background: getComputedStyle(document.documentElement).getPropertyValue('--tooltip-bg').trim() || 'rgba(255, 255, 255, 0.98)',
       border: 'none',
       borderRadius: '8px',
-      color: '#1a1a1a',
+      color: getComputedStyle(document.documentElement).getPropertyValue('--tooltip-text-main').trim() || '#1a1a1a',
       opacity: 0,
       pointerEvents: 'auto',
       position: 'absolute',
@@ -413,7 +413,7 @@ const externalTooltipHandler = (context) => {
       padding: '12px',
       lineHeight: '1.4',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      boxShadow: '0 6px 20px rgba(135, 189, 233, 0.25)',
+      boxShadow: getComputedStyle(document.documentElement).getPropertyValue('--tooltip-shadow').trim() || '0 6px 20px rgba(0, 0, 0, 0.3)',
       transition: 'opacity .15s ease',
       width: 'max-content',
       maxWidth: 'calc(100% - 20px)',
@@ -552,10 +552,10 @@ const externalTooltipHandler = (context) => {
       if (i === 1) {
         innerHtml += `
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px;">
-            <div style="font-weight: 700; font-size: 15px; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(line)}</div>
+            <div style="font-weight: 700; font-size: 15px; color: var(--tooltip-text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(line)}</div>
             <div style="display:flex; gap:6px; flex: 0 0 auto;">
-              <button class="tt-btn tt-btn--copy" id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(135,189,233,0.3); border-radius:6px; color:#1a1a1a; background:rgba(135,189,233,0.08);"><span class="tt-ico tt-ico-copy">${ICON_COPY}</span><span class="tt-ico tt-ico-check">${ICON_CHECK}</span></button>
-              <button class="tt-btn tt-btn--export" id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(135,189,233,0.3); border-radius:6px; color:#1a1a1a; background:rgba(135,189,233,0.12);"><span class="tt-ico">${ICON_EXPORT}</span></button>
+              <button class="tt-btn tt-btn--copy" id="chartjs-tooltip-copy-btn" aria-label="Копировать" title="Копировать" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(135,189,233,0.3); border-radius:6px; color:var(--tooltip-text-main); background:rgba(135,189,233,0.08);"><span class="tt-ico tt-ico-copy">${ICON_COPY}</span><span class="tt-ico tt-ico-check">${ICON_CHECK}</span></button>
+              <button class="tt-btn tt-btn--export" id="chartjs-tooltip-export-btn" aria-label="Экспорт" title="Экспорт" style="all:unset; cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(135,189,233,0.3); border-radius:6px; color:var(--tooltip-text-main); background:rgba(135,189,233,0.12);"><span class="tt-ico">${ICON_EXPORT}</span></button>
             </div>
           </div>
         `;
@@ -563,7 +563,8 @@ const externalTooltipHandler = (context) => {
       }
 
       // 3) Other lines with color rules
-      let color = '#333';
+      const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--tooltip-text-main').trim() || '#333';
+      let color = defaultColor;
       let weight = 400;
 
       // Summary lines
