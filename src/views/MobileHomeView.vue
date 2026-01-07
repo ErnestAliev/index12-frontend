@@ -949,6 +949,38 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', forceEndResize);
 
   await initializeMobileView();
+  
+  // Global click listener to close context menu when clicking outside (including graphs)
+  const handleGlobalMobileClick = (e) => {
+    if (isContextMenuVisible.value) {
+      const contextMenuEl = document.querySelector('.context-menu');
+      const clickedOnMenu = contextMenuEl && contextMenuEl.contains(e.target);
+      const clickedOnChart = e.target.closest('.section-chart');
+      
+      // Close if clicked outside menu OR clicked on chart area
+      if (!clickedOnMenu || clickedOnChart) {
+        isContextMenuVisible.value = false;
+      }
+    }
+  };
+  document.addEventListener('click', handleGlobalMobileClick, true);
+  
+  // Scroll listener to close context menu on scroll
+  const handleScrollClose = () => {
+    if (isContextMenuVisible.value) {
+      isContextMenuVisible.value = false;
+    }
+  };
+  // Listen on window and specific scrollable areas
+  window.addEventListener('scroll', handleScrollClose, true);
+  document.addEventListener('scroll', handleScrollClose, true);
+  
+  // Store reference for cleanup
+  onBeforeUnmount(() => {
+    document.removeEventListener('click', handleGlobalMobileClick, true);
+    window.removeEventListener('scroll', handleScrollClose, true);
+    document.removeEventListener('scroll', handleScrollClose, true);
+  });
 });
 
 onUnmounted(() => {
@@ -1083,17 +1115,26 @@ const handleShowMenu = (payload) => {
         selectedDate.value = payload.date || new Date();
         selectedCellIndex.value = payload.cellIndex || 0;
 
-        const clientY = payload.event?.clientY || window.innerHeight / 2;
-        let topStyle = `${clientY + 10}px`;
-        if (payload.event) {
-            let top = clientY - 150;
-            if (top < 50) top = clientY + 30;
-            topStyle = `${top}px`;
+        // Position menu at center of clicked cell
+        const event = payload.event;
+        let topStyle = '50%';
+        let leftStyle = '50%';
+        
+        if (event && event.target) {
+            const cellRect = event.target.closest('.mobile-cell')?.getBoundingClientRect();
+            if (cellRect) {
+                // Position at center of cell
+                const centerY = cellRect.top + (cellRect.height / 2);
+                const centerX = cellRect.left + (cellRect.width / 2);
+                topStyle = `${centerY}px`;
+                leftStyle = `${centerX}px`;
+            }
         }
+        
         contextMenuPosition.value = {
             top: topStyle,
-            left: '50%',
-            transform: 'translateX(-50%)',
+            left: leftStyle,
+            transform: 'translate(-50%, -50%)',
             position: 'fixed',
             zIndex: '9999'
         };
@@ -1101,15 +1142,6 @@ const handleShowMenu = (payload) => {
     }
 };
 
-// Handler to close context menu when clicking/touching outside
-const handleMobileOutsideClick = (e) => {
-  if (isContextMenuVisible.value) {
-    const contextMenuEl = document.querySelector('.context-menu');
-    if (contextMenuEl && !contextMenuEl.contains(e.target)) {
-      isContextMenuVisible.value = false;
-    }
-  }
-};
 
 const handleEditOperation = (operation) => {
   operationToEdit.value = operation;
@@ -1207,7 +1239,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 </script>
 
 <template>
-  <div class="mobile-layout" @click="handleMobileOutsideClick" @touchstart="handleMobileOutsideClick">
+  <div class="mobile-layout" @click="(e) => { if (isContextMenuVisible && !e.target.closest('.context-menu')) isContextMenuVisible = false; }">
 
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>
