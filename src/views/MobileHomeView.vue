@@ -770,6 +770,16 @@ const isResizing = ref(false);
 const startY = ref(0);
 const startHeight = ref(0);
 
+// Computed: determine if charts are collapsed based on timeline height
+const isMobileChartsCollapsed = computed(() => {
+    if (!layoutBodyRef.value) return false;
+    const bodyH = layoutBodyRef.value.clientHeight;
+    const widgetsH = document.querySelector('.section-widgets')?.clientHeight || 0;
+    const containerH = bodyH - widgetsH;
+    // If timeline takes more than 70% of space, charts are collapsed
+    return timelineHeight.value > containerH * 0.7;
+});
+
 const onResizerStart = (e) => {
     // If somehow we were left in resizing mode, reset first
     if (isResizing.value) {
@@ -811,27 +821,60 @@ const onResizerMove = (e) => {
     if (typeof currentY !== 'number') return;
 
     const delta = currentY - startY.value;
-    const newHeight = startHeight.value + delta;
+    const distance = Math.abs(delta);
+    
+    // Only resize if moved more than threshold (5px)
+    if (distance > 5) {
+        const newHeight = startHeight.value + delta;
 
-    const MIN_HEIGHT = 100;
+        const MIN_HEIGHT = 100;
 
-    let MAX_HEIGHT = 500;
-    if (layoutBodyRef.value) {
-        const bodyH = layoutBodyRef.value.clientHeight;
-        const widgetsH = document.querySelector('.section-widgets')?.clientHeight || 0;
-        MAX_HEIGHT = bodyH - widgetsH - 80;
-    }
+        let MAX_HEIGHT = 500;
+        if (layoutBodyRef.value) {
+            const bodyH = layoutBodyRef.value.clientHeight;
+            const widgetsH = document.querySelector('.section-widgets')?.clientHeight || 0;
+            MAX_HEIGHT = bodyH - widgetsH - 150; // Leave 150px minimum for charts
+        }
 
-    if (newHeight >= MIN_HEIGHT && newHeight <= MAX_HEIGHT) {
-        timelineHeight.value = newHeight;
+        if (newHeight >= MIN_HEIGHT && newHeight <= MAX_HEIGHT) {
+            timelineHeight.value = newHeight;
+        }
     }
 };
 
 const onResizerEnd = () => {
     if (isResizing.value) {
+        // Check if this was a click (no significant movement)
+        const delta = Math.abs(timelineHeight.value - startHeight.value);
+        const wasClick = delta <= 5;
+        
         isResizing.value = false;
         document.body.classList.remove('is-resizing');
         document.body.style.userSelect = '';
+        
+        // If it was a click, toggle charts expansion
+        if (wasClick) {
+            toggleMobileChartsExpansion();
+        }
+    }
+};
+
+const toggleMobileChartsExpansion = () => {
+    if (!layoutBodyRef.value) return;
+    
+    const bodyH = layoutBodyRef.value.clientHeight;
+    const widgetsH = document.querySelector('.section-widgets')?.clientHeight || 0;
+    const containerH = bodyH - widgetsH;
+    
+    // Toggle between expanded (default ~250px) and collapsed (minimum 150px for charts visibility)
+    const isCurrentlyExpanded = timelineHeight.value < containerH * 0.7;
+    
+    if (isCurrentlyExpanded) {
+        // Collapse charts: maximize timeline, but keep charts at 150px minimum
+        timelineHeight.value = containerH - 150;
+    } else {
+        // Expand charts: balance the space
+        timelineHeight.value = 250;
     }
 };
 
@@ -1273,7 +1316,8 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
               <!-- Hide resizer for manager (no charts to resize) -->
               <div 
                 v-if="mainStore.workspaceRole !== 'manager'"
-                class="timeline-resizer" 
+                class="timeline-resizer"
+                :class="{ 'collapsed': isMobileChartsCollapsed }" 
                 v-show="!mainStore.isHeaderExpanded" 
                 @pointerdown.stop.prevent="onResizerStart" 
                 @touchstart.stop.prevent="onResizerStart" 
@@ -1655,6 +1699,11 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 .timeline-resizer:active::before {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1.1);
+}
+
+/* Rotate triangle when charts collapsed (charts are collapsed, so triangle points up to expand) */
+.timeline-resizer.collapsed::before {
+  transform: translate(-50%, -50%) rotate(180deg) scale(1.1);
 }
 
 .timeline-resizer:active::before {

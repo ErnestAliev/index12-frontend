@@ -906,6 +906,9 @@ const HEADER_MAX_H_RATIO = 0.8;
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
 
+// Charts expansion state
+const isChartsExpanded = ref(true);
+
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
         const totalWidgets = mainStore.allWidgets.length;
@@ -1045,14 +1048,103 @@ const rebuildVisibleDays = () => { const days = []; for (let i = 0; i < VISIBLE_
 const generateVisibleDays = () => { rebuildVisibleDays(); };
 const clampHeaderHeight = (rawPx) => { const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO; return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight); };
 const applyHeaderHeight = (newPx) => { headerHeightPx.value = Math.round(newPx); if (homeHeaderRef.value) { homeHeaderRef.value.style.height = `${headerHeightPx.value}px`; } };
-const initHeaderResize = (e) => { e.preventDefault(); window.addEventListener('mousemove', doHeaderResize); window.addEventListener('touchmove', doHeaderResize, { passive: false }); window.addEventListener('mouseup', stopHeaderResize); window.addEventListener('touchend', stopHeaderResize); };
-const doHeaderResize = (e) => { const y = e.touches ? e.touches[0].clientY : e.clientY; applyHeaderHeight(clampHeaderHeight(y)); };
-const stopHeaderResize = () => { window.removeEventListener('mousemove', doHeaderResize); window.removeEventListener('touchmove', doHeaderResize); window.removeEventListener('mouseup', stopHeaderResize); window.removeEventListener('touchend', stopHeaderResize); };
+// Header resizer: track mouse/touch movement to distinguish click from drag
+let headerResizeStartY = 0;
+let headerResizeHasMoved = false;
+const CLICK_THRESHOLD = 5; // pixels
+
+const initHeaderResize = (e) => {
+  e.preventDefault();
+  headerResizeStartY = e.touches ? e.touches[0].clientY : e.clientY;
+  headerResizeHasMoved = false;
+  
+  window.addEventListener('mousemove', doHeaderResize);
+  window.addEventListener('touchmove', doHeaderResize, { passive: false });
+  window.addEventListener('mouseup', stopHeaderResize);
+  window.addEventListener('touchend', stopHeaderResize);
+};
+
+const doHeaderResize = (e) => {
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const distance = Math.abs(y - headerResizeStartY);
+  
+  if (distance > CLICK_THRESHOLD) {
+    headerResizeHasMoved = true;
+    applyHeaderHeight(clampHeaderHeight(y));
+  }
+};
+
+const stopHeaderResize = () => {
+  window.removeEventListener('mousemove', doHeaderResize);
+  window.removeEventListener('touchmove', doHeaderResize);
+  window.removeEventListener('mouseup', stopHeaderResize);
+  window.removeEventListener('touchend', stopHeaderResize);
+  
+  // If no movement detected, treat as click - toggle header expansion
+  if (!headerResizeHasMoved) {
+    mainStore.toggleHeaderExpansion();
+  }
+};
 const clampTimelineHeight = (rawPx) => { const container = mainContentRef.value; if (!container) return timelineHeightPx.value; const headerTotalH = headerHeightPx.value + 15; const containerH = window.innerHeight - headerTotalH; const maxTop = Math.max(0, containerH - DIVIDER_H - GRAPH_MIN); const minTop = TIMELINE_MIN; return Math.min(Math.max(rawPx, minTop), maxTop); };
 const applyHeights = (timelinePx) => { timelineHeightPx.value = Math.round(timelinePx); if (timelineGridRef.value) { timelineGridRef.value.style.height = `${timelineHeightPx.value}px`; } if (navPanelWrapperRef.value) { navPanelWrapperRef.value.style.height = `${timelineHeightPx.value}px`; } };
-const initResize = (e) => { e.preventDefault(); window.addEventListener('mousemove', doResize); window.addEventListener('touchmove', doResize, { passive: false }); window.addEventListener('mouseup', stopResize); window.addEventListener('touchend', stopResize); };
-const doResize = (e) => { if (!mainContentRef.value) return; const y = e.touches ? e.touches[0].clientY : e.clientY; const mainTop = mainContentRef.value.getBoundingClientRect().top; applyHeights(clampTimelineHeight(y - mainTop)); };
-const stopResize = () => { window.removeEventListener('mousemove', doResize); window.removeEventListener('touchmove', doResize); window.removeEventListener('mouseup', stopResize); window.removeEventListener('touchend', stopResize); };
+
+// Vertical resizer: track movement to distinguish click from drag
+let verticalResizeStartY = 0;
+let verticalResizeHasMoved = false;
+
+const initResize = (e) => {
+  e.preventDefault();
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  verticalResizeStartY = y;
+  verticalResizeHasMoved = false;
+  
+  window.addEventListener('mousemove', doResize);
+  window.addEventListener('touchmove', doResize, { passive: false });
+  window.addEventListener('mouseup', stopResize);
+  window.addEventListener('touchend', stopResize);
+};
+
+const doResize = (e) => {
+  if (!mainContentRef.value) return;
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const distance = Math.abs(y - verticalResizeStartY);
+  
+  if (distance > CLICK_THRESHOLD) {
+    verticalResizeHasMoved = true;
+    const mainTop = mainContentRef.value.getBoundingClientRect().top;
+    applyHeights(clampTimelineHeight(y - mainTop));
+  }
+};
+
+const stopResize = () => {
+  window.removeEventListener('mousemove', doResize);
+  window.removeEventListener('touchmove', doResize);
+  window.removeEventListener('mouseup', stopResize);
+  window.removeEventListener('touchend', stopResize);
+  
+  // If no movement detected, treat as click - toggle charts expansion
+  if (!verticalResizeHasMoved) {
+    toggleChartsExpansion();
+  }
+};
+
+const toggleChartsExpansion = () => {
+  isChartsExpanded.value = !isChartsExpanded.value;
+  
+  if (!mainContentRef.value) return;
+  
+  const headerTotalH = headerHeightPx.value + 15;
+  const containerH = window.innerHeight - headerTotalH;
+  
+  if (isChartsExpanded.value) {
+    // Expand: timeline gets default height, charts get remaining
+    applyHeights(318);
+  } else {
+    // Collapse charts: timeline gets most space, charts get minimum
+    const maxTimelineH = containerH - DIVIDER_H - GRAPH_MIN;
+    applyHeights(maxTimelineH);
+  }
+};
 const updateScrollbarMetrics = () => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth || 0; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (maxVirtual <= 0) { scrollbarThumbWidth.value = trackWidth; scrollbarThumbX.value = 0; return; } const ratio = VISIBLE_COLS / Math.max(VISIBLE_COLS, totalDays.value); let tWidth = trackWidth * ratio; tWidth = Math.max(50, tWidth); scrollbarThumbWidth.value = tWidth; const availableSpace = trackWidth - tWidth; const progress = virtualStartIndex.value / maxVirtual; scrollbarThumbX.value = progress * availableSpace; };
 const scrollState = { isDragging: false, startX: 0, startThumbX: 0 };
 const onScrollThumbMouseDown = (e) => { startDrag(e.clientX); };
@@ -1267,14 +1359,14 @@ const handleRefundDelete = async (op) => {
   <div v-else class="home-layout" @click="closeAllMenus">
     <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
     <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
-    <div class="header-resizer" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
+    <div class="header-resizer" :class="{ 'collapsed': mainStore.isHeaderExpanded }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body">
       <aside class="home-left-panel">
         <div class="nav-panel-wrapper" ref="navPanelWrapperRef"><NavigationPanel v-show="mainStore.workspaceRole !== 'manager'" @change-view="onChangeView" /></div><div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
       <main class="home-main-content" ref="mainContentRef">
         <div class="timeline-grid-wrapper" :class="{ 'analyst-readonly': mainStore.workspaceRole === 'analyst' }" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave"><div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div></div>
         <!-- 🟢 UPDATED: Hide vertical resizer for timeline-only, keep scroll track -->
-        <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" ref="resizerRef"></div></div>
+        <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mousedown="onTrackClick"><div class="custom-scrollbar-thumb" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" :class="{ 'collapsed': !isChartsExpanded }" ref="resizerRef"></div></div>
         <!-- 🟢 NEW: Hide graphs for timeline-only users -->
         <div v-if="!mainStore.isTimelineOnly" class="graph-area-wrapper" ref="graphAreaRef"><GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" /><div class="summaries-container"></div></div>
       </main>
@@ -1616,10 +1708,35 @@ const handleRefundDelete = async (op) => {
 .user-menu-item:disabled { color: var(--color-text-mute); cursor: not-allowed; background: none; }
 .home-layout { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; overflow: hidden; background-color: var(--color-background); }
 .home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; transition: height 0.3s ease; }
-.header-resizer { flex-shrink: 0; height: 15px; background: var(--header-resizer-bg); border-top: 1px solid var(--header-resizer-border); border-bottom: 1px solid var(--header-resizer-border); cursor: row-resize; position: relative; z-index: 50; display: flex; align-items: center; justify-content: center; }
+.header-resizer { 
+  flex-shrink: 0; 
+  height: 15px; 
+  background: var(--header-resizer-bg); 
+  border-top: 1px solid var(--header-resizer-border); 
+  border-bottom: 1px solid var(--header-resizer-border); 
+  cursor: row-resize; 
+  position: relative; 
+  z-index: 50; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+}
 .header-resizer:hover { border-top: 1px solid var(--header-resizer-border-hover); }
-.header-resizer::before { content: ''; display: block; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 12px solid var(--header-resizer-dot-bg); opacity: 0.6; transition: opacity 0.2s, transform 0.2s; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
-.header-resizer:hover::before { opacity: 1; transform: scale(1.2); }
+.header-resizer::before { 
+  content: ''; 
+  display: block; 
+  width: 0; 
+  height: 0; 
+  border-left: 9px solid transparent; 
+  border-right: 9px solid transparent; 
+  border-top: 12px solid var(--header-resizer-dot-bg); 
+  opacity: 0.6; 
+  transition: opacity 0.2s, transform 0.2s; 
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); 
+}
+.header-resizer:hover::before { opacity: 1; }
+/* Rotate triangle when expanded (header is expanded, so triangle points up to collapse) */
+.header-resizer.collapsed::before { transform: rotate(180deg) scale(1.1); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
 .home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; }
 .home-right-panel { 
@@ -1738,7 +1855,9 @@ const handleRefundDelete = async (op) => {
 .custom-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-bg-active); cursor: grabbing; }
 .vertical-resizer { position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: row-resize; z-index: 20; display: flex; align-items: center; justify-content: center; }
 .vertical-resizer::before { content: ''; display: block; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-top: 12px solid var(--vertical-resizer-dot-bg); opacity: 0.6; transition: opacity 0.2s, transform 0.2s; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
-.vertical-resizer:hover::before { opacity: 1; transform: scale(1.2); }
+.vertical-resizer:hover::before { opacity: 1; }
+/* Rotate triangle when charts collapsed (charts are collapsed, so triangle points up to expand) */
+.vertical-resizer.collapsed::before { transform: rotate(180deg) scale(1.1); }
 .graph-area-wrapper { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .graph-renderer-content { flex-grow: 1; }
 .summaries-container { flex-shrink: 0; }
