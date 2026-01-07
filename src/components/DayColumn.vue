@@ -193,6 +193,11 @@ const onDrop = (dropDataFromHourCell) => {
   color: var(--day-header-today-text);
   font-weight: bold;
 }
+
+/* 🟢 Визуальная граница между прошлым и будущим */
+.day-column.today {
+  border-right: var(--day-today-border-width) solid var(--day-today-border-color);
+}
 .column-body {
   /* ... */
 }
