@@ -276,9 +276,24 @@ onMounted(() => {
   document.addEventListener('click', globalClickHandler, true);
   document.addEventListener('mousemove', globalMouseMoveHandler);
   
+  // Watch for theme changes to recreate tooltip with new colors
+  const themeObserver = new MutationObserver(() => {
+    // Remove existing tooltip and style to force recreation with new theme colors
+    const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+    const styleEl = document.getElementById(TOOLTIP_STYLE_ID);
+    if (tooltipEl) tooltipEl.remove();
+    if (styleEl) styleEl.remove();
+  });
+  
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class', 'data-theme']
+  });
+  
   // Cleanup observer and listener on unmount
   onUnmounted(() => {
     observer.disconnect();
+    themeObserver.disconnect();
     document.removeEventListener('click', globalClickHandler, true);
     document.removeEventListener('mousemove', globalMouseMoveHandler);
   });

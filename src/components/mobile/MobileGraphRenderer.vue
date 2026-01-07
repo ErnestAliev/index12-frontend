@@ -275,9 +275,26 @@ onMounted(() => {
   
   window.addEventListener('resize', resizeHandler);
   
+  // Watch for theme changes to recreate tooltip with new colors
+  const themeObserver = new MutationObserver(() => {
+    // Remove existing tooltip and style to force recreation with new theme colors
+    const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
+    const styleEl = document.getElementById(TOOLTIP_STYLE_ID);
+    const backdropEl = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
+    if (tooltipEl) tooltipEl.remove();
+    if (styleEl) styleEl.remove();
+    if (backdropEl) backdropEl.remove();
+  });
+  
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class', 'data-theme']
+  });
+  
   // Cleanup observer and listener on unmount
   onUnmounted(() => {
     observer.disconnect();
+    themeObserver.disconnect();
     document.removeEventListener('click', globalClickHandler, true);
     window.removeEventListener('resize', resizeHandler);
   });

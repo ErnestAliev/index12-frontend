@@ -457,11 +457,11 @@
     /* Основной текст */
     --color-heading: #ffffff;
     /* Заголовки */
-    --text-main: #ffffff;
+    --text-main: #ababab;
     /* Белый текст */
-    --text-soft: #ffffff;
-    /* Мягкий текст */
-    --text-mute: #b9b9b9;
+    --text-soft: #ababab
+        /* Мягкий текст */
+        --text-mute: #b9b9b9;
     /* Приглушенный текст */
 
     /* Filter Dropdown */
