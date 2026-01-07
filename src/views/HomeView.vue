@@ -933,12 +933,65 @@ const openContextMenu = (day, event, cellIndex) => {
     return; // Click is outside timeline area, don't show menu
   }
 
-  selectedDay.value = day; selectedCellIndex.value = cellIndex;
-  const menuWidth = 260; 
-  const clickX = event.clientX; const clickY = event.clientY;
+  selectedDay.value = day; 
+  selectedCellIndex.value = cellIndex;
+  
+  const menuWidth = 260;
+  const menuHeight = 150;
+  const padding = 10;
+  
+  // Get the clicked cell's bounding rectangle
+  const cellElement = clickTarget.closest('.hour-cell');
+  let centerX, centerY;
+  
+  if (cellElement) {
+    const cellRect = cellElement.getBoundingClientRect();
+    centerX = cellRect.left + (cellRect.width / 2);
+    centerY = cellRect.top + (cellRect.height / 2);
+  } else {
+    // Fallback to cursor position if cell not found
+    centerX = event.clientX;
+    centerY = event.clientY;
+  }
+  
   const windowWidth = window.innerWidth;
-  const newPos = { top: `${clickY + 5}px`, left: 'auto', right: 'auto' };
-  if (clickX + menuWidth > windowWidth) { newPos.right = `${windowWidth - clickX + 5}px`; } else { newPos.left = `${clickX + 5}px`; }
+  const windowHeight = window.innerHeight;
+  
+  // Calculate menu edges from center position
+  let finalX = centerX;
+  let finalY = centerY;
+  
+  // Check horizontal boundaries (menu will be centered, so check half-width on each side)
+  const leftEdge = finalX - (menuWidth / 2);
+  const rightEdge = finalX + (menuWidth / 2);
+  
+  if (rightEdge > windowWidth - padding) {
+    // Too close to right edge, shift left
+    finalX = windowWidth - (menuWidth / 2) - padding;
+  } else if (leftEdge < padding) {
+    // Too close to left edge, shift right
+    finalX = (menuWidth / 2) + padding;
+  }
+  
+  // Check vertical boundaries (menu will be centered, so check half-height on each side)
+  const topEdge = finalY - (menuHeight / 2);
+  const bottomEdge = finalY + (menuHeight / 2);
+  
+  if (bottomEdge > windowHeight - padding) {
+    // Too close to bottom edge, shift up
+    finalY = windowHeight - (menuHeight / 2) - padding;
+  } else if (topEdge < padding) {
+    // Too close to top edge, shift down
+    finalY = (menuHeight / 2) + padding;
+  }
+  
+  const newPos = { 
+    top: `${finalY}px`, 
+    left: `${finalX}px`,
+    transform: 'translate(-50%, -50%)',
+    right: 'auto' 
+  };
+  
   contextMenuPosition.value = newPos;
   isContextMenuVisible.value = true;
 };
