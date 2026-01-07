@@ -1080,16 +1080,6 @@ const handleShowMenu = (payload) => {
     if (payload.operation) {
         handleEditOperation(payload.operation);
     } else {
-        // Zone check: only allow context menu from timeline area
-        const event = payload.event;
-        if (event) {
-            const timelineEl = document.querySelector('.mobile-timeline');
-            const clickTarget = event.target;
-            if (!timelineEl || !timelineEl.contains(clickTarget)) {
-                return; // Click is outside timeline area, don't show menu
-            }
-        }
-        
         selectedDate.value = payload.date || new Date();
         selectedCellIndex.value = payload.cellIndex || 0;
 
