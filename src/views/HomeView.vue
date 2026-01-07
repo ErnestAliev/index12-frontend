@@ -1194,6 +1194,12 @@ const handleTimelineMouseLeave = (e) => {
       return;
     }
     
+    // Don't close if moving to context menu itself
+    const contextMenuEl = document.querySelector('.context-menu');
+    if (contextMenuEl && contextMenuEl.contains(relatedTarget)) {
+      return; // Moving to menu, keep it open
+    }
+    
     // Close if moving to header (widgets), graphs, or anywhere outside timeline
     const isMovingToTimeline = timelineGridRef.value?.contains(relatedTarget);
     if (!isMovingToTimeline) {

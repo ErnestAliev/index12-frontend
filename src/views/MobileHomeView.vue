@@ -1080,13 +1080,22 @@ const handleShowMenu = (payload) => {
     if (payload.operation) {
         handleEditOperation(payload.operation);
     } else {
+        // Zone check: only allow context menu from timeline area
+        const event = payload.event;
+        if (event) {
+            const timelineEl = document.querySelector('.mobile-timeline');
+            const clickTarget = event.target;
+            if (!timelineEl || !timelineEl.contains(clickTarget)) {
+                return; // Click is outside timeline area, don't show menu
+            }
+        }
+        
         selectedDate.value = payload.date || new Date();
         selectedCellIndex.value = payload.cellIndex || 0;
 
-        const e = payload.event;
-        let topStyle = '30%';
-        if (e) {
-            const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+        const clientY = payload.event?.clientY || window.innerHeight / 2;
+        let topStyle = `${clientY + 10}px`;
+        if (payload.event) {
             let top = clientY - 150;
             if (top < 50) top = clientY + 30;
             topStyle = `${top}px`;
@@ -1100,6 +1109,16 @@ const handleShowMenu = (payload) => {
         };
         isContextMenuVisible.value = true;
     }
+};
+
+// Handler to close context menu when clicking/touching outside
+const handleMobileOutsideClick = (e) => {
+  if (isContextMenuVisible.value) {
+    const contextMenuEl = document.querySelector('.context-menu');
+    if (contextMenuEl && !contextMenuEl.contains(e.target)) {
+      isContextMenuVisible.value = false;
+    }
+  }
 };
 
 const handleEditOperation = (operation) => {
@@ -1198,7 +1217,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 </script>
 
 <template>
-  <div class="mobile-layout" @click="isContextMenuVisible = false">
+  <div class="mobile-layout" @click="handleMobileOutsideClick" @touchstart="handleMobileOutsideClick">
 
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>
