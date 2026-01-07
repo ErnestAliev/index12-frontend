@@ -1124,8 +1124,38 @@ const handleShowMenu = (payload) => {
             const cellRect = event.target.closest('.mobile-cell')?.getBoundingClientRect();
             if (cellRect) {
                 // Position at center of cell
-                const centerY = cellRect.top + (cellRect.height / 2);
-                const centerX = cellRect.left + (cellRect.width / 2);
+                let centerY = cellRect.top + (cellRect.height / 2);
+                let centerX = cellRect.left + (cellRect.width / 2);
+                
+                // Menu approximate dimensions
+                const menuWidth = 260;
+                const menuHeight = 50;
+                const padding = 10;
+                
+                // Check horizontal boundaries
+                const rightEdge = centerX + (menuWidth / 2);
+                const leftEdge = centerX - (menuWidth / 2);
+                
+                if (rightEdge > window.innerWidth - padding) {
+                    // Too close to right edge, shift left
+                    centerX = window.innerWidth - (menuWidth / 2) - padding;
+                } else if (leftEdge < padding) {
+                    // Too close to left edge, shift right
+                    centerX = (menuWidth / 2) + padding;
+                }
+                
+                // Check vertical boundaries
+                const bottomEdge = centerY + (menuHeight / 2);
+                const topEdge = centerY - (menuHeight / 2);
+                
+                if (bottomEdge > window.innerHeight - padding) {
+                    // Too close to bottom, shift up
+                    centerY = window.innerHeight - (menuHeight / 2) - padding;
+                } else if (topEdge < padding) {
+                    // Too close to top, shift down
+                    centerY = (menuHeight / 2) + padding;
+                }
+                
                 topStyle = `${centerY}px`;
                 leftStyle = `${centerX}px`;
             }
