@@ -578,12 +578,39 @@ const preparePayload = (options = {}) => {
     };
 };
 
+
 const handleSave = async (options = {}) => {
     if (isSaving.value || isInlineSaving.value) return;
     
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
+    
+    // 🟢 UPDATE ACCOUNT OWNERSHIP if owner is selected (even if account was created earlier)
+    if (selectedAccountId.value && selectedOwner.value) {
+        const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+        if (acc) {
+            const [type, id] = selectedOwner.value.split('-');
+            const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+            const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+            
+            let needsUpdate = false;
+            if (type === 'company' && currentCompId !== id) needsUpdate = true;
+            if (type === 'individual' && currentIndId !== id) needsUpdate = true;
+            
+            if (needsUpdate) {
+                const updateData = { _id: acc._id, name: acc.name, order: acc.order };
+                if (type === 'company') { 
+                    updateData.companyId = id; 
+                    updateData.individualId = null; 
+                } else { 
+                    updateData.companyId = null; 
+                    updateData.individualId = id; 
+                }
+                await mainStore.batchUpdateEntities('accounts', [updateData]);
+            }
+        }
+    }
     
     const payload = preparePayload(options);
     
