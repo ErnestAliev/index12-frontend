@@ -1981,7 +1981,54 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!Array.isArray(ops)) return []; // Safety check
         // Filter out deleted operations and null/undefined entries
         // Work acts are now visible on timeline with special styling
-        return ops.filter(op => op && !op.isDeleted);
+        // Also filter by visibility (excluded accounts)
+        return ops.filter(op => op && !op.isDeleted && _isOpVisible(op));
+    }
+
+    /**
+     * Get phantom operations for a given day
+     * Returns placeholder objects for operations on excluded accounts that are currently hidden
+     * This prevents users from creating operations in occupied cells
+     */
+    function getPhantomOperations(dateKey) {
+        // If excluded accounts are visible, no phantoms needed
+        if (includeExcludedInTotal.value) return [];
+
+        const ops = displayCache.value[dateKey];
+        if (!Array.isArray(ops)) return [];
+        const phantoms = [];
+
+        ops.forEach(op => {
+            if (!op || op.isDeleted) return;
+
+            // Check if operation belongs to an excluded account
+            let accountIdToCheck = null;
+
+            // Extract account ID (could be populated object or raw ID)
+            if (op.accountId) {
+                accountIdToCheck = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+            } else if (op.fromAccountId) {
+                accountIdToCheck = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
+            } else if (op.toAccountId) {
+                accountIdToCheck = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
+            }
+
+            if (!accountIdToCheck) return;
+
+            // Find account and check if excluded
+            const account = accounts.value.find(a => _idsMatch(a._id, accountIdToCheck));
+
+            if (account?.isExcluded) {
+                phantoms.push({
+                    _id: `phantom - ${op._id} `,
+                    isPhantom: true,
+                    cellIndex: op.cellIndex,
+                    dateKey: op.dateKey || dateKey
+                });
+            }
+        });
+
+        return phantoms;
     }
 
     function _mergeTransfers(list) {
@@ -1989,7 +2036,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const transferGroups = new Map();
         list.forEach(o => {
             if (o?.isTransfer || o?.transferGroupId) {
-                const groupId = o.transferGroupId || `transfer_${o._id}`;
+                const groupId = o.transferGroupId || `transfer_${o._id} `;
                 if (!transferGroups.has(groupId)) { transferGroups.set(groupId, []); }
                 transferGroups.get(groupId).push(o);
             }
@@ -2870,6 +2917,7 @@ export const useMainStore = defineStore('mainStore', () => {
         getCategoryById, futureCategoryBreakdowns,
 
         getOperationsForDay,
+        getPhantomOperations,
 
         setToday: (d) => useProjectionStore().setToday(d),
         setCurrentViewDate: (d) => useProjectionStore().setCurrentViewDate(d),

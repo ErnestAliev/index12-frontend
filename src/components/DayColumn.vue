@@ -76,6 +76,11 @@ const operations = computed(() => {
   return mainStore.getOperationsForDay(props.dateKey);
 });
 
+// Get phantom operations for hidden excluded accounts
+const phantoms = computed(() => {
+  return mainStore.getPhantomOperations(props.dateKey);
+});
+
 // Expose timeline operations so the desktop AI snapshot builder can pull them
 // without relying on any expanded/collapsed widget UI.
 const getAiSnapshot = () => {
@@ -96,11 +101,18 @@ defineExpose({
 const cells = computed(() => {
   const cellArray = [];
   const ops = operations.value;
+  const phants = phantoms.value;
 
   for (let i = 0; i < 32; i++) { // 🟢 UPDATED: 28 -> 32 rows
+    // First check for real operation
+    const realOp = ops.find(op => op.cellIndex === i);
+    
+    // If no real operation, check for phantom
+    const phantomOp = realOp ? null : phants.find(ph => ph.cellIndex === i);
+    
     cellArray.push({
       id: i,
-      operation: ops.find(op => op.cellIndex === i) || null
+      operation: realOp || phantomOp || null
     });
   }
   return cellArray;

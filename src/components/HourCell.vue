@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
+import { usePermissions } from '@/composables/usePermissions';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v3.3 - HIDE EXCLUDED ACCOUNTS ---
@@ -21,6 +22,17 @@ const props = defineProps({
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 const isDragOver = ref(false);
 const mainStore = useMainStore();
+const permissions = usePermissions();
+
+// 🟢 Permission Check - can user interact with this operation?
+const canInteract = computed(() => {
+    const op = props.operation;
+    if (!op) return true; // Empty cell, можно кликнуть для создания
+    if (op.isPhantom) return false; // Phantom всегда заблокирован
+    
+    // Check if user can edit this specific operation
+    return permissions.canEditOperation(op);
+});
 
 /* UI-детектор перевода */
 const isTransferOp = computed(() => {
@@ -69,6 +81,11 @@ const isOpVisible = computed(() => {
         if (excludedAccountIds.value.has(aId)) return false;
     }
     return true;
+});
+
+// 🟢 Phantom Detection - операция на скрытом счете
+const isPhantom = computed(() => {
+    return props.operation?.isPhantom === true;
 });
 
 // 🟢 3. Детектор ЗАКРЫТОЙ сделки/факта (Зеленый)
@@ -177,9 +194,19 @@ const showCheckmark = computed(() => {
 });
 
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
-const onEditClick = () => { if (props.operation) emit('edit-operation', props.operation); };
+
+const onEditClick = () => { 
+    // 🟢 Block editing of phantom operations and operations user can't edit
+    if (!canInteract.value) return;
+    if (props.operation) emit('edit-operation', props.operation); 
+};
 
 const onDragStart = (event) => {
+  // 🟢 Block dragging if user can't interact with operation
+  if (!canInteract.value) {
+      event.preventDefault();
+      return;
+  }
   if (!props.operation) return;
   event.dataTransfer.setData('application/json', JSON.stringify(props.operation));
   event.dataTransfer.effectAllowed = 'move';
@@ -199,9 +226,20 @@ const onDrop = (event) => {
 
 <template>
   <div class="hour-cell" :class="{ 'drag-over': isDragOver }" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
-    <!-- 🟢 FIX: Добавлено условие isOpVisible -->
+    <!-- 🟢 PHANTOM: Show placeholder for hidden excluded operations -->
     <div
-      v-if="operation && isOpVisible"
+      v-if="isPhantom"
+      class="operation-chip phantom"
+      draggable="false"
+      title="Ячейка занята операцией на скрытом счете"
+    >
+      <span class="op-amount">👁️‍🗨️ Занято</span>
+      <span class="op-meta">Скрытый счет</span>
+    </div>
+
+    <!-- 🟢 REGULAR OPERATION: Show if visible -->
+    <div
+      v-else-if="operation && isOpVisible"
       class="operation-chip"
       :class="{ 
          transfer: isTransferOp, 
@@ -217,9 +255,11 @@ const onDrop = (event) => {
          withdrawal: isWithdrawalOp,
           'work-act': isWorkActOp,
           technical: isTechnicalOp, 
-          'credit-income': isCreditIncomeOp 
+          'credit-income': isCreditIncomeOp,
+          'no-permission': !canInteract
       }"
-      draggable="true"
+      :draggable="canInteract"
+      :title="canInteract ? '' : 'Нет прав для редактирования'"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
@@ -292,16 +332,39 @@ const onDrop = (event) => {
 
 .operation-chip { 
   background: var(--op-default-bg); 
-  border: 1px solid var(--op-default-border);  
-  padding:4px 8px; 
-  width:100%; 
-  border-radius:4px; 
-  font-size: 12px; 
-  display:flex; 
-  justify-content:space-between; 
-  cursor:grab; 
-  overflow:hidden; 
-  user-select:none; 
+  color: var(--op-default-text); 
+  border: 1px solid var(--op-border); 
+  padding: 2px 8px; 
+  border-radius: 6px; 
+  font-size: 0.82em; 
+  display: flex; 
+  align-items: center; 
+  gap: 6px; 
+  min-width: 0; 
+  max-width: 100%; 
+  overflow: hidden; 
+  cursor: pointer; 
+  transition: all .15s ease-in-out; 
+}
+
+/* 🟢 Phantom Operation Chip - для скрытых операций */
+.operation-chip.phantom {
+  background: var(--op-default-bg);
+  color: var(--op-default-text);
+  border: 1px dashed var(--op-border);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.operation-chip.phantom:hover {
+  opacity: 0.9;
+  transform: none; /* Disable hover lift */
+}
+
+/* 🟢 No Permission - операция владельца для менеджера */
+.operation-chip.no-permission {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .operation-chip:active { cursor:grabbing; }
 
