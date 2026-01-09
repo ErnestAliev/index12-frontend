@@ -1696,34 +1696,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
             }
 
-            // 🟢 Recalculate snapshot locally after delete
-            // This ensures widgets update immediately without waiting for backend
-            const allOps = Object.values(displayCache.value).flat();
-            const newSnapshot = {
-                timestamp: new Date().toISOString(),
-                accountBalances: {},
-                companyBalances: {},
-                individualBalances: {},
-                contractorBalances: {},
-                projectBalances: {},
-                categoryTotals: {}
-            };
-
-            // Recalculate balances from remaining operations
-            allOps.forEach(op => {
-                if (op.isWorkAct || _isRetailWriteOff(op)) return;
-                const absAmt = Math.abs(Number(op.amount) || 0);
-                const isIncome = op.type === 'income';
-                const signedAmt = isIncome ? absAmt : -absAmt;
-
-                if (op.accountId) {
-                    const accId = (typeof op.accountId === 'object' ? op.accountId._id : op.accountId).toString();
-                    newSnapshot.accountBalances[accId] = (newSnapshot.accountBalances[accId] || 0) + signedAmt;
-                }
-            });
-
-            snapshot.value = newSnapshot;
-
+            // 🟢 IMPORTANT: Update dealCache BEFORE recalculating anything
+            // This ensures dealOperations is in sync with displayCache
             _updateDealCache(operation, 'delete');
             _triggerProjectionUpdate();
 
@@ -1742,8 +1716,9 @@ export const useMainStore = defineStore('mainStore', () => {
                 await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
             }
 
-            // 🔴 REMOVED: fetchSnapshot() returns stale data, optimistic update works correctly
-            // await fetchSnapshot();
+            // 🟢 FIX: Fetch fresh snapshot from backend instead of manual recalculation
+            // This prevents data inconsistency between displayCache and allKnownOperations
+            await fetchSnapshot();
 
         } catch (e) {
             if (e.response && (e.response.status === 404 || e.response.status === 200)) {
