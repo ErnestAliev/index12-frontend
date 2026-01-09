@@ -1690,17 +1690,10 @@ export const useMainStore = defineStore('mainStore', () => {
                 });
             }
 
-            // 🟢 FIX: Properly update displayCache to trigger reactivity
-            // Reassign the array to ensure Vue's reactivity detects the change
+            // Удаляем из кэша отображения
             if (displayCache.value[dateKey]) {
-                const filtered = displayCache.value[dateKey].filter(o => !_idsMatch(o._id, operation._id));
-                displayCache.value[dateKey] = filtered;
-                calculationCache.value[dateKey] = [...filtered];
-            }
-
-            // 🟢 FIX: Also remove from dealOperations if it exists there
-            if (operation.projectId && operation.contractorId) {
-                dealOperations.value = dealOperations.value.filter(o => !_idsMatch(o._id, operation._id));
+                displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => !_idsMatch(o._id, operation._id));
+                calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
             }
 
             // 🟢 Recalculate snapshot locally after delete
