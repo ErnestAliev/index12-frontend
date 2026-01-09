@@ -1965,7 +1965,7 @@ const handleRefundDelete = async (op) => {
 .graph-area-wrapper { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .graph-renderer-content { flex-grow: 1; }
 .summaries-container { flex-shrink: 0; }
-.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: var(--graph-bg-main);}
+.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: var(--ui-panel-bg);}
 .divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); }
 /* --- AI Modal (Desktop) --- */
 .ai-modal-overlay { 
