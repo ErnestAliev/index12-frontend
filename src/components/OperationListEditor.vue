@@ -253,6 +253,139 @@ const handleSave = async ({ mode, data }) => {
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
 const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.value = true; try { await mainStore.deleteOperation(itemToDelete.value.originalOp); itemToDelete.value.isDeleted = true; showDeleteConfirm.value = false; } catch (e) { alert(e.message); } finally { isDeleting.value = false; } };
 
+// EXPORT AND COPY FUNCTIONALITY
+const exportToCSV = () => {
+    if (filteredItems.value.length === 0) {
+        alert('Нет данных для экспорта');
+        return;
+    }
+
+    // CSV Header
+    const headers = ['Дата', 'Владелец', 'Счет', 'Сумма', 'Контрагент', 'Категория', 'Проект'];
+    
+    // CSV Rows
+    const rows = filteredItems.value.map(item => {
+        return [
+            formatDateDisplay(item.date),
+            getOwnerName(item.ownerId),
+            getAccountName(item.accountId),
+            item.amountFormatted,
+            getContractorName(item.contractorValue),
+            getCategoryName(item.categoryId),
+            getProjectName(item.projectId)
+        ];
+    });
+
+    // Combine headers and rows
+    const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    // Create blob and download
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    const typeLabel = props.type === 'income' ? 'доходы' : 'расходы';
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${typeLabel}_${dateStr}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
+const copyToClipboard = async () => {
+    if (filteredItems.value.length === 0) {
+        alert('Нет данных для копирования');
+        return;
+    }
+
+    const typeLabel = props.type === 'income' ? 'Доходы' : 'Расходы';
+    
+    // Определяем период на основе фильтров
+    let periodLabel = '';
+    const { from, to } = filters.value.dateRange;
+    if (from && to) {
+        const fromDate = new Date(from);
+        const toDate = new Date(to);
+        periodLabel = `${fromDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${toDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+    } else if (from) {
+        periodLabel = `с ${new Date(from).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+    } else if (to) {
+        periodLabel = `до ${new Date(to).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+    } else {
+        periodLabel = 'все время';
+    }
+    
+    // Compact format without emojis
+    let message = `${typeLabel} (${periodLabel})\n`;
+    message += `━━━━━━━━━━━━━━━━━━\n`;
+    message += `Всего операций: ${filteredCount.value}\n`;
+    message += `Итого: ${filteredTotalText.value}\n`;
+    message += `━━━━━━━━━━━━━━━━━━\n`;
+
+    filteredItems.value.forEach((item, index) => {
+        const parts = [];
+        
+        // Дата
+        parts.push(`[${formatDateDisplay(item.date)}]`);
+        
+        // Сумма с знаком
+        const sign = props.type === 'income' ? '+' : '-';
+        parts.push(`${sign}${item.amountFormatted} т`);
+        
+        // Счет
+        const accountName = getAccountName(item.accountId);
+        if (accountName !== '-') {
+            parts.push(accountName);
+        }
+        
+        // Владелец
+        const ownerName = getOwnerName(item.ownerId);
+        if (ownerName !== '-') {
+            parts.push(ownerName);
+        }
+        
+        // Контрагент
+        const contractorName = getContractorName(item.contractorValue);
+        if (contractorName !== '-') {
+            parts.push(contractorName);
+        }
+        
+        // Категория
+        const categoryName = getCategoryName(item.categoryId);
+        if (categoryName !== '-') {
+            parts.push(categoryName);
+        }
+        
+        // Проект
+        const projectName = getProjectName(item.projectId);
+        if (projectName !== '-') {
+            parts.push(projectName);
+        }
+        
+        // Формируем строку
+        message += `${index + 1}. ${parts.join(' < ')}\n`;
+    });
+
+    try {
+        await navigator.clipboard.writeText(message);
+        showCopySuccess.value = true;
+        setTimeout(() => {
+            showCopySuccess.value = false;
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy:', err);
+        alert('Ошибка копирования в буфер обмена');
+    }
+};
+
+const showCopySuccess = ref(false);
+
 </script>
 
 <template>
@@ -261,6 +394,29 @@ const confirmDelete = async () => { if (!itemToDelete.value) return; isDeleting.
       <div class="popup-header">
         <div class="header-row">
           <h3>{{ title }}</h3>
+
+          <div class="export-buttons">
+            <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              CSV
+            </button>
+            
+            <button class="export-btn copy-btn" @click="copyToClipboard" title="Копировать для WhatsApp">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              Копировать
+            </button>
+            
+            <transition name="fade">
+              <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
+            </transition>
+          </div>
 
           <div class="summary-bar" :title="`Операций: ${filteredCount}`">
             <span class="summary-label">Итого:</span>
@@ -415,6 +571,92 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
   font-size: 12px;
   color: #9ca3af;
   font-weight: 600;
+}
+
+.export-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  height: 32px;
+  background: #fff;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.export-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: #6b7280;
+  transition: stroke 0.2s;
+}
+
+.export-btn:hover {
+  background: #f9fafb;
+  border-color: #10b981;
+  color: #10b981;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+}
+
+.export-btn:hover svg {
+  stroke: #10b981;
+}
+
+.export-btn:active {
+  transform: scale(0.98);
+}
+
+.copy-success {
+  position: absolute;
+  right: 0;
+  top: -30px;
+  background: #10b981;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+  z-index: 1000;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+@media (max-width: 1100px) {
+  .header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .export-buttons {
+    order: 2;
+  }
+  
+  .summary-bar {
+    order: 3;
+  }
 }
 
 @media (max-width: 900px) {
