@@ -106,37 +106,41 @@
             <p>У вас нет проектов для управления</p>
           </div>
 
-          <div v-else class="settings-list">
-            <div v-for="p in ownedProjects" :key="p._id" class="settings-section">
-              <h4>{{ p.name }}</h4>
-              
-              <!-- Participants -->
-              <div v-if="p.sharedWith && p.sharedWith.length > 0" class="participants">
-                <h5>Участники:</h5>
-                <div v-for="share in p.sharedWith" :key="share.userId" class="participant-item">
-                  <div class="participant-info">
-                    <span class="participant-email">{{ share.email }}</span>
-                    <select 
-                      class="role-select" 
-                      :value="share.role" 
-                      @change="updateUserRole(p._id, share.userId, $event.target.value)"
-                    >
-                      <option value="analyst">Аналитик</option>
-                      <option value="manager">Менеджер</option>
-                      <option value="admin">Администратор</option>
-                    </select>
+          <div v-else class="settings-wrapper">
+            <div class="settings-list">
+              <div v-for="p in ownedProjects" :key="p._id" class="settings-section">
+                <h4>{{ p.name }}</h4>
+                
+                <!-- Participants -->
+                <div v-if="p.sharedWith && p.sharedWith.length > 0" class="participants">
+                  <h5>Участники:</h5>
+                  <div v-for="share in p.sharedWith" :key="share.userId" class="participant-item">
+                    <div class="participant-info">
+                      <span class="participant-email">{{ share.email }}</span>
+                      <select 
+                        class="role-select" 
+                        :value="share.role" 
+                        @change="updateUserRole(p._id, share.userId, $event.target.value)"
+                      >
+                        <option value="analyst">Аналитик</option>
+                        <option value="manager">Менеджер</option>
+                        <option value="admin">Администратор</option>
+                      </select>
+                    </div>
+                    <button class="btn-revoke" @click="revokeAccess(p._id, share.userId)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
                   </div>
-                  <button class="btn-revoke" @click="revokeAccess(p._id, share.userId)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  </button>
                 </div>
               </div>
+            </div>
 
-              <!-- Invite button -->
-              <button class="btn-invite" @click="openShareDialog(p)">
+            <!-- Fixed invite button at bottom -->
+            <div v-if="ownedProjects.length > 0" class="invite-section-fixed">
+              <button class="btn-invite" @click="openShareDialog(ownedProjects[0])">
                 Пригласить участника
               </button>
             </div>
@@ -214,11 +218,23 @@
       </div>
     </div>
   </div>
+
+  <!-- Custom Confirm Dialog -->
+  <ConfirmDialog
+    :show="showConfirmDialog"
+    :title="confirmData.title"
+    :message="confirmData.message"
+    :confirmText="confirmData.confirmText || 'Подтвердить'"
+    :cancelText="confirmData.cancelText || 'Отмена'"
+    @confirm="handleConfirm"
+    @cancel="handleCancel"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
+import ConfirmDialog from '../ConfirmDialog.vue';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 const emit = defineEmits(['close']);
@@ -236,6 +252,10 @@ const shareRole = ref('analyst');
 const generatedLink = ref('');
 const isGeneratingLink = ref(false);
 const linkCopied = ref(false);
+
+// Confirm dialog state
+const showConfirmDialog = ref(false);
+const confirmData = ref({ title: '', message: '', onConfirm: null, confirmText: '', cancelText: '' });
 
 const ownedProjects = computed(() => projects.value.filter(p => !p.isShared));
 const sharedProjects = computed(() => projects.value.filter(p => p.isShared));
@@ -345,34 +365,95 @@ async function copyLink() {
     }, 2000);
   } catch (err) {
     console.error('Failed to copy:', err);
-    alert('Не удалось скопировать ссылку');
+    showAlert('Ошибка', 'Не удалось скопировать ссылку');
   }
+}
+
+// 🟢 Custom confirm dialog helpers
+function showConfirm(title, message, onConfirm, confirmText = 'Подтвердить', cancelText = 'Отмена') {
+  confirmData.value = { title, message, onConfirm, confirmText, cancelText };
+  showConfirmDialog.value = true;
+}
+
+function showAlert(title, message) {
+  confirmData.value = { 
+    title, 
+    message, 
+    onConfirm: () => {}, 
+    confirmText: 'ОК',
+    cancelText: '' 
+  };
+  showConfirmDialog.value = true;
+}
+
+function handleConfirm() {
+  if (confirmData.value.onConfirm) {
+    confirmData.value.onConfirm();
+  }
+  showConfirmDialog.value = false;
+}
+
+function handleCancel() {
+  showConfirmDialog.value = false;
+  // Reload projects to reset UI if needed
+  loadProjects();
 }
 
 async function updateUserRole(workspaceId, userId, newRole) {
-  try {
-    await axios.patch(
-      `${API_BASE_URL}/workspaces/${workspaceId}/share/${userId}`, 
-      { role: newRole }, 
-      { withCredentials: true }
-    );
+  // Get current share info
+  const project = projects.value.find(p => p._id === workspaceId);
+  const share = project?.sharedWith?.find(s => s.userId === userId);
+  
+  if (!share) {
     await loadProjects();
-  } catch (err) {
-    console.error('Failed to update role:', err);
-    alert('Ошибка изменения роли');
+    return;
   }
+
+  const oldRoleLabel = getRoleLabel(share.role);
+  const newRoleLabel = getRoleLabel(newRole);
+
+  // 🟢 Use custom confirm dialog
+  showConfirm(
+    'Изменить роль',
+    `Изменить роль пользователя ${share.email}\nс "${oldRoleLabel}" на "${newRoleLabel}"?`,
+    async () => {
+      try {
+        // 🟢 FIX: Correct endpoint is /members/{userId}/role not /share/{userId}
+        await axios.patch(
+          `${API_BASE_URL}/workspaces/${workspaceId}/members/${userId}/role`, 
+          { role: newRole }, 
+          { withCredentials: true }
+        );
+        await loadProjects();
+      } catch (err) {
+        console.error('Failed to update role:', err);
+        showAlert('Ошибка', 'Не удалось изменить роль');
+        // Reload to reset select value
+        await loadProjects();
+      }
+    },
+    'Изменить',
+    'Отмена'
+  );
 }
 
 async function revokeAccess(workspaceId, userId) {
-  if (!confirm('Отозвать доступ?')) return;
-
-  try {
-    await axios.delete(`${API_BASE_URL}/workspaces/${workspaceId}/share/${userId}`, { withCredentials: true });
-    await loadProjects();
-  } catch (err) {
-    console.error('Failed to revoke:', err);
-    alert('Ошибка');
-  }
+  showConfirm(
+    'Отозвать доступ',
+    'Вы уверены, что хотите отозвать доступ для этого пользователя?',
+    async () => {
+      try {
+        await axios.delete(`${API_BASE_URL}/workspaces/${workspaceId}/share/${userId}`, { withCredentials: true });
+        await loadProjects();
+        showAlert('Готово', 'Доступ успешно отозван');
+      } catch (err) {
+        console.error('Failed to revoke:', err);
+        showAlert('Ошибка', 'Не удалось отозвать доступ');
+      }
+    },
+    'Отозвать',
+    'Отмена'
+  );
 }
 
 onMounted(loadProjects);
@@ -563,10 +644,20 @@ onMounted(loadProjects);
 }
 
 /* Settings */
+.settings-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
 .settings-list {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  padding-bottom: 80px; /* Space for fixed button */
+  overflow-y: auto;
+  flex: 1;
 }
 
 .settings-section {
@@ -659,6 +750,22 @@ onMounted(loadProjects);
   transition: all 0.2s;
   background: var(--color-primary, #34c759);
   color: white;
+}
+
+.btn-invite:active {
+  opacity: 0.8;
+}
+
+/* 🟢 Fixed invite button at bottom */
+.invite-section-fixed {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px 20px;
+  background: var(--color-background-soft, #282828);
+  border-top: 1px solid var(--color-border, #444);
+  z-index: 10;
 }
 
 .btn-revoke {
