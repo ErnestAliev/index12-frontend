@@ -289,7 +289,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3000; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3000; pointer-events: auto; }
 .popup-content { background: #F4F4F4; padding: 20px; border-radius: 12px; width: 420px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 10px; }
 
 .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
