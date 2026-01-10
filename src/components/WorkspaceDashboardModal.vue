@@ -2,7 +2,7 @@
   <div class="workspace-modal-overlay" @click.self="$emit('close')">
     <div class="workspace-modal">
       <div class="workspace-header">
-        <h2>Проекты</h2>
+        <h2>Рабочая область</h2>
         <button class="close-btn" @click="$emit('close')">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -18,14 +18,14 @@
           :class="{ active: activeTab === 'my' }"
           @click="activeTab = 'my'"
         >
-          Мои проекты ({{ ownedWorkspaces.length }})
+          Мои ({{ ownedWorkspaces.length }})
         </button>
         <button 
           class="tab-btn" 
           :class="{ active: activeTab === 'shared' }"
           @click="activeTab = 'shared'"
         >
-          Поделились со мной ({{ sharedWorkspaces.length }})
+          Общие({{ sharedWorkspaces.length }})
         </button>
         <button 
           class="tab-btn" 
@@ -76,7 +76,7 @@
               </div>
             </div>
             <div class="workspace-info">
-              <h3>Создать проект</h3>
+              <h3>Создать рабочую область</h3>
             </div>
           </div>
         </div>
@@ -91,7 +91,7 @@
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
             </svg>
-            <p>С вами пока не поделились проектами</p>
+            <p>С вами пока не поделились дашбоардом</p>
           </div>
 
           <div v-for="workspace in sharedWorkspaces" :key="workspace._id" class="workspace-card shared-card" :class="{'current-project': workspace._id === currentWorkspaceId}">

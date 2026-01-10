@@ -2,7 +2,7 @@
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-sheet">
       <div class="modal-header">
-        <h3>Проекты</h3>
+        <h3>Рабочая область</h3>
         <button class="close-btn" @click="$emit('close')">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -64,7 +64,7 @@
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              <div class="new-project-text">Создать проект</div>
+              <div class="new-project-text">Создать рабочую область</div>
             </button>
           </div>
         </template>
@@ -79,7 +79,7 @@
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
             </svg>
-            <p>С вами пока не поделились проектами</p>
+            <p>С вами пока не поделились дашбоардом</p>
           </div>
 
           <div v-else class="projects-grid">
@@ -162,7 +162,7 @@
   <div v-if="showShareDialog" class="share-dialog-overlay" @click="closeShareDialog">
     <div class="share-dialog" @click.stop>
       <div class="share-header">
-        <h3>Пригласить в проект</h3>
+        <h3>Пригласить в дашбоард</h3>
         <button class="btn-close" @click="closeShareDialog">✕</button>
       </div>
 
