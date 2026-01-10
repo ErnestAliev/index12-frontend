@@ -145,6 +145,7 @@
                   <span class="invite-expires">Истекает: {{ formatDate(invite.expiresAt) }}</span>
                 </div>
                 <button class="btn-revoke" @click="revokeInvite(invite._id, workspace._id)">
+                  Отозвать
                 </button>
               </div>
             </div>
@@ -183,7 +184,7 @@
     <!-- Share Dialog -->
     <div v-if="showShareDialog" class="create-dialog-overlay" @click.self="closeShareDialog">
       <div class="create-dialog share-dialog">
-        <h3>Поделиться проектом</h3>
+        <h3>Поделиться рабочей областью</h3>
         <p class="dialog-subtitle">{{ workspaceToShare?.name }}</p>
         
         <div class="form-group">
@@ -232,7 +233,7 @@
     <!-- Rename Dialog -->
     <div v-if="showRenameDialog" class="create-dialog-overlay" @click.self="showRenameDialog = false">
       <div class="create-dialog">
-        <h3>Переименовать проект</h3>
+        <h3>Переименовать рабочую область</h3>
         <input
           v-model="renameName"
           @keyup.enter="confirmRename"
@@ -692,6 +693,8 @@ async function revokeInvite(inviteId, workspaceId) {
         showConfirm('Готово', 'Ссылка успешно отозвана', () => {}, 'ОК');
       } catch (err) {
         console.error('Failed to revoke invite:', err);
+        console.error('Error response:', err.response?.data);
+        console.error('Error status:', err.response?.status);
         showConfirm('Ошибка', 'Не удалось отозвать ссылку', () => {}, 'ОК');
       }
     },
@@ -1165,6 +1168,8 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
   cursor: pointer;
   transition: all 0.2s;
+  max-width: 250px; /* Prevent select from being too wide */
+  min-width: 120px; /* Ensure minimum width for longest option */
 }
 
 .share-role-select:hover {

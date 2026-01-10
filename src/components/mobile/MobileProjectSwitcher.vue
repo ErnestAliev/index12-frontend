@@ -718,6 +718,7 @@ onMounted(loadProjects);
 }
 
 .role-select {
+  width: 100%; /* Full width for better mobile UX */
   padding: 6px 10px;
   background: var(--color-background, #1a1a1a);
   border: 1px solid var(--color-border, #444);
