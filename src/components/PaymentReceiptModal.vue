@@ -105,7 +105,7 @@
               </div>
 
               <div class="receipt-footer">
-                Документ сформирован автоматически в системе управления недвижимостью.
+                Документ сформирован автоматически в системе управления финансами <a href="https://index12.com" target="_blank" class="footer-link">INDEX12.COM</a>
               </div>
             </div>
           </div>
@@ -562,6 +562,16 @@ select:focus {
   color: #888;
   padding-top: 15px;
   border-top: 1px solid #eee;
+}
+
+.footer-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.footer-link:hover {
+  text-decoration: underline;
 }
 
 /* Export mode (remove shadows for clean PDF) */
