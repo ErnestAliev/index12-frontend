@@ -188,7 +188,8 @@ const handleCreateNew = async () => {
     if (newItem) {
       const mappedItem = { ...newItem };
       if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; mappedItem.ownerValue = null; }
-      if (isContractorEditor || isIndividualEditor) { mappedItem.defaultProjectId = null; mappedItem.defaultCategoryId = null; mappedItem.selectedProjectIds = []; mappedItem.selectedCategoryIds = []; } 
+      if (isContractorEditor || isIndividualEditor) { mappedItem.defaultProjectId = null; mappedItem.defaultCategoryId = null; mappedItem.selectedProjectIds = []; mappedItem.selectedCategoryIds = []; }
+      if (isContractorEditor) { mappedItem.identificationNumber = ''; mappedItem.contractNumber = ''; mappedItem.contractDate = null; } 
       
       if (isCompanyEditor) { 
           mappedItem.selectedAccountIds = [];
@@ -250,7 +251,11 @@ onMounted(() => {
       if (!pIds.length && item.defaultProjectId) { const pId = (typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId; if(pId) pIds.push(pId); }
       let cIds = item.defaultCategoryIds || [];
       if (!cIds.length && item.defaultCategoryId) { const cId = (typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId; if(cId) cIds.push(cId); }
-      return { ...item, selectedProjectIds: pIds, selectedCategoryIds: cIds };
+      // 🟢 NEW: Initialize legal data fields
+      const identificationNumber = item.identificationNumber || '';
+      const contractNumber = item.contractNumber || '';
+      const contractDate = item.contractDate || null;
+      return { ...item, selectedProjectIds: pIds, selectedCategoryIds: cIds, identificationNumber, contractNumber, contractDate };
     }
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
@@ -317,6 +322,12 @@ const handleSave = async () => {
     if (isContractorEditor || isIndividualEditor) { 
         data.defaultProjectIds = item.selectedProjectIds || []; data.defaultCategoryIds = item.selectedCategoryIds || [];
         data.defaultProjectId = data.defaultProjectIds[0] || null; data.defaultCategoryId = data.defaultCategoryIds[0] || null;
+    }
+    if (isContractorEditor) {
+        // 🟢 NEW: Include legal data fields in save
+        data.identificationNumber = item.identificationNumber || null;
+        data.contractNumber = item.contractNumber || null;
+        data.contractDate = item.contractDate || null;
     }
     if (isCompanyEditor) {
         data.taxRegime = item.taxRegime;
@@ -412,7 +423,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         </div>
         
         <div v-else-if="isContractorEditor" class="editor-header contractor-header">
-          <span class="header-name">Название</span><span class="header-project">Проекты</span><span class="header-category">Категории</span><span class="header-trash"></span>
+          <span class="header-name">Название</span><span class="header-project">Проекты</span><span class="header-category">Категории</span><span class="header-bin">БИН/ИИН</span><span class="header-contract-num">Номер договора</span><span class="header-contract-date">Дата договора</span><span class="header-trash"></span>
         </div>
         <div v-else class="editor-header default-header">
           <span class="header-name">Название</span><span class="header-trash"></span>
@@ -479,6 +490,9 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
                   <template v-if="isContractorEditor">
                     <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">{{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}</button>
                     <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}</button>
+                    <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin" placeholder="БИН/ИИН" />
+                    <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num" placeholder="Номер договора" />
+                    <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date" />
                   </template>
                   
                   <template v-if="isCompanyEditor">
@@ -546,7 +560,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
-.popup-content.wide { width: 55%; max-width: 1400px; }
+.popup-content.wide { width: 90%; max-width: 1400px; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 .popup-actions { display: flex; margin-top: 2rem; }
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
@@ -574,7 +588,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .owner-header .header-percent { flex-shrink: 0; width: 60px; }
 
 .contractor-header .header-project { flex-shrink: 0; width: 200px; } 
-.contractor-header .header-category { flex-shrink: 0; width: 200px; } 
+.contractor-header .header-category { flex-shrink: 0; width: 200px; }
+.contractor-header .header-bin { flex-shrink: 0; width: 150px; }
+.contractor-header .header-contract-num { flex-shrink: 0; width: 150px; }
+.contractor-header .header-contract-date { flex-shrink: 0; width: 150px; } 
 .small-header { margin-left: 32px; margin-top: 5px; margin-bottom: 5px; }
 .header-trash { width: 28px; flex-shrink: 0; }
 .list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
@@ -595,6 +612,10 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 
 .edit-tax { flex-shrink: 0; width: 100px; }
 .edit-percent { flex-shrink: 0; width: 60px; text-align: center; }
+
+.edit-bin { flex-shrink: 0; width: 150px; }
+.edit-contract-num { flex-shrink: 0; width: 150px; }
+.edit-contract-date { flex-shrink: 0; width: 150px; }
 
 .delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: #999; transition: stroke 0.2s; }
