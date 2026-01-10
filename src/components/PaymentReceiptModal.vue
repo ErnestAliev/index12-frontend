@@ -273,7 +273,7 @@ if (myCompanies.value.length > 0 && !selectedCompanyId.value) {
 
 .modal-container {
   width: 1000px;
-  height: 700px;
+  height: 750px;
   background: var(--color-background);
   border-radius: 16px;
   display: flex;
@@ -322,10 +322,10 @@ if (myCompanies.value.length > 0 && !selectedCompanyId.value) {
   flex: 1;
   padding: 24px;
   border-right: 1px solid var(--color-border);
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow: hidden;
 }
 
 .step-block {
@@ -333,6 +333,14 @@ if (myCompanies.value.length > 0 && !selectedCompanyId.value) {
   padding: 16px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.05);
+  flex-shrink: 0;
+}
+
+.step-block:has(.tx-list) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .step-title {
@@ -365,9 +373,10 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 280px;
+  flex: 1;
   overflow-y: auto;
   padding-right: 5px;
+  min-height: 0;
 }
 
 .tx-list::-webkit-scrollbar { width: 6px; }
@@ -420,7 +429,7 @@ select:focus {
 }
 
 .btn-download {
-  margin-top: auto;
+  flex-shrink: 0;
   background: var(--color-primary);
   color: white;
   border: none;
