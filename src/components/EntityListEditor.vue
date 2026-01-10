@@ -195,6 +195,7 @@ const handleCreateNew = async () => {
           mappedItem.selectedAccountIds = [];
           mappedItem.taxRegime = 'simplified';
           mappedItem.taxPercent = 3;
+          mappedItem.identificationNumber = '';
       }
 
       if (isIndividualEditor) { otherItems.value.push(mappedItem); } else { localItems.value.push(mappedItem); }
@@ -259,11 +260,13 @@ onMounted(() => {
     }
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
+      const identificationNumber = item.identificationNumber || '';
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
           taxRegime: item.taxRegime || 'simplified',
-          taxPercent: item.taxPercent !== undefined ? item.taxPercent : 3
+          taxPercent: item.taxPercent !== undefined ? item.taxPercent : 3,
+          identificationNumber
       };
     }
     return item;
@@ -332,6 +335,7 @@ const handleSave = async () => {
     if (isCompanyEditor) {
         data.taxRegime = item.taxRegime;
         data.taxPercent = Number(item.taxPercent);
+        data.identificationNumber = item.identificationNumber || null;
     }
     return data;
   });
@@ -419,6 +423,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
           <span class="header-accounts">Привязанные счета</span>
           <span class="header-tax">Налоги</span>
           <span class="header-percent">%</span>
+          <span class="header-bin">ИИН/БИН</span>
           <span class="header-trash"></span>
         </div>
         
@@ -502,6 +507,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
                         <option value="our">ОУР</option>
                     </select>
                     <input type="number" v-model="item.taxPercent" class="edit-input edit-percent" placeholder="%" min="0" max="100" />
+                    <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" />
                   </template>
                   
                   <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
@@ -586,6 +592,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .owner-header .header-accounts { flex-shrink: 0; width: 220px; }
 .owner-header .header-tax { flex-shrink: 0; width: 100px; }
 .owner-header .header-percent { flex-shrink: 0; width: 60px; }
+.owner-header .header-bin { flex-shrink: 0; width: 150px; }
 
 .contractor-header .header-project { flex-shrink: 0; width: 200px; } 
 .contractor-header .header-category { flex-shrink: 0; width: 200px; }
@@ -616,6 +623,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-bin { flex-shrink: 0; width: 150px; }
 .edit-contract-num { flex-shrink: 0; width: 150px; }
 .edit-contract-date { flex-shrink: 0; width: 150px; }
+.edit-company-bin { flex-shrink: 0; width: 150px; }
 
 .delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: #999; transition: stroke 0.2s; }
