@@ -37,7 +37,7 @@
       <div class="project-body">
         <div v-if="isLoading" class="loading-spinner">
           <div class="spinner"></div>
-          <p>Загрузка проектов...</p>
+          <p>Загрузка дашбоардов..</p>
         </div>
         
         <div v-else-if="filteredProjects.length === 0" class="empty-state">

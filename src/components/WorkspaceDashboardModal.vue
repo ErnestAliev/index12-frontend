@@ -39,7 +39,7 @@
       <div class="workspace-body">
         <div v-if="isLoading" class="loading-spinner">
           <div class="spinner"></div>
-          <p>Загрузка проектов...</p>
+          <p>Загрузка дашбоардов....</p>
         </div>
         
         <!-- Tab 1: My Projects -->
