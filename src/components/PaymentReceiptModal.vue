@@ -511,7 +511,7 @@ select:focus {
   background: #16a34a;
   color: #fff;
   padding: 8px 24px;
-  border-radius: 6px;
+  border-radius: 33px;
   font-size: 14px;
   font-weight: 800;
   text-transform: uppercase;
