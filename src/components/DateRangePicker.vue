@@ -126,11 +126,14 @@ const toggle = () => {
 };
 
 const close = (e) => { if (containerRef.value && !containerRef.value.contains(e.target)) isOpen.value = false; };
-const clear = (e) => {
-    e.stopPropagation();
-    localRange.value = { from: null, to: null };
-    emit('update:modelValue', { from: null, to: null });
+const clear = () => {
+  localRange.value = { from: null, to: null };
+  emit('update:modelValue', { from: null, to: null });
+  close();
 };
+
+// Expose toggle method so parent can programmatically open calendar
+defineExpose({ toggle });
 
 onMounted(() => document.addEventListener('click', close));
 onBeforeUnmount(() => document.removeEventListener('click', close));

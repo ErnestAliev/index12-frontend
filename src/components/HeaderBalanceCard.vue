@@ -3,6 +3,7 @@ import { ref, watch, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
+import DateRangePicker from './DateRangePicker.vue';
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -43,6 +44,95 @@ const filterMode = computed({
 const isFilterActive = computed(() => {
   return sortMode.value !== 'default' || filterMode.value !== 'all';
 });
+
+/* --- PERIOD FILTER --- */
+const isPeriodOpen = ref(false);
+const periodBtnRef = ref(null);
+const periodDropdownRef = ref(null);
+const periodPos = ref({ top: '0px', left: '0px' });
+
+const dateRangePickerRef = ref(null);
+const dateRangeValue = ref({ from: null, to: null });
+const isDateRangePickerVisible = ref(false);
+
+// Use mainStore period filter instead of uiStore
+const periodFilter = computed(() => mainStore.periodFilter);
+const isPeriodActive = computed(() => periodFilter.value.mode !== 'all');
+
+const updatePeriodPosition = () => {
+  if (periodBtnRef.value) {
+    const rect = periodBtnRef.value.getBoundingClientRect();
+    periodPos.value = { top: `${rect.bottom + 5}px`, left: `${rect.right - 160}px` };
+  }
+};
+
+const setPeriodMode = (mode) => {
+  if (mode === 'custom') {
+    // Close period dropdown and show DateRangePicker
+    isPeriodOpen.value = false;
+    isDateRangePickerVisible.value = true;
+    
+    // Initialize with current period if already set
+    const current = periodFilter.value;
+    if (current.mode === 'custom' && current.customStart && current.customEnd) {
+      dateRangeValue.value = {
+        from: current.customStart.split('T')[0],
+        to: current.customEnd.split('T')[0]
+      };
+    } else {
+      dateRangeValue.value = { from: null, to: null };
+    }
+    
+    // Open DateRangePicker calendar directly
+    nextTick(() => {
+      if (dateRangePickerRef.value?.toggle) {
+        dateRangePickerRef.value.toggle();
+      }
+    });
+  } else {
+    mainStore.setPeriodFilter({ mode, customStart: null, customEnd: null });
+    isPeriodOpen.value = false;
+  }
+};
+
+// Watch dateRangeValue and apply immediately when user selects both dates
+watch(dateRangeValue, (newVal) => {
+  if (newVal.from && newVal.to) {
+    const start = new Date(newVal.from);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(newVal.to);
+    end.setHours(23, 59, 59, 999);
+    
+    mainStore.setPeriodFilter({
+      mode: 'custom',
+      customStart: start.toISOString(),
+      customEnd: end.toISOString()
+    });
+    
+    // Hide DateRangePicker after selection
+    isDateRangePickerVisible.value = false;
+  }
+}, { deep: true });
+
+watch(isPeriodOpen, async (isOpen) => {
+  if (isOpen) {
+    await nextTick();
+    updatePeriodPosition();
+    document.addEventListener('mousedown', handlePeriodClickOutside);
+    window.addEventListener('resize', updatePeriodPosition);
+    window.addEventListener('scroll', updatePeriodPosition, true);
+  } else {
+    document.removeEventListener('mousedown', handlePeriodClickOutside);
+    window.removeEventListener('resize', updatePeriodPosition);
+    window.removeEventListener('scroll', updatePeriodPosition, true);
+  }
+});
+
+const handlePeriodClickOutside = (event) => {
+  const insideTrigger = periodBtnRef.value && periodBtnRef.value.contains(event.target);
+  const insideDropdown = periodDropdownRef.value && periodDropdownRef.value.contains(event.target);
+  if (!insideTrigger && !insideDropdown) isPeriodOpen.value = false;
+};
 
 const updateFilterPosition = () => {
   if (filterBtnRef.value) {
@@ -115,9 +205,15 @@ const getFutureColor = (item) => {
     return '';
 };
 
+// Period filter is now in mainStore - no need for local filtering
+// MainStore.currentOps automatically filters by period, so balances
+// in props.items are already correct
+
 const processedItems = computed(() => {
   let items = [...props.items];
   
+  // Period filtering happens in mainStore.currentOps - items already filtered
+  // Apply other filters (positive/negative/nonZero)
   if (filterMode.value === 'positive') items = items.filter(item => (item.balance || 0) > 0);
   else if (filterMode.value === 'negative') items = items.filter(item => (item.balance || 0) < 0);
   else if (filterMode.value === 'nonZero') items = items.filter(item => (item.balance || 0) !== 0);
@@ -382,12 +478,35 @@ defineExpose({ getSnapshot });
             </svg>
         </button>
 
+        <!-- Period Filter Button (only in fullscreen) -->
+        <button 
+            v-if="isFullscreen"
+            class="action-square-btn" 
+            :class="{ active: isPeriodActive }" 
+            ref="periodBtnRef" 
+            @click.stop="isPeriodOpen = !isPeriodOpen" 
+            title="Период"
+        >
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+        </button>
+
         <button class="action-square-btn" :class="{ active: isFilterActive }" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
           </svg>
         </button>
-        <button class="action-square-btn" :class="{ 'active': showFutureBalance }" @click.stop="showFutureBalance = !showFutureBalance" title="Прогноз">
+        <!-- Forecast button: keep visible always -->
+        <button 
+            class="action-square-btn" 
+            :class="{ 'active': showFutureBalance }" 
+            @click.stop="showFutureBalance = !showFutureBalance" 
+            title="Прогноз"
+        >
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </button>
         <button @click.stop="$emit('edit')" class="action-square-btn" title="Редактировать">
@@ -420,6 +539,28 @@ defineExpose({ getSnapshot });
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="isPeriodOpen" class="filter-dropdown-fixed" :style="periodPos" ref="periodDropdownRef" @click.stop>
+        <div class="filter-group">
+          <div class="filter-group-title">Период</div>
+          <ul>
+            <li :class="{ active: periodFilter.mode === 'all' }" @click="setPeriodMode('all')"><span>За весь период</span></li>
+            <li :class="{ active: periodFilter.mode === 'currentMonth' }" @click="setPeriodMode('currentMonth')"><span>За текущий месяц</span></li>
+            <li :class="{ active: periodFilter.mode === 'previousMonth' }" @click="setPeriodMode('previousMonth')"><span>За прошлый месяц</span></li>
+            <li :class="{ active: periodFilter.mode === 'custom' }" @click="setPeriodMode('custom')"><span>Выбрать период</span></li>
+          </ul>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- DateRangePicker for custom period selection - only visible when needed -->
+    <DateRangePicker 
+      v-if="isDateRangePickerVisible"
+      ref="dateRangePickerRef"
+      v-model="dateRangeValue" 
+      placeholder="Выберите период"
+    />
     
     <div class="card-items-list" :class="{ 'forecast-mode': showFutureBalance }">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
@@ -702,6 +843,138 @@ defineExpose({ getSnapshot });
   .card-title { font-size: 0.8em; }
   .card-item { font-size: 0.8em; margin-bottom: 0.2rem; }
   .card-items-list.forecast-mode { font-size: var(--font-xs); }
+}
+
+/* 🟢 Date Range Dialog Styles */
+.date-range-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 6000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.date-range-dialog {
+  background: var(--widget-background);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 400px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.dialog-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.dialog-close-btn:hover {
+  background-color: var(--color-background-soft);
+  color: var(--text-main);
+}
+
+.dialog-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.date-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.date-input-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+.date-input-group input {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: var(--color-background);
+  color: var(--text-main);
+  transition: border-color 0.2s;
+}
+
+.date-input-group input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.dialog-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dialog-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.dialog-btn-cancel {
+  background-color: var(--color-background-soft);
+  color: var(--text-main);
+}
+
+.dialog-btn-cancel:hover {
+  background-color: var(--color-background-mute);
+}
+
+.dialog-btn-apply {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.dialog-btn-apply:hover {
+  opacity: 0.9;
 }
 
 /* 🟢 FIX: Принудительный размер шрифта для планшетов */

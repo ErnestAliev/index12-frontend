@@ -64,6 +64,13 @@ export const useMainStore = defineStore('mainStore', () => {
     // 🟢 CACHE VERSIONING (Для принудительного обновления графиков)
     const cacheVersion = ref(0);
 
+    // 🟢 PERIOD FILTER (Фильтр периода для виджетов)
+    const periodFilter = ref({
+        mode: 'all', // 'all' | 'currentMonth' | 'previousMonth' | 'custom'
+        customStart: null,
+        customEnd: null
+    });
+
     // --- 1. UI STORE BRIDGES ---
     const isHeaderExpanded = computed({
         get: () => uiStore.isHeaderExpanded,
@@ -810,11 +817,46 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
 
+    // Helper function to calculate period date range
+    function _getPeriodRange(period) {
+        const now = new Date();
+        let startDate, endDate;
+
+        if (period.mode === 'currentMonth') {
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            startDate.setHours(0, 0, 0, 0);
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            endDate = new Date(now.getFullYear(), now.getMonth(), lastDay);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period.mode === 'previousMonth') {
+            startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            startDate.setHours(0, 0, 0, 0);
+            const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+            endDate = new Date(now.getFullYear(), now.getMonth() - 1, lastDay);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period.mode === 'custom' && period.customStart && period.customEnd) {
+            startDate = new Date(period.customStart);
+            endDate = new Date(period.customEnd);
+        }
+
+        return { startDate, endDate };
+    }
+
     const currentOps = computed(() => {
         const _tick = snapshot.value.timestamp;
         const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
+
+            // Period filter
+            if (periodFilter.value.mode !== 'all') {
+                const opDate = new Date(op.date);
+                const { startDate, endDate } = _getPeriodRange(periodFilter.value);
+                if (startDate && endDate) {
+                    if (opDate < startDate || opDate > endDate) return false;
+                }
+            }
+
             return _isEffectivelyPastOrToday(op.date);
         });
 
@@ -2831,11 +2873,25 @@ export const useMainStore = defineStore('mainStore', () => {
         };
     }
 
+    // ================================ RETURN ================================
 
+    // Period filter functions
+    function setPeriodFilter(config) {
+        periodFilter.value = config;
+    }
+
+    function getPeriodFilter() {
+        return periodFilter.value;
+    }
 
     // 🟢 EXPORT ALL
     return {
         cacheVersion,
+
+        // Period filter
+        periodFilter,
+        setPeriodFilter,
+        getPeriodFilter,
 
         // 🟢 Exporting helper so other stores (projectionStore) can use it
         _idsMatch,

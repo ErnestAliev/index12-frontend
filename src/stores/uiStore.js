@@ -28,6 +28,9 @@ export const useUiStore = defineStore('ui', () => {
   // Widget filters state (per widget key)
   const widgetFilters = ref({});
 
+  // Widget period filters state (per widget key)
+  const widgetPeriodFilters = ref({});
+
   function setWidgetSortMode(widgetKey, mode) {
     if (!widgetFilters.value[widgetKey]) {
       widgetFilters.value[widgetKey] = { sortMode: 'default', filterMode: 'all' };
@@ -50,12 +53,21 @@ export const useUiStore = defineStore('ui', () => {
     return widgetFilters.value[widgetKey]?.filterMode || 'all';
   }
 
+  function setWidgetPeriod(widgetKey, periodConfig) {
+    widgetPeriodFilters.value[widgetKey] = periodConfig;
+  }
+
+  function getWidgetPeriod(widgetKey) {
+    return widgetPeriodFilters.value[widgetKey] || { mode: 'all', customStart: null, customEnd: null };
+  }
+
   return {
     // State
     isHeaderExpanded,
     showCreditWizard,
     includeExcludedInTotal,
     widgetFilters,
+    widgetPeriodFilters,
 
     // Actions
     toggleHeaderExpansion,
@@ -63,6 +75,8 @@ export const useUiStore = defineStore('ui', () => {
     setWidgetSortMode,
     setWidgetFilterMode,
     getWidgetSortMode,
-    getWidgetFilterMode
+    getWidgetFilterMode,
+    setWidgetPeriod,
+    getWidgetPeriod
   };
 });
