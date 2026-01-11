@@ -443,7 +443,7 @@ select:focus {
 }
 
 .btn-download:hover { 
-  background: var(--color-primary-hover); 
+  background: #059669;
 }
 
 .btn-download:disabled { 

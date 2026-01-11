@@ -702,26 +702,7 @@ const axisMax = computed(() => {
   const kAligned8 = Math.ceil(kAligned / 8) * 8;
   return kAligned8 * step;
 });
-const yAxisTicks = computed(() => {
-  const ticks = [];
-  const step = axisStep.value;
-  const max = axisMax.value;
-  for (let v = max; v >= 0; v -= step) {
-    ticks.push(v);
-  }
-  if (ticks.length > 9) return ticks.slice(0, 9);
-  if (ticks.length < 9) {
-    while (ticks.length < 9) ticks.push(0);
-  }
-  return ticks;
-});
-watch(
-  yAxisTicks,
-  (ticks) => {
-    emit('update:yLabels', ticks);
-  },
-  { immediate: true }
-);
+// yAxisTicks перемещен после balanceAxis (см. ниже)
 
 // 🟢 3. НАКОПИТЕЛЬНЫЕ ИТОГИ (SUMMARIES)
 // Ключевая цель: summaries НЕ должны зависеть от выбранного окна.
@@ -1113,6 +1094,34 @@ const balanceAxis = computed(() => {
   return { min: 0, max: max + pad };
 });
 
+// 🟢 yAxisTicks - ПОСЛЕ balanceAxis чтобы избежать циклической зависимости
+const yAxisTicks = computed(() => {
+  // ИСПОЛЬЗУЕМ balanceAxis вместо axisMax, чтобы Y-ось совпадала с реальной высотой графика
+  const max = balanceAxis.value.max;
+  const min = balanceAxis.value.min;
+  
+  if (max <= 0) return [0];
+  
+  // Вычисляем шаг для 8 делений
+  const rawStep = max / 8;
+  const step = niceStep(rawStep);
+  
+  // Генерируем тики от max до 0
+  const ticks = [];
+  for (let v = max; v >= min; v -= step) {
+    ticks.push(Math.max(0, v));
+  }
+  
+  return ticks;
+});
+watch(
+  yAxisTicks,
+  (ticks) => {
+    emit('update:yLabels', ticks);
+  },
+  { immediate: true }
+);
+
 // Серый столбик = баланс на начало дня (start = остаток предыдущего дня)
 const balanceBarData = computed(() => {
   const _v = mainStore.cacheVersion;
@@ -1138,63 +1147,111 @@ const balanceColors = computed(() => {
   });
 });
 
-// 🟥/🟢 Пункт 7 (как ты просил):
-// - Серый = остаток предыдущего дня (start)
-// - Зелёный = доход всегда СВЕРХУ: [start, start+income]
-// - Красный = расход всегда СНИЗУ (под зелёным), чтобы НЕ перекрывать зелёный:
-//            [start-expense, start]
-// Это визуальная логика (не "математика водопада"), чтобы в один день было видно и доход, и расход.
+// 🎭 ВИЗУАЛЬНОЕ СЖАТИЕ (Visual Compression Illusion):
+// ЛОГИКА: Доходы ВИЗУАЛЬНО сжимаются, чтобы показать расходы И создать переход на следующий день
+//
+// ПРИМЕР (10 января):
+// - База (9 янв) = 300K
+// - Доходы = 220K (математически)
+// - Расход = 100K
+// - Конец дня (11 янв) = 420K
+//
+// ВИЗУАЛИЗАЦИЯ:
+// [0, 300K]     = СЕРЫЙ (база)
+// [300K, 420K]  = ЗЕЛЕНЫЙ (доходы СЖАТЫ: матем. 220K → виз. 120K)
+// [420K, 520K]  = КРАСНЫЙ (расход 100K)
+//
+// РЕЗУЛЬТАТ:
+// - Нижняя граница расхода = 420K = верх 11 января ✅
+// - Все операции видны в одном дне
+// - Плавный переход между днями
 
-// 🟠 Предоплата/транш (floating): [start, start+prepayment]
+// 🟠 Предоплата/транш (floating): ВИЗУАЛЬНО СЖАТА [start, endBalance]
+// Математически = prepayment, Визуально = часть от [start, endBalance]
 const prepaymentFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const p = Math.abs(Number(s?.prepayment) || 0);
     if (!p) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
-    const to = start + p;
+    const end = Math.max(0, Number(endVals[i]) || 0);
+    
+    // ВИЗУАЛЬНОЕ СЖАТИЕ: рисуем от start до endBalance (сжато, не математически)
+    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    const totalIncome = p + inc;
+    if (totalIncome === 0) return [0, 0];
+    
+    // Пропорция предоплаты от общего дохода
+    const ratio = p / totalIncome;
+    const visualHeight = end - start;
+    const prepayHeight = visualHeight * ratio;
+    
+    const to = start + prepayHeight;
     if (to <= start) return [0, 0];
     return [start, to];
   });
 });
 
-// 🟢 Обычный доход (floating): [start+prepayment, start+prepayment+incomeMain]
+// 🟢 Обычный доход (floating): ВИЗУАЛЬНО СЖАТ [start+prepayPart, endBalance]
+// Математически = incomeMain, Визуально = часть от [start, endBalance]
 const incomeMainFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const inc = Math.abs(Number(s?.incomeMain) || 0);
     if (!inc) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
+    const end = Math.max(0, Number(endVals[i]) || 0);
     const p = Math.abs(Number(s?.prepayment) || 0);
-    const from = start + p;
-    const to = from + inc;
+    
+    // ВИЗУАЛЬНОЕ СЖАТИЕ: рисуем от start+prepayPart до endBalance
+    const totalIncome = p + inc;
+    if (totalIncome === 0) return [0, 0];
+    
+    const ratio = inc / totalIncome;
+    const visualHeight = end - start;
+    const incHeight = visualHeight * ratio;
+    const prepayHeight = visualHeight - incHeight;
+    
+    const from = start + prepayHeight;
+    const to = end;
     if (to <= from) return [0, 0];
     return [from, to];
   });
 });
 
-// 🟥 Расход (floating): [start - expense, start]
+// 🟥 Расход (floating): [endBalance, peak] - показывает "съеденную" часть
+// Нижняя граница расхода = верхняя граница следующего дня
 const expenseFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const exp = Math.abs(Number(s?.expense) || 0);
     if (!exp) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
-    const from = Math.max(0, start - exp);
-    if (start <= from) return [0, 0];
-    return [from, start];
+    const end = Math.max(0, Number(endVals[i]) || 0); // Это нижняя граница расхода
+    const prepay = Math.abs(Number(s?.prepayment) || 0);
+    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    
+    // Пик = база + все доходы (теоретический максимум)
+    const peak = start + prepay + inc;
+    
+    // Расход от реального конца дня до пика
+    if (end >= peak) return [0, 0];
+    return [end, peak];
   });
 });
 
@@ -1425,14 +1482,15 @@ const chartData = computed(() => {
         categoryPercentage: 1.0,
         borderSkipped: false
       },
-      // 🟥 Расход — всегда ВНИЗУ (под зелёным): [start-expense, start]
+      // 🟥 Расход — "СЪЕДЕННАЯ" часть доходов: [endBalance, peak]
+      // Нижняя граница = верх следующего дня
       {
         type: 'bar',
         label: 'Расход',
         data: (expenseFloatData.value || []).slice(0, labels.length),
         backgroundColor: (expenseFloatColors.value || []).slice(0, labels.length),
         yAxisID: 'yBalance',
-        order: 4000,
+        order: 6000, // Рисуется последним
         borderSkipped: false,
         grouped: false,
         barPercentage: 0.92,
