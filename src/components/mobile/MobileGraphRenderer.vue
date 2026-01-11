@@ -1182,63 +1182,87 @@ const balanceColors = computed(() => {
   });
 });
 
-// 🟥/🟢 Пункт 7 (как ты просил):
-// - Серый = остаток предыдущего дня (start)
-// - Зелёный = доход всегда СВЕРХУ: [start, start+income]
-// - Красный = расход всегда СНИЗУ (под зелёным), чтобы НЕ перекрывать зелёный:
-//            [start-expense, start]
-// Это визуальная логика (не "математика водопада"), чтобы в один день было видно и доход, и расход.
+// 🎭 ВИЗУАЛЬНОЕ СЖАТИЕ (Visual Compression Illusion) - MOBILE
+// ЛОГИКА: Доходы ВИЗУАЛЬНО сжимаются, чтобы показать расходы И создать переход на следующий день
 
-// 🟠 Предоплата/транш (floating): [start, start+prepayment]
+// 🟠 Предоплата/транш (floating): ВИЗУАЛЬНО СЖАТА [start, endBalance]
 const prepaymentFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const p = Math.abs(Number(s?.prepayment) || 0);
     if (!p) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
-    const to = start + p;
+    const end = Math.max(0, Number(endVals[i]) || 0);
+    
+    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    const totalIncome = p + inc;
+    if (totalIncome === 0) return [0, 0];
+    
+    const ratio = p / totalIncome;
+    const visualHeight = end - start;
+    const prepayHeight = visualHeight * ratio;
+    
+    const to = start + prepayHeight;
     if (to <= start) return [0, 0];
     return [start, to];
   });
 });
 
-// 🟢 Обычный доход (floating): [start+prepayment, start+prepayment+incomeMain]
+// 🟢 Обычный доход (floating): ВИЗУАЛЬНО СЖАТ [start+prepayPart, endBalance]
 const incomeMainFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const inc = Math.abs(Number(s?.incomeMain) || 0);
     if (!inc) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
+    const end = Math.max(0, Number(endVals[i]) || 0);
     const p = Math.abs(Number(s?.prepayment) || 0);
-    const from = start + p;
-    const to = from + inc;
+    
+    const totalIncome = p + inc;
+    if (totalIncome === 0) return [0, 0];
+    
+    const ratio = inc / totalIncome;
+    const visualHeight = end - start;
+    const incHeight = visualHeight * ratio;
+    const prepayHeight = visualHeight - incHeight;
+    
+    const from = start + prepayHeight;
+    const to = end;
     if (to <= from) return [0, 0];
     return [from, to];
   });
 });
 
-// 🟥 Расход (floating): [start - expense, start]
+// 🟥 Расход (floating): [endBalance, peak] - показывает "съеденную" часть
 const expenseFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
+  const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
     const exp = Math.abs(Number(s?.expense) || 0);
     if (!exp) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
-    const from = Math.max(0, start - exp);
-    if (start <= from) return [0, 0];
-    return [from, start];
+    const end = Math.max(0, Number(endVals[i]) || 0);
+    const prepay = Math.abs(Number(s?.prepayment) || 0);
+    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    
+    const peak = start + prepay + inc;
+    
+    if (end >= peak) return [0, 0];
+    return [end, peak];
   });
 });
 
@@ -1469,14 +1493,14 @@ const chartData = computed(() => {
         categoryPercentage: 1.0,
         borderSkipped: false
       },
-      // 🟥 Расход — всегда ВНИЗУ (под зелёным): [start-expense, start]
+      // 🟥 Расход — "СЪЕДЕННАЯ" часть: [endBalance, peak]
       {
         type: 'bar',
         label: 'Расход',
         data: (expenseFloatData.value || []).slice(0, labels.length),
         backgroundColor: (expenseFloatColors.value || []).slice(0, labels.length),
         yAxisID: 'yBalance',
-        order: 4000,
+        order: 6000,
         borderSkipped: false,
         grouped: false,
         barPercentage: 0.92,
