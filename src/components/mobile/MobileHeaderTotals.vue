@@ -15,7 +15,8 @@ const _toYmd = (d) => {
 // Получаем данные из стора
 const currentTotal = computed(() => mainStore.currentTotalBalance);
 const futureTotal = computed(() => mainStore.futureTotalBalance);
-const accountsCount = computed(() => mainStore.currentAccountBalances.length);
+const currentAccountsCount = computed(() => mainStore.currentAccountBalances.length);
+const futureAccountsCount = computed(() => mainStore.futureAccountBalances.length);
 
 // 🟢 ИЗМЕНЕНО: year: '2-digit'
 const todayStr = computed(() => {
@@ -28,13 +29,44 @@ const futureDateStr = computed(() => {
   return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' }).format(d);
 });
 
+// Parse subtitle parts for highlighting (current)
+const parsedCurrentSubtitle = computed(() => {
+  const text = `Сейчас на ${currentAccountsCount.value} счетах`;
+  const match = text.match(/^(\S+)(\s+.+?)(\d+)(.+)$/);
+  if (match) {
+    return {
+      keyword: match[1],     // "Сейчас"
+      middle: match[2],      // " на "
+      count: match[3],       // count number
+      after: match[4]        // " счетах"
+    };
+  }
+  return { keyword: null, middle: '', count: null, after: text };
+});
+
+// Parse subtitle parts for highlighting (future)
+const parsedFutureSubtitle = computed(() => {
+  const text = `Будет на ${futureAccountsCount.value} счетах`;
+  const match = text.match(/^(\S+)(\s+.+?)(\d+)(.+)$/);
+  if (match) {
+    return {
+      keyword: match[1],     // "Будет"
+      middle: match[2],      // " на "
+      count: match[3],       // count number
+      after: match[4]        // " счетах"
+    };
+  }
+  return { keyword: null, middle: '', count: null, after: text };
+});
+
 // =========================
 // UI snapshot (screen = truth)
 // =========================
 function getSnapshot() {
   const cur = Number(currentTotal.value || 0);
   const fut = Number(futureTotal.value || 0);
-  const cnt = Number(accountsCount.value || 0);
+  const cntCur = Number(currentAccountsCount.value || 0);
+  const cntFut = Number(futureAccountsCount.value || 0);
 
   return {
     key: 'mobileHeaderTotals',
@@ -50,13 +82,14 @@ function getSnapshot() {
     // Values (raw)
     currentTotal: cur,
     futureTotal: fut,
-    accountsCount: cnt,
+    currentAccountsCount: cntCur,
+    futureAccountsCount: cntFut,
 
     // Values (UI-like text)
     currentText: `₸ ${formatNumber(cur)}`,
     futureText: `${formatNumber(fut)} ₸`,
-    subtitleCurrent: `Всего на ${cnt} счетах • до ${todayStr.value}`,
-    subtitleFuture: `Всего на ${cnt} счетах • до ${futureDateStr.value}`,
+    subtitleCurrent: `Сейчас на ${cntCur} счетах • до ${todayStr.value}`,
+    subtitleFuture: `Будет на ${cntFut} счетах • до ${futureDateStr.value}`,
   };
 }
 
@@ -72,7 +105,14 @@ defineExpose({ getSnapshot });
         <span class="currency">₸</span> {{ formatNumber(currentTotal) }}
       </div>
       <div class="card-sub">
-        Всего на {{ accountsCount }} счетах • <span class="green-text">до {{ todayStr }}</span>
+        <template v-if="parsedCurrentSubtitle.keyword">
+          <span class="subtitle-keyword">{{ parsedCurrentSubtitle.keyword }}</span>{{ parsedCurrentSubtitle.middle }}<span class="subtitle-count">{{ parsedCurrentSubtitle.count }}</span>{{ parsedCurrentSubtitle.after }}
+        </template>
+        <template v-else>
+          Сейчас на {{ currentAccountsCount }} счетах
+        </template>
+        •
+        <span class="green-text">до {{ todayStr }}</span>
       </div>
     </div>
 
@@ -86,7 +126,14 @@ defineExpose({ getSnapshot });
         {{ formatNumber(futureTotal) }} <span class="currency">₸</span>
       </div>
       <div class="card-sub right-align">
-        Всего на {{ accountsCount }} счетах • <span class="green-text">до {{ futureDateStr }}</span>
+        <template v-if="parsedFutureSubtitle.keyword">
+          <span class="subtitle-keyword">{{ parsedFutureSubtitle.keyword }}</span>{{ parsedFutureSubtitle.middle }}<span class="subtitle-count">{{ parsedFutureSubtitle.count }}</span>{{ parsedFutureSubtitle.after }}
+        </template>
+        <template v-else>
+          Будет на {{ futureAccountsCount }} счетах
+        </template>
+        •
+        <span class="green-text">до {{ futureDateStr }}</span>
       </div>
     </div>
   </div>
@@ -138,12 +185,24 @@ defineExpose({ getSnapshot });
 }
 
 .card-sub {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-mute, #666);
+  font-weight: 500;
 }
 
 .green-text {
   color: var(--color-primary, #34c759);
+  font-weight: 800;
+}
+
+.subtitle-keyword {
+  color: var(--color-primary, #34c759);
+  font-weight: 800;
+}
+
+.subtitle-count {
+  color: var(--color-primary, #34c759);
+  font-weight: 800;
 }
 
 .right-align {

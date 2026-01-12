@@ -16,6 +16,22 @@ const isFuture = computed(() => props.widgetKey === 'futureTotal');
 const formattedValue = computed(() => formatNumber(Math.abs(props.totalBalance)));
 const sign = computed(() => props.totalBalance < 0 ? '-' : '');
 
+// Parse subtitle to extract and highlight account count
+const parsedSubtitle = computed(() => {
+  const text = props.subtitlePrefix;
+  // Match pattern like "Сейчас на 6 счетах" or "Будет на 9 счетах"
+  const match = text.match(/^(\S+)(\s+.+?)(\d+)(.+)$/);
+  if (match) {
+    return {
+      keyword: match[1],     // "Сейчас" or "Будет"
+      middle: match[2],      // " на "
+      count: match[3],       // "6" or "9"
+      after: match[4]        // " счетах"
+    };
+  }
+  return { keyword: null, middle: '', count: null, after: text };
+});
+
 // =========================
 // UI snapshot (screen = truth)
 // =========================
@@ -63,7 +79,14 @@ defineExpose({ getSnapshot });
     </div>
     
     <div class="card-sub-balance">
-      {{ props.subtitlePrefix }} • <span class="subtitle-date">{{ props.subtitleDate }}</span>
+      <template v-if="parsedSubtitle.keyword">
+        <span class="subtitle-keyword">{{ parsedSubtitle.keyword }}</span>{{ parsedSubtitle.middle }}<span class="subtitle-count">{{ parsedSubtitle.count }}</span>{{ parsedSubtitle.after }}
+      </template>
+      <template v-else>
+        {{ props.subtitlePrefix }}
+      </template>
+      •
+      <span class="subtitle-date">{{ props.subtitleDate }}</span>
     </div>
   </div>
 </template>
@@ -130,11 +153,19 @@ defineExpose({ getSnapshot });
 }
 
 .card-sub-balance { 
-  font-size: var(--font-xs);
+  font-size: var(--font-md);
   color: var(--text-mute); 
 }
 .card-sub-balance .subtitle-date { 
   color: var(--color-primary); 
-  font-weight: var(--fw-medium); 
+  font-weight: var(--fw-bold); 
+}
+.card-sub-balance .subtitle-count { 
+  color: var(--color-primary); 
+  font-weight: var(--fw-bold); 
+}
+.card-sub-balance .subtitle-keyword { 
+  color: var(--color-primary); 
+  font-weight: var(--fw-bold); 
 }
 </style>

@@ -215,7 +215,7 @@ const getSnapshot = () => {
         title: 'Всего на счетах\nна текущий момент',
         type: 'total',
         totalBalance: Number(loggedCurrentTotal.value) || 0,
-        subtitlePrefix: `Всего на ${mainStore.currentAccountBalances.length} счетах`,
+        subtitlePrefix: `Сейчас на ${mainStore.currentAccountBalances.length} счетах`,
         subtitleDate: `до ${todayStr.value}`
       };
     }
@@ -225,7 +225,7 @@ const getSnapshot = () => {
         title: 'Всего на счетах\nс учетом будущих',
         type: 'total',
         totalBalance: Number(loggedFutureTotal.value) || 0,
-        subtitlePrefix: `Всего на ${mainStore.accounts.length} счетах`,
+        subtitlePrefix: `Будет на ${mainStore.futureAccountBalances.length} счетах`,
         subtitleDate: `до ${futureUntilStr.value}`
       };
     }
@@ -498,7 +498,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
                 :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="'Всего на счетах\nна текущий момент'"
                 :totalBalance="loggedCurrentTotal" 
-                :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
+                :subtitlePrefix="`Сейчас на ${mainStore.currentAccountBalances.length} счетах`"
                 :subtitleDate="`до ${todayStr}`"
                 :widgetKey="fullscreenWidgetKey"
                 :widgetIndex="-1"
@@ -612,7 +612,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
                 :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="'Всего на счетах\nс учетом будущих'"
                 :totalBalance="loggedFutureTotal" 
-                :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
+                :subtitlePrefix="`Будет на ${mainStore.futureAccountBalances.length} счетах`"
                 :subtitleDate="`до ${futureUntilStr}`"
                 :widgetKey="fullscreenWidgetKey"
                 :widgetIndex="-1"
@@ -651,7 +651,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           :title="'Всего на счетах\nна текущий момент'"
           :totalBalance="loggedCurrentTotal" 
-          :subtitlePrefix="`Всего на ${mainStore.currentAccountBalances.length} счетах`"
+          :subtitlePrefix="`Сейчас на ${mainStore.currentAccountBalances.length} счетах`"
           :subtitleDate="`до ${todayStr}`"
           :widgetKey="widgetKey"
           :widgetIndex="index"
@@ -774,7 +774,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           :title="'Всего на счетах\nс учетом будущих'"
           :totalBalance="loggedFutureTotal" 
-          :subtitlePrefix="`Всего на ${mainStore.accounts.length} счетах`"
+          :subtitlePrefix="`Будет на ${mainStore.futureAccountBalances.length} счетах`"
           :subtitleDate="`до ${futureUntilStr}`"
           :widgetKey="widgetKey"
           :widgetIndex="index"
