@@ -18,15 +18,22 @@ const futureTotal = computed(() => mainStore.futureTotalBalance);
 const currentAccountsCount = computed(() => mainStore.currentAccountBalances.length);
 const futureAccountsCount = computed(() => mainStore.futureAccountBalances.length);
 
-// 🟢 ИЗМЕНЕНО: year: '2-digit'
+// 🟢 COMPACT FORMAT: dd.mm.yy
 const todayStr = computed(() => {
-  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date());
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}.${month}.${year}`;
 });
 
-// 🟢 ИЗМЕНЕНО: year: '2-digit'
+// 🟢 COMPACT FORMAT: dd.mm.yy
 const futureDateStr = computed(() => {
   const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date();
-  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' }).format(d);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}.${month}.${year}`;
 });
 
 // Parse subtitle parts for highlighting (current)

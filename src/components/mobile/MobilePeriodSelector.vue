@@ -173,7 +173,11 @@ const setAnalyticsPrevMonth = () => {
 };
 
 // Сброс фильтра
-const handleReset = () => {
+const handleReset = async () => {
+  // Reset projection to end of current month
+  await mainStore.setProjectionToEndOfMonth();
+  
+  // Reset period filter to default 'all' mode
   mainStore.setPeriodFilter({
     mode: 'all',
     customStart: null,
@@ -186,18 +190,28 @@ const handleReset = () => {
 // Применить период
 const applyPeriod = () => {
   if (mode.value === 'forecast' && forecastEndDate.value) {
-    // 🔥 CRITICAL: НЕ меняем projection.mode! Он должен остаться как '12d', '1m', и т.д.
-    // PeriodSelector управляет только periodFilter (фильтрация данных), а не projection (отображение графика)
+    // 🔥 SYMMETRIC EXPANSION: Expand equally in both directions from today
+    const monthsAhead = Math.ceil((forecastEndDate.value - today) / (1000 * 60 * 60 * 24 * 30));
+    const startDate = new Date(today);
+    startDate.setMonth(startDate.getMonth() - monthsAhead);
+    startDate.setDate(1);
+    
+    projectionStore.setProjectionRange(startDate, forecastEndDate.value);
     mainStore.setPeriodFilter({
       mode: 'custom',
-      customStart: today.toISOString(),
-      customEnd: forecastEndDate.value.toISOString()
+      customStart: startDate.toISOString(),
+      customEnd: forecastEndDate.value.toISOString(),
+      isForecastMode: true
     });
   } else if (mode.value === 'analytics' && analyticsStartDate.value && analyticsEndDate.value) {
+    // 🔥 ANALYTICS: Set projection to exact selected range
+    projectionStore.setProjectionRange(analyticsStartDate.value, analyticsEndDate.value);
+    
     mainStore.setPeriodFilter({
       mode: 'custom',
       customStart: analyticsStartDate.value.toISOString(),
-      customEnd: analyticsEndDate.value.toISOString()
+      customEnd: analyticsEndDate.value.toISOString(),
+      isForecastMode: false
     });
   }
   
@@ -221,19 +235,32 @@ const displayRange = computed(() => {
 onMounted(() => {
   const filter = mainStore.periodFilter;
   
- if (filter && filter.mode === 'custom' && filter.customStart && filter.customEnd) {
+  if (filter && filter.mode === 'custom' && filter.customStart && filter.customEnd) {
     const start = new Date(filter.customStart);
     const end = new Date(filter.customEnd);
     const todayCheck = new Date();
     todayCheck.setHours(0, 0, 0, 0);
     
-    if (start >= todayCheck) {
-      mode.value = 'forecast';
-      forecastEndDate.value = end;
+    // 🔥 Use saved mode flag if available
+    if (filter.isForecastMode !== undefined) {
+      if (filter.isForecastMode) {
+        mode.value = 'forecast';
+        forecastEndDate.value = end;
+      } else {
+        mode.value = 'analytics';
+        analyticsStartDate.value = start;
+        analyticsEndDate.value = end;
+      }
     } else {
-      mode.value = 'analytics';
-      analyticsStartDate.value = start;
-      analyticsEndDate.value = end;
+      // Fallback to old logic if flag not set
+      if (start >= todayCheck) {
+        mode.value = 'forecast';
+        forecastEndDate.value = end;
+      } else {
+        mode.value = 'analytics';
+        analyticsStartDate.value = start;
+        analyticsEndDate.value = end;
+      }
     }
     
     currentMonth.value = new Date(end.getFullYear(), end.getMonth(), 1);
@@ -381,19 +408,20 @@ onMounted(() => {
   right: 16px;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 100%;
   border: none;
   background: rgba(255,255,255,0.1);
   color: var(--color-text, #fff);
-  display: flex;
+  display: grid;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s;
+  padding: 2px;
 }
 
 .close-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.5);
   background: rgba(255,255,255,0.2);
 }
 
@@ -506,7 +534,7 @@ onMounted(() => {
   border: none;
   background: rgba(255,255,255,0.05);
   color: var(--color-text, #fff);
-  display: flex;
+  display: grid;
   align-items: center;
   justify-content: center;
   cursor: pointer;
