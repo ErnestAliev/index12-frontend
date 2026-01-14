@@ -3034,6 +3034,75 @@ export const useMainStore = defineStore('mainStore', () => {
         return periodFilter.value;
     }
 
+    // 🔥 SINGLE SOURCE OF TRUTH FOR DATE RANGES
+    // This computed property unifies periodFilter and projection into one effective range
+    // ALL calculations, visualizations, and balance widgets MUST use this
+    const effectiveDateRange = computed(() => {
+        // If user explicitly set custom period filter - use it
+        if (periodFilter.value.mode === 'custom' && periodFilter.value.customStart && periodFilter.value.customEnd) {
+            return {
+                start: new Date(periodFilter.value.customStart),
+                end: new Date(periodFilter.value.customEnd),
+                source: 'periodFilter'
+            };
+        }
+
+        // Otherwise use projection range (default behavior)
+        if (projection.value && projection.value.rangeStartDate && projection.value.rangeEndDate) {
+            return {
+                start: new Date(projection.value.rangeStartDate),
+                end: new Date(projection.value.rangeEndDate),
+                source: 'projection'
+            };
+        }
+
+        // Fallback: today -> end of current month
+        const today = new Date();
+        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return {
+            start: today,
+            end: endOfMonth,
+            source: 'fallback'
+        };
+    });
+
+    // Set projection to end of current month (default startup behavior)
+    async function setProjectionToEndOfMonth() {
+        const today = new Date();
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+        console.log('[Date Range] Setting projection to end of current month:', {
+            from: startOfMonth.toDateString(),
+            to: endOfMonth.toDateString()
+        });
+
+        // Calculate days in month
+        const diffTime = endOfMonth.getTime() - startOfMonth.getTime();
+        const totalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+        projection.value = {
+            mode: 'current_month',
+            totalDays: totalDays,
+            rangeStartDate: startOfMonth,
+            rangeEndDate: endOfMonth,
+            futureIncomeSum: 0,
+            futureExpenseSum: 0
+        };
+
+        // Fetch operations for this range (without loadCalculationData which overwrites projection)
+        const ps = useProjectionStore();
+        ps.setCalculationStatus('calculating');
+        try {
+            await fetchOperationsRange(startOfMonth, endOfMonth);
+            recalculateGlobalBalance(endOfMonth);
+            ps.setCalculationStatus('done');
+        } catch (e) {
+            console.error('[setProjectionToEndOfMonth] Error:', e);
+            ps.setCalculationStatus('idle');
+        }
+    }
+
     // 🟢 EXPORT ALL
     return {
         cacheVersion,
@@ -3042,6 +3111,10 @@ export const useMainStore = defineStore('mainStore', () => {
         periodFilter,
         setPeriodFilter,
         getPeriodFilter,
+
+        // 🔥 Unified date range (SINGLE SOURCE OF TRUTH)
+        effectiveDateRange,
+        setProjectionToEndOfMonth,
 
         // 🟢 Exporting helper so other stores (projectionStore) can use it
         _idsMatch,

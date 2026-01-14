@@ -64,8 +64,8 @@ const isPeriodFilterActive = computed(() => {
   const filter = mainStore.periodFilter;
   if (!filter) return false;
   
-  // Default mode is "currentMonth" - if it's something else, filter is active
-  if (filter.mode !== 'currentMonth') return true;
+  // Default mode is "all" - if it's something else, filter is active
+  if (filter.mode !== 'all') return true;
   
   return false;
 });
@@ -884,17 +884,43 @@ const _parseDateKey = (dateKey) => {
 
 const VISIBLE_COLS = 12;
 const CENTER_INDEX = Math.floor((VISIBLE_COLS - 1) / 2);
-const viewMode = ref('3m'); // 🔴 CHANGED: загружаем 3 месяца для скролла
+const viewMode = ref('3m'); // 🔴 VISUALIZATION ONLY - does NOT affect calculations
 const isScrollActive = computed(() => true); // 🔴 FIXED: скролл всегда активен
-const totalDays = computed(() => mainStore.computeTotalDaysForMode(viewMode.value, today.value));
+// 🔥 UNIFIED: totalDays comes from projection, NOT from viewMode
+const totalDays = computed(() => mainStore.projection?.totalDays || 30);
 watch(totalDays, async () => { await nextTick(); updateScrollbarMetrics(); });
-const globalTodayIndex = computed(() => (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2));
+
+// 🔥 SYNCHRONIZED WITH PROJECTION: globalTodayIndex is days from projection.rangeStartDate to today
+const globalTodayIndex = computed(() => {
+  const startDate = mainStore.projection?.rangeStartDate;
+  if (!startDate) return 0;
+  
+  const start = new Date(startDate); // Convert string to Date
+  start.setHours(0, 0, 0, 0);
+  const tod = new Date(today.value);
+  tod.setHours(0, 0, 0, 0);
+  
+  // Days from projection start to today
+  const diffTime = tod.getTime() - start.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  
+  return Math.max(0, Math.min(diffDays, totalDays.value - 1));
+});
+
 const virtualStartIndex = ref(0);
 const globalIndexFromLocal = (localIndex) => virtualStartIndex.value + localIndex;
+
+// 🔥 SYNCHRONIZED WITH PROJECTION: build dates from projection.rangeStartDate
 const dateFromGlobalIndex = (globalIndex) => {
-  const delta = globalIndex - globalTodayIndex.value;
-  const t = today.value;
-  const d = new Date(t); d.setDate(t.getDate() + delta); return d;
+  const startDate = mainStore.projection?.rangeStartDate;
+  if (!startDate) {
+    // Fallback if projection not loaded
+    return new Date(today.value);
+  }
+  
+  const d = new Date(startDate); // Convert string to Date
+  d.setDate(d.getDate() + globalIndex);
+  return d;
 };
 
 const visibleDays = ref([]);
@@ -1291,28 +1317,16 @@ const showScrollbar = () => {
   }, 1500);
 };
 
-// 🔴 NEW: Автоматическое расширение диапазона при скролле к краю
+// 🔥 DISABLED: Auto-expand is disabled - projection controlled only via PeriodSelector
+// User must explicitly choose date range via PeriodSelector
+// This ensures stable balance calculations
 const autoExpandTimeline = () => {
-  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-  const currentIndex = virtualStartIndex.value;
-  const buffer = 15; // Буфер: расширяем за 15 дней до края
-  
-  // Проверяем близость к краю (слева или справа)
-  const nearStart = currentIndex < buffer;
-  const nearEnd = currentIndex > maxVirtual - buffer;
-  
-  if (nearStart || nearEnd) {
-    // Расширяем диапазон: 3m → 6m → 1y
-    if (viewMode.value === '3m') {
-      console.log('[AutoExpand] Расширяем с 3м до 6м');
-      viewMode.value = '6m';
-    } else if (viewMode.value === '6m') {
-      console.log('[AutoExpand] Расширяем с 6м до 1 года');
-      viewMode.value = '1y';
-    }
-    // Если уже 1y - больше не расширяем
-  }
+  // Disabled - projection is now single source of truth
+  // Only PeriodSelector can change projection
+  return;
 };
+
+
 
 const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); showScrollbar(); autoExpandTimeline(); } } } };
 const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
@@ -1344,7 +1358,22 @@ const onChangeTimelineWidth = async (newWidth) => {
   updateScrollbarMetrics();
 };
 const onWindowResize = () => { applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); };
-const checkDayChange = () => { const currentToday = initializeToday(); if (!sameDay(currentToday, today.value)) { today.value = currentToday; const todayDay = getDayOfYear(today.value); mainStore.setToday(todayDay); if (mainStore.user && !mainStore.isAuthLoading) { centerToday(); recalcProjectionForCurrentView(); } } };
+// Check for day change and re-center timeline on new today
+const checkDayChange = () => {
+  const currentToday = initializeToday();
+  if (!sameDay(currentToday, today.value)) {
+    today.value = currentToday;
+    const todayDay = getDayOfYear(today.value);
+    mainStore.setToday(todayDay);
+    
+    if (mainStore.user && !mainStore.isAuthLoading) {
+      // 🔥 Center timeline on new today
+      centerToday();
+      console.log('[Desktop] Day changed - centered on new today');
+      // DO NOT recalc projection - it stays the same until user changes it
+    }
+  }
+};
 let dayChangeCheckerInterval = null;
 let resizeObserver = null;
 
@@ -1497,9 +1526,13 @@ onMounted(async () => {
     window.addEventListener('resize', onWindowResize); 
     updateScrollbarMetrics(); 
     
-    // Preload ALL historical data (1 year) to populate allKnownOperations
-    await mainStore.loadCalculationData('1y', new Date());
-    await recalcProjectionForCurrentView();
+    // 🔥 UNIFIED DATE RANGE: Load to end of current month (single source of truth)
+    console.log('[Desktop] Initializing with projection to end of current month');
+    await mainStore.setProjectionToEndOfMonth();
+    
+    // Center timeline on today after loading projection
+    centerToday();
+    console.log('[Desktop] Timeline centered on today');
 
     // 🟢 Delay background snapshot significantly to let UI settle
     setTimeout(() => {

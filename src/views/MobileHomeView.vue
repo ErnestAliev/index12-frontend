@@ -759,236 +759,19 @@ const onChartScroll = (left) => {
   autoExpandMobileTimeline(el);
 };
 
-// 🔴 AUTO-EXPAND: Mode-based expansion with fixed edges
+// 🔥 DISABLED: Auto-expand is disabled - projection controlled only via MobilePeriodSelector
+// User must explicitly choose date range via MobilePeriodSelector
+// This ensures stable balance calculations (no "jumping" balances)
 let expandDebounce = null;
 let lastScrollCenter = 0;
-let expansionMode = 'neutral'; // 'neutral', 'forward', 'backward'
-let justReset = false; // Prevent expansion right after reset
-
-const FIXED_PAST_DAYS = 15;   // When expanding forward, past stays at -15d
-const FIXED_FUTURE_DAYS = 15; // When expanding backward, future stays at +15d
-const MAX_EXPAND_MONTHS = 6;  // Max 6 months in expansion direction
+let expansionMode = 'neutral'; // Kept for potential future use
+let justReset = false;
+let lastEdge = null;
 
 const autoExpandMobileTimeline = (scrollElement) => {
-  if (!scrollElement || !mainStore.projection || isExpanding) return;
-  
-  if (expandDebounce) {
-    clearTimeout(expandDebounce);
-  }
-  
-  expandDebounce = setTimeout(() => {
-    const scrollLeft = scrollElement.scrollLeft;
-    const scrollWidth = scrollElement.scrollWidth;
-    const clientWidth = scrollElement.clientWidth;
-    const scrollRight = scrollWidth - (scrollLeft + clientWidth);
-    
-    const buffer = 50;
-    const atLeftEdge = scrollLeft < buffer;
-    const atRightEdge = scrollRight < buffer;
-    
-    const scrollCenter = scrollLeft + clientWidth / 2;
-    const totalCenter = scrollWidth / 2;
-    const distanceFromCenter = scrollCenter - totalCenter;
-    
-    const scrollingForward = scrollCenter > lastScrollCenter;
-    const scrollingBackward = scrollCenter < lastScrollCenter;
-    lastScrollCenter = scrollCenter;
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const proj = mainStore.projection;
-    const currentStart = new Date(proj.rangeStartDate);
-    const currentEnd = new Date(proj.rangeEndDate);
-    
-    const daysFromTodayStart = Math.round((today - currentStart) / (1000 * 60 * 60 * 24));
-    const daysFromTodayEnd = Math.round((currentEnd - today) / (1000 * 60 * 60 * 24));
-    
-    const centerZone = scrollWidth * 0.2;
-    const isNearCenter = Math.abs(distanceFromCenter) < centerZone;
-    
-    // 🔴 DETECT MODE CHANGE & RESET RANGE
-    const previousMode = expansionMode;
-    
-    if (atRightEdge && expansionMode !== 'forward') {
-      expansionMode = 'forward';
-      console.log(`[Mobile Mode] → FORWARD mode (future expansion)`);
-      
-      // Reset to ±15d when switching from BACKWARD
-      if (previousMode === 'backward') {
-        isExpanding = true;
-        justReset = true; // Block next expand
-        
-        const newStart = new Date(today);
-        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
-        const newEnd = new Date(today);
-        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
-        
-        const diffTime = newEnd.getTime() - newStart.getTime();
-        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
-        mainStore.projection = {
-          ...proj,
-          totalDays: newTotalDays,
-          rangeStartDate: newStart,
-          rangeEndDate: newEnd,
-        };
-        
-        console.log(`[Mobile Mode] Reset range to ±${FIXED_PAST_DAYS}d`);
-        setTimeout(() => { 
-          isExpanding = false;
-          // Clear reset flag after delay
-          setTimeout(() => { justReset = false; }, 500);
-        }, 200);
-        return;
-      }
-    } else if (atLeftEdge && expansionMode !== 'backward') {
-      expansionMode = 'backward';
-      console.log(`[Mobile Mode] → BACKWARD mode (past expansion)`);
-      
-      // Reset to ±15d when switching from FORWARD
-      if (previousMode === 'forward') {
-        isExpanding = true;
-        justReset = true; // Block next expand
-        
-        const newStart = new Date(today);
-        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
-        const newEnd = new Date(today);
-        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
-        
-        const diffTime = newEnd.getTime() - newStart.getTime();
-        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
-        mainStore.projection = {
-          ...proj,
-          totalDays: newTotalDays,
-          rangeStartDate: newStart,
-          rangeEndDate: newEnd,
-        };
-        
-        console.log(`[Mobile Mode] Reset range to ±${FIXED_FUTURE_DAYS}d`);
-        setTimeout(() => { 
-          isExpanding = false;
-          // Clear reset flag after delay
-          setTimeout(() => { justReset = false; }, 500);
-        }, 200);
-        return;
-      }
-    } else if (isNearCenter && Math.abs(daysFromTodayStart - 15) < 5 && Math.abs(daysFromTodayEnd - 15) < 5) {
-      if (expansionMode !== 'neutral') {
-        expansionMode = 'neutral';
-        console.log(`[Mobile Mode] → NEUTRAL mode (centered)`);
-      }
-    }
-    
-    // 🔴 COLLAPSE: When scrolling back to center
-    if (isNearCenter && !isExpanding) {
-      let shouldCollapse = false;
-      let newStart = currentStart;
-      let newEnd = currentEnd;
-      
-      if (expansionMode === 'forward' && scrollingBackward && daysFromTodayEnd > 15) {
-        // Collapse future, keep past fixed at -15d
-        newEnd = new Date(currentEnd);
-        newEnd.setMonth(newEnd.getMonth() - 1);
-        
-        newStart = new Date(today);
-        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
-        
-        shouldCollapse = true;
-        console.log(`[Mobile Collapse] Future: ${daysFromTodayEnd}d → ${Math.round((newEnd - today) / (1000 * 60 * 60 * 24))}d (past fixed at -${FIXED_PAST_DAYS}d)`);
-      } else if (expansionMode === 'backward' && scrollingForward && daysFromTodayStart > 15) {
-        // Collapse past, keep future fixed at +15d
-        newStart = new Date(currentStart);
-        newStart.setMonth(newStart.getMonth() + 1);
-        
-        newEnd = new Date(today);
-        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
-        
-        shouldCollapse = true;
-        console.log(`[Mobile Collapse] Past: ${daysFromTodayStart}d → ${Math.round((today - newStart) / (1000 * 60 * 60 * 24))}d (future fixed at +${FIXED_FUTURE_DAYS}d)`);
-      }
-      
-      if (shouldCollapse) {
-        isExpanding = true;
-        
-        const diffTime = newEnd.getTime() - newStart.getTime();
-        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
-        mainStore.projection = {
-          ...proj,
-          totalDays: newTotalDays,
-          rangeStartDate: newStart,
-          rangeEndDate: newEnd,
-        };
-        
-        setTimeout(() => { isExpanding = false; }, 200);
-        return;
-      }
-    }
-    
-    // 🔥 EXPAND: Add 1 month in direction of mode (skip if just reset)
-    if ((atLeftEdge || atRightEdge) && !isExpanding && !justReset) {
-      let shouldExpand = false;
-      let newStart = currentStart;
-      let newEnd = currentEnd;
-      
-      const monthsForward = Math.round((currentEnd - today) / (1000 * 60 * 60 * 24 * 30));
-      const monthsBackward = Math.round((today - currentStart) / (1000 * 60 * 60 * 24 * 30));
-      
-      if (atRightEdge && expansionMode === 'forward' && monthsForward < MAX_EXPAND_MONTHS) {
-        // Expand future, fix past at -15d
-        newStart = new Date(today);
-        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
-        
-        newEnd = new Date(currentEnd);
-        newEnd.setMonth(newEnd.getMonth() + 1);
-        
-        shouldExpand = true;
-        console.log(`[Mobile Expand] FORWARD: +1m future (${monthsForward}m → ${monthsForward + 1}m, past fixed at -${FIXED_PAST_DAYS}d)`);
-      } else if (atLeftEdge && expansionMode === 'backward' && monthsBackward < MAX_EXPAND_MONTHS) {
-        // Expand past gradually by 1 month, fix future at +15d
-        newStart = new Date(currentStart);
-        newStart.setMonth(newStart.getMonth() - 1); // Add 1 month backward
-        
-        newEnd = new Date(today);
-        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
-        
-        shouldExpand = true;
-        console.log(`[Mobile Expand] BACKWARD: +1m past (${monthsBackward}m → ${monthsBackward + 1}m, future fixed at +${FIXED_FUTURE_DAYS}d)`);
-      }
-      
-      if (shouldExpand) {
-        isExpanding = true;
-        
-        const scrollRatio = scrollLeft / scrollWidth;
-        const diffTime = newEnd.getTime() - newStart.getTime();
-        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
-        mainStore.projection = {
-          ...proj,
-          totalDays: newTotalDays,
-          rangeStartDate: newStart,
-          rangeEndDate: newEnd,
-        };
-        
-        setTimeout(() => {
-          if (scrollElement) {
-            const newScrollWidth = scrollElement.scrollWidth;
-            const newScrollLeft = scrollRatio * newScrollWidth;
-            scrollElement.scrollLeft = newScrollLeft;
-            
-            if (chartRef.value) {
-              chartRef.value.setScroll(newScrollLeft);
-            }
-          }
-          isExpanding = false;
-        }, 200);
-      }
-    } else if (justReset) {
-      console.log(`[Mobile] Skipping expand - just reset`);
-    }
-  }, 800); // Reduced from 1s to 800ms
+  // Disabled - projection is now single source of truth
+  // Only MobilePeriodSelector can change projection
+  return;
 };
 
 let isExpanding = false;
@@ -1136,19 +919,14 @@ const initializeMobileView = async () => {
     const oneDay = 1000 * 60 * 60 * 24;
     mainStore.setToday(Math.floor(diff / oneDay));
 
-    // 🔥 OPTIMIZATION: Load timeline FIRST for instant graph display
-    // Widgets load in background - they're secondary
-    
-    // 3. Загрузка Таймлайна (ПРИОРИТЕТ)
+    // 🔥 UNIFIED DATE RANGE: Load to end of current month (SINGLE SOURCE OF TRUTH)
+    // This matches desktop behavior and provides stable balances
     isTimelineLoading.value = true;
-    console.log('[MOBILE GRAPH DEBUG] Starting timeline load...');
+    console.log('[Mobile] Initializing with projection to end of current month');
     try {
-        console.log('[MOBILE GRAPH DEBUG] projection.mode:', mainStore.projection?.mode);
-        if (!mainStore.projection?.mode) {
-            console.log('[MOBILE GRAPH DEBUG] No projection mode, setting to 12d');
-            await mainStore.updateFutureProjectionByMode('12d', today);
-        }
-        const modeToLoad = mainStore.projection.mode || '12d';
+        await mainStore.setProjectionToEndOfMonth();
+        
+        const modeToLoad = mainStore.projection.mode || 'current_month';
         console.log('[MOBILE GRAPH DEBUG] Mode to load:', modeToLoad);
 
         // Load data for current view mode only (no double loading)
