@@ -28,7 +28,7 @@
     /* Виджет: Фон и границы */
     --widget-background: #282828;
     /* Основной фон виджета */
-    --widget-border: transparent;
+    --widget-border: #656565;
     /* Граница виджета - убрана (сетка создаёт разделение) */
     --widget-border-right: transparent;
     /* Правая граница между виджетами - убрана */
