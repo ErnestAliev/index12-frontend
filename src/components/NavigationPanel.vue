@@ -64,59 +64,42 @@ onMounted(() => {
 <template>
   <div class="nav-panel">
     <button class="nav-arrow" @click="changeView(1)">▲</button>
-    
-    <div class="nav-display">
-      <div class="nav-num">{{ currentView.num }}</div>
-      <div class="nav-unit">{{ currentView.unit }}</div>
-    </div>
-    
     <button class="nav-arrow" @click="changeView(-1)">▼</button>
   </div>
 </template>
 
 <style scoped>
-/* (Стили остаются без изменений) */
 .nav-panel {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding-top: 1rem;
+  justify-content: space-between;
+  padding: 1rem 0;
   box-sizing: border-box;
   background-color: var(--nav-panel-bg);
   border-right: 1px solid var(--nav-panel-border);
 }
+
 .nav-arrow {
   border: none;
   background: none;
   color: var(--nav-arrow-color);
-  font-size: 2em;
+  font-size: 1.8em;
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color 0.2s, transform 0.2s;
+  padding: 8px;
+  border-radius: 4px;
 }
+
 .nav-arrow:hover {
   color: var(--nav-arrow-hover);
+  background: rgba(255, 255, 255, 0.05);
+  transform: scale(1.1);
 }
-.nav-display {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  user-select: none;
-}
-.nav-num {
-  font-size: 2.5em;
-  font-weight: bold;
-  color: var(--nav-num-color);
-  line-height: 1;
-}
-.nav-unit {
-  font-size: 0.8em;
-  color: var(--nav-unit-color);
-  letter-spacing: 0.1em;
+
+.nav-arrow:active {
+  transform: scale(0.95);
 }
 </style>

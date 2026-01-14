@@ -25,12 +25,24 @@ const getDayOfYear = (date) => {
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
 const generateDays = () => {
+  console.log('[MOBILE CHART] generateDays called');
   const proj = mainStore.projection;
-  if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) return;
+  console.log('[MOBILE CHART] projection:', proj);
+  
+  if (!proj || !proj.rangeStartDate || !proj.rangeEndDate) {
+    console.error('[MOBILE CHART] Missing projection data:', {
+      hasProj: !!proj,
+      hasStartDate: !!proj?.rangeStartDate,
+      hasEndDate: !!proj?.rangeEndDate
+    });
+    return;
+  }
 
   const start = new Date(proj.rangeStartDate);
   const diffTime = new Date(proj.rangeEndDate).getTime() - start.getTime();
   const totalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  
+  console.log('[MOBILE CHART] Generating', totalDays, 'days from', proj.rangeStartDate, 'to', proj.rangeEndDate);
   
   const days = [];
   const todayReal = new Date();
@@ -47,6 +59,7 @@ const generateDays = () => {
     });
   }
   visibleDays.value = days;
+  console.log('[MOBILE CHART] Generated', visibleDays.value.length, 'visible days');
 };
 
 watch(() => mainStore.projection, generateDays, { deep: true, immediate: true });

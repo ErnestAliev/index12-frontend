@@ -12,8 +12,6 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits } from 'vue';
-
 const props = defineProps({
   show: Boolean,
   title: { type: String, default: 'Подтверждение' },

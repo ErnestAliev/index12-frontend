@@ -4,9 +4,18 @@ import { useMainStore } from './mainStore';
 
 const VIEW_MODE_DAYS = {
   '12d': { total: 12 },
+  '1w': { total: 7 },    // 1 week - до пятницы
+  '2w': { total: 14 },   // 2 weeks
+  '3w': { total: 21 },   // 3 weeks
+  '4w': { total: 28 },   // 4 weeks (1 month)
   '1m': { total: 30 },
+  '6w': { total: 42 },   // 6 weeks
+  '8w': { total: 56 },   // 8 weeks (2 months)
   '3m': { total: 90 },
+  '12w': { total: 84 },  // 12 weeks (3 months)
+  '16w': { total: 112 }, // 16 weeks (4 months)
   '6m': { total: 180 },
+  '24w': { total: 168 }, // 24 weeks (~6 months, max for mobile)
   '1y': { total: 365 }
 };
 
@@ -115,6 +124,9 @@ export const useProjectionStore = defineStore('projection', () => {
 
   function updateProjectionState(mode, today = new Date()) {
     const base = new Date(today); base.setHours(0, 0, 0, 0);
+
+    // 🔥 CRITICAL FIX: Calculate date range based on mode
+    // Previous logic set rangeEndDate to end of year for all modes, causing graph crashes
     const { startDate, endDate } = _calculateDateRangeWithYear(mode, base);
 
     calculationStatus.value = 'idle';
@@ -123,7 +135,7 @@ export const useProjectionStore = defineStore('projection', () => {
       mode,
       totalDays: computeTotalDaysForMode(mode),
       rangeStartDate: startDate,
-      rangeEndDate: endDate,
+      rangeEndDate: endDate, // ✅ Now syncs with mode
       futureIncomeSum: 0,
       futureExpenseSum: 0
     };
@@ -171,6 +183,33 @@ export const useProjectionStore = defineStore('projection', () => {
 
     const result = [];
 
+    // 🟢 Get period filter from mainStore
+    const periodFilter = mainStore.periodFilter;
+    let filterStartMs = null;
+    let filterEndMs = null;
+
+    if (periodFilter && periodFilter.mode === 'custom') {
+      // 🔥 CRITICAL: Parse dates preserving local timezone (avoid UTC shift)
+      const parseLocalDate = (isoString) => {
+        const date = new Date(isoString);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const day = date.getDate();
+        return new Date(year, month, day);
+      };
+
+      if (periodFilter.customStart) {
+        const start = parseLocalDate(periodFilter.customStart);
+        start.setHours(0, 0, 0, 0);
+        filterStartMs = start.getTime();
+      }
+      if (periodFilter.customEnd) {
+        const end = parseLocalDate(periodFilter.customEnd);
+        end.setHours(23, 59, 59, 999);
+        filterEndMs = end.getTime();
+      }
+    }
+
     // Prefer canonical ops if available (so future ops are not limited by view range)
     const opsSource = Array.isArray(mainStore.getAllRelevantOps)
       ? mainStore.getAllRelevantOps
@@ -179,7 +218,36 @@ export const useProjectionStore = defineStore('projection', () => {
     for (const op of opsSource) {
       if (!op?.date) continue;
       const t = new Date(op.date).getTime();
-      if (t > cutOffTime && t <= endDateMs) result.push(op);
+      if (t > cutOffTime && t <= endDateMs) {
+        // 🟢 Filter by period
+        if (filterStartMs !== null && t < filterStartMs) continue;
+        if (filterEndMs !== null && t > filterEndMs) continue;
+        result.push(op);
+      }
+    }
+
+    // Prepayments
+    for (const prep of mainStore.prepayments) {
+      if (!prep?.date) continue;
+      const t = new Date(prep.date).getTime();
+      if (t > cutOffTime && t <= endDateMs) {
+        // 🟢 Filter by period
+        if (filterStartMs !== null && t < filterStartMs) continue;
+        if (filterEndMs !== null && t > filterEndMs) continue;
+        result.push(prep);
+      }
+    }
+
+    // Recurring operations
+    for (const recOp of mainStore.recurringOperations) {
+      if (!recOp?.nextOccurrence) continue;
+      const t = new Date(recOp.nextOccurrence).getTime();
+      if (t > cutOffTime && t <= endDateMs) {
+        // 🟢 Filter by period
+        if (filterStartMs !== null && t < filterStartMs) continue;
+        if (filterEndMs !== null && t > filterEndMs) continue;
+        result.push(recOp);
+      }
     }
 
     return result;

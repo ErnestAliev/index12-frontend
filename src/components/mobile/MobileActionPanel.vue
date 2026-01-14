@@ -1,9 +1,13 @@
 <script setup>
-import { computed, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import MobilePeriodSelector from '@/components/mobile/MobilePeriodSelector.vue';
 
 const emit = defineEmits(['action', 'open-ai', 'open-projects', 'open-user-menu']);
 const mainStore = useMainStore();
+
+// Period selector modal
+const showPeriodSelector = ref(false);
 
 const viewModes = [
   { key: '12d', num: '12', unit: 'ДНЕЙ' },
@@ -59,14 +63,37 @@ const openAi = () => emit('open-ai');
 const openProjects = () => emit('open-projects');
 const openUserMenu = () => emit('open-user-menu');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
+const openPeriodSelector = () => showPeriodSelector.value = true;
+
+// Period display text
+const periodDisplayText = computed(() => {
+  const filter = mainStore.periodFilter;
+  if (!filter || filter.mode === 'all') {
+    return 'Весь период';
+  }
+  if (filter.mode === 'custom' && filter.customStart && filter.customEnd) {
+    const start = new Date(filter.customStart);
+    const end = new Date(filter.customEnd);
+    const formatShort = (d) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(d);
+    return `${formatShort(start)}—${formatShort(end)}`;
+  }
+  return 'Период';
+});
 
 onMounted(async () => {
+    console.log('[MOBILE ACTION PANEL] onMounted called');
+    console.log('[MOBILE ACTION PANEL] projection.mode:', mainStore.projection?.mode);
+    
     // Если при загрузке режим не определен — ставим дефолт '12d'
     if (!mainStore.projection?.mode) {
+        console.log('[MOBILE ACTION PANEL] No projection mode, setting to 12d');
         const today = new Date();
         mainStore.setToday(getDayOfYear(today));
         await mainStore.updateFutureProjectionByMode('12d', today);
+        console.log('[MOBILE ACTION PANEL] After updateFutureProjectionByMode, projection.mode:', mainStore.projection?.mode);
         // Данные загрузит HomeView или watcher
+    } else {
+        console.log('[MOBILE ACTION PANEL] Projection mode already set:', mainStore.projection.mode);
     }
 });
 </script>
@@ -95,33 +122,21 @@ onMounted(async () => {
         </svg>
       </button>
       
-      <!-- 3. Переключатель режимов (disabled for manager) -->
-      <div class="nav-center" :class="{ 'disabled': mainStore.workspaceRole === 'manager' }">
-        <button 
-          class="arrow-btn" 
-          :disabled="mainStore.workspaceRole === 'manager'"
-          @click="switchViewMode(-1)"
-        >
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        
-        <div 
-          class="period-label" 
-          :class="{ 'disabled': mainStore.workspaceRole === 'manager' }"
-          @click="mainStore.workspaceRole !== 'manager' && switchViewMode(1)"
-        >
-          <span class="days-num">{{ currentDisplay.num }}</span>
-          <span class="days-text">{{ currentDisplay.unit || currentDisplay.text }}</span>
-        </div>
-        
-        <button 
-          class="arrow-btn" 
-          :disabled="mainStore.workspaceRole === 'manager'"
-          @click="switchViewMode(1)"
-        >
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-        </button>
-      </div>
+      <!-- 3. Period Selector (disabled for manager) -->
+      <button 
+        class="period-button"
+        :disabled="mainStore.workspaceRole === 'manager'"
+        @click="openPeriodSelector"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+        <span class="period-text">{{ periodDisplayText }}</span>
+        <div v-if="mainStore.periodFilter?.mode === 'custom'" class="period-indicator"></div>
+      </button>
 
       <!-- 4. Аватар пользователя (always active) -->
       <button class="icon-circle user-avatar" @click="openUserMenu" title="Профиль">
@@ -147,6 +162,13 @@ onMounted(async () => {
         </svg>
       </button>
     </div>
+    
+    <!-- Period Selector Modal -->
+    <MobilePeriodSelector 
+      v-if="showPeriodSelector" 
+      @close="showPeriodSelector = false"
+      @apply="showPeriodSelector = false"
+    />
   </div>
 </template>
 
@@ -171,37 +193,43 @@ onMounted(async () => {
   gap: 8px;
 }
 
-/* Уменьшенный центральный переключатель */
-.nav-center { 
-  display: flex; 
-  align-items: center; 
-  gap: 12px;
+/* Period Button */
+.period-button {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: var(--color-text, #fff);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
   flex-shrink: 0;
+  position: relative;
 }
 
-.arrow-btn { 
-  background: none; 
-  border: none; 
-  padding: 6px;
-  cursor: pointer; 
-  display: flex; 
-  align-items: center; 
-  justify-content: center; 
+.period-button:active {
+  transform: scale(0.95);
+  background: rgba(255,255,255,0.1);
 }
-.arrow-btn:active { opacity: 0.7; transform: scale(0.95); }
 
-.period-label { 
-  display: flex; 
-  flex-direction: column; 
-  align-items: center; 
-  cursor: pointer; 
-  line-height: 1; 
-  user-select: none; 
-  width: 60px;
-  flex-shrink: 0;
+.period-text {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
-.days-num { font-size: 18px; font-weight: 700; color: var(--color-text, #fff); }
-.days-text { font-size: 8px; color: var(--text-mute, #888); font-weight: 600; text-transform: uppercase; margin-top: 2px; }
+
+.period-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary, #34c759);
+}
 
 /* Кнопки (AI, Projects, Avatar, Widgets) */
 .icon-circle, .header-expand-btn {
@@ -242,14 +270,11 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* Disabled state for nav-center container */
-.nav-center.disabled {
+/* Disabled state for period button */
+.period-button:disabled {
   opacity: 0.3;
-  pointer-events: none;
-}
-
-.nav-center.disabled .period-label {
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .icon-circle svg, .header-expand-btn svg { display: block; }

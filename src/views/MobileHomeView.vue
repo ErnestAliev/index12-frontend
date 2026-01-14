@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
+import { onMounted, onUnmounted, onBeforeUnmount, ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -743,6 +743,9 @@ const onTimelineScroll = (event) => {
   isTimelineScrolling = true;
   if (chartRef.value) { chartRef.value.setScroll(event.target.scrollLeft); }
   clearTimeout(syncTimeout); syncTimeout = setTimeout(() => { isTimelineScrolling = false; }, 150);
+  
+  // 🔴 NEW: Auto-expand timeline when scrolling near edges (mobile)
+  autoExpandMobileTimeline(event.target);
 };
 
 const onChartScroll = (left) => {
@@ -751,7 +754,244 @@ const onChartScroll = (left) => {
   const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
   if (el) { el.scrollLeft = left; }
   clearTimeout(syncTimeout); syncTimeout = setTimeout(() => { isChartScrolling = false; }, 150);
+  
+  // 🔴 NEW: Auto-expand timeline when scrolling near edges (mobile)
+  autoExpandMobileTimeline(el);
 };
+
+// 🔴 AUTO-EXPAND: Mode-based expansion with fixed edges
+let expandDebounce = null;
+let lastScrollCenter = 0;
+let expansionMode = 'neutral'; // 'neutral', 'forward', 'backward'
+let justReset = false; // Prevent expansion right after reset
+
+const FIXED_PAST_DAYS = 15;   // When expanding forward, past stays at -15d
+const FIXED_FUTURE_DAYS = 15; // When expanding backward, future stays at +15d
+const MAX_EXPAND_MONTHS = 6;  // Max 6 months in expansion direction
+
+const autoExpandMobileTimeline = (scrollElement) => {
+  if (!scrollElement || !mainStore.projection || isExpanding) return;
+  
+  if (expandDebounce) {
+    clearTimeout(expandDebounce);
+  }
+  
+  expandDebounce = setTimeout(() => {
+    const scrollLeft = scrollElement.scrollLeft;
+    const scrollWidth = scrollElement.scrollWidth;
+    const clientWidth = scrollElement.clientWidth;
+    const scrollRight = scrollWidth - (scrollLeft + clientWidth);
+    
+    const buffer = 50;
+    const atLeftEdge = scrollLeft < buffer;
+    const atRightEdge = scrollRight < buffer;
+    
+    const scrollCenter = scrollLeft + clientWidth / 2;
+    const totalCenter = scrollWidth / 2;
+    const distanceFromCenter = scrollCenter - totalCenter;
+    
+    const scrollingForward = scrollCenter > lastScrollCenter;
+    const scrollingBackward = scrollCenter < lastScrollCenter;
+    lastScrollCenter = scrollCenter;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const proj = mainStore.projection;
+    const currentStart = new Date(proj.rangeStartDate);
+    const currentEnd = new Date(proj.rangeEndDate);
+    
+    const daysFromTodayStart = Math.round((today - currentStart) / (1000 * 60 * 60 * 24));
+    const daysFromTodayEnd = Math.round((currentEnd - today) / (1000 * 60 * 60 * 24));
+    
+    const centerZone = scrollWidth * 0.2;
+    const isNearCenter = Math.abs(distanceFromCenter) < centerZone;
+    
+    // 🔴 DETECT MODE CHANGE & RESET RANGE
+    const previousMode = expansionMode;
+    
+    if (atRightEdge && expansionMode !== 'forward') {
+      expansionMode = 'forward';
+      console.log(`[Mobile Mode] → FORWARD mode (future expansion)`);
+      
+      // Reset to ±15d when switching from BACKWARD
+      if (previousMode === 'backward') {
+        isExpanding = true;
+        justReset = true; // Block next expand
+        
+        const newStart = new Date(today);
+        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
+        const newEnd = new Date(today);
+        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
+        
+        const diffTime = newEnd.getTime() - newStart.getTime();
+        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        mainStore.projection = {
+          ...proj,
+          totalDays: newTotalDays,
+          rangeStartDate: newStart,
+          rangeEndDate: newEnd,
+        };
+        
+        console.log(`[Mobile Mode] Reset range to ±${FIXED_PAST_DAYS}d`);
+        setTimeout(() => { 
+          isExpanding = false;
+          // Clear reset flag after delay
+          setTimeout(() => { justReset = false; }, 500);
+        }, 200);
+        return;
+      }
+    } else if (atLeftEdge && expansionMode !== 'backward') {
+      expansionMode = 'backward';
+      console.log(`[Mobile Mode] → BACKWARD mode (past expansion)`);
+      
+      // Reset to ±15d when switching from FORWARD
+      if (previousMode === 'forward') {
+        isExpanding = true;
+        justReset = true; // Block next expand
+        
+        const newStart = new Date(today);
+        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
+        const newEnd = new Date(today);
+        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
+        
+        const diffTime = newEnd.getTime() - newStart.getTime();
+        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        mainStore.projection = {
+          ...proj,
+          totalDays: newTotalDays,
+          rangeStartDate: newStart,
+          rangeEndDate: newEnd,
+        };
+        
+        console.log(`[Mobile Mode] Reset range to ±${FIXED_FUTURE_DAYS}d`);
+        setTimeout(() => { 
+          isExpanding = false;
+          // Clear reset flag after delay
+          setTimeout(() => { justReset = false; }, 500);
+        }, 200);
+        return;
+      }
+    } else if (isNearCenter && Math.abs(daysFromTodayStart - 15) < 5 && Math.abs(daysFromTodayEnd - 15) < 5) {
+      if (expansionMode !== 'neutral') {
+        expansionMode = 'neutral';
+        console.log(`[Mobile Mode] → NEUTRAL mode (centered)`);
+      }
+    }
+    
+    // 🔴 COLLAPSE: When scrolling back to center
+    if (isNearCenter && !isExpanding) {
+      let shouldCollapse = false;
+      let newStart = currentStart;
+      let newEnd = currentEnd;
+      
+      if (expansionMode === 'forward' && scrollingBackward && daysFromTodayEnd > 15) {
+        // Collapse future, keep past fixed at -15d
+        newEnd = new Date(currentEnd);
+        newEnd.setMonth(newEnd.getMonth() - 1);
+        
+        newStart = new Date(today);
+        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
+        
+        shouldCollapse = true;
+        console.log(`[Mobile Collapse] Future: ${daysFromTodayEnd}d → ${Math.round((newEnd - today) / (1000 * 60 * 60 * 24))}d (past fixed at -${FIXED_PAST_DAYS}d)`);
+      } else if (expansionMode === 'backward' && scrollingForward && daysFromTodayStart > 15) {
+        // Collapse past, keep future fixed at +15d
+        newStart = new Date(currentStart);
+        newStart.setMonth(newStart.getMonth() + 1);
+        
+        newEnd = new Date(today);
+        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
+        
+        shouldCollapse = true;
+        console.log(`[Mobile Collapse] Past: ${daysFromTodayStart}d → ${Math.round((today - newStart) / (1000 * 60 * 60 * 24))}d (future fixed at +${FIXED_FUTURE_DAYS}d)`);
+      }
+      
+      if (shouldCollapse) {
+        isExpanding = true;
+        
+        const diffTime = newEnd.getTime() - newStart.getTime();
+        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        mainStore.projection = {
+          ...proj,
+          totalDays: newTotalDays,
+          rangeStartDate: newStart,
+          rangeEndDate: newEnd,
+        };
+        
+        setTimeout(() => { isExpanding = false; }, 200);
+        return;
+      }
+    }
+    
+    // 🔥 EXPAND: Add 1 month in direction of mode (skip if just reset)
+    if ((atLeftEdge || atRightEdge) && !isExpanding && !justReset) {
+      let shouldExpand = false;
+      let newStart = currentStart;
+      let newEnd = currentEnd;
+      
+      const monthsForward = Math.round((currentEnd - today) / (1000 * 60 * 60 * 24 * 30));
+      const monthsBackward = Math.round((today - currentStart) / (1000 * 60 * 60 * 24 * 30));
+      
+      if (atRightEdge && expansionMode === 'forward' && monthsForward < MAX_EXPAND_MONTHS) {
+        // Expand future, fix past at -15d
+        newStart = new Date(today);
+        newStart.setDate(newStart.getDate() - FIXED_PAST_DAYS);
+        
+        newEnd = new Date(currentEnd);
+        newEnd.setMonth(newEnd.getMonth() + 1);
+        
+        shouldExpand = true;
+        console.log(`[Mobile Expand] FORWARD: +1m future (${monthsForward}m → ${monthsForward + 1}m, past fixed at -${FIXED_PAST_DAYS}d)`);
+      } else if (atLeftEdge && expansionMode === 'backward' && monthsBackward < MAX_EXPAND_MONTHS) {
+        // Expand past gradually by 1 month, fix future at +15d
+        newStart = new Date(currentStart);
+        newStart.setMonth(newStart.getMonth() - 1); // Add 1 month backward
+        
+        newEnd = new Date(today);
+        newEnd.setDate(newEnd.getDate() + FIXED_FUTURE_DAYS);
+        
+        shouldExpand = true;
+        console.log(`[Mobile Expand] BACKWARD: +1m past (${monthsBackward}m → ${monthsBackward + 1}m, future fixed at +${FIXED_FUTURE_DAYS}d)`);
+      }
+      
+      if (shouldExpand) {
+        isExpanding = true;
+        
+        const scrollRatio = scrollLeft / scrollWidth;
+        const diffTime = newEnd.getTime() - newStart.getTime();
+        const newTotalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        mainStore.projection = {
+          ...proj,
+          totalDays: newTotalDays,
+          rangeStartDate: newStart,
+          rangeEndDate: newEnd,
+        };
+        
+        setTimeout(() => {
+          if (scrollElement) {
+            const newScrollWidth = scrollElement.scrollWidth;
+            const newScrollLeft = scrollRatio * newScrollWidth;
+            scrollElement.scrollLeft = newScrollLeft;
+            
+            if (chartRef.value) {
+              chartRef.value.setScroll(newScrollLeft);
+            }
+          }
+          isExpanding = false;
+        }, 200);
+      }
+    } else if (justReset) {
+      console.log(`[Mobile] Skipping expand - just reset`);
+    }
+  }, 800); // Reduced from 1s to 800ms
+};
+
+let isExpanding = false;
 
 const initScrollSync = () => {
     if (!timelineRef.value) return;
@@ -896,40 +1136,57 @@ const initializeMobileView = async () => {
     const oneDay = 1000 * 60 * 60 * 24;
     mainStore.setToday(Math.floor(diff / oneDay));
 
-    // 3. Загрузка сущностей (Safe Call)
-    isWidgetsLoading.value = true;
-    try {
-        if (typeof mainStore.fetchAllEntities === 'function') {
-            await mainStore.fetchAllEntities();
-        } else {
-            console.error("Critical: mainStore.fetchAllEntities is not a function. Check store initialization.");
-        }
-    } catch (e) {
-        console.error("Widgets Load Error:", e);
-    } finally {
-        isWidgetsLoading.value = false;
-    }
-
-    // 4. Загрузка Таймлайна
+    // 🔥 OPTIMIZATION: Load timeline FIRST for instant graph display
+    // Widgets load in background - they're secondary
+    
+    // 3. Загрузка Таймлайна (ПРИОРИТЕТ)
     isTimelineLoading.value = true;
+    console.log('[MOBILE GRAPH DEBUG] Starting timeline load...');
     try {
+        console.log('[MOBILE GRAPH DEBUG] projection.mode:', mainStore.projection?.mode);
         if (!mainStore.projection?.mode) {
+            console.log('[MOBILE GRAPH DEBUG] No projection mode, setting to 12d');
             await mainStore.updateFutureProjectionByMode('12d', today);
         }
         const modeToLoad = mainStore.projection.mode || '12d';
+        console.log('[MOBILE GRAPH DEBUG] Mode to load:', modeToLoad);
 
         // Load data for current view mode only (no double loading)
         if (typeof mainStore.loadCalculationData === 'function') {
+            console.log('[MOBILE GRAPH DEBUG] Calling loadCalculationData...');
             await mainStore.loadCalculationData(modeToLoad, today);
+            console.log('[MOBILE GRAPH DEBUG] loadCalculationData completed');
+        } else {
+            console.error('[MOBILE GRAPH DEBUG] loadCalculationData is not a function!');
         }
     } catch (e) {
         console.error("Timeline Load Error:", e);
     } finally {
         isTimelineLoading.value = false;
+        console.log('[MOBILE GRAPH DEBUG] Timeline loading finished, isTimelineLoading:', isTimelineLoading.value);
         nextTick(() => {
             initScrollSync();
         });
     }
+    
+    // 4. Загрузка виджетов В ФОНЕ (после графика)
+    console.log('[MOBILE INIT] Timeline ready. Loading widgets in background...');
+    isWidgetsLoading.value = true;
+    // Don't await - load in background
+    setTimeout(async () => {
+        try {
+            if (typeof mainStore.fetchAllEntities === 'function') {
+                await mainStore.fetchAllEntities();
+                console.log('[MOBILE INIT] Widgets loaded successfully');
+            } else {
+                console.error("Critical: mainStore.fetchAllEntities is not a function. Check store initialization.");
+            }
+        } catch (e) {
+            console.error("Widgets Load Error:", e);
+        } finally {
+            isWidgetsLoading.value = false;
+        }
+    }, 100); // Small delay to ensure graph renders first
 };
 
 onMounted(async () => {
@@ -937,6 +1194,33 @@ onMounted(async () => {
   meta.name = "format-detection";
   meta.content = "telephone=no, date=no, email=no, address=no";
   document.getElementsByTagName('head')[0].appendChild(meta);
+
+  // 🔥 CRITICAL: Reset period filter to 'all' mode on mobile to prevent issues
+  // Mobile uses timeline modes (12d, 1m, etc.) not custom date ranges by default
+  console.log('[MOBILE INIT] Resetting periodFilter to all mode');
+  mainStore.setPeriodFilter({
+    mode: 'all',
+    customStart: null,
+    customEnd: null
+  });
+
+  // 🔥 CRITICAL: Force reset projection.mode to 12d on mobile
+  // MOBILE STRATEGY: Fast start (12d) + background expansion to 6m
+  const today = new Date();
+  const getDayOfYear = (date) => {
+    const start = new Date(date.getFullYear(), 0, 0);
+    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+    return Math.floor(diff / 86400000);
+  };
+  
+  console.log('[MOBILE INIT] Current projection.mode:', mainStore.projection?.mode);
+  
+  // 🔥 START WITH CURRENT MONTH (1m) for better coverage
+  console.log('[MOBILE INIT] Setting to 1m (current month) for startup');
+  mainStore.setToday(getDayOfYear(today));
+  await mainStore.updateFutureProjectionByMode('1m', today);
+  
+  console.log('[MOBILE INIT] Current month initialized. Ready for bidirectional expansion.');
 
   window.addEventListener('touchmove', onResizerMove, { passive: false });
   window.addEventListener('touchend', onResizerEnd);
@@ -949,6 +1233,8 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', forceEndResize);
 
   await initializeMobileView();
+  
+  console.log('[MOBILE INIT] Fast load complete. Timeline will auto-expand when scrolling to edges.');
   
   // Global click listener to close context menu when clicking outside (including graphs)
   const handleGlobalMobileClick = (e) => {

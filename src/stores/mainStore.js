@@ -66,7 +66,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     // 🟢 PERIOD FILTER (Фильтр периода для виджетов)
     const periodFilter = ref({
-        mode: 'all', // 'all' | 'currentMonth' | 'previousMonth' | 'custom'
+        mode: 'all', // 'all' | 'currentMonth' | 'previousMonth' | 'custom' - RESET: showing all data
         customStart: null,
         customEnd: null
     });
@@ -165,6 +165,12 @@ export const useMainStore = defineStore('mainStore', () => {
     const categories = ref([]);
     const credits = ref([]);
     const taxes = ref([]);
+
+    // 🟢 Prepayments are stored in categories with isPrepayment: true
+    const prepayments = computed(() => categories.value.filter(c => c.isPrepayment === true));
+
+    // 🟢 Recurring operations (future feature - currently empty)
+    const recurringOperations = ref([]);
 
     const dealOperations = ref([]);
 
@@ -705,7 +711,7 @@ export const useMainStore = defineStore('mainStore', () => {
         return out;
     }
 
-    async function ensureTaxOpsUntil(endDateInput = null) {
+    async function ensureTaxOpsUntil(endDateInput = null, startDateInput = null) {
         if (!user.value) return;
 
         const endDate = endDateInput ? new Date(endDateInput) : new Date();
@@ -720,7 +726,7 @@ export const useMainStore = defineStore('mainStore', () => {
             if (taxOpsMaxDate.value && endDate.getTime() <= new Date(taxOpsMaxDate.value).getTime()) return;
         }
 
-        // Lower bound for “all-time” taxes history:
+        // Lower bound for "all-time" taxes history:
         // - Prefer backend-provided earliest operation date (minEventDate)
         // - Fallback to user createdAt
         // - Fallback to min date already present in known ops (if any)
@@ -750,14 +756,23 @@ export const useMainStore = defineStore('mainStore', () => {
         }
         hardMinDate.setHours(0, 0, 0, 0);
 
-        const startDate = taxOpsMaxDate.value
-            ? (() => {
-                const d = new Date(taxOpsMaxDate.value);
-                d.setDate(d.getDate() + 1);
-                d.setHours(0, 0, 0, 0);
-                return d;
-            })()
-            : hardMinDate;
+        // 🚀 PERFORMANCE: If startDateInput provided, use it for range loading
+        let startDate;
+        if (startDateInput) {
+            startDate = new Date(startDateInput);
+            startDate.setHours(0, 0, 0, 0);
+            console.log(`[PERF] Loading operations range: ${startDate.toISOString()} -> ${endDate.toISOString()}`);
+        } else {
+            // Original logic: incremental loading from where we left off
+            startDate = taxOpsMaxDate.value
+                ? (() => {
+                    const d = new Date(taxOpsMaxDate.value);
+                    d.setDate(d.getDate() + 1);
+                    d.setHours(0, 0, 0, 0);
+                    return d;
+                })()
+                : hardMinDate;
+        }
 
         // Safety clamp: never request earlier than hardMinDate
         if (startDate.getTime() < hardMinDate.getTime()) {
@@ -835,8 +850,34 @@ export const useMainStore = defineStore('mainStore', () => {
             endDate = new Date(now.getFullYear(), now.getMonth() - 1, lastDay);
             endDate.setHours(23, 59, 59, 999);
         } else if (period.mode === 'custom' && period.customStart && period.customEnd) {
-            startDate = new Date(period.customStart);
-            endDate = new Date(period.customEnd);
+            // 🔥 CRITICAL: ISO strings convert to UTC, causing timezone shift
+            // Example: "2025-12-31T00:00:00.000Z" (UTC) becomes Dec 30 19:00 in GMT+5
+            // Solution: Extract YYYY-MM-DD and create Date in local timezone
+
+            const parseLocalDate = (isoString) => {
+                const date = new Date(isoString);
+                // Get local date components
+                const year = date.getFullYear();
+                const month = date.getMonth();
+                const day = date.getDate();
+                // Create new Date in local timezone with these components
+                return new Date(year, month, day);
+            };
+
+            startDate = parseLocalDate(period.customStart);
+            startDate.setHours(0, 0, 0, 0); // Start of day
+            endDate = parseLocalDate(period.customEnd);
+            endDate.setHours(23, 59, 59, 999); // End of day - includes last day fully
+
+            // 🔍 DEBUG: Log parsed dates
+            console.log('[PERIOD FILTER DEBUG]', {
+                customStart: period.customStart,
+                customEnd: period.customEnd,
+                parsedStartDate: startDate.toISOString(),
+                parsedEndDate: endDate.toISOString(),
+                localStartDate: startDate.toString(),
+                localEndDate: endDate.toString()
+            });
         }
 
         return { startDate, endDate };
@@ -848,11 +889,27 @@ export const useMainStore = defineStore('mainStore', () => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
 
-            // Period filter
-            if (periodFilter.value.mode !== 'all') {
+            // 🟢 Period filter: Show only operations within selected period
+            if (periodFilter.value.mode === 'custom') {
                 const opDate = new Date(op.date);
                 const { startDate, endDate } = _getPeriodRange(periodFilter.value);
                 if (startDate && endDate) {
+                    // 🔍 DEBUG: Log comparison for operations near end of period
+                    if (opDate.getDate() >= 30 || opDate.getDate() === 1) {
+                        console.log('[OP FILTER DEBUG]', {
+                            opId: op._id,
+                            opDateRaw: op.date,
+                            opDateParsed: opDate.toISOString(),
+                            opDateLocal: opDate.toString(),
+                            startDate: startDate.toISOString(),
+                            endDate: endDate.toISOString(),
+                            comparison: {
+                                beforeStart: opDate < startDate,
+                                afterEnd: opDate > endDate,
+                                willFilter: opDate < startDate || opDate > endDate
+                            }
+                        });
+                    }
                     if (opDate < startDate || opDate > endDate) return false;
                 }
             }
@@ -1302,10 +1359,44 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentTotalBalance = computed(() => {
-        return currentAccountBalances.value.reduce((acc, a) => {
-            if (!includeExcludedInTotal.value && a.isExcluded) return acc;
-            return acc + (a.balance || 0);
+        return currentAccountBalances.value.reduce((sum, a) => sum + a.balance, 0);
+    });
+
+    // 🟢 Period-aware total: if analytics filter active, sum operations instead of balances
+    const currentTotalForPeriod = computed(() => {
+        // If no custom period filter, use regular balance
+        if (!periodFilter.value || periodFilter.value.mode !== 'custom') {
+            return currentTotalBalance.value;
+        }
+
+        // For analytics: sum only operations in the period
+        const incomes = currentIncomes.value.reduce((sum, op) => {
+            return sum + Math.abs(Number(op.amount) || 0);
         }, 0);
+
+        const expenses = currentExpenses.value.reduce((sum, op) => {
+            return sum + Math.abs(Number(op.amount) || 0);
+        }, 0);
+
+        return incomes - expenses;
+    });
+
+    const futureTotalForPeriod = computed(() => {
+        // If no custom period filter, use regular balance
+        if (!periodFilter.value || periodFilter.value.mode !== 'custom') {
+            return futureTotalBalance.value;
+        }
+
+        // For analytics: sum only future operations in the period
+        const incomes = futureIncomes.value.reduce((sum, op) => {
+            return sum + Math.abs(Number(op.amount) || 0);
+        }, 0);
+
+        const expenses = futureExpenses.value.reduce((sum, op) => {
+            return sum + Math.abs(Number(op.amount) || 0);
+        }, 0);
+
+        return incomes - expenses;
     });
 
     const futureTotalBalance = computed(() => {
@@ -1946,32 +2037,91 @@ export const useMainStore = defineStore('mainStore', () => {
             await ensureSystemEntities();
             await fetchSnapshot();
 
-            // 🔥 CRITICAL: Load ALL historical operations from first event to today
-            // This ensures data is available immediately without needing to switch views
+            // 🚀 PERFORMANCE: Load only current month for fast startup (1-2 seconds)
             const today = new Date();
             today.setHours(23, 59, 59, 999);
 
-            let startDate = null;
-            if (earliestEventDate.value) {
-                startDate = new Date(earliestEventDate.value);
-            } else if (user.value?.createdAt) {
-                // Fallback to user creation date
-                startDate = new Date(user.value.createdAt);
-            } else {
-                // Final fallback: load from 1 year ago
-                startDate = new Date();
-                startDate.setFullYear(startDate.getFullYear() - 1);
-            }
-            startDate.setHours(0, 0, 0, 0);
+            const currentMonthStart = new Date(today);
+            currentMonthStart.setDate(1);
+            currentMonthStart.setHours(0, 0, 0, 0);
 
             try {
-                // Call ensureTaxOpsUntil which loads into taxKnownOperations (allKnownOperations source)
-                await ensureTaxOpsUntil(today);
+                console.log('[PERF] Loading current month operations for fast startup...');
+                // Load ONLY current month - this makes initial load fast
+                await ensureTaxOpsUntil(today, currentMonthStart);
+                console.log('[PERF] Current month loaded ✓');
             } catch (err) {
-                console.error('[mainStore] Failed to load historical operations:', err);
+                console.error('[mainStore] Failed to load current month operations:', err);
             }
 
-            // Preload full-history ops for Taxes widget (cumulative fact, independent of projection range)
+            // 🔄 Background loading: Previous month (for history/analytics)
+            setTimeout(async () => {
+                try {
+                    console.log('[PERF] Background loading: previous month...');
+                    const prevMonthEnd = new Date(currentMonthStart);
+                    prevMonthEnd.setMilliseconds(-1); // Last ms of previous month
+
+                    const prevMonthStart = new Date(prevMonthEnd);
+                    prevMonthStart.setDate(1);
+                    prevMonthStart.setHours(0, 0, 0, 0);
+
+                    await ensureTaxOpsUntil(prevMonthEnd, prevMonthStart);
+                    console.log('[PERF] Previous month loaded ✓');
+                } catch (err) {
+                    console.error('[mainStore] Failed to load previous month:', err);
+                }
+            }, 100);
+
+            // 🔄 Background loading: Next month (for forecast)
+            setTimeout(async () => {
+                try {
+                    console.log('[PERF] Background loading: next month...');
+                    const nextMonthStart = new Date(today);
+                    nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+                    nextMonthStart.setDate(1);
+                    nextMonthStart.setHours(0, 0, 0, 0);
+
+                    const nextMonthEnd = new Date(nextMonthStart);
+                    nextMonthEnd.setMonth(nextMonthEnd.getMonth() + 1);
+                    nextMonthEnd.setDate(0); // Last day of next month
+                    nextMonthEnd.setHours(23, 59, 59, 999);
+
+                    await ensureTaxOpsUntil(nextMonthEnd, nextMonthStart);
+                    console.log('[PERF] Next month loaded ✓');
+                } catch (err) {
+                    console.error('[mainStore] Failed to load next month:', err);
+                }
+            }, 500);
+
+            // 🔄 Background loading: Full history (lower priority)
+            setTimeout(async () => {
+                try {
+                    console.log('[PERF] Background loading: full history...');
+                    let historicalStart = null;
+
+                    if (earliestEventDate.value) {
+                        historicalStart = new Date(earliestEventDate.value);
+                    } else if (user.value?.createdAt) {
+                        historicalStart = new Date(user.value.createdAt);
+                    } else {
+                        // Fallback: 1 year ago
+                        historicalStart = new Date();
+                        historicalStart.setFullYear(historicalStart.getFullYear() - 1);
+                    }
+                    historicalStart.setHours(0, 0, 0, 0);
+
+                    // Load everything before current month
+                    const beforeCurrentMonth = new Date(currentMonthStart);
+                    beforeCurrentMonth.setMilliseconds(-1);
+
+                    await ensureTaxOpsUntil(beforeCurrentMonth, historicalStart);
+                    console.log('[PERF] Full history loaded ✓');
+                } catch (err) {
+                    console.error('[mainStore] Failed to load full history:', err);
+                }
+            }, 2000);
+
+            // Preload for projection range (low priority)
             void ensureTaxOpsUntil(projection.value?.rangeEndDate ? new Date(projection.value.rangeEndDate) : new Date());
 
             if (user.value) {
@@ -2897,6 +3047,8 @@ export const useMainStore = defineStore('mainStore', () => {
         _idsMatch,
 
         accounts, companies, contractors, projects, categories, individuals,
+        prepayments, // 🟢 Computed from categories where isPrepayment: true
+        recurringOperations, // 🟢 Recurring operations for future projections
         credits, taxes,
         visibleCategories, visibleContractors,
         operationsCache: displayCache, displayCache, calculationCache,
@@ -2919,6 +3071,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
         currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns,
+        currentTotalForPeriod, futureTotalForPeriod,
 
         dailyChartData: computed(() => useProjectionStore().dailyChartData),
 

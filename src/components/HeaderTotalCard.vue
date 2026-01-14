@@ -153,7 +153,7 @@ defineExpose({ getSnapshot });
 }
 
 .card-sub-balance { 
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   color: var(--text-mute); 
 }
 .card-sub-balance .subtitle-date { 

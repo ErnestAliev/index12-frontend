@@ -17,6 +17,7 @@ import HourCell from './HourCell.vue';
 const props = defineProps({
   date: { type: Date, required: true },
   isToday: { type: Boolean, default: false },
+  isTomorrow: { type: Boolean, default: false },
   dateKey: { type: String, required: true }
 });
 
@@ -162,7 +163,7 @@ const onDrop = (dropDataFromHourCell) => {
 </script>
 
 <template>
-  <div class="day-column" :class="{ 'today': isToday }">
+  <div class="day-column" :class="{ 'today': isToday, 'tomorrow': isTomorrow }">
     <div class="column-header">
       {{ formattedDate }}
     </div>
@@ -209,6 +210,11 @@ const onDrop = (dropDataFromHourCell) => {
 /* 🟢 Визуальная граница между прошлым и будущим */
 .day-column.today {
   border-right: var(--day-today-border-width) solid var(--day-today-border-color);
+}
+
+/* 🟢 Визуальная граница между настоящим и будущим (симметрия) */
+.day-column.tomorrow {
+  border-left: var(--day-tomorrow-border-width) solid var(--day-tomorrow-border-color);
 }
 .column-body {
   /* ... */
