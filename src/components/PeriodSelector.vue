@@ -372,11 +372,12 @@ onMounted(() => {
 
 <style scoped>
 .period-selector {
-  background: var(--color-bg-primary, #1a1a1a);
+  background: var(--filter-dropdown-bg);
+  border: 1px solid var(--filter-dropdown-border);
   border-radius: 12px;
   width: 600px;
   max-width: 90vw;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--filter-dropdown-shadow);
   max-height: 100vh;
   overflow-y: auto;
 }
@@ -401,27 +402,27 @@ onMounted(() => {
 .mode-switcher button {
   flex: 1;
   padding: 10px;
-  border: 2px solid var(--color-border, #333);
-  background: var(--color-bg-secondary, #252525);
+  border: 2px solid var(--color-border);
+  background: var(--btn-panel-bg);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
-  color: var(--color-text, #e0e0e0);
+  color: var(--text-main);
   transition: all 0.2s;
   font-weight: 500;
 }
 
 .mode-switcher button.active {
-  border-color: var(--color-primary, #4A90E2);
-  background: var(--color-primary, #4A90E2);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
   color: white;
   font-weight: 600;
 }
 
 .active-period-indicator {
   padding: 10px 12px;
-  background: linear-gradient(135deg, rgba(74, 144, 226, 0.15), rgba(74, 144, 226, 0.05));
-  border-left: 3px solid var(--color-primary, #4A90E2);
+  background: var(--btn-panel-bg-active);
+  border-left: 3px solid var(--color-primary);
   border-radius: 6px;
   margin-bottom: 16px;
   font-size: 13px;
@@ -431,12 +432,12 @@ onMounted(() => {
 }
 
 .indicator-label {
-  color: var(--color-text-muted, #888);
+  color: var(--text-mute);
   font-weight: 500;
 }
 
 .indicator-value {
-  color: var(--color-primary, #4A90E2);
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -449,25 +450,25 @@ onMounted(() => {
 .quick-select button {
   flex: 1;
   padding: 8px;
-  border: 1px solid var(--color-border, #333);
-  background: var(--color-bg-secondary, #252525);
+  border: 1px solid var(--color-border);
+  background: var(--btn-panel-bg);
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text, #e0e0e0);
+  color: var(--text-main);
   transition: all 0.2s;
   font-weight: 500;
 }
 
 .quick-select button:hover {
-  background: var(--color-primary, #4A90E2);
+  background: var(--color-primary);
   color: white;
-  border-color: var(--color-primary, #4A90E2);
+  border-color: var(--color-primary);
 }
 
 .quick-select button.active {
-  background: var(--color-primary, #4A90E2);
-  border-color: var(--color-primary, #4A90E2);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
   color: white;
   font-weight: 700;
 }
@@ -487,7 +488,7 @@ onMounted(() => {
   background: none;
   border: none;
   font-size: 24px;
-  color: var(--color-text, #e0e0e0);
+  color: var(--text-main);
   cursor: pointer;
   padding: 4px 12px;
   border-radius: 6px;
@@ -495,14 +496,14 @@ onMounted(() => {
 }
 
 .calendar-nav button:hover {
-  background: var(--color-bg-tertiary, #333);
+  background: var(--btn-panel-bg-hover);
 }
 
 .calendar-nav h4 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text, #e0e0e0);
+  color: var(--text-main);
   text-transform: capitalize;
 }
 
@@ -517,7 +518,7 @@ onMounted(() => {
   text-align: center;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-muted, #888);
+  color: var(--text-mute);
   padding: 8px 0;
 }
 
@@ -537,8 +538,8 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s;
   border: 2px solid transparent;
-  background: var(--color-bg-secondary, #252525);
-  color: var(--color-text, #e0e0e0);
+  background: var(--btn-panel-bg);
+  color: var(--text-main);
 }
 
 .calendar-day.empty {
@@ -547,17 +548,17 @@ onMounted(() => {
 }
 
 .calendar-day:hover:not(.empty) {
-  background: var(--color-bg-tertiary, #333);
-  border-color: var(--color-primary, #4A90E2);
+  background: var(--btn-panel-bg-hover);
+  border-color: var(--color-primary);
 }
 
 .calendar-day.today {
-  border-color: var(--color-primary, #4A90E2);
+  border-color: var(--color-primary);
   font-weight: 600;
 }
 
 .calendar-day.selected {
-  background: var(--color-primary, #4A90E2);
+  background: var(--color-primary);
   color: white;
   font-weight: 600;
 }
@@ -579,17 +580,17 @@ onMounted(() => {
 }
 
 .btn-cancel {
-  background: var(--color-bg-secondary, #252525);
-  color: var(--color-text, #e0e0e0);
-  border: 1px solid var(--color-border, #333);
+  background: var(--btn-panel-bg);
+  color: var(--text-main);
+  border: 1px solid var(--color-border);
 }
 
 .btn-cancel:hover {
-  background: var(--color-bg-tertiary, #333);
+  background: var(--btn-panel-bg-hover);
 }
 
 .btn-apply {
-  background: var(--color-primary, #4A90E2);
+  background: var(--color-primary);
   color: white;
 }
 

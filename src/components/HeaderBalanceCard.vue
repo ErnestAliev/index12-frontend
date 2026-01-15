@@ -478,23 +478,6 @@ defineExpose({ getSnapshot });
             </svg>
         </button>
 
-        <!-- Period Filter Button (only in fullscreen) -->
-        <button 
-            v-if="isFullscreen"
-            class="action-square-btn" 
-            :class="{ active: isPeriodActive }" 
-            ref="periodBtnRef" 
-            @click.stop="isPeriodOpen = !isPeriodOpen" 
-            title="Период"
-        >
-          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-        </button>
-
         <button class="action-square-btn" :class="{ active: isFilterActive }" ref="filterBtnRef" @click.stop="isFilterOpen = !isFilterOpen" title="Фильтр">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>

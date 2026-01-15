@@ -497,6 +497,11 @@
     /* Modal range-total */
     --range-total-color: #1a1a1a;
 
+    /* Period Selector Wrapper */
+    --period-selector-bg: #ffffff;
+    --period-selector-border: #e0e0e0;
+    --period-selector-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+
     --cell-bg-odd: #F5F7F8;
     /* Фон нечетных строк (zebra striping) */
 
