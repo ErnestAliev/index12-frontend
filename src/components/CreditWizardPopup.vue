@@ -513,13 +513,13 @@ const handleSave = () => {
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 2000; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 4000; }
 .wizard-content { background: #F9F9F9; width: 100%; max-width: 500px; border-radius: 12px; display: flex; flex-direction: column; max-height: 90vh; box-shadow: 0 20px 60px rgba(0,0,0,0.3); border: 1px solid #ddd; }
 
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 
-.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-top: 0; margin-bottom: 1rem; }
+.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: var(--color-text-soft); margin-top: 0; margin-bottom: 1rem; }
 
 /* 🟢 Стили блокировки полей */
 .locked-section {

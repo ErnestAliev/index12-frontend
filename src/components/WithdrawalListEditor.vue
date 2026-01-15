@@ -100,6 +100,11 @@ const openCreatePopup = () => {
     isWithdrawalPopupVisible.value = true; 
 };
 
+// Expose method for parent component
+defineExpose({
+  openCreatePopup
+});
+
 const openEdit = (item) => {
     withdrawalToEdit.value = item.originalOp;
     isWithdrawalPopupVisible.value = true;
@@ -219,22 +224,22 @@ const confirmDelete = async () => {
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid #ddd; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3500; overflow-y: auto; }
+.popup-content { background: var(--color-background); border-radius: 12px; display: flex; flex-direction: column; max-height: 85vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid var(--color-border); }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
-h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
+h3 { margin: 0; font-size: 24px; color: var(--color-heading); font-weight: 700; }
 
-.summary-bar { display: flex; align-items: center; gap: 15px; padding: 15px 24px; background-color: #fff; border-bottom: 1px solid #eee; font-size: 15px; color: #333; margin-top: 10px; }
+.summary-bar { display: flex; align-items: center; gap: 15px; padding: 15px 24px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); font-size: 15px; color: var(--color-text); margin-top: 10px; }
 .sum-item { display: flex; gap: 6px; }
-.sum-label { color: #666; }
+.sum-label { color: var(--color-text-soft); }
 .sum-val { font-weight: 700; }
-.sum-sep { color: #ddd; }
+.sum-sep { color: var(--color-border); }
 .expense-text { color: #ff3b30; }
 
 /* GRID */
 .filters-row, .grid-row { display: grid; gap: 10px; align-items: center; padding: 0 1.5rem; }
 .filters-row { margin: 10px 0; }
-.grid-row { padding: 8px 1.5rem; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; margin-bottom: 6px; transition: box-shadow 0.2s; }
+.grid-row { padding: 8px 1.5rem; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; margin-bottom: 6px; transition: box-shadow 0.2s; }
 .grid-row:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
 
 /* 5 колонок: Дата, Счет, Сумма, Назначение, Корзина */
@@ -242,13 +247,13 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
   grid-template-columns: 130px minmax(150px, 1fr) 150px 2fr 40px;
 }
 
-.text-display { font-size: 13px; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.text-display { font-size: 13px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; max-height: 55vh; scrollbar-width: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
 /* Inputs */
-.filter-input { width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 13px; background: #fff; box-sizing: border-box; color: #333; }
-.filter-input:focus { outline: none; border-color: #222; }
+.filter-input { width: 100%; height: 28px; border: 1px solid var(--color-border); border-radius: 6px; padding: 0 6px; font-size: 13px; background: var(--color-background-soft); box-sizing: border-box; color: var(--color-text); }
+.filter-input:focus { outline: none; border-color: var(--color-heading); }
 .filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 
 /* Node chip */
@@ -259,17 +264,17 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 }
 .withdrawal-node:hover { opacity: 0.9; }
 
-.delete-btn { width: 28px; height: 28px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
-.delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
-.delete-btn svg { width: 14px; stroke: #999; transition: stroke 0.2s; }
+.delete-btn { width: 28px; height: 28px; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.delete-btn:hover { border-color: #FF3B30; background: var(--color-background-mute); }
+.delete-btn svg { width: 14px; stroke: var(--color-text-soft); transition: stroke 0.2s; }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
-.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: space-between; align-items: center; background: #F9F9F9; border-radius: 0 0 12px 12px; }
+.popup-footer { padding: 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; background: var(--color-background); border-radius: 0 0 12px 12px; }
 .btn-add-new-footer { padding: 0 16px; height: 28px; border: 1px solid transparent; border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
 .btn-withdrawal { background-color: #DE8FFF; }
 .btn-withdrawal:hover { background-color: #c876eb; }
-.btn-close { padding: 0 16px; height: 28px; background: white; border: 1px solid #d1d5db; color: #374151; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; }
-.btn-close:hover { background: #f3f4f6; }
+.btn-close { padding: 0 16px; height: 28px; background: var(--color-background-soft); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; }
+.btn-close:hover { background: var(--color-background-mute); }
 
-.empty-state { text-align: center; padding: 3rem; color: #999; font-style: italic; }
+.empty-state { text-align: center; padding: 3rem; color: var(--color-text-soft); font-style: italic; }
 </style>

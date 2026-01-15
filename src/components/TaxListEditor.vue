@@ -192,6 +192,11 @@ const openPayModal = (debtItem = null) => {
     isPaymentPopupVisible.value = true;
 };
 
+// 🟢 EXPOSE METHOD FOR PARENT
+defineExpose({
+    triggerPay: () => openPayModal()
+});
+
 const handlePaymentSuccess = async () => {
     isPaymentPopupVisible.value = false;
     await mainStore.fetchAllEntities();
@@ -271,7 +276,7 @@ onMounted(async () => {
           </div>
           <div class="sum-sep">|</div>
           
-          <button class="btn-small-pay" @click="openPayModal()">Оплатить налоги</button>
+          <!-- <button class="btn-small-pay" @click="openPayModal()">Оплатить налоги</button> MOVED TO GLOBAL FOOTER -->
       </div>
 
       <!-- ЗАГОЛОВОК ТАБЛИЦЫ (Фильтры) -->
@@ -410,12 +415,14 @@ onMounted(async () => {
     </div>
 
     <!-- Модалки -->
-    <TaxPaymentPopup 
-        v-if="isPaymentPopupVisible" 
-        :initial-data="preselectedPaymentData"
-        @close="isPaymentPopupVisible = false" 
-        @success="handlePaymentSuccess" 
-    />
+    <Teleport to="body">
+        <TaxPaymentPopup 
+            v-if="isPaymentPopupVisible" 
+            :initial-data="preselectedPaymentData"
+            @close="isPaymentPopupVisible = false" 
+            @success="handlePaymentSuccess" 
+        />
+    </Teleport>
     
     <!-- 🟢 КАСТОМНЫЙ ПОПАП УДАЛЕНИЯ -->
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
@@ -447,21 +454,21 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1400px; border: 1px solid #ddd; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3500; overflow-y: auto; }
+.popup-content { background: var(--color-background); border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1400px; border: 1px solid var(--color-border); }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
-h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
+h3 { margin: 0; font-size: 24px; color: var(--color-heading); font-weight: 700; }
 
-.tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 0.5rem; border-bottom: 1px solid #e5e7eb; }
-.tab-btn { background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #6b7280; padding: 10px 0; cursor: pointer; transition: all 0.2s; }
-.tab-btn.active { color: #111827; border-color: #111827; }
-.tab-btn:hover { color: #374151; }
+.tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 0.5rem; border-bottom: 1px solid var(--color-border); }
+.tab-btn { background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: var(--color-text-soft); padding: 10px 0; cursor: pointer; transition: all 0.2s; }
+.tab-btn.active { color: var(--color-heading); border-color: var(--color-heading); }
+.tab-btn:hover { color: var(--color-text); }
 
-.summary-bar { display: flex; align-items: center; gap: 15px; padding: 15px 24px; background-color: #fff; border-bottom: 1px solid #eee; font-size: 15px; color: #333; margin-top: 0; }
+.summary-bar { display: flex; align-items: center; gap: 15px; padding: 15px 24px; background-color: var(--color-background-soft); border-bottom: 1px solid var(--color-border); font-size: 15px; color: var(--color-text); margin-top: 0; }
 .sum-item { display: flex; gap: 6px; align-items: center; }
-.sum-label { color: #666; }
+.sum-label { color: var(--color-text-soft); }
 .sum-val { font-weight: 700; }
-.sum-sep { color: #ddd; }
+.sum-sep { color: var(--color-border); }
 .income-text { color: #10b981; }
 .expense-text { color: #ef4444; }
 .warn-text { color: #F59E0B; }
@@ -513,21 +520,21 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
     padding: 0 1.5rem; 
 }
 
-.list-header-row { padding: 0 12px; height: 44px; background: #fff; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #eee; margin-top: 10px; }
-.header-filter-wrapper { width: 100%; height: 100%; display: flex; align-items: center; font-size: 10px; font-weight: 700; color: #555; text-transform: uppercase; overflow: hidden; }
+.list-header-row { padding: 0 12px; height: 44px; background: var(--color-background-soft); position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--color-border); margin-top: 10px; }
+.header-filter-wrapper { width: 100%; height: 100%; display: flex; align-items: center; font-size: 10px; font-weight: 700; color: var(--color-text-soft); text-transform: uppercase; overflow: hidden; }
 .right-text { justify-content: flex-end; text-align: right; width: 100%; }
 .center-text { justify-content: center; text-align: center; width: 100%; }
 
-.header-select, :deep(.date-picker-input) { width: 100%; border: none; background: transparent; font-size: 10px; font-weight: 700; color: #4B5563; text-transform: uppercase; cursor: pointer; outline: none; }
-:deep(.dp__input) { font-size: 10px !important; font-weight: 700 !important; color: #4B5563 !important; border: none !important; background: transparent !important; padding: 0 !important; height: auto !important; text-transform: uppercase; box-shadow: none !important; }
+.header-select, :deep(.date-picker-input) { width: 100%; border: none; background: transparent; font-size: 10px; font-weight: 700; color: var(--color-text-soft); text-transform: uppercase; cursor: pointer; outline: none; }
+:deep(.dp__input) { font-size: 10px !important; font-weight: 700 !important; color: var(--color-text-soft) !important; border: none !important; background: transparent !important; padding: 0 !important; height: auto !important; text-transform: uppercase; box-shadow: none !important; }
 
-.grid-row { padding: 10px 12px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px;  min-height: 48px; }
+.grid-row { padding: 10px 12px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px;  min-height: 48px; }
 .col-cell { overflow: hidden; }
 
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
-.text-display { font-size: 12px; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.text-display { font-size: 12px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bold { font-weight: 600; }
 .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -537,30 +544,30 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; }
 
 .col-amount { text-align: right; font-size: 12px; white-space: nowrap; }
 
-.delete-btn { width: 28px; height: 28px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
-.delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
-.delete-btn svg { width: 14px; stroke: #999; }
+.delete-btn { width: 28px; height: 28px; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.delete-btn:hover { border-color: #FF3B30; background: var(--color-background-mute); }
+.delete-btn svg { width: 14px; stroke: var(--color-text-soft); }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
-.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: flex-end; align-items: center; background: #F9F9F9; border-radius: 0 0 12px 12px; }
-.btn-close { padding: 0 16px; height: 36px; background: white; border: 1px solid #d1d5db; color: #374151; border-radius: 8px; font-weight: 500; cursor: pointer; font-size: 14px; }
-.btn-close:hover { background: #f3f4f6; }
-.empty-state { text-align: center; padding: 3rem; color: #999; font-style: italic; }
+.popup-footer { padding: 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; align-items: center; background: var(--color-background); border-radius: 0 0 12px 12px; }
+.btn-close { padding: 0 16px; height: 36px; background: var(--color-background-soft); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 8px; font-weight: 500; cursor: pointer; font-size: 14px; }
+.btn-close:hover { background: var(--color-background-mute); }
+.empty-state { text-align: center; padding: 3rem; color: var(--color-text-soft); font-style: italic; }
 
 /* 🟢 СТИЛИ ДЛЯ ВСТРОЕННОГО ПОПАПА УДАЛЕНИЯ */
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
-.delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
-.delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
-.confirm-text { font-size: 14px; margin-bottom: 20px; color: #555; line-height: 1.5; }
+.delete-confirm-box { background: var(--color-background); padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
+.delete-confirm-box h4 { margin: 0 0 10px; color: var(--color-heading); font-size: 18px; font-weight: 600; }
+.confirm-text { font-size: 14px; margin-bottom: 20px; color: var(--color-text); line-height: 1.5; }
 .delete-actions { display: flex; gap: 10px; justify-content: center; }
-.btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
-.btn-cancel:hover { background: #d1d1d1; }
+.btn-cancel { background: var(--color-background-mute); color: var(--color-text); border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+.btn-cancel:hover { background: var(--color-border); }
 .btn-delete-confirm { background: #ff3b30; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-delete-confirm:hover { background: #e02e24; }
 
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
-.sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
-.progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
-.progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
+.sub-note { font-size: 13px; color: var(--color-text-soft); margin-top: -5px; margin-bottom: 20px; }
+.progress-container { width: 100%; height: 6px; background-color: var(--color-background-mute); border-radius: 3px; overflow: hidden; position: relative; }
+.progress-bar { width: 100%; height: 100%; background-color: var(--color-heading); position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
 </style>

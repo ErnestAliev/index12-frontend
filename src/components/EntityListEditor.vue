@@ -22,7 +22,8 @@ import { knownBanks } from '@/data/knownBanks.js';
 
 const props = defineProps({
   title: { type: String, required: true },
-  items: { type: Array, required: true }
+  items: { type: Array, required: true },
+  entityType: { type: String, default: '' } // 'accounts', 'companies', etc.
 });
 const emit = defineEmits(['close', 'save']);
 
@@ -36,21 +37,25 @@ const otherItems = ref([]);
 const excludedItems = ref([]);
 
 // --- Тип редактора ---
-const isAccountEditor = props.title.includes('счета');
-const isContractorEditor = props.title.includes('контрагентов');
-const isCompanyEditor = props.title.includes('компании');
-const isIndividualEditor = props.title.includes('Физлиц');
-const isProjectEditor = props.title.includes('проекты');
-const isCategoryEditor = props.title.includes('категории');
+const titleLower = props.title.toLowerCase();
+// Use prop if available, otherwise guess from title
+const isAccountEditor = props.entityType === 'accounts' || titleLower.includes('счет');
+const isContractorEditor = props.entityType === 'contractors' || titleLower.includes('контрагент');
+const isCompanyEditor = props.entityType === 'companies' || titleLower.includes('компани');
+const isIndividualEditor = props.entityType === 'individuals' || titleLower.includes('физлиц');
+const isProjectEditor = props.entityType === 'projects' || titleLower.includes('проект');
+const isCategoryEditor = props.entityType === 'categories' || titleLower.includes('категор');
 
-let entityPath = '';
-const t = props.title.toLowerCase();
-if (t.includes('счета')) entityPath = 'accounts';
-else if (t.includes('компании')) entityPath = 'companies';
-else if (t.includes('контрагент')) entityPath = 'contractors';
-else if (t.includes('проекты')) entityPath = 'projects';
-else if (t.includes('категор')) entityPath = 'categories';
-else if (t.includes('физлиц')) entityPath = 'individuals';
+let entityPath = props.entityType || '';
+if (!entityPath) {
+  const t = titleLower;
+  if (t.includes('счет')) entityPath = 'accounts'; // Fixed from 'счета' to 'счет' to match 'счетов'
+  else if (t.includes('компани')) entityPath = 'companies';
+  else if (t.includes('контрагент')) entityPath = 'contractors';
+  else if (t.includes('проект')) entityPath = 'projects';
+  else if (t.includes('категор')) entityPath = 'categories';
+  else if (t.includes('физлиц')) entityPath = 'individuals';
+}
 
 let entityNameSingular = 'объект';
 if (isAccountEditor) entityNameSingular = 'счет';
@@ -290,6 +295,77 @@ onMounted(() => {
   }
 });
 
+// Watch for changes in items prop to update local lists
+watch(() => props.items, (newItems) => {
+  console.log('📝 Items updated, refreshing local list');
+  const allAccounts = mainStore.accounts;
+  let rawItems = JSON.parse(JSON.stringify(newItems));
+  rawItems = rawItems.filter(item => {
+      const name = item.name.trim().toLowerCase();
+      if (isIndividualEditor) {
+          if (mainStore.retailIndividualId && item._id === mainStore.retailIndividualId) return false;
+          if (name === 'розница' || name === 'розничные клиенты') return false;
+      }
+      if (isCategoryEditor) {
+          if (name === 'реализация') return false;
+          if (name === 'остаток долга') return false;
+          if (name === 'возврат') return false; 
+      }
+      return true;
+  });
+  rawItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  const processedItems = rawItems.map(item => {
+    if (isAccountEditor) {
+      const balance = item.initialBalance || 0;
+      let ownerVal = null;
+      const cId = (item.companyId && typeof item.companyId === 'object') ? item.companyId._id : item.companyId;
+      const iId = (item.individualId && typeof item.individualId === 'object') ? item.individualId._id : item.individualId;
+      if (cId) ownerVal = `company-${cId}`; else if (iId) ownerVal = `individual-${iId}`;
+      const isExcluded = !!item.isExcluded;
+      return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal, isExcluded }
+    }
+    if (isContractorEditor || isIndividualEditor) {
+      let pIds = item.defaultProjectIds || [];
+      if (!pIds.length && item.defaultProjectId) { const pId = (typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId; if(pId) pIds.push(pId); }
+      let cIds = item.defaultCategoryIds || [];
+      if (!cIds.length && item.defaultCategoryId) { const cId = (typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId; if(cId) cIds.push(cId); }
+      const identificationNumber = item.identificationNumber || '';
+      const contractNumber = item.contractNumber || '';
+      const contractDate = item.contractDate || null;
+      return { ...item, selectedProjectIds: pIds, selectedCategoryIds: cIds, identificationNumber, contractNumber, contractDate };
+    }
+    if (isCompanyEditor) {
+      const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
+      const identificationNumber = item.identificationNumber || '';
+      return { 
+          ...item, 
+          selectedAccountIds: selectedAccountIds,
+          taxRegime: item.taxRegime || 'simplified',
+          taxPercent: item.taxPercent !== undefined ? item.taxPercent : 3,
+          identificationNumber
+      };
+    }
+    return item;
+  });
+
+  if (isIndividualEditor) {
+      const ownerIds = new Set();
+      mainStore.accounts.forEach(acc => {
+          if (acc.individualId) { const iId = (typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId; if (iId) ownerIds.add(iId); }
+      });
+      ownerItems.value = processedItems.filter(item => ownerIds.has(item._id));
+      otherItems.value = processedItems.filter(item => !ownerIds.has(item._id));
+  } 
+  else if (isAccountEditor) {
+      localItems.value = processedItems.filter(item => !item.isExcluded);
+      excludedItems.value = processedItems.filter(item => item.isExcluded);
+  }
+  else { 
+      localItems.value = processedItems; 
+  }
+}, { deep: true });
+
 const handleSave = async () => {
   let finalItems = [];
 
@@ -361,10 +437,27 @@ const handleSave = async () => {
 const itemToDelete = ref(null); const showDeletePopup = ref(false); const isDeleting = ref(false);
 const openDeleteDialog = (item) => { itemToDelete.value = item; showDeletePopup.value = true; };
 const confirmDelete = async (deleteOperations) => {
-  if (!itemToDelete.value || !entityPath) return; isDeleting.value = true;
+  console.log('🗑️ confirmDelete triggered', { deleteOperations, item: itemToDelete.value, entityPath });
+  
+  if (!itemToDelete.value) {
+    console.warn('❌ confirmDelete aborted: No item to delete');
+    return;
+  }
+  
+  if (!entityPath) {
+    console.warn('❌ confirmDelete aborted: No entityPath (entityType prop missing?)');
+    return;
+  }
+  
+  isDeleting.value = true;
   try {
-    await new Promise(resolve => setTimeout(resolve, 500)); 
+    console.log('⏳ Starting delete process...');
+    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate delay for UX
+    
+    console.log('🔌 Calling mainStore.deleteEntity...');
     await mainStore.deleteEntity(entityPath, itemToDelete.value._id, deleteOperations);
+    console.log('✅ mainStore.deleteEntity success');
+    
     if (isIndividualEditor) { 
         ownerItems.value = ownerItems.value.filter(i => i._id !== itemToDelete.value._id); 
         otherItems.value = otherItems.value.filter(i => i._id !== itemToDelete.value._id); 
@@ -373,11 +466,30 @@ const confirmDelete = async (deleteOperations) => {
         localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id);
         excludedItems.value = excludedItems.value.filter(i => i._id !== itemToDelete.value._id);
     }
-    else { localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id); }
-  } catch (e) { alert('Ошибка при удалении: ' + e.message); isDeleting.value = false; return; }
-  isDeleting.value = false; await nextTick(); showDeletePopup.value = false; itemToDelete.value = null;
+    else { 
+      localItems.value = localItems.value.filter(i => i._id !== itemToDelete.value._id); 
+    }
+    
+    console.log('🧹 Local state updated');
+  } catch (e) { 
+    console.error('❌ Delete error:', e);
+    alert('Ошибка при удалении: ' + e.message); 
+    isDeleting.value = false; 
+    return; 
+  }
+  
+  isDeleting.value = false; 
+  await nextTick(); 
+  showDeletePopup.value = false; 
+  itemToDelete.value = null;
+  console.log('✨ Delete process completed');
 };
 const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value = false; itemToDelete.value = null; };
+
+// Expose methods for parent components
+defineExpose({
+  triggerCreate: startCreation
+});
 </script>
 
 <template>
@@ -385,34 +497,6 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor }">
       <h3>{{ title }}</h3>
       
-      <div class="create-section">
-        <button v-if="!isCreating" class="btn-add-new" @click="startCreation">
-          + Создать {{ entityNameSingular }}
-        </button>
-        
-        <div v-else class="inline-create-row relative">
-           <input 
-             type="text" 
-             v-model="newItemName" 
-             :placeholder="`Название (${entityNameSingular})`" 
-             ref="newItemInputRef" 
-             class="create-input" 
-             @keyup.enter="handleCreateNew" 
-             @keyup.esc="cancelCreation"
-             @blur="handleBlur"
-             @focus="handleFocus"
-           />
-           <button class="btn-icon-save" @click="handleCreateNew" :disabled="isSavingNew">✓</button>
-           <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
-
-           <ul v-if="showSuggestions && suggestionsList.length > 0" class="suggestions-list">
-              <li v-for="(item, idx) in suggestionsList" :key="idx" @mousedown.prevent="selectSuggestion(item)">
-                  {{ item.name }}
-              </li>
-           </ul>
-        </div>
-      </div>
-
       <template v-if="!isIndividualEditor && localItems.length > 0">
         <div v-if="isAccountEditor" class="editor-header account-header-simple">
           <span class="header-name">Название счета</span><span class="header-owner">Владелец</span><span class="header-balance">Нач. баланс</span><span class="header-trash"></span>
@@ -552,7 +636,43 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
         </template>
 
       </div>
-      <div class="popup-actions"><button @click="handleSave" class="btn-submit btn-submit-edit">Сохранить</button></div>
+      
+      <!-- Sticky Footer with Actions -->
+      <div class="editor-footer">
+        <!-- Left: Create button -->
+        <div class="footer-left">
+          <button v-if="!isCreating" class="btn-add-new" @click="startCreation">
+            + Создать {{ entityNameSingular }}
+          </button>
+          
+          <div v-else class="inline-create-row relative">
+             <input 
+               type="text" 
+               v-model="newItemName" 
+               :placeholder="`Название (${entityNameSingular})`" 
+               ref="newItemInputRef" 
+               class="create-input" 
+               @keyup.enter="handleCreateNew" 
+               @keyup.esc="cancelCreation"
+               @blur="handleBlur"
+               @focus="handleFocus"
+             />
+             <button class="btn-icon-save" @click="handleCreateNew" :disabled="isSavingNew">✓</button>
+             <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
+
+             <ul v-if="showSuggestions && suggestionsList.length > 0" class="suggestions-list">
+                <li v-for="(item, idx) in suggestionsList" :key="idx" @mousedown.prevent="selectSuggestion(item)">
+                    {{ item.name }}
+                </li>
+             </ul>
+          </div>
+        </div>
+        
+        <!-- Right: Save button -->
+        <div class="footer-right">
+          <button @click="handleSave" class="btn-submit btn-submit-edit">Сохранить</button>
+        </div>
+      </div>
     </div>
 
     <!-- Диалоги удаления и создания (без изменений) -->
@@ -565,25 +685,53 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value
 
 <style scoped>
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
-.popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
+.popup-content { max-width: 580px; background: var(--color-background-soft); padding: 2rem; border-radius: 12px; color: var(--color-text); width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
 .popup-content.wide { width: 90%; max-width: 1400px; }
-h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
-.popup-actions { display: flex; margin-top: 2rem; }
+h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
+
+/* Sticky Footer */
+.editor-footer {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  background: var(--color-background-soft);
+  border-top: 2px solid var(--color-border);
+  margin: 0 -2rem -2rem -2rem;
+  z-index: 10;
+}
+
+.footer-left {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.footer-right {
+  flex-shrink: 0;
+}
+
 .btn-submit { width: 100%; height: 50px; padding: 0 1rem; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
-.btn-submit-edit { padding: 0 16px; height: 28px; background: #111827; color: white; border: none; border-radius: 6px; font-weight: 600; border: none; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; width: 240px;}
+.btn-submit-edit { padding: 0 24px; height: 38px; background: #111827; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; min-width: 160px;}
 .btn-submit-edit:hover { background-color: #444444; }
-.create-section { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-.btn-add-new { width: 100%; padding: 0 12px; height: 28px; border: 1px dashed #aaa; background-color: transparent; border-radius: 6px; color: #555; font-size: 13px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
-.btn-add-new:hover { border-color: #222; color: #222; background-color: #e9e9e9; }
+.create-section { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--color-border); }
+.btn-add-new { padding: 0 20px; height: 38px; border: 1px dashed var(--color-border); background-color: transparent; border-radius: 8px; color: var(--color-text-soft); font-size: 14px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+.btn-add-new:hover { border-color: var(--color-text); color: var(--color-text); background-color: var(--color-background-mute); }
 .inline-create-row { display: flex; gap: 8px; align-items: center; }
-.create-input { flex-grow: 1; height: 28px; padding: 0 10px; background: #fff; border: 1px solid #222; border-radius: 6px; font-size: 13px; color: #1a1a1a; margin-bottom: 0 !important; }
+.create-input { flex-grow: 1; height: 28px; padding: 0 10px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 6px; font-size: 13px; color: var(--color-text); margin-bottom: 0 !important; }
 .create-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(34,34,34,0.2); }
 .btn-icon-save, .btn-icon-cancel { width: 28px; height: 28px; border: none; border-radius: 6px; cursor: pointer; color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .btn-icon-save { background-color: #34C759; }
 .btn-icon-save:hover { background-color: #2da84e; }
 .btn-icon-cancel { background-color: #FF3B30; }
 .btn-icon-cancel:hover { background-color: #d63025; }
-.editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: #666; margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
+.editor-header { display: flex; align-items: flex-end; gap: 10px; font-size: 0.8em; color: var(--color-text-soft); margin-left: 32px; margin-bottom: 5px; margin-right: 12px }
 .header-name { flex-grow: 1; }
 .account-header-simple .header-name { width: 100%; }
 .account-header-simple .header-balance { flex-shrink: 0; width: 130px; text-align: right; padding-right: 14px; }
@@ -601,21 +749,27 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .contractor-header .header-contract-date { flex-shrink: 0; width: 150px; } 
 .small-header { margin-left: 32px; margin-top: 5px; margin-bottom: 5px; }
 .header-trash { width: 28px; flex-shrink: 0; }
-.list-editor { max-height: 400px; overflow-y: auto; padding-right: 5px; scrollbar-width: none; -ms-overflow-style: none; }
+.list-editor { 
+  overflow-y: auto; 
+  padding-right: 5px; 
+  scrollbar-width: none; 
+  -ms-overflow-style: none;
+  max-height: none;
+}
 .list-editor::-webkit-scrollbar { display: none; }
 .edit-item { display: flex; align-items: center; margin-bottom: 6px; gap: 10px; }
-.drag-handle { cursor: grab; font-size: 1.2em; color: #999; user-select: none; flex-shrink: 0; width: 22px; height: 28px; display: flex; align-items: center; justify-content: center; margin: 0; }
+.drag-handle { cursor: grab; font-size: 1.2em; color: var(--color-text-soft); user-select: none; flex-shrink: 0; width: 22px; height: 28px; display: flex; align-items: center; justify-content: center; margin: 0; }
 .edit-item:active { cursor: grabbing; }
-.edit-input { height: 28px; padding: 0 10px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; color: #1a1a1a; font-size: 13px; font-family: inherit; box-sizing: border-box; margin: 0; }
-.edit-input:focus { outline: none; border-color: #222222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.2); }
+.edit-input { height: 28px; padding: 0 10px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); font-size: 13px; font-family: inherit; box-sizing: border-box; margin: 0; }
+.edit-input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.2); }
 .edit-name { flex-grow: 1; min-width: 100px; }
 .edit-picker-btn { flex-shrink: 0; width: 200px; text-align: left; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 20px; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .edit-picker-btn:hover { border-color: #222; }
 .edit-owner { flex-shrink: 0; width: 200px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; }
-.create-option { font-weight: 600; color: #007AFF; background-color: #f0f8ff; }
+.create-option { font-weight: 600; color: var(--color-primary); background-color: var(--color-background-soft); }
 .edit-balance { flex-shrink: 0; width: 130px; text-align: right; }
-.edit-account-picker { flex-shrink: 0; width: 220px; text-align: left; color: #333; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23333'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; font-size: 13px; display: flex; align-items: center; margin: 0; padding: 0 10px; height: 28px; background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; font-family: inherit; }
-.edit-account-picker:hover { border-color: #222222; }
+.edit-account-picker { flex-shrink: 0; width: 220px; text-align: left; color: var(--color-text); cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23666'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; font-size: 13px; display: flex; align-items: center; margin: 0; padding: 0 10px; height: 28px; background-color: var(--color-background); border: 1px solid var(--color-border); border-radius: 6px; font-family: inherit; }
+.edit-account-picker:hover { border-color: var(--color-primary); }
 
 .edit-tax { flex-shrink: 0; width: 100px; }
 .edit-percent { flex-shrink: 0; width: 60px; text-align: center; }
@@ -625,20 +779,32 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .edit-contract-date { flex-shrink: 0; width: 150px; }
 .edit-company-bin { flex-shrink: 0; width: 150px; }
 
-.delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
-.delete-btn svg { width: 14px; height: 14px; stroke: #999; transition: stroke 0.2s; }
-.delete-btn:hover { border-color: #FF3B30; background: #fff5f5; }
+.delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
+.delete-btn svg { width: 14px; height: 14px; stroke: var(--color-text-soft); transition: stroke 0.2s; }
+.delete-btn:hover { border-color: #FF3B30; background: rgba(255, 59, 48, 0.1); }
 .delete-btn:hover svg { stroke: #FF3B30; }
 .ghost { opacity: 0.5; background: #c0c0c0; }
-.inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.3); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
-.delete-confirm-box { background: #fff; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); text-align: center; }
-.delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; }
-.delete-confirm-box p { color: #555; font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
+.inner-overlay { 
+  position: absolute !important; 
+  top: 0 !important; 
+  left: 0 !important; 
+  width: 100% !important; 
+  height: 100% !important; 
+  background: rgba(0,0,0,0.3) !important; 
+  border-radius: 12px; 
+  display: flex !important; 
+  align-items: center; 
+  justify-content: center; 
+  z-index: 1000 !important; 
+}
+.delete-confirm-box { background: var(--color-background); padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); text-align: center; border: 1px solid var(--color-border); }
+.delete-confirm-box h4 { margin: 0 0 10px; color: var(--color-heading); font-size: 18px; }
+.delete-confirm-box p { color: var(--color-text-soft); font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
 .delete-actions { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-.btn-choice { border: 1px solid #ddd; border-radius: 8px; background: #fff; padding: 12px; cursor: pointer; text-align: left; display: flex; flex-direction: column; transition: border-color 0.2s, background 0.2s; }
-.btn-choice:hover { border-color: #aaa; background: #f9f9f9; }
-.btn-choice .main-text { font-weight: 600; color: #333; font-size: 15px; margin-bottom: 2px; }
-.btn-choice .sub-text { font-size: 12px; color: #888; }
+.btn-choice { border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-background-soft); padding: 12px; cursor: pointer; text-align: left; display: flex; flex-direction: column; transition: border-color 0.2s, background 0.2s; }
+.btn-choice:hover { border-color: var(--color-border-hover); background: var(--color-background-mute); }
+.btn-choice .main-text { font-weight: 600; color: var(--color-text); font-size: 15px; margin-bottom: 2px; }
+.btn-choice .sub-text { font-size: 12px; color: var(--color-text-soft); }
 .btn-nuke:hover { border-color: #FF3B30; background: #FFF0F0; }
 .btn-nuke .main-text { color: #FF3B30; }
 .btn-cancel { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; text-decoration: underline; }
@@ -648,24 +814,24 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
 .progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
 .progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
-.create-owner-box { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 350px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center; }
-.create-owner-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; }
-.sub-text { font-size: 14px; color: #666; margin-bottom: 15px; }
-.create-owner-input { width: 100%; height: 40px; border: 1px solid #ccc; border-radius: 6px; padding: 0 10px; font-size: 15px; margin-bottom: 20px; box-sizing: border-box; background-color: #ffffff; color: #1a1a1a; }
-.create-owner-input:focus { outline: none; border-color: #222; }
+.create-owner-box { background: var(--color-background); padding: 24px; border-radius: 12px; width: 90%; max-width: 350px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); text-align: center; border: 1px solid var(--color-border); }
+.create-owner-box h4 { margin: 0 0 10px; color: var(--color-heading); font-size: 18px; }
+.sub-text { font-size: 14px; color: var(--color-text-soft); margin-bottom: 15px; }
+.create-owner-input { width: 100%; height: 40px; border: 1px solid var(--color-border); border-radius: 6px; padding: 0 10px; font-size: 15px; margin-bottom: 20px; box-sizing: border-box; background-color: var(--color-background); color: var(--color-text); }
+.create-owner-input:focus { outline: none; border-color: var(--color-primary); }
 .owner-actions { display: flex; justify-content: space-between; align-items: center; }
 .btn-save-owner { padding: 10px 20px; background-color: #34C759; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
 .btn-save-owner:hover { background-color: #2da84e; }
 .btn-save-owner:disabled { opacity: 0.7; cursor: wait; }
 .group-section { margin-bottom: 25px; }
-.group-title { font-size: 14px; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 8px; padding-left: 36px; letter-spacing: 0.5px; }
-.empty-list { padding: 20px; text-align: center; color: #999; font-style: italic; background: #fcfcfc; border: 1px dashed #ddd; border-radius: 8px; margin-left: 36px; }
+.group-title { font-size: 14px; font-weight: 600; color: var(--color-text-soft); text-transform: uppercase; margin-bottom: 8px; padding-left: 36px; letter-spacing: 0.5px; }
+.empty-list { padding: 20px; text-align: center; color: var(--color-text-soft); font-style: italic; background: var(--color-background-soft); border: 1px dashed var(--color-border); border-radius: 8px; margin-left: 36px; }
 
 .relative { position: relative; }
-.suggestions-list { position: absolute; top: 100%; left: 0; right: 48px; background: #fff; border: 1px solid #E0E0E0; border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); z-index: 2000; list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; }
-.suggestions-list li { padding: 10px 14px; font-size: 14px; color: #333; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
+.suggestions-list { position: absolute; top: 100%; left: 0; right: 48px; background: var(--color-background); border: 1px solid var(--color-border); border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); z-index: 2000; list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; }
+.suggestions-list li { padding: 10px 14px; font-size: 14px; color: var(--color-text); cursor: pointer; border-bottom: 1px solid var(--color-border); }
 .suggestions-list li:last-child { border-bottom: none; }
-.suggestions-list li:hover { background-color: #f9f9f9; }
+.suggestions-list li:hover { background-color: var(--color-background-soft); }
 
 /* 🟢 СТИЛИ ДЛЯ ИСКЛЮЧЕННЫХ СЧЕТОВ */
 .excluded-accounts-section {
@@ -691,19 +857,21 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 1.5rem; text-align: left; fon
     background-color: #e0e0e0;
 }
 .excluded-drop-zone {
-    min-height: 80px;
-    background-color: #fafafa;
-    border: 1px dashed #ccc;
+    background-color: var(--color-background-soft);
+    border: 1px dashed var(--color-border);
     border-radius: 8px;
     padding: 10px;
     transition: background-color 0.2s;
+    min-height: 60px;
+    max-height: none;
 }
 .excluded-item {
     opacity: 0.8;
 }
 .faded {
-    color: #888 !important;
-    background-color: #f5f5f5 !important;
+    color: var(--color-text-soft) !important;
+    background-color: var(--color-background-mute) !important;
+    opacity: 0.7;
 }
 .empty-drop-zone {
     color: #aaa;

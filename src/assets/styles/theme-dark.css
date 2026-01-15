@@ -471,9 +471,11 @@
     /* Заголовки */
     --text-main: #ababab;
     /* Белый текст */
-    --text-soft: #ababab
-        /* Мягкий текст */
-        --text-mute: #b9b9b9;
+    --text-soft: #ababab;
+    /* Мягкий текст */
+    --color-text-soft: #ababab;
+    /* Alias for consistency */
+    --text-mute: #b9b9b9;
     /* Приглушенный текст */
 
     /* Filter Dropdown */

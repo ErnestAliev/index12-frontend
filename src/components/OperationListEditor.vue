@@ -230,6 +230,11 @@ const filteredTotalText = computed(() => `${formatNumber(filteredTotal.value)} K
 // ACTIONS
 const openCreatePopup = () => { isCreatePopupVisible.value = true; };
 
+// Expose method for parent component
+defineExpose({
+  openCreatePopup
+});
+
 // 🟢 2. НОВЫЙ ОБРАБОТЧИК СОХРАНЕНИЯ
 const handleSave = async ({ mode, data }) => {
     isCreatePopupVisible.value = false;
@@ -530,10 +535,10 @@ const showCopySuccess = ref(false);
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid #ddd; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3500; overflow-y: auto; }
+.popup-content { background: var(--color-background); border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1300px; border: 1px solid var(--color-border); }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
-h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacing: -0.02em; }
+h3 { margin: 0; font-size: 24px; color: var(--color-heading); font-weight: 700; letter-spacing: -0.02em; }
 
 .header-row {
   display: flex;
@@ -546,8 +551,8 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
   display: flex;
   align-items: baseline;
   gap: 8px;
-  background: #fff;
-  border: 1px solid #E0E0E0;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 6px 10px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
@@ -556,20 +561,20 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 
 .summary-label {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-soft);
   font-weight: 600;
 }
 
 .summary-value {
   font-size: 14px;
-  color: #111827;
+  color: var(--color-heading);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .summary-count {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-text-soft);
   font-weight: 600;
 }
 
@@ -586,12 +591,12 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
   gap: 6px;
   padding: 6px 12px;
   height: 32px;
-  background: #fff;
-  border: 1px solid #E0E0E0;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text);
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
@@ -600,12 +605,12 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .export-btn svg {
   width: 16px;
   height: 16px;
-  stroke: #6b7280;
+  stroke: var(--color-text-soft);
   transition: stroke 0.2s;
 }
 
 .export-btn:hover {
-  background: #f9fafb;
+  background: var(--color-background-mute);
   border-color: #10b981;
   color: #10b981;
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
@@ -670,8 +675,8 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 .filters-row, .grid-row { display: grid; grid-template-columns: 130px 1fr 1fr 120px 1fr 1fr 1fr 50px; gap: 12px; align-items: center; padding: 0 1.5rem; margin-top: 15px;}
 
 .filters-row { margin-bottom: 10px; }
-.grid-row { padding: 8px 1.5rem; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; margin-bottom: 6px; transition: box-shadow 0.2s; min-height: 40px; }
-.grid-row:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-color: #ccc; }
+.grid-row { padding: 8px 1.5rem; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; margin-bottom: 6px; transition: box-shadow 0.2s; min-height: 40px; }
+.grid-row:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-color: var(--color-border); }
 
 .text-red { color: #ff3b30 !important; }
 .col-trash { display: flex; justify-content: left; align-items: center; }
@@ -687,7 +692,7 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
     overflow: hidden; 
     text-overflow: ellipsis; 
     font-size: 13px; 
-    color: #333; 
+    color: var(--color-text); 
     line-height: 28px;
 }
 .amount-text {
@@ -697,24 +702,24 @@ h3 { margin: 0; font-size: 24px; color: #111827; font-weight: 700; letter-spacin
 }
 
 /* Filter Input Styles */
-.filter-input { width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 13px; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
+.filter-input { width: 100%; height: 28px; border: 1px solid var(--color-border); border-radius: 6px; padding: 0 6px; font-size: 13px; color: var(--color-text); box-sizing: border-box; background-color: var(--color-background-soft); margin: 0; }
 .filter-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .filter-input:focus { outline: none; border-color: var(--color-primary); }
 
-.delete-btn { width: 28px; height: 28px; border: 1px solid #E0E0E0; background: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
-.delete-btn svg { width: 14px; height: 14px; stroke: #999; }
-.delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
+.delete-btn { width: 28px; height: 28px; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; }
+.delete-btn svg { width: 14px; height: 14px; stroke: var(--color-text-soft); }
+.delete-btn:hover { border-color: #FF3B30; background: var(--color-background-mute); }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
-.popup-footer { padding: 1.5rem; border-top: 1px solid #E0E0E0; display: flex; justify-content: space-between; align-items: center; background-color: #F9F9F9; border-radius: 0 0 12px 12px; }
+.popup-footer { padding: 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; background-color: var(--color-background); border-radius: 0 0 12px 12px; }
 .footer-left-actions { display: flex; gap: 10px; }
 .btn-add-new-footer { padding: 0 16px; height: 28px; border: 1px solid transparent; border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; display: flex; align-items: center; justify-content: center; }
 .btn-income { background: #10b981; }
 .btn-income:hover { background: #059669; }
 .footer-actions { display: flex; gap: 10px; }
-.btn-close { padding: 0 16px; height: 28px; background: white; border: 1px solid #d1d5db; color: #374151; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; }
-.btn-close:hover { background: #f3f4f6; }
-.empty-state { text-align: center; padding: 4rem; color: #9ca3af; font-style: italic; }
+.btn-close { padding: 0 16px; height: 28px; background: var(--color-background-soft); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.btn-close:hover { background: var(--color-background-mute); }
+.empty-state { text-align: center; padding: 4rem; color: var(--color-text-soft); font-style: italic; }
 
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
 .delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }

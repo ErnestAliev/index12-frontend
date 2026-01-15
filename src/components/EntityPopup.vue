@@ -164,7 +164,7 @@ watch(inputValue, (val) => {
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; }
 .popup-content { max-width: 580px; background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 1rem; position: relative; }
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 0.5rem; font-size: 22px; font-weight: 600; text-align: left; }
-.editor-hint { font-size: 0.9em; color: #666; text-align: left; margin-top: 0; margin-bottom: 1.5rem; }
+.editor-hint { font-size: 0.9em; color: var(--color-text-soft); text-align: left; margin-top: 0; margin-bottom: 1.5rem; }
 .single-field-wrapper { margin-bottom: 2rem; }
 .field-label { display: block; font-size: 0.85em; color: #666; margin-bottom: 8px; margin-left: 2px; }
 .field-row { display: flex; gap: 10px; align-items: center; }

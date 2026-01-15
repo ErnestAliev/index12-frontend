@@ -805,7 +805,7 @@ const closePopup = () => { emit('close'); };
 }
 :deep(*), :deep(input), :deep(button), :deep(select), :deep(textarea) { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
 
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; pointer-events: auto; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 4000; overflow-y: auto; pointer-events: auto; }
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; color: #1a1a1a; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; }
 .theme-edit { border-top: 4px solid var(--color-transfer); }
 .theme-transfer { border-top: 4px solid var(--color-transfer); }

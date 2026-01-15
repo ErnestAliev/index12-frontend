@@ -197,36 +197,36 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 /* 🟢 PADDING уменьшен до 6px (как у обычных input) */
 .picker-trigger {
   width: 100%; height: 28px; 
-  background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 6px; 
+  background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 6px; 
   padding: 0 6px; display: flex; align-items: center; justify-content: space-between;
   cursor: pointer; transition: border-color 0.2s; box-sizing: border-box;
 }
-.date-range-picker.is-open .picker-trigger { border-color: #222; box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.1); }
+.date-range-picker.is-open .picker-trigger { border-color: var(--color-heading); box-shadow: 0 0 0 2px rgba(34, 34, 34, 0.1); }
 
-.trigger-content { flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #1a1a1a; }
-.placeholder { color: #aaa; font-size: 10px; }
+.trigger-content { flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--color-text); }
+.placeholder { color: var(--color-text-soft); font-size: 10px; }
 .value-text { font-weight: 500; font-size: 13px; }
 
-.calendar-icon { display: flex; align-items: center; color: #999; }
-.btn-clear { background: none; border: none; cursor: pointer; font-size: 12px; color: #999; padding: 0 4px; line-height: 1; }
+.calendar-icon { display: flex; align-items: center; color: var(--color-text-soft); }
+.btn-clear { background: none; border: none; cursor: pointer; font-size: 12px; color: var(--color-text-soft); padding: 0 4px; line-height: 1; }
 .btn-clear:hover { color: #ff3b30; }
 
 .calendar-dropdown {
   position: absolute; top: 100%; left: 0; width: 260px;
-  background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px;
+  background: var(--color-background); border: 1px solid var(--color-border); border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 2000; margin-top: 4px; padding: 10px;
   
 }
 .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.month-label { font-size: 14px; font-weight: 600; color: #333; }
-.nav-btn { background: none; border: 1px solid #eee; border-radius: 4px; cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: #555; font-weight: bold; }
-.nav-btn:hover { background: #f5f5f5; border-color: #ccc; }
+.month-label { font-size: 14px; font-weight: 600; color: var(--color-heading); }
+.nav-btn { background: none; border: 1px solid var(--color-border); border-radius: 4px; cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: var(--color-text); font-weight: bold; }
+.nav-btn:hover { background: var(--color-background-mute); border-color: var(--color-border); }
 
-.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px; color: #999; margin-bottom: 4px; }
+.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px; color: var(--color-text-soft); margin-bottom: 4px; }
 .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-.calendar-cell { height: 30px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border-radius: 4px; color: #333; transition: background 0.1s; }
-.calendar-cell:hover:not(.is-empty):not(.is-selected):not(.is-in-range) { background-color: #f0f0f0; }
+.calendar-cell { height: 30px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border-radius: 4px; color: var(--color-text); transition: background 0.1s; }
+.calendar-cell:hover:not(.is-empty):not(.is-selected):not(.is-in-range) { background-color: var(--color-background-mute); }
 .calendar-cell.is-empty { cursor: default; }
-.is-selected { background-color: #222; color: #fff; font-weight: 600; }
-.is-in-range { background-color: #e0e0e0; color: #333; }
+.is-selected { background-color: var(--color-heading); color: #fff; font-weight: 600; }
+.is-in-range { background-color: var(--color-background-mute); color: var(--color-text); }
 </style>

@@ -479,6 +479,8 @@
     /* Темный текст */
     --text-soft: #666666;
     /* Мягкий текст */
+    --color-text-soft: #666666;
+    /* Alias for consistency */
     --text-mute: #999999;
     /* Приглушенный текст */
 

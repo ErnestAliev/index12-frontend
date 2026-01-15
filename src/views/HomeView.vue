@@ -28,6 +28,8 @@ import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
 // 🟢 2. Импорт модала приглашения сотрудников
 import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
+// 🟢 3. Импорт универсального модала редактирования
+import UniversalEditModal from '@/components/UniversalEditModal.vue';
 import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 import PaymentReceiptModal from '@/components/PaymentReceiptModal.vue';
 import PeriodSelector from '@/components/PeriodSelector.vue';
@@ -51,6 +53,7 @@ const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 // Состояния модальных окон
 const showImportModal = ref(false); 
 const showGraphModal = ref(false);
+const showUniversalEditModal = ref(false);
 const showAboutModal = ref(false);
 
 const showWorkspaceModal = ref(false); // 🟢 NEW: Unified workspace/project modal
@@ -1709,6 +1712,14 @@ const handleRefundDelete = async (op) => {
             </svg>
           </button>
 
+          <!-- 🆕 NEW: Universal Edit Modal Button -->
+          <button class="icon-btn edit-btn" @click="showUniversalEditModal = true" title="Редактирование данных">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+
           <!-- 🟢 UPDATED: Hide AI button for timeline-only -->
           <button
             v-if="!mainStore.isTimelineOnly"
@@ -1965,6 +1976,7 @@ const handleRefundDelete = async (op) => {
 
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
+    <UniversalEditModal v-if="showUniversalEditModal" @close="showUniversalEditModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
     <!-- 🟢 Unified Workspace/Project Dashboard Modal -->
     <WorkspaceDashboardModal v-if="showWorkspaceModal" @close="showWorkspaceModal = false" />

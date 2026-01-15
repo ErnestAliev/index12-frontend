@@ -163,9 +163,14 @@ const isFilterActive = computed(() => {
 const totalSum = computed(() => filteredItems.value.reduce((acc, item) => acc + (item.amount || 0), 0));
 const formatTotal = (val) => formatNumber(Math.abs(val)) + ' ₸';
 
-const openCreatePopup = () => {
+const openCreatePopup = () =>{
   isCreatePopupVisible.value = true;
 };
+
+// Expose method for parent component
+defineExpose({
+  openCreatePopup
+});
 
 const handleTransferComplete = async (eventData) => {
   isCreatePopupVisible.value = false;
@@ -307,9 +312,11 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
       <!-- Footer -->
       <div class="popup-footer">
-        <button class="btn-add-new-footer btn-transfer" @click="openCreatePopup">
-          + Создать перевод
-        </button>
+        <div class="footer-left-actions">
+          <button class="btn-add-new-footer btn-transfer" @click="openCreatePopup">
+            + Создать перевод
+          </button>
+        </div>
         
         <div class="footer-actions">
             <button class="btn-close" @click="$emit('close')">Закрыть</button>
@@ -334,15 +341,15 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1200; overflow-y: auto; }
-.popup-content { background: #F9F9F9; border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1200px; border: 1px solid #ddd; }
+.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 3500; overflow-y: auto; }
+.popup-content { background: var(--color-background); border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1200px; border: 1px solid var(--color-border); }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
-h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
-.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: #666; margin-bottom: 1.5rem; margin-top: 0; }
+h3 { margin: 0; font-size: 22px; color: var(--color-heading); font-weight: 700; }
+.editor-hint { padding: 0 1.5rem; font-size: 0.9em; color: var(--color-text-soft); margin-bottom: 1.5rem; margin-top: 0; }
 
-.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e0e0e0; align-items: baseline; }
-.total-item { font-size: 16px; color: #333; }
-.total-label { margin-right: 8px; color: #666; font-weight: 500; }
+.totals-bar { display: flex; justify-content: flex-start; gap: 30px; padding: 0 1.5rem 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border); align-items: baseline; }
+.total-item { font-size: 16px; color: var(--color-text); }
+.total-label { margin-right: 8px; color: var(--color-text-soft); font-weight: 500; }
 .total-value { font-weight: 800; font-size: 1.3em; }
 
 /* Grid System for Transfers */
@@ -358,8 +365,8 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 
 .grid-row { 
   padding: 8px 1.5rem; 
-  background: #fff; 
-  border: 1px solid #E0E0E0; 
+  background: var(--color-background-soft); 
+  border: 1px solid var(--color-border); 
   border-radius: 8px;
   margin-bottom: 6px;
   transition: box-shadow 0.2s;
@@ -367,7 +374,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 }
 .grid-row:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-  border-color: #ccc;
+  border-color: var(--color-border);
 }
 
 .list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; scrollbar-width: none; -ms-overflow-style: none; }
@@ -380,7 +387,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
     overflow: hidden; 
     text-overflow: ellipsis; 
     font-size: 13px; 
-    color: #333; 
+    color: var(--color-text); 
     line-height: 28px;
 }
 .amount-text {
@@ -390,7 +397,7 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 }
 
 /* Filter Inputs (28px) */
-.filter-input { width: 100%; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; font-size: 13px; color: #333; box-sizing: border-box; background-color: #fff; margin: 0; }
+.filter-input { width: 100%; height: 28px; border: 1px solid var(--color-border); border-radius: 6px; padding: 0 6px; font-size: 13px; color: var(--color-text); box-sizing: border-box; background-color: var(--color-background-soft); margin: 0; }
 .filter-select, .select-input { 
   -webkit-appearance: none; appearance: none; 
   background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); 
@@ -401,21 +408,21 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 
 .delete-btn { 
   width: 28px; height: 28px; 
-  border: 1px solid #E0E0E0; background: #fff; 
+  border: 1px solid var(--color-border); background: var(--color-background); 
   border-radius: 6px; 
   display: flex; align-items: center; justify-content: center; 
   cursor: pointer; transition: all 0.2s; padding: 0; margin: 0; 
 }
-.delete-btn svg { width: 14px; height: 14px; stroke: #999; }
-.delete-btn:hover { border-color: #FF3B30; background: #FFF5F5; }
+.delete-btn svg { width: 14px; height: 14px; stroke: var(--color-text-soft); }
+.delete-btn:hover { border-color: #FF3B30; background: var(--color-background-mute); }
 .delete-btn:hover svg { stroke: #FF3B30; }
 
 /* Footer Styles */
 .popup-footer { 
-  padding: 1.5rem; border-top: 1px solid #E0E0E0; 
+  padding: 1.5rem; border-top: 1px solid var(--color-border); 
   display: flex; justify-content: space-between;
   align-items: center;
-  background-color: #F9F9F9; border-radius: 0 0 12px 12px; 
+  background-color: var(--color-background); border-radius: 0 0 12px 12px; 
 }
 
 .footer-actions {
@@ -437,10 +444,10 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 .btn-transfer { background-color: #2F3340; }
 .btn-transfer:hover { background-color: #3a3f50; }
 
-.btn-close { padding: 0 16px; height: 28px; border: 1px solid #ccc; background: transparent; border-radius: 6px; cursor: pointer; font-weight: 500; color: #555; font-size: 13px; display: flex; align-items: center; justify-content: center; }
-.btn-close:hover { background: #eee; }
+.btn-close { padding: 0 16px; height: 28px; border: 1px solid var(--color-border); background: var(--color-background-soft); border-radius: 6px; cursor: pointer; font-weight: 500; color: var(--color-text); font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.btn-close:hover { background: var(--color-background-mute); }
 
-.empty-state { text-align: center; padding: 3rem; color: #888; font-style: italic; }
+.empty-state { text-align: center; padding: 3rem; color: var(--color-text-soft); font-style: italic; }
 
 @media (max-width: 1200px) { 
   .popup-content { max-width: 95vw; margin: 1rem; } 
@@ -454,17 +461,17 @@ h3 { margin: 0; font-size: 22px; color: #1a1a1a; font-weight: 700; }
 
 /* Confirmation */
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 1210; }
-.delete-confirm-box { background: #fff; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
-.delete-confirm-box h4 { margin: 0 0 10px; color: #222; font-size: 18px; font-weight: 600; }
-.confirm-text { font-size: 14px; margin-bottom: 20px; color: #555; line-height: 1.5; }
+.delete-confirm-box { background: var(--color-background); padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
+.delete-confirm-box h4 { margin: 0 0 10px; color: var(--color-heading); font-size: 18px; font-weight: 600; }
+.confirm-text { font-size: 14px; margin-bottom: 20px; color: var(--color-text); line-height: 1.5; }
 .delete-actions { display: flex; gap: 10px; justify-content: center; }
-.btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
-.btn-cancel:hover { background: #d1d1d1; }
+.btn-cancel { background: var(--color-background-mute); color: var(--color-text); border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+.btn-cancel:hover { background: var(--color-border); }
 .btn-delete-confirm { background: #ff3b30; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-delete-confirm:hover { background: #e02e24; }
 .deleting-state { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; }
-.sub-note { font-size: 13px; color: #888; margin-top: -5px; margin-bottom: 20px; }
-.progress-container { width: 100%; height: 6px; background-color: #eee; border-radius: 3px; overflow: hidden; position: relative; }
-.progress-bar { width: 100%; height: 100%; background-color: #222; position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
+.sub-note { font-size: 13px; color: var(--color-text-soft); margin-top: -5px; margin-bottom: 20px; }
+.progress-container { width: 100%; height: 6px; background-color: var(--color-background-mute); border-radius: 3px; overflow: hidden; position: relative; }
+.progress-bar { width: 100%; height: 100%; background-color: var(--color-heading); position: absolute; left: -100%; animation: indeterminate 1.5s infinite ease-in-out; }
 @keyframes indeterminate { 0% { left: -100%; width: 50%; } 50% { left: 25%; width: 50%; } 100% { left: 100%; width: 50%; } }
 </style>

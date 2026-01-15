@@ -224,7 +224,7 @@ const formatMoney = (v) => formatNumber(Math.floor(v || 0));
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="$emit('close')">
+  <div class="tax-popup-overlay" @click.self="$emit('close')">
     <div class="popup-content assistant-content">
       
       <div class="assistant-header">
@@ -326,7 +326,7 @@ const formatMoney = (v) => formatNumber(Math.floor(v || 0));
 </template>
 
 <style scoped>
-.popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 2500; backdrop-filter: blur(3px); }
+.tax-popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999 !important; backdrop-filter: blur(3px); }
 .assistant-content { background: #fff; width: 400px; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; }
 
 .assistant-header { background: #222; padding: 16px 20px; color: #fff; text-align: center; }
