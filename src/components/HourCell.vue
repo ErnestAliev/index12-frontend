@@ -340,6 +340,7 @@ const onDrop = (event) => {
   display: flex; 
   align-items: center; 
   gap: 6px; 
+  width: 100%;
   min-width: 0; 
   max-width: 100%; 
   overflow: hidden; 

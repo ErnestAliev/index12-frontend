@@ -804,13 +804,30 @@ const handleAccountChange = (val) => { if (val === '--CREATE_NEW--') { selectedA
 const showAccountInput = () => { isCreatingSpecialAccount.value = false; accountCreationPlaceholder.value = 'Название счета'; isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
 const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; isCreatingSpecialAccount.value = false; };
 const saveNewAccount = async () => {
-    if (isInlineSaving.value) return; const name = newAccountName.value.trim(); if (!name) return;
-    isInlineSaving.value = true;
-    try {
-        let cId = null, iId = null; if (selectedOwner.value) { const [t, id] = selectedOwner.value.split('-'); if (t==='company') cId=id; else iId=id; }
-        const newItem = await mainStore.addAccount({ name, companyId: cId, individualId: iId, isExcluded: isCreatingSpecialAccount.value });
-        selectedAccountId.value = newItem._id; cancelCreateAccount();
-    } catch(e) { console.error(e); showError('Ошибка при создании счета: ' + e.message); } finally { isInlineSaving.value = false; }
+    const name = newAccountName.value.trim(); 
+    if (!name) return;
+    
+    let cId = null, iId = null; 
+    if (selectedOwner.value) { 
+        const [t, id] = selectedOwner.value.split('-'); 
+        if (t==='company') cId=id; else iId=id; 
+    }
+    
+    // Close form immediately
+    cancelCreateAccount();
+    
+    // Create in background
+    mainStore.addAccount({ 
+        name, 
+        companyId: cId, 
+        individualId: iId,  
+        isExcluded: isCreatingSpecialAccount.value 
+    }).then(newItem => {
+        selectedAccountId.value = newItem._id;
+    }).catch(e => {
+        console.error(e);
+        showError('Ошибка при создании счета: ' + e.message);
+    });
 };
 
 const handleProjectChange = (val) => { if (val === '--CREATE_NEW--') { selectedProjectId.value = null; isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); } };
@@ -818,34 +835,74 @@ const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selected
 
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
 const saveNewProject = async () => {
-    if (isInlineSaving.value) return; const name = newProjectName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addProject(name); selectedProjectId.value = item._id; cancelCreateProject(); } catch(e){ console.error(e); showError('Ошибка создания проекта: ' + e.message); } finally { isInlineSaving.value = false; }
+    const name = newProjectName.value.trim(); 
+    if (!name) return;
+    
+    cancelCreateProject();
+    
+    mainStore.addProject(name).then(item => {
+        selectedProjectId.value = item._id;
+    }).catch(e => {
+        console.error(e);
+        showError('Ошибка создания проекта: ' + e.message);
+    });
 };
 
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
-    if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryId.value = item._id; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
+    const name = newCategoryName.value.trim(); 
+    if (!name) return;
+    
+    cancelCreateCategory();
+    
+    mainStore.addCategory(name).then(item => {
+        selectedCategoryId.value = item._id;
+    }).catch(e => {
+        console.error(e);
+        showError('Ошибка создания категории: ' + e.message);
+    });
+};
 
 const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => {
-    if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { 
-        let item; if (ownerTypeToCreate.value === 'company') item = await mainStore.addCompany(name); else item = await mainStore.addIndividual(name);
-        selectedOwner.value = `${ownerTypeToCreate.value}-${item._id}`; showCreateOwnerModal.value = false;
-    } catch(e){ console.error(e); showError('Ошибка создания владельца: ' + e.message); } finally { isInlineSaving.value = false; }
+    const name = newOwnerName.value.trim(); 
+    if (!name) return;
+    
+    showCreateOwnerModal.value = false;
+    
+    const createFunc = ownerTypeToCreate.value === 'company' ? mainStore.addCompany : mainStore.addIndividual;
+    createFunc(name).then(item => {
+        selectedOwner.value = `${ownerTypeToCreate.value}-${item._id}`;
+    }).catch(e => {
+        console.error(e);
+        showError('Ошибка создания владельца: ' + e.message);
+    });
 };
 
 const openCreateContractorModal = (type) => { contractorTypeToCreate.value = type; newContractorNameInput.value = ''; showCreateContractorModal.value = true; nextTick(() => newContractorInputRef.value?.focus()); };
 const cancelCreateContractorModal = () => { showCreateContractorModal.value = false; newContractorNameInput.value = ''; if (!selectedContractorValue.value) selectedContractorValue.value = null; };
 const saveNewContractorModal = async () => {
-    if (isInlineSaving.value) return; const name = newContractorNameInput.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try {
-        let item; if (contractorTypeToCreate.value === 'contractor') { item = await mainStore.addContractor(name); selectedContractorValue.value = `contr_${item._id}`; } 
-        else { item = await mainStore.addIndividual(name); selectedContractorValue.value = `ind_${item._id}`; }
-        showCreateContractorModal.value = false;
-    } catch(e){ console.error(e); showError('Ошибка создания контрагента: ' + e.message); } finally { isInlineSaving.value = false; }
+    const name = newContractorNameInput.value.trim(); 
+    if (!name) return;
+    
+    showCreateContractorModal.value = false;
+    
+    if (contractorTypeToCreate.value === 'contractor') {
+        mainStore.addContractor(name).then(item => {
+            selectedContractorValue.value = `contr_${item._id}`;
+        }).catch(e => {
+            console.error(e);
+            showError('Ошибка создания контрагента: ' + e.message);
+        });
+    } else {
+        mainStore.addIndividual(name).then(item => {
+            selectedContractorValue.value = `ind_${item._id}`;
+        }).catch(e => {
+            console.error(e);
+            showError('Ошибка создания контрагента: ' + e.message);
+        });
+    }
 };
 
 const handleMainAction = () => {
@@ -1172,7 +1229,8 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a; font-size: 15px; box-sizing: border-box; }
 
 .btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-income); color: var(--color-income); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
-.btn-inline-save:hover { background-color: var(--color-income); color: #fff; }
+.btn-inline-save:hover:not(:disabled) { background-color: var(--color-income); color: #fff; }
+.btn-inline-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-inline-cancel { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-danger); color: var(--color-danger); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
 .btn-inline-cancel:hover { background-color: var(--color-danger); color: #fff; }
@@ -1246,7 +1304,8 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-modal-action { flex: 1; height: 48px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
 .btn-modal-cancel { background-color: #f0f0f0; color: #333; border: 1px solid #ddd; }
 .btn-modal-create { background-color: var(--color-income); color: white; } 
-.btn-modal-create:hover { background-color: #229c87; }
+.btn-modal-create:hover:not(:disabled) { background-color: #229c87; }
+.btn-modal-create:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .inner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); border-radius: 12px; display: flex; align-items: center; justify-content: center; z-index: 2100; }
 .choice-box { background: #fff; padding: 24px; border-radius: 12px; width: 340px; text-align: center; box-shadow: 0 5px 30px rgba(0,0,0,0.3); }

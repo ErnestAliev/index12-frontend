@@ -987,7 +987,8 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
     transition: all 0.2s;
     display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
 }
-.btn-inline-save:hover { background-color: var(--color-expense); color: #fff; }
+.btn-inline-save:hover:not(:disabled) { background-color: var(--color-expense); color: #fff; }
+.btn-inline-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* Кнопка "Отмена" (Крестик) */
 .btn-inline-cancel { 
@@ -1027,7 +1028,8 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-modal-action { flex: 1; height: 48px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
 .btn-modal-cancel { background-color: #f0f0f0; color: #333; border: 1px solid #ddd; }
 .btn-modal-create { background-color: var(--color-expense); color: white; } 
-.btn-modal-create:hover { background-color: #E05A2D; }
+.btn-modal-create:hover:not(:disabled) { background-color: #E05A2D; }
+.btn-modal-create:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 🟢 СТИЛЬ ДЛЯ КНОПКИ 'СОЗДАТЬ' ВНУТРИ BASESELECT */
 /* Sticky Action Row */

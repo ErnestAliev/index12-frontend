@@ -548,7 +548,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 /* Unified Buttons */
 .btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-withdrawal); color: var(--color-withdrawal); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
-.btn-inline-save:hover { background-color: var(--color-withdrawal); color: #fff; }
+.btn-inline-save:hover:not(:disabled) { background-color: var(--color-withdrawal); color: #fff; }
+.btn-inline-save:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-inline-cancel { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-danger); color: var(--color-danger); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
 .btn-inline-cancel:hover { background-color: var(--color-danger); color: #fff; }
 
