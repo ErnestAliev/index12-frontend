@@ -73,9 +73,27 @@ const currentItemForPicker = ref(null);
 const multiSelectType = ref('');
 
 const openAccountPicker = (item) => { currentItemForPicker.value = item; showAccountPicker.value = true; };
-const onAccountPickerSave = (newSelectedIds) => { if (currentItemForPicker.value) { currentItemForPicker.value.selectedAccountIds = newSelectedIds; } showAccountPicker.value = false; currentItemForPicker.value = null; };
+const onAccountPickerSave = (newSelectedIds) => { 
+  if (currentItemForPicker.value) { 
+    currentItemForPicker.value.selectedAccountIds = newSelectedIds; 
+  } 
+  showAccountPicker.value = false; 
+  currentItemForPicker.value = null; 
+  debouncedSave(); // Auto-save after selection
+};
 const openMultiSelect = (item, type) => { currentItemForPicker.value = item; multiSelectType.value = type; showMultiSelect.value = true; };
-const onMultiSelectSave = (newIds) => { if (currentItemForPicker.value) { if (multiSelectType.value === 'projects') { currentItemForPicker.value.selectedProjectIds = newIds; } else if (multiSelectType.value === 'categories') { currentItemForPicker.value.selectedCategoryIds = newIds; } } showMultiSelect.value = false; currentItemForPicker.value = null; };
+const onMultiSelectSave = (newIds) => { 
+  if (currentItemForPicker.value) { 
+    if (multiSelectType.value === 'projects') { 
+      currentItemForPicker.value.selectedProjectIds = newIds; 
+    } else if (multiSelectType.value === 'categories') { 
+      currentItemForPicker.value.selectedCategoryIds = newIds; 
+    } 
+  } 
+  showMultiSelect.value = false; 
+  currentItemForPicker.value = null; 
+  debouncedSave(); // Auto-save after selection
+};
 
 const multiSelectTitle = computed(() => {
   const contractorName = currentItemForPicker.value?.name || '';
@@ -367,6 +385,15 @@ watch(() => props.items, (newItems) => {
   }
 }, { deep: true });
 
+// Auto-save: debounced version of handleSave for selectors and inputs
+let saveTimeout = null;
+const debouncedSave = () => {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    handleSave();
+  }, 500); // 500ms delay to avoid excessive API calls
+};
+
 const handleSave = async () => {
   let finalItems = [];
 
@@ -601,35 +628,35 @@ defineExpose({
               <template #item="{ element: item }">
                 <div class="edit-item">
                   <span class="drag-handle">⠿</span>
-                  <input type="text" v-model="item.name" class="edit-input edit-name" />
+                  <input type="text" v-model="item.name" class="edit-input edit-name" @blur="debouncedSave" />
                   
                   <template v-if="isAccountEditor">
-                    <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item)" class="edit-input edit-owner">
+                    <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item); debouncedSave()" class="edit-input edit-owner">
                         <option :value="null">Нет владельца</option>
                         <option value="create-company" class="create-option">+ Создать Компанию</option>
                         <option value="create-individual" class="create-option">+ Создать Физлицо</option>
                         <optgroup label="Компании"><option v-for="c in companiesList" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
                         <optgroup label="Физлица"><option v-for="i in individualsList" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
                     </select>
-                    <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" class="edit-input edit-balance" placeholder="0" />
+                    <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" @blur="debouncedSave" class="edit-input edit-balance" placeholder="0" />
                   </template>
                   
                   <template v-if="isContractorEditor">
                     <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">{{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}</button>
                     <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}</button>
-                    <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin" placeholder="БИН/ИИН" />
-                    <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num" placeholder="Номер договора" />
-                    <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date" />
+                    <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin" placeholder="БИН/ИИН" @blur="debouncedSave" />
+                    <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num" placeholder="Номер договора" @blur="debouncedSave" />
+                    <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date" @change="debouncedSave" />
                   </template>
                   
                   <template v-if="isCompanyEditor">
                     <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">Выбрано ({{ item.selectedAccountIds.length }})</button>
-                    <select v-model="item.taxRegime" class="edit-input edit-tax" @change="onRegimeChange(item)">
+                    <select v-model="item.taxRegime" class="edit-input edit-tax" @change="onRegimeChange(item); debouncedSave()">
                         <option value="simplified">Упрощенка</option>
                         <option value="our">ОУР</option>
                     </select>
-                    <input type="number" v-model="item.taxPercent" class="edit-input edit-percent" placeholder="%" min="0" max="100" />
-                    <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" />
+                    <input type="number" v-model="item.taxPercent" class="edit-input edit-percent" placeholder="%" min="0" max="100" @blur="debouncedSave" />
+                    <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" @blur="debouncedSave" />
                   </template>
                   
                   <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
