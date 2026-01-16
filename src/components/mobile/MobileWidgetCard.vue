@@ -313,20 +313,52 @@ function getSnapshot() {
 
   // Compact summary widgets (income/expense/withdrawals/transfers)
   if (isListWidget.value) {
-    const detailItems = list.slice(0, 50).map((it) => {
-      const factVal = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
-      const planVal = forecastActive ? toNum(getRightValue(it)) : 0;
+    // Get detailed operations from mainStore for AI
+    let detailedOperations = [];
+    
+    try {
+      const pickStoreArray = (...names) => {
+        for (const n of names) {
+          const v = mainStore?.[n];
+          if (Array.isArray(v) && v.length > 0) return v;
+        }
+        return [];
+      };
+      
+      // Get current operations based on widget type
+      if (key === 'incomeList') {
+        detailedOperations = pickStoreArray('currentIncomes', 'currentIncome', 'incomesCurrent');
+      } else if (key === 'expenseList') {
+        detailedOperations = pickStoreArray('currentExpenses', 'currentExpense', 'expensesCurrent');
+      } else if (key === 'withdrawalList') {
+        detailedOperations = pickStoreArray('currentWithdrawals', 'currentWithdrawal', 'withdrawalsCurrent');
+      } else if (key === 'transfers') {
+        detailedOperations = pickStoreArray('currentTransfers', 'currentTransfer', 'transfersCurrent');
+      }
+    } catch (e) {
+      console.warn('Failed to get detailed operations for', key, e);
+    }
+
+    // Map detailed operations for AI snapshot
+    const detailItems = (detailedOperations || []).slice(0, 100).map((op) => {
+      const amount = toNum(op?.amount ?? op?.sum ?? op?.value ?? 0);
+      const date = op?.date ?? op?.dateIso ?? op?.operationDate ?? null;
+      const contractor = op?.contractorName ?? op?.contractor ?? op?.counterparty ?? '';
+      const category = op?.categoryName ?? op?.category ?? '';
+      const account = op?.accountName ?? op?.account ?? '';
+      const description = op?.description ?? op?.desc ?? op?.note ?? '';
 
       return {
-        id: it?._id ?? null,
-        name: it?.name ?? '',
-        fact: toNum(factVal),
-        factText: formatVal(factVal),
-        plan: planVal,
-        planText: forecastActive ? getRightValueFormatted(it) : '',
-        isExcluded: Boolean(it?.isExcluded),
-        isLinked: Boolean(it?.isLinked),
-        linkMarkerColor: it?.linkMarkerColor ?? null,
+        id: op?._id ?? null,
+        date: date,
+        name: contractor || category || account || description || 'Операция',
+        amount: Math.abs(amount),
+        contractor: contractor,
+        category: category,
+        account: account,
+        description: description,
+        type: op?.type ?? key.replace('List', ''),
+        isExcluded: Boolean(op?.excludeFromTotals ?? op?.isExcluded),
       };
     });
 
@@ -346,9 +378,9 @@ function getSnapshot() {
         }
       ],
 
-      // Optional: UI list details (what user sees)
+      // Detailed operations for AI
       items: detailItems,
-      totalItems: list.length,
+      totalItems: detailedOperations.length,
     };
   }
 
