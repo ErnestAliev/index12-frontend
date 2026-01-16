@@ -49,6 +49,20 @@ export const useProjectionStore = defineStore('projection', () => {
     const startDate = new Date(baseDate);
     const endDate = new Date(baseDate);
 
+    // Special case: '1m' should show entire current month (start to end)
+    if (view === '1m') {
+      // Start of month
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+
+      // End of month
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(0); // Last day of current month
+      endDate.setHours(23, 59, 59, 999);
+
+      return { startDate, endDate };
+    }
+
     const modeInfo = VIEW_MODE_DAYS[view] || VIEW_MODE_DAYS['12d'];
     const totalDays = modeInfo.total;
 
