@@ -698,8 +698,8 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 };
 
 const runAiQuick = async (preset) => {
-  // Add [QB] marker to indicate this is a quick button press
-  const markedPreset = `${preset} [QB]`;
+  // Add ... marker to indicate this is a quick button press
+  const markedPreset = `${preset}...`;
   aiInput.value = preset; // Show clean text in input
   await nextTick();
   await sendAiMessage(markedPreset, { source: 'quick_button' });
