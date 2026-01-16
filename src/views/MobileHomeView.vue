@@ -518,11 +518,12 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     _pushListWidget('withdrawalList', 'Выводы (список)', mainStore.futureWithdrawals, 'Вывод');
     _pushListWidget('transfers', 'Переводы (список)', mainStore.futureTransfers, 'Перевод');
 
-    // Also inject current lists (useful for "сегодня" / "за период")
-    _pushListWidget('incomeListCurrent', 'Доходы (текущие)', mainStore.currentIncomes, 'Доход');
-    _pushListWidget('expenseListCurrent', 'Расходы (текущие)', mainStore.currentExpenses, 'Расход');
-    _pushListWidget('withdrawalListCurrent', 'Выводы (текущие)', mainStore.currentWithdrawals, 'Вывод');
-    _pushListWidget('transfersCurrent', 'Переводы (текущие)', mainStore.currentTransfers, 'Перевод');
+    // REMOVED: Current lists are already included via storeTimeline.opsByDay below
+    // Injecting them here causes duplicates when operations exist in both current and future
+    // _pushListWidget('incomeListCurrent', 'Доходы (текущие)', mainStore.currentIncomes, 'Доход');
+    // _pushListWidget('expenseListCurrent', 'Расходы (текущие)', mainStore.currentExpenses, 'Расход');
+    // _pushListWidget('withdrawalListCurrent', 'Выводы (текущие)', mainStore.currentWithdrawals, 'Вывод');
+    // _pushListWidget('transfersCurrent', 'Переводы (текущие)', mainStore.currentTransfers, 'Перевод');
 
     // Normalize minimal contract
     uiSnapshot.v = (uiSnapshot.v === undefined || uiSnapshot.v === null) ? 1 : uiSnapshot.v;

@@ -234,27 +234,59 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const allKnownOperations = computed(() => {
         const uniqueMap = new Map();
+        const contentMap = new Map(); // Secondary deduplication by content
+
+        const addOperation = (op) => {
+            if (!op || !op._id) return;
+
+            const id = String(op._id);
+
+            // Primary deduplication by ID
+            if (uniqueMap.has(id)) return;
+
+            // Secondary deduplication by content
+            // Normalize function to compare values case-insensitively
+            const normalize = (v) => String(v || '').trim().toLowerCase();
+
+            const contentKey = [
+                op.date ? new Date(op.date).toISOString().slice(0, 10) : '',
+                Math.abs(Number(op.amount ?? 0)), // Normalize amount to absolute value
+                normalize(op.type),
+                normalize(op.contractorId ?? op.contractorName ?? op.contractor ?? ''),
+                normalize(op.categoryId ?? op.categoryName ?? op.category ?? ''),
+                normalize(op.accountId ?? op.accountName ?? op.account ?? ''),
+                normalize(op.description ?? op.desc ?? op.note ?? '')
+            ].join('|');
+
+            if (contentMap.has(contentKey)) {
+                const existingId = contentMap.get(contentKey);
+                console.warn('[DEDUP] Skipping duplicate operation:', {
+                    duplicateId: id,
+                    originalId: existingId,
+                    date: op.date,
+                    amount: op.amount,
+                    type: op.type,
+                    contractor: op.contractorName ?? op.contractor
+                });
+                return;
+            }
+
+            uniqueMap.set(id, op);
+            contentMap.set(contentKey, id);
+        };
 
         // Include operations from displayCache (loaded via fetchOperationsRange)
         Object.values(displayCache.value).forEach(dayOps => {
             if (Array.isArray(dayOps)) {
-                dayOps.forEach(op => {
-                    if (op && op._id) uniqueMap.set(String(op._id), op);
-                });
+                dayOps.forEach(addOperation);
             }
         });
 
         // Include deal operations
-        dealOperations.value.forEach(op => {
-            if (op && op._id) uniqueMap.set(String(op._id), op);
-        });
+        dealOperations.value.forEach(addOperation);
 
         // Include tax operations
-        taxKnownOperations.value.forEach(op => {
-            if (op && op._id && !uniqueMap.has(String(op._id))) {
-                uniqueMap.set(String(op._id), op);
-            }
-        });
+        taxKnownOperations.value.forEach(addOperation);
 
         return Array.from(uniqueMap.values());
     });
