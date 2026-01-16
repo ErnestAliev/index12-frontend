@@ -920,14 +920,13 @@ const initializeMobileView = async () => {
     const oneDay = 1000 * 60 * 60 * 24;
     mainStore.setToday(Math.floor(diff / oneDay));
 
-    // 🔥 UNIFIED DATE RANGE: Load to end of current month (SINGLE SOURCE OF TRUTH)
-    // This matches desktop behavior and provides stable balances
+    // 🔥 UNIFIED DATE RANGE: Already set to '1m' before this function
+    // No need to call setProjectionToEndOfMonth - projection is already correctly set
     isTimelineLoading.value = true;
-    console.log('[Mobile] Initializing with projection to end of current month');
+    console.log('[Mobile] Using pre-initialized projection (1m mode - full current month)');
     try {
-        await mainStore.setProjectionToEndOfMonth();
-        
-        const modeToLoad = mainStore.projection.mode || 'current_month';
+        // Use projection that was already set to '1m' in onMounted
+        const modeToLoad = mainStore.projection.mode || '1m';
         console.log('[MOBILE GRAPH DEBUG] Mode to load:', modeToLoad);
 
         // Load data for current view mode only (no double loading)
