@@ -184,6 +184,11 @@ function getSnapshot() {
   });
 
   const totalCurrentDebt = rows.reduce((s, r) => s + (Number(r.currentDebt) || 0), 0);
+  
+  // Calculate total paid taxes from mainStore.taxes
+  const totalPaid = (mainStore.taxes || [])
+    .filter(t => t.status === 'paid' && t.date && new Date(t.date) <= new Date())
+    .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
   return {
     key: props.widgetKey,
@@ -195,6 +200,10 @@ function getSnapshot() {
     totals: {
       totalCurrentDebt,
       totalCurrentDebtText: `- ${formatMoney(totalCurrentDebt)} ₸`,
+      totalPaid,
+      totalPaidText: `${formatMoney(totalPaid)} ₸`,
+      actualDebt: Math.max(0, totalCurrentDebt - totalPaid),
+      actualDebtText: `- ${formatMoney(Math.max(0, totalCurrentDebt - totalPaid))} ₸`,
     }
   };
 }
