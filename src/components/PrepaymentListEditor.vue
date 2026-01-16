@@ -20,7 +20,8 @@ import WorkActPopup from './WorkActPopup.vue';
 
 const props = defineProps({
   title: { type: String, default: 'Управление предоплатами' },
-  initialTab: { type: String, default: 'clients' } 
+  initialTab: { type: String, default: 'clients' },
+  widgetKey: { type: String, default: null }
 });
 
 const emit = defineEmits(['close']);
@@ -393,6 +394,20 @@ const contractorOptions = computed(() => {
     opts.push({ label: 'Контрагенты', options: mainStore.contractors.map(c => ({ value: `contr_${c._id}`, label: c.name })) });
     return opts;
 });
+
+const isWidgetOnDashboard = computed(() => {
+  if (!props.widgetKey) return null;
+  return mainStore.dashboardLayout.includes(props.widgetKey);
+});
+
+const toggleWidgetOnDashboard = () => {
+  if (!props.widgetKey) return;
+  if (isWidgetOnDashboard.value) {
+    mainStore.dashboardLayout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey);
+  } else {
+    mainStore.dashboardLayout = [...mainStore.dashboardLayout, props.widgetKey];
+  }
+};
 </script>
 
 <template>
@@ -404,7 +419,16 @@ const contractorOptions = computed(() => {
           <div class="loading-text">{{ isDeleting ? 'Удаление операции...' : 'Загрузка списка...' }}</div>
       </div>
 
-      <div class="popup-header"><h3>{{ title }}</h3></div>
+      <div class="popup-header">
+        <div class="header-with-toggle">
+          <h3>{{ title }}</h3>
+          <button v-if="widgetKey && isWidgetOnDashboard !== null" class="widget-toggle-btn" @click.stop="toggleWidgetOnDashboard" :title="isWidgetOnDashboard ? 'Скрыть' : 'Показать'">
+            <svg v-if="isWidgetOnDashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+            <span class="toggle-label">{{ isWidgetOnDashboard ? 'На столе' : 'Скрыт' }}</span>
+          </button>
+        </div>
+      </div>
 
       <div class="tabs-header">
           <button class="tab-btn" :class="{ active: activeTab === 'clients' }" @click="activeTab = 'clients'">Предоплаты по сделкам</button>
@@ -574,6 +598,11 @@ const contractorOptions = computed(() => {
 
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 24px; color: var(--color-heading); font-weight: 700; }
+.header-with-toggle { display: flex; align-items: center; gap: 16px; }
+.widget-toggle-btn { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 13px; color: var(--color-text-soft); }
+.widget-toggle-btn:hover { border-color: var(--color-primary); background: var(--color-background-mute); }
+.widget-toggle-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.widget-toggle-btn .toggle-label { font-weight: 500; }
 .tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 1rem; border-bottom: 1px solid var(--color-border); }
 .tab-btn { background: none; border: none; border-bottom: 3px solid transparent; font-size: 15px; font-weight: 600; color: var(--color-text-soft); padding: 12px 0; cursor: pointer; transition: all 0.2s; }
 .tab-btn.active { color: var(--color-heading) ; border-color: var(--color-heading) ; }

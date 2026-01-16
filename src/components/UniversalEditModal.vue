@@ -254,6 +254,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           ref="accountsEditorRef"
           title="Редактирование счетов"
           entity-type="accounts"
+          widget-key="accounts"
           :items="accountItems"
           @close="() => {}"
           @save="(items) => mainStore.batchUpdateEntities('accounts', items)"
@@ -265,6 +266,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           ref="companiesEditorRef"
           title="Редактирование компаний"
           entity-type="companies"
+          widget-key="companies"
           :items="companyItems"
           @close="() => {}"
           @save="(items) => mainStore.batchUpdateEntities('companies', items)"
@@ -276,6 +278,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           ref="individualsEditorRef"
           title="Редактирование физлиц"
           entity-type="individuals"
+          widget-key="individuals"
           :items="individualItems"
           @close="() => {}"
           @save="(items) => mainStore.batchUpdateEntities('individuals', items)"
@@ -287,6 +290,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           ref="contractorsEditorRef"
           title="Редактирование контрагентов"
           entity-type="contractors"
+          widget-key="contractors"
           :items="contractorItems"
           @close="() => {}"
           @save="(items) => mainStore.batchUpdateEntities('contractors', items)"
@@ -298,6 +302,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           ref="projectsEditorRef"
           title="Редактирование проектов"
           entity-type="projects"
+          widget-key="projects"
           :items="projectItems"
           @close="() => {}"
           @save="(items) => mainStore.batchUpdateEntities('projects', items)"
@@ -307,6 +312,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
         <TaxListEditor
           v-else-if="activeTabId === 'taxes'"
           ref="taxesEditorRef"
+          widget-key="taxes"
           @close="() => {}"
         />
         
@@ -314,12 +320,14 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
         <TransferListEditor
           v-else-if="activeTabId === 'transfers'"
           ref="transfersEditorRef"
+          widget-key="transfers"
           @close="() => {}"
         />
         
         <!-- Prepayments Tab -->
         <PrepaymentListEditor
           v-else-if="activeTabId === 'prepayments'"
+          widget-key="liabilities"
           @close="() => {}"
         />
         
@@ -329,6 +337,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           ref="categoriesEditorRef"
           title="Редактирование категорий"
           entity-type="categories"
+          widget-key="categories"
           :items="categoryItems"
           @close="() => {}"
           @save="(items) => mainStore.batchUpdateEntities('categories', items)"
@@ -338,14 +347,18 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
         <OperationListEditor
           v-else-if="activeTabId === 'incomes'"
           ref="operationEditorRef"
-          operation-type="income"
+          title="Редактирование доходов"
+          type="income"
+          widget-key="incomeList"
           @close="() => {}"
         />
         
         <!-- Expenses Tab -->
         <OperationListEditor
           v-else-if="activeTabId === 'expenses'"
-          operation-type="expense"
+          title="Редактирование расходов"
+          type="expense"
+          widget-key="expenseList"
           @close="() => {}"
         />
         
@@ -353,6 +366,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
         <WithdrawalListEditor
           v-else-if="activeTabId === 'withdrawals'"
           ref="withdrawalsEditorRef"
+          widget-key="withdrawalList"
           @close="() => {}"
         />
         
@@ -360,6 +374,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
         <CreditListEditor
           v-else-if="activeTabId === 'credits'"
           ref="creditsEditorRef"
+          widget-key="credits"
           @close="() => {}"
         />
       </div>

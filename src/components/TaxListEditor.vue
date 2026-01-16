@@ -6,7 +6,8 @@ import DateRangePicker from './DateRangePicker.vue';
 import TaxPaymentPopup from './TaxPaymentPopup.vue';
 
 const props = defineProps({
-  title: { type: String, default: 'Управление налогами' }
+  title: { type: String, default: 'Управление налогами' },
+  widgetKey: { type: String, default: null }
 });
 
 const emit = defineEmits(['close']);
@@ -248,13 +249,45 @@ const cancelDelete = () => {
 onMounted(async () => {
     await mainStore.fetchAllEntities();
 });
+
+const isWidgetOnDashboard = computed(() => {
+  if (!props.widgetKey) return null;
+  return mainStore.dashboardLayout.includes(props.widgetKey);
+});
+
+const toggleWidgetOnDashboard = () => {
+  if (!props.widgetKey) return;
+  if (isWidgetOnDashboard.value) {
+    mainStore.dashboardLayout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey);
+  } else {
+    mainStore.dashboardLayout = [...mainStore.dashboardLayout, props.widgetKey];
+  }
+};
 </script>
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     <div class="popup-content wide-editor">
       <div class="popup-header">
-          <h3>{{ title }}</h3>
+          <div class="header-with-toggle">
+            <h3>{{ title }}</h3>
+            <button 
+              v-if="widgetKey && isWidgetOnDashboard !== null"
+              class="widget-toggle-btn"
+              @click.stop="toggleWidgetOnDashboard"
+              :title="isWidgetOnDashboard ? 'Скрыть виджет' : 'Показать виджет'"
+            >
+              <svg v-if="isWidgetOnDashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+              <span class="toggle-label">{{ isWidgetOnDashboard ? 'На столе' : 'Скрыт' }}</span>
+            </button>
+          </div>
       </div>
 
       <!-- Вкладки -->
@@ -458,6 +491,12 @@ onMounted(async () => {
 .popup-content { background: var(--color-background); border-radius: 12px; display: flex; flex-direction: column; height: 50vh; margin: 2rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 95%; max-width: 1400px; border: 1px solid var(--color-border); }
 .popup-header { padding: 1.5rem 1.5rem 0.5rem; }
 h3 { margin: 0; font-size: 24px; color: var(--color-heading); font-weight: 700; }
+
+.header-with-toggle { display: flex; align-items: center; gap: 16px; }
+.widget-toggle-btn { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 13px; color: var(--color-text-soft); }
+.widget-toggle-btn:hover { border-color: var(--color-primary); background: var(--color-background-mute); }
+.widget-toggle-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.widget-toggle-btn .toggle-label { font-weight: 500; }
 
 .tabs-header { display: flex; gap: 24px; padding: 0 1.5rem; margin-top: 0.5rem; border-bottom: 1px solid var(--color-border); }
 .tab-btn { background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: var(--color-text-soft); padding: 10px 0; cursor: pointer; transition: all 0.2s; }

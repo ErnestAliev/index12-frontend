@@ -23,7 +23,8 @@ import { knownBanks } from '@/data/knownBanks.js';
 const props = defineProps({
   title: { type: String, required: true },
   items: { type: Array, required: true },
-  entityType: { type: String, default: '' } // 'accounts', 'companies', etc.
+  entityType: { type: String, default: '' }, // 'accounts', 'companies', etc.
+  widgetKey: { type: String, default: null } // Optional: corresponding widget key for dashboard toggle
 });
 const emit = defineEmits(['close', 'save']);
 
@@ -486,6 +487,25 @@ const confirmDelete = async (deleteOperations) => {
 };
 const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value = false; itemToDelete.value = null; };
 
+// --- WIDGET TOGGLE LOGIC ---
+const isWidgetOnDashboard = computed(() => {
+  if (!props.widgetKey) return null; // No widget key provided
+  return mainStore.dashboardLayout.includes(props.widgetKey);
+});
+
+const toggleWidgetOnDashboard = () => {
+  if (!props.widgetKey) return;
+  
+  if (isWidgetOnDashboard.value) {
+    // Remove from layout
+    const newLayout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey);
+    mainStore.dashboardLayout = newLayout;
+  } else {
+    // Add to end of layout
+    mainStore.dashboardLayout = [...mainStore.dashboardLayout, props.widgetKey];
+  }
+};
+
 // Expose methods for parent components
 defineExpose({
   triggerCreate: startCreation
@@ -495,7 +515,25 @@ defineExpose({
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor }">
-      <h3>{{ title }}</h3>
+      <div class="header-with-toggle">
+        <h3>{{ title }}</h3>
+        <button 
+          v-if="widgetKey && isWidgetOnDashboard !== null"
+          class="widget-toggle-btn"
+          @click.stop="toggleWidgetOnDashboard"
+          :title="isWidgetOnDashboard ? 'Скрыть виджет с рабочего стола' : 'Показать виджет на рабочем столе'"
+        >
+          <svg v-if="isWidgetOnDashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+          <span class="toggle-label">{{ isWidgetOnDashboard ? 'На столе' : 'Скрыт' }}</span>
+        </button>
+      </div>
       
       <template v-if="!isIndividualEditor && localItems.length > 0">
         <div v-if="isAccountEditor" class="editor-header account-header-simple">
@@ -688,6 +726,47 @@ defineExpose({
 .popup-content { max-width: 580px; background: var(--color-background-soft); padding: 2rem; border-radius: 12px; color: var(--color-text); width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
 .popup-content.wide { width: 90%; max-width: 1400px; }
 h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
+
+/* Widget Toggle Button */
+.header-with-toggle {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 1.5rem;
+}
+
+.header-with-toggle h3 {
+  margin-bottom: 0;
+}
+
+.widget-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  color: var(--color-text-soft);
+}
+
+.widget-toggle-btn:hover {
+  border-color: var(--color-primary);
+  background: var(--color-background-mute);
+}
+
+.widget-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.widget-toggle-btn .toggle-label {
+  font-weight: 500;
+}
 
 /* Sticky Footer */
 .editor-footer {

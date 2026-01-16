@@ -135,11 +135,9 @@ const futureUntilStr = computed(() => {
 const localWidgets = computed({
   get: () => {
     if (mainStore.isHeaderExpanded) {
-      const layoutSet = new Set(mainStore.dashboardLayout);
-      const allKeys = mainStore.allWidgets.map(w => w.key);
+      // Only show widgets that are explicitly in dashboardLayout
+      // Do NOT auto-add all available widgets
       const ordered = [...mainStore.dashboardLayout];
-      
-      allKeys.forEach(k => { if (!layoutSet.has(k)) ordered.push(k); });
       
       const rowSize = isTabletGrid.value ? 5 : 6;
       
@@ -155,6 +153,15 @@ const localWidgets = computed({
     const realWidgets = newOrder.filter(k => !k.startsWith('placeholder_'));
     mainStore.dashboardLayout = realWidgets;
   }
+});
+
+// Hidden widgets: widgets that exist but are NOT in dashboardLayout
+// These need to be mounted invisibly so AI can access their data
+const hiddenWidgets = computed(() => {
+  const layoutSet = new Set(mainStore.dashboardLayout);
+  return mainStore.allWidgets
+    .map(w => w.key)
+    .filter(key => !layoutSet.has(key));
 });
 
 // ===============================
@@ -188,16 +195,15 @@ const getSnapshot = () => {
 
   const visibleKeys = getVisibleGridWidgetKeys();
 
-  // IMPORTANT: AI snapshot must not depend on Expand state.
-  // Even when header is collapsed, hidden widgets are still mounted (CSS hides them),
-  // so we can safely include ALL widget keys here.
-  const allGridKeys = (localWidgets.value || []).filter(k => !String(k).startsWith('placeholder_'));
-
+  // IMPORTANT: AI snapshot MUST include ALL widgets, even hidden ones!
+  // Get all available widget keys from the store configuration
+  const allAvailableWidgetKeys = mainStore.allWidgets.map(w => w.key);
+  
   const fsKey = fullscreenWidgetKey.value && !String(fullscreenWidgetKey.value).startsWith('placeholder_')
     ? fullscreenWidgetKey.value
     : null;
 
-  const keys = Array.from(new Set([...allGridKeys, ...(fsKey ? [fsKey] : [])]));
+  const keys = Array.from(new Set([...allAvailableWidgetKeys, ...(fsKey ? [fsKey] : [])]));
 
   const widgets = keys.map((key) => {
     const inst = (fsKey === key)
@@ -794,6 +800,134 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       </div>
     </template>
   </draggable>
+
+  <!-- HIDDEN WIDGETS: Mounted invisibly so AI can get their data -->
+  <div class="hidden-widgets-container" style="display: none;">
+    <template v-for="widgetKey in hiddenWidgets" :key="`hidden_${widgetKey}`">
+      <HeaderTotalCard
+        v-if="widgetKey === 'currentTotal'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        :title="'Всего на счетах\nна текущий момент'"
+        :totalBalance="loggedCurrentTotal" 
+        :subtitlePrefix="`Сейчас на ${mainStore.currentAccountBalances.length} счетах`"
+        :subtitleDate="`до ${todayStr}`"
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+      />
+      
+      <HeaderTotalCard
+        v-else-if="widgetKey === 'futureTotal'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        :title="'Всего на счетах\nс учетом будущих'"
+        :totalBalance="loggedFutureTotal" 
+        :subtitlePrefix="`Будет на ${mainStore.futureAccountBalances.length} счетах`"
+        :subtitleDate="`до ${futureUntilStr}`"
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+      />
+
+      <HeaderTaxCard
+        v-else-if="widgetKey === 'taxes'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Мои налоги"
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+      />
+
+      <HeaderLiabilitiesCard
+        v-else-if="widgetKey === 'liabilities'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Мои предоплаты"
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'credits'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Мои кредиты"
+        :items="mergedCreditBalances"
+        emptyText="...кредитов нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'contractors'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Мои контрагенты"
+        :items="mergedContractorBalances"
+        emptyText="...контрагентов нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'accounts'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Счета/Кассы"
+        :items="mergedAccountBalances"
+        emptyText="...счетов нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'companies'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Мои компании"
+        :items="mergedCompanyBalances"
+        emptyText="...компаний нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'projects'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Мои проекты"
+        :items="mergedProjectBalances"
+        emptyText="...проектов нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'individuals'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Физлица"
+        :items="mergedIndividualBalances"
+        emptyText="...физлиц нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderBalanceCard
+        v-else-if="widgetKey === 'categories'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        title="Категории"
+        :items="mergedCategoryBalances"
+        emptyText="...категорий нет..."
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+        :isDeltaMode="true"
+      />
+
+      <HeaderCategoryCard
+        v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
+        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
+        :title="getWidgetByKey(widgetKey)?.name || '...'"
+        :widgetKey="widgetKey"
+        :widgetIndex="-1"
+      />
+    </template>
+  </div>
 
   <!-- Popups -->
   <EntityPopup 

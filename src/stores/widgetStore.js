@@ -38,8 +38,9 @@ export const useWidgetStore = defineStore('widget', () => {
   // --- 2. Dashboard Layout (Расположение) ---
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors', 'projects', 'futureTotal',
-    'transfers'
+    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors',
+    'projects', 'futureTotal', 'liabilities', 'incomeList', 'expenseList',
+    'withdrawalList', 'transfers', 'individuals', 'categories'
   ]);
   const originalDashboardLayout = ref([]);
 
