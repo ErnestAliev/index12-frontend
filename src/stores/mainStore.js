@@ -1165,10 +1165,45 @@ export const useMainStore = defineStore('mainStore', () => {
     const currentProjectBalances = computed(() => {
         // Always calculate from filtered currentOps to respect period filter
         const aggregated = _calculateAggregatedBalance(currentOps.value, 'projectId');
-        return projects.value.map(p => ({
-            ...p,
-            balance: aggregated.get(String(p._id)) || 0
-        }));
+
+        const result = projects.value.map(p => {
+            const balance = aggregated.get(String(p._id)) || 0;
+
+            // 🔍 DEBUG: Log operations for "Пушкина" project
+            if (p.name && p.name.includes('Пушкина')) {
+                const projectOps = currentOps.value.filter(op => {
+                    const opProjectId = typeof op.projectId === 'object' ? op.projectId._id : op.projectId;
+                    return String(opProjectId) === String(p._id);
+                });
+
+                const incomes = projectOps.filter(op => op.type === 'income');
+                const expenses = projectOps.filter(op => op.type === 'expense');
+
+                console.log('[PROJECT BALANCE DEBUG - Пушкина]', {
+                    projectId: p._id,
+                    totalOps: projectOps.length,
+                    incomeOps: incomes.length,
+                    expenseOps: expenses.length,
+                    incomeSum: incomes.reduce((sum, op) => sum + Math.abs(op.amount || 0), 0),
+                    expenseSum: expenses.reduce((sum, op) => sum + Math.abs(op.amount || 0), 0),
+                    calculatedBalance: balance,
+                    expenseDetails: expenses.map(op => ({
+                        date: op.date,
+                        amount: op.amount,
+                        category: op.categoryId?.name || 'N/A',
+                        isWorkAct: op.isWorkAct,
+                        isTransfer: op.isTransfer
+                    }))
+                });
+            }
+
+            return {
+                ...p,
+                balance
+            };
+        });
+
+        return result;
     });
 
     const futureProjectBalances = computed(() => futureProjectChanges.value);
