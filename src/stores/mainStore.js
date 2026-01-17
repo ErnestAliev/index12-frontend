@@ -923,6 +923,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const currentOps = computed(() => {
         const _tick = snapshot.value.timestamp;
+        const _filterTick = periodFilter.value; // 🔥 FIX: Add periodFilter as reactive dependency
         const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
