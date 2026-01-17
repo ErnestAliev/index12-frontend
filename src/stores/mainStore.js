@@ -248,40 +248,32 @@ export const useMainStore = defineStore('mainStore', () => {
             // Normalize function to compare values case-insensitively
             const normalize = (v) => String(v || '').trim().toLowerCase();
 
+            // 🔥 FIX: Properly extract category identifier
+            const getCategoryKey = (op) => {
+                if (op.categoryId) {
+                    // If categoryId is an object (populated), use _id
+                    if (typeof op.categoryId === 'object' && op.categoryId._id) {
+                        return String(op.categoryId._id);
+                    }
+                    // If it's a string ID, use it directly
+                    return String(op.categoryId);
+                }
+                // Fallback to category name
+                return normalize(op.categoryName ?? op.category ?? '');
+            };
+
             const contentKey = [
                 op.date ? new Date(op.date).toISOString().slice(0, 10) : '',
-                Math.abs(Number(op.amount ?? 0)), // Normalize amount to absolute value
+                Math.abs(Number(op.amount ?? 0)),
                 normalize(op.type),
                 normalize(op.contractorId ?? op.contractorName ?? op.contractor ?? ''),
-                normalize(op.categoryId ?? op.categoryName ?? op.category ?? ''),
+                getCategoryKey(op), // 🔥 Use proper category extraction
                 normalize(op.accountId ?? op.accountName ?? op.account ?? ''),
                 normalize(op.description ?? op.desc ?? op.note ?? '')
             ].join('|');
 
-            // 🔍 DEBUG: Log contentKey for December operations with -350000
-            if (Math.abs(Number(op.amount)) === 350000 && op.date && new Date(op.date).getMonth() === 11) {
-                console.log('[DEDUP DEBUG]', {
-                    id,
-                    date: op.date,
-                    amount: op.amount,
-                    categoryId: op.categoryId,
-                    categoryName: op.categoryName,
-                    category: op.category,
-                    contentKey,
-                    willDedupe: contentMap.has(contentKey)
-                });
-            }
-
             if (contentMap.has(contentKey)) {
                 const existingId = contentMap.get(contentKey);
-                console.warn('[DEDUP] Skipping duplicate operation:', {
-                    duplicateId: id,
-                    originalId: existingId,
-                    date: op.date,
-                    amount: op.amount,
-                    type: op.type,
-                    contractor: op.contractorName ?? op.contractor
-                });
                 return;
             }
 
