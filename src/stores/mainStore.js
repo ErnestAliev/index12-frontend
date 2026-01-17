@@ -922,6 +922,14 @@ export const useMainStore = defineStore('mainStore', () => {
         const filterStart = periodFilter.value.customStart;
         const filterEnd = periodFilter.value.customEnd;
 
+        console.log('[CURRENT OPS RECALC]', {
+            timestamp: new Date().toISOString(),
+            filterMode,
+            filterStart,
+            filterEnd,
+            totalOps: allKnownOperations.value.length
+        });
+
         const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
@@ -952,6 +960,11 @@ export const useMainStore = defineStore('mainStore', () => {
             }
 
             return _isEffectivelyPastOrToday(op.date);
+        });
+
+        console.log('[CURRENT OPS RESULT]', {
+            filteredCount: result.length,
+            filterActive: filterMode === 'custom'
         });
 
         return result;
