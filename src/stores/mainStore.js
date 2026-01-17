@@ -923,13 +923,17 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const currentOps = computed(() => {
         const _tick = snapshot.value.timestamp;
-        const _filterTick = periodFilter.value; // 🔥 FIX: Add periodFilter as reactive dependency
+        // 🔥 FIX: Explicitly read periodFilter fields for proper Vue reactivity
+        const filterMode = periodFilter.value.mode;
+        const filterStart = periodFilter.value.customStart;
+        const filterEnd = periodFilter.value.customEnd;
+
         const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
 
             // 🟢 Period filter: Show only operations within selected period
-            if (periodFilter.value.mode === 'custom') {
+            if (filterMode === 'custom') {
                 const opDate = new Date(op.date);
                 const { startDate, endDate } = _getPeriodRange(periodFilter.value);
                 if (startDate && endDate) {
