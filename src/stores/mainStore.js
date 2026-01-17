@@ -1132,13 +1132,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentContractorBalances = computed(() => {
-        if (includeExcludedInTotal.value) {
-            return contractors.value.map(c => ({
-                ...c,
-                balance: snapshot.value.contractorBalances[c._id] || 0
-            }));
-        }
-
+        // Always calculate from filtered currentOps to respect period filter
         const aggregated = _calculateAggregatedBalance(currentOps.value, 'contractorId');
         return contractors.value.map(c => ({
             ...c,
@@ -1151,13 +1145,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentProjectBalances = computed(() => {
-        if (includeExcludedInTotal.value) {
-            return projects.value.map(p => ({
-                ...p,
-                balance: snapshot.value.projectBalances[p._id] || 0
-            }));
-        }
-
+        // Always calculate from filtered currentOps to respect period filter
         const aggregated = _calculateAggregatedBalance(currentOps.value, 'projectId');
         return projects.value.map(p => ({
             ...p,
@@ -1168,12 +1156,11 @@ export const useMainStore = defineStore('mainStore', () => {
     const futureProjectBalances = computed(() => futureProjectChanges.value);
 
     const currentCategoryBalances = computed(() => {
+        // Always calculate from filtered currentOps to respect period filter
         const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
         return categories.value.map(c => ({
             ...c,
-            balance: includeExcludedInTotal.value
-                ? (snapshot.value.categoryTotals[c._id]?.total || 0)
-                : (aggregated.get(String(c._id)) || 0)
+            balance: aggregated.get(String(c._id)) || 0
         }));
     });
 
