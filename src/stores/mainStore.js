@@ -258,6 +258,20 @@ export const useMainStore = defineStore('mainStore', () => {
                 normalize(op.description ?? op.desc ?? op.note ?? '')
             ].join('|');
 
+            // 🔍 DEBUG: Log contentKey for December operations with -350000
+            if (Math.abs(Number(op.amount)) === 350000 && op.date && new Date(op.date).getMonth() === 11) {
+                console.log('[DEDUP DEBUG]', {
+                    id,
+                    date: op.date,
+                    amount: op.amount,
+                    categoryId: op.categoryId,
+                    categoryName: op.categoryName,
+                    category: op.category,
+                    contentKey,
+                    willDedupe: contentMap.has(contentKey)
+                });
+            }
+
             if (contentMap.has(contentKey)) {
                 const existingId = contentMap.get(contentKey);
                 console.warn('[DEDUP] Skipping duplicate operation:', {
