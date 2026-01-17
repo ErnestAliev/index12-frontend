@@ -1172,6 +1172,7 @@ export const useMainStore = defineStore('mainStore', () => {
             // 🔍 DEBUG: Log operations for "Пушкина" project
             if (p.name && p.name.includes('Пушкина')) {
                 const projectOps = currentOps.value.filter(op => {
+                    if (!op.projectId) return false;
                     const opProjectId = typeof op.projectId === 'object' ? op.projectId._id : op.projectId;
                     return String(opProjectId) === String(p._id);
                 });
