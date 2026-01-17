@@ -348,6 +348,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
             if (!_isOpVisible(op)) return;
 
+            // 🔥 FIX: Exclude inter-company operations (same as currentExpenses/currentIncomes)
+            if (_isInterCompanyOp(op)) return;
+
+            // 🔥 FIX: Exclude retail write-offs (same as currentExpenses)
+            if (_isRetailWriteOff(op)) return;
+
             let key = null;
             const rawKey = op[groupByField];
             key = _toStr(rawKey);
