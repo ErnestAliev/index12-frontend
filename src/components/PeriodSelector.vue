@@ -210,12 +210,16 @@ const applyPeriod = () => {
     });
   } else if (mode.value === 'analytics' && analyticsStartDate.value && analyticsEndDate.value) {
     // 🔥 ANALYTICS: Set projection to exact selected range
-    projectionStore.setProjectionRange(analyticsStartDate.value, analyticsEndDate.value);
+    // 🔥 FIX: Set end date to end of day (23:59:59.999) to include entire last day
+    const endOfDay = new Date(analyticsEndDate.value);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    projectionStore.setProjectionRange(analyticsStartDate.value, endOfDay);
     
     mainStore.setPeriodFilter({
       mode: 'custom',
       customStart: analyticsStartDate.value.toISOString(),
-      customEnd: analyticsEndDate.value.toISOString(),
+      customEnd: endOfDay.toISOString(),
       isForecastMode: false  // 🔥 Remember this was analytics mode
     });
   }
