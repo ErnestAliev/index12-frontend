@@ -231,35 +231,32 @@ const buildDesktopUiSnapshot = () => {
         .filter(x => x.dateKey)
     : [];
 
-  // (b) Cached days from store (can include much more than 12 visible columns)
-  const cacheMap = (mainStore?.displayCache?.value && typeof mainStore.displayCache.value === 'object')
-    ? mainStore.displayCache.value
-    : (_isPlainObject(mainStore?.displayCache) ? mainStore.displayCache : {});
-
-  const cacheDateKeys = Object.keys(cacheMap || {}).filter(Boolean);
+  // (b) ALL operations from store (not just visible days)
+  // 🔥 FIX: Use allKnownOperations instead of displayCache to ensure AI has complete data
+  const allOps = Array.isArray(mainStore?.allKnownOperations)
+    ? mainStore.allKnownOperations
+    : [];
 
   // Safety cap: keep payload reasonable
   const MAX_OPS = 2000;
-  let totalOps = 0;
+  const truncated = allOps.length > MAX_OPS;
+  const opsToInclude = allOps.slice(0, MAX_OPS);
+  
+  // Group by date for timeline structure
   const opsByDay = {};
-  let truncated = false;
+  for (const op of opsToInclude) {
+    if (!op || op.isDeleted) continue;
+    const normalized = _normalizeOp(op);
+    if (!normalized) continue;
 
-  for (const dk of cacheDateKeys) {
-    if (totalOps >= MAX_OPS) { truncated = true; break; }
-    const rawOps = _getOpsForDateKeyBestEffort(dk);
-    const normalized = rawOps.map(_normalizeOp).filter(Boolean);
-    if (!normalized.length) continue;
+    const dateKey = op.dateKey || op.date || '';
+    if (!dateKey) continue;
 
-    if (totalOps + normalized.length > MAX_OPS) {
-      opsByDay[dk] = normalized.slice(0, Math.max(0, MAX_OPS - totalOps));
-      totalOps = MAX_OPS;
-      truncated = true;
-      break;
-    }
-
-    opsByDay[dk] = normalized;
-    totalOps += normalized.length;
+    if (!opsByDay[dateKey]) opsByDay[dateKey] = [];
+    opsByDay[dateKey].push(normalized);
   }
+
+  const cacheDateKeys = Object.keys(opsByDay);
 
   // Backward-compatible: keep `days` key name used elsewhere
   const days = daysVisible;
@@ -277,9 +274,9 @@ const buildDesktopUiSnapshot = () => {
       daysVisible: days,
       cachedDaysCount: cacheDateKeys.length,
       opsByDay,
-      opsCount: totalOps,
+      opsCount: opsToInclude.length,
       truncated,
-      note: 'ops taken from mainStore.displayCache (store cache), not from expanded widgets/DOM',
+      note: 'ops taken from mainStore.allKnownOperations (ALL operations), ensuring AI has complete data',
     },
   };
 
