@@ -6,7 +6,7 @@ import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
-import CreditWizardPopup from './CreditWizardPopup.vue';
+
 
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 import { categorySuggestions } from '@/data/categorySuggestions.js'; 

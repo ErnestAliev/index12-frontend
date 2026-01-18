@@ -78,7 +78,7 @@ export const useSocketStore = defineStore('socket', () => {
         });
 
         // --- Обработчики событий Сущностей (Счета, Категории и т.д.) ---
-        const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category', 'prepayment'];
+        const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category'];
 
         entityTypes.forEach(type => {
             socket.value.on(`${type}_added`, (item) => {
@@ -94,21 +94,7 @@ export const useSocketStore = defineStore('socket', () => {
             });
         });
 
-        // --- Кредиты и Налоги ---
-        socket.value.on('credit_added', (c) => mainStore.credits.push(c));
-        socket.value.on('credit_updated', (c) => {
-            if (!mainStore.credits) return;
-            const idx = mainStore.credits.findIndex(x => x._id === c._id);
-            if (idx !== -1) mainStore.credits[idx] = c; else mainStore.credits.push(c);
-        });
-        socket.value.on('credit_deleted', (id) => {
-            if (mainStore.credits) mainStore.credits = mainStore.credits.filter(c => c._id !== id);
-        });
 
-        socket.value.on('tax_payment_added', (t) => mainStore.taxes.push(t));
-        socket.value.on('tax_payment_deleted', (id) => {
-            if (mainStore.taxes) mainStore.taxes = mainStore.taxes.filter(t => t._id !== id);
-        });
     }
 
     function disconnect() {

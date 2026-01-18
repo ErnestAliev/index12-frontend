@@ -10,7 +10,7 @@ import { formatNumber } from '@/utils/formatters.js';
 import IncomePopup from '@/components/IncomePopup.vue'; 
 import ExpensePopup from '@/components/ExpensePopup.vue'; 
 import TransferPopup from '@/components/TransferPopup.vue';
-import WithdrawalPopup from '@/components/WithdrawalPopup.vue'; 
+
 import TheHeader from '@/components/TheHeader.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import DayColumn from '@/components/DayColumn.vue';
@@ -20,12 +20,11 @@ import YAxisPanel from '@/components/YAxisPanel.vue';
 import ImportExportModal from '@/components/ImportExportModal.vue';
 import GraphModal from '@/components/GraphModal.vue';
 import AboutModal from '@/components/AboutModal.vue';
-import PrepaymentModal from '@/components/PrepaymentModal.vue';
+
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
 import RefundPopup from '@/components/RefundPopup.vue'; 
 import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
-// 🟢 1. Импорт нового попапа
-import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
+
 // 🟢 2. Импорт модала приглашения сотрудников
 import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
 // 🟢 3. Импорт универсального модала редактирования
@@ -1967,14 +1966,6 @@ const handleRefundDelete = async (op) => {
         @operation-deleted="handleOperationDelete($event)"
     />
 
-    <!-- 🟢 PREPAYMENT MODAL -->
-    <PrepaymentModal 
-       v-if="isPrepaymentModalVisible" 
-       :initialData="prepaymentData" 
-       :dateKey="prepaymentDateKey" 
-       @close="isPrepaymentModalVisible = false" 
-       @save="handlePrepaymentSave" 
-    />
 
     <!-- 🟢 SMART DEAL CONFIRM -->
     <SmartDealPopup 
@@ -1988,16 +1979,9 @@ const handleRefundDelete = async (op) => {
        @confirm="handleSmartDealConfirm"
     />
 
-    <!-- 🟢 TAX DETAILS POPUP -->
-    <TaxPaymentDetailsPopup 
-       v-if="isTaxDetailsPopupVisible"
-       :operation-to-edit="operationToEdit"
-       @close="isTaxDetailsPopupVisible = false"
-       @delete="handleTaxDelete"
-    />
 
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
-    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" :operation-to-edit="operationToEdit" @close="handleCloseWithdrawalPopup" @save="handleWithdrawalSave" />
+
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
 

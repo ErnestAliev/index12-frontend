@@ -2066,14 +2066,11 @@ export const useMainStore = defineStore('mainStore', () => {
     async function fetchAllEntities() {
         if (!user.value) return;
         try {
-            const [accRes, compRes, contrRes, projRes, indRes, catRes, prepRes, credRes, dealsRes, taxesRes] = await Promise.all([
+            const [accRes, compRes, contrRes, projRes, indRes, catRes, dealsRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
                 axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
                 axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
-                axios.get(`${API_BASE_URL}/prepayments`),
-                axios.get(`${API_BASE_URL}/credits`),
-                axios.get(`${API_BASE_URL}/deals/all`),
-                axios.get(`${API_BASE_URL}/taxes`)
+                axios.get(`${API_BASE_URL}/deals/all`)
             ]);
 
             accounts.value = _sortByOrder(accRes.data);
@@ -2081,13 +2078,9 @@ export const useMainStore = defineStore('mainStore', () => {
             contractors.value = _sortByOrder(contrRes.data);
             projects.value = _sortByOrder(projRes.data);
             individuals.value = _sortByOrder(indRes.data);
-            credits.value = _sortByOrder(credRes.data);
             dealOperations.value = dealsRes.data;
-            taxes.value = taxesRes.data;
 
-            const normalCategories = catRes.data.map(c => ({ ...c, isPrepayment: false }));
-            const prepaymentCategories = prepRes.data.map(p => ({ ...p, isPrepayment: true }));
-            categories.value = _sortByOrder([...normalCategories, ...prepaymentCategories]);
+            categories.value = _sortByOrder(catRes.data);
 
             await ensureSystemEntities();
             await fetchSnapshot();

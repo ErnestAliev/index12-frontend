@@ -3,13 +3,8 @@ import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import EntityListEditor from './EntityListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
-import TaxListEditor from './TaxListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
-import PrepaymentListEditor from './PrepaymentListEditor.vue';
-import WithdrawalListEditor from './WithdrawalListEditor.vue';
-import CreditListEditor from './CreditListEditor.vue';
 import CreateEntityModal from './CreateEntityModal.vue';
-import CreditWizardPopup from './CreditWizardPopup.vue';
 
 const emit = defineEmits(['close']);
 const mainStore = useMainStore();
@@ -18,9 +13,7 @@ const mainStore = useMainStore();
 const showCreateEntityModal = ref(false);
 const createEntityType = ref('');
 
-// Credit wizard state
-const showCreditWizard = ref(false);
-const editingCredit = ref(null);
+
 
 // Get items from store for each entity type
 const accountItems = computed(() => mainStore.accounts || []);
@@ -37,14 +30,14 @@ const defaultTabs = [
   { id: 'individuals', label: 'Физлица', component: null },
   { id: 'contractors', label: 'Контрагенты', component: null },
   { id: 'projects', label: 'Проекты', component: null },
-  { id: 'taxes', label: 'Налоги', component: null },
+
   { id: 'transfers', label: 'Переводы', component: null },
-  { id: 'prepayments', label: 'Предоплаты', component: null },
+
   { id: 'categories', label: 'Категории', component: null },
   { id: 'incomes', label: 'Доходы', component: null },
   { id: 'expenses', label: 'Расходы', component: null },
-  { id: 'withdrawals', label: 'Выводы', component: null },
-  { id: 'credits', label: 'Кредиты', component: null }
+
+
 ];
 
 const tabs = ref([...defaultTabs]);
@@ -52,11 +45,7 @@ const tabs = ref([...defaultTabs]);
 const contractorsEditorRef = ref(null);
 const projectsEditorRef = ref(null);
 const categoriesEditorRef = ref(null);
-const taxesEditorRef = ref(null);
-const transfersEditorRef = ref(null);
-const operationEditorRef = ref(null);
-const withdrawalsEditorRef = ref(null);
-const creditsEditorRef = ref(null);
+
 
 const activeTabId = ref('accounts');
 const draggedTabId = ref(null);
@@ -157,13 +146,11 @@ const currentButtonConfig = computed(() => {
     contractors: { show: true, label: 'Создать контрагента', color: '#10b981', handler: startCreating },
     projects: { show: true, label: 'Создать проект', color: '#10b981', handler: startCreating },
     categories: { show: true, label: 'Создать категорию', color: '#10b981', handler: startCreating },
-    taxes: { show: true, label: 'Оплатить налоги', color: '#10b981', handler: handlePayTaxes },
+
     transfers: { show: false, label: '', color: '', handler: null }, // Hidden - uses internal popup
     incomes: { show: false, label: '', color: '', handler: null }, // Hidden - uses internal popup
     expenses: { show: false, label: '', color: '', handler: null }, // Hidden - uses internal popup
-    withdrawals: { show: true, label: 'Вывод средств', color: '#DE8FFF', handler: () => withdrawalsEditorRef.value?.openCreatePopup?.() },
-    credits: { show: true, label: 'Создать кредит', color: '#10b981', handler: () => { editingCredit.value = null; showCreditWizard.value = true; } },
-    prepayments: { show: false, label: '', color: '', handler: null }
+
   };
   
   return configs[activeTabId.value] || { show: false, label: '', color: '', handler: null };
@@ -181,42 +168,11 @@ const handleEntityCreated = (newItem) => {
   // Modal will close automatically, entity already added to store
 };
 
-const handlePayTaxes = () => {
-    console.log('💳 CLICKED: Pay Taxes');
-    console.log('🔗 Ref value:', taxesEditorRef.value);
-    
-    if (taxesEditorRef.value && typeof taxesEditorRef.value.triggerPay === 'function') {
-        taxesEditorRef.value.triggerPay();
-    } else {
-        console.error('❌ Error: taxesEditorRef is missing or triggerPay is not a function');
-        alert('Ошибка: Не удалось открыть окно оплаты. Попробуйте обновить страницу.');
-    }
-};
-
 const closeModal = () => {
   emit('close');
 };
 
-// Credit wizard handlers
-const handleCreditWizardSave = async (creditData) => {
-  try {
-    await mainStore.addCredit(creditData);
-    await mainStore.fetchAllEntities();
-    showCreditWizard.value = false;
-  } catch (error) {
-    console.error('Error saving credit:', error);
-  }
-};
 
-const handleCreditWizardUpdate = async ({ id, updates }) => {
-  try {
-    await mainStore.updateCredit(id, updates);
-    await mainStore.fetchAllEntities();
-    showCreditWizard.value = false;
-  } catch (error) {
-    console.error('Error updating credit:', error);
-  }
-};
 </script>
 
 <template>
@@ -308,13 +264,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           @save="(items) => mainStore.batchUpdateEntities('projects', items)"
         />
         
-        <!-- Taxes Tab -->
-        <TaxListEditor
-          v-else-if="activeTabId === 'taxes'"
-          ref="taxesEditorRef"
-          widget-key="taxes"
-          @close="() => {}"
-        />
+
         
         <!-- Transfers Tab -->
         <TransferListEditor
@@ -324,12 +274,7 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           @close="() => {}"
         />
         
-        <!-- Prepayments Tab -->
-        <PrepaymentListEditor
-          v-else-if="activeTabId === 'prepayments'"
-          widget-key="liabilities"
-          @close="() => {}"
-        />
+
         
         <!-- Categories Tab -->
         <EntityListEditor
@@ -362,21 +307,9 @@ const handleCreditWizardUpdate = async ({ id, updates }) => {
           @close="() => {}"
         />
         
-        <!-- Withdrawals Tab -->
-        <WithdrawalListEditor
-          v-else-if="activeTabId === 'withdrawals'"
-          ref="withdrawalsEditorRef"
-          widget-key="withdrawalList"
-          @close="() => {}"
-        />
+
         
-        <!-- Credits Tab -->
-        <CreditListEditor
-          v-else-if="activeTabId === 'credits'"
-          ref="creditsEditorRef"
-          widget-key="credits"
-          @close="() => {}"
-        />
+
       </div>
       
       <!-- Sticky Footer with Actions -->

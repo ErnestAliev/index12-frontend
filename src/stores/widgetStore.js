@@ -21,15 +21,11 @@ export const useWidgetStore = defineStore('widget', () => {
     { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' },
     { key: 'accounts', name: 'Счета/Кассы' },
     { key: 'companies', name: 'Мои компании' },
-    { key: 'taxes', name: 'Мои налоги' },
-    { key: 'credits', name: 'Мои кредиты' },
     { key: 'contractors', name: 'Мои контрагенты' },
     { key: 'projects', name: 'Мои проекты' },
     { key: 'futureTotal', name: 'Всего на счетах\nс учетом будущих' },
-    { key: 'liabilities', name: 'Мои предоплаты' },
     { key: 'incomeList', name: 'Мои доходы' },
     { key: 'expenseList', name: 'Мои расходы' },
-    { key: 'withdrawalList', name: 'Мои выводы' },
     { key: 'transfers', name: 'Мои переводы' },
     { key: 'individuals', name: 'Физлица' },
     { key: 'categories', name: 'Категории' },
@@ -38,9 +34,9 @@ export const useWidgetStore = defineStore('widget', () => {
   // --- 2. Dashboard Layout (Расположение) ---
   const savedLayout = localStorage.getItem('dashboardLayout');
   const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'taxes', 'credits', 'contractors',
-    'projects', 'futureTotal', 'liabilities', 'incomeList', 'expenseList',
-    'withdrawalList', 'transfers', 'individuals', 'categories'
+    'currentTotal', 'accounts', 'companies', 'contractors',
+    'projects', 'futureTotal', 'incomeList', 'expenseList',
+    'transfers', 'individuals', 'categories'
   ]);
   const originalDashboardLayout = ref([]);
 

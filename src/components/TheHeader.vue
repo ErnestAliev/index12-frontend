@@ -7,10 +7,6 @@ import draggable from 'vuedraggable';
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
-import HeaderLiabilitiesCard from './HeaderLiabilitiesCard.vue'; 
-import HeaderCreditCard from './HeaderCreditCard.vue'; 
-// 🟢 Импорт карточки налогов
-import HeaderTaxCard from './HeaderTaxCard.vue';
 
 // Попапы
 import TransferPopup from './TransferPopup.vue';
@@ -18,15 +14,9 @@ import EntityPopup from './EntityPopup.vue';
 import EntityListEditor from './EntityListEditor.vue';
 import TransferListEditor from './TransferListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
-import WithdrawalPopup from './WithdrawalPopup.vue';
-import CreditListEditor from './CreditListEditor.vue'; 
-import CreditWizardPopup from './CreditWizardPopup.vue'; 
-import PrepaymentListEditor from './PrepaymentListEditor.vue';
-import WithdrawalListEditor from './WithdrawalListEditor.vue';
 
-// 🟢 НОВЫЕ ПОПАПЫ ДЛЯ НАЛОГОВ
-import TaxListEditor from './TaxListEditor.vue';
-import TaxPaymentPopup from './TaxPaymentPopup.vue';
+
+
 
 import IncomePopup from './IncomePopup.vue';
 import ExpensePopup from './ExpensePopup.vue';
@@ -279,17 +269,7 @@ const operationListEditorFilterMode = ref('default');
 const isIncomePopupVisible = ref(false);
 const isExpensePopupVisible = ref(false);
 
-const isWithdrawalPopupVisible = ref(false);
-const isCreditEditorVisible = ref(false); 
-const isCreditWizardVisible = ref(false); 
-const isPrepaymentEditorVisible = ref(false);
-const prepaymentEditorInitialTab = ref('clients');
-const isWithdrawalListEditorVisible = ref(false);
 const isEntityPopupVisible = ref(false);
-
-// 🟢 Налоговые стейты
-const isTaxListEditorVisible = ref(false);
-const isTaxPaymentPopupVisible = ref(false);
 
 const popupTitle = ref('');
 const popupInitialValue = ref(''); 
@@ -344,9 +324,7 @@ const mergedIndividualBalances = computed(() => {
     }));
 });
 
-const mergedCreditBalances = computed(() => {
-    return mainStore.futureCreditBalances.sort((a, b) => (b.balance || 0) - (a.balance || 0));
-});
+
 
 const mergedCategoryBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryChanges, true);
@@ -382,7 +360,7 @@ const onCategoryAdd = (widgetKey, index) => {
     if (widgetKey === 'transfers') { isTransferPopupVisible.value = true; return; }
     if (widgetKey === 'incomeList') { isIncomePopupVisible.value = true; return; }
     if (widgetKey === 'expenseList') { isExpensePopupVisible.value = true; return; }
-    if (widgetKey === 'withdrawalList') { isWithdrawalPopupVisible.value = true; return; }
+
     
     if (widgetKey.startsWith('cat_')) {
         const catId = widgetKey.replace('cat_', '');
@@ -403,14 +381,14 @@ const onCategoryAdd = (widgetKey, index) => {
     isExpensePopupVisible.value = true;
 };
 
-const onLiabilitiesAdd = () => { isIncomePopupVisible.value = true; };
+
 
 const onCategoryEdit = (widgetKey) => {
     operationListEditorFilterMode.value = 'default';
     if (widgetKey === 'transfers') { isTransferEditorVisible.value = true; return; }
     if (widgetKey === 'incomeList') { operationListEditorTitle.value = 'Редактировать доходы'; operationListEditorType.value = 'income'; isOperationListEditorVisible.value = true; return; }
     if (widgetKey === 'expenseList') { operationListEditorTitle.value = 'Редактировать расходы'; operationListEditorType.value = 'expense'; isOperationListEditorVisible.value = true; return; }
-    if (widgetKey === 'withdrawalList') { isWithdrawalListEditorVisible.value = true; return; }
+
     
     const catId = widgetKey.replace('cat_', '');
     const category = mainStore.getCategoryById(catId);
@@ -421,47 +399,7 @@ const onCategoryEdit = (widgetKey) => {
     }
 };
 
-const onLiabilitiesEdit = () => { prepaymentEditorInitialTab.value = 'clients'; isPrepaymentEditorVisible.value = true; };
-const onLiabilitiesTab = (tabName) => { prepaymentEditorInitialTab.value = tabName; isPrepaymentEditorVisible.value = true; };
 
-const onCreditsEdit = () => { isCreditEditorVisible.value = true; };
-const onCreditsAdd = () => { isCreditWizardVisible.value = true; };
-
-// 🟢 ОБРАБОТЧИКИ НАЛОГОВ
-const onTaxesAdd = () => {
-    isTaxPaymentPopupVisible.value = true;
-};
-const onTaxesEdit = () => {
-    isTaxListEditorVisible.value = true;
-};
-
-const handleTaxPaymentSuccess = () => {
-    isTaxPaymentPopupVisible.value = false;
-    mainStore.fetchAllEntities();
-};
-
-const handleWizardSave = async (payload) => {
-    isCreditWizardVisible.value = false;
-    try {
-        const systemEntities = await mainStore.ensureSystemEntities();
-        const repaymentCatId = systemEntities.repaymentCat._id;
-        const creditPayload = {
-            name: payload.name, totalDebt: payload.totalDebt, monthlyPayment: payload.monthlyPayment,
-            paymentDay: payload.paymentDay, contractorId: payload.contractorId, individualId: payload.individualId
-        };
-        await mainStore.addCredit(creditPayload);
-        const operationsPromises = payload.schedule.map(item => {
-            return mainStore.createEvent({
-                date: item.date, amount: -item.amount, type: 'expense', categoryId: repaymentCatId,
-                contractorId: payload.contractorId, individualId: payload.individualId,
-                description: `Погашение обязательства: ${payload.name}`, accountId: null
-            });
-        });
-        await Promise.all(operationsPromises);
-        await mainStore.fetchAllEntities();
-        if (mainStore.projection.mode) { await mainStore.loadCalculationData(mainStore.projection.mode, mainStore.currentViewDate); }
-    } catch (e) { console.error("Ошибка сохранения обязательства:", e); alert("Не удалось создать обязательство: " + e.message); }
-};
 
 const handleTransferComplete = async (eventData) => { if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey); isTransferPopupVisible.value = false; };
 const handleOperationAdded = async ({ mode, id, data }) => {
@@ -510,42 +448,11 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
                 :widgetIndex="-1"
              />
 
-             <HeaderTaxCard
-                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
-                v-else-if="fullscreenWidgetKey === 'taxes'"
-                title="Мои налоги"
-                :widgetKey="fullscreenWidgetKey"
-                :widgetIndex="-1"
-                @add="onTaxesAdd"
-                @edit="onTaxesEdit"
-             />
 
-             <HeaderLiabilitiesCard
-                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
-                v-else-if="fullscreenWidgetKey === 'liabilities'"
-                title="Мои предоплаты" 
-                :weOweAmount="mainStore.liabilitiesWeOwe"
-                :theyOweAmount="mainStore.liabilitiesTheyOwe"
-                :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
-                :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
-                :widgetKey="fullscreenWidgetKey"
-                :widgetIndex="-1"
-                @add="onLiabilitiesAdd"
-                @edit="onLiabilitiesEdit"
-                @open-tab="onLiabilitiesTab"
-             />
 
-             <HeaderCreditCard
-                :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
-                v-else-if="fullscreenWidgetKey === 'credits'"
-                title="Мои кредиты"
-                :items="mergedCreditBalances"
-                emptyText="...кредитов нет..."
-                :widgetKey="fullscreenWidgetKey"
-                :widgetIndex="-1"
-                @add="onCreditsAdd"
-                @edit="onCreditsEdit"
-             />
+
+
+
 
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'accounts'"
@@ -664,44 +571,11 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
         
-        <HeaderTaxCard
-          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-          v-else-if="widgetKey === 'taxes'"
-          title="Мои налоги"
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
-          @add="onTaxesAdd"
-          @edit="onTaxesEdit"
-        />
-        
-        <HeaderLiabilitiesCard
-          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-          v-else-if="widgetKey === 'liabilities'"
-          title="Мои предоплаты" 
-          :weOweAmount="mainStore.liabilitiesWeOwe"
-          :theyOweAmount="mainStore.liabilitiesTheyOwe"
-          :weOweAmountFuture="mainStore.liabilitiesWeOweFuture"
-          :theyOweAmountFuture="mainStore.liabilitiesTheyOweFuture"
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
-          @add="onLiabilitiesAdd"
-          @edit="onLiabilitiesEdit"
-          @open-tab="onLiabilitiesTab"
-          @open-menu="handleOpenMenu"
-        />
 
-        <HeaderCreditCard
-          :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-          v-else-if="widgetKey === 'credits'"
-          title="Мои кредиты"
-          :items="mergedCreditBalances"
-          emptyText="...кредитов нет..."
-          :widgetKey="widgetKey"
-          :widgetIndex="index"
-          @add="onCreditsAdd"
-          @edit="onCreditsEdit"
-          @open-menu="handleOpenMenu"
-        />
+        
+
+
+
 
         <HeaderBalanceCard
           v-else-if="widgetKey === 'accounts'"
@@ -826,32 +700,11 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         :widgetIndex="-1"
       />
 
-      <HeaderTaxCard
-        v-else-if="widgetKey === 'taxes'"
-        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-        title="Мои налоги"
-        :widgetKey="widgetKey"
-        :widgetIndex="-1"
-      />
 
-      <HeaderLiabilitiesCard
-        v-else-if="widgetKey === 'liabilities'"
-        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-        title="Мои предоплаты"
-        :widgetKey="widgetKey"
-        :widgetIndex="-1"
-      />
 
-      <HeaderBalanceCard
-        v-else-if="widgetKey === 'credits'"
-        :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-        title="Мои кредиты"
-        :items="mergedCreditBalances"
-        emptyText="...кредитов нет..."
-        :widgetKey="widgetKey"
-        :widgetIndex="-1"
-        :isDeltaMode="true"
-      />
+
+
+
 
       <HeaderBalanceCard
         v-else-if="widgetKey === 'contractors'"
@@ -920,7 +773,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       />
 
       <HeaderCategoryCard
-        v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
+        v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
         :ref="(el) => registerGridWidgetRef(widgetKey, el)"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
@@ -948,15 +801,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   
   <IncomePopup v-if="isIncomePopupVisible" :date="new Date()" :cellIndex="0" @close="isIncomePopupVisible = false" @save="handleOperationAdded" />
   <ExpensePopup v-if="isExpensePopupVisible" :date="new Date()" :cellIndex="0" @close="isExpensePopupVisible = false" @save="handleOperationAdded" />
-  <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" @close="isWithdrawalPopupVisible = false" @save="handleWithdrawalSaved" />
-  <CreditListEditor v-if="isCreditEditorVisible" @close="isCreditEditorVisible = false" />
-  <CreditWizardPopup v-if="isCreditWizardVisible" @close="isCreditWizardVisible = false" @save="handleWizardSave" />
-  <PrepaymentListEditor v-if="isPrepaymentEditorVisible" :initial-tab="prepaymentEditorInitialTab" @close="isPrepaymentEditorVisible = false" />
-  <WithdrawalListEditor v-if="isWithdrawalListEditorVisible" @close="isWithdrawalListEditorVisible = false" />
-  
-  <!-- 🟢 POPUPS НАЛОГОВ -->
-  <TaxListEditor v-if="isTaxListEditorVisible" @close="isTaxListEditorVisible = false" />
-  <TaxPaymentPopup v-if="isTaxPaymentPopupVisible" @close="isTaxPaymentPopupVisible = false" @success="handleTaxPaymentSuccess" />
+
 
 </template>
 
