@@ -385,6 +385,21 @@ watch(() => props.items, (newItems) => {
   }
 }, { deep: true });
 
+// 🟢 AUTO-SAVE WHEN DRAGGING ACCOUNTS BETWEEN LISTS
+// Watch localItems for changes (e.g., when dragging from excluded to active)
+watch(() => localItems.value.length, () => {
+  if (isAccountEditor) {
+    debouncedSave();
+  }
+});
+
+// Watch excludedItems for changes (e.g., when dragging from active to excluded)
+watch(() => excludedItems.value.length, () => {
+  if (isAccountEditor) {
+    debouncedSave();
+  }
+});
+
 // Auto-save: debounced version of handleSave for selectors and inputs
 let saveTimeout = null;
 const debouncedSave = () => {
