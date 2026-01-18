@@ -18,13 +18,13 @@ import MobileUserMenu from '@/components/mobile/MobileUserMenu.vue';
 import IncomePopup from '@/components/IncomePopup.vue';
 import ExpensePopup from '@/components/ExpensePopup.vue';
 import TransferPopup from '@/components/TransferPopup.vue';
-import WithdrawalPopup from '@/components/WithdrawalPopup.vue';
+
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue';
 import RefundPopup from '@/components/RefundPopup.vue';
-import PrepaymentModal from '@/components/PrepaymentModal.vue';
+
 import SmartDealPopup from '@/components/SmartDealPopup.vue';
 import InfoModal from '@/components/InfoModal.vue';
-import TaxPaymentDetailsPopup from '@/components/TaxPaymentDetailsPopup.vue';
+
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
 
@@ -60,14 +60,12 @@ const isTimelineLoading = ref(true);
 const isIncomePopupVisible = ref(false);
 const isExpensePopupVisible = ref(false);
 const isTransferPopupVisible = ref(false);
-const isWithdrawalPopupVisible = ref(false);
+
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
 const isTaxDetailsPopupVisible = ref(false);
 
-const isPrepaymentModalVisible = ref(false);
-const prepaymentData = ref({});
-const prepaymentDateKey = ref('');
+
 
 const isSmartDealPopupVisible = ref(false);
 const smartDealPayload = ref(null);
@@ -1300,8 +1298,6 @@ const handleOperationDrop = async (dropData) => {
 
 const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
 const handleTransferSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else { await mainStore.updateTransfer(id, data); } isTransferPopupVisible.value = false; } catch (e) { console.error("Mobile Transfer Save Error", e); alert("Ошибка перевода"); } };
-const handleSwitchToPrepayment = (data) => { const rawDate = data.date || new Date(); const d = new Date(rawDate); prepaymentDateKey.value = mainStore._getDateKey(d); prepaymentData.value = { ...data, amount: Math.abs(data.amount || 0), contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, operationToEdit: null }; isIncomePopupVisible.value = false; isPrepaymentModalVisible.value = true; };
-const handlePrepaymentSave = async (finalData) => { isPrepaymentModalVisible.value = false; try { if (!finalData.cellIndex && finalData.cellIndex !== 0) { finalData.cellIndex = await mainStore.getFirstFreeCellIndex(finalData.dateKey); } const prepayIds = mainStore.getPrepaymentCategoryIds; if (prepayIds.length > 0 && !finalData.prepaymentId) { finalData.prepaymentId = prepayIds[0]; } finalData.description = `Предоплата`; await mainStore.createEvent(finalData); } catch (e) { console.error('Prepayment Save Error:', e); alert('Не удалось сохранить предоплату: ' + e.message); } };
 const handleSwitchToSmartDeal = async (payload) => { isIncomePopupVisible.value = false; smartDealPayload.value = payload; let status = payload.dealStatus; if (!status && payload.projectId) { try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } catch(e) { console.error('Error fetching status:', e); } } smartDealStatus.value = status || { debt: 0, totalDeal: 0 }; isSmartDealPopupVisible.value = true; };
 const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => { isSmartDealPopupVisible.value = false; const data = smartDealPayload.value; if (!data) return; try { if (closePrevious === true && !isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); } const trancheNum = nextTrancheNum || 2; const formattedAmount = formatNumber(data.amount); const description = `${formattedAmount} ${trancheNum}-й транш`; const incomeData = { type: 'income', amount: data.amount, date: new Date(data.date), accountId: data.accountId, projectId: data.projectId, contractorId: data.contractorId, counterpartyIndividualId: data.counterpartyIndividualId, categoryId: data.categoryId, companyId: data.companyId, individualId: data.individualId, totalDealAmount: 0, isDealTranche: true, isClosed: isFinal, description: description, cellIndex: data.cellIndex }; if (incomeData.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } const newOp = await mainStore.createEvent(incomeData); if (isFinal) { await mainStore.closePreviousTranches(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId); await mainStore.createWorkAct(data.projectId, data.categoryId, data.contractorId, data.counterpartyIndividualId, data.amount, new Date(), newOp._id, true, data.companyId, data.individualId); } } catch (e) { console.error('Smart Deal Error:', e); alert('Ошибка при проведении транша: ' + e.message); } };
 const handleItemClick = (item) => {
@@ -1312,15 +1308,13 @@ const handleItemClick = (item) => {
     }
 };
 
-const handleTaxDelete = async (operation) => { isTaxDetailsPopupVisible.value = false; if (!operation) return; try { await mainStore.deleteOperation(operation); await mainStore.fetchAllEntities(); } catch(e) { alert("Ошибка удаления налога: " + e.message); } };
 const handleRetailClosure = async (payload) => { try { const pId = payload.projectId || (payload.projectIds && payload.projectIds.length > 0 ? payload.projectIds[0] : null); await mainStore.closeRetailDaily(payload.amount, new Date(payload.date), pId); isRetailPopupVisible.value = false; } catch (e) { alert('Ошибка: ' + e.message); } };
 const handleRetailSave = async ({ id, data }) => { isRetailPopupVisible.value = false; try { const pId = data.projectId || (data.projectIds && data.projectIds.length > 0 ? data.projectIds[0] : null); await mainStore.updateOperation(id, { amount: -Math.abs(data.amount), projectId: pId, date: new Date(data.date) }); } catch (e) { alert('Ошибка сохранения списания: ' + e.message); } };
 const handleRetailDelete = async (op) => { isRetailPopupVisible.value = false; try { await mainStore.deleteOperation(op); } catch (e) { alert('Ошибка удаления'); } };
 const handleRefundSave = async ({ mode, id, data }) => { isRefundPopupVisible.value = false; try { if (mode === 'create') await mainStore.createEvent(data); else await mainStore.updateOperation(id, data); } catch (e) { alert('Ошибка сохранения возврата'); } };
 const handleRefundDelete = async (op) => { isRefundPopupVisible.value = false; try { await mainStore.deleteOperation(op); } catch (e) { alert('Ошибка удаления'); } };
 const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; };
-const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = false; operationToEdit.value = null; };
-const handleWithdrawalSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isWithdrawalPopupVisible.value = false; } catch (e) { console.error("Mobile Withdrawal Save Error", e); alert("Ошибка сохранения"); } };
+
 const handleAction = () => {};
 const handleOperationDelete = async (op) => {
     if (!op) return;
@@ -1487,13 +1481,13 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
     <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
     <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
     <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" />
-    <PrepaymentModal v-if="isPrepaymentModalVisible" :initialData="prepaymentData" :dateKey="prepaymentDateKey" @close="isPrepaymentModalVisible = false" @save="handlePrepaymentSave" />
+
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :transferToEdit="operationToEdit" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
-    <WithdrawalPopup v-if="isWithdrawalPopupVisible" :initial-data="{ amount: 0 }" :operation-to-edit="operationToEdit" @close="handleCloseWithdrawalPopup" @save="handleWithdrawalSave" />
+
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />
-    <TaxPaymentDetailsPopup v-if="isTaxDetailsPopupVisible" :operation-to-edit="operationToEdit" @close="isTaxDetailsPopupVisible = false" @delete="handleTaxDelete" />
+
 
     <!-- Mobile Modals -->
     <MobileProjectSwitcher v-if="showProjectsModal" @close="closeProjectsModal" />
