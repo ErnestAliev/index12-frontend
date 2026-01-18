@@ -2679,72 +2679,19 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     async function ensureSystemEntities() {
-        let retailDuplicates = individuals.value.filter(i => {
-            const n = i.name.trim().toLowerCase();
-            return n === 'розничные клиенты' || n === 'розница';
-        });
-        let retailInd = null;
-        if (retailDuplicates.length === 0) {
-            retailInd = await addIndividual('Розничные клиенты');
-        } else {
-            retailInd = retailDuplicates[0];
-            if (retailDuplicates.length > 1) {
-                for (let i = 1; i < retailDuplicates.length; i++) {
-                    try { await deleteEntity('individuals', retailDuplicates[i]._id, false); }
-                    catch (e) { }
-                }
-            }
-        }
-        let realizationDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'реализация');
-        let realizationCat = null;
-        if (realizationDuplicates.length === 0) {
-            realizationCat = await addCategory('Реализация');
-        } else {
-            realizationCat = realizationDuplicates[0];
-            if (realizationDuplicates.length > 1) {
-                for (let i = 1; i < realizationDuplicates.length; i++) {
-                    try { await deleteEntity('categories', realizationDuplicates[i]._id, false); }
-                    catch (e) { }
-                }
-            }
-        }
-        let debtDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'остаток долга');
-        let debtCat = null;
-        if (debtDuplicates.length === 0) {
-            debtCat = await addCategory('Остаток долга');
-        } else {
-            debtCat = debtDuplicates[0];
-            if (debtDuplicates.length > 1) {
-                for (let i = 1; i < debtDuplicates.length; i++) {
-                    try { await deleteEntity('categories', debtDuplicates[i]._id, false); }
-                    catch (e) { }
-                }
-            }
-        }
-        let refundDuplicates = categories.value.filter(c => c.name.trim().toLowerCase() === 'возврат');
-        let refundCat = null;
-        if (refundDuplicates.length === 0) {
-            refundCat = await addCategory('Возврат');
-        } else {
-            refundCat = refundDuplicates[0];
-            if (refundDuplicates.length > 1) {
-                for (let i = 1; i < refundDuplicates.length; i++) {
-                    try { await deleteEntity('categories', refundDuplicates[i]._id, false); }
-                    catch (e) { }
-                }
-            }
-        }
-        let creditProject = projects.value.find(p => p.name.trim().toLowerCase() === 'мои кредиты');
-        if (!creditProject) creditProject = await addProject('Мои кредиты');
-        let repaymentCat = categories.value.find(c => c.name.trim().toLowerCase() === 'погашение займов');
-        if (!repaymentCat) repaymentCat = await addCategory('Погашение займов');
-        let creditIncomeCat = categories.value.find(c => c.name.trim().toLowerCase() === 'кредиты');
-        if (!creditIncomeCat) creditIncomeCat = await addCategory('Кредиты');
-
-        let taxCat = categories.value.find(c => c.name.trim().toLowerCase() === 'налоги');
-        if (!taxCat) taxCat = await addCategory('Налоги');
-
-        return { retailInd, realizationCat, debtCat, refundCat, creditProject, repaymentCat, creditIncomeCat, taxCat };
+        // 🔥 DISABLED: System categories completely removed from application
+        // This function now returns null values to prevent category creation
+        // while maintaining compatibility with existing code that calls it
+        return {
+            retailInd: null,
+            realizationCat: null,
+            debtCat: null,
+            refundCat: null,
+            creditProject: null,
+            repaymentCat: null,
+            creditIncomeCat: null,
+            taxCat: null
+        };
     }
 
     async function closeRetailDaily(amount, date, projectId = null) {

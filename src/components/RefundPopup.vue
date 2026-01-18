@@ -151,7 +151,9 @@ const handleSave = async () => {
 
     let catId = mainStore.refundCategoryId;
     if (!catId) {
-        const res = await mainStore.ensureSystemEntities();
+        // 🔥 DISABLED: System categories removed
+        // const res = await mainStore.ensureSystemEntities();
+        throw new Error('RefundPopup disabled - system categories removed');
         catId = res.refundCat._id;
     }
 
@@ -184,7 +186,9 @@ const confirmDelete = () => {
 };
 
 onMounted(async () => {
-    if (!mainStore.refundCategoryId) await mainStore.ensureSystemEntities();
+    // 🔥 DISABLED: System categories removed
+    // if (!mainStore.refundCategoryId) await mainStore.ensureSystemEntities();
+    throw new Error('RefundPopup disabled - refundCategoryId not available');
     selectedCategoryId.value = mainStore.refundCategoryId;
 
     if (isEditMode.value) {
