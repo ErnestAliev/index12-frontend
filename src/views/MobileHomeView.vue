@@ -1479,7 +1479,7 @@ const handleSmartDealCancel = () => { isSmartDealPopupVisible.value = false; sma
 
     <!-- Popups -->
     <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
-    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" @trigger-prepayment="handleSwitchToPrepayment" @trigger-smart-deal="handleSwitchToSmartDeal" />
+    <IncomePopup v-if="isIncomePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" @trigger-smart-deal="handleSwitchToSmartDeal" />
     <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" />
 
     <SmartDealPopup v-if="isSmartDealPopupVisible" :deal-status="smartDealStatus" :current-amount="smartDealPayload?.amount || 0" :project-name="smartDealPayload?.projectName || 'Проект'" :contractor-name="smartDealPayload?.contractorName || 'Контрагент'" :category-name="smartDealPayload?.categoryName || 'Категория'" @close="handleSmartDealCancel" @confirm="handleSmartDealConfirm" />
