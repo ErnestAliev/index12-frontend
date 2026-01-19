@@ -6,8 +6,7 @@ import { formatNumber } from '@/utils/formatters.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
-import SmartDealPopup from './SmartDealPopup.vue'; 
-import WorkActPopup from './WorkActPopup.vue'; 
+ 
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 import { categorySuggestions } from '@/data/categorySuggestions.js'; 
 import { knownBanks } from '@/data/knownBanks.js'; 
@@ -29,7 +28,7 @@ const props = defineProps({
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save', 'operation-deleted', 'trigger-prepayment', 'trigger-smart-deal']);
+const emit = defineEmits(['close', 'save', 'operation-deleted']);
 
 const mainStore = useMainStore();
 const permissions = usePermissions();
@@ -45,7 +44,7 @@ const selectedCategoryId = ref(null);
 const description = ref('');
 
 // СТАТУС ОПЕРАЦИИ
-const operationStatus = ref('fact'); 
+ 
 
 // InfoModal
 const showInfoModal = ref(false);
@@ -63,14 +62,7 @@ const showCashChoiceModal = ref(false);
 const showSpecialCashInfo = ref(false); 
 const accountCreationPlaceholder = ref('Название счета');
 
-// 🟢 SMART DEAL STATES
-const showSmartDealPopup = ref(false);
-const showWorkActPopup = ref(false);
-const itemToClose = ref(null); 
 
-const isSaving = ref(false);
-const isActProcessing = ref(false); 
-const processingMessage = ref('Обработка...');
 const errorMessage = ref('');
 const isCloneMode = ref(false);
 const editableDate = ref('');
@@ -147,31 +139,13 @@ const isRetailClientSelected = computed(() => {
     return mainStore.retailIndividualId && selectedContractorValue.value === `ind_${mainStore.retailIndividualId}`;
 });
 
-const statusOptions = computed(() => {
-    if (isRetailClientSelected.value) {
-        return [
-            { value: 'fact', label: 'Факт (Просто оплата)' },
-            { value: 'retail_prepayment', label: 'Предоплата / Розница' }
-        ];
-    }
-    return [
-        { value: 'fact', label: 'Факт (Просто доход)' },
-        { value: 'prepayment', label: 'Предоплата / Сделка' },
-        { value: 'credit_receipt', label: 'Получение кредита' }
-    ];
-});
 
-watch(isRetailClientSelected, (isRetail) => {
-    if (isRetail) operationStatus.value = 'fact';
-});
 
 const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
 const isProtectedMode = computed(() => {
     if (!isEditMode.value) return false;
     const op = props.operationToEdit;
     if (!op) return false;
-    if ((op.totalDealAmount || 0) > 0) return true;
-    if (op.isDealTranche) return true;
     if (mainStore._isRetailWriteOff && mainStore._isRetailWriteOff(op)) return true;
     return false;
 });
@@ -184,7 +158,6 @@ const isReadOnly = computed(() => !canEdit.value);
 const title = computed(() => {
     if (isCloneMode.value) return 'Копия: Доход';
     if (isProtectedMode.value) return 'Редактировать сделку';
-    if (operationStatus.value === 'credit_receipt') return isEditMode.value ? 'Редактировать Кредит' : 'Новый Кредит';
     if (isFutureDate.value) return 'Запланировать доход';
     return isEditMode.value ? 'Редактировать Доход' : 'Новый Доход';
 });
@@ -387,53 +360,24 @@ const categoryOptions = computed(() => {
 });
 
 const popupThemeClass = computed(() => {
-    if (isProtectedMode.value) return 'theme-readonly';
-    if (operationStatus.value === 'credit_receipt') return 'theme-credit';
-    return 'theme-income';
+    return 'theme-default';
 });
 
-const localDealStatus = computed(() => {
-    if (!selectedProjectId.value || !selectedCategoryId.value || !selectedContractorValue.value) return null;
-    let searchCId = null, searchIndId = null;
-    const [prefix, id] = selectedContractorValue.value.split('_');
-    if (prefix === 'contr') searchCId = id; else searchIndId = id;
-    const status = mainStore.getProjectDealStatus(selectedProjectId.value, selectedCategoryId.value, searchCId, searchIndId);
-    if (!status || status.totalDeal === 0) return null;
-    return status;
-});
 
-const isDealDetected = computed(() => {
-    if (!localDealStatus.value) return false;
-    // 🟢 FIX: Если сделка закрыта, считаем, что активной сделки нет (для старта новой).
-    if (localDealStatus.value.isClosed) return false;
-    
-    if (isProtectedMode.value) return false;
-    return true;
-});
 
-const nextTrancheNumber = computed(() => (localDealStatus.value?.tranchesCount || 0) + 1);
+
+
+
 
 const mainButtonText = computed(() => {
     if (isCloneMode.value) return 'Создать копию';
     if (isEditMode.value) return 'Сохранить';
-    if (isDealDetected.value) {
-        const rawAmount = parseFloat(String(amount.value).replace(/\s/g, '')) || 0;
-        if (localDealStatus.value && localDealStatus.value.debt > 0 && rawAmount >= localDealStatus.value.debt) {
-             return 'Закрыть сделку';
-        }
-        return `Внести ${nextTrancheNumber.value}-й транш...`;
-    }
-    if (isRetailClientSelected.value && operationStatus.value === 'retail_prepayment') return 'Предоплата от розницы';
-    if (operationStatus.value === 'prepayment') return 'Оформить предоплату...';
-    if (operationStatus.value === 'credit_receipt') return 'Получить кредит'; 
     if (isFutureDate.value) return 'Запланировать';
     return 'Добавить доход';
 });
 
 const mainButtonClass = computed(() => {
-    if ((isRetailClientSelected.value && operationStatus.value === 'retail_prepayment') || isDealDetected.value || operationStatus.value === 'prepayment') return 'btn-submit-prepayment';
-    if (operationStatus.value === 'credit_receipt') return 'btn-submit-credit';
-    return 'btn-submit-income';
+    return 'btn-main';
 });
 
 const myCreditsProjectId = computed(() => {
@@ -473,7 +417,6 @@ watch(selectedContractorValue, (newVal) => {
     if (isBank) {
         if (myCreditsProjectId.value) selectedProjectId.value = myCreditsProjectId.value;
         if (mainStore.creditCategoryId) selectedCategoryId.value = mainStore.creditCategoryId;
-        operationStatus.value = 'credit_receipt';
         return;
     }
     let entity = null;
@@ -530,29 +473,6 @@ const preparePayload = (options = {}) => {
     let targetCellIndex = undefined;
     if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) targetCellIndex = props.cellIndex;
 
-    let isClosedState = false; 
-    let isDealTrancheForce = undefined;
-    let isPrepaymentState = undefined; 
-
-    if (options.autoCloseCurrent) {
-        isClosedState = true;
-    }
-
-    if (isRetailClientSelected.value) { 
-        isDealTrancheForce = false; 
-        if (operationStatus.value === 'fact') { 
-            isClosedState = true; 
-            isPrepaymentState = false; 
-        } else { 
-            isClosedState = false; 
-            isPrepaymentState = true; 
-        } 
-    } else if (isDealDetected.value) {
-        isDealTrancheForce = true;
-    } else if (operationStatus.value === 'prepayment') {
-        isPrepaymentState = true; 
-    }
-
     if (contrId || contrIndId) {
          const type = contrId ? 'contractors' : 'individuals';
          const id = contrId || contrIndId;
@@ -570,47 +490,15 @@ const preparePayload = (options = {}) => {
         companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: selectedCategoryId.value, projectId: selectedProjectId.value,
-        description: description.value, cellIndex: targetCellIndex, 
-        totalDealAmount: 0, 
-        isDealTranche: isDealTrancheForce !== undefined ? isDealTrancheForce : false, 
-        isClosed: isClosedState, 
-        isPrepayment: isPrepaymentState
+        description: description.value, cellIndex: targetCellIndex
     };
 };
 
 
 const handleSave = async (options = {}) => {
-    if (isSaving.value || isInlineSaving.value) return;
-    
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
-    
-    // 🟢 UPDATE ACCOUNT OWNERSHIP if owner is selected (even if account was created earlier)
-    if (selectedAccountId.value && selectedOwner.value) {
-        const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
-        if (acc) {
-            const [type, id] = selectedOwner.value.split('-');
-            const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-            const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-            
-            let needsUpdate = false;
-            if (type === 'company' && currentCompId !== id) needsUpdate = true;
-            if (type === 'individual' && currentIndId !== id) needsUpdate = true;
-            
-            if (needsUpdate) {
-                const updateData = { _id: acc._id, name: acc.name, order: acc.order };
-                if (type === 'company') { 
-                    updateData.companyId = id; 
-                    updateData.individualId = null; 
-                } else { 
-                    updateData.companyId = null; 
-                    updateData.individualId = id; 
-                }
-                await mainStore.batchUpdateEntities('accounts', [updateData]);
-            }
-        }
-    }
     
     const payload = preparePayload(options);
     
@@ -640,7 +528,6 @@ const handleSave = async (options = {}) => {
         showError(e.message);
     } finally {
         isSaving.value = false;
-        isActProcessing.value = false;
     }
 };
 
@@ -664,17 +551,6 @@ onMounted(async () => {
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
         if (op.contractorId) selectedContractorValue.value = `contr_${op.contractorId._id || op.contractorId}`;
         else if (op.counterpartyIndividualId) selectedContractorValue.value = `ind_${op.counterpartyIndividualId._id || op.counterpartyIndividualId}`;
-        if (op.totalDealAmount > 0 || op.isDealTranche) { operationStatus.value = 'prepayment'; } 
-        else { 
-            const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId; 
-            if (indId && indId === mainStore.retailIndividualId && op.isClosed === false) { 
-                operationStatus.value = 'retail_prepayment'; 
-            } else if (mainStore._isCreditIncome && mainStore._isCreditIncome(op)) { 
-                operationStatus.value = 'credit_receipt'; 
-            } else { 
-                operationStatus.value = 'fact'; 
-            } 
-        }
     } else {
         nextTick(() => amountInput.value?.focus());
     }
@@ -683,111 +559,9 @@ onMounted(async () => {
 });
 const closePopup = () => emit('close');
 
-const getSmartDealProps = computed(() => {
-    if (!localDealStatus.value) return {};
-    let contractorName = 'Контрагент';
-    if (selectedContractorValue.value) { 
-        const [p, id] = selectedContractorValue.value.split('_'); 
-        if (p === 'contr') { const c = mainStore.contractors.find(x => x._id === id); if (c) contractorName = c.name; } 
-        else { const i = mainStore.individuals.find(x => x._id === id); if (i) contractorName = i.name; } 
-    }
-    let projectName = 'Проект'; if (selectedProjectId.value) { const p = mainStore.projects.find(x => x._id === selectedProjectId.value); if (p) projectName = p.name; }
-    let categoryName = 'Категория'; if (selectedCategoryId.value) { const c = mainStore.categories.find(x => x._id === selectedCategoryId.value); if (c) categoryName = c.name; }
-    const rawAmount = parseFloat(String(amount.value).replace(/\s/g, '')) || 0;
 
-    return {
-        dealStatus: localDealStatus.value,
-        currentAmount: rawAmount,
-        projectName,
-        contractorName,
-        categoryName
-    };
-});
 
-const handleSmartDealConfirm = async (decision) => {
-    showSmartDealPopup.value = false;
 
-    if (decision.isFinal) {
-        processingMessage.value = 'Закрываем сделку...';
-        isActProcessing.value = true;
-
-        try {
-            if (localDealStatus.value?.activeTranche) {
-                 const prevOp = localDealStatus.value.activeTranche;
-                 await mainStore.createWorkAct(
-                    prevOp.projectId?._id || prevOp.projectId,
-                    prevOp.categoryId?._id || prevOp.categoryId,
-                    prevOp.contractorId?._id || prevOp.contractorId,
-                    prevOp.counterpartyIndividualId?._id || prevOp.counterpartyIndividualId,
-                    prevOp.amount, 
-                    createSmartDate(editableDate.value), 
-                    prevOp._id 
-                 );
-            }
-            
-            const payload = preparePayload({ autoCloseCurrent: true });
-            await mainStore.createEvent(payload);
-            
-            emit('close'); 
-        } catch (e) {
-            console.error('Ошибка при закрытии сделки:', e);
-            showError('Ошибка при закрытии сделки: ' + e.message);
-        } finally {
-            isActProcessing.value = false;
-        }
-        return;
-    }
-
-    if (decision.closePrevious && localDealStatus.value?.activeTranche) {
-        const op = localDealStatus.value.activeTranche;
-        itemToClose.value = {
-            totalDeal: localDealStatus.value.totalDeal,
-            amount: op.amount,
-            accountName: op.accountId?.name || '-',
-            companyName: op.companyId?.name || op.individualId?.name || '-',
-            contractorName: op.contractorId?.name || op.counterpartyIndividualId?.name || '-',
-            projectName: op.projectId?.name || '-',
-            categoryName: op.categoryId?.name || '-',
-            date: op.date,
-            originalOp: op
-        };
-        showWorkActPopup.value = true;
-    } else {
-        await handleSave();
-    }
-};
-
-const handleWorkActConfirm = async (actData) => {
-    showWorkActPopup.value = false;
-    processingMessage.value = 'Подписываем акт и готовим следующий этап...';
-    isActProcessing.value = true;
-
-    try {
-        const op = itemToClose.value.originalOp;
-        
-        await mainStore.createWorkAct(
-            op.projectId?._id || op.projectId,
-            op.categoryId?._id || op.categoryId,
-            op.contractorId?._id || op.contractorId,
-            op.counterpartyIndividualId?._id || op.counterpartyIndividualId,
-            itemToClose.value.amount, 
-            actData.date, 
-            op._id 
-        );
-        
-        const payload = preparePayload({ closePrevious: true });
-        await mainStore.createEvent(payload);
-        
-        emit('close'); 
-    } catch (e) {
-        console.error('Ошибка создания акта:', e);
-        showError('Ошибка при создании акта: ' + e.message);
-    } finally {
-        isActProcessing.value = false; 
-    }
-};
-
-const handleSmartDealCancel = () => { showSmartDealPopup.value = false; };
 
 const openCashChoice = () => { showCashChoiceModal.value = true; };
 const handleCashChoice = (type) => { showCashChoiceModal.value = false; if (type === 'special') showSpecialCashInfo.value = true; else startCashCreation('regular'); };
@@ -905,43 +679,15 @@ const saveNewContractorModal = async () => {
     }
 };
 
-const handleMainAction = () => {
+const handleMainAction = async () => {
     if (isProtectedMode.value) return;
     const rawAmount = parseFloat(String(amount.value).replace(/\s/g, '')) || 0;
     if (rawAmount <= 0) { showError('Пожалуйста, введите сумму операции.'); return; }
     if (!selectedAccountId.value) { showError('Необходимо выбрать счет зачисления.'); return; }
     if (!selectedOwner.value) { showError('Пожалуйста, укажите владельца (Компанию или Физлицо).'); return; }
     if (!selectedContractorValue.value) { showError('Необходимо выбрать плательщика.'); return; }
-
-    if (isDealDetected.value) { 
-        showSmartDealPopup.value = true;
-        return; 
-    }
     
-    if (operationStatus.value === 'prepayment' && !isRetailClientSelected.value) { 
-        const [oType, oId] = selectedOwner.value.split('-');
-        let cId = null, indId = null; 
-        if (selectedContractorValue.value) { const [p, id] = selectedContractorValue.value.split('_'); if (p === 'contr') cId = id; else indId = id; }
-        
-        let contractorName = 'Контрагент';
-        if (cId) { const c = mainStore.contractors.find(x => x._id === cId); if (c) contractorName = c.name; }
-        else if (indId) { const i = mainStore.individuals.find(x => x._id === indId); if (i) contractorName = i.name; }
-        
-        let projectName = 'Проект'; if (selectedProjectId.value) { const p = mainStore.projects.find(x => x._id === selectedProjectId.value); if (p) projectName = p.name; }
-        let categoryName = 'Категория'; if (selectedCategoryId.value) { const c = mainStore.categories.find(x => x._id === selectedCategoryId.value); if (c) categoryName = c.name; }
-
-        emit('trigger-prepayment', {
-            amount: rawAmount, accountId: selectedAccountId.value, contractorId: cId, counterpartyIndividualId: indId,
-            projectId: selectedProjectId.value, categoryId: selectedCategoryId.value,
-            companyId: oType === 'company' ? oId : null, individualId: oType === 'individual' ? oId : null,
-            date: createSmartDate(editableDate.value), 
-            cellIndex: props.cellIndex, operationToEdit: props.operationToEdit,
-            contractorName, projectName, categoryName
-        });
-        return; 
-    }
-    
-    handleSave();
+    await handleSave();
 };
 </script>
 
@@ -1022,12 +768,6 @@ const handleMainAction = () => {
             <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
             <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
         </div>
-
-        <template v-if="!isProtectedMode && !isEditMode && !isDealDetected">
-            <div class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-                <BaseSelect v-model="operationStatus" :options="statusOptions" label="Статус денег" placeholder="Статус денег" :disabled="isReadOnly" />
-            </div>
-        </template>
         
         <div class="custom-input-box input-spacing has-value date-box" :class="{ 'is-disabled': isProtectedMode }">
             <div class="input-inner-content">
@@ -1116,36 +856,6 @@ const handleMainAction = () => {
             <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
         </div>
     </div>
-
-    <!-- 🟢 PROCESSING OVERLAY -->
-    <div v-if="isActProcessing" class="processing-overlay">
-        <div class="spinner"></div>
-        <p>{{ processingMessage }}</p>
-    </div>
-
-    <InfoModal 
-       v-if="showSpecialCashInfo" 
-       title="Особая касса" 
-       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
-       buttonText="Продолжить создание"
-       @close="confirmSpecialCash"
-    />
-
-    <!-- 🟢 SMART DEAL POPUP -->
-    <SmartDealPopup 
-        v-if="showSmartDealPopup" 
-        v-bind="getSmartDealProps" 
-        @close="showSmartDealPopup = false" 
-        @confirm="handleSmartDealConfirm" 
-    />
-
-    <!-- 🟢 WORK ACT POPUP -->
-    <WorkActPopup 
-        v-if="showWorkActPopup && itemToClose" 
-        :dealItem="itemToClose" 
-        @close="showWorkActPopup = false" 
-        @confirm="handleWorkActConfirm" 
-    />
 
     <InfoModal 
        v-if="showInfoModal && !showSpecialCashInfo" 

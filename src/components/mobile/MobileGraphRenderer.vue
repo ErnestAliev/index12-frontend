@@ -889,7 +889,7 @@ const dailyAggForSummaries = computed(() => {
         (prepId && prepayIds.includes(prepId)) ||
         (op.categoryId && op.categoryId.isPrepayment);
 
-      const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
+      const isTranche = false;
       const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
       const isRetailPrepay = retailId && String(indId) === String(retailId) && op.isClosed !== true;
 
@@ -1325,7 +1325,7 @@ const getTooltipOperationList = (ops) => {
         const prepayIds = mainStore.getPrepaymentCategoryIds || [];
         const catId = op.categoryId?._id || op.categoryId;
         const prepId = op.prepaymentId?._id || op.prepaymentId;
-        const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
+        const isTranche = false;
         const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
         const isRetailPrepay = indId && indId === mainStore.retailIndividualId;
 
@@ -1428,7 +1428,7 @@ const chartData = computed(() => {
           (catId && prepayIds.includes(catId)) ||
           (prepId && prepayIds.includes(prepId)) ||
           (op.categoryId && op.categoryId.isPrepayment);
-        const isTranche = op.isDealTranche === true || (op.totalDealAmount || 0) > 0;
+        const isTranche = false;
 
         const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
         const isRetailPrepay = retailId && String(indId) === String(retailId) && op.isClosed !== true;

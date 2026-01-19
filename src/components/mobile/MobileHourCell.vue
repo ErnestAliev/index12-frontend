@@ -75,20 +75,6 @@ const isClosedDealOp = computed(() => {
     return false;
 });
 
-const isPrepaymentOp = computed(() => {
-    const op = props.operation;
-    if (!op || isTransferOp.value || op.isWithdrawal) return false;
-    if (op.type !== 'income') return false;
-    if (isClosedDealOp.value) return false;
-    if ((op.totalDealAmount || 0) > 0) return true;
-    if (op.isDealTranche === true) return true;
-    const prepayIds = mainStore.getPrepaymentCategoryIds;
-    const catId = op.categoryId?._id || op.categoryId;
-    const prepId = op.prepaymentId?._id || op.prepaymentId;
-    if ((catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment)) return true;
-    if (isRetailClient.value && op.isClosed !== true) return true;
-    return false;
-});
 
 const isWorkActOp = computed(() => {
     const op = props.operation;
@@ -119,14 +105,6 @@ const chipLabel = computed(() => {
   if (isClosedDealOp.value) {
       if (isRetailClient.value) return op.categoryId?.name || 'Выручка';
       return 'Сделка закрыта'; 
-  }
-  if (op.isDealTranche === true) {
-      if (op.description && op.description.includes('транш')) return op.description;
-      return 'Транш';
-  }
-  if (isPrepaymentOp.value) {
-      if (isRetailClient.value) return 'Предоплата (Розница)';
-      return op.description && op.description.includes('транш') ? op.description : 'Предоплата';
   }
   if (isWorkActOp.value) return 'Отработано';
   if (isTechnicalOp.value) return op.description || 'Техническая';
@@ -263,9 +241,8 @@ const onTouchEnd = (e) => {
       class="op-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
+         income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
          expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
-         prepayment: isPrepaymentOp,
          'closed-deal': isClosedDealOp,
          'work-act': isWorkActOp,
          withdrawal: isWithdrawalOp,
@@ -307,7 +284,7 @@ const onTouchEnd = (e) => {
           {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
         <span class="desc">
-          {{ isPrepaymentOp ? (isRetailClient ? 'Предоплата' : 'Транш/Аванс') : (operation.categoryId?.name || 'Без категории') }}
+          {{ operation.categoryId?.name || 'Без категории' }}
         </span>
       </template>
     </div>

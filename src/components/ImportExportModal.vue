@@ -818,7 +818,7 @@ async function prepareExportData() {
          let typeLabel = 'Расход'; let finalDesc = op.description || '';
          let displayAmount = opAmount; 
 
-         const isRealPrepayment = op.type === 'prepayment' || (op.type === 'income' && (op.totalDealAmount > 0 || op.prepaymentId));
+         const isRealPrepayment = op.type === 'prepayment' || (op.type === 'income' && op.prepaymentId);
          const isWorkAct = op.isWorkAct === true;
          const isRetailShift = mainStore._isRetailWriteOff(op);
 

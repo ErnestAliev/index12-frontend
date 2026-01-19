@@ -439,7 +439,7 @@ export const useProjectionStore = defineStore('projection', () => {
         let isPrepay = false;
 
         if (!isClosed) {
-          const isTranche = op.isDealTranche === true || (Number(op.totalDealAmount) || 0) > 0;
+          const isTranche = false;
           const isRetail = retailId && op.counterpartyIndividualId && idsMatch(op.counterpartyIndividualId, retailId);
 
           const catId = op.categoryId?._id || op.categoryId;

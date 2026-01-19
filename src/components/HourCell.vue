@@ -98,30 +98,6 @@ const isClosedDealOp = computed(() => {
 });
 
 // 🟢 4. Детектор ОТКРЫТОЙ предоплаты / Сделки / Транша (Оранжевый)
-const isPrepaymentOp = computed(() => {
-    const op = props.operation;
-    if (!op || isTransferOp.value || op.isWithdrawal) return false;
-    if (op.type !== 'income') return false;
-    
-    // Если уже закрыта -> это не "Предоплата" в контексте цвета
-    if (isClosedDealOp.value) return false;
-
-    // Признаки предоплаты:
-    // а) Есть бюджет сделки (Якорь)
-    if ((op.totalDealAmount || 0) > 0) return true;
-    // б) Это транш (открытый)
-    if (op.isDealTranche === true) return true;
-    // в) Категория "Предоплата"
-    const prepayIds = mainStore.getPrepaymentCategoryIds;
-    const catId = op.categoryId?._id || op.categoryId;
-    const prepId = op.prepaymentId?._id || op.prepaymentId;
-    if ((catId && prepayIds.includes(catId)) || (prepId && prepayIds.includes(prepId)) || (op.categoryId && op.categoryId.isPrepayment)) return true;
-    
-    // г) Розничный клиент: если не закрыто (closed !== true), значит это предоплата (долг)
-    if (isRetailClient.value && op.isClosed !== true) return true;
-
-    return false;
-});
 
 const isWorkActOp = computed(() => {
     const op = props.operation;
@@ -160,23 +136,9 @@ const chipLabel = computed(() => {
   
   if (isClosedDealOp.value) {
       if (isRetailClient.value) {
-          // 🟢 Розница Факт: Просто название категории
           return op.categoryId?.name || 'Выручка';
       }
       return 'Сделка закрыта'; 
-  }
-
-  if (op.isDealTranche === true) {
-      if (op.description && op.description.includes('транш')) {
-          // 🟢 Применяем умную очистку
-          return cleanDescription(op.description);
-      }
-      return 'Транш';
-  }
-  
-  if (isPrepaymentOp.value) {
-      if (isRetailClient.value) return 'Предоплата (Розница)';
-      return op.description && op.description.includes('транш') ? cleanDescription(op.description) : 'Предоплата';
   }
   
   if (isWorkActOp.value) return 'Отработано';
@@ -243,11 +205,8 @@ const onDrop = (event) => {
       class="operation-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isPrepaymentOp && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
+         income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
          expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
-         
-         /* 🟢 Оранжевый */
-         prepayment: isPrepaymentOp,
          
          /* 🟢 Зеленый (Закрытые) */
          'closed-deal': isClosedDealOp,

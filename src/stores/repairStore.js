@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import axios from 'axios';
 import { useMainStore } from './mainStore';
-import { useDealStore } from './dealStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -12,7 +11,6 @@ const DATA_VERSION = 1;
 
 export const useRepairStore = defineStore('repairStore', () => {
     const mainStore = useMainStore();
-    const dealStore = useDealStore();
 
     const isRepairing = ref(false);
     const progress = ref(0);
@@ -171,11 +169,8 @@ export const useRepairStore = defineStore('repairStore', () => {
             // 4. Применение результатов
             mainStore.snapshot = newSnapshot;
 
-            // Обновляем список для сделок
+            // Обновляем список для сделок (только prepayment categories)
             mainStore.dealOperations = processedOps.filter(op =>
-                (op.totalDealAmount > 0) ||
-                op.isDealTranche ||
-                op.isWorkAct ||
                 mainStore.getPrepaymentCategoryIds.includes(String(op.categoryId))
             );
 

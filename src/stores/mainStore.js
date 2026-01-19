@@ -6,7 +6,6 @@ import { useProjectionStore } from './projectionStore';
 import { useTransferStore } from './transferStore';
 import { useSocketStore } from './socketStore';
 import { useWidgetStore } from './widgetStore';
-import { useDealStore } from './dealStore'; // 🟢 Integration
 
 axios.defaults.withCredentials = true;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -396,6 +395,11 @@ export const useMainStore = defineStore('mainStore', () => {
         return ['меж.комп', 'межкомпаний', 'inter-comp'].includes(name);
     };
 
+    // Stub function - intermediary individual functionality was removed
+    const _isIntermediaryIndividual = (op) => {
+        return false;
+    };
+
     const prepaymentCategoryIdsSet = computed(() => {
         const ids = new Set();
         categories.value.forEach(c => {
@@ -512,137 +516,14 @@ export const useMainStore = defineStore('mainStore', () => {
         });
     };
 
-    function _updateDealCache(op, mode = 'add') {
-        // 🟢 FIX: Добавлена проверка op.isPrepayment === true
-        // Теперь одиночные предоплаты без бюджета сразу попадают в кэш сделок и видны в виджете
-        const isDealRelated = (op.totalDealAmount || 0) > 0 || op.isDealTranche === true || op.isWorkAct === true || op.isPrepayment === true;
-        if (!isDealRelated) return;
-
-        if (mode === 'add') {
-            const idx = dealOperations.value.findIndex(d => _idsMatch(d._id, op._id));
-            if (idx === -1) {
-                dealOperations.value = [...dealOperations.value, op];
-            }
-        } else if (mode === 'update') {
-            const idx = dealOperations.value.findIndex(d => _idsMatch(d._id, op._id));
-            if (idx !== -1) {
-                const newArr = [...dealOperations.value];
-                newArr[idx] = op;
-                dealOperations.value = newArr;
-            } else {
-                dealOperations.value = [...dealOperations.value, op];
-            }
-        } else if (mode === 'delete') {
-            dealOperations.value = dealOperations.value.filter(d => !_idsMatch(d._id, op._id));
-        }
-    }
 
     const getAllRelevantOps = computed(() => {
         return allKnownOperations.value.filter(op => _isOpVisible(op));
     });
 
-    const liabilitiesTheyOwe = computed(() => useDealStore().liabilitiesTheyOweCurrent);
-    const liabilitiesWeOwe = computed(() => useDealStore().liabilitiesWeOweCurrent);
-    const liabilitiesWeOweFuture = computed(() => useDealStore().liabilitiesWeOweTotal);
-    const liabilitiesTheyOweFuture = computed(() => useDealStore().liabilitiesTheyOweTotal);
 
-    function getProjectDealStatus(projectId, categoryId = null, contractorId = null, counterpartyIndividualId = null) {
-        return useDealStore().getDealStatus(projectId, categoryId, contractorId || counterpartyIndividualId);
-    }
 
-    // 🟢 🔴 FIX: ULTRA-STRICT CLOSING LOGIC
-    // 1. Exclude the CURRENT operation from closing (it must remain orange)
-    // 2. Ignore pure "Fact" operations (no deal flags)
-    async function closeDealScope(projectId, categoryId, contractorId, counterpartyIndividualId, excludeOpId = null) {
-        console.log('Smart Closing: Updating tranches for deal scope...', { excludeOpId });
 
-        const pId = _toStr(projectId);
-        const cId = _toStr(categoryId);
-        const targetContrId = contractorId ? _toStr(contractorId) : (counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null);
-
-        if (!pId || !cId || !targetContrId) return;
-
-        const candidates = allKnownOperations.value.filter(op => {
-            if (op.type !== 'income') return false;
-            if (op.isTransfer) return false;
-
-            // 🟢 1. SELF-PROTECTION: Exclude the operation we just created/are creating
-            if (excludeOpId && _idsMatch(op._id, excludeOpId)) {
-                return false;
-            }
-
-            // 🟢 2. FACT PROTECTION: Exclude pure facts
-            // Only close things that are explicitly part of a deal structure
-            const isExplicitPrepay = op.isPrepayment === true;
-            const isTranche = op.isDealTranche === true;
-            const hasBudget = (op.totalDealAmount || 0) > 0;
-
-            if (!isExplicitPrepay && !isTranche && !hasBudget) {
-                return false; // This is a FACT (Clean Income), don't touch it.
-            }
-
-            const opPid = _toStr(op.projectId?._id || op.projectId);
-            const opCid = _toStr(op.categoryId?._id || op.categoryId);
-
-            if (opPid !== pId || opCid !== cId) return false;
-
-            const opContr = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
-            return _toStr(opContr) === targetContrId;
-        });
-
-        for (const op of candidates) {
-            if (!op.isClosed) {
-                await updateOperation(op._id, { ...op, isClosed: true });
-            }
-        }
-    }
-
-    async function reopenDealScope(closingOp) {
-        console.log('Rollback: Reopening deal scope...', closingOp);
-
-        const projectId = closingOp.projectId;
-        const categoryId = closingOp.categoryId;
-        const contractorId = closingOp.contractorId;
-        const counterpartyIndividualId = closingOp.counterpartyIndividualId;
-
-        const pId = _toStr(projectId);
-        const cId = _toStr(categoryId);
-        const targetContrId = contractorId ? _toStr(contractorId) : (counterpartyIndividualId ? _toStr(counterpartyIndividualId) : null);
-
-        if (!pId || !cId || !targetContrId) return;
-
-        const candidates = allKnownOperations.value.filter(op => {
-            if (op.type !== 'income') return false;
-            if (op.isTransfer) return false;
-
-            // Strict check here too for consistency
-            const isExplicitPrepay = op.isPrepayment === true;
-            const isTranche = op.isDealTranche === true;
-            const hasBudget = (op.totalDealAmount || 0) > 0;
-
-            if (!isExplicitPrepay && !isTranche && !hasBudget) {
-                return false;
-            }
-
-            const opPid = _toStr(op.projectId?._id || op.projectId);
-            const opCid = _toStr(op.categoryId?._id || op.categoryId);
-
-            if (opPid !== pId || opCid !== cId) return false;
-
-            const opContr = op.contractorId ? (op.contractorId._id || op.contractorId) : (op.counterpartyIndividualId?._id || op.counterpartyIndividualId);
-            return _toStr(opContr) === targetContrId;
-        });
-
-        for (const op of candidates) {
-            if (op.isClosed === true) {
-                await updateOperation(op._id, { ...op, isClosed: false });
-            }
-        }
-    }
-
-    async function closePreviousTranches(p, c, co, ci, excludeOpId) {
-        return closeDealScope(p, c, co, ci, excludeOpId);
-    }
 
     // ... (Categories/Contractors getters remain unchanged) ...
 
@@ -1649,7 +1530,6 @@ export const useMainStore = defineStore('mainStore', () => {
             _applyOptimisticSnapshotUpdate(richOp, 1);
         }
 
-        _updateDealCache(richOp, 'update');
         _triggerProjectionUpdate();
     };
 
@@ -1674,7 +1554,6 @@ export const useMainStore = defineStore('mainStore', () => {
             calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
         }
 
-        _updateDealCache(oldOp, 'delete');
         _triggerProjectionUpdate();
     };
 
@@ -1718,12 +1597,6 @@ export const useMainStore = defineStore('mainStore', () => {
                 eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
             }
 
-            if (eventData.type === 'income' && !eventData.isTransfer && eventData.totalDealAmount === undefined) {
-                const isOver = useDealStore().checkOverpayment(eventData.projectId, eventData.categoryId, eventData.contractorId || eventData.counterpartyIndividualId, eventData.amount);
-                if (isOver) {
-                    console.warn('Overpayment detected! (Logging warning only)');
-                }
-            }
 
             const tempId = `temp_${Date.now()}`;
             const tempOp = {
@@ -1744,7 +1617,6 @@ export const useMainStore = defineStore('mainStore', () => {
                 _applyOptimisticSnapshotUpdate(richOp, 1);
             }
 
-            _updateDealCache(richOp, 'add');
             _triggerProjectionUpdate();
 
             const response = await axios.post(`${API_BASE_URL}/events`, eventData);
@@ -1831,7 +1703,6 @@ export const useMainStore = defineStore('mainStore', () => {
                 _applyOptimisticSnapshotUpdate(richOp, 1);
             }
 
-            _updateDealCache(richOp, 'update');
             _triggerProjectionUpdate();
 
             const updatePayload = { ...opData, dateKey: newDateKey };
@@ -1887,17 +1758,11 @@ export const useMainStore = defineStore('mainStore', () => {
 
             // 🟢 IMPORTANT: Update dealCache BEFORE recalculating anything
             // This ensures dealOperations is in sync with displayCache
-            _updateDealCache(operation, 'delete');
             _triggerProjectionUpdate();
 
-            if (operation.isWorkAct) {
-                await reopenDealScope(operation);
-            }
 
-            // 🟢 NEW: Reopen deal when deleting a closed income operation (tranche)
-            if (operation.isClosed && operation.type === 'income' && !operation.isWorkAct) {
-                await reopenDealScope(operation);
-            }
+
+
 
             if (isTransfer(operation) && operation._id2) {
                 await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
@@ -1908,6 +1773,9 @@ export const useMainStore = defineStore('mainStore', () => {
             // 🟢 FIX: Fetch fresh snapshot from backend instead of manual recalculation
             // This prevents data inconsistency between displayCache and allKnownOperations
             await fetchSnapshot();
+
+            // 🟢 FIX: Trigger projection update after snapshot to ensure graphs refresh
+            _triggerProjectionUpdate();
 
         } catch (e) {
             if (e.response && (e.response.status === 404 || e.response.status === 200)) {
@@ -2731,37 +2599,9 @@ export const useMainStore = defineStore('mainStore', () => {
         } catch (e) { throw e; }
     }
 
-    async function closePrepaymentDeal(originalOp) {
-        try {
-            // 🟢 NEW: Просто закрываем операции без создания расхода
-            // Расчеты теперь используют isClosed флаг
-            await closeDealScope(
-                originalOp.projectId,
-                originalOp.categoryId,
-                originalOp.contractorId,
-                originalOp.counterpartyIndividualId
-            );
-        } catch (e) { throw e; }
-    }
 
-    // 🟢 NEW: Simplified - only close scope, no work act creation
-    async function createWorkAct(projectId, categoryId, contractorId, counterpartyIndividualId, amount, date, opIdToClose, skipFetch = false, companyId = null, individualId = null) {
-        try {
-            // 🟢 Закрываем ВСЕ операции сделки (включая финальный транш)
-            // Больше не исключаем текущую операцию, т.к. акт не создается
-            await closeDealScope(
-                projectId,
-                categoryId,
-                contractorId,
-                counterpartyIndividualId,
-                null  // ← Закрываем ВСЕ без исключений
-            );
 
-            return null; // Больше не создаем операцию
-        } catch (e) {
-            throw e;
-        }
-    }
+
 
     const projectsWithRetailDebts = computed(() => {
         const retailId = retailIndividualId.value;
@@ -3149,10 +2989,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
         currentCreditBalances, futureCreditBalances, creditCategoryId,
 
-        liabilitiesWeOwe: computed(() => useDealStore().liabilitiesWeOweCurrent), // Fact
-        liabilitiesTheyOwe: computed(() => useDealStore().liabilitiesTheyOweCurrent), // Fact
-        liabilitiesWeOweFuture: computed(() => useDealStore().liabilitiesWeOweTotal), // Forecast (Plan)
-        liabilitiesTheyOweFuture: computed(() => useDealStore().liabilitiesTheyOweTotal), // Forecast (Plan)
 
         getPrepaymentCategoryIds, getActCategoryIds,
 
@@ -3189,8 +3025,6 @@ export const useMainStore = defineStore('mainStore', () => {
         loadCalculationData,
 
         createTransfer, updateTransfer, updateOperation, createEvent,
-        createWorkAct,
-        closeDealScope, closePreviousTranches,
 
         fetchOperationsRange, updateFutureProjectionWithData,
 
@@ -3207,14 +3041,13 @@ export const useMainStore = defineStore('mainStore', () => {
         checkAuth, logout,
         _sortByOrder,
 
-        closeRetailDaily, closePrepaymentDeal, ensureSystemEntities,
+        closeRetailDaily, ensureSystemEntities,
         getRetailWriteOffs,
 
         retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId,
         _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
-        getProjectDealStatus,
 
-        dealOperations, getAllRelevantOps,
+        getAllRelevantOps,
         projectsWithRetailDebts,
 
         calculateTaxForPeriod,

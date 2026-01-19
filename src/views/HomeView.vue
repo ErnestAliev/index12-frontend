@@ -23,7 +23,6 @@ import AboutModal from '@/components/AboutModal.vue';
 
 import RetailClosurePopup from '@/components/RetailClosurePopup.vue'; 
 import RefundPopup from '@/components/RefundPopup.vue'; 
-import SmartDealPopup from '@/components/SmartDealPopup.vue'; 
 
 // 🟢 2. Импорт модала приглашения сотрудников
 import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
@@ -683,13 +682,7 @@ const isRefundPopupVisible = ref(false);
 // 🟢 2. Состояние для попапа деталей налога
 const isTaxDetailsPopupVisible = ref(false);
 
-// Состояния для Smart Deal (Сценарий 2 - Второй транш)
-const isSmartDealPopupVisible = ref(false);
-const smartDealPayload = ref(null); 
-const smartDealStatus = ref({ "debt": 0, "totalDeal": 0, "paidTotal": 0 });
 
-// Временное хранение данных для возврата (при отмене)
-const tempIncomeData = ref(null);
 
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
@@ -780,97 +773,9 @@ const handlePrepaymentSave = async (finalData) => {
     }
 };
 
-// 3. ОБРАБОТЧИК: Умная сделка
-const handleSwitchToSmartDeal = async (payload) => {
-    tempIncomeData.value = { ...payload };
-    isIncomePopupVisible.value = false;
-    smartDealPayload.value = payload;
-    
-    let status = payload.dealStatus;
-    if (!status && payload.projectId) {
-         try { status = mainStore.getProjectDealStatus(payload.projectId, payload.categoryId, payload.contractorId, payload.counterpartyIndividualId); } 
-         catch(e) { console.error('Error fetching status:', e); }
-    }
-    smartDealStatus.value = status || { debt: 0, totalDeal: 0 };
-    isSmartDealPopupVisible.value = true;
-};
 
-const handleSmartDealCancel = () => {
-    isSmartDealPopupVisible.value = false;
-};
 
-const handleSmartDealConfirm = async ({ closePrevious, isFinal, nextTrancheNum }) => {
-    isSmartDealPopupVisible.value = false;
-    const data = smartDealPayload.value;
-    if (!data) return;
 
-    try {
-        if (closePrevious === true && !isFinal) {
-             await mainStore.closePreviousTranches(
-                 data.projectId, 
-                 data.categoryId, 
-                 data.contractorId, 
-                 data.counterpartyIndividualId
-             );
-        }
-
-        const trancheNum = nextTrancheNum || 2;
-        const formattedAmount = formatNumber(data.amount);
-        const description = `${formattedAmount} ${trancheNum}-й транш`;
-
-        const incomeData = {
-            type: 'income',
-            amount: data.amount,
-            date: new Date(data.date),
-            accountId: data.accountId,
-            projectId: data.projectId,
-            contractorId: data.contractorId,
-            counterpartyIndividualId: data.counterpartyIndividualId,
-            categoryId: data.categoryId,
-            companyId: data.companyId,
-            individualId: data.individualId,
-            totalDealAmount: 0, 
-            isDealTranche: true, 
-            isClosed: isFinal,
-            description: description,
-            cellIndex: data.cellIndex 
-        };
-        
-        if (incomeData.cellIndex === undefined) {
-             const dateKey = mainStore._getDateKey(new Date(data.date));
-             incomeData.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
-        }
-
-        const newOp = await mainStore.createEvent(incomeData);
-
-        if (isFinal) {
-             await mainStore.closePreviousTranches(
-                 data.projectId, 
-                 data.categoryId, 
-                 data.contractorId, 
-                 data.counterpartyIndividualId
-             );
-             
-             await mainStore.createWorkAct(
-                 data.projectId,
-                 data.categoryId,
-                 data.contractorId,
-                 data.counterpartyIndividualId,
-                 data.amount,
-                 new Date(),
-                 newOp._id, 
-                 true, 
-                 data.companyId,
-                 data.individualId
-             );
-        }
-        
-        // 🟢 FIX: Убраны лишние перезагрузки данных
-    } catch (e) {
-        console.error('Smart Deal Error:', e);
-        alert('Ошибка при проведении транша: ' + e.message);
-    }
-};
 
 const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
     if (data.type === 'income') isIncomePopupVisible.value = false;
@@ -1950,8 +1855,8 @@ const handleRefundDelete = async (op) => {
         @close="handleClosePopup" 
         @save="handleOperationSave"
         @operation-deleted="handleOperationDelete($event)"
-        @trigger-prepayment="handleSwitchToPrepayment"
-        @trigger-smart-deal="handleSwitchToSmartDeal"
+
+
     />
 
     <ExpensePopup 
@@ -1967,17 +1872,7 @@ const handleRefundDelete = async (op) => {
     />
 
 
-    <!-- 🟢 SMART DEAL CONFIRM -->
-    <SmartDealPopup 
-       v-if="isSmartDealPopupVisible"
-       :deal-status="smartDealStatus"
-       :current-amount="smartDealPayload?.amount || 0"
-       :project-name="smartDealPayload?.projectName || 'Проект'"
-       :contractor-name="smartDealPayload?.contractorName || 'Контрагент'"
-       :category-name="smartDealPayload?.categoryName || 'Категория'"
-       @close="handleSmartDealCancel"
-       @confirm="handleSmartDealConfirm"
-    />
+
 
 
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />

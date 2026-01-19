@@ -457,8 +457,7 @@ const processSave = () => {
         accountId: selectedAccountId.value, companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: selectedCategoryId.value, projectId: selectedProjectId.value,
-        description: description.value, cellIndex: targetCellIndex, 
-        totalDealAmount: 0, prepaymentId: undefined
+        description: description.value, cellIndex: targetCellIndex
     };
     
     if (contrId || contrIndId) {
