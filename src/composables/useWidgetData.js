@@ -262,67 +262,8 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap, 'absolute'));
         }
 
-        // TAXES
-        if (k === 'taxes') {
-            const rangeEndDate = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-            if (rangeEndDate) rangeEndDate.setHours(23, 59, 59, 999);
 
-            const companies = Array.isArray(mainStore.companies) ? mainStore.companies : [];
-            const taxes = Array.isArray(mainStore.taxes) ? mainStore.taxes : [];
-
-            return companies.map(comp => {
-                const now = new Date();
-
-                const currentData = mainStore.calculateTaxForPeriod(comp._id, null, now);
-                const paidCurrent = taxes
-                    .filter(t => {
-                        const tCompId = getId(t.companyId);
-                        if (String(tCompId) !== String(comp._id) || t.status !== 'paid') return false;
-                        const tDate = t.date ? new Date(t.date) : new Date(0);
-                        return tDate <= now;
-                    })
-                    .reduce((acc, t) => acc + toNum(t.amount), 0);
-
-                const currentDebt = Math.max(0, currentData.tax - paidCurrent);
-
-                const totalCalc = mainStore.calculateTaxForPeriod(comp._id, null, rangeEndDate);
-                const paidTotal = taxes
-                    .filter(t => {
-                        const tCompId = getId(t.companyId);
-                        const tDate = t.date ? new Date(t.date) : new Date(0);
-                        const isInRange = rangeEndDate ? tDate <= rangeEndDate : true;
-                        return String(tCompId) === String(comp._id) && t.status === 'paid' && isInRange;
-                    })
-                    .reduce((acc, t) => acc + toNum(t.amount), 0);
-
-                const totalDebtAtEnd = Math.max(0, totalCalc.tax - paidTotal);
-
-                // ✅ Forecast column for taxes is DELTA only (not "current + future")
-                const futureDebtDelta = Math.max(0, totalDebtAtEnd - currentDebt);
-
-                const currentVal = -Math.abs(currentDebt);
-                const futureDeltaVal = -Math.abs(futureDebtDelta);
-                const endTotalVal = currentVal + futureDeltaVal;
-
-                return {
-                    _id: comp._id,
-                    name: comp.name,
-                    regime: currentData.regime === 'simplified' ? 'УПР' : 'ОУР',
-                    percent: currentData.percent,
-
-                    currentBalance: currentVal,
-                    futureChange: futureDeltaVal,
-                    futureBalance: futureDeltaVal,
-                    totalForecast: endTotalVal,
-
-                    balance: isForecastActive ? endTotalVal : currentVal,
-
-                    linkMarkerColor: null,
-                    isLinked: false
-                };
-            });
-        }
-
+        // LIABILITIES
         if (k === 'liabilities') {
             const weOweCurrent = mainStore.liabilitiesWeOwe || 0;
             const weOweFuture = mainStore.liabilitiesWeOweFuture || 0;

@@ -88,14 +88,7 @@ const isPhantom = computed(() => {
     return props.operation?.isPhantom === true;
 });
 
-// 🟢 3. Детектор ЗАКРЫТОЙ сделки/факта (Зеленый)
-const isClosedDealOp = computed(() => {
-    const op = props.operation;
-    if (!op) return false;
-    // Любой доход, который помечен как закрытый
-    if (op.type === 'income' && op.isClosed === true) return true;
-    return false;
-});
+
 
 // 🟢 4. Детектор ОТКРЫТОЙ предоплаты / Сделки / Транша (Оранжевый)
 
@@ -134,12 +127,7 @@ const chipLabel = computed(() => {
   const op = props.operation;
   if (!op) return '';
   
-  if (isClosedDealOp.value) {
-      if (isRetailClient.value) {
-          return op.categoryId?.name || 'Выручка';
-      }
-      return 'Сделка закрыта'; 
-  }
+
   
   if (isWorkActOp.value) return 'Отработано';
   
@@ -148,12 +136,7 @@ const chipLabel = computed(() => {
   return op.categoryId?.name || 'Без категории';
 });
 
-// 🟢 Показывать галочку ТОЛЬКО для закрытых B2B сделок (не розница)
-const showCheckmark = computed(() => {
-    if (!isClosedDealOp.value) return false;
-    if (isRetailClient.value) return false; // Розница без галочки
-    return true;
-});
+
 
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
 
@@ -205,11 +188,10 @@ const onDrop = (event) => {
       class="operation-chip"
       :class="{ 
          transfer: isTransferOp, 
-         income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
+         income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp, 
          expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
          
-         /* 🟢 Зеленый (Закрытые) */
-         'closed-deal': isClosedDealOp,
+
          
          withdrawal: isWithdrawalOp,
           'work-act': isWorkActOp,
@@ -246,8 +228,7 @@ const onDrop = (event) => {
       <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
       <template v-else>
         <span class="op-amount">
-            <!-- 🟢 FIX: Галочка только если showCheckmark -->
-            {{ showCheckmark ? '✓' : '' }} {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
+            {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
         </span>
         <span class="op-meta">{{ chipLabel }}</span>
       </template>

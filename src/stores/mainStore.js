@@ -163,7 +163,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const individuals = ref([]);
     const categories = ref([]);
     const credits = ref([]);
-    const taxes = ref([]);
+
 
     // 🟢 Prepayments are stored in categories with isPrepayment: true
     const prepayments = computed(() => categories.value.filter(c => c.isPrepayment === true));
@@ -507,14 +507,7 @@ export const useMainStore = defineStore('mainStore', () => {
         return false;
     };
 
-    const _isTaxPayment = (op) => {
-        if (!op) return false;
-        if (op.type !== 'expense') return false;
-        return taxes.value.some(t => {
-            const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
-            return _idsMatch(relId, op._id);
-        });
-    };
+
 
 
     const getAllRelevantOps = computed(() => {
@@ -1743,12 +1736,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!dateKey) return;
 
         try {
-            if (_isTaxPayment(operation)) {
-                taxes.value = taxes.value.filter(t => {
-                    const relId = typeof t.relatedEventId === 'object' ? t.relatedEventId._id : t.relatedEventId;
-                    return !_idsMatch(relId, operation._id);
-                });
-            }
+
 
             // Удаляем из кэша отображения
             if (displayCache.value[dateKey]) {
@@ -1784,8 +1772,7 @@ export const useMainStore = defineStore('mainStore', () => {
             console.error("Delete Failed:", e);
             refreshDay(dateKey);
             fetchSnapshot();
-            const taxesRes = await axios.get(`${API_BASE_URL}/taxes`);
-            taxes.value = taxesRes.data;
+
         }
     }
 
@@ -2394,7 +2381,7 @@ export const useMainStore = defineStore('mainStore', () => {
             if (path === 'individuals') individuals.value = individuals.value.filter(i => !_idsMatch(i._id, id));
             if (path === 'categories') categories.value = categories.value.filter(i => !_idsMatch(i._id, id));
             if (path === 'credits') credits.value = credits.value.filter(i => !_idsMatch(i._id, id));
-            if (path === 'taxes') taxes.value = taxes.value.filter(i => !_idsMatch(i._id, id));
+
             if (deleteOperations) await forceRefreshAll(); else await forceRefreshAll();
         } catch (error) { throw error; }
     }
@@ -2532,7 +2519,7 @@ export const useMainStore = defineStore('mainStore', () => {
         credits.value = [];
         operations.value = [];
         events.value = [];
-        taxes.value = [];
+
 
         // Clear workspace state
         currentWorkspaceId.value = null;
@@ -2649,85 +2636,6 @@ export const useMainStore = defineStore('mainStore', () => {
         }).sort((a, b) => new Date(b.date) - new Date(a.date));
     });
 
-    const calculateTaxForPeriod = (companyId, startDate = null, endDate = null) => {
-        const company = companies.value.find(c => _idsMatch(c._id, companyId));
-        if (!company) return { base: 0, tax: 0, income: 0, expense: 0 };
-
-        const regime = company.taxRegime || 'simplified';
-        const percent = company.taxPercent || (regime === 'simplified' ? 3 : 10);
-
-        let totalIncome = 0;
-        let totalExpense = 0;
-
-        let effectiveEndDate;
-        if (endDate) {
-            effectiveEndDate = new Date(endDate);
-            effectiveEndDate.setHours(23, 59, 59, 999);
-        } else {
-            effectiveEndDate = new Date();
-            effectiveEndDate.setHours(23, 59, 59, 999);
-        }
-
-        let effectiveStartDate = startDate ? new Date(startDate) : null;
-        if (effectiveStartDate) effectiveStartDate.setHours(0, 0, 0, 0);
-
-        taxKnownOperations.value.forEach(op => {
-            const opDate = new Date(op.date);
-            if (effectiveStartDate && opDate < effectiveStartDate) return;
-            if (effectiveEndDate && opDate > effectiveEndDate) return;
-
-            if (op.type === 'transfer' || op.isTransfer) {
-                const toId = op.toCompanyId ? _toStr(op.toCompanyId) : null;
-                const fromId = op.fromCompanyId ? _toStr(op.fromCompanyId) : null;
-                const targetId = String(companyId);
-
-                if (toId === targetId) {
-                    if (fromId !== targetId) {
-                        totalIncome += (Number(op.amount) || 0);
-                    }
-                }
-                if (fromId === targetId) {
-                    if (toId !== targetId) {
-                        totalExpense += Math.abs(Number(op.amount) || 0);
-                    }
-                }
-                return;
-            }
-
-            const opCompId = op.companyId ? (op.companyId._id || op.companyId) : null;
-            if (String(opCompId) !== String(companyId)) return;
-
-            if (!op.accountId) return;
-
-            if (op.type === 'income') {
-                const catId = op.categoryId?._id || op.categoryId;
-                if (creditCategoryId.value && String(catId) === String(creditCategoryId.value)) {
-                    return;
-                }
-                totalIncome += (Number(op.amount) || 0);
-            } else if (op.type === 'expense') {
-                totalExpense += Math.abs(Number(op.amount) || 0);
-            }
-        });
-
-        let taxBase = 0;
-        if (regime === 'simplified') {
-            taxBase = totalIncome;
-        } else {
-            taxBase = Math.max(0, totalIncome - totalExpense);
-        }
-
-        const taxAmount = taxBase * (percent / 100);
-
-        return {
-            base: taxBase,
-            tax: taxAmount,
-            income: totalIncome,
-            expense: totalExpense,
-            percent,
-            regime
-        };
-    };
 
     function checkInsufficientFunds(accountId, expenseAmount) {
         const acc = accounts.value.find(a => _idsMatch(a._id, accountId));
@@ -2747,40 +2655,6 @@ export const useMainStore = defineStore('mainStore', () => {
         return null;
     }
 
-    async function createTaxPayment(payload) {
-        try {
-            const { taxCat } = await ensureSystemEntities();
-
-            const expenseData = {
-                type: 'expense',
-                amount: -Math.abs(Number(payload.amount)),
-                date: payload.date,
-                accountId: payload.accountId,
-                companyId: payload.companyId,
-                categoryId: taxCat._id,
-                description: `Налог за период ${new Date(payload.periodFrom).toLocaleDateString()} - ${new Date(payload.periodTo).toLocaleDateString()}`
-            };
-
-            const expenseOp = await createEvent(expenseData);
-
-            const taxRecord = {
-                companyId: payload.companyId,
-                periodFrom: payload.periodFrom,
-                periodTo: payload.periodTo,
-                amount: payload.amount,
-                status: 'paid',
-                date: payload.date,
-                relatedEventId: expenseOp._id
-            };
-
-            const res = await axios.post(`${API_BASE_URL}/taxes`, taxRecord);
-            if (!taxes.value.find(t => _idsMatch(t._id, res.data._id))) taxes.value.push(res.data);
-
-            return res.data;
-        } catch (e) {
-            throw e;
-        }
-    }
 
     function getBalanceAtDate(accountId, targetDate) {
         const acc = currentAccountBalances.value.find(a => _idsMatch(a._id, accountId));
@@ -2958,7 +2832,8 @@ export const useMainStore = defineStore('mainStore', () => {
         accounts, companies, contractors, projects, categories, individuals,
         prepayments, // 🟢 Computed from categories where isPrepayment: true
         recurringOperations, // 🟢 Recurring operations for future projections
-        credits, taxes,
+        credits,
+
         visibleCategories, visibleContractors,
         operationsCache: displayCache, displayCache, calculationCache,
 
@@ -3048,12 +2923,8 @@ export const useMainStore = defineStore('mainStore', () => {
         _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
 
         getAllRelevantOps,
-        projectsWithRetailDebts,
-
-        calculateTaxForPeriod,
         checkInsufficientFunds, // 🟢 Export
-        createTaxPayment,
-        _isTaxPayment,
+
 
         totalInitialBalance,
 

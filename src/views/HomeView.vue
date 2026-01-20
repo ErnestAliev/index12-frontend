@@ -1005,11 +1005,6 @@ const handleEditOperation = (operation) => {
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
   selectedCellIndex.value = operation.cellIndex;
 
-  // 🟢 3. ПРОВЕРКА НА НАЛОГ
-  if (mainStore._isTaxPayment(operation)) {
-      isTaxDetailsPopupVisible.value = true;
-      return;
-  }
 
   if (mainStore._isRetailWriteOff(operation)) {
       isRetailPopupVisible.value = true;
@@ -1761,7 +1756,6 @@ const handleRefundDelete = async (op) => {
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи доходы')">Доходы</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи расходы')">Расходы</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи переводы')">Переводы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи налоги')">Налоги</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи выводы')">Выводы</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи кредиты')">Кредиты</button>
             <button class="ai-quick-btn" @click="useQuickPrompt('покажи предоплаты')">Предоплаты</button>
