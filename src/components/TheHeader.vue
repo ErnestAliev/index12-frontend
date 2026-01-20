@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
-import draggable from 'vuedraggable';
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -124,35 +123,131 @@ const futureUntilStr = computed(() => {
 
 const localWidgets = computed({
   get: () => {
+    const rowSize = isTabletGrid.value ? 5 : 6;
+    const layout = [...mainStore.dashboardLayout];
+    
+    // Insert fixed widgets at their positions in first row
+    const result = [];
+    
+    // Position 0: currentTotal (fixed)
+    result.push('currentTotal');
+    
+    // Positions 1 to (rowSize-2): from dashboardLayout
+    const lastPos = rowSize - 1;
+    const middleCount = rowSize - 2;
+    
+    for (let i = 0; i < middleCount; i++) {
+      if (i < layout.length) {
+        result.push(layout[i]);
+      } else {
+        result.push(`placeholder_${i + 1}`);
+      }
+    }
+    
+    // Last position of first row: futureTotal (fixed)
+    result.push('futureTotal');
+    
+    // Add remaining widgets after first row (positions 6+)
+    for (let i = middleCount; i < layout.length; i++) {
+      result.push(layout[i]);
+    }
+    
+    // In expanded mode, add placeholders to fill grid (max 3 rows)
     if (mainStore.isHeaderExpanded) {
-      // Only show widgets that are explicitly in dashboardLayout
-      // Do NOT auto-add all available widgets
-      const ordered = [...mainStore.dashboardLayout];
-      
-      const rowSize = isTabletGrid.value ? 5 : 6;
-      
-      const rows = Math.ceil(Math.max(ordered.length, 1) / rowSize); 
+      const MAX_ROWS = 3;
+      const rows = Math.min(Math.ceil(Math.max(result.length, rowSize) / rowSize), MAX_ROWS);
       const totalSlots = rows * rowSize;
       
-      while (ordered.length < totalSlots) { ordered.push(`placeholder_${ordered.length}`); }
-      return ordered;
+      while (result.length < totalSlots) {
+        result.push(`placeholder_${result.length}`);
+      }
     }
-    return mainStore.dashboardLayout;
+    
+    return result;
   },
   set: (newOrder) => {
-    const realWidgets = newOrder.filter(k => !k.startsWith('placeholder_'));
-    mainStore.dashboardLayout = realWidgets;
+    const rowSize = isTabletGrid.value ? 5 : 6;
+    
+    // Remove positions 0 (currentTotal) and rowSize-1 from first row (futureTotal)
+    const filtered = newOrder.filter((k, index) => {
+      // Skip currentTotal (position 0)
+      if (index === 0 && k === 'currentTotal') return false;
+      // Skip futureTotal (position 5 in 6-col or position 4 in 5-col)
+      if (index === rowSize - 1 && k === 'futureTotal') return false;
+      // In first row, skip futureTotal if it somehow appears elsewhere
+      if (index < rowSize && k === 'futureTotal') return false;
+      if (k === 'currentTotal') return false;
+      
+      return true;
+    });
+    
+    mainStore.dashboardLayout = filtered;
   }
 });
 
-// Hidden widgets: widgets that exist but are NOT in dashboardLayout
+// Hidden widgets: widgets that exist but are NOT in dashboardLayout and NOT fixed widgets
 // These need to be mounted invisibly so AI can access their data
 const hiddenWidgets = computed(() => {
   const layoutSet = new Set(mainStore.dashboardLayout);
   return mainStore.allWidgets
     .map(w => w.key)
-    .filter(key => !layoutSet.has(key));
+    .filter(key => {
+      // currentTotal and futureTotal are always visible at fixed positions
+      if (key === 'currentTotal' || key === 'futureTotal') return false;
+      return !layoutSet.has(key);
+    });
 });
+
+// ===============================
+// HTML5 DRAG-AND-DROP
+// ===============================
+const draggedIndex = ref(null);
+const dropTargetIndex = ref(null);
+
+const handleDragStart = (event, index) => {
+  const widget = localWidgets.value[index];
+  // Prevent dragging fixed widgets
+  if (widget === 'currentTotal' || widget === 'futureTotal') {
+    event.preventDefault();
+    return;
+  }
+  draggedIndex.value = index;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/html', event.target.innerHTML);
+};
+
+const handleDragOver = (event, index) => {
+  event.preventDefault();
+  const targetWidget = localWidgets.value[index];
+  // Only allow drop on placeholders
+  if (targetWidget && targetWidget.startsWith('placeholder_')) {
+    dropTargetIndex.value = index;
+    event.dataTransfer.dropEffect = 'move';
+  }
+};
+
+const handleDrop = (event, index) => {
+  event.preventDefault();
+  if (draggedIndex.value === null) return;
+  
+  const targetWidget = localWidgets.value[index];
+  // Only swap with placeholders
+  if (targetWidget && targetWidget.startsWith('placeholder_')) {
+    const newLayout = [...localWidgets.value];
+    const temp = newLayout[draggedIndex.value];
+    newLayout[draggedIndex.value] = newLayout[index];
+    newLayout[index] = temp;
+    localWidgets.value = newLayout;
+  }
+  
+  draggedIndex.value = null;
+  dropTargetIndex.value = null;
+};
+
+const handleDragEnd = () => {
+  draggedIndex.value = null;
+  dropTargetIndex.value = null;
+};
 
 // ===============================
 // 🟢 UI SNAPSHOT (screen = truth)
@@ -545,18 +640,26 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     </div>
   </Teleport>
 
-  <!-- DRAGGABLE GRID -->
-  <draggable 
-    v-model="localWidgets" 
-    item-key="key"
+  <!-- NATIVE HTML5 DRAG-AND-DROP GRID -->
+  <div 
     class="header-dashboard"
     :class="{ 'expanded': mainStore.isHeaderExpanded }"
-    ghost-class="sortable-ghost"
-    drag-class="sortable-drag"
-    :animation="200"
   >
-    <template #item="{ element: widgetKey, index }">
-      <div class="dashboard-card-wrapper" @click="openFullscreen(widgetKey)">
+    <div
+      v-for="(widgetKey, index) in localWidgets"
+      :key="widgetKey"
+      class="dashboard-card-wrapper"
+      :class="{
+        'dragging': draggedIndex === index,
+        'drop-target': dropTargetIndex === index && widgetKey.startsWith('placeholder_')
+      }"
+      :draggable="widgetKey !== 'currentTotal' && widgetKey !== 'futureTotal' && !widgetKey.startsWith('placeholder_')"
+      @dragstart="handleDragStart($event, index)"
+      @dragover="handleDragOver($event, index)"
+      @drop="handleDrop($event, index)"
+      @dragend="handleDragEnd"
+      @click="openFullscreen(widgetKey)"
+    >
         <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
@@ -672,8 +775,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
       </div>
-    </template>
-  </draggable>
+  </div>
 
   <!-- HIDDEN WIDGETS: Mounted invisibly so AI can get their data -->
   <div class="hidden-widgets-container" style="display: none;">
@@ -807,8 +909,20 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 <style scoped>
 .header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--widget-grid-gap); padding: var(--widget-grid-padding); background-color: var(--widget-grid-color); border-radius: var(--widget-grid-border-radius); border: var(--widget-grid-border-width) solid var(--widget-grid-color); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
-.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; border-right: 1px solid var(--widget-border); border-bottom: 1px solid var(--widget-border); cursor: grab; transition: background-color 0.2s; }
-.dashboard-card-wrapper:active { cursor: grabbing; }
+.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; border-right: 1px solid var(--widget-border); border-bottom: 1px solid var(--widget-border); cursor: default; transition: background-color 0.2s; }
+.dashboard-card-wrapper[draggable="true"] { cursor: grab; }
+.dashboard-card-wrapper[draggable="true"]:active { cursor: grabbing; }
+
+/* HTML5 Drag States */
+.dashboard-card-wrapper.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.dashboard-card-wrapper.drop-target {
+  outline: 2px solid var(--color-success, #4CAF50);
+  outline-offset: -2px;
+}
 
 /* 🟢 HOVER EFFECT - используем переменные из theme.css */
 .dashboard-card-wrapper:hover {

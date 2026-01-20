@@ -894,11 +894,14 @@ const isChartsExpanded = ref(true);
 
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
-        const totalWidgets = mainStore.allWidgets.length;
-        const rows = Math.ceil(totalWidgets / 6);
-        headerHeightPx.value = rows * 135 + 15; 
+        // Calculate rows needed: dashboardLayout + 2 fixed widgets (currentTotal, futureTotal)
+        const totalWidgets = mainStore.dashboardLayout.length + 2;
+        const rowSize = 6;
+        const rows = Math.ceil(totalWidgets / rowSize);
+        // Each row: 130px + padding between rows
+        headerHeightPx.value = rows * 130 + 20; 
     } else {
-        headerHeightPx.value = 135;
+        headerHeightPx.value = 132;
     }
     applyHeaderHeight(headerHeightPx.value);
     nextTick(() => { onWindowResize(); });
@@ -1591,7 +1594,7 @@ const handleRefundDelete = async (op) => {
             class="icon-btn header-expand-btn"
             :class="{ 'active': mainStore.isHeaderExpanded }"
             @click="mainStore.toggleHeaderExpansion"
-            :title="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
+            :data-tooltip="mainStore.isHeaderExpanded ? 'Свернуть хедер' : 'Показать все виджеты'"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="7" height="7"></rect>
@@ -1610,7 +1613,7 @@ const handleRefundDelete = async (op) => {
               'filter-active': isPeriodFilterActive 
             }"
             @click="isPeriodSelectorOpen = !isPeriodSelectorOpen"
-            title="Период расчёта"
+            data-tooltip="Период расчёта"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -1621,7 +1624,7 @@ const handleRefundDelete = async (op) => {
           </button>
 
           <!-- 🟢 NEW: Hide import/export for timeline-only -->
-          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" title="Импорт / Экспорт">
+          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" data-tooltip="Импорт / Экспорт">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/>
@@ -1630,7 +1633,7 @@ const handleRefundDelete = async (op) => {
           </button>
 
           <!-- 🟢 NEW: Hide graph button for timeline-only -->
-          <button v-if="!mainStore.isTimelineOnly" class="icon-btn graph-btn" @click="showGraphModal = true" title="Графики">
+          <button v-if="!mainStore.isTimelineOnly" class="icon-btn graph-btn" @click="showGraphModal = true" data-tooltip="Графики">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="20" x2="18" y2="10"></line>
               <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -1639,7 +1642,7 @@ const handleRefundDelete = async (op) => {
           </button>
 
           <!-- 🆕 NEW: Universal Edit Modal Button -->
-          <button class="icon-btn edit-btn" @click="showUniversalEditModal = true" title="Редактирование данных">
+          <button class="icon-btn edit-btn" @click="showUniversalEditModal = true" data-tooltip="Редактирование данных">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -1652,7 +1655,7 @@ const handleRefundDelete = async (op) => {
             class="icon-btn ai-btn"
             :class="{ 'active': isAiDrawerOpen }"
             @click.stop="openAiDrawer"
-            title="AI ассистент"
+            data-tooltip="AI ассистент"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
@@ -1665,7 +1668,7 @@ const handleRefundDelete = async (op) => {
             v-if="mainStore.isAdmin"
             class="icon-btn workspace-dashboard-btn"
             @click="showWorkspaceModal = true"
-            title="Рабочие области"
+            data-tooltip="Рабочие области"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -1673,7 +1676,7 @@ const handleRefundDelete = async (op) => {
           </button>
 
           <!-- 🆕 NEW: Theme Toggle Button -->
-          <button class="icon-btn theme-toggle-btn" @click="toggleTheme" :title="currentTheme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на темную тему'">
+          <button class="icon-btn theme-toggle-btn" @click="toggleTheme" :data-tooltip="currentTheme === 'dark' ? 'Светлая тема' : 'Темная тема'">
             <svg v-if="currentTheme === 'dark'" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
             </svg>
@@ -1695,7 +1698,7 @@ const handleRefundDelete = async (op) => {
             v-if="!mainStore.isTimelineOnly"
             class="icon-btn receipt-btn" 
             @click="showReceiptModal = true" 
-            title="Генератор квитанций"
+            data-tooltip="Генератор квитанций"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -1709,7 +1712,7 @@ const handleRefundDelete = async (op) => {
 
         <!-- Bottom buttons group -->
         <div class="right-panel-bottom">
-          <button class="icon-btn about-btn" @click="showAboutModal = true" title="О сервисе">
+          <button class="icon-btn about-btn" @click="showAboutModal = true" data-tooltip="О сервисе">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -2056,11 +2059,39 @@ const handleRefundDelete = async (op) => {
   padding: 0; 
   transition: background-color 0.2s, border-color 0.2s, color 0.2s;
   flex-shrink: 0;
+  position: relative;
 }
 
 .icon-btn:hover { 
   background: var(--color-background-mute); 
   border-color: var(--color-border-hover);
+}
+
+/* Custom tooltip - bright, instant, left-side */
+.icon-btn[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: 8px;
+  padding: 6px 12px;
+  background: var(--color-primary, #007AFF);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+}
+
+.icon-btn[data-tooltip]:hover::before {
+  opacity: 1;
+  transition: opacity 0ms;
 }
 
 /* 🟢 Green highlight when period filter is active */

@@ -9,7 +9,8 @@ const props = defineProps({
   subtitlePrefix: { type: String, required: true },
   subtitleDate: { type: String, required: true },
   widgetKey: { type: String, required: true },
-  widgetIndex: { type: Number, required: true }
+  widgetIndex: { type: Number, required: true },
+  hideMenu: { type: Boolean, default: false }
 });
 
 const isFuture = computed(() => props.widgetKey === 'futureTotal');

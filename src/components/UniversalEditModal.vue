@@ -334,15 +334,6 @@ const closeModal = () => {
       @close="showCreateEntityModal = false"
       @created="handleEntityCreated"
     />
-    
-    <!-- Credit Wizard Popup -->
-    <CreditWizardPopup
-      v-if="showCreditWizard"
-      :editingCredit="editingCredit"
-      @close="showCreditWizard = false"
-      @save="handleCreditWizardSave"
-      @update="handleCreditWizardUpdate"
-    />
   </div>
 </template>
 

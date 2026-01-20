@@ -33,11 +33,15 @@ export const useWidgetStore = defineStore('widget', () => {
 
   // --- 2. Dashboard Layout (Расположение) ---
   const savedLayout = localStorage.getItem('dashboardLayout');
-  const dashboardLayout = ref(savedLayout ? JSON.parse(savedLayout) : [
-    'currentTotal', 'accounts', 'companies', 'contractors',
-    'projects', 'futureTotal', 'incomeList', 'expenseList',
-    'transfers', 'individuals', 'categories'
-  ]);
+  let initialLayout = savedLayout ? JSON.parse(savedLayout) : [
+    'accounts', 'companies', 'contractors', 'projects',
+    'incomeList', 'expenseList', 'transfers', 'individuals', 'categories'
+  ];
+
+  // Filter out currentTotal and futureTotal if they exist in saved layout (legacy data)
+  initialLayout = initialLayout.filter(k => k !== 'currentTotal' && k !== 'futureTotal');
+
+  const dashboardLayout = ref(initialLayout);
   const originalDashboardLayout = ref([]);
 
   // Сохранение на сервер

@@ -210,6 +210,12 @@ const getFutureColor = (item) => {
 // in props.items are already correct
 
 const processedItems = computed(() => {
+  // Defensive check: ensure items is array
+  if (!props.items || !Array.isArray(props.items)) {
+    console.warn('[HeaderBalanceCard] props.items is not an array:', props.items, 'for widget:', props.widgetKey);
+    return [];
+  }
+  
   let items = [...props.items];
   
   // Period filtering happens in mainStore.currentOps - items already filtered
