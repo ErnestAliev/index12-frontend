@@ -124,7 +124,10 @@ const futureUntilStr = computed(() => {
 const localWidgets = computed({
   get: () => {
     const rowSize = isTabletGrid.value ? 5 : 6;
-    const layout = [...mainStore.dashboardLayout];
+    const MAX_WIDGETS = 16; // 3 rows × 6 cols - 2 fixed widgets
+    
+    // Limit layout to prevent 4th row
+    const layout = [...mainStore.dashboardLayout].slice(0, MAX_WIDGETS);
     
     // Insert fixed widgets at their positions in first row
     const result = [];
@@ -147,7 +150,7 @@ const localWidgets = computed({
     // Last position of first row: futureTotal (fixed)
     result.push('futureTotal');
     
-    // Add remaining widgets after first row (positions 6+)
+    // Add remaining widgets after first row (positions 6+) - already limited by layout.slice
     for (let i = middleCount; i < layout.length; i++) {
       result.push(layout[i]);
     }
