@@ -155,8 +155,10 @@ const localWidgets = computed({
       result.push(layout[i]);
     }
     
-    // HARD LIMIT: Never exceed 18 slots total (3 rows × 6 cols)
-    const MAX_TOTAL_SLOTS = 18;
+    // HARD LIMIT: Never exceed max slots (3 rows × rowSize)
+    // Desktop: 6 cols × 3 rows = 18 slots
+    // Tablet: 5 cols × 3 rows = 15 slots
+    const MAX_TOTAL_SLOTS = rowSize * 3;
     if (result.length > MAX_TOTAL_SLOTS) {
       result.length = MAX_TOTAL_SLOTS; // Truncate to max
     }
