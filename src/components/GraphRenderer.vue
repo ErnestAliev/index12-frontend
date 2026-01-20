@@ -920,10 +920,7 @@ const summaries = computed(() => {
 
     const rec = agg.get(dateKey);
 
-    const incPrepay = Math.abs(Number(rec?.prepayment || 0));
-    const incMain = Math.abs(Number(rec?.incomeMain || 0));
-    const incTotal = incPrepay + incMain;
-
+    const incTotal = Math.abs(Number(rec?.incomeMain || 0)) + Math.abs(Number(rec?.prepayment || 0));
     const expTotal = Math.abs(Number(rec?.expense || 0)) + Math.abs(Number(rec?.withdrawal || 0));
 
     const endBalance = closingByKey.has(dateKey)
@@ -933,8 +930,6 @@ const summaries = computed(() => {
     return {
       date: d.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: incTotal,
-      incomeMain: incMain,
-      prepayment: incPrepay,
       expense: expTotal,
       balance: endBalance
     };
@@ -1166,71 +1161,58 @@ const balanceColors = computed(() => {
 // - Все операции видны в одном дне
 // - Плавный переход между днями
 
-// 🟠 Предоплата/транш (floating): ВИЗУАЛЬНО СЖАТА [start, endBalance]
-// Математически = prepayment, Визуально = часть от [start, endBalance]
-const prepaymentFloatData = computed(() => {
+// 🟢 Доход (floating): УМНОЕ СЖАТИЕ
+// - Если нет расхода: занимает [start, end]
+// - Если прибыль (end >= start): визуально сжат пропорционально
+// - Если убыток (end < start): математический [start, start+income]
+// - Если баланс не изменился (visualSpace=0): математический чтобы показать операции
+const incomeFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   const startVals = startBalanceValues.value || [];
   const endVals = endBalanceValues.value || [];
 
   return arr.map((s, i) => {
-    const p = Math.abs(Number(s?.prepayment) || 0);
-    if (!p) return [0, 0];
-
-    const start = Math.max(0, Number(startVals[i]) || 0);
-    const end = Math.max(0, Number(endVals[i]) || 0);
-    
-    // ВИЗУАЛЬНОЕ СЖАТИЕ: рисуем от start до endBalance (сжато, не математически)
-    const inc = Math.abs(Number(s?.incomeMain) || 0);
-    const totalIncome = p + inc;
-    if (totalIncome === 0) return [0, 0];
-    
-    // Пропорция предоплаты от общего дохода
-    const ratio = p / totalIncome;
-    const visualHeight = end - start;
-    const prepayHeight = visualHeight * ratio;
-    
-    const to = start + prepayHeight;
-    if (to <= start) return [0, 0];
-    return [start, to];
-  });
-});
-
-// 🟢 Обычный доход (floating): ВИЗУАЛЬНО СЖАТ [start+prepayPart, endBalance]
-// Математически = incomeMain, Визуально = часть от [start, endBalance]
-const incomeMainFloatData = computed(() => {
-  const _v = mainStore.cacheVersion;
-  const arr = Array.isArray(summaries.value) ? summaries.value : [];
-  const startVals = startBalanceValues.value || [];
-  const endVals = endBalanceValues.value || [];
-
-  return arr.map((s, i) => {
-    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    const inc = Math.abs(Number(s?.income) || 0);
+    const exp = Math.abs(Number(s?.expense) || 0);
     if (!inc) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
     const end = Math.max(0, Number(endVals[i]) || 0);
-    const p = Math.abs(Number(s?.prepayment) || 0);
     
-    // ВИЗУАЛЬНОЕ СЖАТИЕ: рисуем от start+prepayPart до endBalance
-    const totalIncome = p + inc;
-    if (totalIncome === 0) return [0, 0];
+    // Если нет расхода - income занимает всё визуальное пространство до end
+    if (!exp) {
+      return [start, end];
+    }
     
-    const ratio = inc / totalIncome;
-    const visualHeight = end - start;
-    const incHeight = visualHeight * ratio;
-    const prepayHeight = visualHeight - incHeight;
+    const visualSpace = end - start;
     
-    const from = start + prepayHeight;
-    const to = end;
-    if (to <= from) return [0, 0];
-    return [from, to];
+    // Если баланс не изменился (visualSpace ≈ 0) - математический подход
+    if (Math.abs(visualSpace) < 1) {
+      const to = start + inc;
+      return [start, to];
+    }
+    
+    // Если прибыль (end > start) - визуальное сжатие
+    if (end > start) {
+      const totalOps = inc + exp;
+      const incomeRatio = inc / totalOps;
+      const incomeVisualHeight = visualSpace * incomeRatio;
+      
+      const to = start + incomeVisualHeight;
+      return [start, to];
+    }
+    
+    // Если убыток (end < start) - математический подход
+    const to = start + inc;
+    return [start, to];
   });
 });
 
-// 🟥 Расход (floating): [endBalance, peak] - показывает "съеденную" часть
-// Нижняя граница расхода = верхняя граница следующего дня
+// 🟥 Расход (floating): УМНАЯ ЛОГИКА
+// - Если прибыль (end > start): рисуется от верха income до end
+// - Если убыток (end < start): рисуется от end до peak (математический)
+// - Если баланс не изменился (visualSpace≈0): от верха income до peak
 const expenseFloatData = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
@@ -1239,36 +1221,44 @@ const expenseFloatData = computed(() => {
 
   return arr.map((s, i) => {
     const exp = Math.abs(Number(s?.expense) || 0);
+    const inc = Math.abs(Number(s?.income) || 0);
     if (!exp) return [0, 0];
 
     const start = Math.max(0, Number(startVals[i]) || 0);
-    const end = Math.max(0, Number(endVals[i]) || 0); // Это нижняя граница расхода
-    const prepay = Math.abs(Number(s?.prepayment) || 0);
-    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    const end = Math.max(0, Number(endVals[i]) || 0);
+    const visualSpace = end - start;
     
-    // Пик = база + все доходы (теоретический максимум)
-    const peak = start + prepay + inc;
+    // Если баланс не изменился (visualSpace ≈ 0) - математический от верха income
+    if (Math.abs(visualSpace) < 1) {
+      const incomeTop = start + inc;
+      const peak = incomeTop + exp;
+      return [incomeTop, peak];
+    }
     
-    // Расход от реального конца дня до пика
+    // Если прибыль (end > start) - рисуем от верха income до end
+    if (end > start) {
+      const totalOps = inc + exp;
+      const incomeRatio = inc / totalOps;
+      const incomeVisualHeight = visualSpace * incomeRatio;
+      
+      const incomeTop = start + incomeVisualHeight;
+      // Expense от верха income до end
+      if (end <= incomeTop) return [0, 0];
+      return [incomeTop, end];
+    }
+    
+    // Если убыток (end < start) - математический подход: от end до peak
+    const peak = start + inc;
     if (end >= peak) return [0, 0];
     return [end, peak];
   });
 });
 
-const prepaymentFloatColors = computed(() => {
+const incomeFloatColors = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   return arr.map((s) => {
-    const p = Math.abs(Number(s?.prepayment) || 0);
-    return p ? 'rgba(255,157,0,1)' : 'rgba(0,0,0,0)';
-  });
-});
-
-const incomeMainFloatColors = computed(() => {
-  const _v = mainStore.cacheVersion;
-  const arr = Array.isArray(summaries.value) ? summaries.value : [];
-  return arr.map((s) => {
-    const inc = Math.abs(Number(s?.incomeMain) || 0);
+    const inc = Math.abs(Number(s?.income) || 0);
     return inc ? 'rgba(52,199,89,1)' : 'rgba(0,0,0,0)';
   });
 });
@@ -1496,25 +1486,12 @@ const chartData = computed(() => {
         barPercentage: 0.92,
         categoryPercentage: 1.0
       },
-      // 🟠 Предоплата/транш — оранжевый сегмент над стартом дня
-      {
-        type: 'bar',
-        label: 'Предоплата',
-        data: (prepaymentFloatData.value || []).slice(0, labels.length),
-        backgroundColor: (prepaymentFloatColors.value || []).slice(0, labels.length),
-        yAxisID: 'yBalance',
-        order: 4500,
-        borderSkipped: false,
-        grouped: false,
-        barPercentage: 0.92,
-        categoryPercentage: 1.0
-      },
-      // 🟢 Доход — всегда СВЕРХУ (после предоплаты)
+      // 🟢 Доход — зеленый бар [start, start + income]
       {
         type: 'bar',
         label: 'Доход',
-        data: (incomeMainFloatData.value || []).slice(0, labels.length),
-        backgroundColor: (incomeMainFloatColors.value || []).slice(0, labels.length),
+        data: (incomeFloatData.value || []).slice(0, labels.length),
+        backgroundColor: (incomeFloatColors.value || []).slice(0, labels.length),
         yAxisID: 'yBalance',
         order: 5000,
         borderSkipped: false,
