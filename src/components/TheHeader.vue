@@ -155,11 +155,17 @@ const localWidgets = computed({
       result.push(layout[i]);
     }
     
+    // HARD LIMIT: Never exceed 18 slots total (3 rows × 6 cols)
+    const MAX_TOTAL_SLOTS = 18;
+    if (result.length > MAX_TOTAL_SLOTS) {
+      result.length = MAX_TOTAL_SLOTS; // Truncate to max
+    }
+    
     // In expanded mode, add placeholders to fill grid (max 3 rows)
     if (mainStore.isHeaderExpanded) {
       const MAX_ROWS = 3;
       const rows = Math.min(Math.ceil(Math.max(result.length, rowSize) / rowSize), MAX_ROWS);
-      const totalSlots = rows * rowSize;
+      const totalSlots = Math.min(rows * rowSize, MAX_TOTAL_SLOTS); // Double protection
       
       while (result.length < totalSlots) {
         result.push(`placeholder_${result.length}`);
