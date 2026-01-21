@@ -316,6 +316,19 @@ const handleDragEnd = () => {
   }, 100);
 };
 
+const handleCardClick = (event, widgetKey) => {
+  // Don't open fullscreen if:
+  // 1. Currently dragging
+  // 2. Clicked on a button or interactive element
+  // 3. Widget is a placeholder
+  if (isDragging.value) return;
+  if (event.target.closest('button, input, select, textarea, a, [role="button"]')) return;
+  if (widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')) return;
+  
+  openFullscreen(widgetKey);
+};
+
+
 // ===============================
 // 🟢 UI SNAPSHOT (screen = truth)
 // ===============================
@@ -725,6 +738,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       @dragover="handleDragOver($event, index)"
       @drop="handleDrop($event, index)"
       @dragend="handleDragEnd"
+      @click="handleCardClick($event, widgetKey)"
     >
         <div v-if="widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
