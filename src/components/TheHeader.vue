@@ -72,7 +72,22 @@ const handleOpenMenu = (payload) => {
 
 const handleMenuSelect = (newWidgetKey) => {
   if (activeDropdown.value) {
-    mainStore.replaceWidget(activeDropdown.value.index, newWidgetKey);
+    // Find first placeholder in localWidgets
+    const placeholderIndex = localWidgets.value.findIndex(w => w.startsWith('placeholder_'));
+    
+    if (placeholderIndex !== -1) {
+      // Convert localWidgets index to dashboardLayout index
+      // Count how many real widgets (not placeholders, not fixed) are before this position
+      let dashboardIndex = 0;
+      for (let i = 0; i < placeholderIndex; i++) {
+        const widget = localWidgets.value[i];
+        if (widget !== 'currentTotal' && widget !== 'futureTotal' && !widget.startsWith('placeholder_')) {
+          dashboardIndex++;
+        }
+      }
+      
+      mainStore.replaceWidget(dashboardIndex, newWidgetKey);
+    }
     activeDropdown.value = null;
   }
 };

@@ -62,8 +62,14 @@ export const useWidgetStore = defineStore('widget', () => {
   }, { deep: true });
 
   function replaceWidget(i, key) {
-    if (i >= 0 && i < dashboardLayout.value.length) {
-      if (!dashboardLayout.value.includes(key)) {
+    // Check if widget already exists
+    if (dashboardLayout.value.includes(key)) return;
+
+    // Replace at index or push to end if index equals length
+    if (i >= 0 && i <= dashboardLayout.value.length) {
+      if (i === dashboardLayout.value.length) {
+        dashboardLayout.value.push(key);
+      } else {
         dashboardLayout.value[i] = key;
       }
     }
