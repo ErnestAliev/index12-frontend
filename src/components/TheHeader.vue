@@ -38,8 +38,9 @@ const searchQuery = ref('');
 const fullscreenWidgetKey = ref(null);
 
 const openFullscreen = (key) => {
-  // Не открываем плейсхолдеры
-  if (key && !key.startsWith('placeholder_')) {
+  // Don't open if we're dragging or if it's a placeholder
+  if (isDragging.value) return;
+  if (key && typeof key === 'string' && !key.startsWith('placeholder_')) {
     fullscreenWidgetKey.value = key;
     document.body.style.overflow = 'hidden'; // Блокируем скролл страницы
   }
@@ -73,7 +74,7 @@ const handleOpenMenu = (payload) => {
 const handleMenuSelect = (newWidgetKey) => {
   if (activeDropdown.value) {
     // Find first placeholder in localWidgets
-    const placeholderIndex = localWidgets.value.findIndex(w => w.startsWith('placeholder_'));
+    const placeholderIndex = localWidgets.value.findIndex(w => w && typeof w === 'string' && w.startsWith('placeholder_'));
     
     if (placeholderIndex !== -1) {
       // Convert localWidgets index to dashboardLayout index
@@ -81,7 +82,7 @@ const handleMenuSelect = (newWidgetKey) => {
       let dashboardIndex = 0;
       for (let i = 0; i < placeholderIndex; i++) {
         const widget = localWidgets.value[i];
-        if (widget !== 'currentTotal' && widget !== 'futureTotal' && !widget.startsWith('placeholder_')) {
+        if (widget !== 'currentTotal' && widget !== 'futureTotal' && widget && typeof widget === 'string' && !widget.startsWith('placeholder_')) {
           dashboardIndex++;
         }
       }
@@ -141,8 +142,8 @@ const localWidgets = computed({
     const rowSize = isTabletGrid.value ? 5 : 6;
     const MAX_WIDGETS = 16; // 3 rows × 6 cols - 2 fixed widgets
     
-    // Limit layout to prevent 4th row
-    const layout = [...mainStore.dashboardLayout].slice(0, MAX_WIDGETS);
+    // Limit layout to prevent 4th row - temporarily disabled to debug
+    const layout = [...mainStore.dashboardLayout]; // .slice(0, MAX_WIDGETS);
     
     // Insert fixed widgets at their positions in first row
     const result = [];
@@ -155,7 +156,7 @@ const localWidgets = computed({
     const middleCount = rowSize - 2;
     
     for (let i = 0; i < middleCount; i++) {
-      if (i < layout.length) {
+      if (i < layout.length && layout[i]) {
         result.push(layout[i]);
       } else {
         result.push(`placeholder_${i + 1}`);
@@ -165,9 +166,13 @@ const localWidgets = computed({
     // Last position of first row: futureTotal (fixed)
     result.push('futureTotal');
     
-    // Add remaining widgets after first row (positions 6+) - already limited by layout.slice
+    // Add remaining widgets after first row (positions 6+)
     for (let i = middleCount; i < layout.length; i++) {
-      result.push(layout[i]);
+      if (layout[i]) {
+        result.push(layout[i]);
+      } else {
+        result.push(`placeholder_${result.length}`);
+      }
     }
     
     // HARD LIMIT: Never exceed max slots (3 rows × rowSize)
@@ -178,15 +183,14 @@ const localWidgets = computed({
       result.length = MAX_TOTAL_SLOTS; // Truncate to max
     }
     
-    // In expanded mode, add placeholders to fill grid (max 3 rows)
-    if (mainStore.isHeaderExpanded) {
-      const MAX_ROWS = 3;
-      const rows = Math.min(Math.ceil(Math.max(result.length, rowSize) / rowSize), MAX_ROWS);
-      const totalSlots = Math.min(rows * rowSize, MAX_TOTAL_SLOTS); // Double protection
-      
-      while (result.length < totalSlots) {
-        result.push(`placeholder_${result.length}`);
-      }
+    // Always add placeholders to fill grid (max 3 rows)
+    const MAX_ROWS = 3;
+    // Calculate slots based on actual content in layout, not arbitrary limit
+    const rows = Math.min(Math.ceil(Math.max(result.length, rowSize) / rowSize), MAX_ROWS);
+    const totalSlots = Math.max(Math.min(rows * rowSize, MAX_TOTAL_SLOTS), result.length);
+    
+    while (result.length < totalSlots) {
+      result.push(`placeholder_${result.length}`);
     }
     
     return result;
@@ -229,14 +233,27 @@ const hiddenWidgets = computed(() => {
 // ===============================
 const draggedIndex = ref(null);
 const dropTargetIndex = ref(null);
+const isDragging = ref(false);
 
 const handleDragStart = (event, index) => {
   const widget = localWidgets.value[index];
+  
+  // Check if drag started from an interactive element (button, input, etc)
+  const target = event.target;
+  const isInteractive = target.closest('button, input, select, textarea, a, [role="button"]');
+  
+  if (isInteractive) {
+    event.preventDefault();
+    return;
+  }
+  
   // Prevent dragging fixed widgets
   if (widget === 'currentTotal' || widget === 'futureTotal') {
     event.preventDefault();
     return;
   }
+  event.stopPropagation();
+  isDragging.value = true;
   draggedIndex.value = index;
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/html', event.target.innerHTML);
@@ -244,9 +261,10 @@ const handleDragStart = (event, index) => {
 
 const handleDragOver = (event, index) => {
   event.preventDefault();
+  event.stopPropagation();
   const targetWidget = localWidgets.value[index];
   // Only allow drop on placeholders
-  if (targetWidget && targetWidget.startsWith('placeholder_')) {
+  if (targetWidget && typeof targetWidget === 'string' && targetWidget.startsWith('placeholder_')) {
     dropTargetIndex.value = index;
     event.dataTransfer.dropEffect = 'move';
   }
@@ -254,16 +272,35 @@ const handleDragOver = (event, index) => {
 
 const handleDrop = (event, index) => {
   event.preventDefault();
+  event.stopPropagation();
   if (draggedIndex.value === null) return;
   
   const targetWidget = localWidgets.value[index];
+  const draggedWidget = localWidgets.value[draggedIndex.value];
+  
   // Only swap with placeholders
-  if (targetWidget && targetWidget.startsWith('placeholder_')) {
-    const newLayout = [...localWidgets.value];
-    const temp = newLayout[draggedIndex.value];
-    newLayout[draggedIndex.value] = newLayout[index];
-    newLayout[index] = temp;
-    localWidgets.value = newLayout;
+  if (targetWidget && typeof targetWidget === 'string' && targetWidget.startsWith('placeholder_')) {
+    // Simple swap approach - exchange positions in localWidgets
+    const newLocalWidgets = [...localWidgets.value];
+    
+    // Swap: put dragged widget at target position, put placeholder at dragged position
+    newLocalWidgets[index] = draggedWidget;
+    newLocalWidgets[draggedIndex.value] = targetWidget;
+    
+    // Now extract the dashboardLayout from newLocalWidgets
+    // Remove currentTotal (position 0) and futureTotal (position 5 for 6-col, 4 for 5-col)
+    const rowSize = isTabletGrid.value ? 5 : 6;
+    const filtered = newLocalWidgets.filter((widget, idx) => {
+      // Skip currentTotal at position 0
+      if (idx === 0 && widget === 'currentTotal') return false;
+      // Skip futureTotal at row end
+      if (idx === rowSize - 1 && widget === 'futureTotal') return false;
+      // Skip any other currentTotal/futureTotal that somehow appear
+      if (widget === 'currentTotal' || widget === 'futureTotal') return false;
+      return true;
+    });
+    
+    mainStore.dashboardLayout = filtered;
   }
   
   draggedIndex.value = null;
@@ -273,6 +310,10 @@ const handleDrop = (event, index) => {
 const handleDragEnd = () => {
   draggedIndex.value = null;
   dropTargetIndex.value = null;
+  // Reset isDragging after a short delay to prevent click from firing
+  setTimeout(() => {
+    isDragging.value = false;
+  }, 100);
 };
 
 // ===============================
@@ -282,20 +323,20 @@ const gridWidgetRefMap = new Map();
 const fullscreenWidgetRefMap = new Map();
 
 const registerGridWidgetRef = (key, el) => {
-  if (!key || String(key).startsWith('placeholder_')) return;
+  if (!key || (typeof key === 'string' && key.startsWith('placeholder_'))) return;
   if (el) gridWidgetRefMap.set(key, el);
   else gridWidgetRefMap.delete(key);
 };
 
 const registerFullscreenWidgetRef = (key, el) => {
-  if (!key || String(key).startsWith('placeholder_')) return;
+  if (!key || (typeof key === 'string' && key.startsWith('placeholder_'))) return;
   if (el) fullscreenWidgetRefMap.set(key, el);
   else fullscreenWidgetRefMap.delete(key);
 };
 
 // When header is not expanded, only the first row is visible (6 desktop, 5 tablet grid)
 const getVisibleGridWidgetKeys = () => {
-  const keys = (localWidgets.value || []).filter(k => !String(k).startsWith('placeholder_'));
+  const keys = (localWidgets.value || []).filter(k => k && typeof k === 'string' && !k.startsWith('placeholder_'));
   if (mainStore.isHeaderExpanded) return keys;
   const rowSize = isTabletGrid.value ? 5 : 6;
   return keys.slice(0, rowSize);
@@ -310,7 +351,7 @@ const getSnapshot = () => {
   // Get all available widget keys from the store configuration
   const allAvailableWidgetKeys = mainStore.allWidgets.map(w => w.key);
   
-  const fsKey = fullscreenWidgetKey.value && !String(fullscreenWidgetKey.value).startsWith('placeholder_')
+  const fsKey = fullscreenWidgetKey.value && typeof fullscreenWidgetKey.value === 'string' && !fullscreenWidgetKey.value.startsWith('placeholder_')
     ? fullscreenWidgetKey.value
     : null;
 
@@ -653,7 +694,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
              />
 
              <HeaderCategoryCard
-                v-else-if="fullscreenWidgetKey === 'transfers' || fullscreenWidgetKey.startsWith('cat_') || fullscreenWidgetKey === 'incomeList' || fullscreenWidgetKey === 'expenseList' || fullscreenWidgetKey === 'withdrawalList'"
+                v-else-if="fullscreenWidgetKey === 'transfers' || (fullscreenWidgetKey && typeof fullscreenWidgetKey === 'string' && fullscreenWidgetKey.startsWith('cat_')) || fullscreenWidgetKey === 'incomeList' || fullscreenWidgetKey === 'expenseList' || fullscreenWidgetKey === 'withdrawalList'"
                 :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="getWidgetByKey(fullscreenWidgetKey)?.name || '...'"
                 :widgetKey="fullscreenWidgetKey"
@@ -677,16 +718,15 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       class="dashboard-card-wrapper"
       :class="{
         'dragging': draggedIndex === index,
-        'drop-target': dropTargetIndex === index && widgetKey.startsWith('placeholder_')
+        'drop-target': dropTargetIndex === index && widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')
       }"
-      :draggable="widgetKey !== 'currentTotal' && widgetKey !== 'futureTotal' && !widgetKey.startsWith('placeholder_')"
+      :draggable="widgetKey !== 'currentTotal' && widgetKey !== 'futureTotal' && widgetKey && typeof widgetKey === 'string' && !widgetKey.startsWith('placeholder_')"
       @dragstart="handleDragStart($event, index)"
       @dragover="handleDragOver($event, index)"
       @drop="handleDrop($event, index)"
       @dragend="handleDragEnd"
-      @click="openFullscreen(widgetKey)"
     >
-        <div v-if="widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
+        <div v-if="widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
@@ -791,7 +831,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         />
 
         <HeaderCategoryCard
-          v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
+          v-else-if="widgetKey === 'transfers' || (widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('cat_')) || widgetKey === 'incomeList' || widgetKey === 'expenseList' || widgetKey === 'withdrawalList'"
           :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           :title="getWidgetByKey(widgetKey)?.name || '...'"
           :widgetKey="widgetKey"
@@ -901,7 +941,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       />
 
       <HeaderCategoryCard
-        v-else-if="widgetKey === 'transfers' || widgetKey.startsWith('cat_') || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
+        v-else-if="widgetKey === 'transfers' || (widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('cat_')) || widgetKey === 'incomeList' || widgetKey === 'expenseList'"
         :ref="(el) => registerGridWidgetRef(widgetKey, el)"
         :title="getWidgetByKey(widgetKey)?.name || '...'"
         :widgetKey="widgetKey"
@@ -935,15 +975,10 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 <style scoped>
 .header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--widget-grid-gap); padding: var(--widget-grid-padding); background-color: var(--widget-grid-color); border-radius: var(--widget-grid-border-radius); border: var(--widget-grid-border-width) solid var(--widget-grid-color); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
-.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; border-right: 1px solid var(--widget-border); border-bottom: 1px solid var(--widget-border); cursor: default; transition: background-color 0.2s; }
+.dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; cursor: default; transition: background-color 0.2s; }
 .dashboard-card-wrapper[draggable="true"] { cursor: grab; }
 .dashboard-card-wrapper[draggable="true"]:active { cursor: grabbing; }
 
-/* HTML5 Drag States */
-.dashboard-card-wrapper.dragging {
-  opacity: 0.5;
-  cursor: grabbing;
-}
 
 .dashboard-card-wrapper.drop-target {
   outline: 2px solid var(--color-success, #4CAF50);
@@ -956,7 +991,25 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   border-color: var(--widget-border-hover);
 }
 
-:deep(.dashboard-card) { flex: 1; display: flex; flex-direction: column; background-color: transparent; padding: 8px 12px !important; border: none !important; min-width: 0; box-sizing: border-box; margin: 0 !important; min-height: 0; }
+:deep(.dashboard-card) { 
+  flex: 1; 
+  display: flex; 
+  flex-direction: column; 
+  background-color: transparent; 
+  padding: 8px 12px !important; 
+  border: none !important; 
+  min-width: 0; 
+  box-sizing: border-box; 
+  margin: 0 !important; 
+  min-height: 0;
+}
+
+
+/* Disable pointer events when dragging to prevent interference */
+.dashboard-card-wrapper.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
 
 /* 🟢 FULLSCREEN STYLES */
 .fullscreen-overlay {

@@ -23,7 +23,8 @@
     "socket.io-client": "^4.8.1",
     "vue": "^3.5.22",
     "vue-chartjs": "^5.3.2",
-    "vue-router": "^4.6.3"
+    "vue-router": "^4.6.3",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",

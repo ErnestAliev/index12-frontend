@@ -539,12 +539,15 @@ const toggleWidgetOnDashboard = () => {
   if (!props.widgetKey) return;
   
   if (isWidgetOnDashboard.value) {
-    // Remove from layout
-    const newLayout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey);
-    mainStore.dashboardLayout = newLayout;
+    // Remove widget completely - don't replace with placeholder
+    const layout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey && !k?.startsWith('placeholder_'));
+    mainStore.dashboardLayout = layout;
   } else {
-    // Add to end of layout
-    mainStore.dashboardLayout = [...mainStore.dashboardLayout, props.widgetKey];
+    // Add widget to end - placeholders are generated in localWidgets, not stored
+    const layout = mainStore.dashboardLayout.filter(k => !k?.startsWith('placeholder_'));
+    layout.push(props.widgetKey);
+    
+    mainStore.dashboardLayout = layout;
   }
 };
 
