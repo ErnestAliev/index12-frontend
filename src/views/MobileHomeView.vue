@@ -1511,15 +1511,11 @@ const handleOperationDelete = async (op) => {
             <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы</button>
             <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы</button>
             <button class="ai-chip" @click="runAiQuick('покажи налоги')">Налоги</button>
-            <button class="ai-chip" @click="runAiQuick('покажи выводы')">Выводы</button>
-            <button class="ai-chip" @click="runAiQuick('покажи кредиты')">Кредиты</button>
-            <button class="ai-chip" @click="runAiQuick('покажи предоплаты')">Предоплаты</button>
             <button class="ai-chip" @click="runAiQuick('покажи компании')">Компании</button>
             <button class="ai-chip" @click="runAiQuick('покажи проекты')">Проекты</button>
             <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
             <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
             <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
-            <button class="ai-chip" @click="runAiQuick('диагностика')">Диагностика</button>
           </div>
 
           <div class="ai-modal-body">
