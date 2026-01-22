@@ -354,6 +354,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         asOf,
         includeHidden, 
         visibleAccountIds,
+        periodFilter: mainStore.periodFilter, // ✅ Pass period filter to backend
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
       }),
     });
