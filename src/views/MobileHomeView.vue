@@ -317,28 +317,31 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     // 🔥 SIMPLIFIED: No more uiSnapshot building - backend queries MongoDB directly!
     // This removes 300+ lines of snapshot building code and eliminates race conditions.
     
-    const _qLower = String(q || '').toLowerCase();
-    const includeHidden = /скрыт|скрытые|сч[её]т|касс|account|баланс/.test(_qLower);
+    const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(q || '');
+    const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ы|ых)?\b/i.test(q || '');
+    const includeHidden = wantsAccounts || wantsHidden;
 
-    const visibleAccountIds = (() => {
-      try {
-        const accs = Array.isArray(mainStore?.accounts) ? mainStore.accounts : [];
-        if (!accs.length) return [];
+    const visibleAccountIds = includeHidden
+      ? null
+      : (() => {
+          try {
+            const accs = Array.isArray(mainStore?.accounts) ? mainStore.accounts : [];
+            if (!accs.length) return [];
 
-        // If user enabled "include excluded in total" – treat all accounts as visible.
-        if (Boolean(mainStore?.includeExcludedInTotal)) {
-          return accs.map(a => a?._id).filter(Boolean);
-        }
+            // If user enabled "include excluded in total" – treat all accounts as visible.
+            if (Boolean(mainStore?.includeExcludedInTotal)) {
+              return accs.map(a => a?._id).filter(Boolean);
+            }
 
-        // Otherwise: only accounts that are not excluded/hidden.
-        return accs
-          .filter(a => !(a?.isExcluded || a?.excluded || a?.excludedFromTotal || a?.excludeFromTotal))
-          .map(a => a?._id)
-          .filter(Boolean);
-      } catch (_) {
-        return [];
-      }
-    })();
+            // Otherwise: only accounts that are not excluded/hidden.
+            return accs
+              .filter(a => !(a?.isExcluded || a?.excluded || a?.excludedFromTotal || a?.excludeFromTotal))
+              .map(a => a?._id)
+              .filter(Boolean);
+          } catch (_) {
+            return [];
+          }
+        })();
 
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
