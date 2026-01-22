@@ -543,65 +543,12 @@ const sendAiMessage = async () => {
               .filter(Boolean)
           : null);
 
-    // ✅ Smart prefetch: detect period from query and load it
-    const wantsOpsTimeline = /\b(доход|расход|перевод|вывод|операц|налог|предоплат|будущ|прогноз|план|отчёт|отчет)\b/i.test(text);
-    if (wantsOpsTimeline && typeof mainStore?.fetchOperationsRange === 'function') {
-      // Try to detect specific period from query
-      const textLower = text.toLowerCase();
-      let rangeStart, rangeEnd;
-      
-      // Detect "за январь", "в январе", "январь 2026"
-      const months = {
-        'январ': 0, 'феврал': 1, 'март': 2, 'апрел': 3, 'ма': 4, 'май': 4,
-        'июн': 5, 'июл': 6, 'август': 7, 'сентябр': 8, 'октябр': 9, 'ноябр': 10, 'декабр': 11
-      };
-      
-      let detectedMonth = null;
-      for (const [monthName, monthIdx] of Object.entries(months)) {
-        if (textLower.includes(monthName)) {
-          detectedMonth = monthIdx;
-          break;
-        }
-      }
-      
-      if (detectedMonth !== null) {
-        // Extract year (default to current year)
-        let year = new Date().getFullYear();
-        const yearMatch = textLower.match(/\b(20\d{2})\b/);
-        if (yearMatch) year = Number(yearMatch[1]);
-        
-        // Load full month
-        rangeStart = new Date(year, detectedMonth, 1);
-        rangeEnd = new Date(year, detectedMonth + 1, 0, 23, 59, 59);
-      } else {
-        // Fallback: load ±3 months
-        const today = new Date();
-        rangeStart = new Date(today);
-        rangeStart.setMonth(rangeStart.getMonth() - 3);
-        rangeEnd = new Date(today);
-        rangeEnd.setMonth(rangeEnd.getMonth() + 3);
-      }
-      
-      try {
-        // 🔥 FIX: force=true, sparse=false to ensure complete data
-        await mainStore.fetchOperationsRange(rangeStart, rangeEnd, { force: true, sparse: false });
-      } catch (e) {
-        console.error('AI: Failed to prefetch operations', e);
-      }
-    }
+    // 🔥 REMOVED: Frontend prefetch no longer needed!
+    // Backend now queries MongoDB directly via dataProvider.buildDataPacket()
+    // This gives AI access to full historical data without frontend limitations.
 
-    // Screen-snapshot context (source of truth): what user sees in header widgets
-        // Desktop snapshot must not depend on expanded/collapsed UI
-    const uiSnapshot = buildDesktopUiSnapshot();
-
-    const aiContext = buildAiContext(mainStore, {
-      viewMode: viewMode.value,
-      today: today.value,
-      ui: {
-        includeHidden,
-        visibleAccountIds,
-      },
-    });
+    // 🔥 SIMPLIFIED: No more uiSnapshot/aiContext - backend now queries database directly!
+    // This reduces HTTP payload by ~90% and eliminates race conditions with displayCache.
 
     const res = await axios.post(
       `${API_BASE_URL}/ai/query`,
@@ -609,10 +556,8 @@ const sendAiMessage = async () => {
         message: text,
         asOf,
         includeHidden,
-        // ВАЖНО: чтобы суммы совпадали с виджетами (фильтрация по видимым счетам)
         visibleAccountIds,
-        aiContext,
-        uiSnapshot,
+        // 🔥 REMOVED: aiContext, uiSnapshot - backend uses dataProvider.buildDataPacket()
       },
       {
         // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.

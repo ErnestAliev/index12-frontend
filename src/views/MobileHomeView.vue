@@ -296,21 +296,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   aiVoiceConfirmedText = ''; // Reset voice confirmed text
   aiLoading.value = true;
 
-  // ✅ Always prefetch operations so AI sees future data (Desktop-parity)
-  if (typeof mainStore?.fetchOperationsRange === 'function') {
-    const today = new Date();
-    const rs = new Date(today);
-    rs.setMonth(rs.getMonth() - 3);
-    const re = new Date(today);
-    re.setMonth(re.getMonth() + 3);
-    try {
-      await mainStore.fetchOperationsRange(rs, re, { force: false, sparse: true });
-      // Wait for Vue reactivity to propagate cache updates
-      await nextTick();
-    } catch (e) {
-      console.error('AI Mobile: Failed to prefetch ops', e);
-    }
-  }
+  // 🔥 REMOVED: Prefetch no longer needed - backend queries MongoDB directly!
 
   try {
     // Важно: отправляем локальную дату/время пользователя (с offset), а не UTC.
@@ -328,223 +314,9 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 
     const asOf = _localIsoNow();
 
-    // UI snapshot (read-only).
-    // IMPORTANT: use the SAME snapshot generator as desktop so totals/keys match.
-    const _parseDateAny = (raw) => {
-      if (!raw) return null;
-      if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
-      const d1 = new Date(raw);
-      if (!Number.isNaN(d1.getTime())) return d1;
-      const s = String(raw).trim();
-      const m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
-      if (m) {
-        const dd = Number(m[1]);
-        const mm = Number(m[2]);
-        let yy = Number(m[3]);
-        if (yy < 100) yy += 2000;
-        const d2 = new Date(yy, mm - 1, dd);
-        return Number.isNaN(d2.getTime()) ? null : d2;
-      }
-      const m2 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
-      if (m2) {
-        const d3 = new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
-        return Number.isNaN(d3.getTime()) ? null : d3;
-      }
-      return null;
-    };
-
-    const todayObj = new Date(asOf);
-    const futureObj = (() => {
-      const p = mainStore?.projection || {};
-      const raw =
-        p?.rangeEndDate ||
-        p?.toDate || p?.to || p?.endDate || p?.until || p?.toDateKey ||
-        mainStore?.forecastToDate ||
-        mainStore?.forecastToDateKey;
-      const d = _parseDateAny(raw);
-      if (d) return d;
-      // Default to 6 months ahead if no forecast date provided
-      const defaultFuture = new Date(todayObj);
-      defaultFuture.setMonth(defaultFuture.getMonth() + 6);
-      return defaultFuture;
-    })();
-
-    let uiSnapshot = null;
-    try {
-      // Mobile: snapshot comes primarily from MobileWidgetGrid (totals widgets)
-      uiSnapshot = (typeof widgetGridRef.value?.getSnapshot === 'function')
-        ? (widgetGridRef.value.getSnapshot() || null)
-        : null;
-    } catch (e) {
-      console.error('AI: widgetGridRef.getSnapshot failed (mobile)', e);
-      uiSnapshot = null;
-    }
-
-    // Hard guarantee: never send null/undefined
-    if (!uiSnapshot || typeof uiSnapshot !== 'object') {
-      uiSnapshot = { v: 1, meta: {}, ui: {}, widgets: [] };
-    }
-
-    // Ensure widgets array exists
-    if (!Array.isArray(uiSnapshot.widgets)) uiSnapshot.widgets = [];
-
-    // Add header totals snapshot if available
-    try {
-      const ht = (typeof headerTotalsRef.value?.getSnapshot === 'function')
-        ? headerTotalsRef.value.getSnapshot()
-        : null;
-      if (ht) {
-        if (Array.isArray(ht.widgets)) uiSnapshot.widgets.push(...ht.widgets);
-        else if (ht.key) uiSnapshot.widgets.push(ht);
-      }
-    } catch (e) {
-      console.warn('AI: headerTotalsRef.getSnapshot failed', e);
-    }
-
-    // ---- CRITICAL for "ближайший доход/расход" on mobile
-    // Totals widgets do not contain dated rows; operations are stored in cells.
-    // We inject lists with dates from the store so backend can sort upcoming ops.
-
-    const _fmtYmd = (d) => {
-      try {
-        const dd = (d instanceof Date) ? d : new Date(d);
-        if (Number.isNaN(dd.getTime())) return null;
-        const pad2 = (n) => String(n).padStart(2, '0');
-        return `${dd.getFullYear()}-${pad2(dd.getMonth() + 1)}-${pad2(dd.getDate())}`;
-      } catch (_) {
-        return null;
-      }
-    };
-
-    const _resolveOpDate = (op) => {
-      // 1) if op.date exists
-      const d1 = _parseDateAny(op?.date);
-      if (d1) return d1;
-
-      // 2) if dateKey exists (common for "cells" ops)
-      const dk = op?.dateKey;
-      if (dk) {
-        // Prefer store parser if present
-        try {
-          if (typeof mainStore?._parseDateKey === 'function') {
-            const d2 = mainStore._parseDateKey(dk);
-            const dd = new Date(d2);
-            if (!Number.isNaN(dd.getTime())) return dd;
-          }
-        } catch (_) {}
-
-        // Fallback: YYYYMMDD
-        const s = String(dk).trim();
-        const m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
-        if (m) {
-          const d3 = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-          if (!Number.isNaN(d3.getTime())) return d3;
-        }
-      }
-
-      return null;
-    };
-
-    const _opToRow = (op, fallbackName) => {
-      if (!op) return null;
-
-      const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name || op.contractorName || '';
-      const project = op.projectId?.name || op.projectName || '';
-      const category = op.categoryId?.name || op.categoryName || '';
-
-      // Transfer meta
-      const fromAccId = op.fromAccountId?._id || op.fromAccountId || null;
-      const toAccId = op.toAccountId?._id || op.toAccountId || null;
-      const fromAcc = fromAccId ? (mainStore.accounts || []).find(a => String(a?._id) === String(fromAccId)) : null;
-      const toAcc = toAccId ? (mainStore.accounts || []).find(a => String(a?._id) === String(toAccId)) : null;
-      const fromAccountName = fromAcc?.name || op.fromAccountName || '';
-      const toAccountName = toAcc?.name || op.toAccountName || '';
-
-      const dateObj = _resolveOpDate(op);
-      const dateYmd = dateObj ? _fmtYmd(dateObj) : null;
-
-      const t = (op.type === 'transfer' || op.isTransfer) ? 'transfer'
-        : (op.isWithdrawal || op.type === 'withdrawal') ? 'withdrawal'
-        : (op.type === 'income' || op.isIncome) ? 'income'
-        : 'expense';
-
-      const baseName = (op.description || op.comment || category || contractor || project || fallbackName || 'Операция');
-
-      const name = (t === 'transfer' && (fromAccountName || toAccountName))
-        ? `Перевод: ${fromAccountName || '?'} → ${toAccountName || '?'}`
-        : (t === 'withdrawal' && (op.destination || op.withdrawalDestination))
-          ? `Вывод: ${op.destination || op.withdrawalDestination}`
-          : baseName;
-
-      return {
-        id: op._id || op.id || null,
-        // IMPORTANT: date must be resolvable even when only dateKey exists
-        date: dateYmd || op.date || null,
-        dateKey: op.dateKey || null,
-        cellIndex: (op.cellIndex !== undefined ? op.cellIndex : null),
-        type: t,
-        amount: op.amount,
-        contractorName: contractor || null,
-        projectName: project || null,
-        categoryName: category || null,
-        fromAccountName: fromAccountName || null,
-        toAccountName: toAccountName || null,
-        name,
-      };
-    };
-
-    const _pushListWidget = (key, title, ops, fallbackName) => {
-      try {
-        const arr = Array.isArray(ops) ? ops : [];
-        if (!arr.length) return;
-        const rows = [];
-        for (const op of arr.slice(0, 250)) {
-          const r = _opToRow(op, fallbackName);
-          if (r && (r.date || r.dateKey) && r.amount !== undefined && r.amount !== null) rows.push(r);
-        }
-        if (!rows.length) return;
-        uiSnapshot.widgets.push({ key, title, rows });
-      } catch (_) {}
-    };
-
-    // Prefer future lists (they are exactly what "ближайшие" means)
-    _pushListWidget('incomeList', 'Доходы (список)', mainStore.futureIncomes, 'Доход');
-    _pushListWidget('expenseList', 'Расходы (список)', mainStore.futureExpenses, 'Расход');
-    _pushListWidget('withdrawalList', 'Выводы (список)', mainStore.futureWithdrawals, 'Вывод');
-    _pushListWidget('transfers', 'Переводы (список)', mainStore.futureTransfers, 'Перевод');
-
-    // REMOVED: Current lists are already included via storeTimeline.opsByDay below
-    // Injecting them here causes duplicates when operations exist in both current and future
-    // _pushListWidget('incomeListCurrent', 'Доходы (текущие)', mainStore.currentIncomes, 'Доход');
-    // _pushListWidget('expenseListCurrent', 'Расходы (текущие)', mainStore.currentExpenses, 'Расход');
-    // _pushListWidget('withdrawalListCurrent', 'Выводы (текущие)', mainStore.currentWithdrawals, 'Вывод');
-    // _pushListWidget('transfersCurrent', 'Переводы (текущие)', mainStore.currentTransfers, 'Перевод');
-
-    // Normalize minimal contract
-    uiSnapshot.v = (uiSnapshot.v === undefined || uiSnapshot.v === null) ? 1 : uiSnapshot.v;
-    uiSnapshot.meta = (uiSnapshot.meta && typeof uiSnapshot.meta === 'object') ? uiSnapshot.meta : {};
-    uiSnapshot.ui = (uiSnapshot.ui && typeof uiSnapshot.ui === 'object') ? uiSnapshot.ui : {};
-
-    // Ensure dates are consistent with the mobile range end the UI uses
-    const _fmtRu = (d) => {
-      try {
-        const dd = new Date(d);
-        if (Number.isNaN(dd.getTime())) return '';
-        return dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-      } catch (_) {
-        return '';
-      }
-    };
-
-    uiSnapshot.meta.todayIso = uiSnapshot.meta.todayIso || asOf;
-    uiSnapshot.meta.todayStr = uiSnapshot.meta.todayStr || _fmtRu(todayObj);
-    uiSnapshot.meta.futureUntilIso = uiSnapshot.meta.futureUntilIso || futureObj.toISOString();
-    uiSnapshot.meta.futureUntilStr = uiSnapshot.meta.futureUntilStr || _fmtRu(futureObj);
-
-    // Keep the same flag that affects account totals
-    uiSnapshot.ui.includeExcludedInTotal = Boolean(mainStore?.includeExcludedInTotal);
-
-    // --- Accounts visibility contract (desktop parity)
+    // 🔥 SIMPLIFIED: No more uiSnapshot building - backend queries MongoDB directly!
+    // This removes 300+ lines of snapshot building code and eliminates race conditions.
+    
     const _qLower = String(q || '').toLowerCase();
     const includeHidden = /скрыт|скрытые|сч[её]т|касс|account|баланс/.test(_qLower);
 
@@ -568,86 +340,19 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       }
     })();
 
-    // ✅ Inject storeTimeline (Desktop-parity) so AI sees all cached operations, not just current view widgets.
-    // This allows identifying future ops/balances even if the mobile view doesn't show them.
-    {
-      const cacheMap = mainStore?.displayCache?.value || mainStore?.displayCache || {};
-      const cacheDateKeys = Object.keys(cacheMap).filter(Boolean);
-      
-      const MAX_OPS = 3000;
-      let totalOps = 0;
-      const opsByDay = {};
-      
-      const _pickName = (v) => {
-        if (!v) return null;
-        if (typeof v === 'string') return v;
-        return v?.name || v?.title || v?.label || v?.displayName || null;
-      };
-
-      // Resolve entity name: try populated object first, then lookup by ID in store
-      const _resolveEntityName = (idOrObj, storeList) => {
-        const directName = _pickName(idOrObj);
-        if (directName && typeof idOrObj === 'object') return directName;
-        
-        if (!idOrObj || !storeList) return null;
-        const idStr = typeof idOrObj === 'object' ? (idOrObj._id || idOrObj.id) : idOrObj;
-        if (!idStr) return null;
-        
-        const found = storeList.find(e => e && (String(e._id) === String(idStr) || String(e.id) === String(idStr)));
-        return found?.name || found?.title || null;
-      };
-
-      const _normalizeOp = (op) => {
-         if (!op) return null;
-         const date = op.date ? new Date(op.date) : null;
-         const dateIso = (date && !isNaN(date.getTime())) ? date.toISOString().slice(0, 10) : null;
-         
-         return {
-           _id: op._id,
-           date: dateIso,
-           dateKey: op.dateKey,
-           amount: op.amount,
-           type: op.type,
-           isWithdrawal: op.isWithdrawal,
-           isTransfer: op.isTransfer,
-           account: _resolveEntityName(op.accountId, mainStore?.accounts) || _pickName(op.account) || null,
-           project: _resolveEntityName(op.projectId, mainStore?.projects) || _pickName(op.project) || null,
-           contractor: _resolveEntityName(op.contractorId, mainStore?.contractors) || _pickName(op.contractor) || null,
-           category: _resolveEntityName(op.categoryId, mainStore?.categories) || _pickName(op.category) || null,
-           description: op.description
-         };
-      };
-
-      for (const dk of cacheDateKeys) {
-        if (totalOps >= MAX_OPS) break;
-        const rawOps = Array.isArray(cacheMap[dk]) ? cacheMap[dk] : [];
-        const normalized = rawOps.map(_normalizeOp).filter(Boolean);
-        if (!normalized.length) continue;
-
-        if (totalOps + normalized.length > MAX_OPS) {
-          opsByDay[dk] = normalized.slice(0, Math.max(0, MAX_OPS - totalOps));
-          totalOps = MAX_OPS;
-          break;
-        }
-
-        opsByDay[dk] = normalized;
-        totalOps += normalized.length;
-      }
-
-      uiSnapshot.storeTimeline = {
-        daysVisible: [], // Mobile doesn't have visible columns concept like desktop
-        cachedDaysCount: cacheDateKeys.length,
-        opsByDay,
-        opsCount: totalOps,
-        note: 'injected from mobile displayCache'
-      };
-    }
-
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ message: q, source, quickKey, uiSnapshot, includeHidden, visibleAccountIds }),
+      body: JSON.stringify({ 
+        message: q, 
+        source, 
+        quickKey, 
+        asOf,
+        includeHidden, 
+        visibleAccountIds,
+        // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
+      }),
     });
 
     if (res.status === 402 || res.status === 403) {
