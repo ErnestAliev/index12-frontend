@@ -2313,7 +2313,15 @@ export const useMainStore = defineStore('mainStore', () => {
             }
             const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
             const sortedData = _sortByOrder(res.data);
-            if (path === 'accounts') accounts.value = sortedData;
+            if (path === 'accounts') {
+                // Preserve isExcluded if backend omits it (dragging between visible/hidden lists must stick)
+                const savedFlags = new Map(items.map(i => [String(i._id), !!i.isExcluded]));
+                accounts.value = sortedData.map(acc => {
+                    const id = acc && acc._id ? String(acc._id) : null;
+                    const fallbackExcluded = id ? savedFlags.get(id) : false;
+                    return { ...acc, isExcluded: acc.isExcluded !== undefined ? acc.isExcluded : fallbackExcluded };
+                });
+            }
             else if (path === 'companies') companies.value = sortedData;
             else if (path === 'contractors') contractors.value = sortedData;
             else if (path === 'projects') projects.value = sortedData;
