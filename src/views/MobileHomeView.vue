@@ -798,9 +798,9 @@ const setFilterMode = (mode) => {
 };
 const showFutureBalance = computed({ get: () => activeWidgetKey.value ? (mainStore.dashboardForecastState[activeWidgetKey.value] ?? false) : false, set: (val) => { if (activeWidgetKey.value) mainStore.setForecastState(activeWidgetKey.value, val); } });
 const isListWidget = computed(() => { const k = activeWidgetKey.value; return ['incomeList', 'expenseList', 'withdrawalList', 'transfers'].includes(k); });
-const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories', 'taxes'].includes(k); });
-const getValueClass = (val, widgetKey) => { const num = Number(val) || 0; if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'white-text'; if (num < 0) return 'red-text'; return 'white-text'; };
-const getDeltaClass = (val, widgetKey) => { const num = Number(val) || 0; if (num === 0) return 'white-text'; if (widgetKey === 'taxes') return num < 0 ? 'red-text' : 'green-text'; return num > 0 ? 'green-text' : 'red-text'; };
+const isWidgetDeltaMode = computed(() => { const k = activeWidgetKey.value; return ['contractors', 'projects', 'individuals', 'categories'].includes(k); });
+const getValueClass = (val) => { const num = Number(val) || 0; if (num < 0) return 'red-text'; return 'white-text'; };
+const getDeltaClass = (val) => { const num = Number(val) || 0; if (num === 0) return 'white-text'; return num > 0 ? 'green-text' : 'red-text'; };
 
 // ===== Sticky footer totals for Contractors/Projects/Individuals/Categories (Mobile Fullscreen) =====
 const isTotalsWidget = computed(() => {

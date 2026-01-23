@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import axios from 'axios';
 import { useUiStore } from './uiStore';
 import { useProjectionStore } from './projectionStore';
@@ -147,15 +147,6 @@ export const useMainStore = defineStore('mainStore', () => {
     const displayCache = ref({});
     const calculationCache = ref({});
 
-    // --- TAX OPS CACHE (ALL-TIME) ---
-    // Taxes widget must show cumulative fact for the whole history, independent of projection range.
-    const taxOpsCache = ref([]);            // full-history operations (merged transfers + populated)
-    const taxOpsMaxDate = ref(null);        // ISO string of the max loaded date
-    const isTaxOpsLoading = ref(false);
-    let taxOpsLoadPromise = null;
-
-
-    const earliestEventDate = ref(null); // earliest operation date (from /auth/me)
     const accounts = ref([]);
     const companies = ref([]);
     const contractors = ref([]);
@@ -289,9 +280,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
         // Include deal operations
         dealOperations.value.forEach(addOperation);
-
-        // Include tax operations
-        taxKnownOperations.value.forEach(addOperation);
 
         return Array.from(uniqueMap.values());
     });
@@ -567,26 +555,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
 
 
-    // --- TAX CALC SOURCE OPS (ALL-TIME + currently loaded/optimistic) ---
-    // We merge:
-    // 1) taxOpsCache (all-time history loaded in background)
-    // 2) allOperationsFlat (current range + optimistic ops)
-    // 3) dealOperations (may include older ops outside current range)
-    // This guarantees calculateTaxForPeriod works even before the full history is loaded.
-    const taxKnownOperations = computed(() => {
-        const map = new Map();
-        (taxOpsCache.value || []).forEach(op => {
-            if (op && op._id) map.set(String(op._id), op);
-        });
-        (allOperationsFlat.value || []).forEach(op => {
-            if (op && op._id && !map.has(String(op._id))) map.set(String(op._id), op);
-        });
-        (dealOperations.value || []).forEach(op => {
-            if (op && op._id && !map.has(String(op._id))) map.set(String(op._id), op);
-        });
-        return Array.from(map.values());
-    });
-
     async function _fetchOperationsListChunked(startDate, endDate, chunkDays = 120) {
         const out = [];
 
@@ -622,111 +590,6 @@ export const useMainStore = defineStore('mainStore', () => {
 
         return out;
     }
-
-    async function ensureTaxOpsUntil(endDateInput = null, startDateInput = null) {
-        if (!user.value) return;
-
-        const endDate = endDateInput ? new Date(endDateInput) : new Date();
-        endDate.setHours(23, 59, 59, 999);
-
-        // already covered
-        if (taxOpsMaxDate.value && endDate.getTime() <= new Date(taxOpsMaxDate.value).getTime()) return;
-
-        // if a load is in-flight, await it, then re-check
-        if (isTaxOpsLoading.value && taxOpsLoadPromise) {
-            await taxOpsLoadPromise;
-            if (taxOpsMaxDate.value && endDate.getTime() <= new Date(taxOpsMaxDate.value).getTime()) return;
-        }
-
-        // Lower bound for "all-time" taxes history:
-        // - Prefer backend-provided earliest operation date (minEventDate)
-        // - Fallback to user createdAt
-        // - Fallback to min date already present in known ops (if any)
-        // - Final safety fallback: 5 years back (avoid loading from year 2000)
-        let hardMinDate = null;
-        if (earliestEventDate.value) {
-            hardMinDate = new Date(earliestEventDate.value);
-        } else if (user.value?.minEventDate || user.value?.createdAt) {
-            const raw = user.value.minEventDate || user.value.createdAt;
-            const d = new Date(raw);
-            if (!Number.isNaN(d.getTime())) hardMinDate = d;
-        } else {
-            const ops = (taxKnownOperations?.value || []).filter(o => o && o.date);
-            if (ops.length) {
-                let minT = null;
-                for (const o of ops) {
-                    const dt = new Date(o.date);
-                    if (Number.isNaN(dt.getTime())) continue;
-                    const t = dt.getTime();
-                    if (minT === null || t < minT) minT = t;
-                }
-                if (minT !== null) hardMinDate = new Date(minT);
-            }
-        }
-        if (!hardMinDate || Number.isNaN(hardMinDate.getTime())) {
-            hardMinDate = new Date(new Date().getFullYear() - 5, 0, 1);
-        }
-        hardMinDate.setHours(0, 0, 0, 0);
-
-        // 🚀 PERFORMANCE: If startDateInput provided, use it for range loading
-        let startDate;
-        if (startDateInput) {
-            startDate = new Date(startDateInput);
-            startDate.setHours(0, 0, 0, 0);
-            console.log(`[PERF] Loading operations range: ${startDate.toISOString()} -> ${endDate.toISOString()}`);
-        } else {
-            // Original logic: incremental loading from where we left off
-            startDate = taxOpsMaxDate.value
-                ? (() => {
-                    const d = new Date(taxOpsMaxDate.value);
-                    d.setDate(d.getDate() + 1);
-                    d.setHours(0, 0, 0, 0);
-                    return d;
-                })()
-                : hardMinDate;
-        }
-
-        // Safety clamp: never request earlier than hardMinDate
-        if (startDate.getTime() < hardMinDate.getTime()) {
-            startDate.setTime(hardMinDate.getTime());
-        }
-
-        isTaxOpsLoading.value = true;
-        taxOpsLoadPromise = (async () => {
-            try {
-                const newOps = await _fetchOperationsListChunked(startDate, endDate);
-
-                const map = new Map();
-                (taxOpsCache.value || []).forEach(op => {
-                    if (op && op._id) map.set(String(op._id), op);
-                });
-                newOps.forEach(op => {
-                    if (op && op._id) map.set(String(op._id), op);
-                });
-
-                taxOpsCache.value = Array.from(map.values());
-                taxOpsMaxDate.value = endDate.toISOString();
-            } catch (e) {
-                console.error('[tax] ensureTaxOpsUntil failed:', e);
-            } finally {
-                isTaxOpsLoading.value = false;
-                taxOpsLoadPromise = null;
-            }
-        })();
-
-        await taxOpsLoadPromise;
-    }
-
-    // Keep tax cache extended when user changes projection range
-    watch(
-        () => projection.value?.rangeEndDate,
-        (d) => {
-            const end = d ? new Date(d) : new Date();
-            // do not block UI
-            void ensureTaxOpsUntil(end);
-        },
-        { immediate: true }
-    );
     const futureOps = computed(() => {
         const rawFuture = useProjectionStore().futureOps;
         return rawFuture.filter(op => _isOpVisible(op));
@@ -2078,93 +1941,6 @@ export const useMainStore = defineStore('mainStore', () => {
             await ensureSystemEntities();
             await fetchSnapshot();
 
-            // 🚀 PERFORMANCE: Load only current month for fast startup (1-2 seconds)
-            const today = new Date();
-            today.setHours(23, 59, 59, 999);
-
-            const currentMonthStart = new Date(today);
-            currentMonthStart.setDate(1);
-            currentMonthStart.setHours(0, 0, 0, 0);
-
-            try {
-                // Loading current month
-                // Load ONLY current month - this makes initial load fast
-                await ensureTaxOpsUntil(today, currentMonthStart);
-                // Current month loaded
-            } catch (err) {
-                console.error('[mainStore] Failed to load current month operations:', err);
-            }
-
-            // 🔄 Background loading: Previous month (for history/analytics)
-            setTimeout(async () => {
-                try {
-                    // Loading previous month
-                    const prevMonthEnd = new Date(currentMonthStart);
-                    prevMonthEnd.setMilliseconds(-1); // Last ms of previous month
-
-                    const prevMonthStart = new Date(prevMonthEnd);
-                    prevMonthStart.setDate(1);
-                    prevMonthStart.setHours(0, 0, 0, 0);
-
-                    await ensureTaxOpsUntil(prevMonthEnd, prevMonthStart);
-                    // Previous month loaded
-                } catch (err) {
-                    console.error('[mainStore] Failed to load previous month:', err);
-                }
-            }, 100);
-
-            // 🔄 Background loading: Next month (for forecast)
-            setTimeout(async () => {
-                try {
-                    // Loading next month
-                    const nextMonthStart = new Date(today);
-                    nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
-                    nextMonthStart.setDate(1);
-                    nextMonthStart.setHours(0, 0, 0, 0);
-
-                    const nextMonthEnd = new Date(nextMonthStart);
-                    nextMonthEnd.setMonth(nextMonthEnd.getMonth() + 1);
-                    nextMonthEnd.setDate(0); // Last day of next month
-                    nextMonthEnd.setHours(23, 59, 59, 999);
-
-                    await ensureTaxOpsUntil(nextMonthEnd, nextMonthStart);
-                    // Next month loaded
-                } catch (err) {
-                    console.error('[mainStore] Failed to load next month:', err);
-                }
-            }, 500);
-
-            // 🔄 Background loading: Full history (lower priority)
-            setTimeout(async () => {
-                try {
-                    // Loading full history
-                    let historicalStart = null;
-
-                    if (earliestEventDate.value) {
-                        historicalStart = new Date(earliestEventDate.value);
-                    } else if (user.value?.createdAt) {
-                        historicalStart = new Date(user.value.createdAt);
-                    } else {
-                        // Fallback: 1 year ago
-                        historicalStart = new Date();
-                        historicalStart.setFullYear(historicalStart.getFullYear() - 1);
-                    }
-                    historicalStart.setHours(0, 0, 0, 0);
-
-                    // Load everything before current month
-                    const beforeCurrentMonth = new Date(currentMonthStart);
-                    beforeCurrentMonth.setMilliseconds(-1);
-
-                    await ensureTaxOpsUntil(beforeCurrentMonth, historicalStart);
-                    // Full history loaded
-                } catch (err) {
-                    console.error('[mainStore] Failed to load full history:', err);
-                }
-            }, 2000);
-
-            // Preload for projection range (low priority)
-            void ensureTaxOpsUntil(projection.value?.rangeEndDate ? new Date(projection.value.rangeEndDate) : new Date());
-
             if (user.value) {
                 useSocketStore().connect(user.value._id);
             }
@@ -2627,17 +2403,6 @@ export const useMainStore = defineStore('mainStore', () => {
             const res = await axios.get(`${API_BASE_URL}/auth/me`);
             user.value = res.data;
 
-            // Capture user's earliest operation date (backend should provide `minEventDate`)
-            const minDateRaw = res.data?.minEventDate || res.data?.createdAt || null;
-            if (minDateRaw) {
-                const d = new Date(minDateRaw);
-                if (!Number.isNaN(d.getTime())) {
-                    d.setHours(0, 0, 0, 0);
-                    earliestEventDate.value = d;
-                }
-            } else {
-                earliestEventDate.value = null;
-            }
         } catch (error) {
             user.value = null;
         } finally {
@@ -2697,8 +2462,7 @@ export const useMainStore = defineStore('mainStore', () => {
             refundCat: null,
             creditProject: null,
             repaymentCat: null,
-            creditIncomeCat: null,
-            taxCat: null
+            creditIncomeCat: null
         };
     }
 
@@ -2749,7 +2513,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         const balances = new Map();
 
-        taxKnownOperations.value.forEach(op => {
+        allKnownOperations.value.forEach(op => {
             const indId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
             if (!_idsMatch(indId, retailId)) return;
 

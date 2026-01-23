@@ -44,13 +44,10 @@ const _normalizeOpForAi = (op) => {
   const n = Number(amount || 0);
   const isTransfer = !!(op.isTransfer || op.type === 'transfer');
   const isWithdrawal = !!(op.isWithdrawal || op.type === 'withdrawal');
-  const isTax = !!(op.isTax || op.isTaxPayment || op.type === 'tax');
-
-  // AI-friendly kind: income/expense/transfer/withdrawal/tax/unknown
+  // AI-friendly kind: income/expense/transfer/withdrawal/unknown
   let aiKind = 'unknown';
   if (isTransfer) aiKind = 'transfer';
   else if (isWithdrawal) aiKind = 'withdrawal';
-  else if (isTax) aiKind = 'tax';
   else if (Number.isFinite(n) && n > 0) aiKind = 'income';
   else if (Number.isFinite(n) && n < 0) aiKind = 'expense';
 
@@ -68,8 +65,7 @@ const _normalizeOpForAi = (op) => {
     company: _pickName(op.companyId) || _pickName(op.company) || _pickName(op.companyName) || null,
     comment: op.comment || op.note || null,
     isTransfer,
-    isWithdrawal,
-    isTax,
+    isWithdrawal
   };
 };
 

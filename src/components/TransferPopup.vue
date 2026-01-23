@@ -155,26 +155,12 @@ const smartHint = computed(() => {
     if (selectedFromOwner.value && selectedFromOwner.value.startsWith('individual-')) {
         return 'Перевод с личной карты/счета на нужды компании (Вложение средств).';
     }
-    return 'Вы переводите деньги между своими компаниями. Налог будет начислен получателю.';
+    return 'Вы переводите деньги между своими компаниями.';
   }
   if (transferPurpose.value === 'personal') {
       return 'Вы переводите деньги на личный счет или карту. Деньги бизнеса -> Личные деньги.';
   }
   return '';
-});
-
-const taxCalculation = computed(() => {
-    if (transferPurpose.value !== 'inter_company') return null;
-    if (!selectedToOwner.value) return null;
-    const [type, id] = selectedToOwner.value.split('-');
-    if (type !== 'company') return null;
-    const company = mainStore.companies.find(c => c._id === id);
-    if (!company) return null;
-    const percent = company.taxPercent !== undefined ? company.taxPercent : (company.taxRegime === 'our' ? 10 : 3);
-    const rawAmount = parseFloat((amount.value || '0').replace(/\s/g, ''));
-    if (!rawAmount || rawAmount <= 0) return null;
-    const taxVal = rawAmount * (percent / 100);
-    return { percent, taxAmount: taxVal, targetCompanyName: company.name };
 });
 
 const getOwnerName = (acc) => {
@@ -600,16 +586,13 @@ const handleSave = async () => {
   }
   if (updates.length > 0) { await mainStore.batchUpdateEntities('accounts', updates); }
 
-  let finalTaxAmount = 0;
-  if (taxCalculation.value) { finalTaxAmount = taxCalculation.value.taxAmount; }
-
   const transferPayload = { 
       date: finalDate, amount: amountParsed, 
       fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, transferPurpose: transferPurpose.value,
-      transferReason: null, taxAmount: finalTaxAmount
+      transferReason: null
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
@@ -699,14 +682,6 @@ const closePopup = () => { emit('close'); };
 
         <div class="input-spacing">
             <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
-        </div>
-
-        <div class="tax-info-box" v-if="taxCalculation">
-            <div class="tax-row"><span class="tax-label">Сумма перевода:</span><span>{{ amount || 0 }} ₸</span></div>
-            <div class="tax-row"><span class="tax-label">Налог ({{ taxCalculation.percent }}% от получателя):</span><span class="tax-val warn-text">{{ formatNumber(taxCalculation.taxAmount) }} ₸</span></div>
-            <div class="tax-divider"></div>
-            <div class="tax-row total"><span class="tax-label">Будет начислено в налоги:</span><span>{{ formatNumber(taxCalculation.taxAmount) }} ₸</span></div>
-            <p class="tax-hint">Сумма налога не списывается со счета автоматически.</p>
         </div>
 
         <div class="hint-box" v-if="smartHint">{{ smartHint }}</div>
@@ -811,13 +786,7 @@ const closePopup = () => { emit('close'); };
 .theme-transfer { border-top: 4px solid var(--color-transfer); }
 
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
-.hint-box { background-color: #E3F2FD; border: 1px solid #90CAF9; color: #0D47A1; padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; margin-bottom: 12px; }
-.tax-info-box { background-color: #FFF3E0; border: 1px solid #FFE0B2; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-.tax-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; color: #555; }
-.tax-divider { height: 1px; background-color: #FFCC80; margin: 6px 0; }
-.total { font-weight: 700; font-size: 14px; color: #333; }
-.warn-text { color: #F59E0B; font-weight: 600; }
-.tax-hint { font-size: 11px; color: #888; margin-top: 8px; margin-bottom: 0; font-style: italic; }
+    .hint-box { background-color: #E3F2FD; border: 1px solid #90CAF9; color: #0D47A1; padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; margin-bottom: 12px; }
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
 /* 🟢 2. ФОКУС СУММЫ - ТЕМНО-СИНИЙ */
@@ -965,13 +934,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
     font-size: 12px;
     padding: 8px;
     margin-bottom: 8px;
-  }
-  .tax-info-box {
-    padding: 8px;
-    margin-bottom: 8px;
-  }
-  .tax-row {
-    font-size: 12px;
   }
 }
 </style>

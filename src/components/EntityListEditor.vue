@@ -218,8 +218,6 @@ const handleCreateNew = async () => {
       
       if (isCompanyEditor) { 
           mappedItem.selectedAccountIds = [];
-          mappedItem.taxRegime = 'simplified';
-          mappedItem.taxPercent = 3;
           mappedItem.identificationNumber = '';
       }
 
@@ -228,14 +226,6 @@ const handleCreateNew = async () => {
     }
   } catch (e) { console.error(e); alert('Ошибка при создании: ' + e.message); } 
   finally { isSavingNew.value = false; }
-};
-
-const onRegimeChange = (item) => {
-    if (item.taxRegime === 'simplified') {
-        item.taxPercent = 3;
-    } else if (item.taxRegime === 'our') {
-        item.taxPercent = 10;
-    }
 };
 
 const formatNumber = (numStr) => { const clean = `${numStr}`.replace(/[^0-9]/g, ''); return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' '); };
@@ -289,8 +279,6 @@ onMounted(() => {
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
-          taxRegime: item.taxRegime || 'simplified',
-          taxPercent: item.taxPercent !== undefined ? item.taxPercent : 3,
           identificationNumber
       };
     }
@@ -367,8 +355,6 @@ watch(() => props.items, (newItems) => {
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
-          taxRegime: item.taxRegime || 'simplified',
-          taxPercent: item.taxPercent !== undefined ? item.taxPercent : 3,
           identificationNumber
       };
     }
@@ -450,8 +436,6 @@ const handleSave = async () => {
         data.contractDate = item.contractDate || null;
     }
     if (isCompanyEditor) {
-        data.taxRegime = item.taxRegime;
-        data.taxPercent = Number(item.taxPercent);
         data.identificationNumber = item.identificationNumber || null;
     }
     return data;
@@ -592,8 +576,6 @@ defineExpose({
         <div v-else-if="isCompanyEditor" class="editor-header owner-header">
           <span class="header-name">Название Компании</span>
           <span class="header-accounts">Привязанные счета</span>
-          <span class="header-tax">Налоги</span>
-          <span class="header-percent">%</span>
           <span class="header-bin">ИИН/БИН</span>
           <span class="header-trash"></span>
         </div>
@@ -674,11 +656,6 @@ defineExpose({
                   
                   <template v-if="isCompanyEditor">
                     <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">Выбрано ({{ item.selectedAccountIds.length }})</button>
-                    <select v-model="item.taxRegime" class="edit-input edit-tax" @change="onRegimeChange(item); debouncedSave()">
-                        <option value="simplified">Упрощенка</option>
-                        <option value="our">ОУР</option>
-                    </select>
-                    <input type="number" v-model="item.taxPercent" class="edit-input edit-percent" placeholder="%" min="0" max="100" @blur="debouncedSave" />
                     <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" @blur="debouncedSave" />
                   </template>
                   
@@ -868,8 +845,6 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 .account-header-simple .header-owner { flex-shrink: 0; width: 200px; }
 
 .owner-header .header-accounts { flex-shrink: 0; width: 220px; }
-.owner-header .header-tax { flex-shrink: 0; width: 100px; }
-.owner-header .header-percent { flex-shrink: 0; width: 60px; }
 .owner-header .header-bin { flex-shrink: 0; width: 150px; }
 
 .contractor-header .header-project { flex-shrink: 0; width: 200px; } 
@@ -901,8 +876,6 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 .edit-account-picker { flex-shrink: 0; width: 220px; text-align: left; color: var(--color-text); cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.41 0.589844L6 5.16984L10.59 0.589844L12 2.00019L6 8.00019L0 2.00019L1.41 0.589844Z' fill='%23666'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 25px; font-size: 13px; display: flex; align-items: center; margin: 0; padding: 0 10px; height: 28px; background-color: var(--color-background); border: 1px solid var(--color-border); border-radius: 6px; font-family: inherit; }
 .edit-account-picker:hover { border-color: var(--color-primary); }
 
-.edit-tax { flex-shrink: 0; width: 100px; }
-.edit-percent { flex-shrink: 0; width: 60px; text-align: center; }
 
 .edit-bin { flex-shrink: 0; width: 150px; }
 .edit-contract-num { flex-shrink: 0; width: 150px; }

@@ -141,16 +141,11 @@ const getFactValueClass = (item) => {
     // Если это виджет расходов - всегда красный цвет
     if (props.widgetKey === 'expenseList') return 'red-text';
     
-    if (props.widgetKey === 'taxes') {
-        if (num < 0) return 'red-text';
-        return 'white-text';
-    }
-
     if (num < 0) return 'red-text';
     // ⚡️ ИНАЧЕ ВОЗВРАЩАЕМ БЕЛЫЙ/СЕРЫЙ (white-text имеет opacity 0.9)
     // Никогда не возвращаем зеленый для факта, как и просили.
     return 'white-text';
-};
+  };
 
 const getRightValue = (item) => {
     if (isBalanceWidget.value) {
@@ -197,13 +192,9 @@ const getRightValueClass = (item) => {
     if (isAlwaysNegativeWidget.value) return 'red-text';
     if (isTransferWidget.value) return 'white-text';
 
-    if (props.widgetKey === 'taxes') {
-        return num < 0 ? 'red-text' : 'green-text';
-    }
-    
     // ⚡️ ДЛЯ СПИСКОВ (IncomeList и др.): Положительный прогноз -> Зеленый
     return num >= 0 ? 'green-text' : 'red-text';
-};
+  };
 
 const formatLiabilitiesPlan = (val) => {
     const num = toNum(val);
@@ -232,7 +223,6 @@ const cardStyleClass = computed(() => {
   if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
   if (k === 'liabilities') return 'style-orange'; 
   if (k === 'credits') return 'style-light-blue'; 
-  if (k === 'taxes') return 'style-red'; 
   return 'style-gray';
 });
 
@@ -384,7 +374,7 @@ function getSnapshot() {
     };
   }
 
-  // Standard list widgets (accounts/companies/projects/contractors/categories/individuals/credits/taxes/etc.)
+  // Standard list widgets (accounts/companies/projects/contractors/categories/individuals/credits/etc.)
   const rows = list.slice(0, 50).map((it) => {
     const factVal = (it && (it.currentBalance !== undefined ? it.currentBalance : it.balance)) ?? 0;
     const planVal = forecastActive ? toNum(getRightValue(it)) : 0;

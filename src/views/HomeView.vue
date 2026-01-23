@@ -143,7 +143,6 @@ const _normalizeOp = (op) => {
     company: _resolveEntityName(op.companyId, mainStore?.companies) || _pickName(op.company) || _pickName(op.companyName) || null,
     isTransfer: !!(op.isTransfer || op.type === 'transfer'),
     isWithdrawal: !!(op.isWithdrawal),
-    isTax: !!(op.isTax || op.isTaxPayment),
     isRefund: !!(op.isRefund),
     isPrepayment: !!(op.isPrepayment),
   };
@@ -625,7 +624,6 @@ const isWithdrawalPopupVisible = ref(false);
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
 // 🟢 2. Состояние для попапа деталей налога
-const isTaxDetailsPopupVisible = ref(false);
 
 
 
@@ -996,22 +994,6 @@ const handleOperationDelete = async (operation) => {
     handleClosePopup(); 
     handleCloseTransferPopup();
     handleCloseWithdrawalPopup();
-};
-
-// 🟢 4. Хендлер удаления налога
-const handleTaxDelete = async (operation) => {
-    isTaxDetailsPopupVisible.value = false;
-    if (!operation) return;
-    try {
-        await mainStore.deleteOperation(operation);
-        // Принудительно обновим налоги, чтобы виджет обновился
-        const res = await axios.get(`${API_BASE_URL}/taxes`);
-        mainStore.taxes = res.data;
-        // Перерисовываем дни
-        visibleDays.value = [...visibleDays.value];
-    } catch(e) {
-        alert("Ошибка удаления налога: " + e.message);
-    }
 };
 
 const scrollInterval = ref(null);
