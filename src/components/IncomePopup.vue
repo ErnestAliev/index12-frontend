@@ -728,7 +728,7 @@ const handleMainAction = async () => {
 
         <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
         <div v-if="isOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Кто получает" label="Кто получает (Владелец)">
+            <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов">
                 <template #action-item>
                     <div class="dual-action-row">
                         <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>

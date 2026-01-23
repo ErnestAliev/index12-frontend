@@ -726,7 +726,7 @@ onMounted(async () => {
 
           <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
           <div v-if="isOwnerSelectVisible" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-              <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Кто платит" label="Кто платит (Владелец)" :disabled="isReadOnly">
+              <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
                   <template #action-item v-if="canEdit">
                       <div class="dual-action-row">
                           <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>

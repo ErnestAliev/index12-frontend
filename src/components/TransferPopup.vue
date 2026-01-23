@@ -657,7 +657,7 @@ const closePopup = () => { emit('close'); };
 
         <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
         <div v-if="isFromOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Отправитель" label="Отправитель" @change="handleFromOwnerChange" :disabled="isReadOnly">
+            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
                 <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
                         <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
@@ -687,7 +687,7 @@ const closePopup = () => { emit('close'); };
 
         <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
         <div v-if="isToOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Получатель" label="Получатель" @change="handleToOwnerChange" :disabled="isReadOnly">
+            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
                 <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
                         <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
