@@ -593,7 +593,7 @@ const sendAiMessage = async () => {
         asOf,
         includeHidden,
         visibleAccountIds,
-        // debugAi: true, // включать только при отладке
+        debugAi: true, // временно включено для отладки
       },
       {
         // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.
