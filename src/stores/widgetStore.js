@@ -20,7 +20,7 @@ export const useWidgetStore = defineStore('widget', () => {
   const staticWidgets = ref([
     { key: 'currentTotal', name: 'Всего на счетах\nна текущий момент' },
     { key: 'accounts', name: 'Счета/Кассы' },
-    { key: 'companies', name: 'Мои компании' },
+    { key: 'companies', name: 'Владельцы счетов' },
     { key: 'contractors', name: 'Мои контрагенты' },
     { key: 'projects', name: 'Мои проекты' },
     { key: 'futureTotal', name: 'Всего на счетах\nс учетом будущих' },

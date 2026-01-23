@@ -740,8 +740,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
              <HeaderBalanceCard
                 v-else-if="fullscreenWidgetKey === 'companies'"
                 :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
-                title="Мои компании"
-                :items="mergedCompanyBalances" emptyText="...компаний нет..."
+                title="Владельцы счетов"
+                :items="mergedCompanyBalances" emptyText="...владельцев нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
                 :isDeltaMode="false"
                 @add="openAddPopup('Новая компания', mainStore.addCompany, 'company')"
@@ -895,8 +895,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         <HeaderBalanceCard
           v-else-if="widgetKey === 'companies'"
           :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-          title="Мои компании"
-          :items="mergedCompanyBalances" emptyText="...компаний нет..."
+          title="Владельцы счетов"
+          :items="mergedCompanyBalances" emptyText="...владельцев нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="false"
           @add="openAddPopup('Новая компания', mainStore.addCompany, 'company')"
@@ -1033,9 +1033,9 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       <HeaderBalanceCard
         v-else-if="widgetKey === 'companies'"
         :ref="(el) => registerGridWidgetRef(widgetKey, el)"
-        title="Мои компании"
+        title="Владельцы счетов"
         :items="mergedCompanyBalances"
-        emptyText="...компаний нет..."
+        emptyText="...владельцев нет..."
         :widgetKey="widgetKey"
         :widgetIndex="-1"
         :isDeltaMode="true"

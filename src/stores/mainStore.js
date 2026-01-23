@@ -1031,25 +1031,45 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentCompanyBalances = computed(() => {
-        return companies.value.map(comp => {
+        const result = [];
+
+        // Add all companies with their account balances
+        companies.value.forEach(comp => {
             const targetId = _toStr(comp._id);
             const linked = currentAccountBalances.value.filter(a => {
                 return _toStr(a.companyId) === targetId;
             });
             const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
-            return { ...comp, balance: total };
+            result.push({ ...comp, balance: total, entityType: 'company' });
         });
+
+        // Add account-owner individuals
+        currentAccountOwnerIndividuals.value.forEach(ind => {
+            result.push({ ...ind, entityType: 'individual' });
+        });
+
+        return result;
     });
 
     const futureCompanyBalances = computed(() => {
-        return companies.value.map(comp => {
+        const result = [];
+
+        // Add all companies with their future account balances
+        companies.value.forEach(comp => {
             const targetId = _toStr(comp._id);
             const linked = futureAccountBalances.value.filter(a => {
                 return _toStr(a.companyId) === targetId;
             });
             const total = linked.reduce((sum, acc) => sum + acc.balance, 0);
-            return { ...comp, balance: total };
+            result.push({ ...comp, balance: total, entityType: 'company' });
         });
+
+        // Add future account-owner individuals
+        futureAccountOwnerIndividuals.value.forEach(ind => {
+            result.push({ ...ind, entityType: 'individual' });
+        });
+
+        return result;
     });
 
     const currentContractorBalances = computed(() => {
@@ -1244,29 +1264,111 @@ export const useMainStore = defineStore('mainStore', () => {
         });
     });
 
+    // 🟢 Account Owner Individuals: Individuals who own accounts (account-based balances)
+    const currentAccountOwnerIndividuals = computed(() => {
+        const ownerIds = new Set();
+        accounts.value.forEach(a => {
+            if (a.individualId) {
+                const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                if (iId) ownerIds.add(String(iId));
+            }
+        });
+
+        const hiddenIndividualIds = new Set();
+        if (!includeExcludedInTotal.value) {
+            accounts.value.forEach(a => {
+                if (a && a.isExcluded && a.individualId) {
+                    const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                    if (iId) hiddenIndividualIds.add(String(iId));
+                }
+            });
+        }
+
+        return individuals.value
+            .filter(i => ownerIds.has(String(i._id)))
+            .filter(i => !hiddenIndividualIds.has(String(i._id)))
+            .map(i => {
+                const linkedAccounts = currentAccountBalances.value.filter(a => {
+                    const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
+                    return String(indId) === String(i._id);
+                });
+                const total = linkedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+                return { ...i, balance: total };
+            });
+    });
+
+    const futureAccountOwnerIndividuals = computed(() => {
+        const ownerIds = new Set();
+        accounts.value.forEach(a => {
+            if (a.individualId) {
+                const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                if (iId) ownerIds.add(String(iId));
+            }
+        });
+
+        const hiddenIndividualIds = new Set();
+        if (!includeExcludedInTotal.value) {
+            accounts.value.forEach(a => {
+                if (a && a.isExcluded && a.individualId) {
+                    const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                    if (iId) hiddenIndividualIds.add(String(iId));
+                }
+            });
+        }
+
+        return individuals.value
+            .filter(i => ownerIds.has(String(i._id)))
+            .filter(i => !hiddenIndividualIds.has(String(i._id)))
+            .map(i => {
+                const linkedAccounts = futureAccountBalances.value.filter(a => {
+                    const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
+                    return String(indId) === String(i._id);
+                });
+                const total = linkedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+                return { ...i, balance: total };
+            });
+    });
+
+    // 🟢 Transaction Individuals: Individuals without accounts (transaction-based balances only)
     const currentIndividualBalances = computed(() => {
+        // Get set of individuals who own accounts
+        const accountOwnerIds = new Set();
+        accounts.value.forEach(a => {
+            if (a.individualId) {
+                const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                if (iId) accountOwnerIds.add(String(iId));
+            }
+        });
+
         const opsMap = new Map();
         currentOps.value.forEach(op => {
             const amt = Math.abs(Number(op.amount) || 0);
             if (op.type === 'transfer' || op.isTransfer) {
                 if (op.fromIndividualId) {
                     const key = _toStr(op.fromIndividualId);
-                    opsMap.set(key, (opsMap.get(key) || 0) - amt);
+                    // Only count transfers for non-account-owners
+                    if (!accountOwnerIds.has(key)) {
+                        opsMap.set(key, (opsMap.get(key) || 0) - amt);
+                    }
                 }
                 if (op.toIndividualId) {
                     const key = _toStr(op.toIndividualId);
-                    opsMap.set(key, (opsMap.get(key) || 0) + amt);
+                    // Only count transfers for non-account-owners
+                    if (!accountOwnerIds.has(key)) {
+                        opsMap.set(key, (opsMap.get(key) || 0) + amt);
+                    }
                 }
             } else {
                 const sign = op.type === 'income' ? 1 : -1;
                 const value = amt * sign;
-                if (op.individualId) {
-                    const key = _toStr(op.individualId);
-                    opsMap.set(key, (opsMap.get(key) || 0) + value);
-                }
+
+                // Skip individualId (account owner) - their balance comes from accounts
+                // Only count counterpartyIndividualId for transaction-based individuals
                 if (op.counterpartyIndividualId) {
                     const key = _toStr(op.counterpartyIndividualId);
-                    opsMap.set(key, (opsMap.get(key) || 0) + value);
+                    if (!accountOwnerIds.has(key)) {
+                        opsMap.set(key, (opsMap.get(key) || 0) + value);
+                    }
                 }
             }
         });
@@ -1281,23 +1383,26 @@ export const useMainStore = defineStore('mainStore', () => {
             });
         }
 
-        return individuals.value.reduce((acc, i) => {
-            if (hiddenIndividualIds.has(String(i._id))) return acc;
-
-            const linkedAccounts = currentAccountBalances.value.filter(a => {
-                const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
-                return indId === i._id;
-            });
-
-            const accountsInitialSum = linkedAccounts.reduce((sum, acc) => sum + Number(acc.initialBalance || 0), 0);
-            const opsBalance = opsMap.get(String(i._id)) || 0;
-
-            acc.push({ ...i, balance: accountsInitialSum + opsBalance });
-            return acc;
-        }, []);
+        // Only return individuals who don't own accounts
+        return individuals.value
+            .filter(i => !accountOwnerIds.has(String(i._id)))
+            .filter(i => !hiddenIndividualIds.has(String(i._id)))
+            .map(i => ({
+                ...i,
+                balance: opsMap.get(String(i._id)) || 0
+            }));
     });
 
     const futureIndividualBalances = computed(() => {
+        // Get set of individuals who own accounts
+        const accountOwnerIds = new Set();
+        accounts.value.forEach(a => {
+            if (a.individualId) {
+                const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
+                if (iId) accountOwnerIds.add(String(iId));
+            }
+        });
+
         const hiddenIndividualIds = new Set();
         if (!includeExcludedInTotal.value) {
             accounts.value.forEach(a => {
@@ -1308,15 +1413,16 @@ export const useMainStore = defineStore('mainStore', () => {
             });
         }
 
-        return individuals.value.reduce((acc, i) => {
-            if (hiddenIndividualIds.has(String(i._id))) return acc;
-
-            const curr = currentIndividualBalances.value.find(c => c._id === i._id);
-            const base = curr ? curr.balance : 0;
-            const change = futureIndividualChanges.value.find(f => f._id === i._id)?.balance || 0;
-            acc.push({ ...i, balance: base + change });
-            return acc;
-        }, []);
+        // Only return individuals who don't own accounts
+        return individuals.value
+            .filter(i => !accountOwnerIds.has(String(i._id)))
+            .filter(i => !hiddenIndividualIds.has(String(i._id)))
+            .map(i => {
+                const curr = currentIndividualBalances.value.find(c => c._id === i._id);
+                const base = curr ? curr.balance : 0;
+                const change = futureIndividualChanges.value.find(f => f._id === i._id)?.balance || 0;
+                return { ...i, balance: base + change };
+            });
     });
 
     const currentTotalBalance = computed(() => {
@@ -2901,13 +3007,13 @@ export const useMainStore = defineStore('mainStore', () => {
         userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
         currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
-        currentIndividualBalances, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns,
+        currentIndividualBalances, currentAccountOwnerIndividuals, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns,
         currentTotalForPeriod, futureTotalForPeriod,
 
         dailyChartData: computed(() => useProjectionStore().dailyChartData),
 
         futureAccountBalances, futureCompanyBalances, futureContractorBalances, futureProjectBalances,
-        futureIndividualBalances,
+        futureIndividualBalances, futureAccountOwnerIndividuals,
 
         currentCreditBalances, futureCreditBalances, creditCategoryId,
 
