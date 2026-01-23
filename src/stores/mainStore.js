@@ -631,37 +631,19 @@ export const useMainStore = defineStore('mainStore', () => {
         const filterEnd = periodFilter.value.customEnd;
 
         // Recalculating current ops
+        const { startDate, endDate } = _getPeriodRange(periodFilter.value);
 
         const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
 
             // 🟢 Period filter: Show only operations within selected period
-            if (filterMode === 'custom') {
+            if (filterMode === 'custom' && startDate && endDate) {
                 const opDate = new Date(op.date);
-                const { startDate, endDate } = _getPeriodRange(periodFilter.value);
-                if (startDate && endDate) {
-                    // 🔍 DEBUG: Log comparison for operations near end of period
-                    if (opDate.getDate() >= 30 || opDate.getDate() === 1) {
-                        console.log('[OP FILTER DEBUG]', {
-                            opId: op._id,
-                            opDateRaw: op.date,
-                            opDateParsed: opDate.toISOString(),
-                            opDateLocal: opDate.toString(),
-                            startDate: startDate.toISOString(),
-                            endDate: endDate.toISOString(),
-                            comparison: {
-                                beforeStart: opDate < startDate,
-                                afterEnd: opDate > endDate,
-                                willFilter: opDate < startDate || opDate > endDate
-                            }
-                        });
-                    }
-                    if (opDate < startDate || opDate > endDate) return false;
-                }
+                if (opDate < startDate || opDate > endDate) return false;
             }
 
-            return _isEffectivelyPastOrToday(op.date);
+            return true;
         });
 
         // Current ops result
