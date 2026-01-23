@@ -838,29 +838,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       @dragend="handleDragEnd"
       @click="handleCardClick($event, widgetKey)"
     >
-        <!-- Swap Controls -->
-        <div 
-          v-if="widgetKey && !widgetKey.startsWith('placeholder_') && widgetKey !== 'currentTotal' && widgetKey !== 'futureTotal'" 
-          class="widget-swap-controls"
-        >
-          <button 
-            v-if="canSwapLeft(index)" 
-            class="swap-btn swap-left" 
-            @click.stop="swapWithNeighbor(index, 'left')"
-            title="Поменять с левым соседом"
-          >
-            ←
-          </button>
-          <button 
-            v-if="canSwapRight(index)" 
-            class="swap-btn swap-right" 
-            @click.stop="swapWithNeighbor(index, 'right')"
-            title="Поменять с правым соседом"
-          >
-            →
-          </button>
-        </div>
-
         <div v-if="widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
@@ -1145,51 +1122,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   opacity: 0.5;
   cursor: grabbing;
 }
-
-/* 🟢 WIDGET SWAP CONTROLS */
-.widget-swap-controls {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 10;
-}
-
-.dashboard-card-wrapper:hover .widget-swap-controls {
-  opacity: 1;
-}
-
-.swap-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background-color: var(--widget-background);
-  color: var(--color-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: all 0.2s;
-  padding: 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.swap-btn:hover {
-  background-color: var(--color-primary, #007AFF);
-  color: white;
-  border-color: var(--color-primary, #007AFF);
-  transform: scale(1.1);
-}
-
-.swap-btn:active {
-  transform: scale(0.95);
-}
-
 
 /* 🟢 FULLSCREEN STYLES */
 .fullscreen-overlay {
