@@ -847,12 +847,23 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const futureAccountBalances = computed(() => {
-        const futureMap = _calculateFutureEntityBalance(snapshot.value.accountBalances, 'accountId');
+        // Base = current account balances (already respects period filter and excluded accounts)
+        const baseMap = new Map();
+        currentAccountBalances.value.forEach(acc => {
+            baseMap.set(String(acc._id), Number(acc.balance || 0));
+        });
+
+        // Apply future changes
+        const deltaMap = _calculateFutureEntityChange('accountId');
+
         return accounts.value.reduce((acc, a) => {
             if (!includeExcludedInTotal.value && a.isExcluded) return acc;
+            const id = String(a._id);
+            const base = baseMap.get(id) || 0;
+            const delta = deltaMap[id] || 0;
             acc.push({
                 ...a,
-                balance: Number(futureMap[a._id] || 0) + Number(a.initialBalance || 0)
+                balance: base + delta
             });
             return acc;
         }, []);
