@@ -264,12 +264,8 @@ const handleDragStart = (event, index) => {
 const handleDragOver = (event, index) => {
   event.preventDefault();
   event.stopPropagation();
-  const targetWidget = localWidgets.value[index];
-  // Only allow drop on placeholders
-  if (targetWidget && typeof targetWidget === 'string' && targetWidget.startsWith('placeholder_')) {
-    dropTargetIndex.value = index;
-    event.dataTransfer.dropEffect = 'move';
-  }
+  dropTargetIndex.value = index;
+  event.dataTransfer.dropEffect = 'move';
 };
 
 const handleDrop = (event, index) => {
@@ -277,33 +273,27 @@ const handleDrop = (event, index) => {
   event.stopPropagation();
   if (draggedIndex.value === null) return;
   
-  const targetWidget = localWidgets.value[index];
   const draggedWidget = localWidgets.value[draggedIndex.value];
   
-  // Only swap with placeholders
-  if (targetWidget && typeof targetWidget === 'string' && targetWidget.startsWith('placeholder_')) {
-    // Simple swap approach - exchange positions in localWidgets
-    const newLocalWidgets = [...localWidgets.value];
-    
-    // Swap: put dragged widget at target position, put placeholder at dragged position
-    newLocalWidgets[index] = draggedWidget;
-    newLocalWidgets[draggedIndex.value] = targetWidget;
-    
-    // Now extract the dashboardLayout from newLocalWidgets
-    // Remove currentTotal (position 0) and futureTotal (position 5 for 6-col, 4 for 5-col)
-    const rowSize = isTabletGrid.value ? 5 : 6;
-    const filtered = newLocalWidgets.filter((widget, idx) => {
-      // Skip currentTotal at position 0
-      if (idx === 0 && widget === 'currentTotal') return false;
-      // Skip futureTotal at row end
-      if (idx === rowSize - 1 && widget === 'futureTotal') return false;
-      // Skip any other currentTotal/futureTotal that somehow appear
-      if (widget === 'currentTotal' || widget === 'futureTotal') return false;
-      return true;
-    });
-    
-    mainStore.dashboardLayout = filtered;
-  }
+  // Swap dragged with target index
+  const newLocalWidgets = [...localWidgets.value];
+  const targetWidget = newLocalWidgets[index];
+  newLocalWidgets[index] = draggedWidget;
+  newLocalWidgets[draggedIndex.value] = targetWidget;
+
+  // Build layout without placeholders and fixed widgets
+  const rowSize = isTabletGrid.value ? 5 : 6;
+  const filtered = newLocalWidgets.filter((widget, idx) => {
+    if (!widget) return false;
+    const isPlaceholder = typeof widget === 'string' && widget.startsWith('placeholder_');
+    if (isPlaceholder) return false;
+    if (idx === 0 && widget === 'currentTotal') return false;
+    if (idx === rowSize - 1 && widget === 'futureTotal') return false;
+    if (widget === 'currentTotal' || widget === 'futureTotal') return false;
+    return true;
+  });
+
+  mainStore.dashboardLayout = filtered;
   
   draggedIndex.value = null;
   dropTargetIndex.value = null;
