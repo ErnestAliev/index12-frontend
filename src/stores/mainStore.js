@@ -2383,6 +2383,9 @@ export const useMainStore = defineStore('mainStore', () => {
             if (path === 'credits') credits.value = credits.value.filter(i => !_idsMatch(i._id, id));
 
             if (deleteOperations) await forceRefreshAll(); else await forceRefreshAll();
+
+            // 🔥 FIX: Refresh snapshot to update balance calculations after entity deletion
+            await fetchSnapshot();
         } catch (error) { throw error; }
     }
 
@@ -2403,6 +2406,10 @@ export const useMainStore = defineStore('mainStore', () => {
         }
         const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
         if (!accounts.value.find(a => _idsMatch(a._id, res.data._id))) accounts.value.push(res.data);
+
+        // 🔥 FIX: Refresh snapshot to include new account in balance calculations
+        await fetchSnapshot();
+
         return res.data;
     }
 
@@ -2422,6 +2429,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     axios.put(`${API_BASE_URL}/prepayments/batch-update`, prepaymentCategories)
                 ]);
                 await fetchAllEntities();
+                // 🔥 FIX: Refresh snapshot after entity updates
+                await fetchSnapshot();
                 return;
             }
             const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
@@ -2431,7 +2440,14 @@ export const useMainStore = defineStore('mainStore', () => {
             else if (path === 'contractors') contractors.value = sortedData;
             else if (path === 'projects') projects.value = sortedData;
             else if (path === 'individuals') individuals.value = sortedData;
-        } catch (e) { await fetchAllEntities(); }
+
+            // 🔥 FIX: Refresh snapshot after batch entity updates
+            await fetchSnapshot();
+        } catch (e) {
+            await fetchAllEntities();
+            // 🔥 FIX: Refresh snapshot even on error to ensure UI consistency
+            await fetchSnapshot();
+        }
     }
 
     async function getFirstFreeCellIndex(dateKey, startIndex = 0) {
