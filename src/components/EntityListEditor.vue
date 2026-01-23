@@ -381,9 +381,14 @@ watch(() => props.items, (newItems) => {
 // � FIX: Removed auto-save watchers on array length - they caused race condition
 // Save is now triggered by @end event on draggable components
 
-// Auto-save: debounced version of handleSave for selectors and inputs
+// Auto-save: debounced version of handleSave for selectors/inputs (non-accounts)
 let saveTimeout = null;
 const debouncedSave = () => {
+  if (isAccountEditor) {
+    // Accounts: save immediately on change/drag so moves between visible/hidden persist
+    void handleSave();
+    return;
+  }
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
     handleSave();
@@ -628,7 +633,7 @@ defineExpose({
                 handle=".drag-handle" 
                 ghost-class="ghost"
                 :group="isAccountEditor ? 'accounts' : null"
-                @end="isAccountEditor ? debouncedSave : null"
+                @end="isAccountEditor ? handleSave : null"
             >
               <template #item="{ element: item }">
                 <div class="edit-item">
@@ -678,7 +683,7 @@ defineExpose({
                     ghost-class="ghost"
                     group="accounts"
                     class="excluded-drop-zone"
-                    @end="debouncedSave"
+                    @end="handleSave"
                 >
                     <template #item="{ element: item }">
                         <div class="edit-item excluded-item">
