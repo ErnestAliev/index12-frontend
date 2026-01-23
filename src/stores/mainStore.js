@@ -224,51 +224,16 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const allKnownOperations = computed(() => {
         const uniqueMap = new Map();
-        const contentMap = new Map(); // Secondary deduplication by content
 
         const addOperation = (op) => {
             if (!op || !op._id) return;
 
             const id = String(op._id);
 
-            // Primary deduplication by ID
+            // Deduplicate strictly by ID to avoid dropping distinct ops with the same content
             if (uniqueMap.has(id)) return;
 
-            // Secondary deduplication by content
-            // Normalize function to compare values case-insensitively
-            const normalize = (v) => String(v || '').trim().toLowerCase();
-
-            // 🔥 FIX: Properly extract category identifier
-            const getCategoryKey = (op) => {
-                if (op.categoryId) {
-                    // If categoryId is an object (populated), use _id
-                    if (typeof op.categoryId === 'object' && op.categoryId._id) {
-                        return String(op.categoryId._id);
-                    }
-                    // If it's a string ID, use it directly
-                    return String(op.categoryId);
-                }
-                // Fallback to category name
-                return normalize(op.categoryName ?? op.category ?? '');
-            };
-
-            const contentKey = [
-                op.date ? new Date(op.date).toISOString().slice(0, 10) : '',
-                Math.abs(Number(op.amount ?? 0)),
-                normalize(op.type),
-                normalize(op.contractorId ?? op.contractorName ?? op.contractor ?? ''),
-                getCategoryKey(op), // 🔥 Use proper category extraction
-                normalize(op.accountId ?? op.accountName ?? op.account ?? ''),
-                normalize(op.description ?? op.desc ?? op.note ?? '')
-            ].join('|');
-
-            if (contentMap.has(contentKey)) {
-                const existingId = contentMap.get(contentKey);
-                return;
-            }
-
             uniqueMap.set(id, op);
-            contentMap.set(contentKey, id);
         };
 
         // Include operations from displayCache (loaded via fetchOperationsRange)
