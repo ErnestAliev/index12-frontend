@@ -460,7 +460,7 @@ const closeAiDrawer = () => {
 const useQuickPrompt = (promptText) => {
   aiInput.value = promptText;
   nextTick(() => {
-    sendAiMessage(); // Automatically send the message
+    sendAiMessage(promptText, { source: 'quick_button' }); // Automatically send the message
   });
 };
 
@@ -530,9 +530,9 @@ const handleAiInputKeydown = (event) => {
   sendAiMessage();
 };
 
-const sendAiMessage = async () => {
+const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   stopAiRecordingIfNeeded();
-  const text = (aiInput.value || '').trim();
+  const text = forcedMsg !== null ? String(forcedMsg).trim() : (aiInput.value || '').trim();
   if (!text || aiLoading.value) return;
 
   aiMessages.value.push(_makeAiMsg('user', text));
@@ -590,6 +590,8 @@ const sendAiMessage = async () => {
       `${API_BASE_URL}/ai/query`,
       {
         message: text,
+        source: opts.source || 'freeform',
+        quickKey: opts.quickKey || null,
         asOf,
         includeHidden,
         visibleAccountIds,
