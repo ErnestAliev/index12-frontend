@@ -383,6 +383,7 @@ watch(() => props.items, (newItems) => {
 
 // Auto-save: debounced version of handleSave for selectors/inputs (non-accounts)
 let saveTimeout = null;
+let savePromise = null;
 const debouncedSave = () => {
   if (isAccountEditor) {
     // Accounts: save immediately on change/drag so moves between visible/hidden persist
@@ -395,10 +396,10 @@ const debouncedSave = () => {
   }, 500); // 500ms delay to avoid excessive API calls
 };
 
-const handleSave = async () => {
-  // 🔥 FIX: Set saving flag to prevent props watcher from interfering
+// Serialize saves to avoid race conditions and lost state
+const runSave = async () => {
   isSaving.value = true;
-  
+
   let finalItems = [];
 
   // 🟢 ОБЪЕДИНЕНИЕ СПИСКОВ СЧЕТОВ ПЕРЕД СОХРАНЕНИЕМ
@@ -445,6 +446,15 @@ const handleSave = async () => {
     }
     return data;
   });
+
+  // Optimistic update for accounts so reopening shows latest order/hidden state
+  if (isAccountEditor) {
+    const optimistic = itemsToSave.map((item) => {
+      const existing = mainStore.accounts.find(a => a._id === item._id) || {};
+      return { ...existing, ...item };
+    });
+    mainStore.accounts = optimistic;
+  }
   
   emit('save', itemsToSave);
   
@@ -462,12 +472,18 @@ const handleSave = async () => {
     const updates = Array.from(accountsToUpdate.values());
     if (updates.length > 0) await mainStore.batchUpdateEntities('accounts', updates);
   }
-  
+
   // 🔥 FIX: Wait for backend to process and props to update before allowing new changes
   setTimeout(() => {
     isSaving.value = false;
     console.log('✅ Save complete, accepting props updates again');
   }, isAccountEditor ? 0 : 800);
+};
+
+const handleSave = async () => {
+  // Chain saves to ensure ordering and avoid lost updates
+  savePromise = (savePromise || Promise.resolve()).then(runSave);
+  await savePromise;
 };
 
 const itemToDelete = ref(null); const showDeletePopup = ref(false); const isDeleting = ref(false);
