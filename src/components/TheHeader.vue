@@ -570,7 +570,16 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 
-const loggedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false));
+const loggedAccountBalances = computed(() => {
+  const result = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
+  
+  // 🔍 DIAGNOSTIC: Compare raw store data vs merged result
+  console.log('🔍 [Account Balances Debug]');
+  console.log('Raw mainStore.currentAccountBalances:', JSON.parse(JSON.stringify(mainStore.currentAccountBalances)));
+  console.log('After mergeBalances:', JSON.parse(JSON.stringify(result)));
+  
+  return result;
+});
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false));
 
 const mergedContractorBalances = computed(() => {

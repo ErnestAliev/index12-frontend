@@ -975,16 +975,33 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentAccountBalances = computed(() => {
-        return accounts.value.reduce((acc, a) => {
+        const result = accounts.value.reduce((acc, a) => {
             if (!includeExcludedInTotal.value && a.isExcluded) {
                 return acc;
             }
+            const snapshotBalance = Number(snapshot.value.accountBalances[a._id] || 0);
+            const initialBalance = Number(a.initialBalance || 0);
+            const totalBalance = snapshotBalance + initialBalance;
+
             acc.push({
                 ...a,
-                balance: Number(snapshot.value.accountBalances[a._id] || 0) + Number(a.initialBalance || 0)
+                balance: totalBalance
             });
             return acc;
         }, []);
+
+        // 🔍 DIAGNOSTIC: Log snapshot data for first 3 accounts
+        if (result.length > 0) {
+            console.log('🔍 [mainStore.currentAccountBalances]');
+            console.log('snapshot.accountBalances:', JSON.parse(JSON.stringify(snapshot.value.accountBalances)));
+            result.slice(0, 3).forEach(acc => {
+                const snap = Number(snapshot.value.accountBalances[acc._id] || 0);
+                const init = Number(acc.initialBalance || 0);
+                console.log(`${acc.name}: snapshot=${snap} + initial=${init} = ${acc.balance}`);
+            });
+        }
+
+        return result;
     });
 
     const futureAccountBalances = computed(() => {
