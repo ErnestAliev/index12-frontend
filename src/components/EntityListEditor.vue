@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick, computed, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
@@ -467,7 +467,7 @@ const handleSave = async () => {
   setTimeout(() => {
     isSaving.value = false;
     console.log('✅ Save complete, accepting props updates again');
-  }, 800);
+  }, isAccountEditor ? 0 : 800);
 };
 
 const itemToDelete = ref(null); const showDeletePopup = ref(false); const isDeleting = ref(false);
@@ -521,6 +521,13 @@ const confirmDelete = async (deleteOperations) => {
   console.log('✨ Delete process completed');
 };
 const cancelDelete = () => { if (isDeleting.value) return; showDeletePopup.value = false; itemToDelete.value = null; };
+
+// Persist state when closing the editor (especially for accounts drag/drop)
+onBeforeUnmount(() => {
+  if (isAccountEditor) {
+    void handleSave();
+  }
+});
 
 // --- WIDGET TOGGLE LOGIC ---
 const isWidgetOnDashboard = computed(() => {
@@ -631,9 +638,10 @@ defineExpose({
                 v-model="localItems" 
                 item-key="_id" 
                 handle=".drag-handle" 
-                ghost-class="ghost"
+                ghost-class="ghost" 
                 :group="isAccountEditor ? 'accounts' : null"
                 @end="isAccountEditor ? handleSave : null"
+                @change="isAccountEditor ? handleSave : null"
             >
               <template #item="{ element: item }">
                 <div class="edit-item">
@@ -680,11 +688,12 @@ defineExpose({
                     v-model="excludedItems" 
                     item-key="_id" 
                     handle=".drag-handle" 
-                    ghost-class="ghost"
-                    group="accounts"
-                    class="excluded-drop-zone"
-                    @end="handleSave"
-                >
+                ghost-class="ghost"
+                group="accounts"
+                class="excluded-drop-zone"
+                @end="handleSave"
+                @change="handleSave"
+            >
                     <template #item="{ element: item }">
                         <div class="edit-item excluded-item">
                             <span class="drag-handle">⠿</span>
