@@ -54,6 +54,81 @@ const headerTotalsRef = ref(null);
 
 const isWidgetsLoading = ref(true);
 const isTimelineLoading = ref(true);
+const selectedMonthStart = ref(null);
+
+const getDayOfYear = (date) => {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+  return Math.floor(diff / 86400000);
+};
+
+const monthLabelFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
+const formatMonthLabel = (date) => monthLabelFormatter.format(date);
+
+const setMonthRange = async (baseDate = new Date()) => {
+  const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const end = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+
+  selectedMonthStart.value = start;
+
+  const shouldShowLoader = !timelineRef.value;
+  if (shouldShowLoader) {
+    isTimelineLoading.value = true;
+  }
+  try {
+    mainStore.setPeriodFilter({
+      mode: 'custom',
+      customStart: start.toISOString(),
+      customEnd: end.toISOString()
+    });
+
+    mainStore.setProjectionRange(start, end);
+    await mainStore.fetchOperationsRange(start, end);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isCurrentMonth = today.getFullYear() === start.getFullYear() && today.getMonth() === start.getMonth();
+    const centerDate = isCurrentMonth ? today : new Date(start.getFullYear(), start.getMonth(), Math.min(15, end.getDate()));
+    mainStore.setCurrentViewDate(centerDate);
+  } catch (e) {
+    console.error('Failed to set month range:', e);
+  } finally {
+    if (shouldShowLoader) {
+      isTimelineLoading.value = false;
+    }
+  }
+};
+
+const goPrevMonth = async () => {
+  const base = selectedMonthStart.value || new Date();
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  await setMonthRange(prev);
+};
+
+const goNextMonth = async () => {
+  const base = selectedMonthStart.value || new Date();
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  await setMonthRange(next);
+};
+
+const currentMonthLabel = computed(() => {
+  const base = selectedMonthStart.value || new Date();
+  return formatMonthLabel(base);
+});
+
+const prevMonthLabel = computed(() => {
+  const base = selectedMonthStart.value || new Date();
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  return formatMonthLabel(prev);
+});
+
+const nextMonthLabel = computed(() => {
+  const base = selectedMonthStart.value || new Date();
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  return formatMonthLabel(next);
+});
 
 // Состояния попапов
 const isIncomePopupVisible = ref(false);
@@ -466,9 +541,8 @@ const onChartScroll = (left) => {
   autoExpandMobileTimeline(el);
 };
 
-// 🔥 DISABLED: Auto-expand is disabled - projection controlled only via MobilePeriodSelector
-// User must explicitly choose date range via MobilePeriodSelector
-// This ensures stable balance calculations (no "jumping" balances)
+// 🔥 DISABLED: Auto-expand is disabled — диапазон задает переключатель месяцев
+// Это единственная точка правды по периоду и убирает "прыжки" баланса
 let expandDebounce = null;
 let lastScrollCenter = 0;
 let expansionMode = 'neutral'; // Kept for potential future use
@@ -476,8 +550,7 @@ let justReset = false;
 let lastEdge = null;
 
 const autoExpandMobileTimeline = (scrollElement) => {
-  // Disabled - projection is now single source of truth
-  // Only MobilePeriodSelector can change projection
+  // Disabled - диапазон меняется только через переключатель месяцев
   return;
 };
 
@@ -619,35 +692,17 @@ const initializeMobileView = async () => {
         return;
     }
 
-    // 2. Установка даты
+    // 2. Устанавливаем текущий день и диапазон месяца
     const today = new Date();
-    const startOfYear = new Date(today.getFullYear(), 0, 0);
-    const diff = (today - startOfYear) + ((startOfYear.getTimezoneOffset() - today.getTimezoneOffset()) * 60 * 1000);
-    const oneDay = 1000 * 60 * 60 * 24;
-    mainStore.setToday(Math.floor(diff / oneDay));
+    mainStore.setToday(getDayOfYear(today));
 
-    // 🔥 UNIFIED DATE RANGE: Already set to '1m' before this function
-    // No need to call setProjectionToEndOfMonth - projection is already correctly set
     isTimelineLoading.value = true;
-    console.log('[Mobile] Using pre-initialized projection (1m mode - full current month)');
     try {
-        // Use projection that was already set to '1m' in onMounted
-        const modeToLoad = mainStore.projection.mode || '1m';
-        console.log('[MOBILE GRAPH DEBUG] Mode to load:', modeToLoad);
-
-        // Load data for current view mode only (no double loading)
-        if (typeof mainStore.loadCalculationData === 'function') {
-            console.log('[MOBILE GRAPH DEBUG] Calling loadCalculationData...');
-            await mainStore.loadCalculationData(modeToLoad, today);
-            console.log('[MOBILE GRAPH DEBUG] loadCalculationData completed');
-        } else {
-            console.error('[MOBILE GRAPH DEBUG] loadCalculationData is not a function!');
-        }
+        await setMonthRange(today);
     } catch (e) {
         console.error("Timeline Load Error:", e);
     } finally {
         isTimelineLoading.value = false;
-        console.log('[MOBILE GRAPH DEBUG] Timeline loading finished, isTimelineLoading:', isTimelineLoading.value);
         nextTick(() => {
             initScrollSync();
         });
@@ -679,33 +734,6 @@ onMounted(async () => {
   meta.content = "telephone=no, date=no, email=no, address=no";
   document.getElementsByTagName('head')[0].appendChild(meta);
 
-  // 🔥 CRITICAL: Reset period filter to 'all' mode on mobile to prevent issues
-  // Mobile uses timeline modes (12d, 1m, etc.) not custom date ranges by default
-  console.log('[MOBILE INIT] Resetting periodFilter to all mode');
-  mainStore.setPeriodFilter({
-    mode: 'all',
-    customStart: null,
-    customEnd: null
-  });
-
-  // 🔥 CRITICAL: Force reset projection.mode to 12d on mobile
-  // MOBILE STRATEGY: Fast start (12d) + background expansion to 6m
-  const today = new Date();
-  const getDayOfYear = (date) => {
-    const start = new Date(date.getFullYear(), 0, 0);
-    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-    return Math.floor(diff / 86400000);
-  };
-  
-  console.log('[MOBILE INIT] Current projection.mode:', mainStore.projection?.mode);
-  
-  // 🔥 START WITH CURRENT MONTH (1m) for better coverage
-  console.log('[MOBILE INIT] Setting to 1m (current month) for startup');
-  mainStore.setToday(getDayOfYear(today));
-  await mainStore.updateFutureProjectionByMode('1m', today);
-  
-  console.log('[MOBILE INIT] Current month initialized. Ready for bidirectional expansion.');
-
   window.addEventListener('touchmove', onResizerMove, { passive: false });
   window.addEventListener('touchend', onResizerEnd);
   window.addEventListener('pointermove', onResizerMove, { passive: false });
@@ -718,7 +746,7 @@ onMounted(async () => {
 
   await initializeMobileView();
   
-  console.log('[MOBILE INIT] Fast load complete. Timeline will auto-expand when scrolling to edges.');
+  console.log('[MOBILE INIT] Fast load complete. Month navigation is active.');
   
   // Global click listener to close context menu when clicking outside (including graphs)
   const handleGlobalMobileClick = (e) => {
@@ -1176,6 +1204,11 @@ const handleOperationDelete = async (op) => {
                 @open-ai="openAiModal"
                 @open-projects="openProjectsModal"
                 @open-user-menu="openUserMenuModal"
+                @prev-month="goPrevMonth"
+                @next-month="goNextMonth"
+                :current-month-label="currentMonthLabel"
+                :prev-month-label="prevMonthLabel"
+                :next-month-label="nextMonthLabel"
               />
             </div>
         </div>

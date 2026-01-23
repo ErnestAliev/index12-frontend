@@ -145,7 +145,7 @@ const updateStorePosition = () => {
    }
 };
 
-const scrollToDate = (targetDate) => {
+const scrollToDate = (targetDate, smooth = false) => {
     ('[DEBUG_MT] scrollToDate: Target', targetDate);
     if (!scrollContainer.value || allDays.value.length === 0) {
         ('[DEBUG_MT] scrollToDate: Container or days missing');
@@ -174,12 +174,16 @@ const scrollToDate = (targetDate) => {
     }
 
     isProgrammaticScroll.value = true;
-    el.scrollLeft = scrollPos;
+    if (smooth && typeof el.scrollTo === 'function') {
+        el.scrollTo({ left: scrollPos, behavior: 'smooth' });
+    } else {
+        el.scrollLeft = scrollPos;
+    }
     
     setTimeout(() => { 
         ('[DEBUG_MT] scrollToDate: Programmatic lock released');
         isProgrammaticScroll.value = false; 
-    }, 300);
+    }, smooth ? 450 : 300);
     updateVisibleDays();
 };
 
@@ -192,7 +196,7 @@ const setScroll = (left) => {
         setTimeout(() => { isProgrammaticScroll.value = false; }, 50);
     }
 };
-defineExpose({ setScroll });
+defineExpose({ setScroll, scrollToDate });
 
 watch(() => mainStore.projection, async (newVal, oldVal) => {
   ('[DEBUG_MT] Watcher: projection changed');
@@ -228,7 +232,7 @@ watch(() => mainStore.projection, async (newVal, oldVal) => {
   
   setTimeout(() => {
       const target = mainStore.currentViewDate ? new Date(mainStore.currentViewDate) : new Date();
-      scrollToDate(target); 
+      scrollToDate(target, true); 
   }, 100);
 }, { deep: true });
 
