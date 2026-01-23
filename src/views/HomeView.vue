@@ -593,7 +593,7 @@ const sendAiMessage = async () => {
         asOf,
         includeHidden,
         visibleAccountIds,
-        // 🔥 REMOVED: aiContext, uiSnapshot - backend uses dataProvider.buildDataPacket()
+        debugAi: true, // временно просим бэкенд вернуть debug (скрытые счета)
       },
       {
         // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.
