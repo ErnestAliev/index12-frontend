@@ -843,13 +843,18 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function fetchSnapshot() {
         try {
+            console.log('🔍 [fetchSnapshot] Calling backend /snapshot...');
             const clientDate = new Date().toISOString();
             const res = await axios.get(`${API_BASE_URL}/snapshot`, {
                 params: { date: clientDate }
             });
+            console.log('🔍 [fetchSnapshot] Response:', {
+                accountBalances: res.data?.accountBalances || {},
+                accountBalancesKeys: Object.keys(res.data?.accountBalances || {}).length + ' accounts'
+            });
             snapshot.value = res.data;
         } catch (e) {
-            console.error('Failed to fetch snapshot:', e);
+            console.error('🔴 [fetchSnapshot] Error:', e);
         }
     }
 
