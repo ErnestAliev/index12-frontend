@@ -30,7 +30,6 @@ import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
 import UniversalEditModal from '@/components/UniversalEditModal.vue';
 import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 import PaymentReceiptModal from '@/components/PaymentReceiptModal.vue';
-import PeriodSelector from '@/components/PeriodSelector.vue';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
@@ -59,16 +58,54 @@ const showReceiptModal = ref(false);   // 🟢 NEW: Payment receipt generator
 
 // --- AI ассистент (Desktop MVP, read-only) ---
 const isAiDrawerOpen = ref(false);
-const isPeriodSelectorOpen = ref(false);
+// Период управляется через перелистывание месяцев, без отдельного окна выбора
+const selectedMonthStart = ref(null);
 
-const isPeriodFilterActive = computed(() => {
-  const filter = mainStore.periodFilter;
-  if (!filter) return false;
-  
-  // Default mode is "all" - if it's something else, filter is active
-  if (filter.mode !== 'all') return true;
-  
-  return false;
+const monthTransitioning = ref(false);
+const triggerMonthAnimation = () => {
+  monthTransitioning.value = true;
+  setTimeout(() => { monthTransitioning.value = false; }, 350);
+};
+
+const setMonthRange = async (baseDate) => {
+  const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const end = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  selectedMonthStart.value = start;
+  mainStore.setPeriodFilter({
+    mode: 'custom',
+    customStart: start.toISOString(),
+    customEnd: end.toISOString()
+  });
+  mainStore.setProjectionRange(start, end);
+  await mainStore.fetchOperationsRange(start, end);
+  scrollToMonthCenter(baseDate);
+  triggerMonthAnimation();
+};
+
+const goPrevMonth = async () => {
+  const base = selectedMonthStart.value || new Date();
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  await setMonthRange(prev);
+};
+
+const goNextMonth = async () => {
+  const base = selectedMonthStart.value || new Date();
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  await setMonthRange(next);
+};
+
+const prevMonthLabel = computed(() => {
+  const base = selectedMonthStart.value || new Date();
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  return prev.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+});
+
+const nextMonthLabel = computed(() => {
+  const base = selectedMonthStart.value || new Date();
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  return next.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
 });
 
 // 🟢 Loading state for timeline and graphs
@@ -815,6 +852,7 @@ const timelineGridRef = ref(null);
 const timelineGridContentRef = ref(null);
 const yAxisLabels = ref([]); 
 const resizerRef = ref(null);
+const dividerWrapperRef = ref(null);
 const customScrollbarTrackRef = ref(null);
 const scrollbarThumbWidth = ref(0);
 const scrollbarThumbX = ref(0);
@@ -826,7 +864,7 @@ const headerResizerRef = ref(null);
 
 const TIMELINE_MIN = 100;
 const GRAPH_MIN    = 115;
-const DIVIDER_H    = 15;
+const DIVIDER_H    = 28;
 const HEADER_MIN_H = 132; 
 const HEADER_MAX_H_RATIO = 0.8; 
 const headerHeightPx = ref(HEADER_MIN_H); 
@@ -1013,6 +1051,39 @@ const onContainerDragOver = (e) => {
 const onContainerDragLeave = (e) => { stopAutoScroll(); };
 const handleOperationDrop = async (dropData) => { stopAutoScroll(); const operation = dropData.operation; const oldDateKey = operation.dateKey; const newDateKey = dropData.toDateKey; const newCellIndex = dropData.toCellIndex; if (!oldDateKey || !newDateKey) return; if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return; await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex); };
 const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
+
+const clampVirtualStart = (targetDayIndex) => {
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const startIdx = Math.max(0, Math.min(targetDayIndex - CENTER_INDEX, maxVirtual));
+  virtualStartIndex.value = startIdx;
+  rebuildVisibleDays();
+  nextTick(() => updateScrollbarMetrics());
+};
+
+const scrollToMonthCenter = (baseDate) => {
+  const startDate = mainStore.projection?.rangeStartDate;
+  const total = totalDays.value || 0;
+  if (!startDate || !total) {
+    clampVirtualStart(0);
+    return;
+  }
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+
+  const todayDate = new Date(today.value);
+  todayDate.setHours(0, 0, 0, 0);
+
+  let targetDayIndex = Math.floor((total - 1) / 2);
+
+  if (baseDate && baseDate.getFullYear() === todayDate.getFullYear() && baseDate.getMonth() === todayDate.getMonth()) {
+    const diff = Math.round((todayDate.getTime() - start.getTime()) / msPerDay);
+    targetDayIndex = Math.max(0, Math.min(diff, total - 1));
+  }
+
+  clampVirtualStart(targetDayIndex);
+};
 const generateVisibleDays = () => { rebuildVisibleDays(); };
 const clampHeaderHeight = (rawPx) => { const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO; return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight); };
 const applyHeaderHeight = (newPx) => { headerHeightPx.value = Math.round(newPx); if (homeHeaderRef.value) { homeHeaderRef.value.style.height = `${headerHeightPx.value}px`; } };
@@ -1061,14 +1132,17 @@ let verticalResizeStartY = 0;
 let verticalResizeHasMoved = false;
 let isDraggingResizer = false; // Flag to prevent ResizeObserver interference
 
-const initResize = (e) => {
-  e.preventDefault();
-  
-  // Check if click is on vertical-resizer (ромб) - don't resize, let it handle its own click
-  const target = e.target || e.srcElement;
-  if (target && (target.closest('.vertical-resizer') || target.classList.contains('vertical-resizer'))) {
-    return; // Let vertical-resizer handle its own clicks
-  }
+  const initResize = (e) => {
+    e.preventDefault();
+    
+    // Check if click is on vertical-resizer (ромб) - don't resize, let it handle its own click
+    const target = e.target || e.srcElement;
+    if (target && target.closest('.month-nav-btn')) {
+      return; // Month navigation click, not resize
+    }
+    if (target && (target.closest('.vertical-resizer') || target.classList.contains('vertical-resizer'))) {
+      return; // Let vertical-resizer handle its own clicks
+    }
   
   // Don't resize if clicking on scrollbar THUMB (but allow on track) - let thumb drag
   if (target && (target.closest('.custom-scrollbar-thumb') || target.classList.contains('custom-scrollbar-thumb'))) {
@@ -1176,12 +1250,7 @@ const showScrollbar = () => {
   }, 1500);
 };
 
-// 🔥 DISABLED: Auto-expand is disabled - projection controlled only via PeriodSelector
-// User must explicitly choose date range via PeriodSelector
-// This ensures stable balance calculations
 const autoExpandTimeline = () => {
-  // Disabled - projection is now single source of truth
-  // Only PeriodSelector can change projection
   return;
 };
 
@@ -1192,7 +1261,7 @@ const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
 const onContentTouchStart = (e) => { if (!isScrollActive.value) return; contentTouchState.isDragging = true; contentTouchState.startX = e.touches[0].clientX; contentTouchState.startIndex = virtualStartIndex.value; };
 const onContentTouchMove = (e) => { if (!contentTouchState.isDragging) return; const deltaPx = contentTouchState.startX - e.touches[0].clientX; const pxPerDay = 50; const deltaDays = Math.round(deltaPx / pxPerDay); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); let nextVal = contentTouchState.startIndex + deltaDays; nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (e.cancelable) e.preventDefault(); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); autoExpandTimeline(); } };
 const onContentTouchEnd = () => { contentTouchState.isDragging = false; };
-const centerToday = () => { const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); virtualStartIndex.value = Math.min(Math.max(0, globalTodayIndex.value - CENTER_INDEX), maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
+const centerToday = () => { scrollToMonthCenter(selectedMonthStart.value || new Date()); };
 // OLD: onChangeView - controls both timeline AND forecast
 const onChangeView = async (newView) => { const currentStartDate = visibleDays.value[0]?.date || new Date(today.value); viewMode.value = newView; await nextTick(); const msPerDay = 1000 * 60 * 60 * 24; const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay); const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2); let targetIndex = newGlobalTodayIndex + diffDays; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual)); virtualStartIndex.value = targetIndex; rebuildVisibleDays(); await nextTick(); setTimeout(() => { updateScrollbarMetrics(); recalcProjectionForCurrentView(); }, 50); };
 
@@ -1346,6 +1415,7 @@ onMounted(async () => {
     mainStore.startAutoRefresh(); 
     await nextTick(); 
     await mainStore.fetchAllEntities(); 
+    await setMonthRange(new Date());
     const todayDay = getDayOfYear(today.value); 
     mainStore.setToday(todayDay); 
     generateVisibleDays(); 
@@ -1357,10 +1427,9 @@ onMounted(async () => {
     applyHeights(clampTimelineHeight(initialTop)); 
     
     // Attach resize handlers to divider-wrapper (for top/bottom edge dragging)
-    const dividerWrapper = document.querySelector('.divider-wrapper');
-    if (dividerWrapper) {
-      dividerWrapper.addEventListener('mousedown', initResize);
-      dividerWrapper.addEventListener('touchstart', initResize, { passive: false });
+    if (dividerWrapperRef.value) {
+      dividerWrapperRef.value.addEventListener('mousedown', initResize);
+      dividerWrapperRef.value.addEventListener('touchstart', initResize, { passive: false });
     } 
     if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } 
     if (timelineGridRef.value) { 
@@ -1398,7 +1467,7 @@ onMounted(async () => {
         captureBackgroundScreenshot();
     }, 2000);
 });
-onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave); } window.removeEventListener('resize', onWindowResize); document.removeEventListener('click', handleGlobalClick); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
+onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (dividerWrapperRef.value) { dividerWrapperRef.value.removeEventListener('mousedown', initResize); dividerWrapperRef.value.removeEventListener('touchstart', initResize); } if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave); } window.removeEventListener('resize', onWindowResize); document.removeEventListener('click', handleGlobalClick); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
 
 // --- Transfer, Retail, Refund Handlers ---
 const handleTransferSave = async ({ mode, id, data }) => { 
@@ -1499,10 +1568,26 @@ const handleRefundDelete = async (op) => {
           <div v-if="isDataLoading" class="section-loading-overlay">
             <div class="spinner-small"></div>
           </div>
-          <div class="timeline-grid-content" ref="timelineGridContentRef"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
+        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
-        <div class="divider-wrapper"><div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mouseenter="showScrollbar" @mouseleave="() => { if (!scrollState.isDragging) showScrollbar(); }"><div class="custom-scrollbar-thumb" :class="{ 'visible': scrollbarVisible }" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div><div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" :class="{ 'collapsed': !isChartsExpanded }" ref="resizerRef"><TimelineSwitcher @change-timeline-width="onChangeTimelineWidth" @expand-charts-max="expandChartsMax" @collapse-charts-max="collapseChartsMax" @center-charts="centerCharts" /></div></div>
+        <div class="divider-wrapper" ref="dividerWrapperRef">
+          <div class="month-nav">
+            <button class="month-nav-btn left" @click="goPrevMonth" title="Предыдущий месяц">←</button>
+            <div class="month-label">{{ prevMonthLabel }}</div>
+          </div>
+
+          <div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mouseenter="showScrollbar" @mouseleave="() => { if (!scrollState.isDragging) showScrollbar(); }"><div class="custom-scrollbar-thumb" :class="{ 'visible': scrollbarVisible }" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div>
+
+          <div class="month-nav center">
+            <div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" :class="{ 'collapsed': !isChartsExpanded }" ref="resizerRef"><TimelineSwitcher @change-timeline-width="onChangeTimelineWidth" @expand-charts-max="expandChartsMax" @collapse-charts-max="collapseChartsMax" @center-charts="centerCharts" /></div>
+          </div>
+
+          <div class="month-nav">
+            <div class="month-label">{{ nextMonthLabel }}</div>
+            <button class="month-nav-btn right" @click="goNextMonth" title="Следующий месяц">→</button>
+          </div>
+        </div>
         <!-- 🟢 NEW: Hide graphs for timeline-only users -->
         <div v-if="!mainStore.isTimelineOnly" class="graph-area-wrapper" ref="graphAreaRef">
           <div v-if="isDataLoading" class="section-loading-overlay">
@@ -1528,25 +1613,6 @@ const handleRefundDelete = async (op) => {
               <rect x="14" y="3" width="7" height="7"></rect>
               <rect x="14" y="14" width="7" height="7"></rect>
               <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-          </button>
-
-          <!-- 🆕 NEW: Period Selector Button -->
-          <button
-            v-if="!mainStore.isTimelineOnly"
-            class="icon-btn period-btn"
-            :class="{ 
-              'active': isPeriodSelectorOpen,
-              'filter-active': isPeriodFilterActive 
-            }"
-            @click="isPeriodSelectorOpen = !isPeriodSelectorOpen"
-            data-tooltip="Период расчёта"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
             </svg>
           </button>
 
@@ -1810,14 +1876,6 @@ const handleRefundDelete = async (op) => {
     <!-- 🆕 NEW: Payment Receipt Generator -->
     <PaymentReceiptModal v-if="showReceiptModal" @close="showReceiptModal = false" />
 
-    <!-- 🆕 NEW: Period Selector Dropdown -->
-    <Teleport to="body">
-      <div v-if="isPeriodSelectorOpen" class="period-selector-overlay" @click="isPeriodSelectorOpen = false">
-        <div class="period-selector-wrapper" @click.stop>
-          <PeriodSelector @close="isPeriodSelectorOpen = false" @apply="isPeriodSelectorOpen = false" />
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -2081,14 +2139,21 @@ const handleRefundDelete = async (op) => {
   cursor: not-allowed !important;
 }
 
-.timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; }
-.divider-wrapper { flex-shrink: 0; height: 15px; width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; cursor: row-resize; }
+.timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
+.timeline-grid-content.month-transition { transform: translateY(-6px); opacity: 0.9; }
+.divider-wrapper { flex-shrink: 0; height: 18px; width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
+.divider-wrapper .month-label { flex: 0 0 auto; font-weight: 600; font-size: 11px; text-transform: capitalize; color: var(--color-text); line-height: 1; }
+.month-nav { display: inline-flex; align-items: center; gap: 4px; width: 140px; justify-content: center; }
+.month-nav.center { flex: 1; justify-content: center; }
+.month-nav-btn { width: 18px; height: 18px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 12px; padding: 0; }
+.month-nav-btn:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.month-nav-btn:active { transform: scale(0.96); }
 .custom-scrollbar-track { position: absolute; left: 50px; right: 50px; top: 0; height: 100%; background-color: transparent; cursor: default; z-index: 15; pointer-events: none; }
 .custom-scrollbar-track:hover { pointer-events: all; }
 .custom-scrollbar-thumb { position: absolute; top: 2px; bottom: 2px; background-color: var(--scrollbar-thumb-bg); border-radius: 6px; cursor: grab; z-index: 16; pointer-events: all; opacity: 0; transition: opacity 0.3s ease; }
 .custom-scrollbar-thumb.visible { opacity: 1; }
 .custom-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-bg-active); cursor: grabbing; }
-.vertical-resizer { position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: pointer; z-index: 40; display: flex; align-items: center; justify-content: center; }
+.vertical-resizer { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); width: 40px; height: 25px; cursor: pointer; z-index: 40; display: flex; align-items: center; justify-content: center; }
 .vertical-resizer::before { 
   content: ''; 
   display: block; 

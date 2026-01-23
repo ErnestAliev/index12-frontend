@@ -65,7 +65,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     // 🟢 PERIOD FILTER (Фильтр периода для виджетов)
     const periodFilter = ref({
-        mode: 'all', // 'all' | 'currentMonth' | 'previousMonth' | 'custom' - RESET: showing all data
+        mode: 'currentMonth', // стартуем с текущего месяца
         customStart: null,
         customEnd: null
     });
@@ -803,14 +803,15 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentAccountBalances = computed(() => {
-        // Initialize balances map with initialBalance for each account
+        // Факт всегда по всей истории (не зависит от periodFilter)
         const balances = {};
         accounts.value.forEach(acc => {
             balances[acc._id] = Number(acc.initialBalance || 0);
         });
 
-        // Calculate net change from all operations
-        currentOps.value.forEach(op => {
+        const pastOps = getAllRelevantOps.value.filter(op => _isEffectivelyPastOrToday(op.date));
+
+        pastOps.forEach(op => {
             const amt = Math.abs(Number(op.amount) || 0);
 
             if (op.isTransfer) {
