@@ -154,6 +154,7 @@ const isCreating = ref(false);
 const newItemName = ref('');
 const newItemInputRef = ref(null);
 const isSavingNew = ref(false);
+const isSaving = ref(false); // 🔥 FIX: Prevent race condition during save
 
 // 🟢 АВТОПОДСТАНОВКА
 const showSuggestions = ref(false);
@@ -316,6 +317,12 @@ onMounted(() => {
 
 // Watch for changes in items prop to update local lists
 watch(() => props.items, (newItems) => {
+  // 🔥 FIX: Don't update during save to prevent race condition
+  if (isSaving.value) {
+    console.log('📝 Ignoring props update during save');
+    return;
+  }
+  
   console.log('📝 Items updated, refreshing local list');
   const allAccounts = mainStore.accounts;
   let rawItems = JSON.parse(JSON.stringify(newItems));
@@ -385,20 +392,8 @@ watch(() => props.items, (newItems) => {
   }
 }, { deep: true });
 
-// 🟢 AUTO-SAVE WHEN DRAGGING ACCOUNTS BETWEEN LISTS
-// Watch localItems for changes (e.g., when dragging from excluded to active)
-watch(() => localItems.value.length, () => {
-  if (isAccountEditor) {
-    debouncedSave();
-  }
-});
-
-// Watch excludedItems for changes (e.g., when dragging from active to excluded)
-watch(() => excludedItems.value.length, () => {
-  if (isAccountEditor) {
-    debouncedSave();
-  }
-});
+// � FIX: Removed auto-save watchers on array length - they caused race condition
+// Save is now triggered by @end event on draggable components
 
 // Auto-save: debounced version of handleSave for selectors and inputs
 let saveTimeout = null;
@@ -410,6 +405,9 @@ const debouncedSave = () => {
 };
 
 const handleSave = async () => {
+  // 🔥 FIX: Set saving flag to prevent props watcher from interfering
+  isSaving.value = true;
+  
   let finalItems = [];
 
   // 🟢 ОБЪЕДИНЕНИЕ СПИСКОВ СЧЕТОВ ПЕРЕД СОХРАНЕНИЕМ
@@ -475,6 +473,12 @@ const handleSave = async () => {
     const updates = Array.from(accountsToUpdate.values());
     if (updates.length > 0) await mainStore.batchUpdateEntities('accounts', updates);
   }
+  
+  // 🔥 FIX: Wait for backend to process and props to update before allowing new changes
+  setTimeout(() => {
+    isSaving.value = false;
+    console.log('✅ Save complete, accepting props updates again');
+  }, 800);
 };
 
 const itemToDelete = ref(null); const showDeletePopup = ref(false); const isDeleting = ref(false);
@@ -642,6 +646,7 @@ defineExpose({
                 handle=".drag-handle" 
                 ghost-class="ghost"
                 :group="isAccountEditor ? 'accounts' : null"
+                @end="isAccountEditor ? debouncedSave : null"
             >
               <template #item="{ element: item }">
                 <div class="edit-item">
@@ -696,6 +701,7 @@ defineExpose({
                     ghost-class="ghost"
                     group="accounts"
                     class="excluded-drop-zone"
+                    @end="debouncedSave"
                 >
                     <template #item="{ element: item }">
                         <div class="edit-item excluded-item">
