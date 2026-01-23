@@ -531,8 +531,17 @@ const handleAiInputKeydown = (event) => {
 };
 
 const sendAiMessage = async (forcedMsg = null, opts = {}) => {
+  // Защита: если вместо текста пришёл DOM-событие (PointerEvent/KeyboardEvent), берём текст из инпута
+  const _isDomEvent = (x) => x && typeof x === 'object' && x.type && x.target;
+  const raw = _isDomEvent(forcedMsg)
+    ? (aiInput.value || '')
+    : (forcedMsg !== null ? forcedMsg : (aiInput.value || ''));
+
+  const text = String(raw || '').trim();
+  const source = opts.source || 'chat';
+  const quickKey = opts.quickKey || null;
+
   stopAiRecordingIfNeeded();
-  const text = forcedMsg !== null ? String(forcedMsg).trim() : (aiInput.value || '').trim();
   if (!text || aiLoading.value) return;
 
   aiMessages.value.push(_makeAiMsg('user', text));
@@ -590,8 +599,8 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       `${API_BASE_URL}/ai/query`,
       {
         message: text,
-        source: opts.source || 'freeform',
-        quickKey: opts.quickKey || null,
+        source,
+        quickKey,
         asOf,
         includeHidden,
         visibleAccountIds,
