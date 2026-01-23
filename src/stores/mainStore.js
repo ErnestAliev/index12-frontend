@@ -632,16 +632,23 @@ export const useMainStore = defineStore('mainStore', () => {
 
         // Recalculating current ops
         const { startDate, endDate } = _getPeriodRange(periodFilter.value);
+        const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
         const result = allKnownOperations.value.filter(op => {
             if (!op?.date) return false;
             if (!_isOpVisible(op)) return false;
 
-            // 🟢 Period filter: Show only operations within selected period
-            if (filterMode === 'custom' && startDate && endDate) {
-                const opDate = new Date(op.date);
-                if (opDate < startDate || opDate > endDate) return false;
-            }
+            const opDate = new Date(op.date);
+
+            // Если диапазон полностью в будущем — факт пустой
+            if (startDate && startDate.getTime() > todayEnd.getTime()) return false;
+
+            // Фильтр по периоду
+            if (startDate && opDate < startDate) return false;
+            if (filterMode === 'custom' && endDate && opDate > endDate) return false;
+
+            // Факт: только операции до конца сегодняшнего дня
+            if (opDate > todayEnd) return false;
 
             return true;
         });
