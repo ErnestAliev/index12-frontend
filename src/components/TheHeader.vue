@@ -207,6 +207,8 @@ const localWidgets = computed({
       // In first row, skip futureTotal if it somehow appears elsewhere
       if (index < rowSize && k === 'futureTotal') return false;
       if (k === 'currentTotal') return false;
+      // Skip placeholders
+      if (k && typeof k === 'string' && k.startsWith('placeholder_')) return false;
       
       return true;
     });
@@ -326,6 +328,101 @@ const handleCardClick = (event, widgetKey) => {
   if (widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')) return;
   
   openFullscreen(widgetKey);
+};
+
+// ===============================
+// SWAP WITH NEIGHBOR
+// ===============================
+const canSwapLeft = (index) => {
+  const rowSize = isTabletGrid.value ? 5 : 6;
+  const currentWidget = localWidgets.value[index];
+  
+  // Can't swap fixed widgets
+  if (currentWidget === 'currentTotal' || currentWidget === 'futureTotal') return false;
+  
+  // Can't swap if at left edge of row
+  if (index % rowSize === 0) return false;
+  
+  const leftIndex = index - 1;
+  if (leftIndex < 0) return false;
+  
+  const leftWidget = localWidgets.value[leftIndex];
+  
+  // Can't swap with fixed widgets or placeholders
+  if (leftWidget === 'currentTotal' || leftWidget === 'futureTotal') return false;
+  if (leftWidget && typeof leftWidget === 'string' && leftWidget.startsWith('placeholder_')) return false;
+  
+  return true;
+};
+
+const canSwapRight = (index) => {
+  const rowSize = isTabletGrid.value ? 5 : 6;
+  const currentWidget = localWidgets.value[index];
+  
+  // Can't swap fixed widgets
+  if (currentWidget === 'currentTotal' || currentWidget === 'futureTotal') return false;
+  
+  // Can't swap if at right edge of row
+  if ((index + 1) % rowSize === 0) return false;
+  
+  const rightIndex = index + 1;
+  if (rightIndex >= localWidgets.value.length) return false;
+  
+  const rightWidget = localWidgets.value[rightIndex];
+  
+  // Can't swap with fixed widgets or placeholders
+  if (rightWidget === 'currentTotal' || rightWidget === 'futureTotal') return false;
+  if (rightWidget && typeof rightWidget === 'string' && rightWidget.startsWith('placeholder_')) return false;
+  
+  return true;
+};
+
+const swapWithNeighbor = (index, direction) => {
+  const rowSize = isTabletGrid.value ? 5 : 6;
+  const targetIndex = direction === 'left' ? index - 1 : index + 1;
+  
+  // Safety checks
+  if (targetIndex < 0 || targetIndex >= localWidgets.value.length) return;
+  
+  const currentWidget = localWidgets.value[index];
+  const targetWidget = localWidgets.value[targetIndex];
+  
+  // Don't swap fixed widgets or placeholders
+  if (currentWidget === 'currentTotal' || currentWidget === 'futureTotal') return;
+  if (targetWidget === 'currentTotal' || targetWidget === 'futureTotal') return;
+  if (targetWidget && typeof targetWidget === 'string' && targetWidget.startsWith('placeholder_')) return;
+  
+  // Convert localWidgets indices to dashboardLayout indices
+  // We need to map from visual position to store position
+  // Position 0 = currentTotal (not in dashboardLayout)
+  // Positions 1-4 (desktop) or 1-3 (tablet) = dashboardLayout[0-3] or [0-2]
+  // Position 5 (desktop) or 4 (tablet) = futureTotal (not in dashboardLayout)
+  // Positions 6+ = dashboardLayout[4+] or [3+]
+  
+  const getDashboardIndex = (localIndex) => {
+    if (localIndex === 0) return -1; // currentTotal
+    if (localIndex === rowSize - 1) return -1; // futureTotal
+    if (localIndex < rowSize - 1) {
+      // First row (excluding currentTotal and futureTotal)
+      return localIndex - 1;
+    } else {
+      // Second row and beyond
+      return localIndex - 2; // -1 for currentTotal, -1 for futureTotal
+    }
+  };
+  
+  const currentDashboardIndex = getDashboardIndex(index);
+  const targetDashboardIndex = getDashboardIndex(targetIndex);
+  
+  if (currentDashboardIndex === -1 || targetDashboardIndex === -1) return;
+  
+  // Create new dashboardLayout with swapped widgets
+  const newLayout = [...mainStore.dashboardLayout];
+  [newLayout[currentDashboardIndex], newLayout[targetDashboardIndex]] = 
+    [newLayout[targetDashboardIndex], newLayout[currentDashboardIndex]];
+  
+  // Update store
+  mainStore.dashboardLayout = newLayout;
 };
 
 
@@ -740,6 +837,29 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       @dragend="handleDragEnd"
       @click="handleCardClick($event, widgetKey)"
     >
+        <!-- Swap Controls -->
+        <div 
+          v-if="widgetKey && !widgetKey.startsWith('placeholder_') && widgetKey !== 'currentTotal' && widgetKey !== 'futureTotal'" 
+          class="widget-swap-controls"
+        >
+          <button 
+            v-if="canSwapLeft(index)" 
+            class="swap-btn swap-left" 
+            @click.stop="swapWithNeighbor(index, 'left')"
+            title="Поменять с левым соседом"
+          >
+            ←
+          </button>
+          <button 
+            v-if="canSwapRight(index)" 
+            class="swap-btn swap-right" 
+            @click.stop="swapWithNeighbor(index, 'right')"
+            title="Поменять с правым соседом"
+          >
+            →
+          </button>
+        </div>
+
         <div v-if="widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
         <HeaderTotalCard
@@ -903,11 +1023,11 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         v-else-if="widgetKey === 'accounts'"
         :ref="(el) => registerGridWidgetRef(widgetKey, el)"
         title="Счета/Кассы"
-        :items="mergedAccountBalances"
+        :items="loggedAccountBalances"
         emptyText="...счетов нет..."
         :widgetKey="widgetKey"
         :widgetIndex="-1"
-        :isDeltaMode="true"
+        :isDeltaMode="false"
       />
 
       <HeaderBalanceCard
@@ -1024,6 +1144,51 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   opacity: 0.5;
   cursor: grabbing;
 }
+
+/* 🟢 WIDGET SWAP CONTROLS */
+.widget-swap-controls {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+
+.dashboard-card-wrapper:hover .widget-swap-controls {
+  opacity: 1;
+}
+
+.swap-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background-color: var(--widget-background);
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.2s;
+  padding: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.swap-btn:hover {
+  background-color: var(--color-primary, #007AFF);
+  color: white;
+  border-color: var(--color-primary, #007AFF);
+  transform: scale(1.1);
+}
+
+.swap-btn:active {
+  transform: scale(0.95);
+}
+
 
 /* 🟢 FULLSCREEN STYLES */
 .fullscreen-overlay {
