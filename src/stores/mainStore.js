@@ -843,18 +843,13 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function fetchSnapshot() {
         try {
-            console.log('🔍 [fetchSnapshot] Calling backend /snapshot...');
             const clientDate = new Date().toISOString();
             const res = await axios.get(`${API_BASE_URL}/snapshot`, {
                 params: { date: clientDate }
             });
-            console.log('🔍 [fetchSnapshot] Response:', {
-                accountBalances: res.data?.accountBalances || {},
-                accountBalancesKeys: Object.keys(res.data?.accountBalances || {}).length + ' accounts'
-            });
             snapshot.value = res.data;
         } catch (e) {
-            console.error('🔴 [fetchSnapshot] Error:', e);
+            console.error('Failed to fetch snapshot:', e);
         }
     }
 
@@ -980,33 +975,47 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentAccountBalances = computed(() => {
-        const result = accounts.value.reduce((acc, a) => {
-            if (!includeExcludedInTotal.value && a.isExcluded) {
-                return acc;
+        // Initialize balances map with initialBalance for each account
+        const balances = {};
+        accounts.value.forEach(acc => {
+            balances[acc._id] = Number(acc.initialBalance || 0);
+        });
+
+        // Calculate net change from all operations
+        currentOps.value.forEach(op => {
+            const amt = Math.abs(Number(op.amount) || 0);
+
+            if (op.isTransfer) {
+                // Handle transfers between accounts
+                const fromId = op.fromAccountId?._id || op.fromAccountId;
+                const toId = op.toAccountId?._id || op.toAccountId;
+
+                if (fromId && balances[fromId] !== undefined) {
+                    balances[fromId] -= amt;
+                }
+                if (toId && balances[toId] !== undefined) {
+                    balances[toId] += amt;
+                }
+            } else {
+                // Handle regular income/expense operations
+                const accId = op.accountId?._id || op.accountId;
+                if (!accId || balances[accId] === undefined) return;
+
+                if (op.type === 'income') {
+                    balances[accId] += Number(op.amount || 0);
+                } else if (op.type === 'expense' || op.isWithdrawal) {
+                    balances[accId] -= amt;
+                }
             }
-            const snapshotBalance = Number(snapshot.value.accountBalances[a._id] || 0);
-            const initialBalance = Number(a.initialBalance || 0);
-            const totalBalance = snapshotBalance + initialBalance;
+        });
 
-            acc.push({
+        // Build result array with calculated balances
+        return accounts.value
+            .filter(a => includeExcludedInTotal.value || !a.isExcluded)
+            .map(a => ({
                 ...a,
-                balance: totalBalance
-            });
-            return acc;
-        }, []);
-
-        // 🔍 DIAGNOSTIC: Log snapshot data for first 3 accounts
-        if (result.length > 0) {
-            console.log('🔍 [mainStore.currentAccountBalances]');
-            console.log('snapshot.accountBalances:', JSON.parse(JSON.stringify(snapshot.value.accountBalances)));
-            result.slice(0, 3).forEach(acc => {
-                const snap = Number(snapshot.value.accountBalances[acc._id] || 0);
-                const init = Number(acc.initialBalance || 0);
-                console.log(`${acc.name}: snapshot=${snap} + initial=${init} = ${acc.balance}`);
-            });
-        }
-
-        return result;
+                balance: balances[a._id] || 0
+            }));
     });
 
     const futureAccountBalances = computed(() => {

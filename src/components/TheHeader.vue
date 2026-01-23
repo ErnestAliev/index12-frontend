@@ -570,16 +570,7 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 
-const loggedAccountBalances = computed(() => {
-  const result = mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
-  
-  // 🔍 DIAGNOSTIC: Compare raw store data vs merged result
-  console.log('🔍 [Account Balances Debug]');
-  console.log('Raw mainStore.currentAccountBalances:', JSON.parse(JSON.stringify(mainStore.currentAccountBalances)));
-  console.log('After mergeBalances:', JSON.parse(JSON.stringify(result)));
-  
-  return result;
-});
+
 const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false));
 
 const mergedContractorBalances = computed(() => {
@@ -739,7 +730,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
                 v-else-if="fullscreenWidgetKey === 'accounts'"
                 :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 title="Счета/Кассы"
-                :items="loggedAccountBalances" emptyText="...счетов нет..."
+                :items="mainStore.currentAccountBalances" emptyText="...счетов нет..."
                 :widgetKey="fullscreenWidgetKey" :widgetIndex="-1"
                 :isDeltaMode="false"
                 @add="openAddPopup('Новый счет', mainStore.addAccount, 'account')"
@@ -893,7 +884,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           v-else-if="widgetKey === 'accounts'"
           :ref="(el) => registerGridWidgetRef(widgetKey, el)"
           title="Счета/Кассы"
-          :items="loggedAccountBalances" emptyText="...счетов нет..."
+          :items="mainStore.currentAccountBalances" emptyText="...счетов нет..."
           :widgetKey="widgetKey" :widgetIndex="index"
           :isDeltaMode="false"
           @add="openAddPopup('Новый счет', mainStore.addAccount, 'account')"
@@ -1032,7 +1023,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
         v-else-if="widgetKey === 'accounts'"
         :ref="(el) => registerGridWidgetRef(widgetKey, el)"
         title="Счета/Кассы"
-        :items="loggedAccountBalances"
+        :items="mainStore.currentAccountBalances"
         emptyText="...счетов нет..."
         :widgetKey="widgetKey"
         :widgetIndex="-1"
