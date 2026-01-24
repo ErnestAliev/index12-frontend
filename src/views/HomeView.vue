@@ -122,6 +122,7 @@ const aiPaywall = ref(false);
 const aiPaywallReason = ref('AI ассистент доступен по подписке.');
 const aiMessagesRef = ref(null);
 const aiInputRef = ref(null);
+const deepAiMode = ref(false); // Режим развёрнутых ответов (без командных шорткатов)
 
 // --- Theme management ---
 const currentTheme = ref(localStorage.getItem('theme') || 'dark');
@@ -601,6 +602,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         message: text,
         source,
         quickKey,
+        mode: deepAiMode.value ? 'deep' : 'freeform',
         asOf,
         includeHidden,
         visibleAccountIds,
@@ -1805,6 +1807,11 @@ const handleRefundDelete = async (op) => {
 
               <!-- Buttons (right) -->
               <div class="ai-input-buttons">
+                <label class="ai-deep-toggle">
+                  <input type="checkbox" v-model="deepAiMode" />
+                  <span>Глубокий ответ</span>
+                </label>
+
                 <button
                   class="ai-mic-btn"
                   :class="{ recording: isAiRecording }"
