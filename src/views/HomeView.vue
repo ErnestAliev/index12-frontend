@@ -1783,10 +1783,9 @@ const handleRefundDelete = async (op) => {
               <button class="ai-quick-btn" @click="useQuickPrompt('покажи категории')">Категории</button>
               <button class="ai-quick-btn" @click="useQuickPrompt('покажи физлица')">Физлица</button>
             </div>
-            <label class="ai-deep-toggle-top">
-              <input type="checkbox" v-model="deepAiMode" />
-              <span>Deep</span>
-            </label>
+            <button class="ai-deep-btn" :class="{ active: deepAiMode }" @click="deepAiMode = !deepAiMode">
+              Deep
+            </button>
           </div>
 
           <div class="ai-messages" ref="aiMessagesRef">
@@ -2304,23 +2303,27 @@ const handleRefundDelete = async (op) => {
   border-color: var(--color-border-hover); 
 }
 
-.ai-deep-toggle-top {
+.ai-deep-btn {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
   border: 1px solid var(--color-border);
   background: var(--color-background-soft);
   color: var(--color-text);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.2s ease;
 }
-
-.ai-deep-toggle-top input {
-  margin: 0;
+.ai-deep-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.ai-deep-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.18);
 }
 
 .ai-messages {

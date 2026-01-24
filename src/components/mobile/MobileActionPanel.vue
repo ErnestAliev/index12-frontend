@@ -122,8 +122,8 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
   gap: 8px;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  padding: 0 8px;
+  border-radius: 33px;
+
   min-width: 150px;
   justify-content: center;
 }

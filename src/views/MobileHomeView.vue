@@ -1264,10 +1264,9 @@ const handleOperationDelete = async (op) => {
               <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
               <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
             </div>
-            <label class="ai-deep-toggle-top">
-              <input type="checkbox" v-model="deepAiMode" />
-              <span>Deep</span>
-            </label>
+            <button class="ai-deep-btn" :class="{ active: deepAiMode }" @click="deepAiMode = !deepAiMode">
+              Deep
+            </button>
           </div>
 
           <div class="ai-modal-body">
@@ -1681,6 +1680,28 @@ const handleOperationDelete = async (op) => {
   font-weight: 800;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+.ai-deep-btn {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, #555);
+  background: var(--color-background-soft, #1f1f1f);
+  color: var(--color-text, #fff);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.ai-deep-btn:hover {
+  border-color: var(--color-primary, #34c759);
+  color: var(--color-primary, #34c759);
+}
+.ai-deep-btn.active {
+  background: var(--color-primary, #34c759);
+  border-color: var(--color-primary, #34c759);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.18);
 }
 
 .ai-modal-body {
