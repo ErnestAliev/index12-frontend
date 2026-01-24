@@ -866,6 +866,7 @@ const timelineGridContentRef = ref(null);
 const yAxisLabels = ref([]); 
 const resizerRef = ref(null);
 const dividerWrapperRef = ref(null);
+const yAxisPanelRef = ref(null);
 const customScrollbarTrackRef = ref(null);
 const scrollbarThumbWidth = ref(0);
 const scrollbarThumbX = ref(0);
@@ -1138,7 +1139,12 @@ const stopHeaderResize = () => {
   }
 };
 const clampTimelineHeight = (rawPx) => { const container = mainContentRef.value; if (!container) return timelineHeightPx.value; const headerTotalH = headerHeightPx.value + 15; const containerH = window.innerHeight - headerTotalH; const maxTop = Math.max(0, containerH - DIVIDER_H - GRAPH_MIN); const minTop = TIMELINE_MIN; return Math.min(Math.max(rawPx, minTop), maxTop); };
-const applyHeights = (timelinePx) => { timelineHeightPx.value = Math.round(timelinePx); if (timelineGridRef.value) { timelineGridRef.value.style.height = `${timelineHeightPx.value}px`; } };
+const applyHeights = (timelinePx) => {
+  timelineHeightPx.value = Math.round(timelinePx);
+  if (timelineGridRef.value) {
+    timelineGridRef.value.style.height = `${timelineHeightPx.value}px`;
+  }
+};
 
 // Vertical resizer: track movement to distinguish click from drag
 let verticalResizeStartY = 0;
@@ -1298,7 +1304,11 @@ const onChangeTimelineWidth = async (newWidth) => {
   // Only update scrollbar - DO NOT recalculate projections
   updateScrollbarMetrics();
 };
-const onWindowResize = () => { applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); applyHeights(clampTimelineHeight(timelineHeightPx.value)); updateScrollbarMetrics(); };
+const onWindowResize = () => {
+  applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
+  applyHeights(clampTimelineHeight(timelineHeightPx.value));
+  updateScrollbarMetrics();
+};
 // Check for day change and re-center timeline on new today
 const checkDayChange = () => {
   const currentToday = initializeToday();
@@ -1571,11 +1581,12 @@ const handleRefundDelete = async (op) => {
     <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
     <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
     <div class="header-resizer" :class="{ 'collapsed': mainStore.isHeaderExpanded }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
-    <div class="home-body">
+    <div class="home-body" :style="{ '--timeline-height': timelineHeightPx + 'px', '--divider-height': DIVIDER_H + 'px' }">
       <aside class="home-left-panel">
-        <!-- nav-panel-wrapper kept as placeholder for future controls -->
-        <div class="nav-panel-wrapper"></div>
-        <div class="divider-placeholder"></div><YAxisPanel :yLabels="yAxisLabels" /></aside>
+        <div class="timeline-spacer"></div>
+        <div class="divider-placeholder"></div>
+        <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
+      </aside>
       <main class="home-main-content" ref="mainContentRef">
         <div class="timeline-grid-wrapper" :class="{ 'analyst-readonly': mainStore.workspaceRole === 'analyst' }" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave">
           <div v-if="isDataLoading" class="section-loading-overlay">
@@ -2009,7 +2020,9 @@ const handleRefundDelete = async (op) => {
 /* Rotate triangle when expanded (header is expanded, so triangle points up to collapse) */
 .header-resizer.collapsed::before { transform: rotate(180deg) scale(1.1); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
-.home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; }
+.home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: grid; grid-template-rows: var(--timeline-height, 318px) var(--divider-height, 28px) 1fr; background: var(--divider-wrapper-bg); border-right: 1px solid var(--color-border); }
+.timeline-spacer { width: 100%; height: 100%; }
+.y-axis-wrapper-flex { width: 100%; height: 100%; }
 .home-right-panel { 
   width: 60px; 
   flex-shrink: 0; 
@@ -2138,7 +2151,7 @@ const handleRefundDelete = async (op) => {
   padding: 0;
 }
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-.timeline-grid-wrapper { position: relative; height: 318px; flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; transition: height 0.3s ease; }
+.timeline-grid-wrapper { position: relative; height: var(--timeline-height, 318px); flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; transition: height 0.12s ease; }
 
 /* 🟢 NEW: Full height timeline for timeline-only users */
 .home-main-content:has(.graph-area-wrapper[style*="display: none"]) .timeline-grid-wrapper,
@@ -2160,7 +2173,7 @@ const handleRefundDelete = async (op) => {
 
 .timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
 .timeline-grid-content.month-transition { transform: translateY(-6px); opacity: 0.9; }
-.divider-wrapper { flex-shrink: 0; height: 18px; width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
+.divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
 .divider-wrapper .month-label { flex: 0 0 auto; font-weight: 600; font-size: 11px; text-transform: capitalize; color: var(--color-text); line-height: 1; }
 .month-nav { display: inline-flex; align-items: center; gap: 4px; width: 140px; justify-content: center; }
 .month-nav.center { flex: 1; justify-content: center; }
@@ -2189,8 +2202,7 @@ const handleRefundDelete = async (op) => {
 .graph-area-wrapper { position: relative; flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .graph-renderer-content { flex-grow: 1; }
 .summaries-container { flex-shrink: 0; }
-.nav-panel-wrapper { height: 318px; flex-shrink: 0; overflow: hidden; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background-color: var(--ui-panel-bg);}
-.divider-placeholder { flex-shrink: 0; height: 15px; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); }
+.divider-placeholder { flex-shrink: 0; background-color: var(--divider-wrapper-bg); border-bottom: 0px solid var(--divider-wrapper-border); }
 /* --- AI Modal (Desktop) --- */
 .ai-modal-overlay { 
   position: fixed; 
