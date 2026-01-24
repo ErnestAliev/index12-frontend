@@ -9,6 +9,8 @@ const currentIndex = ref(0);
 const currentWidth = computed(() => timelineWidths[currentIndex.value]);
 const isPanelOpen = ref(false);
 
+const openPanel = () => { isPanelOpen.value = true; };
+const closePanel = () => { isPanelOpen.value = false; };
 const ensureOpen = () => { if (!isPanelOpen.value) isPanelOpen.value = true; };
 
 const changeWidth = (direction) => {
@@ -47,7 +49,13 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
 </script>
 
 <template>
-  <div class="timeline-switcher" :class="{ open: isPanelOpen }" @click.stop>
+  <div
+    class="timeline-switcher"
+    :class="{ open: isPanelOpen }"
+    @click.stop
+    @pointerenter="openPanel"
+    @pointerleave="closePanel"
+  >
     <div class="switcher-column center-column">
       <!-- Expand timeline down (arrow up = chart goes UP) -->
       <button 
