@@ -9,7 +9,10 @@ const currentIndex = ref(0);
 const currentWidth = computed(() => timelineWidths[currentIndex.value]);
 const isPanelOpen = ref(false);
 
+const ensureOpen = () => { if (!isPanelOpen.value) isPanelOpen.value = true; };
+
 const changeWidth = (direction) => {
+  ensureOpen();
   console.log(`[TimelineSwitcher] changeWidth called with direction: ${direction}, currentIndex: ${currentIndex.value}`);
   const newIndex = currentIndex.value + direction;
   if (newIndex >= 0 && newIndex < timelineWidths.length) {
@@ -22,21 +25,19 @@ const changeWidth = (direction) => {
 };
 
 const expandChartsMax = () => {
+  ensureOpen();
   console.log('[TimelineSwitcher] expandChartsMax called');
   emit('expand-charts-max');
 };
 
 const collapseChartsMax = () => {
+  ensureOpen();
   console.log('[TimelineSwitcher] collapseChartsMax called');
   emit('collapse-charts-max');
 };
 
 const centerCharts = () => {
-  // Первый тап открывает панель, повторный — центрирует
-  if (!isPanelOpen.value) {
-    isPanelOpen.value = true;
-    return;
-  }
+  ensureOpen();
   console.log('[TimelineSwitcher] centerCharts called');
   emit('center-charts');
 };
@@ -88,7 +89,7 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
   justify-content: center;
   opacity: 0;
   transition: opacity 0.2s;
-  pointer-events: none;
+  pointer-events: all;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -99,7 +100,6 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
 /* Show on parent hover */
 .vertical-resizer:hover .timeline-switcher {
   opacity: 1;
-  pointer-events: all;
 }
 
 .timeline-switcher.open {
