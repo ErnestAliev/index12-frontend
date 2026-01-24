@@ -163,6 +163,7 @@ const aiMessages = ref([]); // { id, role: 'user'|'assistant', text, copied? }
 const aiLoading = ref(false);
 const aiPaywall = ref(false);
 const aiInputRef = ref(null);
+const deepAiMode = ref(false); // Режим глубоких ответов
 
 const aiMessagesBoxRef = ref(null);
 
@@ -355,6 +356,9 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   const q = String(msg).trim();
   const source = String(opts.source || 'chat');
   const quickKey = (opts.quickKey != null) ? String(opts.quickKey) : '';
+  const mode = (opts.mode === 'deep' || opts.mode === 'freeform')
+    ? opts.mode
+    : (opts.deep || deepAiMode.value ? 'deep' : 'freeform');
   if (!q || aiLoading.value) return;
 
   // Guard: do not send AI snapshot while data is still loading (prevents zeros)
@@ -430,6 +434,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         includeHidden, 
         visibleAccountIds,
         periodFilter: mainStore.periodFilter, // ✅ Pass period filter to backend
+        mode,
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
       }),
     });
@@ -1248,16 +1253,21 @@ const handleOperationDelete = async (op) => {
           </div>
 
           <div class="ai-modal-chips">
-            <button class="ai-chip" @click="runAiQuick('покажи счета')">Счета</button>
-            <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы</button>
-            <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы</button>
-            <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы</button>
-            <button class="ai-chip" @click="runAiQuick('покажи налоги')">Налоги</button>
-            <button class="ai-chip" @click="runAiQuick('покажи компании')">Компании</button>
-            <button class="ai-chip" @click="runAiQuick('покажи проекты')">Проекты</button>
-            <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
-            <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
-            <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
+            <div class="ai-chip-left">
+              <button class="ai-chip" @click="runAiQuick('покажи счета')">Счета</button>
+              <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы</button>
+              <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы</button>
+              <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы</button>
+              <button class="ai-chip" @click="runAiQuick('покажи компании')">Компании</button>
+              <button class="ai-chip" @click="runAiQuick('покажи проекты')">Проекты</button>
+              <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
+              <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
+              <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
+            </div>
+            <label class="ai-deep-toggle-top">
+              <input type="checkbox" v-model="deepAiMode" />
+              <span>Deep</span>
+            </label>
           </div>
 
           <div class="ai-modal-body">
@@ -1650,6 +1660,14 @@ const handleOperationDelete = async (op) => {
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ai-chip-left {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .ai-chip {
