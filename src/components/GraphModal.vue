@@ -2,7 +2,6 @@
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
-import NavigationPanel from './NavigationPanel.vue';
 import YAxisPanel from './YAxisPanel.vue';
 import GraphRenderer from './GraphRenderer.vue';
 
@@ -14,6 +13,9 @@ const yAxisLabels = ref([]);
 const currentViewMode = ref('12d');
 const today = ref(new Date());
 const visibleDays = ref([]);
+const currentMonthStart = ref(new Date());
+const pastCount = ref(0);   // сколько месяцев добавлено в прошлое
+const futureCount = ref(0); // сколько месяцев добавлено в будущее
 
 // --- Хелперы ---
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -24,109 +26,79 @@ const getDayOfYear = (date) => {
 };
 const _getDateKey = (date) => `${date.getFullYear()}-${getDayOfYear(date)}`;
 
-// 🟢 ИСПРАВЛЕНО: Расчет общей суммы на конец периода
-const rangeTotal = computed(() => {
-  // Базовое значение = Сумма начальных балансов счетов
-  let total = (mainStore.accounts || []).reduce((acc, item) => acc + (item.initialBalance || 0), 0);
-
-  if (!visibleDays.value || visibleDays.value.length === 0) return total;
-
-  // Берем дату последнего дня видимого диапазона
-  const lastVisibleDate = visibleDays.value[visibleDays.value.length - 1].date;
-  const lastVisibleTime = lastVisibleDate.getTime();
-
-  // Ищем в dailyChartData (там хранятся уже рассчитанные накопительные итоги по дням)
-  // Нам нужно найти запись, дата которой <= lastVisibleDate, но максимально близкая к ней.
-  if (mainStore.dailyChartData && mainStore.dailyChartData.size > 0) {
-      const entries = Array.from(mainStore.dailyChartData.values());
-
-      // Сортируем по дате (на всякий случай)
-      entries.sort((a, b) => a.date - b.date);
-
-      // Идем с конца, чтобы найти последнюю актуальную запись
-      for (let i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].date.getTime() <= lastVisibleTime) {
-              total = entries[i].closingBalance;
-              break; // Нашли актуальный баланс на конец периода
-          }
-      }
-  }
-
-  return total;
-});
-
-// Форматированная строка суммы
-const rangeTotalString = computed(() => {
-  const val = rangeTotal.value;
-  const absVal = Math.abs(val);
+const formatCurrency = (val) => {
+  const safe = Number(val) || 0;
+  const absVal = Math.abs(safe);
   const formatted = formatNumber(absVal);
-  const currency = '₸'; 
-
-  if (val < 0) return `- ${currency} ${formatted}`;
+  const currency = '₸';
+  if (safe < 0) return `- ${currency} ${formatted}`;
   return `${currency} ${formatted}`;
+};
+
+// Текущий баланс (на сегодня, не зависит от диапазона)
+const currentBalanceString = computed(() => formatCurrency(mainStore.currentTotalBalance || 0));
+
+const rangeStartDate = computed(() => {
+  const base = currentMonthStart.value;
+  return new Date(base.getFullYear(), base.getMonth() - pastCount.value, 1);
 });
 
-
-const accountsInfoPart = computed(() => {
-  const count = mainStore.accounts ? mainStore.accounts.length : 0;
-  return `Всего на ${count} счетах`;
+const rangeEndDate = computed(() => {
+  const base = currentMonthStart.value;
+  // Конец последнего месяца в диапазоне (включая будущие)
+  return new Date(base.getFullYear(), base.getMonth() + futureCount.value + 1, 0);
 });
 
-const dateInfoPart = computed(() => {
-  let endDateStr = '';
-  if (visibleDays.value && visibleDays.value.length > 0) {
-    const end = visibleDays.value[visibleDays.value.length - 1].date;
-    const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-    endDateStr = fullDate.format(end);
-  } else {
-    const fullDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-    endDateStr = fullDate.format(new Date());
-  }
-  return `до ${endDateStr}`;
-});
-
-const generateVisibleDays = (mode) => {
-  const modeDays = mainStore.computeTotalDaysForMode ? mainStore.computeTotalDaysForMode(mode, today.value) : 12;
-  const baseDate = new Date(today.value);
-  let startDate = new Date(baseDate);
-
-  switch (mode) {
-    case '12d': startDate.setDate(startDate.getDate() - 5); break;
-    case '1m':  startDate.setDate(startDate.getDate() - 15); break;
-    case '3m':  startDate.setDate(startDate.getDate() - 45); break;
-    case '6m':  startDate.setDate(startDate.getDate() - 90); break;
-    case '1y':  startDate.setDate(startDate.getDate() - 180); break;
-    default:    startDate.setDate(startDate.getDate() - 5);
-  }
-
+const generateVisibleDays = () => {
+  const startDate = rangeStartDate.value;
+  const endDate = rangeEndDate.value;
   const days = [];
-  for (let i = 0; i < modeDays; i++) {
-    const d = new Date(startDate);
-    d.setDate(startDate.getDate() + i);
+  let cursor = new Date(startDate);
+  let id = 0;
+  while (cursor <= endDate) {
     days.push({
-      id: i,
-      date: d,
-      isToday: sameDay(d, today.value),
-      dayOfYear: getDayOfYear(d),
-      dateKey: _getDateKey(d)
+      id,
+      date: new Date(cursor),
+      isToday: sameDay(cursor, today.value),
+      dayOfYear: getDayOfYear(cursor),
+      dateKey: _getDateKey(cursor)
     });
+    id += 1;
+    cursor.setDate(cursor.getDate() + 1);
   }
   visibleDays.value = days;
 };
 
-const loadGraphData = async (mode) => {
+const loadGraphData = async (mode, baseDate = null) => {
   isLoading.value = true;
   await nextTick();
   try {
     if (mainStore.loadCalculationData) {
-      await mainStore.loadCalculationData(mode, today.value);
+      await mainStore.loadCalculationData(mode, baseDate || currentMonthStart.value || today.value);
     }
-    generateVisibleDays(mode);
+    generateVisibleDays();
   } catch (error) {
     console.error("GraphModal: Ошибка загрузки данных:", error);
   } finally {
     isLoading.value = false;
   }
+};
+
+const pickModeBySpan = (days) => {
+  if (days <= 35) return '1m';
+  if (days <= 100) return '3m';
+  if (days <= 200) return '6m';
+  return '1y';
+};
+
+const refreshDataForRange = () => {
+  const start = rangeStartDate.value;
+  const end = rangeEndDate.value;
+  const spanDays = Math.max(1, Math.floor((end - start) / 86400000) + 1);
+  const mode = pickModeBySpan(spanDays);
+  const mid = new Date((start.getTime() + end.getTime()) / 2);
+  currentViewMode.value = mode;
+  loadGraphData(mode, mid);
 };
 
 const onChangeView = (newMode) => {
@@ -136,34 +108,131 @@ const onChangeView = (newMode) => {
 };
 
 onMounted(() => {
-  const t = new Date(); t.setHours(0, 0, 0, 0); today.value = t;
-  loadGraphData('12d');
+  const t = new Date(); t.setHours(0, 0, 0, 0); today.value = t; currentMonthStart.value = new Date(t.getFullYear(), t.getMonth(), 1);
+  generateVisibleDays();
+  refreshDataForRange();
 });
+
+const currentMonthLabel = computed(() => {
+  return currentMonthStart.value.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+});
+
+const extendFuture = () => {
+  futureCount.value += 1;
+  generateVisibleDays();
+  refreshDataForRange();
+};
+const extendPast = () => {
+  pastCount.value += 1;
+  generateVisibleDays();
+  refreshDataForRange();
+};
+
+const monthsLabels = computed(() => {
+  const items = [];
+  const base = currentMonthStart.value;
+  for (let i = pastCount.value; i >= 1; i--) {
+    const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+    items.push({ date: d, label: d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }), active: false });
+  }
+  items.push({ date: base, label: base.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }), active: true });
+  for (let i = 1; i <= futureCount.value; i++) {
+    const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
+    items.push({ date: d, label: d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }), active: false });
+  }
+  return items;
+});
+
+const handleMonthClick = (dateObj) => {
+  if (!dateObj) return;
+  currentMonthStart.value = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
+  pastCount.value = 0;
+  futureCount.value = 0;
+  generateVisibleDays();
+  refreshDataForRange();
+};
+
+// Баланс на конец выбранного диапазона (учитывая скрытые, если включены)
+const rangeEndBalance = computed(() => {
+  const cutoff = rangeEndDate.value ? rangeEndDate.value.getTime() : Date.now();
+  const todayEnd = today.value ? new Date(today.value) : new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  const todayCutoff = todayEnd.getTime();
+
+  // Базовые остатки: текущие балансы уже учитывают все операции до сегодня
+  const balances = new Map();
+  (mainStore.currentAccountBalances || []).forEach(acc => {
+    balances.set(String(acc._id), Number(acc.balance || 0));
+  });
+
+  // Добавляем будущие операции до cutoff
+  const opsSource = mainStore.getAllRelevantOps || [];
+  const ops = Array.isArray(opsSource) ? opsSource : [];
+  ops.forEach(op => {
+    if (!op || !op.date) return;
+    const t = new Date(op.date).getTime();
+    if (t <= todayCutoff) return;       // уже в текущих балансах
+    if (t > cutoff) return;             // за пределами выбранного диапазона
+    if (op.isWorkAct) return;
+
+    const amt = Math.abs(Number(op.amount) || 0);
+
+    if (op.isTransfer || op.type === 'transfer') {
+      const fromId = op.fromAccountId?._id || op.fromAccountId;
+      const toId = op.toAccountId?._id || op.toAccountId;
+      if (fromId && balances.has(String(fromId))) {
+        balances.set(String(fromId), (balances.get(String(fromId)) || 0) - amt);
+      }
+      if (toId && balances.has(String(toId))) {
+        balances.set(String(toId), (balances.get(String(toId)) || 0) + amt);
+      }
+    } else {
+      const accId = op.accountId?._id || op.accountId;
+      if (!accId || !balances.has(String(accId))) return;
+      if (op.type === 'income') {
+        balances.set(String(accId), (balances.get(String(accId)) || 0) + (Number(op.amount) || 0));
+      } else if (op.type === 'expense' || op.isWithdrawal) {
+        balances.set(String(accId), (balances.get(String(accId)) || 0) - amt);
+      }
+    }
+  });
+
+  let total = 0;
+  balances.forEach(v => { total += v; });
+  return total;
+});
+
+const rangeEndBalanceString = computed(() => formatCurrency(rangeEndBalance.value));
+const showExcluded = computed(() => mainStore.includeExcludedInTotal);
+const toggleExcluded = () => mainStore.toggleExcludedInclusion();
 </script>
 
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-content graph-modal-content">
+  <div class="modal-content graph-modal-content">
 
       <div class="modal-header">
-        <h2>
-          <span class="header-subtitle">
-            <span class="text-grey">{{ accountsInfoPart }}</span>
-            <span class="text-grey separator"> : </span>
-            <span class="range-total">{{ rangeTotalString }}</span>
-            <span class="text-grey separator"> • </span>
-            <span class="text-green">{{ dateInfoPart }}</span>
-          </span>
-        </h2>
-        <button class="close-btn" @click="$emit('close')">&times;</button>
+        <div class="header-left">
+          <div class="balance-label">Текущий баланс</div>
+          <div class="balance-value">{{ currentBalanceString }}</div>
+        </div>
+        <div class="header-center eye-toggle">
+          <button class="eye-btn icon-only" :class="{ active: showExcluded }" @click="toggleExcluded" title="Показать/скрыть исключенные счета">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+              <circle cx="12" cy="12" r="3"/>
+              <line v-if="!showExcluded" x1="2" y1="22" x2="22" y2="2"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="header-right">
+          <div class="balance-label">Будущий баланс</div>
+          <div class="balance-value">{{ rangeEndBalanceString }}</div>
+        </div>
       </div>
 
       <div class="graph-modal-body">
         <aside class="modal-left-panel">
-          <div class="nav-panel-container">
-            <NavigationPanel @change-view="onChangeView" />
-          </div>
-          <div class="divider-placeholder"></div>
           <div class="y-axis-wrapper">
              <YAxisPanel :yLabels="yAxisLabels" :bottom-padding="0" />
           </div>
@@ -185,6 +254,25 @@ onMounted(() => {
           </div>
         </main>
       </div>
+      <div class="modal-footer">
+        <div class="month-nav-footer">
+          <div class="month-group">
+            <button class="month-nav-btn" @click="extendPast" title="Добавить месяц в прошлое">←</button>
+            <div class="month-list">
+              <button
+                v-for="(item, idx) in monthsLabels"
+                :key="idx"
+                class="month-chip"
+                :class="{ active: item.active }"
+                @click="handleMonthClick(item.date)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+            <button class="month-nav-btn" @click="extendFuture" title="Добавить месяц в будущее">→</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -203,66 +291,150 @@ onMounted(() => {
   display: flex; flex-direction: column; overflow: hidden;
 }
 .modal-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 15px 24px; border-bottom: 1px solid var(--color-border);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 15px 24px;
+  border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
+  column-gap: 32px;
 }
-.modal-header h2 {
-  margin: 0;
-  font-size: 1.2rem;
-  color: var(--color-heading);
+
+.header-left,
+.header-right {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 2px;
+}
+.header-left { align-items: flex-start; }
+.header-right { align-items: flex-end; text-align: right; }
+
+.balance-label {
+  font-size: 12px;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
-.header-subtitle {
-  font-size: 0.85em;
-  margin-left: 0;
-  font-weight: 400;
-}
-
-.text-grey { color: #888; }
-.text-green { color: #34c759; }
-.separator { margin: 0 4px; }
-
-.range-total {
-  color: var(--range-total-color);
+.balance-value {
   font-weight: 700;
-  font-size: 1.3em;
-  margin: 0 4px;
+  font-size: 1.2em;
+  color: var(--color-text);
 }
 
-.close-btn {
-  background: none; border: none; font-size: 28px;
-  color: var(--color-text-soft); cursor: pointer; padding: 0; line-height: 1;
+.header-center.eye-toggle {
+  display: flex;
+  justify-content: center;
 }
-.close-btn:hover { color: var(--color-text); }
+
+.eye-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text-soft);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.eye-btn.icon-only {
+  padding: 8px;
+  gap: 0;
+}
+.eye-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.eye-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.month-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  width: 100%;
+}
+.month-nav.center { flex: 1; justify-content: center; }
+.month-nav-btn {
+  width: 26px; height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  font-size: 14px;
+  padding: 0;
+}
+.month-nav-btn:hover {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.month-nav-btn:active { transform: scale(0.96); }
 
 .graph-modal-body {
   flex-grow: 1; display: flex; overflow: hidden;
   background-color: var(--color-background);
 }
 
+.modal-footer {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  padding: 8px 16px;
+}
+.month-nav-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.month-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.month-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.month-chip {
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  text-transform: capitalize;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.month-chip:hover { background: var(--color-background-mute); }
+.month-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
 /* ЛЕВАЯ ПАНЕЛЬ */
 .modal-left-panel {
-  width: 60px; flex-shrink: 0;
+  width: 80px; flex-shrink: 0;
   display: flex; flex-direction: column;
   background-color: var(--color-background-soft);
   border-right: 1px solid var(--color-border);
 }
-.nav-panel-container {
-  flex: 0 0 320px;
-  min-height: 320px;
-  border-bottom: 1px solid var(--color-border);
-  overflow: hidden;
-}
-.divider-placeholder {
-  flex-shrink: 0; height: 15px;
-  background-color: var(--color-background-soft);
-  border-bottom: 1px solid var(--color-border);
-}
 .y-axis-wrapper {
   flex-grow: 1; min-height: 0; position: relative;
+  padding-top: 12px;
 }
 
 /* ОСНОВНАЯ ОБЛАСТЬ */
