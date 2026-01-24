@@ -53,6 +53,7 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
       <button 
         class="control-btn arrow-up-btn" 
         @click.stop="collapseChartsMax"
+        @touchstart.stop.prevent="collapseChartsMax"
         title="Поднять график вверх (минимизировать таймлайн)"
       >
         ▲
@@ -62,6 +63,7 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
       <button 
         class="control-btn grip-handle" 
         @click.stop="centerCharts"
+        @touchstart.stop.prevent="centerCharts"
         title="Вернуть в исходное состояние"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -73,6 +75,7 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
       <button 
         class="control-btn arrow-down-btn" 
         @click.stop="expandChartsMax"
+        @touchstart.stop.prevent="expandChartsMax"
         title="Опустить график вниз (максимизировать таймлайн)"
       >
         ▼
