@@ -1761,15 +1761,21 @@ const handleRefundDelete = async (op) => {
 
         <template v-else>
           <div class="ai-quick">
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи счета')">Счета</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи доходы')">Доходы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи расходы')">Расходы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи переводы')">Переводы</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи компании')">Компании</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи проекты')">Проекты</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи контрагентов')">Контрагенты</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи категории')">Категории</button>
-            <button class="ai-quick-btn" @click="useQuickPrompt('покажи физлица')">Физлица</button>
+            <div class="ai-quick-left">
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи счета')">Счета</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи доходы')">Доходы</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи расходы')">Расходы</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи переводы')">Переводы</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи компании')">Компании</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи проекты')">Проекты</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи контрагентов')">Контрагенты</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи категории')">Категории</button>
+              <button class="ai-quick-btn" @click="useQuickPrompt('покажи физлица')">Физлица</button>
+            </div>
+            <label class="ai-deep-toggle-top">
+              <input type="checkbox" v-model="deepAiMode" />
+              <span>Deep</span>
+            </label>
           </div>
 
           <div class="ai-messages" ref="aiMessagesRef">
@@ -1807,11 +1813,6 @@ const handleRefundDelete = async (op) => {
 
               <!-- Buttons (right) -->
               <div class="ai-input-buttons">
-                <label class="ai-deep-toggle">
-                  <input type="checkbox" v-model="deepAiMode" />
-                  <span>Глубокий ответ</span>
-                </label>
-
                 <button
                   class="ai-mic-btn"
                   :class="{ recording: isAiRecording }"
@@ -2257,12 +2258,19 @@ const handleRefundDelete = async (op) => {
   padding: 12px 20px;
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
   border-bottom: 1px solid var(--color-border);
   overflow: auto;
   flex-shrink: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-hover) transparent;
+}
+
+.ai-quick-left {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .ai-quick::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -2282,6 +2290,25 @@ const handleRefundDelete = async (op) => {
 .ai-quick-btn:hover { 
   background: var(--color-background-mute); 
   border-color: var(--color-border-hover); 
+}
+
+.ai-deep-toggle-top {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-deep-toggle-top input {
+  margin: 0;
 }
 
 .ai-messages {
