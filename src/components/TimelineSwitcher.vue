@@ -7,6 +7,7 @@ const timelineWidths = ['12d', '1m', '3m', '6m', '1y'];
 const currentIndex = ref(0);
 
 const currentWidth = computed(() => timelineWidths[currentIndex.value]);
+const isPanelOpen = ref(false);
 
 const changeWidth = (direction) => {
   console.log(`[TimelineSwitcher] changeWidth called with direction: ${direction}, currentIndex: ${currentIndex.value}`);
@@ -31,6 +32,11 @@ const collapseChartsMax = () => {
 };
 
 const centerCharts = () => {
+  // Первый тап открывает панель, повторный — центрирует
+  if (!isPanelOpen.value) {
+    isPanelOpen.value = true;
+    return;
+  }
   console.log('[TimelineSwitcher] centerCharts called');
   emit('center-charts');
 };
@@ -40,7 +46,7 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
 </script>
 
 <template>
-  <div class="timeline-switcher" @click.stop>
+  <div class="timeline-switcher" :class="{ open: isPanelOpen }" @click.stop>
     <div class="switcher-column center-column">
       <!-- Expand timeline down (arrow up = chart goes UP) -->
       <button 
@@ -92,6 +98,11 @@ const canIncreaseWidth = computed(() => currentIndex.value < timelineWidths.leng
 
 /* Show on parent hover */
 .vertical-resizer:hover .timeline-switcher {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.timeline-switcher.open {
   opacity: 1;
   pointer-events: all;
 }
