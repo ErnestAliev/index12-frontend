@@ -1101,6 +1101,8 @@ const scrollToMonthCenter = (baseDate) => {
 const generateVisibleDays = () => { rebuildVisibleDays(); };
 const clampHeaderHeight = (rawPx) => { const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO; return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight); };
 const applyHeaderHeight = (newPx) => { headerHeightPx.value = Math.round(newPx); if (homeHeaderRef.value) { homeHeaderRef.value.style.height = `${headerHeightPx.value}px`; } };
+const headerExpandedTarget = () => clampHeaderHeight(window.innerHeight * 0.5);
+const isHeaderTall = computed(() => headerHeightPx.value > HEADER_MIN_H + 10);
 // Header resizer: track mouse/touch movement to distinguish click from drag
 let headerResizeStartY = 0;
 let headerResizeHasMoved = false;
@@ -1132,10 +1134,11 @@ const stopHeaderResize = () => {
   window.removeEventListener('touchmove', doHeaderResize);
   window.removeEventListener('mouseup', stopHeaderResize);
   window.removeEventListener('touchend', stopHeaderResize);
-  
-  // If no movement detected, treat as click - toggle header expansion
+
+  // Если это клик без драга — быстрый тоггл высоты (как у TimelineSwitcher)
   if (!headerResizeHasMoved) {
-    mainStore.toggleHeaderExpansion();
+    const target = isHeaderTall.value ? HEADER_MIN_H : headerExpandedTarget();
+    applyHeaderHeight(target);
   }
 };
 const clampTimelineHeight = (rawPx) => { const container = mainContentRef.value; if (!container) return timelineHeightPx.value; const headerTotalH = headerHeightPx.value + 15; const containerH = window.innerHeight - headerTotalH; const maxTop = Math.max(0, containerH - DIVIDER_H - GRAPH_MIN); const minTop = TIMELINE_MIN; return Math.min(Math.max(rawPx, minTop), maxTop); };
@@ -1580,7 +1583,7 @@ const handleRefundDelete = async (op) => {
   <div v-else class="home-layout" @click="closeAllMenus">
     <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
     <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
-    <div class="header-resizer" :class="{ 'collapsed': mainStore.isHeaderExpanded }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
+    <div class="header-resizer" :class="{ 'expanded': isHeaderTall }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body" :style="{ '--timeline-height': timelineHeightPx + 'px', '--divider-height': DIVIDER_H + 'px' }">
       <aside class="home-left-panel">
         <div class="timeline-spacer"></div>
@@ -2017,7 +2020,7 @@ const handleRefundDelete = async (op) => {
 }
 .header-resizer:hover::before { opacity: 1; }
 /* Rotate triangle when expanded (header is expanded, so triangle points up to collapse) */
-.header-resizer.collapsed::before { transform: rotate(180deg) scale(1.1); }
+.header-resizer.expanded::before { transform: rotate(180deg) scale(1.1); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
 .home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: grid; grid-template-rows: var(--timeline-height, 318px) var(--divider-height, 28px) 1fr; background: var(--divider-wrapper-bg); border-right: 1px solid var(--color-border); }
 .timeline-spacer { width: 100%; height: 100%; }
