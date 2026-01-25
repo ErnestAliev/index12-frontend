@@ -11,11 +11,12 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
  */
 
 const props = defineProps({
-  modelValue: { type: [String, Number, Object], default: null },
+  modelValue: { type: [String, Number, Object, Array], default: null },
   options: { type: Array, default: () => [] }, // { value, label, subLabel, rightText, tooltip, isSpecial, isHeader, isActionRow }
   placeholder: { type: String, default: 'Выберите...' },
   label: { type: String, default: '' }, 
-  disabled: { type: Boolean, default: false }
+  disabled: { type: Boolean, default: false },
+  multiple: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['update:modelValue', 'change']);
@@ -23,8 +24,20 @@ const emit = defineEmits(['update:modelValue', 'change']);
 const isOpen = ref(false);
 const containerRef = ref(null);
 
-const selectedOption = computed(() => {
-  return props.options.find(o => o.value === props.modelValue && !o.isHeader && !o.isActionRow);
+const selectedOptions = computed(() => {
+  if (props.multiple) {
+    const vals = Array.isArray(props.modelValue) ? props.modelValue : [];
+    return props.options.filter(o => vals.includes(o.value) && !o.isHeader && !o.isActionRow);
+  }
+  const single = props.options.find(o => o.value === props.modelValue && !o.isHeader && !o.isActionRow);
+  return single ? [single] : [];
+});
+
+const displayText = computed(() => {
+  if (!props.multiple) return selectedOptions.value[0]?.label || '';
+  if (!selectedOptions.value.length) return '';
+  if (selectedOptions.value.length <= 2) return selectedOptions.value.map(o => o.label).join(', ');
+  return `${selectedOptions.value.length} выбрано`;
 });
 
 const toggle = () => {
@@ -34,9 +47,17 @@ const toggle = () => {
 
 const selectOption = (option) => {
   if (option.isHeader || option.isActionRow || option.disabled) return;
-  emit('update:modelValue', option.value);
-  emit('change', option.value);
-  isOpen.value = false;
+  if (props.multiple) {
+    const current = Array.isArray(props.modelValue) ? [...props.modelValue] : [];
+    const idx = current.indexOf(option.value);
+    if (idx !== -1) current.splice(idx, 1); else current.push(option.value);
+    emit('update:modelValue', current);
+    emit('change', current);
+  } else {
+    emit('update:modelValue', option.value);
+    emit('change', option.value);
+    isOpen.value = false;
+  }
 };
 
 const close = (e) => {
@@ -57,15 +78,14 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
       <div class="trigger-content">
         
         <!-- СОСТОЯНИЕ 1: ЗНАЧЕНИЕ ВЫБРАНО -->
-        <div v-if="selectedOption && selectedOption.value !== null" class="filled-state">
+        <div v-if="selectedOptions.length && displayText" class="filled-state">
           <span class="small-label">{{ label }}</span>
           <div class="value-row">
              <div class="text-group">
-                 <span class="selected-text">{{ selectedOption.label }}</span>
-                 <!-- 🟢 subLabel (Компания/Владелец) -->
-                 <span v-if="selectedOption.subLabel" class="sub-text">{{ selectedOption.subLabel }}</span>
+                 <span class="selected-text">{{ displayText }}</span>
+                 <span v-if="!multiple && selectedOptions[0]?.subLabel" class="sub-text">{{ selectedOptions[0].subLabel }}</span>
              </div>
-             <span v-if="selectedOption.rightText" class="right-text">{{ selectedOption.rightText }}</span>
+             <span v-if="!multiple && selectedOptions[0]?.rightText" class="right-text">{{ selectedOptions[0].rightText }}</span>
           </div>
         </div>
 
@@ -87,7 +107,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
              'is-header': option.isHeader, 
              'is-special': option.isSpecial,
              'is-action-row': option.isActionRow,
-             'is-selected': option.value === modelValue
+             'is-selected': multiple ? (Array.isArray(modelValue) && modelValue.includes(option.value)) : option.value === modelValue
           }"
           :title="option.tooltip || ''"
           @click.stop="selectOption(option)"

@@ -39,7 +39,15 @@ const amountInput = ref(null);
 const selectedAccountId = ref(null);
 const selectedOwner = ref(null); 
 const selectedContractorValue = ref(null); 
-const selectedProjectId = ref(null);
+const selectedProjectIds = ref([]);
+const primaryProjectId = computed(() => (selectedProjectIds.value && selectedProjectIds.value.length ? selectedProjectIds.value[0] : null));
+const normalizeId = (val) => {
+    if (!val) return null;
+    if (typeof val === 'object') {
+        return val._id ? String(val._id) : String(val);
+    }
+    return String(val);
+};
 const selectedCategoryId = ref(null);
 const description = ref('');
 
@@ -418,7 +426,7 @@ watch(selectedContractorValue, (newVal) => {
         }
     }
     if (isBank) {
-        if (myCreditsProjectId.value) selectedProjectId.value = myCreditsProjectId.value;
+        if (myCreditsProjectId.value) selectedProjectIds.value = [normalizeId(myCreditsProjectId.value)];
         if (mainStore.creditCategoryId) selectedCategoryId.value = mainStore.creditCategoryId;
         return;
     }
@@ -426,15 +434,11 @@ watch(selectedContractorValue, (newVal) => {
     if (prefix === 'contr') entity = mainStore.contractors.find(c => c._id === id);
     else entity = mainStore.individuals.find(i => i._id === id);
     if (entity) {
-        if (entity.defaultProjectId) selectedProjectId.value = typeof entity.defaultProjectId === 'object' ? entity.defaultProjectId._id : entity.defaultProjectId;
+        if (entity.defaultProjectId) {
+            const pid = normalizeId(entity.defaultProjectId);
+            selectedProjectIds.value = pid ? [pid] : [];
+        }
         if (entity.defaultCategoryId) selectedCategoryId.value = typeof entity.defaultCategoryId === 'object' ? entity.defaultCategoryId._id : entity.defaultCategoryId;
-    }
-});
-
-watch(selectedProjectId, (newProj) => {
-    if (isInitialLoad.value) return;
-    if (newProj && myCreditsProjectId.value && newProj === myCreditsProjectId.value) {
-        if (mainStore.loanRepaymentCategoryId) selectedCategoryId.value = mainStore.loanRepaymentCategoryId;
     }
 });
 
@@ -481,18 +485,23 @@ const preparePayload = (options = {}) => {
          const id = contrId || contrIndId;
          const updateData = { _id: id };
          let needsUpdate = false;
-         if (selectedProjectId.value) { updateData.defaultProjectId = selectedProjectId.value; needsUpdate = true; }
+         if (primaryProjectId.value) { updateData.defaultProjectId = primaryProjectId.value; needsUpdate = true; }
          if (selectedCategoryId.value) { updateData.defaultCategoryId = selectedCategoryId.value; needsUpdate = true; }
          if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
     }
 
+    const projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
+
     return {
-        type: 'income', amount: finalAmount, 
+        type: 'income',
+        amount: finalAmount, 
         date: createSmartDate(editableDate.value), 
         accountId: selectedAccountId.value,
         companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
-        categoryId: selectedCategoryId.value, projectId: selectedProjectId.value,
+        categoryId: selectedCategoryId.value,
+        projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
+        projectIds: projectIdsClean.length > 1 ? projectIdsClean : undefined,
         description: description.value, cellIndex: targetCellIndex
     };
 };
@@ -546,7 +555,15 @@ onMounted(async () => {
         const op = props.operationToEdit;
         amount.value = formatNumber(Math.abs(op.amount));
         selectedAccountId.value = op.accountId?._id || op.accountId;
-        selectedProjectId.value = op.projectId?._id || op.projectId;
+        const projIds = Array.isArray(op.projectIds)
+            ? op.projectIds.map(normalizeId).filter(Boolean)
+            : [];
+        if (projIds.length) {
+            selectedProjectIds.value = projIds;
+        } else {
+            const projId = normalizeId(op.projectId?._id || op.projectId);
+            selectedProjectIds.value = projId ? [projId] : [];
+        }
         selectedCategoryId.value = op.categoryId?._id || op.categoryId;
         description.value = op.description || '';
         if (op.date) editableDate.value = toInputDate(new Date(op.date));
@@ -607,7 +624,13 @@ const saveNewAccount = async () => {
     });
 };
 
-const handleProjectChange = (val) => { if (val === '--CREATE_NEW--') { selectedProjectId.value = null; isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); } };
+const handleProjectChange = (val) => { 
+    if (Array.isArray(val) && val.includes('--CREATE_NEW--')) {
+        selectedProjectIds.value = [];
+        isCreatingProject.value = true; 
+        nextTick(() => newProjectInput.value?.focus()); 
+    }
+};
 const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); } };
 
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
@@ -618,7 +641,7 @@ const saveNewProject = async () => {
     cancelCreateProject();
     
     mainStore.addProject(name).then(item => {
-        selectedProjectId.value = item._id;
+        selectedProjectIds.value = [item._id];
     }).catch(e => {
         console.error(e);
         showError('Ошибка создания проекта: ' + e.message);
@@ -750,10 +773,8 @@ const handleMainAction = async () => {
             </BaseSelect>
         </div>
 
-        <!-- ПРОЕКТ -->
-        <!-- ПРОЕКТ -->
         <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-            <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
+            <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
         </div>
         <div v-else class="inline-create-form input-spacing">
             <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -1037,4 +1058,9 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .bank-suggestions-list li:last-child { border-bottom: none; }
 .bank-suggestions-list li:hover { background-color: #f9f9f9; }
 .read-only-info { flex: 1 1 auto; display: flex; align-items: center; color: #777; font-size: 14px; font-style: italic; }
+.multi-project { margin-top: 10px; border: 1px dashed var(--color-border, #444); border-radius: 10px; padding: 8px; background: var(--color-background-soft, #1f1f1f); }
+.multi-project .multi-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.multi-project .multi-list { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.multi-project .multi-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.multi-project .multi-hint { margin-top: 6px; font-size: 11px; color: var(--color-text-soft, #999); }
 </style>

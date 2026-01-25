@@ -255,25 +255,28 @@ export const useMainStore = defineStore('mainStore', () => {
         return map;
     });
 
+    const _isAccountExcluded = (id) => {
+        if (!id) return false;
+        const idStr = typeof id === 'object' ? String(id._id) : String(id);
+        return excludedAccountIds.value.has(idStr);
+    };
+
     const _isOpVisible = (op) => {
-        if (includeExcludedInTotal.value) return true;
         if (!op) return false;
+        // Управленческий родитель (исключен из итогов) всегда скрываем из расчетов
+        if (op.excludeFromTotals) return false;
+        // Дальше проверка скрытых счетов
+        if (includeExcludedInTotal.value) return true;
 
-        const isExcludedId = (id) => {
-            if (!id) return false;
-            const idStr = typeof id === 'object' ? String(id._id) : String(id);
-            return excludedAccountIds.value.has(idStr);
-        };
-
-        if (op.accountId && isExcludedId(op.accountId)) return false;
+        if (op.accountId && _isAccountExcluded(op.accountId)) return false;
 
         // IMPORTANT: some ops (prepayments/deals/legacy) may carry account routing in from/to fields
         // even when they are NOT marked as transfer. If any related account is excluded, hide the op.
-        if (op.fromAccountId && isExcludedId(op.fromAccountId)) return false;
-        if (op.toAccountId && isExcludedId(op.toAccountId)) return false;
+        if (op.fromAccountId && _isAccountExcluded(op.fromAccountId)) return false;
+        if (op.toAccountId && _isAccountExcluded(op.toAccountId)) return false;
 
         // Fallback for older payloads
-        if (op.account && isExcludedId(op.account)) return false;
+        if (op.account && _isAccountExcluded(op.account)) return false;
 
         if (op.relatedEventId && !op.accountId) {
             const parentId = typeof op.relatedEventId === 'object'
@@ -286,13 +289,26 @@ export const useMainStore = defineStore('mainStore', () => {
             }
 
             if (parent) {
-                if (parent.accountId && isExcludedId(parent.accountId)) return false;
-                if (parent.fromAccountId && isExcludedId(parent.fromAccountId)) return false;
-                if (parent.toAccountId && isExcludedId(parent.toAccountId)) return false;
-                if (parent.account && isExcludedId(parent.account)) return false;
+                if (parent.accountId && _isAccountExcluded(parent.accountId)) return false;
+                if (parent.fromAccountId && _isAccountExcluded(parent.fromAccountId)) return false;
+                if (parent.toAccountId && _isAccountExcluded(parent.toAccountId)) return false;
+                if (parent.account && _isAccountExcluded(parent.account)) return false;
             }
         }
 
+        return true;
+    };
+
+    // Видимость на таймлайне: показываем родителя, скрываем дочерние разбиения,
+    // уважаем скрытые счета
+    const _isTimelineVisible = (op) => {
+        if (!op) return false;
+        if (op.isSplitChild) return false;
+        if (includeExcludedInTotal.value) return true;
+        if (op.accountId && _isAccountExcluded(op.accountId)) return false;
+        if (op.fromAccountId && _isAccountExcluded(op.fromAccountId)) return false;
+        if (op.toAccountId && _isAccountExcluded(op.toAccountId)) return false;
+        if (op.account && _isAccountExcluded(op.account)) return false;
         return true;
     };
 
@@ -1363,6 +1379,16 @@ export const useMainStore = defineStore('mainStore', () => {
             bindEntity('toAccountId', accounts);
         }
 
+        // Если есть splitMeta, достанем projectIds для редактирования/отображения
+        if (Array.isArray(populated.splitMeta) && populated.splitMeta.length) {
+            populated.projectIds = populated.splitMeta
+                .map(s => {
+                    if (!s?.projectId) return null;
+                    return typeof s.projectId === 'object' ? s.projectId._id : s.projectId;
+                })
+                .filter(Boolean);
+        }
+
         return populated;
     }
 
@@ -1556,6 +1582,54 @@ export const useMainStore = defineStore('mainStore', () => {
                 eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
             }
 
+            const projectIds = Array.isArray(eventData.projectIds) ? eventData.projectIds.filter(Boolean) : [];
+            const isSplit = projectIds.length > 1 && (eventData.type === 'income' || eventData.type === 'expense');
+
+            if (isSplit) {
+                const total = Number(eventData.amount || 0);
+                const n = projectIds.length;
+                const absTotal = Math.abs(Math.round(total));
+                const baseShare = Math.floor(absTotal / n);
+                const remainder = absTotal - baseShare * n;
+                const sign = total >= 0 ? 1 : -1;
+
+                const splitMeta = projectIds.map((pid, idx) => ({
+                    projectId: pid,
+                    amount: sign * (baseShare + (idx === 0 ? remainder : 0))
+                }));
+
+                // Родитель: реальный платеж, исключаем из итогов
+                const parentPayload = {
+                    ...eventData,
+                    projectId: null,
+                    projectIds: undefined,
+                    splitMeta,
+                    excludeFromTotals: true,
+                    isSplitParent: true
+                };
+
+                const parentRes = await axios.post(`${API_BASE_URL}/events`, parentPayload);
+                const parentOp = parentRes.data;
+
+                // Дочерние операции по проектам
+                const childPayloads = splitMeta.map(share => ({
+                    ...eventData,
+                    projectId: share.projectId,
+                    projectIds: undefined,
+                    amount: share.amount,
+                    parentOpId: parentOp._id,
+                    isSplitChild: true,
+                    excludeFromTotals: false
+                }));
+
+                await Promise.all(childPayloads.map(p => axios.post(`${API_BASE_URL}/events`, p)));
+
+                await refreshDay(eventData.dateKey);
+                await fetchSnapshot();
+                _triggerProjectionUpdate();
+                return parentOp;
+            }
+
 
             const tempId = `temp_${Date.now()}`;
             const tempOp = {
@@ -1703,12 +1777,19 @@ export const useMainStore = defineStore('mainStore', () => {
 
         try {
 
+            const isSplitParent = operation.isSplitParent === true;
 
-            // Удаляем из кэша отображения
-            if (displayCache.value[dateKey]) {
-                displayCache.value[dateKey] = displayCache.value[dateKey].filter(o => !_idsMatch(o._id, operation._id));
-                calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
-            }
+            // Удаляем из кэша отображения (родителя и дочерние сплиты)
+            const purgeFromCaches = (parentId) => {
+                for (const dk in displayCache.value) {
+                    const list = displayCache.value[dk];
+                    if (!Array.isArray(list)) continue;
+                    const filtered = list.filter(o => !_idsMatch(o._id, parentId) && !_idsMatch(o.parentOpId, parentId));
+                    displayCache.value[dk] = filtered;
+                    calculationCache.value[dk] = [...filtered];
+                }
+            };
+            purgeFromCaches(operation._id);
 
             // 🟢 IMPORTANT: Update dealCache BEFORE recalculating anything
             // This ensures dealOperations is in sync with displayCache
@@ -1721,7 +1802,12 @@ export const useMainStore = defineStore('mainStore', () => {
             if (isTransfer(operation) && operation._id2) {
                 await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
             } else {
-                await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
+                // Если родитель сплита — удаляем и дочерние
+                if (isSplitParent) {
+                    await axios.delete(`${API_BASE_URL}/events/${operation._id}`, { params: { cascadeSplit: true } });
+                } else {
+                    await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
+                }
             }
 
             // 🟢 FIX: Fetch fresh snapshot from backend instead of manual recalculation
@@ -1932,7 +2018,7 @@ export const useMainStore = defineStore('mainStore', () => {
         // Filter out deleted operations and null/undefined entries
         // Work acts are now visible on timeline with special styling
         // Also filter by visibility (excluded accounts)
-        return ops.filter(op => op && !op.isDeleted && _isOpVisible(op));
+        return ops.filter(op => op && !op.isDeleted && _isTimelineVisible(op));
     }
 
     /**
@@ -2040,40 +2126,65 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!oldDateKey || !newDateKey) return;
         if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
         if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
+
         const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
         const isMerged = operation.isTransfer && operation._id2;
+        const isSplitParent = operation.isSplitParent === true;
+        const splitChildren = isSplitParent
+            ? allOperationsFlat.value.filter(o => _idsMatch(o.parentOpId, operation._id))
+            : [];
+
+        const updateSnapshotForList = (opsList, sign) => {
+            opsList.forEach(op => {
+                if (_isEffectivelyPastOrToday(op.date)) {
+                    _applyOptimisticSnapshotUpdate(op, sign);
+                }
+            });
+        };
 
         if (oldDateKey === newDateKey) {
             const ops = [...(displayCache.value[oldDateKey] || [])];
             const sourceOp = ops.find(o => _idsMatch(o._id, operation._id));
             const targetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
+
             if (sourceOp) {
                 if (targetOp) {
                     const originalSourceIndex = sourceOp.cellIndex;
-                    sourceOp.cellIndex = targetIndex; targetOp.cellIndex = originalSourceIndex;
-                    _syncCaches(oldDateKey, ops);
-                    const promises = [
-                        axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex }),
-                        axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: originalSourceIndex })
-                    ];
-                    if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: targetIndex }));
-                    Promise.all(promises).catch(() => refreshDay(oldDateKey));
+                    sourceOp.cellIndex = targetIndex;
+                    targetOp.cellIndex = originalSourceIndex;
                 } else {
                     sourceOp.cellIndex = targetIndex;
-                    _syncCaches(oldDateKey, ops);
-                    const promises = [
-                        axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
-                    ];
-                    if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: targetIndex }));
-                    Promise.all(promises).catch(() => refreshDay(oldDateKey));
                 }
+
+                // Дочерние сплиты повторяют индекс родителя
+                splitChildren.forEach(child => {
+                    const idx = ops.findIndex(o => _idsMatch(o._id, child._id));
+                    if (idx !== -1) ops[idx] = { ...ops[idx], cellIndex: targetIndex };
+                });
+
+                _syncCaches(oldDateKey, ops);
+
+                const promises = [
+                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
+                ];
+                if (targetOp) {
+                    promises.push(axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: targetOp.cellIndex }));
+                }
+                if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: targetIndex }));
+                splitChildren.forEach(child => {
+                    promises.push(axios.put(`${API_BASE_URL}/events/${child._id}`, { cellIndex: targetIndex }));
+                });
+
+                Promise.all(promises).catch(() => refreshDay(oldDateKey));
             }
-        }
-        else {
+        } else {
             let oldOps = [...(displayCache.value[oldDateKey] || [])];
             const sourceOpData = oldOps.find(o => _idsMatch(o._id, operation._id));
-            oldOps = oldOps.filter(o => !_idsMatch(o._id, operation._id));
+
+            // Уберем родителя и все дочерние сплиты из старого дня
+            oldOps = oldOps.filter(o => !_idsMatch(o._id, operation._id) && !_idsMatch(o.parentOpId, operation._id));
             _syncCaches(oldDateKey, oldOps);
+
             let newOps = [...(displayCache.value[newDateKey] || [])];
             const occupant = newOps.find(o => o.cellIndex === targetIndex);
             let finalIndex = targetIndex;
@@ -2083,40 +2194,61 @@ export const useMainStore = defineStore('mainStore', () => {
             }
 
             const newDateObj = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(newDateKey);
+            const newDayOfYear = _getDayOfYear(newDateObj);
 
-            const moved = { ...sourceOpData, dateKey: newDateKey, date: newDateObj, cellIndex: finalIndex };
-            newOps.push(moved);
+            const movedParent = sourceOpData ? { ...sourceOpData, dateKey: newDateKey, date: newDateObj, dayOfYear: newDayOfYear, cellIndex: finalIndex } : null;
+
+            // Перенесем дочерние сплиты
+            const movedChildren = splitChildren.map(child => ({
+                ...child,
+                dateKey: newDateKey,
+                date: newDateObj,
+                dayOfYear: newDayOfYear,
+                cellIndex: finalIndex
+            }));
+
+            if (movedParent) newOps.push(movedParent);
+            movedChildren.forEach(ch => newOps.push(ch));
+
+            // Сортировка по cellIndex для стабильного порядка
+            newOps.sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
             _syncCaches(newDateKey, newOps);
 
             const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
             const isInSnapshot = _isEffectivelyPastOrToday(newDateObj);
-
             const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
+
             if (needsSnapshotUpdate) {
                 const sign = isInSnapshot ? 1 : -1;
-                const opToUpdate = moved || sourceOpData;
-                if (opToUpdate) {
-                    _applyOptimisticSnapshotUpdate(opToUpdate, sign);
-                }
+                const listForSnapshot = isSplitParent ? movedChildren : (movedParent ? [movedParent] : []);
+                updateSnapshotForList(listForSnapshot, sign);
             }
+
             _triggerProjectionUpdate();
 
-            const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: moved.date };
-            const promises = [
-                axios.put(`${API_BASE_URL}/events/${moved._id}`, payload)
-            ];
+            const promises = [];
+            if (movedParent) {
+                const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: movedParent.date, dayOfYear: newDayOfYear };
+                promises.push(axios.put(`${API_BASE_URL}/events/${movedParent._id}`, payload));
+            }
             if (isMerged) {
+                const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: newDateObj, dayOfYear: newDayOfYear };
                 promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
             }
+            movedChildren.forEach(ch => {
+                const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: ch.date, dayOfYear: newDayOfYear };
+                promises.push(axios.put(`${API_BASE_URL}/events/${ch._id}`, payload));
+            });
 
-            await Promise.all(promises)
-                .then(() => {
-                })
-                .catch(() => {
-                    refreshDay(oldDateKey);
-                    refreshDay(newDateKey);
-                    fetchSnapshot();
-                });
+            if (occupant) {
+                promises.push(axios.put(`${API_BASE_URL}/events/${occupant._id}`, { cellIndex: occupant.cellIndex }));
+            }
+
+            await Promise.all(promises).catch(() => {
+                refreshDay(oldDateKey);
+                refreshDay(newDateKey);
+                fetchSnapshot();
+            });
         }
     }
 

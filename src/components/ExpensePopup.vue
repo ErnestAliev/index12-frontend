@@ -42,7 +42,13 @@ const amountInput = ref(null);
 const selectedAccountId = ref(null);
 const selectedOwner = ref(null); 
 const selectedContractorValue = ref(null); 
-const selectedProjectId = ref(null);
+const selectedProjectIds = ref([]);
+const primaryProjectId = computed(() => (selectedProjectIds.value && selectedProjectIds.value.length ? selectedProjectIds.value[0] : null));
+const normalizeId = (val) => {
+    if (!val) return null;
+    if (typeof val === 'object') return val._id ? String(val._id) : String(val);
+    return String(val);
+};
 const selectedCategoryId = ref(null);
 const description = ref('');
 
@@ -406,7 +412,7 @@ watch(selectedContractorValue, (newVal) => {
         }
     }
     if (isBank) {
-        if (myCreditsProjectId.value) selectedProjectId.value = myCreditsProjectId.value;
+        if (myCreditsProjectId.value) selectedProjectIds.value = [normalizeId(myCreditsProjectId.value)];
         if (mainStore.loanRepaymentCategoryId) selectedCategoryId.value = mainStore.loanRepaymentCategoryId;
         return;
     }
@@ -414,15 +420,11 @@ watch(selectedContractorValue, (newVal) => {
     if (prefix === 'contr') entity = mainStore.contractors.find(c => c._id === id);
     else entity = mainStore.individuals.find(i => i._id === id);
     if (entity) {
-        if (entity.defaultProjectId) selectedProjectId.value = typeof entity.defaultProjectId === 'object' ? entity.defaultProjectId._id : entity.defaultProjectId;
+        if (entity.defaultProjectId) {
+            const pid = normalizeId(entity.defaultProjectId);
+            selectedProjectIds.value = pid ? [pid] : [];
+        }
         if (entity.defaultCategoryId) selectedCategoryId.value = typeof entity.defaultCategoryId === 'object' ? entity.defaultCategoryId._id : entity.defaultCategoryId;
-    }
-});
-
-watch(selectedProjectId, (newProj) => {
-    if (isInitialLoad.value) return;
-    if (newProj && myCreditsProjectId.value && newProj === myCreditsProjectId.value) {
-        if (mainStore.loanRepaymentCategoryId) selectedCategoryId.value = mainStore.loanRepaymentCategoryId;
     }
 });
 
@@ -449,6 +451,7 @@ const processSave = () => {
     let targetCellIndex = undefined;
     if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) targetCellIndex = props.cellIndex;
 
+    const projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
     const payload = {
         type: 'expense', 
         amount: finalAmount, 
@@ -456,7 +459,9 @@ const processSave = () => {
         date: createSmartDate(editableDate.value), 
         accountId: selectedAccountId.value, companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
-        categoryId: selectedCategoryId.value, projectId: selectedProjectId.value,
+        categoryId: selectedCategoryId.value,
+        projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
+        projectIds: projectIdsClean.length > 1 ? projectIdsClean : undefined,
         description: description.value, cellIndex: targetCellIndex
     };
     
@@ -465,7 +470,7 @@ const processSave = () => {
          const id = contrId || contrIndId;
          const updateData = { _id: id };
          let needsUpdate = false;
-         if (selectedProjectId.value) { updateData.defaultProjectId = selectedProjectId.value; needsUpdate = true; }
+         if (primaryProjectId.value) { updateData.defaultProjectId = primaryProjectId.value; needsUpdate = true; }
          if (selectedCategoryId.value) { updateData.defaultCategoryId = selectedCategoryId.value; needsUpdate = true; }
          if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
     }
@@ -488,6 +493,11 @@ const handleSave = async () => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
+    const projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
+    if (projectIdsClean.length > 1 && (selectedCategoryId.value === null || selectedCategoryId.value === undefined)) {
+        showError('Укажите категорию для разбиения по проектам');
+        return;
+    }
     
     // 🟢 UPDATE ACCOUNT OWNERSHIP if owner is selected (even if account was created earlier)
     if (selectedAccountId.value && selectedOwner.value) {
@@ -623,13 +633,19 @@ const saveNewAccount = async () => {
 };
 
 // Inline Creates Handlers
-const handleProjectChange = (val) => { if (val === '--CREATE_NEW--') { selectedProjectId.value = null; isCreatingProject.value = true; nextTick(() => newProjectInput.value?.focus()); } };
+const handleProjectChange = (val) => { 
+    if (Array.isArray(val) && val.includes('--CREATE_NEW--')) {
+        selectedProjectIds.value = [];
+        isCreatingProject.value = true; 
+        nextTick(() => newProjectInput.value?.focus()); 
+    }
+};
 const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); } };
 
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
 const saveNewProject = async () => {
     if (isInlineSaving.value) return; const name = newProjectName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addProject(name); selectedProjectId.value = item._id; cancelCreateProject(); } catch(e){ console.error(e); showError('Ошибка создания проекта: ' + e.message); } finally { isInlineSaving.value = false; }
+    isInlineSaving.value = true; try { const item = await mainStore.addProject(name); selectedProjectIds.value = [item._id]; cancelCreateProject(); } catch(e){ console.error(e); showError('Ошибка создания проекта: ' + e.message); } finally { isInlineSaving.value = false; }
 };
 
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
@@ -670,7 +686,15 @@ onMounted(async () => {
         const op = props.operationToEdit;
         amount.value = formatNumber(Math.abs(op.amount));
         selectedAccountId.value = op.accountId?._id || op.accountId;
-        selectedProjectId.value = op.projectId?._id || op.projectId;
+        const projIds = Array.isArray(op.projectIds)
+            ? op.projectIds.map(normalizeId).filter(Boolean)
+            : [];
+        if (projIds.length) {
+            selectedProjectIds.value = projIds;
+        } else {
+            const projId = normalizeId(op.projectId?._id || op.projectId);
+            selectedProjectIds.value = projId ? [projId] : [];
+        }
         selectedCategoryId.value = op.categoryId?._id || op.categoryId;
         description.value = op.description || '';
         if (op.date) editableDate.value = toInputDate(new Date(op.date));
@@ -750,7 +774,7 @@ onMounted(async () => {
 
           <!-- ПРОЕКТ -->
           <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-              <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
+              <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
           </div>
           <div v-else class="inline-create-form input-spacing">
               <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />

@@ -115,11 +115,34 @@ const excludedAccountIds = computed(() => {
 // 🟢 2. Хелпер для проверки видимости операции (SAFE)
 const isOpVisible = (op) => {
   if (!op) return false;
-  if (op.accountId) {
-    const aId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-    if (aId && excludedAccountIds.value.has(String(aId))) return false;
+  // Управленческий родитель сплита и операции, исключенные из итогов — не считаем
+  if (op.excludeFromTotals) return false;
+  if (op.isSplitParent) return false;
+
+  if (!mainStore.includeExcludedInTotal) {
+    const checkId = (idLike) => {
+      if (!idLike) return false;
+      const id = typeof idLike === 'object' ? idLike._id : idLike;
+      return id && excludedAccountIds.value.has(String(id));
+    };
+    if (checkId(op.accountId)) return false;
+    if (checkId(op.fromAccountId)) return false;
+    if (checkId(op.toAccountId)) return false;
   }
   return true;
+};
+
+// 🟢 3. Получаем операции для дня (для графиков/tooltip) из расчетного кэша, иначе из таймлайна
+const getOpsForDateKey = (dateKey) => {
+  const calc = mainStore?.calculationCache?.value || mainStore?.calculationCache;
+  const fromCalc = calc?.[dateKey];
+  if (Array.isArray(fromCalc)) return fromCalc;
+
+  if (typeof mainStore?.getOperationsForDay === 'function') {
+    const fromTimeline = mainStore.getOperationsForDay(dateKey);
+    if (Array.isArray(fromTimeline)) return fromTimeline;
+  }
+  return [];
 };
 
 // --- Ensure SummaryDay (summaries) does NOT depend on the visible range.
@@ -1368,7 +1391,7 @@ const chartData = computed(() => {
 
   for (const day of safeDays) {
     const dateKey = _getDateKey(day.date);
-    const dayOps = mainStore.getOperationsForDay(dateKey) || [];
+    const dayOps = getOpsForDateKey(dateKey).filter(op => op && !op.isDeleted && isOpVisible(op));
 
     const incomeOps = [];
     const creditOps = [];
@@ -1385,8 +1408,6 @@ const chartData = computed(() => {
 
     dayOps.forEach((op) => {
       if (!op) return;
-      if (!isOpVisible(op)) return;
-
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
 
