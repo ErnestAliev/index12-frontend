@@ -123,6 +123,13 @@ const getCategoryName = (catId) => {
 
 // Получение имени проекта
 const getProjectName = (projId) => {
+    if (Array.isArray(projId)) {
+        const names = projId.map(id => {
+            const found = projects.value.find(x => x._id === id);
+            return found ? found.name : null;
+        }).filter(Boolean);
+        return names.length ? names.join(', ') : '-';
+    }
     const p = projects.value.find(x => x._id === projId);
     return p ? p.name : '-';
 };
@@ -152,6 +159,8 @@ const loadOperations = () => {
     if (op.isTransfer || op.isWithdrawal) return false;
     if (op.categoryId?.name?.toLowerCase() === 'перевод') return false;
     if (mainStore._isRetailWriteOff(op)) return false;
+    // Показываем только родителя сплита (дочерние доли скрываем)
+    if (op.isSplitChild) return false;
 
     return true;
   });
@@ -177,6 +186,10 @@ const loadOperations = () => {
       else if (indContrId) contrVal = `ind_${indContrId}`;
 
       let amount = Math.abs(op.amount);
+      const projectIdsArr = Array.isArray(op.projectIds)
+        ? op.projectIds.map(id => typeof id === 'object' ? id._id : id).filter(Boolean)
+        : [];
+      const primaryProjectId = projectIdsArr.length ? projectIdsArr[0] : (op.projectId?._id || op.projectId);
 
       return {
         _id: op._id,
@@ -188,7 +201,8 @@ const loadOperations = () => {
         ownerId: ownerId, 
         contractorValue: contrVal, 
         categoryId: op.categoryId?._id || op.categoryId,
-        projectId: op.projectId?._id || op.projectId,
+        projectId: primaryProjectId,
+        projectIds: projectIdsArr.length ? projectIdsArr : (primaryProjectId ? [primaryProjectId] : []),
         isDeleted: false
       };
     });
@@ -213,7 +227,10 @@ const filteredItems = computed(() => {
 
     if (filters.value.contractorValue && item.contractorValue !== filters.value.contractorValue) return false;
     if (filters.value.category && item.categoryId !== filters.value.category) return false;
-    if (filters.value.project && item.projectId !== filters.value.project) return false;
+    if (filters.value.project) {
+        const arr = Array.isArray(item.projectIds) ? item.projectIds : (item.projectId ? [item.projectId] : []);
+        if (!arr.includes(filters.value.project)) return false;
+    }
 
     return true;
   });
@@ -295,7 +312,7 @@ const exportToCSV = () => {
             item.amountFormatted,
             getContractorName(item.contractorValue),
             getCategoryName(item.categoryId),
-            getProjectName(item.projectId)
+            getProjectName(item.projectIds || item.projectId)
         ];
     });
 
@@ -386,7 +403,7 @@ const copyToClipboard = async () => {
         }
         
         // Проект
-        const projectName = getProjectName(item.projectId);
+        const projectName = getProjectName(item.projectIds || item.projectId);
         if (projectName !== '-') {
             parts.push(projectName);
         }
@@ -528,7 +545,7 @@ const showCopySuccess = ref(false);
 
             <!-- Проект -->
             <div class="col-proj">
-                <span class="text-cell" :title="getProjectName(item.projectId)">{{ getProjectName(item.projectId) }}</span>
+                <span class="text-cell" :title="getProjectName(item.projectIds || item.projectId)">{{ getProjectName(item.projectIds || item.projectId) }}</span>
             </div>
 
             <div class="col-trash">
