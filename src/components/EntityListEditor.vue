@@ -231,6 +231,16 @@ const handleCreateNew = async () => {
 const formatNumber = (numStr) => { const clean = `${numStr}`.replace(/[^0-9]/g, ''); return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' '); };
 const onAmountInput = (item) => { const rawValue = String(item.initialBalanceFormatted).replace(/[^0-9]/g, ''); item.initialBalanceFormatted = formatNumber(rawValue); item.initialBalance = Number(rawValue) || 0; };
 
+const toInputDate = (val) => {
+  if (!val) return '';
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 onMounted(() => {
   const allAccounts = mainStore.accounts;
   let rawItems = JSON.parse(JSON.stringify(props.items));
@@ -346,7 +356,7 @@ watch(() => props.items, (newItems) => {
       if (!cIds.length && item.defaultCategoryId) { const cId = (typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId; if(cId) cIds.push(cId); }
       const identificationNumber = item.identificationNumber || '';
       const contractNumber = item.contractNumber || '';
-      const contractDate = item.contractDate || null;
+      const contractDate = toInputDate(item.contractDate) || '';
       return { ...item, selectedProjectIds: pIds, selectedCategoryIds: cIds, identificationNumber, contractNumber, contractDate };
     }
     if (isCompanyEditor) {
@@ -439,7 +449,7 @@ const runSave = async () => {
         // 🟢 NEW: Include legal data fields in save
         data.identificationNumber = item.identificationNumber || null;
         data.contractNumber = item.contractNumber || null;
-        data.contractDate = item.contractDate || null;
+        data.contractDate = item.contractDate ? new Date(item.contractDate) : null;
     }
     if (isCompanyEditor) {
         data.identificationNumber = item.identificationNumber || null;
@@ -680,7 +690,7 @@ defineExpose({
                     <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}</button>
                     <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin" placeholder="БИН/ИИН" @blur="debouncedSave" />
                     <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num" placeholder="Номер договора" @blur="debouncedSave" />
-                    <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date" @change="debouncedSave" />
+                    <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date" @input="debouncedSave" />
                   </template>
                   
                   <template v-if="isCompanyEditor">
@@ -910,6 +920,8 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 .edit-bin { flex-shrink: 0; width: 150px; }
 .edit-contract-num { flex-shrink: 0; width: 150px; }
 .edit-contract-date { flex-shrink: 0; width: 150px; }
+.edit-contract-date::-webkit-calendar-picker-indicator { cursor: pointer; }
+:global(.theme-dark) .edit-contract-date::-webkit-calendar-picker-indicator { filter: invert(1) brightness(1.2); }
 .edit-company-bin { flex-shrink: 0; width: 150px; }
 
 .delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
