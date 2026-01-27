@@ -406,11 +406,12 @@ const stopAiRecordingIfNeeded = () => {
   isAiRecording.value = false;
 };
 
-const _makeAiMsg = (role, text) => ({
+const _makeAiMsg = (role, text, log = null) => ({
   id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
   role,
   text,
   copied: false,
+  log,
 });
 
 const scrollAiToBottom = () => {
@@ -421,6 +422,20 @@ const scrollAiToBottom = () => {
     el.scrollTop = el.scrollHeight;
   });
 };
+
+// ----- LOG MODAL -----
+const showLogModal = ref(false);
+const logText = ref('');
+const openLog = (msg) => {
+  if (!msg?.log) return;
+  try {
+    logText.value = JSON.stringify(msg.log, null, 2);
+  } catch (e) {
+    logText.value = String(msg.log);
+  }
+  showLogModal.value = true;
+};
+const closeLog = () => { showLogModal.value = false; logText.value = ''; };
 
 const openAiDrawer = () => {
   isAiDrawerOpen.value = true;
@@ -546,7 +561,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   stopAiRecordingIfNeeded();
   if (!text || aiLoading.value) return;
 
-  aiMessages.value.push(_makeAiMsg('user', text));
+  aiMessages.value.push(_makeAiMsg('user', text, { userQuestion: text }));
   nextTick(scrollAiToBottom);
   aiInput.value = '';
   aiVoiceConfirmedText = ''; // Reset voice confirmed text
@@ -597,18 +612,20 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     // 🔥 SIMPLIFIED: No more uiSnapshot/aiContext - backend now queries database directly!
     // This reduces HTTP payload by ~90% and eliminates race conditions with displayCache.
 
+    const requestPayload = {
+      message: text,
+      source,
+      quickKey,
+      mode: deepAiMode.value ? 'deep' : 'freeform',
+      asOf,
+      includeHidden,
+      visibleAccountIds,
+      debugAi: true, // временно включено для отладки
+    };
+
     const res = await axios.post(
       `${API_BASE_URL}/ai/query`,
-      {
-        message: text,
-        source,
-        quickKey,
-        mode: deepAiMode.value ? 'deep' : 'freeform',
-        asOf,
-        includeHidden,
-        visibleAccountIds,
-        debugAi: true, // временно включено для отладки
-      },
+      requestPayload,
       {
         // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.
         withCredentials: true,
@@ -616,6 +633,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       }
     );
     const rawAnswer = (res?.data?.text || '').trim() || 'Нет ответа.';
+    const debug = res?.data?.debug || null;
 
     // Нормализация вывода: иногда год «2026» разбивается как «2 026» из-за форматирования чисел.
     // Приводим даты к виду DD.MM.YY.
@@ -632,7 +650,12 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     };
 
     const answer = normalizeAiText(rawAnswer);
-    aiMessages.value.push(_makeAiMsg('assistant', answer));
+    aiMessages.value.push(_makeAiMsg('assistant', answer, {
+      userQuestion: text,
+      request: requestPayload,
+      backendResponse: res?.data ?? null,
+      debug,
+    }));
   } catch (err) {
     const status = err?.response?.status;
 
@@ -1798,6 +1821,7 @@ const handleRefundDelete = async (op) => {
                 <div class="ai-text">{{ msg.text }}</div>
                 <div class="ai-actions" v-if="msg.role === 'assistant'">
                   <button class="ai-copy-btn" @click="copyAiText(msg)">{{ msg.copied ? '✅' : 'Копировать' }}</button>
+                  <button class="ai-log-btn" v-if="msg.log" @click="openLog(msg)">Log</button>
                 </div>
               </div>
             </div>
@@ -1908,6 +1932,17 @@ const handleRefundDelete = async (op) => {
     
     <!-- 🆕 NEW: Payment Receipt Generator -->
     <PaymentReceiptModal v-if="showReceiptModal" @close="showReceiptModal = false" />
+
+    <!-- AI Log Modal -->
+    <div v-if="showLogModal" class="ai-log-modal" @click.self="closeLog">
+      <div class="ai-log-modal-content">
+        <div class="ai-log-header">
+          <span>AI лог</span>
+          <button class="ai-log-close" @click="closeLog">×</button>
+        </div>
+        <pre class="ai-log-body">{{ logText }}</pre>
+      </div>
+    </div>
 
   </div>
 </template>
@@ -2377,6 +2412,66 @@ const handleRefundDelete = async (op) => {
   transition: background 0.15s;
 }
 .ai-copy-btn:hover { background: var(--color-background-mute); }
+
+.ai-log-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+  margin-left: 8px;
+}
+.ai-log-btn:hover { background: var(--color-background-mute); }
+
+.ai-log-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.ai-log-modal-content {
+  width: min(900px, 90vw);
+  max-height: 80vh;
+  background: var(--color-background, #fff);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ai-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+}
+
+.ai-log-close {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.ai-log-body {
+  padding: 16px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
 
 .ai-typing { color: var(--color-text-mute); font-size: 13px; padding: 4px 0; }
 
