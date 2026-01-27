@@ -715,8 +715,8 @@ onMounted(async () => {
         nextTick(() => amountInput.value?.focus());
     }
     // Автоподстановка "Без проекта" при отсутствии выбора
-    if (!selectedProjectIds.value.length && defaultProjectId.value) {
-        selectedProjectIds.value = [defaultProjectId.value];
+    if (!selectedProjectIds.value.length) {
+        selectedProjectIds.value = [defaultProjectId.value ?? null];
     }
     await nextTick();
     isInitialLoad.value = false;
@@ -724,15 +724,15 @@ onMounted(async () => {
 
 // Не позволяем оставить поле проектов пустым — подставляем "Без проекта"
 watch(selectedProjectIds, (val) => {
-    if ((!val || !val.length) && defaultProjectId.value) {
-        selectedProjectIds.value = [defaultProjectId.value];
+    if (!val || !val.length) {
+        selectedProjectIds.value = [defaultProjectId.value ?? null];
     }
 });
 
 // Если проект "Без проекта" станет доступен позже (после загрузки справочников) — подставить его
 watch(defaultProjectId, (defId) => {
-    if (defId && (!selectedProjectIds.value || !selectedProjectIds.value.length)) {
-        selectedProjectIds.value = [defId];
+    if (!selectedProjectIds.value || !selectedProjectIds.value.length) {
+        selectedProjectIds.value = [defId ?? null];
     }
 }, { immediate: true });
 </script>

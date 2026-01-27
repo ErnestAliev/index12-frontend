@@ -584,8 +584,8 @@ onMounted(async () => {
         nextTick(() => amountInput.value?.focus());
     }
     // Автоподстановка "Без проекта" при отсутствии выбора
-    if (!selectedProjectIds.value.length && defaultProjectId.value) {
-        selectedProjectIds.value = [defaultProjectId.value];
+    if (!selectedProjectIds.value.length) {
+        selectedProjectIds.value = [defaultProjectId.value ?? null];
     }
     await nextTick();
     isInitialLoad.value = false;
