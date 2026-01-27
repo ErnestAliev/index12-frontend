@@ -49,6 +49,12 @@ const normalizeId = (val) => {
     return String(val);
 };
 const selectedCategoryId = ref(null);
+
+// Default project "Без проекта"
+const defaultProjectId = computed(() => {
+  const p = mainStore.projects.find(x => x.name && x.name.trim().toLowerCase() === 'без проекта');
+  return p ? p._id : null;
+});
 const description = ref('');
 
 // СТАТУС ОПЕРАЦИИ
@@ -490,7 +496,10 @@ const preparePayload = (options = {}) => {
          if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
     }
 
-    const projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
+    let projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
+    if (!projectIdsClean.length && defaultProjectId.value) {
+        projectIdsClean = [defaultProjectId.value];
+    }
 
     return {
         type: 'income',
@@ -501,7 +510,7 @@ const preparePayload = (options = {}) => {
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: selectedCategoryId.value,
         projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
-        projectIds: projectIdsClean.length > 1 ? projectIdsClean : undefined,
+        projectIds: projectIdsClean.length > 1 ? projectIdsClean : (projectIdsClean.length === 1 ? undefined : (defaultProjectId.value ? [defaultProjectId.value] : undefined)),
         description: description.value, cellIndex: targetCellIndex
     };
 };
