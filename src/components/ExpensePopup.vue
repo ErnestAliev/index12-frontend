@@ -728,6 +728,13 @@ watch(selectedProjectIds, (val) => {
         selectedProjectIds.value = [defaultProjectId.value];
     }
 });
+
+// Если проект "Без проекта" станет доступен позже (после загрузки справочников) — подставить его
+watch(defaultProjectId, (defId) => {
+    if (defId && (!selectedProjectIds.value || !selectedProjectIds.value.length)) {
+        selectedProjectIds.value = [defId];
+    }
+}, { immediate: true });
 </script>
 
 <template>

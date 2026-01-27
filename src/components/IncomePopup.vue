@@ -597,6 +597,13 @@ watch(selectedProjectIds, (val) => {
         selectedProjectIds.value = [defaultProjectId.value];
     }
 });
+
+// Если "Без проекта" появится после загрузки справочников — автоподстановка
+watch(defaultProjectId, (defId) => {
+    if (defId && (!selectedProjectIds.value || !selectedProjectIds.value.length)) {
+        selectedProjectIds.value = [defId];
+    }
+}, { immediate: true });
 const closePopup = () => emit('close');
 
 
