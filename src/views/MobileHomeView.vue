@@ -482,11 +482,10 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 };
 
 const runAiQuick = async (preset) => {
-  // Add ... marker to indicate this is a quick button press
-  const markedPreset = `${preset}...`;
-  aiInput.value = preset; // Show clean text in input
+  // Быстрый запрос: не пишем в инпут, отправляем напрямую
+  aiInput.value = '';
   await nextTick();
-  await sendAiMessage(markedPreset, { source: 'quick_button' });
+  await sendAiMessage(preset, { source: 'quick_button' });
 };
 
 // Автоскролл: держим чат внизу при новых сообщениях и при открытии окна

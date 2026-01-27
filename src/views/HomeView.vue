@@ -459,7 +459,8 @@ const closeAiDrawer = () => {
 
 
 const useQuickPrompt = (promptText) => {
-  aiInput.value = promptText;
+  // Отправляем сразу, не дублируем текст в инпут и не триггерим лишние наблюдатели
+  aiInput.value = '';
   nextTick(() => {
     sendAiMessage(promptText, { source: 'quick_button' }); // Automatically send the message
   });
