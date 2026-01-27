@@ -714,8 +714,19 @@ onMounted(async () => {
     } else {
         nextTick(() => amountInput.value?.focus());
     }
+    // Автоподстановка "Без проекта" при отсутствии выбора
+    if (!selectedProjectIds.value.length && defaultProjectId.value) {
+        selectedProjectIds.value = [defaultProjectId.value];
+    }
     await nextTick();
     isInitialLoad.value = false;
+});
+
+// Не позволяем оставить поле проектов пустым — подставляем "Без проекта"
+watch(selectedProjectIds, (val) => {
+    if ((!val || !val.length) && defaultProjectId.value) {
+        selectedProjectIds.value = [defaultProjectId.value];
+    }
 });
 </script>
 
