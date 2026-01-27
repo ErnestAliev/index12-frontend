@@ -4,6 +4,7 @@ import axios from 'axios';
 import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
+import { sendAiRequest } from '@/utils/aiClient.js';
 
 
 // Компоненты
@@ -605,14 +606,16 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
               .filter(Boolean)
           : null);
 
-    // 🔥 REMOVED: Frontend prefetch no longer needed!
-    // Backend now queries MongoDB directly via dataProvider.buildDataPacket()
-    // This gives AI access to full historical data without frontend limitations.
+    // Если это quick_button и у нас есть фронтовый снимок счетов — отправим его на спец. эндпоинт
+    const snapshot = (source === 'quick_button')
+      ? {
+          accounts: Array.isArray(mainStore?.currentAccountBalances) ? mainStore.currentAccountBalances : [],
+          companies: Array.isArray(mainStore?.companies) ? mainStore.companies : [],
+        }
+      : null;
 
-    // 🔥 SIMPLIFIED: No more uiSnapshot/aiContext - backend now queries database directly!
-    // This reduces HTTP payload by ~90% and eliminates race conditions with displayCache.
-
-    const requestPayload = {
+    const { text: rawAnswer, debug, backendResponse, request } = await sendAiRequest({
+      apiBaseUrl: API_BASE_URL,
       message: text,
       source,
       quickKey,
@@ -620,20 +623,11 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       asOf,
       includeHidden,
       visibleAccountIds,
-      debugAi: true, // временно включено для отладки
-    };
-
-    const res = await axios.post(
-      `${API_BASE_URL}/ai/query`,
-      requestPayload,
-      {
-        // ВАЖНО: без withCredentials куки сессии (auth) могут не уйти на другой домен/поддомен.
-        withCredentials: true,
-        timeout: 20000,
-      }
-    );
-    const rawAnswer = (res?.data?.text || '').trim() || 'Нет ответа.';
-    const debug = res?.data?.debug || null;
+      snapshot,
+      debugAi: true,
+      timeout: 20000,
+    });
+    const rawSafe = (rawAnswer || '').toString().trim() || 'Нет ответа.';
 
     // Нормализация вывода: иногда год «2026» разбивается как «2 026» из-за форматирования чисел.
     // Приводим даты к виду DD.MM.YY.
@@ -649,11 +643,11 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       return out;
     };
 
-    const answer = normalizeAiText(rawAnswer);
+    const answer = normalizeAiText(rawSafe);
     aiMessages.value.push(_makeAiMsg('assistant', answer, {
       userQuestion: text,
-      request: requestPayload,
-      backendResponse: res?.data ?? null,
+      request,
+      backendResponse,
       debug,
     }));
   } catch (err) {
