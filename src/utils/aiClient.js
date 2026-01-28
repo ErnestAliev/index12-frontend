@@ -19,8 +19,10 @@ export async function sendAiRequest({
   timeout = 20000,
 }) {
   if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
+  const text = (message || '').toString();
+  const isSnapshotEligible = /(сч[её]т|счета|касс|баланс|компан)/i.test(text);
   const payload = {
-    message,
+    message: text,
     source,
     quickKey,
     mode,
@@ -32,7 +34,7 @@ export async function sendAiRequest({
   if (snapshot) payload.snapshot = snapshot;
 
   const endpoint =
-    source === 'quick_button' && snapshot
+    source === 'quick_button' && snapshot && isSnapshotEligible
       ? `${apiBaseUrl}/ai/query_snapshot`
       : `${apiBaseUrl}/ai/query`;
 
