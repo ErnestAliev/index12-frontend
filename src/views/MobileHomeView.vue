@@ -398,7 +398,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     
     const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(q || '');
     const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ы|ых)?\b/i.test(q || '');
-    const wantsTransfers = /\b(перевод|transfer)s?\b/i.test(q || '');
+    const wantsTransfers = /\b(перевод(?:ы|ов)?|transfer)s?\b/i.test(q || '');
     const includeHidden = wantsAccounts || wantsHidden || wantsTransfers;
 
     const visibleAccountIds = includeHidden
