@@ -590,7 +590,8 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     // (Чтобы пользователь не зависел от UI-тумблера и не гадал про «скрытые счета».)
     const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(text);
     const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ых)?\b/i.test(text);
-    const includeHidden = wantsAccounts || wantsHidden;
+    const wantsTransfers = /\b(перевод|transfer)s?\b/i.test(text);
+    const includeHidden = wantsAccounts || wantsHidden || wantsTransfers;
 
     // Если hidden не нужен — отправляем только видимые (не excluded/hidden) id.
     // Если нужен — отправляем null, чтобы билдер включил все.
