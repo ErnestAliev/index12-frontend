@@ -588,24 +588,9 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 
     // Определяем, нужно ли включать скрытые счета по смыслу запроса.
     // (Чтобы пользователь не зависел от UI-тумблера и не гадал про «скрытые счета».)
-    const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(text);
-    const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ых)?\b/i.test(text);
-    const wantsTransfers = /\b(перевод(?:ы|ов)?|transfer)s?\b/i.test(text);
-    const includeHidden = wantsAccounts || wantsHidden || wantsTransfers;
-
-    // Если hidden не нужен — отправляем только видимые (не excluded/hidden) id.
-    // Если нужен — отправляем null, чтобы билдер включил все.
-    const visibleAccountIds = includeHidden
-      ? null
-      : (Array.isArray(mainStore?.accounts)
-          ? mainStore.accounts
-              .filter(a => {
-                const excluded = !!(a?.isExcluded ?? a?.excluded ?? a?.hidden ?? a?.isHidden);
-                return !excluded;
-              })
-              .map(a => a?._id)
-              .filter(Boolean)
-          : null);
+    // includeHidden/visibleAccountIds теперь рассчитываются в aiClient.js
+    const includeHidden = false;
+    const visibleAccountIds = null;
 
     // Если это quick_button и у нас есть фронтовый снимок счетов — отправим его на спец. эндпоинт
     const snapshot = (source === 'quick_button')

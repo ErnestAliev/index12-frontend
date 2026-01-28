@@ -396,32 +396,9 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     // 🔥 SIMPLIFIED: No more uiSnapshot building - backend queries MongoDB directly!
     // This removes 300+ lines of snapshot building code and eliminates race conditions.
     
-    const wantsAccounts = /\b(сч[её]т|счета|касс[аы])\b/i.test(q || '');
-    const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ы|ых)?\b/i.test(q || '');
-    const wantsTransfers = /\b(перевод(?:ы|ов)?|transfer)s?\b/i.test(q || '');
-    const includeHidden = wantsAccounts || wantsHidden || wantsTransfers;
-
-    const visibleAccountIds = includeHidden
-      ? null
-      : (() => {
-          try {
-            const accs = Array.isArray(mainStore?.accounts) ? mainStore.accounts : [];
-            if (!accs.length) return [];
-
-            // If user enabled "include excluded in total" – treat all accounts as visible.
-            if (Boolean(mainStore?.includeExcludedInTotal)) {
-              return accs.map(a => a?._id).filter(Boolean);
-            }
-
-            // Otherwise: only accounts that are not excluded/hidden.
-            return accs
-              .filter(a => !(a?.isExcluded || a?.excluded || a?.excludedFromTotal || a?.excludeFromTotal))
-              .map(a => a?._id)
-              .filter(Boolean);
-          } catch (_) {
-            return [];
-          }
-        })();
+    // includeHidden/visibleAccountIds теперь рассчитываются в aiClient.js
+    const includeHidden = false;
+    const visibleAccountIds = null;
 
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',

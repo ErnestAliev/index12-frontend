@@ -20,6 +20,16 @@ export async function sendAiRequest({
 }) {
   if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
   const text = (message || '').toString();
+  const wantsAccounts = /\b(сч[её]т|счета|касс[аы]|баланс)\b/i.test(text);
+  const wantsCompanies = /компан/i.test(text);
+  const wantsHidden = /\bскрыт(ые|ый|ая|ое|о|ы|ых)?\b/i.test(text);
+  const wantsTransfers = /\b(перевод(?:ы|ов)?|transfer)s?\b/i.test(text);
+  const autoIncludeHidden = includeHidden || wantsAccounts || wantsHidden || wantsTransfers;
+
+  // If we auto-include hidden, drop visibleAccountIds to let backend взять все
+  const effectiveIncludeHidden = autoIncludeHidden;
+  const effectiveVisibleIds = effectiveIncludeHidden ? null : visibleAccountIds;
+
   const isSnapshotEligible = /(сч[её]т|счета|касс|баланс|компан)/i.test(text);
   const payload = {
     message: text,
@@ -27,8 +37,8 @@ export async function sendAiRequest({
     quickKey,
     mode,
     asOf,
-    includeHidden,
-    visibleAccountIds,
+    includeHidden: effectiveIncludeHidden,
+    visibleAccountIds: effectiveVisibleIds,
     debugAi,
   };
   if (snapshot) payload.snapshot = snapshot;
