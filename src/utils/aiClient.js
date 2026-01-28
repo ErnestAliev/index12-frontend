@@ -27,8 +27,8 @@ export async function sendAiRequest({
   const autoIncludeHidden = includeHidden || wantsAccounts || wantsHidden || wantsTransfers;
 
   // If we auto-include hidden, drop visibleAccountIds to let backend взять все
-  const effectiveIncludeHidden = autoIncludeHidden;
-  const effectiveVisibleIds = effectiveIncludeHidden ? null : visibleAccountIds;
+  let effectiveIncludeHidden = autoIncludeHidden;
+  let effectiveVisibleIds = effectiveIncludeHidden ? null : visibleAccountIds;
 
   const isSnapshotEligible = /(сч[её]т|счета|касс|баланс|компан)/i.test(text);
   const payload = {
@@ -47,6 +47,15 @@ export async function sendAiRequest({
     source === 'quick_button' && snapshot && isSnapshotEligible
       ? `${apiBaseUrl}/ai/query_snapshot`
       : `${apiBaseUrl}/ai/query`;
+
+  // Важный фикс: для быстрых кнопок НЕ snapshot не ограничиваем счета видимостью,
+  // иначе переводы и прочие запросы теряют «скрытые» счета.
+  if (source === 'quick_button' && endpoint.endsWith('/ai/query')) {
+    effectiveIncludeHidden = true;
+    effectiveVisibleIds = null;
+    payload.includeHidden = true;
+    payload.visibleAccountIds = null;
+  }
 
   const res = await axios.post(endpoint, payload, {
     withCredentials: true,
