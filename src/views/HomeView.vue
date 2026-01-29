@@ -592,13 +592,11 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     const includeHidden = false;
     const visibleAccountIds = null;
 
-    // Если это quick_button и у нас есть фронтовый снимок счетов — отправим его на спец. эндпоинт
-    const snapshot = (source === 'quick_button')
-      ? {
-          accounts: Array.isArray(mainStore?.currentAccountBalances) ? mainStore.currentAccountBalances : [],
-          companies: Array.isArray(mainStore?.companies) ? mainStore.companies : [],
-        }
-      : null;
+    // Всегда прикладываем snapshot (если есть) для запросов про счета/компании
+    const snapshot = {
+      accounts: Array.isArray(mainStore?.currentAccountBalances) ? mainStore.currentAccountBalances : [],
+      companies: Array.isArray(mainStore?.companies) ? mainStore.companies : [],
+    };
 
     const { text: rawAnswer, debug, backendResponse, request } = await sendAiRequest({
       apiBaseUrl: API_BASE_URL,

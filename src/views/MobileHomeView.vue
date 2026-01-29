@@ -400,6 +400,11 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     const includeHidden = false;
     const visibleAccountIds = null;
 
+    const snapshot = {
+      accounts: Array.isArray(mainStore?.currentAccountBalances) ? mainStore.currentAccountBalances : [],
+      companies: Array.isArray(mainStore?.companies) ? mainStore.companies : [],
+    };
+
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -413,6 +418,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         visibleAccountIds,
         periodFilter: mainStore.periodFilter, // ✅ Pass period filter to backend
         mode,
+        snapshot,
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
       }),
     });
