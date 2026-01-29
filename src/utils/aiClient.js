@@ -31,9 +31,6 @@ export async function sendAiRequest({
   let effectiveVisibleIds = effectiveIncludeHidden ? null : visibleAccountIds;
 
   const isSnapshotEligible = /(сч[её]т|счета|касс|баланс|компан)/i.test(text);
-  const snapshotHasAccounts = Array.isArray(snapshot?.accounts) ? snapshot.accounts.length > 0
-    : Array.isArray(snapshot?.currentAccountBalances) ? snapshot.currentAccountBalances.length > 0
-    : false;
 
   const payload = {
     message: text,
@@ -48,7 +45,7 @@ export async function sendAiRequest({
   if (snapshot) payload.snapshot = snapshot;
 
   const endpoint =
-    source === 'quick_button' && snapshot && snapshotHasAccounts && isSnapshotEligible
+    source === 'quick_button' && snapshot && isSnapshotEligible
       ? `${apiBaseUrl}/ai/query_snapshot`
       : `${apiBaseUrl}/ai/query`;
 
