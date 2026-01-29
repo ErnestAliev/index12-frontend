@@ -149,6 +149,30 @@ const saveNewOwner = async () => {
   finally { isSavingOwner.value = false; }
 };
 
+// --- TAX REGIME HANDLER FOR COMPANIES ---
+const handleTaxRegimeChange = (item) => {
+  if (!isCompanyEditor) return;
+  
+  const isTOO = /тоо/i.test(item.name);
+  const isIP = /ип/i.test(item.name);
+  
+  if (item.taxRegime === 'our') {
+    // ОУР (Общеустановленный режим)
+    if (isTOO) {
+      item.taxPercent = 20; // ТОО на ОУР = 20% КПН
+    } else if (isIP) {
+      item.taxPercent = 10; // ИП на ОУР = 10% ИПН
+    } else {
+      item.taxPercent = 20; // Default ОУР
+    }
+  } else {
+    // Упрощенка
+    item.taxPercent = 3; // Упрощенка = 3% (и ТОО, и ИП)
+  }
+  
+  debouncedSave();
+};
+
 // --- ЛОГИКА СОЗДАНИЯ СУЩНОСТИ ---
 const isCreating = ref(false);
 const newItemName = ref('');
@@ -219,6 +243,17 @@ const handleCreateNew = async () => {
       if (isCompanyEditor) { 
           mappedItem.selectedAccountIds = [];
           mappedItem.identificationNumber = '';
+          // Auto-detect company type and set tax defaults
+          const isTOO = /тоо/i.test(mappedItem.name);
+          const isIP = /ип/i.test(mappedItem.name);
+          mappedItem.taxRegime = 'simplified'; // Default to упрощенка
+          if (isTOO) {
+              mappedItem.taxPercent = 3; // ТОО Упрощенка
+          } else if (isIP) {
+              mappedItem.taxPercent = 3; // ИП Упрощенка
+          } else {
+              mappedItem.taxPercent = 3; // Default
+          }
       }
 
       if (isIndividualEditor) { otherItems.value.push(mappedItem); } else { localItems.value.push(mappedItem); }
@@ -286,10 +321,14 @@ onMounted(() => {
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
       const identificationNumber = item.identificationNumber || '';
+      const taxRegime = item.taxRegime || 'simplified';
+      const taxPercent = item.taxPercent != null ? item.taxPercent : 3;
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
-          identificationNumber
+          identificationNumber,
+          taxRegime,
+          taxPercent
       };
     }
     return item;
@@ -362,10 +401,14 @@ watch(() => props.items, (newItems) => {
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
       const identificationNumber = item.identificationNumber || '';
+      const taxRegime = item.taxRegime || 'simplified';
+      const taxPercent = item.taxPercent != null ? item.taxPercent : 3;
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
-          identificationNumber
+          identificationNumber,
+          taxRegime,
+          taxPercent
       };
     }
     return item;
@@ -453,6 +496,8 @@ const runSave = async () => {
     }
     if (isCompanyEditor) {
         data.identificationNumber = item.identificationNumber || null;
+        data.taxRegime = item.taxRegime || 'simplified';
+        data.taxPercent = item.taxPercent != null ? item.taxPercent : 3;
     }
     return data;
   });
@@ -615,6 +660,8 @@ defineExpose({
           <span class="header-name">Название Компании</span>
           <span class="header-accounts">Привязанные счета</span>
           <span class="header-bin">ИИН/БИН</span>
+          <span class="header-tax-regime">Режим</span>
+          <span class="header-tax-percent">%</span>
           <span class="header-trash"></span>
         </div>
         
@@ -696,6 +743,11 @@ defineExpose({
                   <template v-if="isCompanyEditor">
                     <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">Выбрано ({{ item.selectedAccountIds.length }})</button>
                     <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" @blur="debouncedSave" />
+                    <select v-model="item.taxRegime" @change="handleTaxRegimeChange(item)" class="edit-input edit-tax-regime">
+                      <option value="simplified">Упрощенка</option>
+                      <option value="our">ОУР</option>
+                    </select>
+                    <input type="number" v-model.number="item.taxPercent" @blur="debouncedSave" min="0" max="100" class="edit-input edit-tax-percent" placeholder="%" />
                   </template>
                   
                   <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
@@ -886,6 +938,8 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 
 .owner-header .header-accounts { flex-shrink: 0; width: 220px; }
 .owner-header .header-bin { flex-shrink: 0; width: 150px; }
+.owner-header .header-tax-regime { flex-shrink: 0; width: 130px; }
+.owner-header .header-tax-percent { flex-shrink: 0; width: 70px; }
 
 .contractor-header .header-project { flex-shrink: 0; width: 200px; } 
 .contractor-header .header-category { flex-shrink: 0; width: 200px; }
@@ -923,6 +977,8 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 .edit-contract-date::-webkit-calendar-picker-indicator { cursor: pointer; }
 :global(.theme-dark) .edit-contract-date::-webkit-calendar-picker-indicator { filter: invert(1) brightness(1.2); }
 .edit-company-bin { flex-shrink: 0; width: 150px; }
+.edit-tax-regime { flex-shrink: 0; width: 130px; }
+.edit-tax-percent { flex-shrink: 0; width: 70px; text-align: center; }
 
 .delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: var(--color-text-soft); transition: stroke 0.2s; }
