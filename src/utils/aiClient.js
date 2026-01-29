@@ -58,7 +58,7 @@ export async function sendAiRequest({
 
   const res = await axios.post(endpoint, payload, {
     withCredentials: true,
-    timeout,
+    timeout: mode === 'deep' ? 150000 : timeout, // Deep mode: 2.5 min for quality analysis
   });
 
   return {
