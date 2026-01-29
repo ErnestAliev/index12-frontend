@@ -44,10 +44,8 @@ export async function sendAiRequest({
   };
   if (snapshot) payload.snapshot = snapshot;
 
-  const endpoint =
-    source === 'quick_button' && snapshot && isSnapshotEligible
-      ? `${apiBaseUrl}/ai/query_snapshot`
-      : `${apiBaseUrl}/ai/query`;
+  // Всегда идём на единый endpoint — сервер сам решает, отвечать из snapshot или БД
+  const endpoint = `${apiBaseUrl}/ai/query`;
 
   // Важный фикс: для быстрых кнопок НЕ snapshot не ограничиваем счета видимостью,
   // иначе переводы и прочие запросы теряют «скрытые» счета.
