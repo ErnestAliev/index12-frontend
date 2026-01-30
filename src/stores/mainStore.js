@@ -810,17 +810,17 @@ export const useMainStore = defineStore('mainStore', () => {
     const currentAccountBalances = computed(() => {
         // Факт всегда по всей истории (не зависит от periodFilter)
         const balances = {};
-        // ✅ FIX: Only initialize balances for visible accounts
-        // This ensures transfers involving excluded accounts don't affect visible account balances
-        accounts.value
-            .filter(a => includeExcludedInTotal.value || !a.isExcluded)
-            .forEach(acc => {
-                balances[acc._id] = Number(acc.initialBalance || 0);
-            });
+        accounts.value.forEach(acc => {
+            balances[acc._id] = Number(acc.initialBalance || 0);
+        });
 
-        const pastOps = getAllRelevantOps.value.filter(op => _isEffectivelyPastOrToday(op.date));
+        // ✅ FIX: Process ALL past operations, not just visible ones
+        // This is needed for transfers - they must be partially applied
+        const allPastOps = allKnownOperations.value
+            .filter(op => !op?.excludeFromTotals)
+            .filter(op => _isEffectivelyPastOrToday(op.date));
 
-        pastOps.forEach(op => {
+        allPastOps.forEach(op => {
             const amt = Math.abs(Number(op.amount) || 0);
 
             if (op.isTransfer) {
@@ -828,14 +828,32 @@ export const useMainStore = defineStore('mainStore', () => {
                 const fromId = op.fromAccountId?._id || op.fromAccountId;
                 const toId = op.toAccountId?._id || op.toAccountId;
 
-                if (fromId && balances[fromId] !== undefined) {
-                    balances[fromId] -= amt;
-                }
-                if (toId && balances[toId] !== undefined) {
-                    balances[toId] += amt;
+                // ✅ FIX: Check if accounts are excluded
+                const fromExcluded = fromId && _isAccountExcluded(fromId);
+                const toExcluded = toId && _isAccountExcluded(toId);
+
+                if (!includeExcludedInTotal.value) {
+                    // Only apply to visible (non-excluded) accounts
+                    if (fromId && balances[fromId] !== undefined && !fromExcluded) {
+                        balances[fromId] -= amt;
+                    }
+                    if (toId && balances[toId] !== undefined && !toExcluded) {
+                        balances[toId] += amt;
+                    }
+                } else {
+                    // Apply to all accounts when excluded are visible
+                    if (fromId && balances[fromId] !== undefined) {
+                        balances[fromId] -= amt;
+                    }
+                    if (toId && balances[toId] !== undefined) {
+                        balances[toId] += amt;
+                    }
                 }
             } else {
                 // Handle regular income/expense operations
+                // Only process if operation is visible (respects excluded accounts)
+                if (!_isOpVisible(op)) return;
+
                 const accId = op.accountId?._id || op.accountId;
                 if (!accId || balances[accId] === undefined) return;
 
