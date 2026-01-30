@@ -18,7 +18,8 @@ const props = defineProps({
   date: { type: Date, required: true },
   isToday: { type: Boolean, default: false },
   isTomorrow: { type: Boolean, default: false },
-  dateKey: { type: String, required: true }
+  dateKey: { type: String, required: true },
+  columnCount: { type: Number, default: 12 } // Number of visible columns
 });
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
@@ -116,6 +117,12 @@ const cells = computed(() => {
 });
 
 const formattedDate = computed(() => {
+  // For 21+ columns, show only day number to save space
+  if (props.columnCount >= 21) {
+    return props.date.getDate();
+  }
+  
+  // Default format: "пн янв 27"
   return props.date.toLocaleString('ru-RU', {
     weekday: 'short', month: 'short', day: 'numeric'
   });

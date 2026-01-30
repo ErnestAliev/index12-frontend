@@ -811,8 +811,8 @@ const _parseDateKey = (dateKey) => {
     const date = new Date(year, 0, 1); date.setDate(doy); return date;
 };
 
-const VISIBLE_COLS = 12;
-const CENTER_INDEX = Math.floor((VISIBLE_COLS - 1) / 2);
+const VISIBLE_COLS = ref(7); // Default: 7 columns
+const CENTER_INDEX = computed(() => Math.floor((VISIBLE_COLS.value - 1) / 2));
 const viewMode = ref('3m'); // 🔴 VISUALIZATION ONLY - does NOT affect calculations
 const isScrollActive = computed(() => true); // 🔴 FIXED: скролл всегда активен
 // 🔥 UNIFIED: totalDays comes from projection, NOT from viewMode
@@ -1059,18 +1059,30 @@ const onContainerDragOver = (e) => {
   const rect = timelineGridRef.value.getBoundingClientRect();
   const mouseX = e.clientX;
   const threshold = 80;
-  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
   let direction = 0; 
   if (mouseX < rect.left + threshold) direction = -1; else if (mouseX > rect.right - threshold) direction = 1;
   if (direction !== 0) { if (!isAutoScrolling.value) { isAutoScrolling.value = true; scrollInterval.value = setInterval(() => { const nextVal = virtualStartIndex.value + direction; if (nextVal >= 0 && nextVal <= maxVirtual) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } else { stopAutoScroll(); } }, 100); } } else { stopAutoScroll(); }
 };
 const onContainerDragLeave = (e) => { stopAutoScroll(); };
 const handleOperationDrop = async (dropData) => { stopAutoScroll(); const operation = dropData.operation; const oldDateKey = operation.dateKey; const newDateKey = dropData.toDateKey; const newCellIndex = dropData.toCellIndex; if (!oldDateKey || !newDateKey) return; if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return; await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex); };
-const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
+const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS.value; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
+
+// Set column count and rebuild
+const setColumnCount = (count) => {
+  if (count === VISIBLE_COLS.value) return;
+  VISIBLE_COLS.value = count;
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
+  // Re-center on today
+  const targetIndex = Math.max(0, Math.min(globalTodayIndex.value - CENTER_INDEX.value, maxVirtual));
+  virtualStartIndex.value = targetIndex;
+  rebuildVisibleDays();
+  nextTick(() => updateScrollbarMetrics());
+};
 
 const clampVirtualStart = (targetDayIndex) => {
-  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
-  const startIdx = Math.max(0, Math.min(targetDayIndex - CENTER_INDEX, maxVirtual));
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
+  const startIdx = Math.max(0, Math.min(targetDayIndex - CENTER_INDEX.value, maxVirtual));
   virtualStartIndex.value = startIdx;
   rebuildVisibleDays();
   nextTick(() => updateScrollbarMetrics());
@@ -1254,16 +1266,16 @@ const centerCharts = () => {
   applyHeights(318);
   isChartsExpanded.value = true;
 };
-const updateScrollbarMetrics = () => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth || 0; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (maxVirtual <= 0) { scrollbarThumbWidth.value = trackWidth; scrollbarThumbX.value = 0; return; } const ratio = VISIBLE_COLS / Math.max(VISIBLE_COLS, totalDays.value); let tWidth = trackWidth * ratio; tWidth = Math.max(50, tWidth); scrollbarThumbWidth.value = tWidth; const availableSpace = trackWidth - tWidth; const progress = virtualStartIndex.value / maxVirtual; scrollbarThumbX.value = progress * availableSpace; };
+const updateScrollbarMetrics = () => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth || 0; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); if (maxVirtual <= 0) { scrollbarThumbWidth.value = trackWidth; scrollbarThumbX.value = 0; return; } const ratio = VISIBLE_COLS.value / Math.max(VISIBLE_COLS.value, totalDays.value); let tWidth = trackWidth * ratio; tWidth = Math.max(50, tWidth); scrollbarThumbWidth.value = tWidth; const availableSpace = trackWidth - tWidth; const progress = virtualStartIndex.value / maxVirtual; scrollbarThumbX.value = progress * availableSpace; };
 const scrollState = { isDragging: false, startX: 0, startThumbX: 0 };
 const onScrollThumbMouseDown = (e) => { startDrag(e.clientX); };
 const onScrollThumbTouchStart = (e) => { startDrag(e.touches[0].clientX); };
 const startDrag = (clientX) => { scrollState.isDragging = true; scrollState.startX = clientX; scrollState.startThumbX = scrollbarThumbX.value; window.addEventListener('mousemove', onScrollThumbMove); window.addEventListener('mouseup', onScrollThumbEnd); window.addEventListener('touchmove', onScrollThumbTouchMove, { passive: false }); window.addEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = 'none'; document.body.style.cursor = 'grabbing'; };
-const calculateScrollFromDrag = (clientX) => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth; const availableSpace = trackWidth - scrollbarThumbWidth.value; if (availableSpace <= 0) return; const delta = clientX - scrollState.startX; let newThumbX = scrollState.startThumbX + delta; newThumbX = Math.max(0, Math.min(newThumbX, availableSpace)); scrollbarThumbX.value = newThumbX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); const ratio = newThumbX / availableSpace; const newIndex = Math.round(ratio * maxVirtual); if (newIndex !== virtualStartIndex.value) { virtualStartIndex.value = newIndex; rebuildVisibleDays(); } };
+const calculateScrollFromDrag = (clientX) => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth; const availableSpace = trackWidth - scrollbarThumbWidth.value; if (availableSpace <= 0) return; const delta = clientX - scrollState.startX; let newThumbX = scrollState.startThumbX + delta; newThumbX = Math.max(0, Math.min(newThumbX, availableSpace)); scrollbarThumbX.value = newThumbX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); const ratio = newThumbX / availableSpace; const newIndex = Math.round(ratio * maxVirtual); if (newIndex !== virtualStartIndex.value) { virtualStartIndex.value = newIndex; rebuildVisibleDays(); } };
 const onScrollThumbMove = (e) => { if (!scrollState.isDragging) return; calculateScrollFromDrag(e.clientX); };
 const onScrollThumbTouchMove = (e) => { if (!scrollState.isDragging) return; e.preventDefault(); calculateScrollFromDrag(e.touches[0].clientX); };
 const onScrollThumbEnd = () => { scrollState.isDragging = false; window.removeEventListener('mousemove', onScrollThumbMove); window.removeEventListener('mouseup', onScrollThumbEnd); window.removeEventListener('touchmove', onScrollThumbTouchMove); window.removeEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
-const onTrackClick = (e) => { if (e.target.classList.contains('custom-scrollbar-thumb')) return; const trackRect = customScrollbarTrackRef.value.getBoundingClientRect(); const clickX = e.clientX - trackRect.left; const targetThumbX = clickX - (scrollbarThumbWidth.value / 2); const trackWidth = trackRect.width; const availableSpace = trackWidth - scrollbarThumbWidth.value; let newThumbX = Math.max(0, Math.min(targetThumbX, availableSpace)); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); const ratio = newThumbX / availableSpace; virtualStartIndex.value = Math.round(ratio * maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
+const onTrackClick = (e) => { if (e.target.classList.contains('custom-scrollbar-thumb')) return; const trackRect = customScrollbarTrackRef.value.getBoundingClientRect(); const clickX = e.clientX - trackRect.left; const targetThumbX = clickX - (scrollbarThumbWidth.value / 2); const trackWidth = trackRect.width; const availableSpace = trackWidth - scrollbarThumbWidth.value; let newThumbX = Math.max(0, Math.min(targetThumbX, availableSpace)); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); const ratio = newThumbX / availableSpace; virtualStartIndex.value = Math.round(ratio * maxVirtual); rebuildVisibleDays(); updateScrollbarMetrics(); };
 
 // 🔴 NEW: Показать скролл и скрыть через 1.5с
 const showScrollbar = () => {
@@ -1280,14 +1292,14 @@ const autoExpandTimeline = () => {
 
 
 
-const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); showScrollbar(); autoExpandTimeline(); } } } };
+const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); showScrollbar(); autoExpandTimeline(); } } } };
 const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
 const onContentTouchStart = (e) => { if (!isScrollActive.value) return; contentTouchState.isDragging = true; contentTouchState.startX = e.touches[0].clientX; contentTouchState.startIndex = virtualStartIndex.value; };
-const onContentTouchMove = (e) => { if (!contentTouchState.isDragging) return; const deltaPx = contentTouchState.startX - e.touches[0].clientX; const pxPerDay = 50; const deltaDays = Math.round(deltaPx / pxPerDay); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); let nextVal = contentTouchState.startIndex + deltaDays; nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (e.cancelable) e.preventDefault(); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); autoExpandTimeline(); } };
+const onContentTouchMove = (e) => { if (!contentTouchState.isDragging) return; const deltaPx = contentTouchState.startX - e.touches[0].clientX; const pxPerDay = 50; const deltaDays = Math.round(deltaPx / pxPerDay); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); let nextVal = contentTouchState.startIndex + deltaDays; nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (e.cancelable) e.preventDefault(); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); autoExpandTimeline(); } };
 const onContentTouchEnd = () => { contentTouchState.isDragging = false; };
 const centerToday = () => { scrollToMonthCenter(selectedMonthStart.value || new Date()); };
 // OLD: onChangeView - controls both timeline AND forecast
-const onChangeView = async (newView) => { const currentStartDate = visibleDays.value[0]?.date || new Date(today.value); viewMode.value = newView; await nextTick(); const msPerDay = 1000 * 60 * 60 * 24; const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay); const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2); let targetIndex = newGlobalTodayIndex + diffDays; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS); targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual)); virtualStartIndex.value = targetIndex; rebuildVisibleDays(); await nextTick(); setTimeout(() => { updateScrollbarMetrics(); recalcProjectionForCurrentView(); }, 50); };
+const onChangeView = async (newView) => { const currentStartDate = visibleDays.value[0]?.date || new Date(today.value); viewMode.value = newView; await nextTick(); const msPerDay = 1000 * 60 * 60 * 24; const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay); const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX.value : Math.floor(totalDays.value / 2); let targetIndex = newGlobalTodayIndex + diffDays; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual)); virtualStartIndex.value = targetIndex; rebuildVisibleDays(); await nextTick(); setTimeout(() => { updateScrollbarMetrics(); recalcProjectionForCurrentView(); }, 50); };
 
 // NEW: onChangeTimelineWidth - controls ONLY visual timeline width (no forecast recalc)
 const onChangeTimelineWidth = async (newWidth) => {
@@ -1297,9 +1309,9 @@ const onChangeTimelineWidth = async (newWidth) => {
   
   const msPerDay = 1000 * 60 * 60 * 24;
   const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay);
-  const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX : Math.floor(totalDays.value / 2);
+  const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX.value : Math.floor(totalDays.value / 2);
   let targetIndex = newGlobalTodayIndex + diffDays;
-  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS);
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
   targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual));
   
   virtualStartIndex.value = targetIndex;
@@ -1588,7 +1600,35 @@ const handleRefundDelete = async (op) => {
     <div class="header-resizer" :class="{ 'expanded': isHeaderTall }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body" :style="{ '--timeline-height': timelineHeightPx + 'px', '--divider-height': DIVIDER_H + 'px' }">
       <aside class="home-left-panel">
-        <div class="timeline-spacer"></div>
+        <div class="timeline-spacer">
+          <!-- Column count switcher buttons -->
+          <div class="column-switcher-container">
+            <button 
+              class="column-switcher-btn" 
+              :class="{ 'active': VISIBLE_COLS === 7 }"
+              @click="setColumnCount(7)"
+              title="7 дней"
+            >
+              7д
+            </button>
+            <button 
+              class="column-switcher-btn" 
+              :class="{ 'active': VISIBLE_COLS === 12 }"
+              @click="setColumnCount(12)"
+              title="12 дней"
+            >
+              12д
+            </button>
+            <button 
+              class="column-switcher-btn" 
+              :class="{ 'active': VISIBLE_COLS === 21 }"
+              @click="setColumnCount(21)"
+              title="21 день"
+            >
+              21д
+            </button>
+          </div>
+        </div>
         <div class="divider-placeholder"></div>
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
@@ -1597,7 +1637,7 @@ const handleRefundDelete = async (op) => {
           <div v-if="isDataLoading" class="section-loading-overlay">
             <div class="spinner-small"></div>
           </div>
-        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
+        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ gridTemplateColumns: `repeat(${VISIBLE_COLS}, minmax(0, 1fr))` }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
         <div class="divider-wrapper" ref="dividerWrapperRef">
@@ -1608,6 +1648,7 @@ const handleRefundDelete = async (op) => {
 
           <div v-if="isScrollActive" class="custom-scrollbar-track" ref="customScrollbarTrackRef" @mouseenter="showScrollbar" @mouseleave="() => { if (!scrollState.isDragging) showScrollbar(); }"><div class="custom-scrollbar-thumb" :class="{ 'visible': scrollbarVisible }" :style="{ width: scrollbarThumbWidth + 'px', transform: `translateX(${scrollbarThumbX}px)` }" @mousedown.stop="onScrollThumbMouseDown" @touchstart.stop="onScrollThumbTouchStart"></div></div>
 
+          <!-- Center: vertical resizer with TimelineSwitcher (chart height controls only) -->
           <div class="month-nav center">
             <div v-if="!mainStore.isTimelineOnly" class="vertical-resizer" :class="{ 'collapsed': !isChartsExpanded }" ref="resizerRef"><TimelineSwitcher @change-timeline-width="onChangeTimelineWidth" @expand-charts-max="expandChartsMax" @collapse-charts-max="collapseChartsMax" @center-charts="centerCharts" /></div>
           </div>
@@ -1622,7 +1663,7 @@ const handleRefundDelete = async (op) => {
           <div v-if="isDataLoading" class="section-loading-overlay">
             <div class="spinner-small"></div>
           </div>
-          <GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" />
+          <GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" :columnCount="VISIBLE_COLS" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" />
           <div class="summaries-container"></div>
         </div>
       </main>
@@ -2037,7 +2078,17 @@ const handleRefundDelete = async (op) => {
 .header-resizer.expanded::before { transform: rotate(180deg) scale(1.1); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
 .home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: grid; grid-template-rows: var(--timeline-height, 318px) var(--divider-height, 28px) 1fr; background: var(--divider-wrapper-bg); border-right: 1px solid var(--color-border); }
-.timeline-spacer { width: 100%; height: 100%; }
+.timeline-spacer { width: 100%; height: 100%; align-items: center; justify-content: center; }
+
+.column-switcher-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  height: 100%;
+  padding: 8px;
+}
 .y-axis-wrapper-flex { width: 100%; height: 100%; }
 .home-right-panel { 
   width: 60px; 
@@ -2187,7 +2238,7 @@ const handleRefundDelete = async (op) => {
   cursor: not-allowed !important;
 }
 
-.timeline-grid-content { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
+.timeline-grid-content { display: grid; width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
 .timeline-grid-content.month-transition { transform: translateY(-6px); opacity: 0.9; }
 .divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
 .divider-wrapper .month-label { flex: 0 0 auto; font-weight: 600; font-size: 11px; text-transform: capitalize; color: var(--color-text); line-height: 1; }
@@ -2196,6 +2247,38 @@ const handleRefundDelete = async (op) => {
 .month-nav-btn { width: 18px; height: 18px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-background-soft); color: var(--color-text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 12px; padding: 0; }
 .month-nav-btn:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 .month-nav-btn:active { transform: scale(0.96); }
+
+.column-switcher-btn { 
+  flex: 1;
+  width: 100%;
+  padding: 0;
+  margin: 4px 0;
+  border-radius: 4px; 
+  border: 1px solid var(--color-border); 
+  background: transparent; 
+  color: var(--color-text); 
+  cursor: pointer; 
+  display: inline-flex; 
+  align-items: center; 
+  justify-content: center; 
+  transition: all 0.15s; 
+  font-size: 14px; 
+  font-weight: 500;
+  opacity: 0.6;
+}
+.column-switcher-btn:hover { 
+  opacity: 0.8;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-primary);
+}
+.column-switcher-btn.active { 
+  color: rgba(74, 144, 226, 0.8); 
+  font-weight: 700;
+  opacity: 1;
+  font-size: 15px;
+  border-color: rgba(74, 144, 226, 0.5);
+}
+.column-switcher-btn:active { transform: scale(0.97); }
 .custom-scrollbar-track { position: absolute; left: 50px; right: 50px; top: 0; height: 100%; background-color: transparent; cursor: default; z-index: 15; pointer-events: none; }
 .custom-scrollbar-track:hover { pointer-events: all; }
 .custom-scrollbar-thumb { position: absolute; top: 2px; bottom: 2px; background-color: var(--scrollbar-thumb-bg); border-radius: 6px; cursor: grab; z-index: 16; pointer-events: all; opacity: 0; transition: opacity 0.3s ease; }

@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { useProjectionStore } from '@/stores/projectionStore';
-import { formatNumber } from '@/utils/formatters.js';
+import { formatNumber, formatShortNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS } from 'chart.js/auto';
 import { 
@@ -52,9 +52,10 @@ const _clearTooltipHideTimer = () => {
 let tooltipCopyFeedbackTimer = null;
 
 const props = defineProps({
-  visibleDays: { type: Array, required: true, default: () => [] },
-  animate: { type: Boolean, default: false },
-  showSummaries: { type: Boolean, default: true }
+  animate: { type: Boolean, default: true },
+  showSummaries: { type: Boolean, default: true },
+  visibleDays: { type: Array, default: () => [] },
+  columnCount: { type: Number, default: 12 } // Number of visible columns
 });
 const emit = defineEmits(['update:yLabels']);
 
@@ -951,6 +952,7 @@ const summaries = computed(() => {
       : startBalance;
 
     return {
+      day: d, // Keep Date object for flexible formatting
       date: d.toLocaleDateString('ru-RU', { weekday: 'short', month: 'short', day: 'numeric' }),
       income: incTotal,
       expense: expTotal,
@@ -1763,10 +1765,19 @@ watch(
 
     <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${summaries.length}, 1fr)` }">
       <div v-for="(day, index) in summaries" :key="index" class="day-summary">
-        <div class="day-date">{{ day.date }}</div>
-        <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
-        <div class="day-expense">₸ {{ formatNumber(day.expense) }}</div>
-        <div class="day-balance">₸ {{ formatNumber(day.balance) }}</div>
+        <div class="day-date">{{ columnCount >= 21 && day.day ? day.day.getDate() : day.date }}</div>
+        <template v-if="columnCount >= 21">
+          <!-- Compact format for 21+ columns -->
+          <div class="day-income">₸ {{ formatShortNumber(day.income) }}</div>
+          <div class="day-expense">₸ {{ formatShortNumber(day.expense) }}</div>
+          <div class="day-balance">₸ {{ formatShortNumber(day.balance) }}</div>
+        </template>
+        <template v-else>
+          <!-- Full format for 7-12 columns -->
+          <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
+          <div class="day-expense">₸ {{ formatNumber(day.expense) }}</div>
+          <div class="day-balance">₸ {{ formatNumber(day.balance) }}</div>
+        </template>
       </div>
     </div>
   </div>
