@@ -2272,11 +2272,11 @@ const handleRefundDelete = async (op) => {
   border-color: var(--color-primary);
 }
 .column-switcher-btn.active { 
-  color: rgba(74, 144, 226, 0.8); 
+  color: #595959; 
   font-weight: 700;
   opacity: 1;
   font-size: 15px;
-  border-color: rgba(74, 144, 226, 0.5);
+  border-color: #585858;
 }
 .column-switcher-btn:active { transform: scale(0.97); }
 .custom-scrollbar-track { position: absolute; left: 50px; right: 50px; top: 0; height: 100%; background-color: transparent; cursor: default; z-index: 15; pointer-events: none; }

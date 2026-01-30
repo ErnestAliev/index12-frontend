@@ -2,7 +2,7 @@
 // Она принимает число, убирает десятичную часть и добавляет пробелы
 export const formatNumber = (num) => {
   const numAsInt = Math.floor(num);
-  return String(numAsInt).replace(/\B(?=(\d{3})+(?!\\d))/g, ' ');
+  return String(numAsInt).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
 // Короткий формат для узких колонок (21д режим)
