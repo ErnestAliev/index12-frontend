@@ -2059,26 +2059,40 @@ export const useMainStore = defineStore('mainStore', () => {
         ops.forEach(op => {
             if (!op || op.isDeleted) return;
 
-            // Check if operation belongs to an excluded account
-            let accountIdToCheck = null;
+            // ✅ FIX: For transfers, check BOTH accounts
+            // If ANY account is excluded, create phantom
+            let shouldCreatePhantom = false;
 
-            // Extract account ID (could be populated object or raw ID)
+            // Check regular operations (income/expense)
             if (op.accountId) {
-                accountIdToCheck = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
-            } else if (op.fromAccountId) {
-                accountIdToCheck = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
-            } else if (op.toAccountId) {
-                accountIdToCheck = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
+                const accountId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
+                const account = accounts.value.find(a => _idsMatch(a._id, accountId));
+                if (account?.isExcluded) {
+                    shouldCreatePhantom = true;
+                }
             }
 
-            if (!accountIdToCheck) return;
+            // Check transfers - fromAccountId
+            if (op.fromAccountId) {
+                const fromId = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
+                const fromAccount = accounts.value.find(a => _idsMatch(a._id, fromId));
+                if (fromAccount?.isExcluded) {
+                    shouldCreatePhantom = true;
+                }
+            }
 
-            // Find account and check if excluded
-            const account = accounts.value.find(a => _idsMatch(a._id, accountIdToCheck));
+            // Check transfers - toAccountId
+            if (op.toAccountId) {
+                const toId = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
+                const toAccount = accounts.value.find(a => _idsMatch(a._id, toId));
+                if (toAccount?.isExcluded) {
+                    shouldCreatePhantom = true;
+                }
+            }
 
-            if (account?.isExcluded) {
+            if (shouldCreatePhantom) {
                 phantoms.push({
-                    _id: `phantom - ${op._id} `,
+                    _id: `phantom-${op._id}`,
                     isPhantom: true,
                     cellIndex: op.cellIndex,
                     dateKey: op.dateKey || dateKey
