@@ -810,9 +810,13 @@ export const useMainStore = defineStore('mainStore', () => {
     const currentAccountBalances = computed(() => {
         // Факт всегда по всей истории (не зависит от periodFilter)
         const balances = {};
-        accounts.value.forEach(acc => {
-            balances[acc._id] = Number(acc.initialBalance || 0);
-        });
+        // ✅ FIX: Only initialize balances for visible accounts
+        // This ensures transfers involving excluded accounts don't affect visible account balances
+        accounts.value
+            .filter(a => includeExcludedInTotal.value || !a.isExcluded)
+            .forEach(acc => {
+                balances[acc._id] = Number(acc.initialBalance || 0);
+            });
 
         const pastOps = getAllRelevantOps.value.filter(op => _isEffectivelyPastOrToday(op.date));
 
