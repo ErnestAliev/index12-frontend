@@ -111,11 +111,24 @@ export function usePermissions() {
      * @returns {boolean}
      */
     function canEditOperation(operation) {
-        if (!canEdit.value) return false;
-        if (isAdmin.value) return true;
+        if (!canEdit.value) {
+            console.log('🔐 [canEditOperation] User cannot edit (role restriction)');
+            return false;
+        }
+        if (isAdmin.value) {
+            console.log('✅ [canEditOperation] Admin can edit all');
+            return true;
+        }
         // Manager can only edit own operations
         if (isManager.value) {
-            return operation.createdBy === mainStore.user?.id;
+            const result = operation.createdBy === mainStore.user?.id;
+            console.log('🔍 [canEditOperation] Manager ownership check:', {
+                operationId: operation._id,
+                createdBy: operation.createdBy,
+                currentUserId: mainStore.user?.id,
+                match: result
+            });
+            return result;
         }
         return false;
     }
@@ -126,11 +139,24 @@ export function usePermissions() {
      * @returns {boolean}
      */
     function canDeleteOperation(operation) {
-        if (!canDelete.value) return false;
-        if (isAdmin.value) return true;
+        if (!canDelete.value) {
+            console.log('🔐 [canDeleteOperation] User cannot delete (role restriction)');
+            return false;
+        }
+        if (isAdmin.value) {
+            console.log('✅ [canDeleteOperation] Admin can delete all');
+            return true;
+        }
         // Manager can only delete own operations
         if (isManager.value) {
-            return operation.createdBy === mainStore.user?.id;
+            const result = operation.createdBy === mainStore.user?.id;
+            console.log('🔍 [canDeleteOperation] Manager ownership check:', {
+                operationId: operation._id,
+                createdBy: operation.createdBy,
+                currentUserId: mainStore.user?.id,
+                match: result
+            });
+            return result;
         }
         return false;
     }
