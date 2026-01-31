@@ -1064,10 +1064,10 @@ const accountBalancesByDateKey = computed(() => {
       const accId = String(acc._id);
       let balance = Number(acc.initialBalance || 0);
       
-      // Add/subtract all operations for this account up to end of this day
+      // Add/subtract all operations for this account up to end of this      
       for (const op of ops) {
         if (!op) continue;
-        if (!isOpVisible(op)) continue;
+        // ✅ FIX: Don't filter transfers by isOpVisible - handle them separately
         
         const opDate = _coerceDate(op.date);
         if (!opDate || opDate.getTime() > dayEndTime.getTime()) continue;
@@ -1075,7 +1075,7 @@ const accountBalancesByDateKey = computed(() => {
         const amt = Number(op.amount) || 0;
         const absAmt = Math.abs(amt);
         
-        // Handle transfers
+        // Handle transfers - apply partially based on account visibility
         if (op.isTransfer) {
           // Transfer FROM this account (decreases balance)
           let fromAccId = null;
@@ -1083,7 +1083,10 @@ const accountBalancesByDateKey = computed(() => {
             fromAccId = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
           }
           if (fromAccId && String(fromAccId) === accId) {
-            balance -= absAmt;
+            // Only subtract if the 'from' account is visible
+            if (isOpVisible(op, fromAccId)) {
+              balance -= absAmt;
+            }
             continue;
           }
           
@@ -1093,7 +1096,10 @@ const accountBalancesByDateKey = computed(() => {
             toAccId = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
           }
           if (toAccId && String(toAccId) === accId) {
-            balance += absAmt;
+            // Only add if the 'to' account is visible
+            if (isOpVisible(op, toAccId)) {
+              balance += absAmt;
+            }
             continue;
           }
           
@@ -1102,6 +1108,9 @@ const accountBalancesByDateKey = computed(() => {
         }
         
         // Handle regular operations (income/expense/withdrawal)
+        // Only process if operation is visible
+        if (!isOpVisible(op)) continue;
+        
         let opAccId = null;
         if (op.accountId) {
           opAccId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;

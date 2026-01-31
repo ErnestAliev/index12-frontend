@@ -1001,7 +1001,7 @@ const accountBalancesByDateKey = computed(() => {
       // Add/subtract all operations for this account up to end of this day
       for (const op of ops) {
         if (!op) continue;
-        if (!isOpVisible(op)) continue;
+        // ✅ FIX: Don't filter transfers by isOpVisible - handle them separately
         
         const opDate = _coerceDate(op.date);
         if (!opDate || opDate.getTime() > dayEndTime.getTime()) continue;
@@ -1009,7 +1009,7 @@ const accountBalancesByDateKey = computed(() => {
         const amt = Number(op.amount) || 0;
         const absAmt = Math.abs(amt);
         
-        // Handle transfers
+        // Handle transfers - apply partially based on account visibility
         if (op.isTransfer) {
           // Transfer FROM this account (decreases balance)
           let fromAccId = null;
@@ -1017,6 +1017,7 @@ const accountBalancesByDateKey = computed(() => {
             fromAccId = typeof op.fromAccountId === 'object' ? op.fromAccountId._id : op.fromAccountId;
           }
           if (fromAccId && String(fromAccId) === accId) {
+            // ✅ Only apply if THIS account (from) is current account
             balance -= absAmt;
             continue;
           }
@@ -1027,6 +1028,7 @@ const accountBalancesByDateKey = computed(() => {
             toAccId = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
           }
           if (toAccId && String(toAccId) === accId) {
+            // ✅ Only apply if THIS account (to) is current account
             balance += absAmt;
             continue;
           }
@@ -1036,6 +1038,9 @@ const accountBalancesByDateKey = computed(() => {
         }
         
         // Handle regular operations (income/expense/withdrawal)
+        // Only process if operation is visible
+        if (!isOpVisible(op)) continue;
+        
         let opAccId = null;
         if (op.accountId) {
           opAccId = typeof op.accountId === 'object' ? op.accountId._id : op.accountId;
