@@ -84,8 +84,13 @@ const setMonthRange = async (baseDate = new Date()) => {
       customEnd: end.toISOString()
     });
 
-    mainStore.setProjectionRange(start, end);
-    await mainStore.fetchOperationsRange(start, end);
+    // Extend projection range ONLY forward for timeline scrolling
+    // Mobile shows 4 columns, when centering on month-end we need buffer into next month
+    const extendedEnd = new Date(end);
+    extendedEnd.setDate(end.getDate() + 3); // 3 days into next month
+
+    mainStore.setProjectionRange(start, extendedEnd); // Start at month beginning, no backward buffer
+    await mainStore.fetchOperationsRange(start, extendedEnd);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);

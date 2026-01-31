@@ -82,15 +82,13 @@ const setMonthRange = async (baseDate) => {
     customEnd: end.toISOString()
   });
   
-  // Set projection range - extend to allow timeline scrolling
-  // Buffer needs to cover half of maximum timeline width (21 days / 2 = 10.5 ≈ 11)
-  const extendedStart = new Date(start);
-  extendedStart.setDate(start.getDate() - 11); // 11 days before month start
+  // Set projection range - extend ONLY forward for timeline scrolling
+  // Desktop shows 11 columns centered on today, need buffer into next month when today is near month-end
   const extendedEnd = new Date(end);
-  extendedEnd.setDate(end.getDate() + 11); // 11 days after month end
+  extendedEnd.setDate(end.getDate() + 6); // 6 days into next month
   
-  mainStore.setProjectionRange(extendedStart, extendedEnd);
-  await mainStore.fetchOperationsRange(extendedStart, extendedEnd);
+  mainStore.setProjectionRange(start, extendedEnd); // Start at month beginning, no backward buffer
+  await mainStore.fetchOperationsRange(start, extendedEnd);
   scrollToMonthCenter(baseDate);
   triggerMonthAnimation();
 };
