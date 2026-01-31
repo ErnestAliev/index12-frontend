@@ -1669,9 +1669,6 @@ const chartOptions = computed(() => {
               if (dayExpense) lines.push(`Расход: -${formatNumber(dayExpense)} т`);
             }
 
-            // Если операций нет — просто баланс
-            if (!dayIncome && !dayExpense) return lines;
-
             // Собираем детализацию (всегда общий tooltip): сначала доходы, потом расходы, потом переводы
             const safeGet = (key) => {
               const arr = tooltipDetails.value?.[key];
@@ -1687,6 +1684,7 @@ const chartOptions = computed(() => {
             expenseDetails = [...expenseDetails].sort(sortByAbs);
             transferDetails = [...transferDetails].sort(sortByAbs);
 
+            // ✅ FIX: Show tooltip even if only transfers exist
             if (!incomeDetails.length && !expenseDetails.length && !transferDetails.length) return lines;
 
             lines.push('---');
