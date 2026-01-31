@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 
 const emit = defineEmits(['change-timeline-width', 'expand-charts-max', 'collapse-charts-max', 'center-charts']);
 
-const timelineWidths = ['12d', '1m', '3m', '6m', '1y'];
+const timelineWidths = ['11d', '1m', '3m', '6m', '1y'];
 const currentIndex = ref(0);
 
 const currentWidth = computed(() => timelineWidths[currentIndex.value]);

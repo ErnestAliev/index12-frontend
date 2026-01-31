@@ -212,12 +212,8 @@ const onDrop = (dropDataFromHourCell) => {
 
 /* 🟢 Визуальная граница между прошлым и будущим */
 .day-column.today {
+  border-left: var(--day-today-border-width) solid var(--day-today-border-color);
   border-right: var(--day-today-border-width) solid var(--day-today-border-color);
-}
-
-/* 🟢 Визуальная граница между настоящим и будущим (симметрия) */
-.day-column.tomorrow {
-  border-left: var(--day-tomorrow-border-width) solid var(--day-tomorrow-border-color);
 }
 .column-body {
   /* ... */

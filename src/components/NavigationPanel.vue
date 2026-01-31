@@ -19,13 +19,13 @@ import { ref, computed, onMounted } from 'vue';
 const emit = defineEmits(['change-view']);
 
 const views = [
-  { key: '12d', num: '12', unit: 'ДНЕЙ' },
+  { key: '11d', num: '11', unit: 'ДНЕЙ' },
   { key: '1m',  num: '1',  unit: 'МЕС' },
   { key: '3m',  num: '3',  unit: 'МЕС' },
   { key: '6m',  num: '6',  unit: 'МЕС' },
   { key: '1y',  num: '1',  unit: 'ГОД' }
 ];
-const currentIndex = ref(0); // Стартуем с '12d'
+const currentIndex = ref(0); // Стартуем с '11d'
 
 const currentView = computed(() => views[currentIndex.value]);
 

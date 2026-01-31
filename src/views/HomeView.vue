@@ -74,13 +74,23 @@ const setMonthRange = async (baseDate) => {
   start.setHours(0, 0, 0, 0);
   end.setHours(23, 59, 59, 999);
   selectedMonthStart.value = start;
+  
+  // Set periodFilter for widgets - full month
   mainStore.setPeriodFilter({
     mode: 'custom',
     customStart: start.toISOString(),
     customEnd: end.toISOString()
   });
-  mainStore.setProjectionRange(start, end);
-  await mainStore.fetchOperationsRange(start, end);
+  
+  // Set projection range - extend to allow timeline scrolling
+  // Buffer needs to cover half of maximum timeline width (21 days / 2 = 10.5 ≈ 11)
+  const extendedStart = new Date(start);
+  extendedStart.setDate(start.getDate() - 11); // 11 days before month start
+  const extendedEnd = new Date(end);
+  extendedEnd.setDate(end.getDate() + 11); // 11 days after month end
+  
+  mainStore.setProjectionRange(extendedStart, extendedEnd);
+  await mainStore.fetchOperationsRange(extendedStart, extendedEnd);
   scrollToMonthCenter(baseDate);
   triggerMonthAnimation();
 };
@@ -811,7 +821,7 @@ const _parseDateKey = (dateKey) => {
     const date = new Date(year, 0, 1); date.setDate(doy); return date;
 };
 
-const VISIBLE_COLS = ref(7); // Default: 7 columns
+const VISIBLE_COLS = ref(11); // Default: 11 columns - today centered at position 5
 const CENTER_INDEX = computed(() => Math.floor((VISIBLE_COLS.value - 1) / 2));
 const viewMode = ref('3m'); // 🔴 VISUALIZATION ONLY - does NOT affect calculations
 const isScrollActive = computed(() => true); // 🔴 FIXED: скролл всегда активен
@@ -1054,7 +1064,7 @@ const scrollInterval = ref(null);
 const isAutoScrolling = ref(false);
 const stopAutoScroll = () => { if (scrollInterval.value) { clearInterval(scrollInterval.value); scrollInterval.value = null; } isAutoScrolling.value = false; };
 const onContainerDragOver = (e) => {
-  if (viewMode.value === '12d') return;
+  if (viewMode.value === '11d') return;
   if (!timelineGridRef.value) return;
   const rect = timelineGridRef.value.getBoundingClientRect();
   const mouseX = e.clientX;
@@ -1103,12 +1113,9 @@ const scrollToMonthCenter = (baseDate) => {
   const todayDate = new Date(today.value);
   todayDate.setHours(0, 0, 0, 0);
 
-  let targetDayIndex = Math.floor((total - 1) / 2);
-
-  if (baseDate && baseDate.getFullYear() === todayDate.getFullYear() && baseDate.getMonth() === todayDate.getMonth()) {
-    const diff = Math.round((todayDate.getTime() - start.getTime()) / msPerDay);
-    targetDayIndex = Math.max(0, Math.min(diff, total - 1));
-  }
+  // Always center on today - timeline is independent of month boundaries
+  const diff = Math.round((todayDate.getTime() - start.getTime()) / msPerDay);
+  const targetDayIndex = Math.max(0, Math.min(diff, total - 1));
 
   clampVirtualStart(targetDayIndex);
 };
@@ -1309,7 +1316,7 @@ const onChangeTimelineWidth = async (newWidth) => {
   
   const msPerDay = 1000 * 60 * 60 * 24;
   const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay);
-  const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX.value : Math.floor(totalDays.value / 2);
+  const newGlobalTodayIndex = (viewMode.value === '11d') ? CENTER_INDEX.value : Math.floor(totalDays.value / 2);
   let targetIndex = newGlobalTodayIndex + diffDays;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
   targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual));
@@ -1494,13 +1501,8 @@ onMounted(async () => {
     window.addEventListener('resize', onWindowResize); 
     updateScrollbarMetrics(); 
     
-    // 🔥 UNIFIED DATE RANGE: Load to end of current month (single source of truth)
-    console.log('[Desktop] Initializing with projection to end of current month');
-    await mainStore.setProjectionToEndOfMonth();
-    
-    // Center timeline on today after loading projection
-    centerToday();
-    console.log('[Desktop] Timeline centered on today');
+    // Timeline is now initialized by setMonthRange in onMounted (line 1458)
+    // No need to call setProjectionToEndOfMonth - it would overwrite timeline range
 
     // 🟢 Delay background snapshot significantly to let UI settle
     setTimeout(() => {
@@ -1613,11 +1615,11 @@ const handleRefundDelete = async (op) => {
             </button>
             <button 
               class="column-switcher-btn" 
-              :class="{ 'active': VISIBLE_COLS === 12 }"
-              @click="setColumnCount(12)"
-              title="12 дней"
+              :class="{ 'active': VISIBLE_COLS === 11 }"
+              @click="setColumnCount(11)"
+              title="11 дней"
             >
-              12д
+              11д
             </button>
             <button 
               class="column-switcher-btn" 
