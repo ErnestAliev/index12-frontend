@@ -2016,7 +2016,8 @@ export const useMainStore = defineStore('mainStore', () => {
             await fetchSnapshot();
 
             if (user.value) {
-                useSocketStore().connect(user.value._id);
+                // ✅ Connect to workspace socket room (all workspace members in same room)
+                useSocketStore().connect(user.value.currentWorkspaceId);
             }
 
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }

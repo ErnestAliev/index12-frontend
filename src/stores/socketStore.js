@@ -24,11 +24,11 @@ export const useSocketStore = defineStore('socket', () => {
 
     /**
      * Инициализация подключения к сокету
-     * @param {string} userId - ID пользователя для комнаты
+     * @param {string} workspaceId - ID workspace для комнаты (все члены workspace в одной комнате)
      */
-    function connect(userId) {
+    function connect(workspaceId) {
         if (socket.value) return; // Уже подключен
-        if (!userId) return;
+        if (!workspaceId) return;
 
         const mainStore = useMainStore();
 
@@ -40,9 +40,9 @@ export const useSocketStore = defineStore('socket', () => {
         });
 
         socket.value.on('connect', () => {
-
+            console.log('[socketStore] Connected to server, joining workspace:', workspaceId);
             isConnected.value = true;
-            socket.value.emit('join', userId);
+            socket.value.emit('join', workspaceId);
 
             // Устанавливаем заголовок для axios, чтобы сервер знал ID сокета этого клиента
             // и не присылал нам обратно наши же действия (эхо)
@@ -97,6 +97,25 @@ export const useSocketStore = defineStore('socket', () => {
 
     }
 
+    /**
+     * Переключение между workspace (покинуть старое, присоединиться к новому)
+     * @param {string} oldWorkspaceId - ID старого workspace
+     * @param {string} newWorkspaceId - ID нового workspace
+     */
+    function switchWorkspace(oldWorkspaceId, newWorkspaceId) {
+        if (!socket.value || !isConnected.value) return;
+
+        if (oldWorkspaceId) {
+            console.log('[socketStore] Leaving workspace:', oldWorkspaceId);
+            socket.value.emit('leave', oldWorkspaceId);
+        }
+
+        if (newWorkspaceId) {
+            console.log('[socketStore] Joining workspace:', newWorkspaceId);
+            socket.value.emit('join', newWorkspaceId);
+        }
+    }
+
     function disconnect() {
         if (socket.value) {
             socket.value.disconnect();
@@ -109,6 +128,7 @@ export const useSocketStore = defineStore('socket', () => {
         socket,
         isConnected,
         connect,
-        disconnect
+        disconnect,
+        switchWorkspace
     };
 });
