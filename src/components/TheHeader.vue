@@ -129,12 +129,11 @@ onUnmounted(() => {
 
 const isTablet = computed(() => windowWidth.value < 1400); 
 
-const ruShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-const todayStr = computed(() => { const d = new Date(); return isTablet.value ? ruSuperShort.format(d) : ruShort.format(d); });
+const todayStr = computed(() => { const d = new Date(); return ruSuperShort.format(d); });
 const futureUntilStr = computed(() => {
   const d = mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null;
-  return (d && !isNaN(d.getTime())) ? (isTablet.value ? ruSuperShort.format(d) : ruShort.format(d)) : todayStr.value;
+  return (d && !isNaN(d.getTime())) ? ruSuperShort.format(d) : todayStr.value;
 });
 
 const localWidgets = computed({
