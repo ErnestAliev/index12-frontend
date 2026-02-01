@@ -374,10 +374,20 @@ const summaryTotals = computed(() => {
   // not from operations in mainStore.
   const list = processedItems.value || [];
 
+  const planExpense = (() => {
+    if (props.widgetKey === 'projects') {
+      const hasBreakdown = list.some(item => item && Object.prototype.hasOwnProperty.call(item, 'futureExpenseAbs'));
+      if (hasBreakdown) {
+        return list.reduce((acc, item) => acc + Math.max(0, Number(item?.futureExpenseAbs) || 0), 0);
+      }
+    }
+    return _sumListByFieldSign(list, 'futureBalance', 'neg');
+  })();
+
   return {
     factExpense: _sumListByFieldSign(list, 'balance', 'neg'),
     factIncome: _sumListByFieldSign(list, 'balance', 'pos'),
-    planExpense: _sumListByFieldSign(list, 'futureBalance', 'neg'),
+    planExpense,
     planIncome: _sumListByFieldSign(list, 'futureBalance', 'pos'),
   };
 });

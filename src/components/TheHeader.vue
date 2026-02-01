@@ -548,14 +548,23 @@ const loggedCurrentTotal = computed(() => mainStore.currentTotalBalance);
 const loggedFutureTotal = computed(() => mainStore.futureTotalBalance);
 
 const mergeBalances = (currentBalances, futureData, isDelta = false) => {
-  let result = currentBalances || [];
+  const safeCurrent = Array.isArray(currentBalances) ? currentBalances : [];
+  let result = safeCurrent;
+
   if (futureData) {
-      const futureMap = new Map(futureData.map(item => [item._id, item.balance]));
-      result = currentBalances.map(item => {
+      const futureMap = new Map((futureData || []).map(item => [item._id, item || {}]));
+      result = safeCurrent.map(item => {
+          const future = futureMap.get(item._id) || {};
           const fallback = isDelta ? 0 : item.balance;
-          return { ...item, futureBalance: futureMap.get(item._id) ?? fallback };
+          return {
+              ...item,
+              futureBalance: future.balance ?? fallback,
+              futureIncomeAbs: future.futureIncomeAbs ?? item.futureIncomeAbs,
+              futureExpenseAbs: future.futureExpenseAbs ?? item.futureExpenseAbs
+          };
       });
   }
+
   return result.sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 

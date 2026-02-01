@@ -1035,8 +1035,38 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const futureProjectChanges = computed(() => {
-        const futureMap = _calculateFutureEntityChange('projectId');
-        return projects.value.map(p => ({ ...p, balance: futureMap[p._id] || 0 }));
+        const deltaMap = {};
+        const incomeMap = {};
+        const expenseMap = {};
+
+        for (const op of futureOps.value) {
+            if (_isRetailWriteOff(op) || op.isWorkAct) continue;
+            if (isTransfer(op)) continue; // Проекты не затрагиваются чистыми переводами
+
+            let pid = op.projectId?._id || op.projectId;
+            if (!pid && Array.isArray(op.projectIds) && op.projectIds.length === 1) {
+                pid = op.projectIds[0]?._id || op.projectIds[0];
+            }
+            if (!pid) continue;
+
+            const rawAmt = Number(op.amount) || 0;
+            const absAmt = Math.abs(rawAmt);
+
+            if (op.type === 'income') {
+                incomeMap[pid] = (incomeMap[pid] || 0) + absAmt;
+                deltaMap[pid] = (deltaMap[pid] || 0) + rawAmt;
+            } else {
+                expenseMap[pid] = (expenseMap[pid] || 0) + absAmt;
+                deltaMap[pid] = (deltaMap[pid] || 0) - absAmt;
+            }
+        }
+
+        return projects.value.map(p => ({
+            ...p,
+            balance: deltaMap[p._id] || 0,
+            futureIncomeAbs: incomeMap[p._id] || 0,
+            futureExpenseAbs: expenseMap[p._id] || 0
+        }));
     });
 
     const futureIndividualChanges = computed(() => {
