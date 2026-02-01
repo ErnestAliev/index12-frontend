@@ -82,13 +82,49 @@ const setMonthRange = async (baseDate) => {
     customEnd: end.toISOString()
   });
   
-  // Set projection range - extend ONLY forward for timeline scrolling
-  // Desktop shows 11 columns centered on today, need buffer into next month when today is near month-end
-  const extendedEnd = new Date(end);
-  extendedEnd.setDate(end.getDate() + 6); // 6 days into next month
+  // 🔥 SMART BUFFER: Calculate buffer based on today's position in month
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isCurrentMonth = today.getFullYear() === start.getFullYear() && today.getMonth() === start.getMonth();
   
-  mainStore.setProjectionRange(start, extendedEnd); // Start at month beginning, no backward buffer
-  await mainStore.fetchOperationsRange(start, extendedEnd);
+  let projectionStart = new Date(start);
+  let projectionEnd = new Date(end);
+  
+  if (isCurrentMonth) {
+    // Calculate how many days needed for centering (half of visible columns)
+    const halfCols = Math.floor(VISIBLE_COLS.value / 2);
+    
+    // Days before today in current month
+    const dayOfMonth = today.getDate();
+    const daysBeforeInMonth = dayOfMonth - 1; // 01.02 = 0 days before
+    
+    // Days after today in current month
+    const lastDayOfMonth = end.getDate();
+    const daysAfterInMonth = lastDayOfMonth - dayOfMonth; // 01.02 in 28-day month = 27 days after
+    
+    // Calculate how much buffer we need
+    const needBefore = Math.max(0, halfCols - daysBeforeInMonth); // If today=01.02, need 5 days from Jan
+    const needAfter = Math.max(0, halfCols - daysAfterInMonth); // If today=28.02, need 5 days from Mar
+    
+    if (needBefore > 0) {
+      // Extend backward into previous month
+      projectionStart = new Date(start);
+      projectionStart.setDate(start.getDate() - needBefore);
+    }
+    
+    if (needAfter > 0) {
+      // Extend forward into next month
+      projectionEnd = new Date(end);
+      projectionEnd.setDate(end.getDate() + needAfter);
+    }
+  } else {
+    // Not current month - just add small buffer forward for scrolling
+    projectionEnd = new Date(end);
+    projectionEnd.setDate(end.getDate() + 6);
+  }
+  
+  mainStore.setProjectionRange(projectionStart, projectionEnd);
+  await mainStore.fetchOperationsRange(projectionStart, projectionEnd);
   scrollToMonthCenter(baseDate);
   triggerMonthAnimation();
 };

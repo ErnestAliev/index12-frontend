@@ -84,17 +84,49 @@ const setMonthRange = async (baseDate = new Date()) => {
       customEnd: end.toISOString()
     });
 
-    // Extend projection range ONLY forward for timeline scrolling
-    // Mobile shows 4 columns, when centering on month-end we need buffer into next month
-    const extendedEnd = new Date(end);
-    extendedEnd.setDate(end.getDate() + 3); // 3 days into next month
-
-    mainStore.setProjectionRange(start, extendedEnd); // Start at month beginning, no backward buffer
-    await mainStore.fetchOperationsRange(start, extendedEnd);
-
+    // 🔥 SMART BUFFER: Calculate buffer based on today's position in month
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const isCurrentMonth = today.getFullYear() === start.getFullYear() && today.getMonth() === start.getMonth();
+    
+    let projectionStart = new Date(start);
+    let projectionEnd = new Date(end);
+    
+    if (isCurrentMonth) {
+      // Mobile shows ~4 columns (25vw each), need 2 columns on each side for centering
+      const halfCols = 2;
+      
+      // Days before today in current month
+      const dayOfMonth = today.getDate();
+      const daysBeforeInMonth = dayOfMonth - 1;
+      
+      // Days after today in current month
+      const lastDayOfMonth = end.getDate();
+      const daysAfterInMonth = lastDayOfMonth - dayOfMonth;
+      
+      // Calculate buffer needed
+      const needBefore = Math.max(0, halfCols - daysBeforeInMonth);
+      const needAfter = Math.max(0, halfCols - daysAfterInMonth);
+      
+      if (needBefore > 0) {
+        projectionStart = new Date(start);
+        projectionStart.setDate(start.getDate() - needBefore);
+      }
+      
+      if (needAfter > 0) {
+        projectionEnd = new Date(end);
+        projectionEnd.setDate(end.getDate() + needAfter);
+      }
+    } else {
+      // Not current month - small buffer forward
+      projectionEnd = new Date(end);
+      projectionEnd.setDate(end.getDate() + 3);
+    }
+
+    mainStore.setProjectionRange(projectionStart, projectionEnd);
+    await mainStore.fetchOperationsRange(projectionStart, projectionEnd);
+
+    // Use today and isCurrentMonth already calculated above
     const centerDate = isCurrentMonth ? today : new Date(start.getFullYear(), start.getMonth(), Math.min(15, end.getDate()));
     mainStore.setCurrentViewDate(centerDate);
   } catch (e) {
