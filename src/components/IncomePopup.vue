@@ -72,8 +72,7 @@ const showError = (msg, title = 'Внимание') => {
 };
 
 // --- СОСТОЯНИЯ ---
-const showCashChoiceModal = ref(false); 
-const showSpecialCashInfo = ref(false); 
+// Removed: showCashChoiceModal and showSpecialCashInfo - no longer needed
 const accountCreationPlaceholder = ref('Название счета');
 
 
@@ -91,7 +90,8 @@ const isDeleteConfirmVisible = ref(false);
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInput = ref(null);
-const isCreatingSpecialAccount = ref(false);
+const isCreatingSpecialAccount = ref(false);  // Для особых касс (исключенные)
+const isCreatingCashRegister = ref(false);     // Для ВСЕХ касс
 const isCreatingProject = ref(false); const newProjectName = ref(''); const newProjectInput = ref(null);
 const isCreatingCategory = ref(false); const newCategoryName = ref(''); const newCategoryInput = ref(null);
 const showAccountSuggestions = ref(false); const showCategorySuggestions = ref(false);
@@ -610,20 +610,20 @@ const closePopup = () => emit('close');
 
 
 
-const openCashChoice = () => { showCashChoiceModal.value = true; };
-const handleCashChoice = (type) => { showCashChoiceModal.value = false; if (type === 'special') showSpecialCashInfo.value = true; else startCashCreation('regular'); };
-const confirmSpecialCash = () => { showSpecialCashInfo.value = false; startCashCreation('special'); };
-const startCashCreation = (type) => {
-    accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы';
+const openCashChoice = () => { startCashCreation(); };
+
+const startCashCreation = () => {
+    accountCreationPlaceholder.value = 'Название кассы';
     newAccountName.value = '';
-    isCreatingSpecialAccount.value = (type === 'special');
+    isCreatingSpecialAccount.value = false;  // Больше не создаем особые кассы
+    isCreatingCashRegister.value = true;  // Всегда обычная касса
     isCreatingAccount.value = true;
     selectedAccountId.value = null;
     nextTick(() => newAccountInput.value?.focus());
 };
 const handleAccountChange = (val) => { if (val === '--CREATE_NEW--') { selectedAccountId.value = null; accountCreationPlaceholder.value = 'Название счета'; showAccountInput(); } else { selectedAccountId.value = val; } };
 const showAccountInput = () => { isCreatingSpecialAccount.value = false; accountCreationPlaceholder.value = 'Название счета'; isCreatingAccount.value = true; nextTick(() => newAccountInput.value?.focus()); };
-const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; isCreatingSpecialAccount.value = false; };
+const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountName.value = ''; isCreatingSpecialAccount.value = false; isCreatingCashRegister.value = false; };
 const saveNewAccount = async () => {
     const name = newAccountName.value.trim(); 
     if (!name) return;
@@ -642,7 +642,8 @@ const saveNewAccount = async () => {
         name, 
         companyId: cId, 
         individualId: iId,  
-        isExcluded: isCreatingSpecialAccount.value 
+        isCashRegister: isCreatingCashRegister.value,  // Касса
+        isExcluded: isCreatingSpecialAccount.value      // Особая
     }).then(newItem => {
         selectedAccountId.value = newItem._id;
     }).catch(e => {
@@ -895,21 +896,11 @@ const handleMainAction = async () => {
 
     </div>
 
-    <!-- 🟢 CHOICE MODAL -->
-    <div v-if="showCashChoiceModal" class="inner-overlay" @click.self="showCashChoiceModal = false">
-        <div class="choice-box">
-            <h4>Создание кассы</h4>
-            <p class="choice-desc">Отображаются в виджете <br> "Счета/Кассы"</p>
-            <div class="choice-actions">
-                <button class="btn-choice-option" @click="handleCashChoice('regular')"><span class="opt-title">Обычная касса</span></button>
-                <button class="btn-choice-option" @click="handleCashChoice('special')"><span class="opt-title">Особая касса</span></button>
-            </div>
-            <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
-        </div>
-    </div>
+
+    <!-- Removed: Cash choice modal -->
 
     <InfoModal 
-       v-if="showInfoModal && !showSpecialCashInfo" 
+       v-if="showInfoModal" 
        :title="infoModalTitle" 
        :message="infoModalMessage" 
        @close="showInfoModal = false"

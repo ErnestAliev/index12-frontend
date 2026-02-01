@@ -89,10 +89,10 @@ const isCreatingCategory = ref(false); const newCategoryName = ref(''); const ne
 const showAccountSuggestions = ref(false); const showCategorySuggestions = ref(false);
 
 // 🟢 CASH REGISTER LOGIC (Новое)
-const showCashChoiceModal = ref(false); // Модал выбора (Обычная/Особая)
-const showSpecialCashInfo = ref(false); // Инфо про особую кассу
+// Removed: showCashChoiceModal and showSpecialCashInfo - no longer needed
 const accountCreationPlaceholder = ref('Название счета'); 
-const isCreatingSpecialAccount = ref(false); // Флаг для isExcluded
+const isCreatingSpecialAccount = ref(false);  // Для особых касс
+const isCreatingCashRegister = ref(false);     // Для ВСЕХ касс // Флаг для isExcluded
 
 const showCreateOwnerModal = ref(false);
 const ownerTypeToCreate = ref('company'); 
@@ -575,27 +575,14 @@ const handleLocalWizardSave = async (payload) => {
 
 // --- CASH REGISTER LOGIC (Новое) ---
 const openCashChoice = () => {
-    showCashChoiceModal.value = true;
+    startCashCreation();
 };
 
-const handleCashChoice = (type) => {
-    showCashChoiceModal.value = false;
-    if (type === 'special') {
-        showSpecialCashInfo.value = true;
-    } else {
-        startCashCreation('regular');
-    }
-};
-
-const confirmSpecialCash = () => {
-    showSpecialCashInfo.value = false;
-    startCashCreation('special');
-};
-
-const startCashCreation = (type) => {
-    accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы';
+const startCashCreation = () => {
+    accountCreationPlaceholder.value = 'Название кассы';
     newAccountName.value = '';
-    isCreatingSpecialAccount.value = (type === 'special');
+    isCreatingSpecialAccount.value = false;  // Больше не создаем особые кассы
+    isCreatingCashRegister.value = true;  // Всегда обычная касса
     isCreatingAccount.value = true;
     // Очищаем селект
     selectedAccountId.value = null;
@@ -623,6 +610,7 @@ const cancelCreateAccount = () => {
     isCreatingAccount.value = false; 
     newAccountName.value = ''; 
     isCreatingSpecialAccount.value = false;
+    isCreatingCashRegister.value = false;  // Сбрасываем
 };
 
 const saveNewAccount = async () => {
@@ -630,12 +618,13 @@ const saveNewAccount = async () => {
     isInlineSaving.value = true;
     try {
         let cId = null, iId = null; if (selectedOwner.value) { const [t, id] = selectedOwner.value.split('-'); if (t==='company') cId=id; else iId=id; }
-        // 🟢 Передаем isExcluded
+        // 🟢 Передаем isCashRegister и isExcluded
         const newItem = await mainStore.addAccount({ 
             name, 
             companyId: cId, 
             individualId: iId,
-            isExcluded: isCreatingSpecialAccount.value
+            isCashRegister: isCreatingCashRegister.value,  // Касса
+            isExcluded: isCreatingSpecialAccount.value      // Особая
         });
         selectedAccountId.value = newItem._id; cancelCreateAccount();
     } catch(e) { console.error(e); showError('Ошибка при создании счета: ' + e.message); } finally { isInlineSaving.value = false; }
@@ -899,36 +888,12 @@ watch(defaultProjectId, (defId) => {
       </template>
     </div>
     
-    <!-- 🟢 CHOICE MODAL: ВЫБОР ТИПА КАССЫ -->
-    <div v-if="showCashChoiceModal" class="inner-overlay" @click.self="showCashChoiceModal = false">
-        <div class="choice-box">
-            <h4>Создание кассы</h4>
-            <p class="choice-desc">Отображаются в виджете 
-                <br> "Счета/Кассы"</p>
-            <div class="choice-actions">
-                <button class="btn-choice-option" @click="handleCashChoice('regular')">
-                    <span class="opt-title">Обычная касса</span>
-                </button>
-                <button class="btn-choice-option" @click="handleCashChoice('special')">
-                    <span class="opt-title">Особая касса</span>
-                </button>
-            </div>
-            <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
-        </div>
-    </div>
-
-    <!-- 🟢 INFO MODAL: ОСОБАЯ КАССА -->
-    <InfoModal 
-       v-if="showSpecialCashInfo" 
-       title="Особая касса" 
-       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
-       buttonText="Продолжить создание"
-       @close="confirmSpecialCash"
-    />
+    
+    <!-- Removed: Cash choice and special cash info modals -->
 
     <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
     
-    <InfoModal v-if="showInfoModal && !showSpecialCashInfo" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
+    <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
     
     <div v-if="isCreditWarningVisible" class="inner-overlay" @click.self="isCreditWarningVisible = false">
         <div class="warning-box">

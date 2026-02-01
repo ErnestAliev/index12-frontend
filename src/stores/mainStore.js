@@ -2449,7 +2449,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 initialBalance: data.initialBalance || 0,
                 companyId: data.companyId || null,
                 individualId: data.individualId || null,
-                isExcluded: !!data.isExcluded
+                isExcluded: !!data.isExcluded,
+                isCashRegister: !!data.isCashRegister  // 🟢 Pass cash register flag
             };
         }
         const res = await axios.post(`${API_BASE_URL}/accounts`, payload);
@@ -2484,12 +2485,18 @@ export const useMainStore = defineStore('mainStore', () => {
             const res = await axios.put(`${API_BASE_URL}/${path}/batch-update`, items);
             const sortedData = _sortByOrder(res.data);
             if (path === 'accounts') {
-                // Preserve isExcluded if backend omits it (dragging between visible/hidden lists must stick)
-                const savedFlags = new Map(items.map(i => [String(i._id), !!i.isExcluded]));
+                // Preserve isExcluded and isCashRegister if backend omits them (dragging between lists must stick)
+                const savedExcludedFlags = new Map(items.map(i => [String(i._id), !!i.isExcluded]));
+                const savedCashRegisterFlags = new Map(items.map(i => [String(i._id), !!i.isCashRegister]));
                 accounts.value = sortedData.map(acc => {
                     const id = acc && acc._id ? String(acc._id) : null;
-                    const fallbackExcluded = id ? savedFlags.get(id) : false;
-                    return { ...acc, isExcluded: acc.isExcluded !== undefined ? acc.isExcluded : fallbackExcluded };
+                    const fallbackExcluded = id ? savedExcludedFlags.get(id) : false;
+                    const fallbackCashRegister = id ? savedCashRegisterFlags.get(id) : false;
+                    return {
+                        ...acc,
+                        isExcluded: acc.isExcluded !== undefined ? acc.isExcluded : fallbackExcluded,
+                        isCashRegister: acc.isCashRegister !== undefined ? acc.isCashRegister : fallbackCashRegister
+                    };
                 });
             }
             else if (path === 'companies') companies.value = sortedData;

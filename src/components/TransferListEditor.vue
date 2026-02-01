@@ -226,7 +226,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
           </button>
         </div>
       </div>
-      <p class="editor-hint">Просмотр истории переводов. Для удаления используйте иконку корзины.</p>
+     
       
       <!-- ИТОГИ ПО ФИЛЬТРУ -->
       <div class="totals-bar" v-if="isFilterActive">

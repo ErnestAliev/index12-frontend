@@ -25,7 +25,7 @@ const categoryItems = computed(() => mainStore.categories || []);
 
 // Tab definitions with default order
 const defaultTabs = [
-  { id: 'accounts', label: 'Счета', component: null },
+  { id: 'accounts', label: 'Счета/Кассы', component: null },
   { id: 'companies', label: 'Компании', component: null },
   { id: 'individuals', label: 'Физлица', component: null },
   { id: 'contractors', label: 'Контрагенты', component: null },

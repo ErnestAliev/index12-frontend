@@ -62,10 +62,10 @@ const showError = (msg) => {
 };
 
 // 🟢 CASH REGISTER LOGIC
-const showCashChoiceModal = ref(false);
-const showSpecialCashInfo = ref(false);
+// Removed: showCashChoiceModal and showSpecialCashInfo - no longer needed
 const accountCreationPlaceholder = ref('Название счета'); 
-const isCreatingSpecialAccount = ref(false); 
+const isCreatingSpecialAccount = ref(false);  // Для особых касс (исключенных)
+const isCreatingCashRegister = ref(false);     // Для ВСЕХ касс (обычных и особых)
 const creatingAccountFor = ref(null); // 'from' | 'to'
 
 // Состояния создания
@@ -291,26 +291,13 @@ watch(newToAccountName, (val) => { if (isProgrammaticTo.value) return; showToAcc
 // --- CASH REGISTER LOGIC (Новое) ---
 const openCashChoice = (target) => {
     creatingAccountFor.value = target; // 'from' or 'to'
-    showCashChoiceModal.value = true;
+    startCashCreation('regular'); // Сразу создаем обычную кассу
 };
 
-const handleCashChoice = (type) => {
-    showCashChoiceModal.value = false;
-    if (type === 'special') {
-        showSpecialCashInfo.value = true;
-    } else {
-        startCashCreation('regular');
-    }
-};
-
-const confirmSpecialCash = () => {
-    showSpecialCashInfo.value = false;
-    startCashCreation('special');
-};
-
-const startCashCreation = (type) => {
-    accountCreationPlaceholder.value = type === 'special' ? 'Название спец. кассы' : 'Название кассы';
-    isCreatingSpecialAccount.value = (type === 'special');
+const startCashCreation = () => {
+    accountCreationPlaceholder.value = 'Название кассы';
+    isCreatingSpecialAccount.value = false;  // Больше не создаем особые кассы
+    isCreatingCashRegister.value = true;  // Всегда обычная касса
     
     if (creatingAccountFor.value === 'from') {
         fromAccountId.value = null;
@@ -459,17 +446,19 @@ const cancelCreateFromAccount = () => {
     isCreatingFromAccount.value = false; 
     newFromAccountName.value = ''; 
     isCreatingSpecialAccount.value = false;
+    isCreatingCashRegister.value = false;  // Сбрасываем флаг кассы
 };
 const saveNewFromAccount = async () => {
   if (isInlineSaving.value) return; const name = newFromAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
     let cId = null, iId = null; if (selectedFromOwner.value) { const [type, id] = selectedFromOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
-    // 🟢 PASS EXCLUDED FLAG
+    // 🟢 PASS CASH REGISTER AND EXCLUDED FLAGS
     const newItem = await mainStore.addAccount({ 
         name: name, 
         companyId: cId, 
         individualId: iId,
-        isExcluded: isCreatingSpecialAccount.value 
+        isCashRegister: isCreatingCashRegister.value,  // Касса (обычная или особая)
+        isExcluded: isCreatingSpecialAccount.value      // Только для особых касс
     }); 
     fromAccountId.value = newItem._id; onFromAccountSelected(newItem._id);
     cancelCreateFromAccount(); 
@@ -480,17 +469,19 @@ const cancelCreateToAccount = () => {
     isCreatingToAccount.value = false; 
     newToAccountName.value = ''; 
     isCreatingSpecialAccount.value = false;
+    isCreatingCashRegister.value = false;  // Сбрасываем флаг кассы
 };
 const saveNewToAccount = async () => {
   if (isInlineSaving.value) return; const name = newToAccountName.value.trim(); if (!name) return; isInlineSaving.value = true;
   try {
     let cId = null, iId = null; if (selectedToOwner.value) { const [type, id] = selectedToOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
-    // 🟢 PASS EXCLUDED FLAG
+    // 🟢 PASS CASH REGISTER AND EXCLUDED FLAGS
     const newItem = await mainStore.addAccount({ 
         name: name, 
         companyId: cId, 
         individualId: iId,
-        isExcluded: isCreatingSpecialAccount.value
+        isCashRegister: isCreatingCashRegister.value,  // Касса (обычная или особая)
+        isExcluded: isCreatingSpecialAccount.value      // Только для особых касс
     }); 
     toAccountId.value = newItem._id; onToAccountSelected(newItem._id);
     cancelCreateToAccount(); 
@@ -733,36 +724,12 @@ const closePopup = () => { emit('close'); };
       
     </div>
 
-    <!-- 🟢 CHOICE MODAL: ВЫБОР ТИПА КАССЫ -->
-    <div v-if="showCashChoiceModal" class="inner-overlay" @click.self="showCashChoiceModal = false">
-        <div class="choice-box">
-            <h4>Создание кассы</h4>
-            <p class="choice-desc">Отображаются в виджете 
-                <br> "Счета/Кассы"</p>
-            <div class="choice-actions">
-                <button class="btn-choice-option" @click="handleCashChoice('regular')">
-                    <span class="opt-title">Обычная касса</span>
-                </button>
-                <button class="btn-choice-option" @click="handleCashChoice('special')">
-                    <span class="opt-title">Особая касса</span>
-                </button>
-            </div>
-            <button class="btn-cancel-link" @click="showCashChoiceModal = false">Отмена</button>
-        </div>
-    </div>
 
-    <!-- 🟢 INFO MODAL: ОСОБАЯ КАССА -->
-    <InfoModal 
-       v-if="showSpecialCashInfo" 
-       title="Особая касса" 
-       message="Вы создаёте особый вид кассы, которую можно исключать из общих расчётов. Сделать это можно в настройках 'Счета/Кассы'." 
-       buttonText="Продолжить создание"
-       @close="confirmSpecialCash"
-    />
+    <!-- Removed: Cash choice and special cash info modals -->
 
   </div>
 
-  <InfoModal v-if="showInfoModal && !showSpecialCashInfo" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
+  <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
   <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены, что хотите удалить этот перевод?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
 </template>
 
