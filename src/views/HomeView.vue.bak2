@@ -641,12 +641,12 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     // Передаем активный период фильтра, чтобы AI считал только его (например, январь)
     const periodFilter = mainStore?.periodFilter ? { ...mainStore.periodFilter } : null;
 
-    // Таймлайн дневных итогов (как в графике) — расширяем до 90 дней для анализа/прогноза
+    // Таймлайн дневных итогов (как в графике) для выбранного периода
     const buildTimelinePayload = () => {
       const timelineMap = projectionStore.dailyChartData;
       if (!(timelineMap instanceof Map) || timelineMap.size === 0) return null;
 
-      // Определяем границы: берем максимум из выбранного периода и окна 90 дней назад
+      // Определяем границы: periodFilter (если custom) иначе projection range
       let start = null;
       let end = null;
       const pf = mainStore?.periodFilter;
@@ -658,11 +658,6 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         end = new Date(projectionStore.projection.rangeEndDate);
       }
       if (!start || !end) return null;
-
-      const today = new Date();
-      const ninetyDaysAgo = new Date(today);
-      ninetyDaysAgo.setDate(today.getDate() - 90);
-      if (start > ninetyDaysAgo) start = ninetyDaysAgo; // расширяем назад до 90дн
 
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
