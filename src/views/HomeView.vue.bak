@@ -3,7 +3,6 @@ import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue'
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
-import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { sendAiRequest } from '@/utils/aiClient.js';
 
@@ -36,7 +35,6 @@ import PaymentReceiptModal from '@/components/PaymentReceiptModal.vue';
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
 const mainStore = useMainStore();
-const projectionStore = useProjectionStore();
 
 // --- CONSTANTS ---
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -641,49 +639,6 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     // Передаем активный период фильтра, чтобы AI считал только его (например, январь)
     const periodFilter = mainStore?.periodFilter ? { ...mainStore.periodFilter } : null;
 
-    // Таймлайн дневных итогов (как в графике) для выбранного периода
-    const buildTimelinePayload = () => {
-      const timelineMap = projectionStore.dailyChartData;
-      if (!(timelineMap instanceof Map) || timelineMap.size === 0) return null;
-
-      // Определяем границы: periodFilter (если custom) иначе projection range
-      let start = null;
-      let end = null;
-      const pf = mainStore?.periodFilter;
-      if (pf && pf.mode === 'custom' && pf.customStart && pf.customEnd) {
-        start = new Date(pf.customStart);
-        end = new Date(pf.customEnd);
-      } else if (projectionStore?.projection?.rangeStartDate && projectionStore?.projection?.rangeEndDate) {
-        start = new Date(projectionStore.projection.rangeStartDate);
-        end = new Date(projectionStore.projection.rangeEndDate);
-      }
-      if (!start || !end) return null;
-
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-
-      const out = [];
-      timelineMap.forEach((val) => {
-        if (!val?.date) return;
-        const d = val.date instanceof Date ? val.date : new Date(val.date);
-        if (Number.isNaN(d.getTime())) return;
-        if (d < start || d > end) return;
-        out.push({
-          date: d.toISOString(),
-          income: Number(val.income) || 0,
-          prepayment: Number(val.prepayment) || 0,
-          expense: Number(val.expense) || 0,
-          withdrawal: Number(val.withdrawal) || 0,
-          closingBalance: Number(val.closingBalance) || 0,
-        });
-      });
-
-      out.sort((a, b) => new Date(a.date) - new Date(b.date));
-      return out.length ? out : null;
-    };
-
-    const timeline = buildTimelinePayload();
-
     // Всегда прикладываем snapshot (если есть) для запросов про счета/компании
     const snapshot = {
       accounts: Array.isArray(mainStore?.currentAccountBalances) ? mainStore.currentAccountBalances : [],
@@ -700,7 +655,6 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       includeHidden,
       visibleAccountIds,
       snapshot,
-      timeline,
       periodFilter,
       debugAi: true,
       timeout: 20000,

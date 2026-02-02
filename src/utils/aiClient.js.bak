@@ -17,7 +17,6 @@ export async function sendAiRequest({
   snapshot = null,
   debugAi = true,
   periodFilter = null,
-  timeline = null,
   timeout = 20000,
 }) {
   if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
@@ -44,7 +43,6 @@ export async function sendAiRequest({
     visibleAccountIds: effectiveVisibleIds,
     debugAi,
     periodFilter,
-    timeline,
   };
   if (snapshot) payload.snapshot = snapshot;
 
