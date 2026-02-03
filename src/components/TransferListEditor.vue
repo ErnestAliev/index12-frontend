@@ -168,6 +168,93 @@ const formatTotal = (val) => formatNumber(Math.abs(val)) + ' ₸';
 const filteredCount = computed(() => filteredItems.value.length);
 const filteredTotalText = computed(() => `${formatNumber(totalSum.value)} KZT`);
 
+// Экспорт и копирование
+const showCopySuccess = ref(false);
+
+const exportToCSV = () => {
+  if (filteredItems.value.length === 0) {
+    alert('Нет данных для экспорта');
+    return;
+  }
+
+  const headers = ['Дата', 'Отправитель', 'Счет От', 'Сумма', 'Счет Куда', 'Получатель'];
+  const rows = filteredItems.value.map(item => [
+    formatDateDisplay(item.date),
+    getOwnerName(item.fromOwnerId),
+    getAccountName(item.fromAccountId),
+    item.amountFormatted,
+    getAccountName(item.toAccountId),
+    getOwnerName(item.toOwnerId)
+  ]);
+
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const dateStr = new Date().toISOString().split('T')[0];
+  link.setAttribute('href', url);
+  link.setAttribute('download', `transfers_${dateStr}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const copyToClipboard = async () => {
+  if (filteredItems.value.length === 0) {
+    alert('Нет данных для копирования');
+    return;
+  }
+
+  let periodLabel = '';
+  const { from, to } = filters.value.dateRange;
+  if (from && to) {
+    periodLabel = `${new Date(from).toLocaleDateString('ru-RU')} - ${new Date(to).toLocaleDateString('ru-RU')}`;
+  } else if (from) {
+    periodLabel = `с ${new Date(from).toLocaleDateString('ru-RU')}`;
+  } else if (to) {
+    periodLabel = `до ${new Date(to).toLocaleDateString('ru-RU')}`;
+  } else {
+    periodLabel = 'все время';
+  }
+
+  let message = `Переводы (${periodLabel})\n`;
+  message += `━━━━━━━━━━━━━━━━━━\n`;
+  message += `Всего переводов: ${filteredCount.value}\n`;
+  message += `Итого: ${filteredTotalText.value}\n`;
+  message += `━━━━━━━━━━━━━━━━━━\n`;
+
+  filteredItems.value.forEach((item, index) => {
+    const parts = [];
+    parts.push(`[${formatDateDisplay(item.date)}]`);
+    parts.push(`${item.amountFormatted} т`);
+
+    const routeAccounts = `${getAccountName(item.fromAccountId)} → ${getAccountName(item.toAccountId)}`;
+    parts.push(routeAccounts);
+
+    const fromOwner = getOwnerName(item.fromOwnerId);
+    const toOwner = getOwnerName(item.toOwnerId);
+    if (fromOwner !== '-' || toOwner !== '-') {
+      parts.push(`${fromOwner} → ${toOwner}`);
+    }
+
+    message += `${index + 1}. ${parts.join(' < ')}\n`;
+  });
+
+  try {
+    await navigator.clipboard.writeText(message);
+    showCopySuccess.value = true;
+    setTimeout(() => (showCopySuccess.value = false), 2000);
+  } catch (err) {
+    console.error('Failed to copy:', err);
+    alert('Ошибка копирования в буфер обмена');
+  }
+};
+
 const openCreatePopup = () =>{
   isCreatePopupVisible.value = true;
 };
@@ -229,6 +316,29 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
               <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
               <span class="toggle-label">{{ isWidgetOnDashboard ? 'На столе' : 'Скрыт' }}</span>
             </button>
+          </div>
+
+          <div class="export-buttons">
+            <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              CSV
+            </button>
+            
+            <button class="export-btn copy-btn" @click="copyToClipboard" title="Копировать для WhatsApp">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              Копировать
+            </button>
+            
+            <transition name="fade">
+              <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
+            </transition>
           </div>
 
           <div class="summary-bar" :title="`Переводов: ${filteredCount}`">
@@ -392,6 +502,16 @@ h3 { margin: 0; font-size: 22px; color: var(--color-heading); font-weight: 700; 
 .total-label { margin-right: 8px; color: var(--color-text-soft); font-weight: 500; }
 .total-value { font-weight: 800; font-size: 1.3em; }
 
+.export-buttons { display: flex; align-items: center; gap: 8px; position: relative; }
+.export-btn { display: flex; align-items: center; gap: 6px; padding: 6px 12px; height: 32px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--color-text); cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.export-btn svg { width: 16px; height: 16px; stroke: var(--color-text-soft); transition: stroke 0.2s; }
+.export-btn:hover { background: var(--color-background-mute); border-color: #10b981; color: #10b981; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1); }
+.export-btn:hover svg { stroke: #10b981; }
+.export-btn:active { transform: scale(0.98); }
+.copy-success { position: absolute; right: 0; top: -30px; background: #10b981; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); white-space: nowrap; z-index: 1000; }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
 .summary-bar { display: flex; align-items: baseline; gap: 8px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); white-space: nowrap; }
 .summary-label { font-size: 12px; color: var(--color-text-soft); font-weight: 600; }
 .summary-value { font-size: 14px; color: var(--color-heading); font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -496,7 +616,8 @@ h3 { margin: 0; font-size: 22px; color: var(--color-heading); font-weight: 700; 
 
 @media (max-width: 1100px) {
   .header-row { flex-direction: column; align-items: flex-start; }
-  .summary-bar { order: 2; }
+  .export-buttons { order: 2; }
+  .summary-bar { order: 3; }
 }
 
 @media (max-width: 1200px) { 
