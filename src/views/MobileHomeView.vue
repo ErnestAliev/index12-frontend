@@ -45,6 +45,14 @@ const mainStore = useMainStore();
 const uiStore = useUiStore();
 const { getWidgetItems } = useWidgetData();
 
+const accountVisibilityMode = computed(() => mainStore.accountVisibilityMode);
+const accountVisibilityLabel = computed(() => {
+  if (accountVisibilityMode.value === 'hidden') return 'Показывать только скрытые счета';
+  if (accountVisibilityMode.value === 'all') return 'Показывать открытые и скрытые счета';
+  return 'Показывать только открытые счета';
+});
+const accountVisibilityIcon = computed(() => accountVisibilityMode.value === 'all' ? 'eye' : 'eye-off');
+
 // --- Refs & State ---
 const timelineRef = ref(null);
 const chartRef = ref(null);
@@ -1108,9 +1116,9 @@ const handleOperationDelete = async (op) => {
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
-                    <button v-if="activeWidgetKey === 'accounts' && (!mainStore.workspaceRole || mainStore.isWorkspaceOwner || mainStore.isWorkspaceAdmin)" class="action-square-btn" :class="{ active: mainStore.includeExcludedInTotal }" @click="mainStore.toggleExcludedInclusion()" title="Учитывать скрытые счета">
-                        <svg v-if="mainStore.includeExcludedInTotal" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    <button v-if="activeWidgetKey === 'accounts' && (!mainStore.workspaceRole || mainStore.isWorkspaceOwner || mainStore.isWorkspaceAdmin)" class="action-square-btn" @click="mainStore.cycleAccountVisibilityMode()" :title="accountVisibilityLabel">
+                        <svg v-if="accountVisibilityIcon === 'eye'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path><line x1="2" y1="22" x2="22" y2="2"></line></svg>
                     </button>
                     <button v-if="!isListWidget" ref="filterBtnRef" class="action-square-btn" :class="{ active: isFilterActive }" @click.stop="toggleFilter" title="Фильтр"><svg width="14" height="14" viewBox="0 0 24 24" :fill="isFilterActive ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
                     <button class="action-square-btn" :class="{ active: showFutureBalance }" @click="showFutureBalance = !showFutureBalance" title="Прогноз"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>

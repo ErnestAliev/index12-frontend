@@ -79,29 +79,39 @@ export const useMainStore = defineStore('mainStore', () => {
 
     // 🔥 CRITICAL: Excluded accounts MUST be hidden from invited users
     // Only owner or admin can toggle visibility
-    const includeExcludedInTotal = computed({
+    const accountVisibilityMode = computed({
         get: () => {
-            // Invited users NEVER see excluded accounts, only workspace owner or admin can
             if (!isWorkspaceOwner.value && !isWorkspaceAdmin.value) {
-                return false; // Force hidden for invited users
+                return 'open'; // Invited users see only open accounts
             }
-            // Owner or admin can toggle
-            return uiStore.includeExcludedInTotal;
+            return uiStore.accountVisibilityMode;
         },
-        set: (v) => {
-            // Only owner or admin can change this setting
+        set: (mode) => {
             if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
-                uiStore.includeExcludedInTotal = v;
+                uiStore.setAccountVisibilityMode(mode);
             }
-            // Invited users: setting is ignored
         }
     });
+
+    const includeExcludedInTotal = computed({
+        get: () => accountVisibilityMode.value !== 'open',
+        set: (v) => {
+            if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
+                uiStore.setAccountVisibilityMode(v ? 'all' : 'open');
+            }
+        }
+    });
+
     const toggleExcludedInclusion = () => {
-        // Only workspace owner or admin can toggle
         if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
             uiStore.toggleExcludedInclusion();
         }
-        // Invited users: no-op
+    };
+
+    const cycleAccountVisibilityMode = () => {
+        if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
+            uiStore.cycleAccountVisibilityMode();
+        }
     };
 
     // --- 2. WIDGET STORE BRIDGES ---
@@ -257,8 +267,14 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const _isAccountExcluded = (id) => {
         if (!id) return false;
-        const idStr = typeof id === 'object' ? String(id._id) : String(id);
-        return excludedAccountIds.value.has(idStr);
+        const accId = typeof id === 'object' ? String(id._id) : String(id);
+        const acc = accounts.value.find(a => _idsMatch(a._id, accId));
+        const isExcluded = acc?.isExcluded === true;
+
+        const mode = accountVisibilityMode.value;
+        if (mode === 'open') return isExcluded;           // hide excluded
+        if (mode === 'hidden') return !isExcluded;        // hide open
+        return false; // 'all'
     };
 
     const _isOpVisible = (op) => {
@@ -829,25 +845,14 @@ export const useMainStore = defineStore('mainStore', () => {
                 const toId = op.toAccountId?._id || op.toAccountId;
 
                 // ✅ FIX: Check if accounts are excluded
-                const fromExcluded = fromId && _isAccountExcluded(fromId);
-                const toExcluded = toId && _isAccountExcluded(toId);
+                const fromHidden = fromId && _isAccountExcluded(fromId);
+                const toHidden = toId && _isAccountExcluded(toId);
 
-                if (!includeExcludedInTotal.value) {
-                    // Only apply to visible (non-excluded) accounts
-                    if (fromId && balances[fromId] !== undefined && !fromExcluded) {
-                        balances[fromId] -= amt;
-                    }
-                    if (toId && balances[toId] !== undefined && !toExcluded) {
-                        balances[toId] += amt;
-                    }
-                } else {
-                    // Apply to all accounts when excluded are visible
-                    if (fromId && balances[fromId] !== undefined) {
-                        balances[fromId] -= amt;
-                    }
-                    if (toId && balances[toId] !== undefined) {
-                        balances[toId] += amt;
-                    }
+                if (fromId && balances[fromId] !== undefined && !fromHidden) {
+                    balances[fromId] -= amt;
+                }
+                if (toId && balances[toId] !== undefined && !toHidden) {
+                    balances[toId] += amt;
                 }
             } else {
                 // Handle regular income/expense operations
@@ -867,7 +872,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         // Build result array with calculated balances
         return accounts.value
-            .filter(a => includeExcludedInTotal.value || !a.isExcluded)
+            .filter(a => !_isAccountExcluded(a))
             .map(a => ({
                 ...a,
                 balance: balances[a._id] || 0
@@ -885,7 +890,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const deltaMap = _calculateFutureEntityChange('accountId');
 
         return accounts.value.reduce((acc, a) => {
-            if (!includeExcludedInTotal.value && a.isExcluded) return acc;
+            if (_isAccountExcluded(a)) return acc;
             const id = String(a._id);
             const base = baseMap.get(id) || 0;
             const delta = deltaMap[id] || 0;
@@ -2935,7 +2940,8 @@ export const useMainStore = defineStore('mainStore', () => {
         operationsCache: displayCache, displayCache, calculationCache,
 
         // UI Store Bridges
-        isHeaderExpanded, toggleHeaderExpansion, includeExcludedInTotal, toggleExcludedInclusion,
+        isHeaderExpanded, toggleHeaderExpansion,
+        accountVisibilityMode, includeExcludedInTotal, toggleExcludedInclusion, cycleAccountVisibilityMode,
 
         // Widget Store Bridges
         allWidgets, dashboardLayout, dashboardForecastState,

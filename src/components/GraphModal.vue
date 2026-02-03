@@ -203,8 +203,14 @@ const rangeEndBalance = computed(() => {
 });
 
 const rangeEndBalanceString = computed(() => formatCurrency(rangeEndBalance.value));
-const showExcluded = computed(() => mainStore.includeExcludedInTotal);
-const toggleExcluded = () => mainStore.toggleExcludedInclusion();
+const visibilityMode = computed(() => mainStore.accountVisibilityMode);
+const visibilityLabel = computed(() => {
+  if (visibilityMode.value === 'hidden') return 'Показывать только скрытые счета';
+  if (visibilityMode.value === 'all') return 'Показывать открытые и скрытые счета';
+  return 'Показывать только открытые счета';
+});
+const visibilityIcon = computed(() => visibilityMode.value === 'all' ? 'eye' : 'eye-off');
+const toggleVisibility = () => mainStore.cycleAccountVisibilityMode();
 </script>
 
 <template>
@@ -217,11 +223,15 @@ const toggleExcluded = () => mainStore.toggleExcludedInclusion();
           <div class="balance-value">{{ currentBalanceString }}</div>
         </div>
         <div class="header-center eye-toggle">
-          <button class="eye-btn icon-only" :class="{ active: showExcluded }" @click="toggleExcluded" title="Показать/скрыть исключенные счета">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button class="eye-btn icon-only" @click="toggleVisibility" :title="visibilityLabel">
+            <svg v-if="visibilityIcon === 'eye'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
               <circle cx="12" cy="12" r="3"/>
-              <line v-if="!showExcluded" x1="2" y1="22" x2="22" y2="2"></line>
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+              <line x1="2" y1="22" x2="22" y2="2"></line>
             </svg>
           </button>
         </div>

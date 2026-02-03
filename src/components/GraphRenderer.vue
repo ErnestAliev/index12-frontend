@@ -74,6 +74,7 @@ const normalizedVisibleDays = computed(() => {
 });
 
 const mainStore = useMainStore();
+const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 
 const projectionStore = useProjectionStore();
 const historyLoadTick = ref(0);
@@ -84,7 +85,8 @@ const initialTotalBalance = computed(() => {
   let sum = 0;
   for (const a of accs) {
     if (!a) continue;
-    if (!mainStore.includeExcludedInTotal && a.isExcluded) continue;
+    if (visibilityMode.value === 'open' && a.isExcluded) continue;
+    if (visibilityMode.value === 'hidden' && !a.isExcluded) continue;
     sum += Number(a.initialBalance || 0);
   }
   return Math.max(0, sum);
@@ -101,13 +103,14 @@ const tooltipDetails = ref({
 
 // 🟢 1. Получаем список ID исключенных счетов (SAFE)
 const excludedAccountIds = computed(() => {
-  if (mainStore.includeExcludedInTotal) return new Set();
+  if (visibilityMode.value === 'all') return new Set();
   const ids = new Set();
   if (Array.isArray(mainStore.accounts)) {
     mainStore.accounts.forEach((a) => {
-      if (a && a.isExcluded) {
-        ids.add(String(a._id)); // Always store as String
-      }
+      if (!a) return;
+      const id = String(a._id);
+      if (visibilityMode.value === 'open' && a.isExcluded) ids.add(id);
+      if (visibilityMode.value === 'hidden' && !a.isExcluded) ids.add(id);
     });
   }
   return ids;

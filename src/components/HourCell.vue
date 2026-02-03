@@ -23,6 +23,7 @@ const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 const isDragOver = ref(false);
 const mainStore = useMainStore();
 const permissions = usePermissions();
+const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 
 // 🟢 Permission Check - can user interact with this operation?
 const canInteract = computed(() => {
@@ -57,12 +58,13 @@ const isRetailClient = computed(() => {
 
 // 🟢 1. Получаем список ID исключенных счетов
 const excludedAccountIds = computed(() => {
-    // Если глобальная настройка "Показывать скрытые" включена - возвращаем пустой набор
-    if (mainStore.includeExcludedInTotal) return new Set();
+    const mode = visibilityMode.value;
+    if (mode === 'all') return new Set();
     
     const ids = new Set();
     mainStore.accounts.forEach(a => {
-        if (a.isExcluded) ids.add(a._id);
+        if (mode === 'open' && a.isExcluded) ids.add(a._id);
+        if (mode === 'hidden' && !a.isExcluded) ids.add(a._id);
     });
     return ids;
 });
@@ -72,8 +74,8 @@ const isOpVisible = computed(() => {
     const op = props.operation;
     if (!op) return false;
     
-    // Если включен показ скрытых - всегда true
-    if (mainStore.includeExcludedInTotal) return true;
+    // Если включен режим «Все» - всегда true
+    if (visibilityMode.value === 'all') return true;
 
     // Проверяем счет операции
     if (op.accountId) {

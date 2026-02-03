@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
 export const useUiStore = defineStore('ui', () => {
 
@@ -15,14 +15,35 @@ export const useUiStore = defineStore('ui', () => {
   // Мастер кредитов (показывать/скрывать)
   const showCreditWizard = ref(false);
 
-  // Глобальная настройка: Учитывать ли исключенные счета в общих суммах
-  // Используется в mainStore для расчетов
+  // Глобальная настройка видимости счетов (три состояния)
   const savedIncludeExcluded = localStorage.getItem('includeExcludedInTotal');
-  const includeExcludedInTotal = ref(savedIncludeExcluded === 'true');
+  const savedVisibilityMode = localStorage.getItem('accountVisibilityMode');
+  const accountVisibilityMode = ref(
+    savedVisibilityMode === 'hidden' || savedVisibilityMode === 'all'
+      ? savedVisibilityMode
+      : (savedIncludeExcluded === 'true' ? 'all' : 'open') // миграция со старого флага
+  );
 
+  const includeExcludedInTotal = computed(() => accountVisibilityMode.value !== 'open');
+
+  function setAccountVisibilityMode(mode) {
+    const allowed = ['open', 'hidden', 'all'];
+    const next = allowed.includes(mode) ? mode : 'open';
+    accountVisibilityMode.value = next;
+    localStorage.setItem('accountVisibilityMode', next);
+    localStorage.setItem('includeExcludedInTotal', String(next !== 'open'));
+  }
+
+  function cycleAccountVisibilityMode() {
+    const order = ['open', 'hidden', 'all'];
+    const idx = order.indexOf(accountVisibilityMode.value);
+    const next = order[(idx + 1) % order.length];
+    setAccountVisibilityMode(next);
+  }
+
+  // Backward compatibility: old toggle flips between open/all
   function toggleExcludedInclusion() {
-    includeExcludedInTotal.value = !includeExcludedInTotal.value;
-    localStorage.setItem('includeExcludedInTotal', String(includeExcludedInTotal.value));
+    setAccountVisibilityMode(accountVisibilityMode.value === 'open' ? 'all' : 'open');
   }
 
   // Widget filters state (per widget key)
@@ -65,6 +86,7 @@ export const useUiStore = defineStore('ui', () => {
     // State
     isHeaderExpanded,
     showCreditWizard,
+    accountVisibilityMode,
     includeExcludedInTotal,
     widgetFilters,
     widgetPeriodFilters,
@@ -72,6 +94,8 @@ export const useUiStore = defineStore('ui', () => {
     // Actions
     toggleHeaderExpansion,
     toggleExcludedInclusion,
+    setAccountVisibilityMode,
+    cycleAccountVisibilityMode,
     setWidgetSortMode,
     setWidgetFilterMode,
     getWidgetSortMode,
