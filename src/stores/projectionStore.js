@@ -292,11 +292,15 @@ export const useProjectionStore = defineStore('projection', () => {
     };
 
     const visibilityMode = mainStore.accountVisibilityMode || 'open';
-    const includeExcluded = visibilityMode !== 'open';
+    const includeExcluded = visibilityMode === 'all' || visibilityMode === 'hidden';
     const excludedSet = (() => {
       const s = new Set();
       const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
       if (visibilityMode === 'all') return s;
+      if (visibilityMode === 'none') {
+        accs.forEach(a => { if (a?._id) s.add(String(a._id)); });
+        return s;
+      }
       for (const a of accs) {
         if (!a) continue;
         if (visibilityMode === 'open' && a.isExcluded) s.add(String(a._id));

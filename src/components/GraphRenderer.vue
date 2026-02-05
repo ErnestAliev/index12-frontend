@@ -85,6 +85,7 @@ const initialTotalBalance = computed(() => {
   let sum = 0;
   for (const a of accs) {
     if (!a) continue;
+    if (visibilityMode.value === 'none') continue;
     if (visibilityMode.value === 'open' && a.isExcluded) continue;
     if (visibilityMode.value === 'hidden' && !a.isExcluded) continue;
     sum += Number(a.initialBalance || 0);
@@ -109,6 +110,7 @@ const excludedAccountIds = computed(() => {
     mainStore.accounts.forEach((a) => {
       if (!a) return;
       const id = String(a._id);
+      if (visibilityMode.value === 'none') { ids.add(id); return; }
       if (visibilityMode.value === 'open' && a.isExcluded) ids.add(id);
       if (visibilityMode.value === 'hidden' && !a.isExcluded) ids.add(id);
     });

@@ -94,7 +94,10 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const includeExcludedInTotal = computed({
-        get: () => accountVisibilityMode.value !== 'open',
+        get: () => {
+            const mode = accountVisibilityMode.value;
+            return mode === 'all' || mode === 'hidden';
+        },
         set: (v) => {
             if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
                 uiStore.setAccountVisibilityMode(v ? 'all' : 'open');
@@ -105,6 +108,18 @@ export const useMainStore = defineStore('mainStore', () => {
     const toggleExcludedInclusion = () => {
         if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
             uiStore.toggleExcludedInclusion();
+        }
+    };
+
+    const toggleOpenVisibility = () => {
+        if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
+            uiStore.toggleOpenVisibility();
+        }
+    };
+
+    const toggleHiddenVisibility = () => {
+        if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
+            uiStore.toggleHiddenVisibility();
         }
     };
 
@@ -272,6 +287,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const isExcluded = acc?.isExcluded === true;
 
         const mode = accountVisibilityMode.value;
+        if (mode === 'none') return true;               // hide everything
         if (mode === 'open') return isExcluded;           // hide excluded
         if (mode === 'hidden') return !isExcluded;        // hide open
         return false; // 'all'
@@ -2941,7 +2957,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
         // UI Store Bridges
         isHeaderExpanded, toggleHeaderExpansion,
-        accountVisibilityMode, includeExcludedInTotal, toggleExcludedInclusion, cycleAccountVisibilityMode,
+        accountVisibilityMode, includeExcludedInTotal,
+        toggleExcludedInclusion, toggleOpenVisibility, toggleHiddenVisibility, cycleAccountVisibilityMode,
 
         // Widget Store Bridges
         allWidgets, dashboardLayout, dashboardForecastState,

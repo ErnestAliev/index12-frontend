@@ -18,27 +18,63 @@ export const useUiStore = defineStore('ui', () => {
   // Глобальная настройка видимости счетов (три состояния)
   const savedIncludeExcluded = localStorage.getItem('includeExcludedInTotal');
   const savedVisibilityMode = localStorage.getItem('accountVisibilityMode');
-  const accountVisibilityMode = ref(
-    savedVisibilityMode === 'hidden' || savedVisibilityMode === 'all'
-      ? savedVisibilityMode
-      : (savedIncludeExcluded === 'true' ? 'all' : 'open') // миграция со старого флага
-  );
+
+  const sanitizeMode = (mode) => {
+    if (mode === 'open' || mode === 'hidden' || mode === 'all') return mode;
+    return 'all'; // default AND convert 'none' or invalid to 'all'
+  };
+
+  const initialMode = sanitizeMode(savedVisibilityMode);
+  const accountVisibilityMode = ref(initialMode);
+
+  // Sync storage to sanitized mode so дальнейшие загрузки не подхватывают 'none' или мусор
+  localStorage.setItem('accountVisibilityMode', initialMode);
+  localStorage.setItem('includeExcludedInTotal', String(initialMode === 'all' || initialMode === 'hidden'));
 
   const includeExcludedInTotal = computed(() => accountVisibilityMode.value !== 'open');
 
   function setAccountVisibilityMode(mode) {
-    const allowed = ['open', 'hidden', 'all'];
+    const allowed = ['open', 'hidden', 'all', 'none'];
     const next = allowed.includes(mode) ? mode : 'open';
     accountVisibilityMode.value = next;
     localStorage.setItem('accountVisibilityMode', next);
-    localStorage.setItem('includeExcludedInTotal', String(next !== 'open'));
+    localStorage.setItem('includeExcludedInTotal', String(next === 'all' || next === 'hidden'));
+  }
+
+  function _flagsToMode(showOpen, showHidden) {
+    if (showOpen && showHidden) return 'all';
+    if (showOpen) return 'open';
+    if (showHidden) return 'hidden';
+    return 'none'; // оба выключены
+  }
+
+  function _modeToFlags(mode) {
+    switch (mode) {
+      case 'all': return { showOpen: true, showHidden: true };
+      case 'open': return { showOpen: true, showHidden: false };
+      case 'hidden': return { showOpen: false, showHidden: true };
+      case 'none': return { showOpen: false, showHidden: false };
+      default: return { showOpen: true, showHidden: true };
+    }
   }
 
   function cycleAccountVisibilityMode() {
-    const order = ['open', 'hidden', 'all'];
+    const order = ['all', 'open', 'hidden', 'none'];
     const idx = order.indexOf(accountVisibilityMode.value);
     const next = order[(idx + 1) % order.length];
     setAccountVisibilityMode(next);
+  }
+
+  function toggleOpenVisibility() {
+    const { showOpen, showHidden } = _modeToFlags(accountVisibilityMode.value);
+    const nextMode = _flagsToMode(!showOpen, showHidden);
+    setAccountVisibilityMode(nextMode);
+  }
+
+  function toggleHiddenVisibility() {
+    const { showOpen, showHidden } = _modeToFlags(accountVisibilityMode.value);
+    const nextMode = _flagsToMode(showOpen, !showHidden);
+    setAccountVisibilityMode(nextMode);
   }
 
   // Backward compatibility: old toggle flips between open/all
@@ -94,6 +130,8 @@ export const useUiStore = defineStore('ui', () => {
     // Actions
     toggleHeaderExpansion,
     toggleExcludedInclusion,
+    toggleOpenVisibility,
+    toggleHiddenVisibility,
     setAccountVisibilityMode,
     cycleAccountVisibilityMode,
     setWidgetSortMode,

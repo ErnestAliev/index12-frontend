@@ -63,6 +63,7 @@ const excludedAccountIds = computed(() => {
     
     const ids = new Set();
     mainStore.accounts.forEach(a => {
+        if (mode === 'none') { ids.add(a._id); return; }
         if (mode === 'open' && a.isExcluded) ids.add(a._id);
         if (mode === 'hidden' && !a.isExcluded) ids.add(a._id);
     });
