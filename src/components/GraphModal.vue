@@ -222,22 +222,22 @@ const toggleVisibility = () => mainStore.cycleAccountVisibilityMode();
         </div>
         <div class="header-center eye-toggle">
           <button class="eye-btn icon-only" @click="mainStore.toggleOpenVisibility()" :class="{ active: showOpenActive }" :title="showOpenActive ? 'Отключить открытые счета' : 'Включить открытые счета'">
-            <svg v-if="openEyeIcon === 'eye'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-if="openEyeIcon === 'eye'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
               <line x1="2" y1="22" x2="22" y2="2"></line>
             </svg>
           </button>
           <button class="eye-btn icon-only" @click="mainStore.toggleHiddenVisibility()" :class="{ active: showHiddenActive }" :title="showHiddenActive ? 'Отключить скрытые счета' : 'Включить скрытые счета'">
-            <svg v-if="hiddenEyeIcon === 'eye'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-if="hiddenEyeIcon === 'eye'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
               <line x1="2" y1="22" x2="22" y2="2"></line>
@@ -344,31 +344,31 @@ const toggleVisibility = () => mainStore.cycleAccountVisibilityMode();
 .header-center.eye-toggle {
   display: flex;
   justify-content: center;
+  gap: 6px;
 }
 
 .eye-btn {
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background);
-  color: var(--color-text-soft);
-  padding: 8px 12px;
-  border-radius: 10px;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid var(--btn-widget-border);
+  background: var(--btn-widget-bg);
+  color: var(--btn-widget-color);
+  padding: 0;
   cursor: pointer;
   transition: all 0.2s ease;
 }
-.eye-btn.icon-only {
-  padding: 8px;
-  gap: 0;
-}
+.eye-btn.icon-only { gap: 0; }
 .eye-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--btn-widget-border-hover, var(--btn-widget-border));
+  color: var(--btn-widget-color-hover, var(--color-primary));
 }
 .eye-btn.active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
+  background: var(--color-primary, #34c759);
+  border-color: transparent;
   color: #fff;
 }
 

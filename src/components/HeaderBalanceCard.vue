@@ -723,8 +723,18 @@ defineExpose({ getSnapshot });
 .action-square-btn:hover { background-color: var(--btn-widget-bg-hover); color: var(--btn-widget-color-hover); }
 .action-square-btn.active { background-color: var(--btn-widget-bg-active); color: var(--btn-widget-color-active); border-color: var(--btn-widget-border-active); }
 
-.visibility-btn { color: var(--text-mute); }
-.visibility-btn.active { color: var(--color-primary); border-color: rgba(31,157,85,0.4); background: var(--color-primary-10, #e6f7ef); }
+.visibility-btn {
+  color: var(--btn-widget-color);
+  background-color: var(--btn-widget-bg);
+}
+.visibility-btn.active {
+  background: var(--color-primary, #34c759);
+  color: #fff;
+  border-color: transparent;
+}
+.visibility-btn.active .icon-svg {
+  stroke: currentColor;
+}
 
 .icon-svg { width: 11px; height: 11px; display: block; object-fit: contain; }
 
