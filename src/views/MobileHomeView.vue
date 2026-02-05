@@ -26,6 +26,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
+import { fetchAiHistory, resetAiHistory } from '@/utils/aiClient.js';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -228,6 +229,23 @@ let aiRecognition = null;
 // Store confirmed voice text at module level so it can be reset on send
 let aiVoiceConfirmedText = '';
 
+// Daily reset for AI history (sync with local midnight)
+const dayKeyRef = ref(new Date().toISOString().slice(0, 10));
+let dayChangeInterval = null;
+
+const checkDayChange = async () => {
+  const key = new Date().toISOString().slice(0, 10);
+  if (key !== dayKeyRef.value) {
+    dayKeyRef.value = key;
+    try {
+      await resetAiHistory({ apiBaseUrl: API_BASE_URL });
+      aiMessages.value = [];
+    } catch (e) {
+      console.warn('AI history reset failed (mobile)', e?.message || e);
+    }
+  }
+};
+
 const _ensureAiRecognition = () => {
   if (aiRecognition) return aiRecognition;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -305,6 +323,7 @@ const toggleAiRecording = () => {
 const openAiModal = async () => {
   showAiModal.value = true;
   try { document.body.style.overflow = 'hidden'; } catch (_) {}
+  await loadAiHistory();
   await nextTick();
   // Don't auto-focus on mobile to prevent keyboard from opening
 };
@@ -362,6 +381,22 @@ const pushAiMessage = (role, text) => {
   });
   if (aiMessages.value.length > 50) aiMessages.value.splice(0, aiMessages.value.length - 50);
   nextTick(scrollAiToBottom);
+};
+
+const loadAiHistory = async () => {
+  try {
+    const hist = await fetchAiHistory({ apiBaseUrl: API_BASE_URL, limit: 100 });
+    aiMessages.value = (hist || []).map(m => ({
+      id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      role: m.role || 'assistant',
+      text: m.content || m.text || '',
+      copied: false,
+    }));
+  } catch (e) {
+    console.warn('AI history load failed (mobile)', e?.message || e);
+  } finally {
+    nextTick(scrollAiToBottom);
+  }
 };
 
 const copyAiText = async (msg) => {
@@ -781,6 +816,11 @@ onMounted(async () => {
   
   console.log('[MOBILE INIT] Fast load complete. Month navigation is active.');
   
+  // Daily check (local time) to reset AI history together with day shift
+  dayChangeInterval = setInterval(() => {
+    checkDayChange().catch((e) => console.warn('checkDayChange mobile failed', e?.message || e));
+  }, 60000);
+  
   // Global click listener to close context menu when clicking outside (including graphs)
   const handleGlobalMobileClick = (e) => {
     if (isContextMenuVisible.value) {
@@ -818,7 +858,7 @@ onUnmounted(() => {
     const el = timelineRef.value?.$el.querySelector('.timeline-scroll-area');
     if (el) el.removeEventListener('scroll', onTimelineScroll);
     document.removeEventListener('click', handleFilterClickOutside, true);
-
+    if (dayChangeInterval) { clearInterval(dayChangeInterval); dayChangeInterval = null; }
     window.removeEventListener('touchmove', onResizerMove);
     window.removeEventListener('touchend', onResizerEnd);
     window.removeEventListener('pointermove', onResizerMove);

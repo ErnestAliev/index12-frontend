@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
 import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
-import { sendAiRequest } from '@/utils/aiClient.js';
+import { sendAiRequest, fetchAiHistory, resetAiHistory } from '@/utils/aiClient.js';
 
 
 // Компоненты
@@ -470,6 +470,17 @@ const scrollAiToBottom = () => {
   });
 };
 
+const loadAiHistory = async () => {
+  try {
+    const hist = await fetchAiHistory({ apiBaseUrl: API_BASE_URL, limit: 100 });
+    aiMessages.value = (hist || []).map(m => _makeAiMsg(m.role || 'assistant', m.content || m.text || ''));
+  } catch (e) {
+    console.warn('AI history load failed', e?.message || e);
+  } finally {
+    nextTick(scrollAiToBottom);
+  }
+};
+
 // ----- LOG MODAL -----
 const showLogModal = ref(false);
 const logText = ref('');
@@ -487,9 +498,11 @@ const closeLog = () => { showLogModal.value = false; logText.value = ''; };
 const openAiDrawer = () => {
   isAiDrawerOpen.value = true;
   aiPaywall.value = false;
-  nextTick(() => {
-    aiInputRef.value?.focus?.();
-    scrollAiToBottom();
+  loadAiHistory().finally(() => {
+    nextTick(() => {
+      aiInputRef.value?.focus?.();
+      scrollAiToBottom();
+    });
   });
 };
 
@@ -1423,7 +1436,7 @@ const onWindowResize = () => {
   updateScrollbarMetrics();
 };
 // Check for day change and re-center timeline on new today
-const checkDayChange = () => {
+const checkDayChange = async () => {
   const currentToday = initializeToday();
   if (!sameDay(currentToday, today.value)) {
     today.value = currentToday;
@@ -1434,6 +1447,13 @@ const checkDayChange = () => {
       // 🔥 Center timeline on new today
       centerToday();
       console.log('[Desktop] Day changed - centered on new today');
+      // 🔥 Reset AI history at local midnight to keep day-context
+      try {
+        await resetAiHistory({ apiBaseUrl: API_BASE_URL });
+        aiMessages.value = [];
+      } catch (e) {
+        console.warn('AI history reset failed', e?.message || e);
+      }
       // DO NOT recalc projection - it stays the same until user changes it
     }
   }
@@ -1520,7 +1540,9 @@ onMounted(async () => {
     document.documentElement.setAttribute('data-theme', currentTheme.value);
     
     checkDayChange(); 
-    dayChangeCheckerInterval = setInterval(checkDayChange, 60000); 
+    dayChangeCheckerInterval = setInterval(() => {
+      checkDayChange().catch((e) => console.warn('checkDayChange failed', e?.message || e));
+    }, 60000); 
     await mainStore.checkAuth(); 
     if (mainStore.isAuthLoading || !mainStore.user) return; 
     

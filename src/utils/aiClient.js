@@ -73,4 +73,23 @@ export async function sendAiRequest({
   };
 }
 
+// Fetch last N messages from backend session history
+export async function fetchAiHistory({ apiBaseUrl, limit = 50, timeout = 8000 }) {
+  if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
+  const endpoint = `${apiBaseUrl}/ai/history?limit=${encodeURIComponent(limit)}`;
+  const res = await axios.get(endpoint, {
+    withCredentials: true,
+    timeout,
+  });
+  return Array.isArray(res?.data?.history) ? res.data.history : [];
+}
+
+// Reset backend chat history (per user)
+export async function resetAiHistory({ apiBaseUrl, timeout = 8000 }) {
+  if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
+  const endpoint = `${apiBaseUrl}/ai/history`;
+  await axios.delete(endpoint, { withCredentials: true, timeout });
+  return true;
+}
+
 export default { sendAiRequest };
