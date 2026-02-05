@@ -240,20 +240,29 @@ let aiRecognition = null;
 let aiVoiceConfirmedText = '';
 
 // Daily reset for AI history (sync with local midnight)
-const dayKeyRef = ref(new Date().toISOString().slice(0, 10));
+const DAY_KEY_STORAGE = 'aiLastDayKey';
+const _currentDayKey = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+const dayKeyRef = ref(_currentDayKey());
 let dayChangeInterval = null;
 
 const checkDayChange = async () => {
-  const key = new Date().toISOString().slice(0, 10);
-  if (key !== dayKeyRef.value) {
-    dayKeyRef.value = key;
+  const key = _currentDayKey();
+  const prev = localStorage.getItem(DAY_KEY_STORAGE);
+  if (prev && prev !== key) {
     try {
       await resetAiHistory({ apiBaseUrl: API_BASE_URL });
       aiMessages.value = [];
+      console.log('[Mobile] AI history reset on day change', prev, '->', key);
     } catch (e) {
       console.warn('AI history reset failed (mobile)', e?.message || e);
     }
   }
+  dayKeyRef.value = key;
+  localStorage.setItem(DAY_KEY_STORAGE, key);
 };
 
 const _ensureAiRecognition = () => {
@@ -825,6 +834,7 @@ onMounted(async () => {
   await initializeMobileView();
   
   console.log('[MOBILE INIT] Fast load complete. Month navigation is active.');
+  await checkDayChange();
   
   // Daily check (local time) to reset AI history together with day shift
   dayChangeInterval = setInterval(() => {

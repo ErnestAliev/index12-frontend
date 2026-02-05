@@ -1436,8 +1436,31 @@ const onWindowResize = () => {
   updateScrollbarMetrics();
 };
 // Check for day change and re-center timeline on new today
+const DAY_KEY_STORAGE = 'aiLastDayKey';
+const _currentDayKey = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const ensureAiHistoryForToday = async () => {
+  const cur = _currentDayKey();
+  const prev = localStorage.getItem(DAY_KEY_STORAGE);
+  if (prev && prev !== cur) {
+    try {
+      await resetAiHistory({ apiBaseUrl: API_BASE_URL });
+      aiMessages.value = [];
+      console.log('[Desktop] AI history reset on day change', prev, '->', cur);
+    } catch (e) {
+      console.warn('AI history reset failed', e?.message || e);
+    }
+  }
+  localStorage.setItem(DAY_KEY_STORAGE, cur);
+};
+
 const checkDayChange = async () => {
   const currentToday = initializeToday();
+  await ensureAiHistoryForToday();
   if (!sameDay(currentToday, today.value)) {
     today.value = currentToday;
     const todayDay = getDayOfYear(today.value);
@@ -1447,13 +1470,6 @@ const checkDayChange = async () => {
       // 🔥 Center timeline on new today
       centerToday();
       console.log('[Desktop] Day changed - centered on new today');
-      // 🔥 Reset AI history at local midnight to keep day-context
-      try {
-        await resetAiHistory({ apiBaseUrl: API_BASE_URL });
-        aiMessages.value = [];
-      } catch (e) {
-        console.warn('AI history reset failed', e?.message || e);
-      }
       // DO NOT recalc projection - it stays the same until user changes it
     }
   }
@@ -1539,7 +1555,7 @@ onMounted(async () => {
     // Initialize theme
     document.documentElement.setAttribute('data-theme', currentTheme.value);
     
-    checkDayChange(); 
+    await checkDayChange(); 
     dayChangeCheckerInterval = setInterval(() => {
       checkDayChange().catch((e) => console.warn('checkDayChange failed', e?.message || e));
     }, 60000); 
