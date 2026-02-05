@@ -57,6 +57,13 @@ const showHiddenActive = computed(() => accountVisibilityMode.value === 'all' ||
 const openEyeIcon = computed(() => (showOpenActive.value ? 'eye' : 'eye-off'));
 const hiddenEyeIcon = computed(() => (showHiddenActive.value ? 'eye' : 'eye-off'));
 
+// Ensure mobile start shows all accounts (both eyes active)
+onMounted(() => {
+  if (!showOpenActive.value && !showHiddenActive.value) {
+    uiStore.setAccountVisibilityMode('all');
+  }
+});
+
 // --- Refs & State ---
 const timelineRef = ref(null);
 const chartRef = ref(null);
