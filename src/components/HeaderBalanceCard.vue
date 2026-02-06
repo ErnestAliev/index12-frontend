@@ -386,6 +386,20 @@ const summaryTotals = computed(() => {
   // not from operations in mainStore.
   const list = processedItems.value || [];
 
+  const factIncome = list.reduce((acc, item) => {
+    const explicit = Number(item?.incomeAbs);
+    if (!isNaN(explicit)) return acc + Math.max(0, explicit);
+    const bal = Number(item?.balance) || 0;
+    return acc + Math.max(0, bal);
+  }, 0);
+
+  const factExpense = list.reduce((acc, item) => {
+    const explicit = Number(item?.expenseAbs);
+    if (!isNaN(explicit)) return acc + Math.max(0, explicit);
+    const bal = Number(item?.balance) || 0;
+    return acc + Math.max(0, -bal);
+  }, 0);
+
   const planExpense = (() => {
     if (props.widgetKey === 'projects') {
       const hasBreakdown = list.some(item => item && Object.prototype.hasOwnProperty.call(item, 'futureExpenseAbs'));
@@ -396,11 +410,21 @@ const summaryTotals = computed(() => {
     return _sumListByFieldSign(list, 'futureBalance', 'neg');
   })();
 
+  const planIncome = (() => {
+    if (props.widgetKey === 'projects') {
+      const hasBreakdown = list.some(item => item && Object.prototype.hasOwnProperty.call(item, 'futureIncomeAbs'));
+      if (hasBreakdown) {
+        return list.reduce((acc, item) => acc + Math.max(0, Number(item?.futureIncomeAbs) || 0), 0);
+      }
+    }
+    return _sumListByFieldSign(list, 'futureBalance', 'pos');
+  })();
+
   return {
-    factExpense: _sumListByFieldSign(list, 'balance', 'neg'),
-    factIncome: _sumListByFieldSign(list, 'balance', 'pos'),
+    factExpense,
+    factIncome,
     planExpense,
-    planIncome: _sumListByFieldSign(list, 'futureBalance', 'pos'),
+    planIncome,
   };
 });
 

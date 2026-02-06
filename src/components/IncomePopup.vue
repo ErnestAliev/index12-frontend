@@ -653,11 +653,19 @@ const saveNewAccount = async () => {
 };
 
 const handleProjectChange = (val) => { 
-    if (Array.isArray(val) && val.includes('--CREATE_NEW--')) {
+    if (!Array.isArray(val)) return;
+
+    // Запуск создания нового проекта
+    if (val.includes('--CREATE_NEW--')) {
         selectedProjectIds.value = [];
         isCreatingProject.value = true; 
         nextTick(() => newProjectInput.value?.focus()); 
+        return;
     }
+
+    // Если выбран хотя бы один реальный проект — убираем "Без проекта" (null)
+    const hasRealProject = val.some(v => v !== null && v !== undefined);
+    selectedProjectIds.value = hasRealProject ? val.filter(v => v !== null && v !== undefined) : val;
 };
 const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); } };
 

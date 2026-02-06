@@ -559,6 +559,9 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
           return {
               ...item,
               futureBalance: future.balance ?? fallback,
+              // сохраняем раздельные суммы доход/расход, если есть
+              incomeAbs: item.incomeAbs,
+              expenseAbs: item.expenseAbs,
               futureIncomeAbs: future.futureIncomeAbs ?? item.futureIncomeAbs,
               futureExpenseAbs: future.futureExpenseAbs ?? item.futureExpenseAbs
           };

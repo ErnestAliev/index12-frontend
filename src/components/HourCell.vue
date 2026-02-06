@@ -139,6 +139,24 @@ const chipLabel = computed(() => {
   return op.categoryId?.name || 'Без категории';
 });
 
+// Отображаемая сумма с учетом взаимозачетов (для доходов)
+const getDisplayAmount = (op) => {
+  if (!op || op.amount === undefined || op.amount === null) return null;
+  const amt = Number(op.amount);
+  if (!Number.isFinite(amt)) return null;
+
+  if (op.type === 'income') {
+    const offsets = mainStore.allOperationsFlat.filter(
+      (o) => o.offsetIncomeId && mainStore._idsMatch(o.offsetIncomeId, op._id || op.id)
+    );
+    const offsetTotal = offsets.reduce((s, o) => s + Math.abs(Number(o.amount) || 0), 0);
+    return amt - offsetTotal;
+  }
+  return amt;
+};
+
+const displayAmount = computed(() => getDisplayAmount(props.operation));
+
 
 
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
@@ -208,7 +226,7 @@ const onDrop = (event) => {
       @click.stop="onEditClick"
     >
       <template v-if="isTransferOp">
-        <span class="op-amount">{{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
         <span class="op-meta">{{ toOwnerName }}</span>
       </template>
       <template v-else-if="isWithdrawalOp">
@@ -231,7 +249,7 @@ const onDrop = (event) => {
       <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
       <template v-else>
         <span class="op-amount">
-            {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
+            {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
         </span>
         <span class="op-meta">{{ chipLabel }}</span>
       </template>

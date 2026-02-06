@@ -295,8 +295,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const _isOpVisible = (op) => {
         if (!op) return false;
-        // Управленческий родитель (исключен из итогов) всегда скрываем из расчетов
-        if (op.excludeFromTotals) return false;
+        // Управленческий родитель (исключен из итогов) скрываем, НО показываем взаимозачетные расходы для управления ими
+        if (op.excludeFromTotals && !op.offsetIncomeId) return false;
         // Дальше проверка скрытых счетов
         if (includeExcludedInTotal.value) return true;
 
@@ -366,6 +366,30 @@ export const useMainStore = defineStore('mainStore', () => {
             const sign = op.type === 'income' ? 1 : -1;
             const value = amt * sign;
             map.set(key, (map.get(key) || 0) + value);
+        });
+        return map;
+    };
+
+    // Детализированная агрегация (разделяем доход/расход)
+    const _calculateAggregatedBalanceDetailed = (ops, groupByField, sumField = 'amount') => {
+        const map = new Map();
+        ops.forEach(op => {
+            if (!op) return;
+            if (op.isWorkAct) return;
+            if (!_isOpVisible(op)) return;
+
+            let key = null;
+            const rawKey = op[groupByField];
+            key = _toStr(rawKey);
+            if (!key) return;
+
+            if ((op.type === 'transfer' || op.isTransfer) && groupByField !== 'individualId') return;
+
+            const amt = Math.abs(op[sumField] || 0);
+            const rec = map.get(key) || { incomeAbs: 0, expenseAbs: 0 };
+            if (op.type === 'income') rec.incomeAbs += amt;
+            else if (op.type === 'expense') rec.expenseAbs += amt;
+            map.set(key, rec);
         });
         return map;
     };
@@ -975,27 +999,16 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const currentProjectBalances = computed(() => {
         // Always calculate from filtered currentOps to respect period filter
-        const aggregated = _calculateAggregatedBalance(currentOps.value, 'projectId');
+        const aggregated = _calculateAggregatedBalanceDetailed(currentOps.value, 'projectId');
 
         const result = projects.value.map(p => {
-            const balance = aggregated.get(String(p._id)) || 0;
-
-            // 🔍 DEBUG: Log operations for "Пушкина" project
-            if (p.name && p.name.includes('Пушкина')) {
-                const projectOps = currentOps.value.filter(op => {
-                    if (!op.projectId) return false;
-                    const opProjectId = typeof op.projectId === 'object' ? op.projectId._id : op.projectId;
-                    return String(opProjectId) === String(p._id);
-                });
-
-                const incomes = projectOps.filter(op => op.type === 'income');
-                const expenses = projectOps.filter(op => op.type === 'expense');
-
-                // Project balance calculation
-            }
+            const rec = aggregated.get(String(p._id)) || { incomeAbs: 0, expenseAbs: 0 };
+            const balance = (rec.incomeAbs || 0) - (rec.expenseAbs || 0);
 
             return {
                 ...p,
+                incomeAbs: rec.incomeAbs || 0,
+                expenseAbs: rec.expenseAbs || 0,
                 balance
             };
         });
@@ -1741,7 +1754,6 @@ export const useMainStore = defineStore('mainStore', () => {
                 dealOperations.value = newDeals;
             }
 
-
             await fetchSnapshot();
 
             return serverOp;
@@ -1846,9 +1858,21 @@ export const useMainStore = defineStore('mainStore', () => {
 
         const opId = operation._id || operation.id;
         const dateKey = operation.dateKey;
-        if (!dateKey) return;
+        if (!opId) return;
+
+        // Подтянем свежие данные операции, чтобы точно знать offsetIncomeId и amount
+        let opForDelete = operation;
+        try {
+            const res = await axios.get(`${API_BASE_URL}/events/${opId}`);
+            opForDelete = res.data || operation;
+        } catch(e) { /* оставляем переданный */ }
+
+        const effectiveDateKey = dateKey || opForDelete.dateKey || (opForDelete.date ? _getDateKey(new Date(opForDelete.date)) : null);
+        if (!effectiveDateKey) return;
 
         try {
+
+            // Взаимозачеты больше не изменяют сумму дохода — никаких откатов
 
             const isSplitParent = operation.isSplitParent === true;
 
@@ -1883,11 +1907,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 }
             }
 
-            // 🟢 FIX: Fetch fresh snapshot from backend instead of manual recalculation
-            // This prevents data inconsistency between displayCache and allKnownOperations
             await fetchSnapshot();
-
-            // 🟢 FIX: Trigger projection update after snapshot to ensure graphs refresh
             _triggerProjectionUpdate();
 
         } catch (e) {

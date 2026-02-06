@@ -209,7 +209,13 @@ const _resolveEntityName = (idOrObj, storeList) => {
 
 const _normalizeOp = (op) => {
   if (!op || typeof op !== 'object') return null;
-  const amount = (typeof op.amount === 'number') ? op.amount : (typeof op.sum === 'number' ? op.sum : null);
+  const baseAmount = (typeof op.amount === 'number') ? op.amount : (typeof op.sum === 'number' ? op.sum : null);
+  let amount = baseAmount;
+  if (op.type === 'income' && baseAmount !== null) {
+    const offsets = mainStore.allOperationsFlat.filter(o => o.offsetIncomeId && mainStore._idsMatch(o.offsetIncomeId, op._id || op.id));
+    const offsetTotal = offsets.reduce((s, o) => s + Math.abs(Number(o.amount) || 0), 0);
+    amount = baseAmount - offsetTotal;
+  }
   const date = op.date ? new Date(op.date) : null;
   const dateIso = (date && !isNaN(date.getTime())) ? date.toISOString().slice(0, 10) : null;
 
@@ -659,6 +665,29 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       const timelineMap = projectionStore.dailyChartData;
       if (!(timelineMap instanceof Map) || timelineMap.size === 0) return null;
 
+      const dayOfYear = (date) => {
+        const start = new Date(date.getFullYear(), 0, 0);
+        const diff = date - start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000;
+        return Math.floor(diff / 86400000);
+      };
+      const getDateKey = (date) => `${date.getFullYear()}-${dayOfYear(date)}`;
+
+      // Суммы взаимозачетов (offsetIncomeId) по дням для AI, чтобы они попадали в ответ как расходы
+      const offsetExpenseByDay = (() => {
+        const map = new Map();
+        const ops = Array.isArray(mainStore?.allOperationsFlat) ? mainStore.allOperationsFlat : [];
+        ops.forEach(op => {
+          if (!op || op.type !== 'expense' || !op.offsetIncomeId) return;
+          if (!op.date) return;
+          const d = new Date(op.date);
+          if (Number.isNaN(d.getTime())) return;
+          const key = getDateKey(d);
+          const amt = Math.abs(Number(op.amount) || 0);
+          map.set(key, (map.get(key) || 0) + amt);
+        });
+        return map;
+      })();
+
       // Определяем границы: берем максимум из выбранного периода и окна 90 дней назад
       let start = null;
       let end = null;
@@ -686,11 +715,14 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         const d = val.date instanceof Date ? val.date : new Date(val.date);
         if (Number.isNaN(d.getTime())) return;
         if (d < start || d > end) return;
+        const key = getDateKey(d);
+        const offsetExp = offsetExpenseByDay.get(key) || 0;
         out.push({
           date: d.toISOString(),
           income: Number(val.income) || 0,
           prepayment: Number(val.prepayment) || 0,
-          expense: Number(val.expense) || 0,
+          expense: (Number(val.expense) || 0) + offsetExp, // учитываем взаимозачеты как расход для AI
+          offsetExpense: offsetExp,
           withdrawal: Number(val.withdrawal) || 0,
           closingBalance: Number(val.closingBalance) || 0,
         });

@@ -49,7 +49,8 @@ const normalizeId = (val) => {
     if (typeof val === 'object') return val._id ? String(val._id) : String(val);
     return String(val);
 };
-const selectedCategoryId = ref(null);
+// Категории — мультиселект
+const selectedCategoryIds = ref([]);
 
 // Default project "Без проекта"
 const defaultProjectId = computed(() => {
@@ -67,9 +68,15 @@ const isInitialLoad = ref(true);
 const isDateChanged = ref(false); 
 const isDeleteConfirmVisible = ref(false);
 
+// 🟢 Режим взаимозачета с доходом
+const isIncomeOffsetMode = ref(false);
+const selectedIncomeOpId = ref(null);
+const offsetCategoryId = ref(null);
+
 const isCreditWarningVisible = ref(false);
 const creditWarningMessage = ref('');
 const isLocalWizardVisible = ref(false);
+const lastPreparedCategoryIds = ref([]);
 
 // InfoModal
 const showInfoModal = ref(false);
@@ -108,6 +115,61 @@ const isProgrammaticAccount = ref(false);
 const isProgrammaticCategory = ref(false);
 const isProgrammaticContractor = ref(false);
 const isProgrammaticOwner = ref(false);
+
+// Helper для сравнения ID
+const idsMatch = (a, b) => String(a || '') === String(b || '');
+
+// Убеждаемся, что есть категория "Взаимозачет"
+const ensureOffsetCategory = async () => {
+    if (offsetCategoryId.value) return offsetCategoryId.value;
+    const existing = mainStore.categories.find(c => {
+        const n = (c.name || '').toLowerCase().trim();
+        return n === 'взаимозачет' || n === 'взаимозачёт' || n === 'взаимозачет ';
+    });
+    if (existing) {
+        offsetCategoryId.value = existing._id || existing.id;
+        return offsetCategoryId.value;
+    }
+    try {
+        const created = await mainStore.addCategory('Взаимозачет');
+        offsetCategoryId.value = created._id || created.id;
+    } catch (e) {
+        console.error('Cannot create offset category', e);
+        showError('Не удалось создать категорию "Взаимозачет": ' + e.message);
+    }
+    return offsetCategoryId.value;
+};
+
+const sumIncomeOffsets = (incomeId, excludeExpenseId = null) => {
+    if (!incomeId) return 0;
+    return mainStore.allOperationsFlat
+        .filter(op =>
+            op &&
+            op.type === 'expense' &&
+            op.offsetIncomeId &&
+            idsMatch(op.offsetIncomeId, incomeId) &&
+            (!excludeExpenseId || !idsMatch(op._id, excludeExpenseId))
+        )
+        .reduce((s, op) => s + Math.abs(Number(op.amount) || 0), 0);
+};
+
+// Базовая (исходная) сумма дохода без взаимозачетов
+const getIncomeBaseAmount = (incomeId) => {
+    if (!incomeId) return 0;
+    const incomeOp = mainStore.allOperationsFlat.find(op => idsMatch(op._id, incomeId));
+    if (!incomeOp) return 0;
+    const raw = Math.abs(Number(incomeOp.amount) || 0);
+    const offsets = sumIncomeOffsets(incomeId, null);
+    return Math.max(0, raw - offsets);
+};
+
+// Остаток дохода до применения текущего взаимозачета
+const getIncomeRemaining = (incomeId, excludeExpenseId = null) => {
+    if (!incomeId) return 0;
+    const base = getIncomeBaseAmount(incomeId);
+    const existingOffsets = sumIncomeOffsets(incomeId, excludeExpenseId);
+    return Math.max(0, base - existingOffsets);
+};
 
 // --- 🟢 TIME LOGIC ---
 const toInputDate = (dateObj) => { 
@@ -254,7 +316,6 @@ const accountOptions = computed(() => {
     }
     return option;
   });
-  opts.push({ isActionRow: true }); 
   return opts;
 });
 
@@ -283,7 +344,6 @@ const ownerOptions = computed(() => {
           opts.push(option); 
       });
   }
-  opts.push({ isActionRow: true }); 
   return opts;
 });
 
@@ -311,6 +371,38 @@ const contractorOptions = computed(() => {
   return opts;
 });
 
+// 🟢 Опции доходов для взаимозачета (в пределах месяца выбранной даты)
+const incomeOffsetOptions = computed(() => {
+  const target = editableDate.value ? createSmartDate(editableDate.value) : new Date();
+  const month = target.getMonth();
+  const year = target.getFullYear();
+
+  const options = mainStore.allOperationsFlat
+    .filter(op => op && op.type === 'income' && op.date && new Date(op.date).getMonth() === month && new Date(op.date).getFullYear() === year)
+    .map(op => {
+        const contractorName = op.contractorId?.name || op.counterpartyIndividualId?.name || op.description || 'Доход';
+        const projectName = op.projectId?.name || (Array.isArray(op.projectIds) && op.projectIds[0]?.name) || '';
+        const categoryName = op.categoryId?.name || '';
+        const remaining = getIncomeRemaining(op._id, isEditMode.value ? props.operationToEdit?._id : null);
+        if (remaining <= 0) return null;
+        return {
+            value: op._id,
+            label: contractorName,
+            subLabel: [projectName, categoryName].filter(Boolean).join(' • '),
+            rightText: `${formatNumber(Math.round(getIncomeBaseAmount(op._id)))} ₸`,
+            tooltip: `Остаток после вычетов: ${formatNumber(Math.round(remaining))} ₸`
+        };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+        const opA = mainStore.allOperationsFlat.find(o => idsMatch(o._id, a.value));
+        const opB = mainStore.allOperationsFlat.find(o => idsMatch(o._id, b.value));
+        return (opB?.date || 0) - (opA?.date || 0);
+    });
+
+  return options;
+});
+
 const projectOptions = computed(() => {
   const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
   opts.unshift({ value: null, label: 'Без проекта' });
@@ -333,7 +425,28 @@ const categoryOptions = computed(() => {
   return opts;
 });
 
+const selectedIncomeOp = computed(() => {
+    if (!selectedIncomeOpId.value) return null;
+    return mainStore.allOperationsFlat.find(op => idsMatch(op._id, selectedIncomeOpId.value));
+});
+
+const selectedIncomeRemaining = computed(() => {
+    if (!selectedIncomeOp.value) return 0;
+    return getIncomeRemaining(selectedIncomeOp.value._id, isEditMode.value ? props.operationToEdit?._id : null);
+});
+
+const currentAmountNumeric = computed(() => {
+    const n = parseFloat((amount.value || '').toString().replace(/\s/g, ''));
+    return isNaN(n) ? 0 : n;
+});
+
+const projectedIncomeAfterOffset = computed(() => {
+    const after = selectedIncomeRemaining.value - currentAmountNumeric.value;
+    return after < 0 ? 0 : after;
+});
+
 const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
+const isOffsetEditLocked = computed(() => isIncomeOffsetMode.value && isEditMode.value);
 
 // 🟢 PERMISSIONS
 const canEdit = computed(() => mainStore.canEdit);
@@ -343,7 +456,7 @@ const isReadOnly = computed(() => !canEdit.value);
 // 🟢 ДИНАМИЧЕСКИЙ ЗАГОЛОВОК
 const title = computed(() => {
     if (isCloneMode.value) return 'Копия: Расход';
-    if (isEditMode.value) return 'Редактировать Расход';
+    if (isEditMode.value) return 'Редактировать';
     
     // Если будущее - пишем "Запланировать"
     if (isFutureDate.value) return 'Запланировать расход';
@@ -352,6 +465,7 @@ const title = computed(() => {
 });
 
 const buttonText = computed(() => {
+    if (isIncomeOffsetMode.value) return isEditMode.value ? 'Сохранить взаимозачет' : 'Создать взаимозачет';
     if (isEditMode.value) return 'Сохранить';
     if (isFutureDate.value) return 'Запланировать';
     return 'Добавить расход';
@@ -407,6 +521,7 @@ watch(selectedAccountId, (newVal) => {
 });
 
 watch(selectedContractorValue, (newVal) => {
+    if (isIncomeOffsetMode.value) return; // не трогаем категории/проекты при взаимозачете
     if (isInitialLoad.value || !newVal) return;
     const [prefix, id] = newVal.split('_');
     let isBank = false;
@@ -419,7 +534,7 @@ watch(selectedContractorValue, (newVal) => {
     }
     if (isBank) {
         if (myCreditsProjectId.value) selectedProjectIds.value = [normalizeId(myCreditsProjectId.value)];
-        if (mainStore.loanRepaymentCategoryId) selectedCategoryId.value = mainStore.loanRepaymentCategoryId;
+        if (mainStore.loanRepaymentCategoryId) selectedCategoryIds.value = [mainStore.loanRepaymentCategoryId];
         return;
     }
     let entity = null;
@@ -430,7 +545,7 @@ watch(selectedContractorValue, (newVal) => {
             const pid = normalizeId(entity.defaultProjectId);
             selectedProjectIds.value = pid ? [pid] : [];
         }
-        if (entity.defaultCategoryId) selectedCategoryId.value = typeof entity.defaultCategoryId === 'object' ? entity.defaultCategoryId._id : entity.defaultCategoryId;
+        if (entity.defaultCategoryId) selectedCategoryIds.value = [typeof entity.defaultCategoryId === 'object' ? entity.defaultCategoryId._id : entity.defaultCategoryId];
     }
 });
 
@@ -445,7 +560,7 @@ const onAmountInput = (e) => {
 
 const toDisplayDate = (d) => { if (!d) return ''; const [y,m,d_] = d.split('-'); return `${d_}.${m}.${y}`; };
 
-const processSave = () => {
+const processSave = (preparedCategoryIds = []) => {
     let cId = null, iId = null;
     if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
     let contrId = null, contrIndId = null;
@@ -453,6 +568,26 @@ const processSave = () => {
 
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     const finalAmount = -Math.abs(rawAmount);
+
+    // В режиме взаимозачета копируем реквизиты из выбранного дохода
+    if (isIncomeOffsetMode.value && selectedIncomeOp.value) {
+        const inc = selectedIncomeOp.value;
+        selectedAccountId.value = inc.accountId?._id || inc.accountId || null;
+        if (inc.companyId) selectedOwner.value = `company-${inc.companyId._id || inc.companyId}`;
+        else if (inc.individualId) selectedOwner.value = `individual-${inc.individualId._id || inc.individualId}`;
+        if (inc.contractorId) selectedContractorValue.value = `contr_${inc.contractorId._id || inc.contractorId}`;
+        else if (inc.counterpartyIndividualId) selectedContractorValue.value = `ind_${inc.counterpartyIndividualId._id || inc.counterpartyIndividualId}`;
+
+        const projIds = Array.isArray(inc.projectIds)
+            ? inc.projectIds.map(normalizeId).filter(Boolean)
+            : [];
+        if (projIds.length) {
+            selectedProjectIds.value = projIds;
+        } else {
+            const pid = normalizeId(inc.projectId?._id || inc.projectId);
+            selectedProjectIds.value = pid ? [pid] : [];
+        }
+    }
 
     let targetCellIndex = undefined;
     if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) targetCellIndex = props.cellIndex;
@@ -468,20 +603,26 @@ const processSave = () => {
         date: createSmartDate(editableDate.value), 
         accountId: selectedAccountId.value, companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
-        categoryId: selectedCategoryId.value,
+        categoryId: preparedCategoryIds[0] || null,
+        categoryIds: preparedCategoryIds.length ? preparedCategoryIds : undefined,
         projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
         projectIds: projectIdsClean.length > 1 ? projectIdsClean : (projectIdsClean.length === 1 ? undefined : (defaultProjectId.value ? [defaultProjectId.value] : undefined)),
         description: description.value, cellIndex: targetCellIndex
     };
+
+    if (isIncomeOffsetMode.value && selectedIncomeOpId.value) {
+        payload.offsetIncomeId = selectedIncomeOpId.value;
+        payload.excludeFromTotals = true; // не учитываем в общих итогах
+    }
     
     if (contrId || contrIndId) {
          const type = contrId ? 'contractors' : 'individuals';
          const id = contrId || contrIndId;
          const updateData = { _id: id };
          let needsUpdate = false;
-         if (primaryProjectId.value) { updateData.defaultProjectId = primaryProjectId.value; needsUpdate = true; }
-         if (selectedCategoryId.value) { updateData.defaultCategoryId = selectedCategoryId.value; needsUpdate = true; }
-         if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
+        if (primaryProjectId.value) { updateData.defaultProjectId = primaryProjectId.value; needsUpdate = true; }
+        if (selectedCategoryIds.value && selectedCategoryIds.value.length) { updateData.defaultCategoryId = selectedCategoryIds.value[0]; needsUpdate = true; }
+        if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
     }
 
     emit('save', { mode: isEditMode.value ? 'edit' : 'create', id: props.operationToEdit?._id, data: payload, originalOperation: props.operationToEdit });
@@ -493,6 +634,15 @@ const processSave = () => {
 const handleSave = async () => {
     if (isSaving.value || isInlineSaving.value) return;
     
+    if (isIncomeOffsetMode.value) {
+        if (!selectedIncomeOpId.value || !selectedIncomeOp.value) { showError('Выберите операцию дохода'); return; }
+        // Защита: закрепляем категории как "Взаимозачет" + пользовательские (без подмен из дохода)
+        if (offsetCategoryId.value) {
+            const rest = (selectedCategoryIds.value || []).filter(v => v && v !== offsetCategoryId.value);
+            selectedCategoryIds.value = [offsetCategoryId.value, ...rest];
+        }
+    }
+
     // 🟢 ВАЛИДАЦИЯ ПЕРЕД СОХРАНЕНИЕМ
     if (validationResult.value && !validationResult.value.isValid) {
         showError(validationResult.value.message);
@@ -502,11 +652,24 @@ const handleSave = async () => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
+    if (isIncomeOffsetMode.value && rawAmount > selectedIncomeRemaining.value) {
+        showError(`Сумма превышает остаток дохода (${formatNumber(Math.round(selectedIncomeRemaining.value))} ₸)`);
+        return;
+    }
     const projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
-    if (projectIdsClean.length > 1 && (selectedCategoryId.value === null || selectedCategoryId.value === undefined)) {
+    const preparedCategoryIdsBase = (selectedCategoryIds.value || []).filter(v => v !== null && v !== undefined);
+    if (projectIdsClean.length > 1 && preparedCategoryIdsBase.length === 0) {
         showError('Укажите категорию для разбиения по проектам');
         return;
     }
+    let preparedCategoryIds = preparedCategoryIdsBase;
+    if (isIncomeOffsetMode.value) {
+        const offId = await ensureOffsetCategory();
+        if (offId) {
+            if (!preparedCategoryIds.includes(offId)) preparedCategoryIds = [offId, ...preparedCategoryIds];
+        }
+    }
+    lastPreparedCategoryIds.value = preparedCategoryIds;
     
     // 🟢 UPDATE ACCOUNT OWNERSHIP if owner is selected (even if account was created earlier)
     if (selectedAccountId.value && selectedOwner.value) {
@@ -536,7 +699,7 @@ const handleSave = async () => {
     
     isSaving.value = true;
 
-    if (mainStore.loanRepaymentCategoryId && selectedCategoryId.value === mainStore.loanRepaymentCategoryId) {
+    if (mainStore.loanRepaymentCategoryId && selectedCategoryIds.value.includes(mainStore.loanRepaymentCategoryId)) {
         let contrObj = null; let isContr = false;
         if (selectedContractorValue.value) {
             const [type, id] = selectedContractorValue.value.split('_');
@@ -563,30 +726,14 @@ const handleSave = async () => {
             }
         }
     }
-    processSave();
+    processSave(preparedCategoryIds);
 };
 
-const confirmCreditWarning = () => { isSaving.value = true; processSave(); };
+const confirmCreditWarning = () => { isSaving.value = true; processSave(lastPreparedCategoryIds.value); };
 const launchCreditWizard = () => { isCreditWarningVisible.value = false; isLocalWizardVisible.value = true; };
 const handleLocalWizardSave = async (payload) => {
     try { await mainStore.addCredit(payload); await mainStore.fetchAllEntities(); isLocalWizardVisible.value = false; handleSave(); } 
     catch (e) { console.error(e); showError("Не удалось создать кредит: " + e.message); }
-};
-
-// --- CASH REGISTER LOGIC (Новое) ---
-const openCashChoice = () => {
-    startCashCreation();
-};
-
-const startCashCreation = () => {
-    accountCreationPlaceholder.value = 'Название кассы';
-    newAccountName.value = '';
-    isCreatingSpecialAccount.value = false;  // Больше не создаем особые кассы
-    isCreatingCashRegister.value = true;  // Всегда обычная касса
-    isCreatingAccount.value = true;
-    // Очищаем селект
-    selectedAccountId.value = null;
-    nextTick(() => newAccountInput.value?.focus());
 };
 
 const handleAccountChange = (val) => { 
@@ -632,13 +779,27 @@ const saveNewAccount = async () => {
 
 // Inline Creates Handlers
 const handleProjectChange = (val) => { 
-    if (Array.isArray(val) && val.includes('--CREATE_NEW--')) {
+    if (isIncomeOffsetMode.value) return;
+    if (!Array.isArray(val)) return;
+    
+    // Старт создания нового проекта
+    if (val.includes('--CREATE_NEW--')) {
         selectedProjectIds.value = [];
         isCreatingProject.value = true; 
         nextTick(() => newProjectInput.value?.focus()); 
+        return;
     }
+
+    // Если выбраны реальные проекты — убираем "Без проекта" (null)
+    const hasRealProject = val.some(v => v !== null && v !== undefined);
+    selectedProjectIds.value = hasRealProject ? val.filter(v => v !== null && v !== undefined) : val;
 };
-const handleCategoryChange = (val) => { if (val === '--CREATE_NEW--') { selectedCategoryId.value = null; isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); } };
+const handleCategoryChange = (val) => { 
+    if (!Array.isArray(val)) return;
+    if (val.includes('--CREATE_NEW--')) { selectedCategoryIds.value = selectedCategoryIds.value.filter(v => v !== '--CREATE_NEW--'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); return; }
+    const hasReal = val.some(v => v !== null && v !== undefined);
+    selectedCategoryIds.value = hasReal ? val.filter(v => v !== null && v !== undefined) : val;
+};
 
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
 const saveNewProject = async () => {
@@ -649,9 +810,8 @@ const saveNewProject = async () => {
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
     if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryId.value = item._id; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
+    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryIds.value = [...(selectedCategoryIds.value || []), item._id]; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
 
-const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => {
     if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); if (!name) return;
@@ -676,6 +836,53 @@ const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = t
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 const onDeleteConfirmed = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); };
 
+const toggleIncomeOffsetMode = () => {
+    if (isReadOnly.value) return;
+    isIncomeOffsetMode.value = !isIncomeOffsetMode.value;
+    if (isIncomeOffsetMode.value) {
+        ensureOffsetCategory().then((offId) => {
+            if (offId) {
+                const rest = (selectedCategoryIds.value || []).filter(v => v && v !== offId);
+                selectedCategoryIds.value = [offId, ...rest];
+            }
+        });
+    } else {
+        selectedIncomeOpId.value = null;
+    }
+};
+
+const applyIncomePreset = (incomeOp) => {
+    if (!incomeOp) return;
+    selectedAccountId.value = incomeOp.accountId?._id || incomeOp.accountId || null;
+    if (incomeOp.companyId) selectedOwner.value = `company-${incomeOp.companyId._id || incomeOp.companyId}`;
+    else if (incomeOp.individualId) selectedOwner.value = `individual-${incomeOp.individualId._id || incomeOp.individualId}`;
+    if (incomeOp.contractorId) selectedContractorValue.value = `contr_${incomeOp.contractorId._id || incomeOp.contractorId}`;
+    else if (incomeOp.counterpartyIndividualId) selectedContractorValue.value = `ind_${incomeOp.counterpartyIndividualId._id || incomeOp.counterpartyIndividualId}`;
+
+    const projIds = Array.isArray(incomeOp.projectIds)
+        ? incomeOp.projectIds.map(normalizeId).filter(Boolean)
+        : [];
+    if (projIds.length) {
+        selectedProjectIds.value = projIds;
+    } else {
+        const pid = normalizeId(incomeOp.projectId?._id || incomeOp.projectId);
+        selectedProjectIds.value = pid ? [pid] : [];
+    }
+};
+
+const handleIncomeSelect = (val) => {
+    selectedIncomeOpId.value = val;
+    ensureOffsetCategory().then(() => {
+        const incomeOp = mainStore.allOperationsFlat.find(op => idsMatch(op._id, val));
+        applyIncomePreset(incomeOp);
+        // После выбора дохода фиксируем категории: принудительно ставим "Взаимозачет" + уже выбранные пользователем (без автокопии из дохода)
+        if (offsetCategoryId.value) {
+            const userCats = (selectedCategoryIds.value || []).filter(v => v && v !== offsetCategoryId.value);
+            selectedCategoryIds.value = [offsetCategoryId.value, ...userCats];
+        }
+    });
+};
+
 onMounted(async () => {
     isInitialLoad.value = true;
     if (props.date) editableDate.value = toInputDate(props.date);
@@ -693,19 +900,41 @@ onMounted(async () => {
             const projId = normalizeId(op.projectId?._id || op.projectId);
             selectedProjectIds.value = projId ? [projId] : [];
         }
-        selectedCategoryId.value = op.categoryId?._id || op.categoryId;
+        if (Array.isArray(op.categoryIds) && op.categoryIds.length) {
+            selectedCategoryIds.value = op.categoryIds.map(normalizeId).filter(Boolean);
+        } else {
+            selectedCategoryIds.value = [op.categoryId?._id || op.categoryId].filter(Boolean);
+        }
         description.value = op.description || '';
         if (op.date) editableDate.value = toInputDate(new Date(op.date));
         if (op.companyId) selectedOwner.value = `company-${op.companyId._id || op.companyId}`;
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
         if (op.contractorId) selectedContractorValue.value = `contr_${op.contractorId._id || op.contractorId}`;
         else if (op.counterpartyIndividualId) selectedContractorValue.value = `ind_${op.counterpartyIndividualId._id || op.counterpartyIndividualId}`;
+        if (op.offsetIncomeId) {
+            isIncomeOffsetMode.value = true;
+            selectedIncomeOpId.value = op.offsetIncomeId;
+        }
     } else {
         nextTick(() => amountInput.value?.focus());
     }
     // Автоподстановка "Без проекта" при отсутствии выбора
     if (!selectedProjectIds.value.length) {
         selectedProjectIds.value = [defaultProjectId.value ?? null];
+    }
+    if (!selectedCategoryIds.value.length) {
+        selectedCategoryIds.value = [null];
+    }
+    if (isIncomeOffsetMode.value) {
+        await ensureOffsetCategory();
+        if (offsetCategoryId.value) {
+            const rest = selectedCategoryIds.value.filter(v => v && v !== offsetCategoryId.value);
+            selectedCategoryIds.value = [offsetCategoryId.value, ...rest];
+        }
+        if (selectedIncomeOpId.value) {
+            const inc = mainStore.allOperationsFlat.find(op => idsMatch(op._id, selectedIncomeOpId.value));
+            applyIncomePreset(inc);
+        }
     }
     await nextTick();
     isInitialLoad.value = false;
@@ -729,7 +958,13 @@ watch(defaultProjectId, (defId) => {
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
     <div class="popup-content theme-expense">
-      <h3>{{ title }}</h3>
+      <div class="header-row">
+        <h3>{{ title }}</h3>
+        <button class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
+            <svg viewBox="0 0 24 24" class="offset-icon"><path d="M5 12h14M12 5v14M8 4l-4 4m0 0 4 4M16 16l4-4m0 0-4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="offset-label">Взаимовычет</span>
+        </button>
+      </div>
       
       <!-- СУММА + ВАЛИДАЦИЯ -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
@@ -744,20 +979,17 @@ watch(defaultProjectId, (defId) => {
           {{ validationResult.message }}
       </div>
 
+      <div v-if="isIncomeOffsetMode && selectedIncomeOp" class="offset-hint">
+          Доход уменьшится на {{ formatNumber(Math.round(currentAmountNumeric)) }} ₸ и станет = {{ formatNumber(Math.round(projectedIncomeAfterOffset)) }} ₸
+      </div>
+
       <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
           <!-- СЧЕТ -->
-          <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+          <div v-if="!isIncomeOffsetMode && !isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
               <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Счет списания" label="Счет списания" @change="handleAccountChange" :disabled="isReadOnly">
-                  <!-- 🟢 Slot for Dual Create Buttons -->
-                  <template #action-item v-if="canEdit">
-                      <div class="dual-action-row">
-                          <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
-                          <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
-                      </div>
-                  </template>
               </BaseSelect>
           </div>
-          <div v-else class="inline-create-form input-spacing relative">
+          <div v-else-if="!isIncomeOffsetMode" class="inline-create-form input-spacing relative">
               <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @blur="handleAccountInputBlur" @focus="handleAccountInputFocus" />
               <button @click="saveNewAccount" class="btn-inline-save">✓</button>
               <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
@@ -765,20 +997,14 @@ watch(defaultProjectId, (defId) => {
           </div>
 
           <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
-          <div v-if="isOwnerSelectVisible" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+          <div v-if="!isIncomeOffsetMode && isOwnerSelectVisible" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
               <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
-                  <template #action-item v-if="canEdit">
-                      <div class="dual-action-row">
-                          <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                          <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                      </div>
-                  </template>
               </BaseSelect>
           </div>
 
           <!-- КОНТРАГЕНТ (Кому) -->
-          <div class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-              <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly">
+          <div v-if="!isIncomeOffsetMode" class="input-spacing" :class="{ 'is-disabled': isReadOnly || isOffsetEditLocked }">
+              <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
                   <template #action-item v-if="canEdit">
                       <div class="dual-action-row">
                           <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
@@ -788,11 +1014,16 @@ watch(defaultProjectId, (defId) => {
               </BaseSelect>
           </div>
 
+          <!-- Взаимозачет: выбор дохода -->
+          <div v-if="isIncomeOffsetMode" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+              <BaseSelect v-model="selectedIncomeOpId" :options="incomeOffsetOptions" placeholder="Вычет из операции доход" label="Вычет из операции доход" @change="handleIncomeSelect" :disabled="isReadOnly" />
+          </div>
+
           <!-- ПРОЕКТ -->
-          <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+          <div v-if="!isIncomeOffsetMode && !isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
               <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
           </div>
-          <div v-else class="inline-create-form input-spacing">
+          <div v-else-if="!isIncomeOffsetMode" class="inline-create-form input-spacing">
               <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
               <button @click="saveNewProject" class="btn-inline-save">✓</button>
               <button @click="cancelCreateProject" class="btn-inline-cancel">✕</button>
@@ -800,7 +1031,7 @@ watch(defaultProjectId, (defId) => {
 
           <!-- КАТЕГОРИЯ -->
           <div v-if="!isCreatingCategory" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-              <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
+              <BaseSelect v-model="selectedCategoryIds" :multiple="true" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
           </div>
           <div v-else class="inline-create-form input-spacing relative">
               <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
@@ -821,7 +1052,7 @@ watch(defaultProjectId, (defId) => {
                        {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                    </span>
 
-                   <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isReadOnly" />
+                   <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isReadOnly || isOffsetEditLocked" />
                    
                    <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                 </div>
@@ -943,6 +1174,14 @@ watch(defaultProjectId, (defId) => {
 .popup-content { background: #F4F4F4; padding: 2rem; border-radius: 12px; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); margin: 2rem 1rem; }
 .theme-expense { border-top: 4px solid #F36F3F; }
 h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color: #1a1a1a; text-align: left; }
+.header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.offset-toggle-btn { display: inline-flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #E0E0E0; border-radius: 10px; padding: 5px 10px; cursor: pointer; color: #555; font-weight: 600; transition: all 0.2s; }
+.offset-toggle-btn .offset-icon { width: 18px; height: 18px; }
+.offset-toggle-btn:hover { border-color: var(--color-expense); color: var(--color-expense); }
+.offset-toggle-btn.active { background: #fff3e0; border-color: var(--color-expense); color: var(--color-expense); }
+.offset-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.offset-label { font-size: 13px; white-space: nowrap; }
+.offset-hint { font-size: 13px; color: #555; margin-bottom: 10px; font-weight: 600; }
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
 /* 🟢 2. ФОКУС СУММЫ - ЦВЕТ РАСХОДА */

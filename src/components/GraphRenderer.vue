@@ -121,8 +121,11 @@ const excludedAccountIds = computed(() => {
 // 🟢 2. Хелпер для проверки видимости операции (SAFE)
 const isOpVisible = (op) => {
   if (!op) return false;
-  // Управленческий родитель сплита и операции, исключенные из итогов — не считаем
-  if (op.excludeFromTotals) return false;
+  // Delegate to store logic if available to stay consistent with widgets and balances
+  if (typeof mainStore._isOpVisible === 'function') return mainStore._isOpVisible(op);
+  // Управленческий родитель сплита — не считаем. Исключенные из итогов скрываем,
+  // но оставляем взаимозачетные расходы (offsetIncomeId), чтобы видеть их на графике/в тултипах.
+  if (op.excludeFromTotals && !op.offsetIncomeId) return false;
   if (op.isSplitParent) return false;
 
   if (!mainStore.includeExcludedInTotal) {

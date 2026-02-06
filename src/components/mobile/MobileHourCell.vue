@@ -94,6 +94,20 @@ const isWithdrawalOp = computed(() => props.operation && props.operation.isWithd
 const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
 const isRetailWriteOffOp = computed(() => mainStore._isRetailWriteOff(props.operation));
 
+// Отображаемая сумма для доходов с учетом взаимозачетов
+const displayAmount = computed(() => {
+    const op = props.operation;
+    if (!op || op.amount === undefined || op.amount === null) return null;
+    const amt = Number(op.amount);
+    if (!Number.isFinite(amt)) return null;
+    if (op.type === 'income') {
+        const offsets = mainStore.allOperationsFlat.filter(o => o.offsetIncomeId && mainStore._idsMatch(o.offsetIncomeId, op._id || op.id));
+        const offsetTotal = offsets.reduce((s, o) => s + Math.abs(Number(o.amount) || 0), 0);
+        return amt - offsetTotal;
+    }
+    return amt;
+});
+
 const toOwnerName = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -258,7 +272,7 @@ const onTouchEnd = (e) => {
       @touchend="onTouchEnd"
     >
       <template v-if="isTransferOp">
-        <span class="amt">{{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="amt">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
         <span class="desc">{{ toOwnerName }}</span>
       </template>
 
@@ -284,7 +298,7 @@ const onTouchEnd = (e) => {
 
       <template v-else>
         <span class="amt">
-          {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(operation.amount)) }}
+          {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
         </span>
         <span class="desc">
           {{ operation.categoryId?.name || 'Без категории' }}
