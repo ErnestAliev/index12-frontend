@@ -234,11 +234,6 @@ const hiddenWidgets = computed(() => {
     });
 });
 
-const skeletonSlots = computed(() => {
-  const rowSize = isTabletGrid.value ? 5 : 6;
-  return mainStore.isHeaderExpanded ? localWidgets.value.length : rowSize;
-});
-
 // ===============================
 // HTML5 DRAG-AND-DROP
 // ===============================
@@ -995,16 +990,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     </template>
 
     <template v-else>
-      <div
-        v-for="slot in skeletonSlots"
-        :key="`skeleton_${slot}`"
-        class="dashboard-card-wrapper"
-      >
-        <div class="dashboard-card skeleton-card">
-          <div class="skeleton-title"></div>
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
-        </div>
+      <div class="section-loading-overlay">
+        <div class="spinner-small"></div>
       </div>
     </template>
   </div>
@@ -1145,35 +1132,36 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .dashboard-card-wrapper[draggable="true"] { cursor: grab; }
 .dashboard-card-wrapper[draggable="true"]:active { cursor: grabbing; }
 
-.skeleton-card {
-  gap: 10px;
+.header-dashboard {
+  position: relative;
 }
 
-.skeleton-title,
-.skeleton-line {
-  border-radius: 6px;
-  background: linear-gradient(90deg, rgba(135, 189, 233, 0.18) 0%, rgba(135, 189, 233, 0.32) 45%, rgba(135, 189, 233, 0.18) 100%);
-  background-size: 220% 100%;
-  animation: header-skeleton-shimmer 1.4s ease-in-out infinite;
+.section-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-background);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  pointer-events: none;
 }
 
-.skeleton-title {
-  width: 58%;
-  height: 10px;
+.spinner-small {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
-.skeleton-line {
-  width: 86%;
-  height: 8px;
-}
-
-.skeleton-line.short {
-  width: 64%;
-}
-
-@keyframes header-skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 
