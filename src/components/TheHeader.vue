@@ -233,6 +233,7 @@ const hiddenWidgets = computed(() => {
       return !layoutSet.has(key);
     });
 });
+const shouldMountHiddenWidgets = ref(false);
 
 // ===============================
 // HTML5 DRAG-AND-DROP
@@ -446,6 +447,90 @@ const getVisibleGridWidgetKeys = () => {
   return keys.slice(0, rowSize);
 };
 
+const _sumOpsAbs = (ops) => {
+  if (!Array.isArray(ops)) return 0;
+  return ops.reduce((acc, op) => acc + Math.abs(Number(op?.amount) || 0), 0);
+};
+
+const buildFallbackWidgetSnapshot = (key) => {
+  const showFutureBalance = Boolean(mainStore.dashboardForecastState?.[key]);
+  const title = mainStore.allWidgets.find(w => w?.key === key)?.name || key;
+
+  const mapRows = (items = []) => items.map((item) => ({
+    id: item?._id ?? item?.id ?? null,
+    name: item?.name ?? '',
+    order: item?.order ?? 0,
+    balance: Number(item?.balance) || 0,
+    futureBalance: Number(item?.futureBalance ?? item?.balance) || 0,
+  }));
+
+  if (key === 'accounts') {
+    return { key, title, showFutureBalance, isDeltaMode: false, rows: mapRows(mergedAccountBalances.value) };
+  }
+  if (key === 'companies') {
+    return { key, title, showFutureBalance, isDeltaMode: false, rows: mapRows(mergedCompanyBalances.value) };
+  }
+  if (key === 'contractors') {
+    return { key, title, showFutureBalance, isDeltaMode: true, rows: mapRows(mergedContractorBalances.value) };
+  }
+  if (key === 'projects') {
+    return { key, title, showFutureBalance, isDeltaMode: true, rows: mapRows(mergedProjectBalances.value) };
+  }
+  if (key === 'individuals') {
+    return { key, title, showFutureBalance, isDeltaMode: true, rows: mapRows(mergedIndividualBalances.value) };
+  }
+  if (key === 'categories') {
+    return { key, title, showFutureBalance, isDeltaMode: true, rows: mapRows(mergedCategoryBalances.value) };
+  }
+
+  if (key === 'incomeList' || key === 'expenseList' || key === 'withdrawalList' || key === 'transfers') {
+    let currentList = [];
+    let futureList = [];
+    if (key === 'incomeList') {
+      currentList = mainStore.currentIncomes;
+      futureList = mainStore.futureIncomes;
+    } else if (key === 'expenseList') {
+      currentList = mainStore.currentExpenses;
+      futureList = mainStore.futureExpenses;
+    } else if (key === 'withdrawalList') {
+      currentList = mainStore.currentWithdrawals;
+      futureList = mainStore.futureWithdrawals;
+    } else {
+      currentList = mainStore.currentTransfers;
+      futureList = mainStore.futureTransfers;
+    }
+    return {
+      key,
+      title,
+      showFutureBalance,
+      rows: [
+        {
+          current: _sumOpsAbs(currentList),
+          future: _sumOpsAbs(futureList),
+        }
+      ]
+    };
+  }
+
+  if (typeof key === 'string' && key.startsWith('cat_')) {
+    const source = showFutureBalance ? mainStore.futureCategoryBreakdowns : mainStore.currentCategoryBreakdowns;
+    const breakdown = source?.[key] || { income: 0, expense: 0, total: 0 };
+    return {
+      key,
+      title,
+      showFutureBalance,
+      categoryBreakdown: {
+        income: Number(breakdown?.income) || 0,
+        expense: Number(breakdown?.expense) || 0,
+        total: Number(breakdown?.total) || 0
+      },
+      rows: []
+    };
+  }
+
+  return null;
+};
+
 const getSnapshot = () => {
   const ts = new Date().toISOString();
 
@@ -505,6 +590,9 @@ const getSnapshot = () => {
         subtitleDate: `до ${futureUntilStr.value}`
       };
     }
+
+    const fallback = buildFallbackWidgetSnapshot(key);
+    if (fallback) return fallback;
 
     return { key, type: 'unknown' };
   }).filter(Boolean);
@@ -997,7 +1085,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   </div>
 
   <!-- HIDDEN WIDGETS: Mounted invisibly so AI can get their data -->
-  <div v-if="props.dataReady" class="hidden-widgets-container" style="display: none;">
+  <div v-if="props.dataReady && shouldMountHiddenWidgets" class="hidden-widgets-container" style="display: none;">
     <template v-for="widgetKey in hiddenWidgets" :key="`hidden_${widgetKey}`">
       <HeaderTotalCard
         v-if="widgetKey === 'currentTotal'"
