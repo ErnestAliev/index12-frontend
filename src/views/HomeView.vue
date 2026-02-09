@@ -77,8 +77,13 @@ const setMonthRange = async (baseDate) => {
   start.setHours(0, 0, 0, 0);
   end.setHours(23, 59, 59, 999);
   selectedMonthStart.value = start;
-  const periodStartIso = start.toISOString();
-  const periodEndIso = end.toISOString();
+  
+  // Set periodFilter for widgets - full month
+  mainStore.setPeriodFilter({
+    mode: 'custom',
+    customStart: start.toISOString(),
+    customEnd: end.toISOString()
+  });
   
   // 🔥 SMART BUFFER: Calculate buffer based on today's position in month
   const today = new Date();
@@ -124,12 +129,6 @@ const setMonthRange = async (baseDate) => {
   try {
     mainStore.setProjectionRange(projectionStart, projectionEnd);
     await mainStore.fetchOperationsRange(projectionStart, projectionEnd);
-    // Apply widgets period after operations are loaded to avoid extra intermediate recomputation.
-    mainStore.setPeriodFilter({
-      mode: 'custom',
-      customStart: periodStartIso,
-      customEnd: periodEndIso
-    });
     scrollToMonthCenter(baseDate);
     triggerMonthAnimation();
   } finally {
@@ -1628,7 +1627,7 @@ onMounted(async () => {
     
     mainStore.startAutoRefresh(); 
     await nextTick(); 
-    await mainStore.fetchAllEntities({ awaitSnapshot: false }); 
+    await mainStore.fetchAllEntities(); 
     await setMonthRange(new Date());
     const todayDay = getDayOfYear(today.value); 
     mainStore.setToday(todayDay); 
