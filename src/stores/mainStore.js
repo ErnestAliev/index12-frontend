@@ -2101,25 +2101,15 @@ export const useMainStore = defineStore('mainStore', () => {
         ps.setGlobalProjectedBalance(finalBalance, endDate);
     }
 
-    async function fetchDealOperations() {
-        try {
-            const dealsRes = await axios.get(`${API_BASE_URL}/deals/all`);
-            dealOperations.value = Array.isArray(dealsRes.data) ? dealsRes.data : [];
-        } catch (e) {
-            if (e.response && e.response.status === 401) user.value = null;
-            else console.warn('[fetchDealOperations] Failed:', e?.message || e);
-        }
-    }
-
     async function fetchAllEntities(options = {}) {
         if (!user.value) return;
         const awaitSnapshot = options?.awaitSnapshot !== false;
-        const awaitDeals = options?.awaitDeals !== false;
         try {
-            const [accRes, compRes, contrRes, projRes, indRes, catRes] = await Promise.all([
+            const [accRes, compRes, contrRes, projRes, indRes, catRes, dealsRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
                 axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
-                axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`)
+                axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
+                axios.get(`${API_BASE_URL}/deals/all`)
             ]);
 
             accounts.value = _sortByOrder(accRes.data);
@@ -2127,13 +2117,9 @@ export const useMainStore = defineStore('mainStore', () => {
             contractors.value = _sortByOrder(contrRes.data);
             projects.value = _sortByOrder(projRes.data);
             individuals.value = _sortByOrder(indRes.data);
-            categories.value = _sortByOrder(catRes.data);
+            dealOperations.value = dealsRes.data;
 
-            if (awaitDeals) {
-                await fetchDealOperations();
-            } else {
-                fetchDealOperations();
-            }
+            categories.value = _sortByOrder(catRes.data);
 
             await ensureSystemEntities();
             if (awaitSnapshot) {

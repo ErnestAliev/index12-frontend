@@ -54,7 +54,6 @@ let tooltipCopyFeedbackTimer = null;
 const props = defineProps({
   animate: { type: Boolean, default: true },
   showSummaries: { type: Boolean, default: true },
-  preloadHistory: { type: Boolean, default: false },
   visibleDays: { type: Array, default: () => [] },
   columnCount: { type: Number, default: 12 } // Number of visible columns
 });
@@ -232,10 +231,8 @@ const ensureOpsHistoryForSummaries = async () => {
 };
 
 onMounted(() => {
-  // Heavy full-history preload is optional; avoid it on primary dashboard bootstrap.
-  if (props.preloadHistory) {
-    ensureOpsHistoryForSummaries();
-  }
+  // preload ASAP so the very first 12-day render has correct running balances
+  ensureOpsHistoryForSummaries();
   
   // Watch for modal overlays appearing and hide tooltip
   const observer = new MutationObserver(() => {
@@ -337,9 +334,7 @@ onMounted(() => {
 watch(
   [normalizedVisibleDays, () => mainStore.user?.minEventDate, () => mainStore.user?.createdAt],
   () => {
-    if (props.preloadHistory) {
-      ensureOpsHistoryForSummaries();
-    }
+    ensureOpsHistoryForSummaries();
   },
   { immediate: true }
 );
@@ -762,11 +757,42 @@ const _unrefAny = (v) => {
 const opsForSummaries = computed(() => {
   const _v = mainStore.cacheVersion;
   const _h = historyLoadTick.value;
-  const primary = _asArray(mainStore.allKnownOperations);
-  if (primary.length) return primary.filter(Boolean);
 
-  const fallback = _asArray(mainStore.displayOperationsFlat);
-  return fallback.filter(Boolean);
+  const seen = new Set();
+  const out = [];
+
+  const push = (op) => {
+    if (!op) return;
+    const id = op._id ? String(op._id) : null;
+    if (id) {
+      if (seen.has(id)) return;
+      seen.add(id);
+    }
+    out.push(op);
+  };
+
+  // Источник для SummaryDay должен включать ВСЮ историю, которую мы подгружаем через fetchOperationsRange.
+  // В mainStore это лежит в displayCache, и наружу (в store) обычно прокинуто как displayOperationsFlat.
+  // Если в вашем store его нет — строка безопасна (просто будет пустой массив).
+  _asArray(mainStore.allKnownOperations).forEach(push);
+  _asArray(mainStore.displayOperationsFlat).forEach(push);
+  _asArray(mainStore.currentOps).forEach(push);
+
+  const dc = _unrefAny(mainStore.displayCache);
+  if (dc && typeof dc === 'object') {
+    Object.values(dc).forEach((list) => {
+      _asArray(list).forEach(push);
+    });
+  }
+
+  const cc = _unrefAny(mainStore.calculationCache);
+  if (cc && typeof cc === 'object') {
+    Object.values(cc).forEach((list) => {
+      _asArray(list).forEach(push);
+    });
+  }
+
+  return out;
 });
 
 // Сводка операций по дням (для расчёта running balance)

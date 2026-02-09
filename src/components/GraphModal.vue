@@ -269,7 +269,6 @@ const toggleVisibility = () => mainStore.cycleAccountVisibilityMode();
               @update:yLabels="yAxisLabels = $event"
               :show-summaries="false"
               :animate="true"
-              :preload-history="true"
             />
           </div>
         </main>
