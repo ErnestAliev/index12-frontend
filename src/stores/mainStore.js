@@ -2064,8 +2064,9 @@ export const useMainStore = defineStore('mainStore', () => {
         ps.setGlobalProjectedBalance(finalBalance, endDate);
     }
 
-    async function fetchAllEntities() {
+    async function fetchAllEntities(options = {}) {
         if (!user.value) return;
+        const awaitSnapshot = options?.awaitSnapshot !== false;
         try {
             const [accRes, compRes, contrRes, projRes, indRes, catRes, dealsRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
@@ -2084,7 +2085,13 @@ export const useMainStore = defineStore('mainStore', () => {
             categories.value = _sortByOrder(catRes.data);
 
             await ensureSystemEntities();
-            await fetchSnapshot();
+            if (awaitSnapshot) {
+                await fetchSnapshot();
+            } else {
+                fetchSnapshot().catch((e) => {
+                    console.warn('[fetchAllEntities] Background snapshot failed:', e?.message || e);
+                });
+            }
 
             if (user.value) {
                 // ✅ Connect to workspace socket room (all workspace members in same room)
