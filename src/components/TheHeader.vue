@@ -29,6 +29,9 @@ import ExpensePopup from './ExpensePopup.vue';
  */
 
 const mainStore = useMainStore();
+const props = defineProps({
+  dataReady: { type: Boolean, default: true }
+});
 
 // --- ГЛОБАЛЬНОЕ МЕНЮ ВИДЖЕТОВ ---
 const activeDropdown = ref(null);
@@ -52,6 +55,7 @@ const closeFullscreen = () => {
 };
 
 const filteredWidgets = computed(function() {
+  if (!props.dataReady) return [];
   if (!searchQuery.value) return mainStore.allWidgets;
   const query = searchQuery.value.toLowerCase();
   return mainStore.allWidgets.filter(function(widget) {
@@ -219,6 +223,7 @@ const localWidgets = computed({
 // Hidden widgets: widgets that exist but are NOT in dashboardLayout and NOT fixed widgets
 // These need to be mounted invisibly so AI can access their data
 const hiddenWidgets = computed(() => {
+  if (!props.dataReady) return [];
   const layoutSet = new Set(mainStore.dashboardLayout);
   return mainStore.allWidgets
     .map(w => w.key)
@@ -227,6 +232,11 @@ const hiddenWidgets = computed(() => {
       if (key === 'currentTotal' || key === 'futureTotal') return false;
       return !layoutSet.has(key);
     });
+});
+
+const skeletonSlots = computed(() => {
+  const rowSize = isTabletGrid.value ? 5 : 6;
+  return mainStore.isHeaderExpanded ? localWidgets.value.length : rowSize;
 });
 
 // ===============================
@@ -444,6 +454,20 @@ const getVisibleGridWidgetKeys = () => {
 const getSnapshot = () => {
   const ts = new Date().toISOString();
 
+  if (!props.dataReady) {
+    return {
+      v: 1,
+      ts,
+      ui: {
+        isHeaderExpanded: Boolean(mainStore.isHeaderExpanded),
+        dashboardLayout: Array.isArray(mainStore.dashboardLayout) ? [...mainStore.dashboardLayout] : [],
+        dashboardForecastState: mainStore.dashboardForecastState ? { ...mainStore.dashboardForecastState } : {},
+        loading: true
+      },
+      widgets: []
+    };
+  }
+
   const visibleKeys = getVisibleGridWidgetKeys();
 
   // IMPORTANT: AI snapshot MUST include ALL widgets, even hidden ones!
@@ -572,18 +596,30 @@ const mergeBalances = (currentBalances, futureData, isDelta = false) => {
 };
 
 
-const mergedAccountBalances = computed(() => mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false));
-const mergedCompanyBalances = computed(() => mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false));
+const mergedAccountBalances = computed(() => {
+  if (!props.dataReady) return [];
+  return mergeBalances(mainStore.currentAccountBalances, mainStore.futureAccountBalances, false);
+});
+
+const mergedCompanyBalances = computed(() => {
+  if (!props.dataReady) return [];
+  return mergeBalances(mainStore.currentCompanyBalances, mainStore.futureCompanyBalances, false);
+});
 
 const mergedContractorBalances = computed(() => {
+    if (!props.dataReady) return [];
     const allMerged = mergeBalances(mainStore.currentContractorBalances, mainStore.futureContractorChanges, true);
     const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
     return allMerged.filter(contr => !myCompanyNames.has(contr.name.trim().toLowerCase()));
 });
 
-const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true));
+const mergedProjectBalances = computed(() => {
+    if (!props.dataReady) return [];
+    return mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true);
+});
 
 const mergedIndividualBalances = computed(() => {
+    if (!props.dataReady) return [];
     const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);
     const accountMap = new Map();
     mainStore.accounts.forEach(acc => {
@@ -601,6 +637,7 @@ const mergedIndividualBalances = computed(() => {
 
 
 const mergedCategoryBalances = computed(() => {
+    if (!props.dataReady) return [];
     const allMerged = mergeBalances(mainStore.currentCategoryBalances, mainStore.futureCategoryChanges, true);
     const visibleIds = new Set(mainStore.visibleCategories.map(c => c._id));
     return allMerged.filter(c => visibleIds.has(c._id));
@@ -693,7 +730,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 <template>
   <!-- ГЛОБАЛЬНОЕ МЕНЮ -->
-  <div v-if="activeDropdown" class="global-menu-overlay" @click="closeDropdown">
+  <div v-if="activeDropdown && props.dataReady" class="global-menu-overlay" @click="closeDropdown">
     <div class="global-widget-dropdown" :style="{ top: activeDropdown.top + 'px', left: activeDropdown.left + 'px', width: activeDropdown.width + 'px' }" @click.stop>
       <input type="text" class="widget-search-input" v-model="searchQuery" placeholder="Поиск..." />
       <ul>
@@ -706,7 +743,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
   <!-- 🟢 FULLSCREEN OVERLAY -->
   <Teleport to="body">
-    <div v-if="fullscreenWidgetKey" class="fullscreen-overlay" @click.self="closeFullscreen">
+    <div v-if="fullscreenWidgetKey && props.dataReady" class="fullscreen-overlay" @click.self="closeFullscreen">
        <div class="fullscreen-content">
           <div class="fullscreen-card-container">
              <!-- Рендерим нужный виджет на основе fullscreenWidgetKey -->
@@ -824,6 +861,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     class="header-dashboard"
     :class="{ 'expanded': mainStore.isHeaderExpanded }"
   >
+    <template v-if="props.dataReady">
     <div
       v-for="(widgetKey, index) in localWidgets"
       :key="widgetKey"
@@ -954,10 +992,25 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           @open-menu="handleOpenMenu"
         />
       </div>
+    </template>
+
+    <template v-else>
+      <div
+        v-for="slot in skeletonSlots"
+        :key="`skeleton_${slot}`"
+        class="dashboard-card-wrapper"
+      >
+        <div class="dashboard-card skeleton-card">
+          <div class="skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </div>
+      </div>
+    </template>
   </div>
 
   <!-- HIDDEN WIDGETS: Mounted invisibly so AI can get their data -->
-  <div class="hidden-widgets-container" style="display: none;">
+  <div v-if="props.dataReady" class="hidden-widgets-container" style="display: none;">
     <template v-for="widgetKey in hiddenWidgets" :key="`hidden_${widgetKey}`">
       <HeaderTotalCard
         v-if="widgetKey === 'currentTotal'"
@@ -1091,6 +1144,37 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; cursor: default; transition: background-color 0.2s; }
 .dashboard-card-wrapper[draggable="true"] { cursor: grab; }
 .dashboard-card-wrapper[draggable="true"]:active { cursor: grabbing; }
+
+.skeleton-card {
+  gap: 10px;
+}
+
+.skeleton-title,
+.skeleton-line {
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(135, 189, 233, 0.18) 0%, rgba(135, 189, 233, 0.32) 45%, rgba(135, 189, 233, 0.18) 100%);
+  background-size: 220% 100%;
+  animation: header-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-title {
+  width: 58%;
+  height: 10px;
+}
+
+.skeleton-line {
+  width: 86%;
+  height: 8px;
+}
+
+.skeleton-line.short {
+  width: 64%;
+}
+
+@keyframes header-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
 
 .dashboard-card-wrapper.drop-target {

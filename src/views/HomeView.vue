@@ -71,6 +71,7 @@ const triggerMonthAnimation = () => {
 };
 
 const setMonthRange = async (baseDate) => {
+  widgetsDataReady.value = false;
   const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
   const end = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
   start.setHours(0, 0, 0, 0);
@@ -125,10 +126,14 @@ const setMonthRange = async (baseDate) => {
     projectionEnd.setDate(end.getDate() + 6);
   }
   
-  mainStore.setProjectionRange(projectionStart, projectionEnd);
-  await mainStore.fetchOperationsRange(projectionStart, projectionEnd);
-  scrollToMonthCenter(baseDate);
-  triggerMonthAnimation();
+  try {
+    mainStore.setProjectionRange(projectionStart, projectionEnd);
+    await mainStore.fetchOperationsRange(projectionStart, projectionEnd);
+    scrollToMonthCenter(baseDate);
+    triggerMonthAnimation();
+  } finally {
+    widgetsDataReady.value = true;
+  }
 };
 
 const goPrevMonth = async () => {
@@ -162,6 +167,7 @@ const isDataLoading = computed(() => {
   if (!visibleDays.value || visibleDays.value.length === 0) return true;
   return false;
 });
+const widgetsDataReady = ref(false);
 const aiInput = ref('');
 const aiMessages = ref([]); // { id, role: 'user'|'assistant', text, copied? }
 const aiLoading = ref(false);
@@ -1586,6 +1592,7 @@ const captureBackgroundScreenshot = async () => {
 onMounted(async () => { 
     // Initialize theme
     document.documentElement.setAttribute('data-theme', currentTheme.value);
+    widgetsDataReady.value = false;
     
     await checkDayChange(); 
     dayChangeCheckerInterval = setInterval(() => {
@@ -1757,7 +1764,7 @@ const handleRefundDelete = async (op) => {
   <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко INDEX12.COM</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
   <div v-else class="home-layout" @click="closeAllMenus">
     <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
-    <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
+    <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" :data-ready="widgetsDataReady" /></header>
     <div class="header-resizer" :class="{ 'expanded': isHeaderTall }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body" :style="{ '--timeline-height': timelineHeightPx + 'px', '--divider-height': DIVIDER_H + 'px' }">
       <aside class="home-left-panel">
