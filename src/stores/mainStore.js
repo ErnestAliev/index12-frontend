@@ -193,7 +193,10 @@ export const useMainStore = defineStore('mainStore', () => {
     const _toStr = (val) => {
         if (!val) return '';
         if (typeof val === 'object') {
-            return val._id ? String(val._id) : '';
+            if (val._id) return String(val._id);
+            if (val.id) return String(val.id);
+            const raw = String(val);
+            return raw && raw !== '[object Object]' ? raw : '';
         }
         return String(val);
     };
@@ -592,8 +595,29 @@ export const useMainStore = defineStore('mainStore', () => {
 
 
 
-    async function _fetchOperationsListChunked(startDate, endDate, chunkDays = 120) {
+    const _buildEntityLookups = () => {
+        const toMap = (items) => {
+            const map = new Map();
+            (items || []).forEach(item => {
+                const id = _toStr(item?._id || item?.id);
+                if (id) map.set(id, item);
+            });
+            return map;
+        };
+
+        return {
+            accounts: toMap(accounts.value),
+            projects: toMap(projects.value),
+            categories: toMap(categories.value),
+            companies: toMap(companies.value),
+            contractors: toMap(contractors.value),
+            individuals: toMap(individuals.value)
+        };
+    };
+
+    async function _fetchOperationsListChunked(startDate, endDate, chunkDays = 120, lookups = null) {
         const out = [];
+        const entityLookups = lookups || _buildEntityLookups();
 
         const cursor = new Date(startDate);
         cursor.setHours(0, 0, 0, 0);
@@ -610,14 +634,15 @@ export const useMainStore = defineStore('mainStore', () => {
             const response = await axios.get(`${API_BASE_URL}/events`, {
                 params: {
                     startDate: chunkStart.toISOString(),
-                    endDate: chunkEnd.toISOString()
+                    endDate: chunkEnd.toISOString(),
+                    lite: 1
                 }
             });
 
             const rawOps = Array.isArray(response.data) ? response.data : [];
             const processedOps = _mergeTransfers(rawOps).map(op => {
                 const dk = op.dateKey || _getDateKey(new Date(op.date));
-                return _populateOp({ ...op, dateKey: dk });
+                return _populateOp({ ...op, dateKey: dk }, entityLookups);
             });
 
             out.push(...processedOps);
@@ -681,15 +706,6 @@ export const useMainStore = defineStore('mainStore', () => {
             endDate = parseLocalDate(period.customEnd);
             endDate.setHours(23, 59, 59, 999); // End of day - includes last day fully
 
-            // 🔍 DEBUG: Log parsed dates
-            console.log('[PERIOD FILTER DEBUG]', {
-                customStart: period.customStart,
-                customEnd: period.customEnd,
-                parsedStartDate: startDate.toISOString(),
-                parsedEndDate: endDate.toISOString(),
-                localStartDate: startDate.toString(),
-                localEndDate: endDate.toString()
-            });
         }
 
         return { startDate, endDate };
@@ -1408,7 +1424,7 @@ export const useMainStore = defineStore('mainStore', () => {
         return total;
     });
 
-    function _populateOp(op) {
+    function _populateOp(op, entityLookups = null) {
         const populated = { ...op };
 
         if (populated.date) {
@@ -1431,14 +1447,23 @@ export const useMainStore = defineStore('mainStore', () => {
             populated.date = d;
         }
 
-        const bindEntity = (field, storeRef) => {
+        const bindEntity = (field, storeRef, lookupKey = null) => {
             const raw = populated[field];
             if (!raw) {
                 populated[field] = null;
                 return;
             }
-            const id = (typeof raw === 'object') ? raw._id : raw;
-            const found = storeRef.value.find(item => _idsMatch(item._id, id));
+            let id;
+            if (typeof raw === 'object') {
+                id = raw._id || raw.id || raw;
+            } else {
+                id = raw;
+            }
+            const idStr = _toStr(id);
+            const lookupMap = lookupKey && entityLookups ? entityLookups[lookupKey] : null;
+            const found = lookupMap
+                ? lookupMap.get(idStr)
+                : storeRef.value.find(item => _idsMatch(item._id, id));
 
             if (found) {
                 populated[field] = found;
@@ -1451,17 +1476,17 @@ export const useMainStore = defineStore('mainStore', () => {
             }
         };
 
-        bindEntity('accountId', accounts);
-        bindEntity('projectId', projects);
-        bindEntity('categoryId', categories);
-        bindEntity('companyId', companies);
-        bindEntity('contractorId', contractors);
-        bindEntity('individualId', individuals);
-        bindEntity('counterpartyIndividualId', individuals);
+        bindEntity('accountId', accounts, 'accounts');
+        bindEntity('projectId', projects, 'projects');
+        bindEntity('categoryId', categories, 'categories');
+        bindEntity('companyId', companies, 'companies');
+        bindEntity('contractorId', contractors, 'contractors');
+        bindEntity('individualId', individuals, 'individuals');
+        bindEntity('counterpartyIndividualId', individuals, 'individuals');
 
         if (populated.isTransfer) {
-            bindEntity('fromAccountId', accounts);
-            bindEntity('toAccountId', accounts);
+            bindEntity('fromAccountId', accounts, 'accounts');
+            bindEntity('toAccountId', accounts, 'accounts');
         }
 
         // Если есть splitMeta, достанем projectIds для редактирования/отображения
@@ -1952,22 +1977,25 @@ export const useMainStore = defineStore('mainStore', () => {
 
             let processedOps = [];
 
+            const lookups = _buildEntityLookups();
+
             if (dayCount > chunkDays) {
                 // Chunked fetch (safe for big histories)
-                processedOps = await _fetchOperationsListChunked(start, end, chunkDays);
+                processedOps = await _fetchOperationsListChunked(start, end, chunkDays, lookups);
             } else {
                 // Small range: one request is OK
                 const response = await axios.get(`${API_BASE_URL}/events`, {
                     params: {
                         startDate: start.toISOString(),
-                        endDate: end.toISOString()
+                        endDate: end.toISOString(),
+                        lite: 1
                     }
                 });
 
                 const rawOps = Array.isArray(response.data) ? response.data : [];
                 processedOps = _mergeTransfers(rawOps).map(op => {
                     const dk = op.dateKey || _getDateKey(new Date(op.date));
-                    return _populateOp({ ...op, dateKey: dk });
+                    return _populateOp({ ...op, dateKey: dk }, lookups);
                 });
             }
 
@@ -1981,6 +2009,10 @@ export const useMainStore = defineStore('mainStore', () => {
                 fetchedMap.get(dk).push(op);
             });
 
+            // Batch cache writes to avoid cascading recomputations on every day update.
+            const displayPatch = {};
+            const calculationPatch = {};
+
             const applyDay = (dateKey, serverOps) => {
                 const existing = Array.isArray(displayCache.value[dateKey]) ? displayCache.value[dateKey] : [];
                 const existingOptimistic = existing.filter(o => o && o.isOptimistic);
@@ -1989,8 +2021,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     .filter(o => o && typeof o === 'object')
                     .sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
 
-                displayCache.value[dateKey] = finalOps;
-                calculationCache.value[dateKey] = [...finalOps];
+                displayPatch[dateKey] = finalOps;
+                calculationPatch[dateKey] = [...finalOps];
             };
 
             if (useSparse) {
@@ -2005,6 +2037,12 @@ export const useMainStore = defineStore('mainStore', () => {
                     const serverOps = fetchedMap.get(dateKey) || [];
                     applyDay(dateKey, serverOps);
                 }
+            }
+
+            if (Object.keys(displayPatch).length > 0) {
+                displayCache.value = { ...displayCache.value, ...displayPatch };
+                calculationCache.value = { ...calculationCache.value, ...calculationPatch };
+                cacheVersion.value++;
             }
 
         } catch (error) {
