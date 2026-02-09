@@ -1632,6 +1632,9 @@ onMounted(async () => {
     await setMonthRange(new Date());
     const todayDay = getDayOfYear(today.value); 
     mainStore.setToday(todayDay); 
+    generateVisibleDays(); 
+    await nextTick(); 
+    centerToday(); 
     await nextTick(); 
     applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
     const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; 
