@@ -802,7 +802,7 @@ const initializeMobileView = async () => {
     setTimeout(async () => {
         try {
             if (typeof mainStore.fetchAllEntities === 'function') {
-                await mainStore.fetchAllEntities();
+                await mainStore.fetchAllEntities({ awaitSnapshot: false, awaitDeals: false });
                 console.log('[MOBILE INIT] Widgets loaded successfully');
             } else {
                 console.error("Critical: mainStore.fetchAllEntities is not a function. Check store initialization.");

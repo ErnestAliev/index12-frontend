@@ -1628,7 +1628,7 @@ onMounted(async () => {
     
     mainStore.startAutoRefresh(); 
     await nextTick(); 
-    await mainStore.fetchAllEntities({ awaitSnapshot: false }); 
+    await mainStore.fetchAllEntities({ awaitSnapshot: false, awaitDeals: false }); 
     await setMonthRange(new Date());
     const todayDay = getDayOfYear(today.value); 
     mainStore.setToday(todayDay); 
