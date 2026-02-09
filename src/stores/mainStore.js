@@ -696,6 +696,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     const currentOps = computed(() => {
+        const _tick = snapshot.value.timestamp;
         // 🔥 FIX: Explicitly read periodFilter fields for proper Vue reactivity
         const filterMode = periodFilter.value.mode;
         const filterStart = periodFilter.value.customStart;
