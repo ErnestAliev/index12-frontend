@@ -6,6 +6,7 @@ import { useProjectionStore } from './projectionStore';
 import { useTransferStore } from './transferStore';
 import { useSocketStore } from './socketStore';
 import { useWidgetStore } from './widgetStore';
+import { detectCompanyLegalForm, getDefaultTaxPercentByName, normalizeTaxRegime } from '@/utils/companyTax';
 
 axios.defaults.withCredentials = true;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -2368,9 +2369,6 @@ export const useMainStore = defineStore('mainStore', () => {
             const dateKey = _getDateKey(finalDate);
             const transferCategory = await _getOrCreateTransferCategory();
 
-            let expenseContractorId = null;
-            let incomeContractorId = null;
-
             const tempId = `temp_tr_${Date.now()}`;
 
             let optimisticOps = [];
@@ -2421,27 +2419,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
             _triggerProjectionUpdate();
 
-            if (transferData.transferPurpose === 'inter_company') {
-                const fromCompObj = companies.value.find(c => _idsMatch(c._id, transferData.fromCompanyId));
-                const toCompObj = companies.value.find(c => _idsMatch(c._id, transferData.toCompanyId));
-                if (toCompObj) {
-                    let c = contractors.value.find(cnt => cnt.name.toLowerCase() === toCompObj.name.toLowerCase());
-                    if (!c) c = await addContractor(toCompObj.name);
-                    expenseContractorId = c._id;
-                }
-                if (fromCompObj) {
-                    let c = contractors.value.find(cnt => cnt.name.toLowerCase() === fromCompObj.name.toLowerCase());
-                    if (!c) c = await addContractor(fromCompObj.name);
-                    incomeContractorId = c._id;
-                }
-            }
-
             const payload = {
                 ...transferData,
                 dateKey,
-                categoryId: transferData.categoryId || transferCategory,
-                expenseContractorId,
-                incomeContractorId
+                categoryId: transferData.transferPurpose === 'inter_company'
+                    ? null
+                    : (transferData.categoryId || transferCategory)
             };
 
             const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
@@ -2533,10 +2516,46 @@ export const useMainStore = defineStore('mainStore', () => {
         return res.data;
     }
 
-    async function addCompany(name) { const res = await axios.post(`${API_BASE_URL}/companies`, { name }); if (!companies.value.find(i => _idsMatch(i._id, res.data._id))) companies.value.push(res.data); return res.data; }
+    async function addCompany(data) {
+        const payload = typeof data === 'string'
+            ? { name: data }
+            : { ...(data || {}) };
+
+        payload.name = String(payload.name || '').trim();
+        payload.legalForm = payload.legalForm || detectCompanyLegalForm(payload.name);
+        payload.taxRegime = normalizeTaxRegime(payload.taxRegime);
+        if (payload.taxPercent == null) {
+            payload.taxPercent = getDefaultTaxPercentByName(payload.name, payload.taxRegime);
+        }
+
+        const res = await axios.post(`${API_BASE_URL}/companies`, payload);
+        if (!companies.value.find(i => _idsMatch(i._id, res.data._id))) companies.value.push(res.data);
+        return res.data;
+    }
     async function addContractor(name) { const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); if (!contractors.value.find(i => _idsMatch(i._id, res.data._id))) contractors.value.push(res.data); return res.data; }
     async function addProject(name) { const res = await axios.post(`${API_BASE_URL}/projects`, { name }); if (!projects.value.find(i => _idsMatch(i._id, res.data._id))) projects.value.push(res.data); return res.data; }
-    async function addIndividual(name) { const res = await axios.post(`${API_BASE_URL}/individuals`, { name }); if (!individuals.value.find(i => _idsMatch(i._id, res.data._id))) individuals.value.push(res.data); return res.data; }
+    async function addIndividual(data) {
+        const payload = typeof data === 'string'
+            ? { name: data }
+            : { ...(data || {}) };
+
+        payload.name = String(payload.name || '').trim();
+        payload.legalForm = payload.legalForm || 'individual';
+
+        if (payload.taxRegime == null) {
+            payload.taxRegime = 'none';
+        }
+
+        if (payload.taxPercent == null) {
+            if (payload.taxRegime === 'our') payload.taxPercent = 10;
+            else if (payload.taxRegime === 'simplified') payload.taxPercent = 3;
+            else payload.taxPercent = 0;
+        }
+
+        const res = await axios.post(`${API_BASE_URL}/individuals`, payload);
+        if (!individuals.value.find(i => _idsMatch(i._id, res.data._id))) individuals.value.push(res.data);
+        return res.data;
+    }
     async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); if (!credits.value.find(i => _idsMatch(i._id, res.data._id))) credits.value.push(res.data); return res.data; }
 
     async function batchUpdateEntities(path, items) {

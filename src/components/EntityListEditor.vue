@@ -10,6 +10,7 @@ import MultiSelectModal from './MultiSelectModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
 import { categorySuggestions } from '@/data/categorySuggestions.js';
 import { knownBanks } from '@/data/knownBanks.js';
+import { getDefaultTaxPercentByName, normalizeTaxRegime } from '@/utils/companyTax';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v38.1 - EXCLUDED ACCOUNTS ROBUST SAVE ---
@@ -155,24 +156,10 @@ const saveNewOwner = async () => {
 // --- TAX REGIME HANDLER FOR COMPANIES ---
 const handleTaxRegimeChange = (item) => {
   if (!isCompanyEditor) return;
-  
-  const isTOO = /тоо/i.test(item.name);
-  const isIP = /ип/i.test(item.name);
-  
-  if (item.taxRegime === 'our') {
-    // ОУР (Общеустановленный режим)
-    if (isTOO) {
-      item.taxPercent = 20; // ТОО на ОУР = 20% КПН
-    } else if (isIP) {
-      item.taxPercent = 10; // ИП на ОУР = 10% ИПН
-    } else {
-      item.taxPercent = 20; // Default ОУР
-    }
-  } else {
-    // Упрощенка
-    item.taxPercent = 3; // Упрощенка = 3% (и ТОО, и ИП)
-  }
-  
+
+  item.taxRegime = normalizeTaxRegime(item.taxRegime);
+  item.taxPercent = getDefaultTaxPercentByName(item.name, item.taxRegime);
+
   debouncedSave();
 };
 
@@ -245,17 +232,10 @@ const handleCreateNew = async () => {
       
       if (isCompanyEditor) { 
           mappedItem.selectedAccountIds = [];
-          mappedItem.identificationNumber = '';
-          // Auto-detect company type and set tax defaults
-          const isTOO = /тоо/i.test(mappedItem.name);
-          const isIP = /ип/i.test(mappedItem.name);
-          mappedItem.taxRegime = 'simplified'; // Default to упрощенка
-          if (isTOO) {
-              mappedItem.taxPercent = 3; // ТОО Упрощенка
-          } else if (isIP) {
-              mappedItem.taxPercent = 3; // ИП Упрощенка
-          } else {
-              mappedItem.taxPercent = 3; // Default
+          mappedItem.identificationNumber = mappedItem.identificationNumber || '';
+          mappedItem.taxRegime = normalizeTaxRegime(mappedItem.taxRegime);
+          if (mappedItem.taxPercent == null) {
+              mappedItem.taxPercent = getDefaultTaxPercentByName(mappedItem.name, mappedItem.taxRegime);
           }
       }
 
@@ -325,8 +305,8 @@ onMounted(() => {
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
       const identificationNumber = item.identificationNumber || '';
-      const taxRegime = item.taxRegime || 'simplified';
-      const taxPercent = item.taxPercent != null ? item.taxPercent : 3;
+      const taxRegime = normalizeTaxRegime(item.taxRegime);
+      const taxPercent = item.taxPercent != null ? item.taxPercent : getDefaultTaxPercentByName(item.name, taxRegime);
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
@@ -404,8 +384,8 @@ watch(() => props.items, (newItems) => {
     if (isCompanyEditor) {
       const selectedAccountIds = allAccounts.filter(a => (a.companyId?._id || a.companyId) === item._id).map(a => a._id);
       const identificationNumber = item.identificationNumber || '';
-      const taxRegime = item.taxRegime || 'simplified';
-      const taxPercent = item.taxPercent != null ? item.taxPercent : 3;
+      const taxRegime = normalizeTaxRegime(item.taxRegime);
+      const taxPercent = item.taxPercent != null ? item.taxPercent : getDefaultTaxPercentByName(item.name, taxRegime);
       return { 
           ...item, 
           selectedAccountIds: selectedAccountIds,
@@ -503,8 +483,10 @@ const runSave = async () => {
     }
     if (isCompanyEditor) {
         data.identificationNumber = item.identificationNumber || null;
-        data.taxRegime = item.taxRegime || 'simplified';
-        data.taxPercent = item.taxPercent != null ? item.taxPercent : 3;
+        data.taxRegime = normalizeTaxRegime(item.taxRegime);
+        data.taxPercent = item.taxPercent != null
+            ? item.taxPercent
+            : getDefaultTaxPercentByName(item.name, data.taxRegime);
     }
     return data;
   });

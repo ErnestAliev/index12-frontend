@@ -7,6 +7,7 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue'; 
 import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
+import { getDefaultTaxPercentByName, getTaxRegimeLabel } from '@/utils/companyTax';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v30.2 - FUTURE TRANSFER VALIDATION ---
@@ -147,22 +148,6 @@ const validationResult = computed(() => {
     return { isValid: true };
 });
 
-const smartHint = computed(() => {
-  if (transferPurpose.value === 'internal') {
-    return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
-  }
-  if (transferPurpose.value === 'inter_company') {
-    if (selectedFromOwner.value && selectedFromOwner.value.startsWith('individual-')) {
-        return 'Перевод с личной карты/счета на нужды компании (Вложение средств).';
-    }
-    return 'Вы переводите деньги между своими компаниями.';
-  }
-  if (transferPurpose.value === 'personal') {
-      return 'Вы переводите деньги на личный счет или карту. Деньги бизнеса -> Личные деньги.';
-  }
-  return '';
-});
-
 const getOwnerName = (acc) => {
     if (acc.companyId) { 
         const cId = (typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId; 
@@ -255,8 +240,77 @@ const ownerOptions = computed(() => {
   return opts;
 });
 
+const resolveOwnerKey = (accountId, selectedOwnerKey) => {
+  if (selectedOwnerKey && selectedOwnerKey !== '--CREATE_NEW--') return selectedOwnerKey;
+  if (!accountId) return null;
+  const account = mainStore.accounts.find(a => a._id === accountId);
+  if (!account) return null;
+  if (account.companyId) {
+      const cId = typeof account.companyId === 'object' ? account.companyId._id : account.companyId;
+      return cId ? `company-${cId}` : null;
+  }
+  if (account.individualId) {
+      const iId = typeof account.individualId === 'object' ? account.individualId._id : account.individualId;
+      return iId ? `individual-${iId}` : null;
+  }
+  return null;
+};
+
+const resolvedFromOwnerKey = computed(() => resolveOwnerKey(fromAccountId.value, selectedFromOwner.value));
+const resolvedToOwnerKey = computed(() => resolveOwnerKey(toAccountId.value, selectedToOwner.value));
+
+const isTransferRouteReady = computed(() => (
+  !!fromAccountId.value &&
+  !!toAccountId.value &&
+  !!resolvedFromOwnerKey.value &&
+  !!resolvedToOwnerKey.value
+));
+
+const findCompanyByOwnerKey = (ownerKey) => {
+  if (!ownerKey || !ownerKey.startsWith('company-')) return null;
+  const companyId = ownerKey.slice('company-'.length);
+  return mainStore.companies.find(c => String(c._id) === String(companyId)) || null;
+};
+
+const formatCompanyTax = (company) => {
+  if (!company) return null;
+  const regime = company.taxRegime || 'simplified';
+  const percent = company.taxPercent != null
+      ? Number(company.taxPercent)
+      : getDefaultTaxPercentByName(company.name, regime);
+  return `${getTaxRegimeLabel(regime)} ${percent}%`;
+};
+
+const smartHint = computed(() => {
+  if (!isTransferRouteReady.value) return '';
+
+  if (transferPurpose.value === 'internal') {
+    return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
+  }
+
+  if (transferPurpose.value === 'inter_company') {
+    if (resolvedFromOwnerKey.value && resolvedFromOwnerKey.value.startsWith('individual-')) {
+        return 'Перевод с личного счета на нужды компании (вложение средств).';
+    }
+
+    const fromCompany = findCompanyByOwnerKey(resolvedFromOwnerKey.value);
+    const toCompany = findCompanyByOwnerKey(resolvedToOwnerKey.value);
+    if (fromCompany && toCompany) {
+      return `Межкомпанийский перевод. Налоговый режим: ${fromCompany.name} (${formatCompanyTax(fromCompany)}) -> ${toCompany.name} (${formatCompanyTax(toCompany)}).`;
+    }
+
+    return 'Межкомпанийский перевод. Проверьте налоговый режим и ставку компании в настройках.';
+  }
+
+  if (transferPurpose.value === 'personal') {
+      return 'Перевод на личный счет: деньги бизнеса переходят в личные средства.';
+  }
+
+  return '';
+});
+
 // --- WATCHERS ---
-watch([selectedFromOwner, selectedToOwner], ([newFrom, newTo]) => {
+watch([resolvedFromOwnerKey, resolvedToOwnerKey], ([newFrom, newTo]) => {
   if (!newFrom || !newTo) return;
   const [fromType, fromId] = newFrom.split('-');
   const [toType, toId] = newTo.split('-');
@@ -679,11 +733,11 @@ const closePopup = () => { emit('close'); };
           <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
       </div>
 
-      <div class="input-spacing">
+      <div v-if="isTransferRouteReady" class="input-spacing">
           <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
       </div>
 
-      <div class="hint-box" v-if="smartHint">{{ smartHint }}</div>
+      <div class="hint-box" v-if="isTransferRouteReady && smartHint">{{ smartHint }}</div>
       
       <div class="custom-input-box input-spacing has-value date-box">
          <div class="input-inner-content">
