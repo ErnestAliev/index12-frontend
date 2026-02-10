@@ -2504,7 +2504,9 @@ export const useMainStore = defineStore('mainStore', () => {
                 companyId: data.companyId || null,
                 individualId: data.individualId || null,
                 isExcluded: !!data.isExcluded,
-                isCashRegister: !!data.isCashRegister  // 🟢 Pass cash register flag
+                isCashRegister: !!data.isCashRegister,  // 🟢 Pass cash register flag
+                taxRegime: data.taxRegime || null,
+                taxPercent: data.taxPercent ?? null
             };
         }
         const res = await axios.post(`${API_BASE_URL}/accounts`, payload);

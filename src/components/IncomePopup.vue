@@ -658,6 +658,9 @@ const cancelCreateAccount = () => { isCreatingAccount.value = false; newAccountN
 const saveNewAccount = async () => {
     const name = newAccountName.value.trim(); 
     if (!name) return;
+
+    const isCashRegister = isCreatingCashRegister.value;
+    const isExcluded = isCreatingSpecialAccount.value;
     
     let cId = null, iId = null; 
     if (selectedOwner.value) { 
@@ -673,8 +676,8 @@ const saveNewAccount = async () => {
         name, 
         companyId: cId, 
         individualId: iId,  
-        isCashRegister: isCreatingCashRegister.value,  // Касса
-        isExcluded: isCreatingSpecialAccount.value      // Особая
+        isCashRegister,  // Касса
+        isExcluded      // Особая
     }).then(newItem => {
         selectedAccountId.value = newItem._id;
     }).catch(e => {

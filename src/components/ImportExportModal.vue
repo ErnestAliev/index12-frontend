@@ -9,6 +9,7 @@ const mainStore = useMainStore();
 const isLoading = ref(false);
 const loadError = ref('');
 const operations = ref([]);
+const showCopySuccess = ref(false);
 const filters = ref({
   dateFrom: '',
   dateTo: '',
@@ -302,6 +303,69 @@ const getAmountClass = (row) => {
   return '';
 };
 
+const exportToCSV = () => {
+  if (filteredOperations.value.length === 0) {
+    alert('Нет данных для экспорта');
+    return;
+  }
+
+  const escapeCsvCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const rows = filteredOperations.value.map((row) =>
+    TABLE_COLUMNS.map((column) => row.values[column] ?? '')
+  );
+
+  const csvContent = [
+    TABLE_COLUMNS.map(escapeCsvCell).join(','),
+    ...rows.map((row) => row.map(escapeCsvCell).join(','))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const dateStr = new Date().toISOString().split('T')[0];
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', `operations_${dateStr}.csv`);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+const copyToClipboard = async () => {
+  if (filteredOperations.value.length === 0) {
+    alert('Нет данных для копирования');
+    return;
+  }
+
+  const lines = [
+    `Операции: ${filteredCount.value} / ${totalCount.value}`,
+    `Доход: ${formatSummaryAmount(summaryTotals.value.income)}`,
+    `Расход: ${formatSummaryAmount(summaryTotals.value.expense)}`,
+    `Перевод: ${formatSummaryAmount(summaryTotals.value.transfer)}`,
+    '────────────────────'
+  ];
+
+  filteredOperations.value.forEach((row, index) => {
+    lines.push(
+      `${index + 1}. ${row.values['Дата']} | ${row.values['Тип']} | ${row.values['Сумма']} | ${row.values['Счет']} | ${row.values['Контрагент']} | ${row.values['Компания/Физлицо']} | ${row.values['Категория']} | ${row.values['Проект']} | ${row.values['Статус']}`
+    );
+  });
+
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    showCopySuccess.value = true;
+    setTimeout(() => {
+      showCopySuccess.value = false;
+    }, 2000);
+  } catch (err) {
+    console.error('Failed to copy:', err);
+    alert('Ошибка копирования в буфер обмена');
+  }
+};
+
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   loadOperations();
@@ -325,6 +389,26 @@ onBeforeUnmount(() => {
             <span class="summary-item transfer">Перевод: {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
           </div>
           <span class="counter-label">Записей: {{ filteredCount }} / {{ totalCount }}</span>
+          <div class="export-buttons">
+            <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              CSV
+            </button>
+            <button class="export-btn copy-btn" @click="copyToClipboard" title="Копировать">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              Копировать
+            </button>
+            <transition name="fade">
+              <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
+            </transition>
+          </div>
           <button class="close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
@@ -546,6 +630,76 @@ onBeforeUnmount(() => {
   font-size: var(--font-sm, 13px);
   color: var(--editor-muted-text);
   font-weight: var(--fw-medium, 500);
+}
+
+.export-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: var(--fw-semi, 600);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.export-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--editor-muted-text);
+  transition: stroke 0.2s;
+}
+
+.export-btn:hover {
+  background: var(--color-background-mute);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.export-btn:hover svg {
+  stroke: #10b981;
+}
+
+.export-btn:active {
+  transform: scale(0.98);
+}
+
+.copy-success {
+  position: absolute;
+  right: 0;
+  top: -30px;
+  background: #10b981;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+  z-index: 1000;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .close-btn {
@@ -803,6 +957,12 @@ onBeforeUnmount(() => {
 
   .counter-label {
     display: none;
+  }
+
+  .export-btn {
+    height: 28px;
+    padding: 0 8px;
+    font-size: 11px;
   }
 
   .summary-line {

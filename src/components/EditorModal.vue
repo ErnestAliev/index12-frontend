@@ -40,6 +40,12 @@ const INDIVIDUAL_TAX_REGIME_OPTIONS = [
   { value: 'simplified', label: 'Упрощенка' }
 ];
 
+const CASH_TAX_REGIME_OPTIONS = [
+  { value: 'none', label: 'Нет' },
+  { value: 'our', label: 'ОУР' },
+  { value: 'simplified', label: 'Упрощенка' }
+];
+
 const closeModal = () => {
   emit('close');
 };
@@ -75,6 +81,29 @@ const normalizeOwnerTaxRegime = (value, ownerType = 'company') => {
     return normalized;
   }
   return 'none';
+};
+
+const normalizeCashTaxRegime = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'our' || normalized === 'simplified' || normalized === 'none') {
+    return normalized;
+  }
+  return 'none';
+};
+
+const getDefaultCashTaxPercent = (ownerKey, regime) => {
+  const normalizedRegime = normalizeCashTaxRegime(regime);
+  if (normalizedRegime === 'none') return 0;
+
+  const ownerType = ownerTypeFromKey(ownerKey);
+  const ownerId = ownerIdFromKey(ownerKey);
+
+  if (ownerType === 'company') {
+    const company = mainStore.companies.find((item) => String(item._id) === String(ownerId));
+    return getDefaultTaxPercentByName(company?.name || '', normalizedRegime);
+  }
+
+  return normalizedRegime === 'our' ? 10 : 3;
 };
 
 const formatMoney = (value) => {
@@ -318,19 +347,31 @@ const buildRows = () => {
         : '';
 
     const ownerMeta = getOwnerMetaByKey(ownerKey);
+    const isCashRegister = !!account?.isCashRegister;
+    const cashTaxRegime = normalizeCashTaxRegime(account?.taxRegime);
+    const rawCashTaxPercent = Number(account?.taxPercent);
+    const effectiveTaxRegime = isCashRegister ? cashTaxRegime : ownerMeta.taxRegime;
+    const effectiveTaxPercent = isCashRegister
+      ? (
+        Number.isFinite(rawCashTaxPercent)
+          ? rawCashTaxPercent
+          : getDefaultCashTaxPercent(ownerKey, cashTaxRegime)
+      )
+      : ownerMeta.taxPercent;
     const baseRow = {
       _id: account._id,
       order: Number(account.order || index),
       accountName: account.name || '',
       isExcluded: !!account.isExcluded,
+      isCashRegister,
       initialBalanceInput: formatMoney(account.initialBalance || 0),
       currency: 'KZT',
       currentBalance: currentBalanceMap.value.get(String(account._id)) ?? Number(account.initialBalance || 0),
       ownerKey,
       iinBin: formatIinBin(ownerMeta.identificationNumber),
       legalForm: ownerMeta.legalForm,
-      taxRegime: ownerMeta.taxRegime,
-      taxPercent: ownerMeta.taxPercent,
+      taxRegime: effectiveTaxRegime,
+      taxPercent: effectiveTaxPercent,
       lastOwnerKey: ownerKey,
       ownerCreationType: null,
       ownerCreationName: ''
@@ -343,6 +384,7 @@ const buildRows = () => {
       ...baseRow,
       accountName: previous.accountName ?? baseRow.accountName,
       isExcluded: typeof previous.isExcluded === 'boolean' ? previous.isExcluded : baseRow.isExcluded,
+      isCashRegister: typeof previous.isCashRegister === 'boolean' ? previous.isCashRegister : baseRow.isCashRegister,
       initialBalanceInput: previous.initialBalanceInput ?? baseRow.initialBalanceInput,
       currency: previous.currency || baseRow.currency,
       ownerKey: previous.ownerKey ?? baseRow.ownerKey,
@@ -358,6 +400,7 @@ const buildRows = () => {
 };
 
 const getTaxRegimeOptions = (row) => {
+  if (row?.isCashRegister) return CASH_TAX_REGIME_OPTIONS;
   return ownerTypeFromKey(row.ownerKey) === 'company'
     ? COMPANY_TAX_REGIME_OPTIONS
     : INDIVIDUAL_TAX_REGIME_OPTIONS;
@@ -462,6 +505,16 @@ const onOwnerChange = (row) => {
   const ownerMeta = getOwnerMetaByKey(row.ownerKey);
   row.iinBin = formatIinBin(ownerMeta.identificationNumber);
   row.legalForm = ownerMeta.legalForm;
+  if (row.isCashRegister) {
+    row.taxRegime = normalizeCashTaxRegime(row.taxRegime);
+    if (row.taxRegime === 'none') {
+      row.taxPercent = 0;
+    } else if (!Number.isFinite(Number(row.taxPercent))) {
+      row.taxPercent = getDefaultCashTaxPercent(row.ownerKey, row.taxRegime);
+    }
+    return;
+  }
+
   row.taxRegime = ownerMeta.taxRegime;
   row.taxPercent = ownerMeta.taxPercent;
 };
@@ -523,6 +576,15 @@ const onInitialBalanceBlur = (row) => {
 };
 
 const onTaxRegimeChange = (row) => {
+  if (row?.isCashRegister) {
+    const normalizedRegime = normalizeCashTaxRegime(row.taxRegime);
+    row.taxRegime = normalizedRegime;
+    row.taxPercent = normalizedRegime === 'none'
+      ? 0
+      : getDefaultCashTaxPercent(row.ownerKey, normalizedRegime);
+    return;
+  }
+
   const ownerType = ownerTypeFromKey(row.ownerKey);
   const normalizedRegime = normalizeOwnerTaxRegime(row.taxRegime, ownerType || 'individual');
   row.taxRegime = normalizedRegime;
@@ -537,7 +599,7 @@ const onTaxRegimeChange = (row) => {
   row.taxPercent = normalizedRegime === 'our' ? 10 : normalizedRegime === 'simplified' ? 3 : 0;
 };
 
-const addAccountRow = async () => {
+const addAccountRow = async (kind = 'account') => {
   if (isSaving.value) return;
 
   saveMessage.value = '';
@@ -545,15 +607,16 @@ const addAccountRow = async () => {
 
   try {
     isSaving.value = true;
+    const isCashRegister = kind === 'cash';
     await mainStore.addAccount({
-      name: 'Новый счет',
+      name: isCashRegister ? 'Новая касса' : 'Новый счет',
       initialBalance: 0,
       isExcluded: false,
-      isCashRegister: false
+      isCashRegister
     });
-    saveMessage.value = 'Счет добавлен';
+    saveMessage.value = isCashRegister ? 'Касса добавлена' : 'Счет добавлен';
   } catch (err) {
-    saveError.value = `Ошибка добавления счета: ${err?.message || 'Неизвестная ошибка'}`;
+    saveError.value = `Ошибка добавления: ${err?.message || 'Неизвестная ошибка'}`;
   } finally {
     isSaving.value = false;
     setTimeout(() => {
@@ -620,15 +683,31 @@ const saveSettings = async () => {
 
         const ownerType = ownerTypeFromKey(row.ownerKey);
         const ownerId = ownerIdFromKey(row.ownerKey);
+        const cashTaxRegime = row.isCashRegister ? normalizeCashTaxRegime(row.taxRegime) : null;
+        const parsedCashTaxPercent = Number(row.taxPercent);
+        const cashTaxPercent = row.isCashRegister
+          ? (
+            cashTaxRegime === 'none'
+              ? 0
+              : (
+                Number.isFinite(parsedCashTaxPercent)
+                  ? parsedCashTaxPercent
+                  : getDefaultCashTaxPercent(row.ownerKey, cashTaxRegime)
+              )
+          )
+          : null;
 
         return {
           ...source,
           order: Number(source.order ?? index),
           name: String(row.accountName || '').trim() || 'Без названия',
           isExcluded: !!row.isExcluded,
+          isCashRegister: !!row.isCashRegister,
           initialBalance: parseMoney(row.initialBalanceInput),
           companyId: ownerType === 'company' ? ownerId : null,
           individualId: ownerType === 'individual' ? ownerId : null,
+          taxRegime: cashTaxRegime,
+          taxPercent: cashTaxPercent,
           currency: 'KZT'
         };
       })
@@ -647,9 +726,13 @@ const saveSettings = async () => {
         const source = companiesById.get(String(ownerId));
         if (!source) return;
 
-        const taxRegime = normalizeOwnerTaxRegime(row.taxRegime, 'company');
+        const taxRegime = row.isCashRegister
+          ? normalizeOwnerTaxRegime(source.taxRegime, 'company')
+          : normalizeOwnerTaxRegime(row.taxRegime, 'company');
         const fallbackTaxPercent = getDefaultTaxPercentByName(source.name || '', taxRegime);
-        const parsedTaxPercent = Number(row.taxPercent);
+        const parsedTaxPercent = row.isCashRegister
+          ? Number(source.taxPercent)
+          : Number(row.taxPercent);
 
         companyUpdates.set(String(ownerId), {
           ...source,
@@ -664,9 +747,13 @@ const saveSettings = async () => {
       const source = individualsById.get(String(ownerId));
       if (!source) return;
 
-      const taxRegime = normalizeOwnerTaxRegime(row.taxRegime, 'individual');
+      const taxRegime = row.isCashRegister
+        ? normalizeOwnerTaxRegime(source.taxRegime, 'individual')
+        : normalizeOwnerTaxRegime(row.taxRegime, 'individual');
       const fallbackTaxPercent = taxRegime === 'our' ? 10 : taxRegime === 'simplified' ? 3 : 0;
-      const parsedTaxPercent = Number(row.taxPercent);
+      const parsedTaxPercent = row.isCashRegister
+        ? Number(source.taxPercent)
+        : Number(row.taxPercent);
 
       individualUpdates.set(String(ownerId), {
         ...source,
@@ -788,7 +875,7 @@ watch(
                   <button
                     type="button"
                     class="visibility-btn"
-                    :class="{ hidden: row.isExcluded }"
+                    :class="{ active: !row.isExcluded }"
                     :title="row.isExcluded ? 'Показать счет' : 'Скрыть счет'"
                     @click="row.isExcluded = !row.isExcluded"
                   >
@@ -975,9 +1062,13 @@ watch(
               </tr>
 
               <tr>
-                <td class="add-row" colspan="11">
-                  <button class="add-btn" :disabled="isSaving" @click="addAccountRow">Добавить +</button>
+                <td class="add-row add-row-account">
+                  <div class="add-actions">
+                    <button class="add-btn" :disabled="isSaving" @click="addAccountRow('account')">+ Счет</button>
+                    <button class="add-btn" :disabled="isSaving" @click="addAccountRow('cash')">+ Касса</button>
+                  </div>
                 </td>
+                <td class="add-row-empty" colspan="10"></td>
               </tr>
             </tbody>
           </table>
@@ -1504,7 +1595,7 @@ watch(
   color: var(--btn-widget-color-hover, var(--editor-cell-text));
 }
 
-.visibility-btn.hidden {
+.visibility-btn.active {
   background: var(--btn-widget-bg-active, var(--color-primary));
   border-color: var(--btn-widget-border-active, transparent);
   color: var(--btn-widget-color-active, #fff);
@@ -1524,10 +1615,11 @@ tr.is-hidden .cell-input,
 tr.is-hidden .cell-select,
 tr.is-hidden .readonly-cell {
   color: var(--editor-muted-text);
+  opacity: 0.82;
 }
 
 tr.is-hidden .money-currency {
-  opacity: 0.85;
+  opacity: 0.72;
 }
 
 .delete-cell {
@@ -1712,18 +1804,37 @@ tr.is-hidden .money-currency {
   background: var(--editor-row-bg);
 }
 
-.add-btn {
+.add-row-account {
+  overflow: hidden;
+}
+
+.add-row-empty {
+  background: var(--editor-row-bg);
+}
+
+.add-actions {
   width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+.add-btn {
+  flex: 1 1 50%;
   height: 100%;
   border: none;
   background: transparent;
-  text-align: left;
-  padding: 0 12px;
+  text-align: center;
+  padding: 0 6px;
   font-size: 15px;
   font-weight: var(--fw-semi, 600);
   color: var(--editor-cell-text);
   cursor: pointer;
-  transition: background-color 0.18s ease;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.add-btn + .add-btn {
+  border-left: 1px solid var(--editor-border);
 }
 
 .add-btn:hover:not(:disabled) {
