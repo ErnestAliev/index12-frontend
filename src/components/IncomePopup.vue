@@ -515,6 +515,33 @@ const preparePayload = (options = {}) => {
     };
 };
 
+const syncSelectedAccountOwner = async () => {
+    if (!selectedAccountId.value || !selectedOwner.value) return;
+
+    const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
+    if (!acc) return;
+
+    const [type, id] = selectedOwner.value.split('-');
+    const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
+    const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
+
+    let needsUpdate = false;
+    if (type === 'company') needsUpdate = currentCompId !== id || !!currentIndId;
+    if (type === 'individual') needsUpdate = currentIndId !== id || !!currentCompId;
+    if (!needsUpdate) return;
+
+    const updateData = { _id: acc._id, name: acc.name, order: acc.order };
+    if (type === 'company') {
+        updateData.companyId = id;
+        updateData.individualId = null;
+    } else {
+        updateData.companyId = null;
+        updateData.individualId = id;
+    }
+
+    await mainStore.batchUpdateEntities('accounts', [updateData]);
+};
+
 
 const handleSave = async (options = {}) => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
@@ -522,6 +549,14 @@ const handleSave = async (options = {}) => {
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
     
     const payload = preparePayload(options);
+
+    try {
+        await syncSelectedAccountOwner();
+    } catch (e) {
+        console.error('Account-owner sync error:', e);
+        showError('Ошибка привязки владельца к счету: ' + (e.message || e));
+        return;
+    }
     
     // 🟢 ВЕРСИЯ 63.4: При создании нового дохода (не редактировании)
     // закрываем попап мгновенно и создаем операцию в фоне.
@@ -862,11 +897,7 @@ const handleMainAction = async () => {
       <!-- МОДАЛКИ СОЗДАНИЯ -->
       <template v-if="showCreateOwnerModal">
         <div class="smart-create-owner">
-          <h4 class="smart-create-title">Новый владелец</h4>
-          <div class="smart-create-tabs">
-            <button :class="{ active: ownerTypeToCreate === 'company' }" @click="ownerTypeToCreate = 'company'">Компания</button>
-            <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="ownerTypeToCreate = 'individual'">Физлицо</button>
-          </div>
+          <h4 class="smart-create-title">{{ ownerTypeToCreate === 'company' ? 'Новая компания' : 'Новое физлицо' }}</h4>
           <div class="input-wrapper relative">
               <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" />
               <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length > 0" class="bank-suggestions-list">
@@ -986,18 +1017,18 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .icon { width: 20px; height: 20px; fill: currentColor; display: block; }
 
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
-.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a; font-size: 15px; box-sizing: border-box; }
+.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
 
-.btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-income); color: var(--color-income); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
-.btn-inline-save:hover:not(:disabled) { background-color: var(--color-income); color: #fff; }
+.btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid #1a1a1a; color: #1a1a1a; border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+.btn-inline-save:hover:not(:disabled) { background-color: #f2f2f2; color: #1a1a1a; }
 .btn-inline-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-inline-cancel { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-danger); color: var(--color-danger); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
 .btn-inline-cancel:hover { background-color: var(--color-danger); color: #fff; }
 
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
-.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-income); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
-.btn-dual-action:hover { background-color: #f0fdfa; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #1a1a1a; cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f5f5f5; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 

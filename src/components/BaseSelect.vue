@@ -162,8 +162,8 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 }
 
 .base-select.is-open .select-trigger {
-  border-color: var(--focus-color, #28B8A0);
-  box-shadow: 0 0 0 1px var(--focus-shadow, rgba(40, 184, 160, 0.2));
+  border-color: var(--focus-color, #1a1a1a);
+  box-shadow: 0 0 0 1px var(--focus-shadow, rgba(26, 26, 26, 0.15));
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
@@ -255,7 +255,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   left: 0;
   right: 0;
   background: #FFFFFF;
-  border: 1px solid var(--focus-color, #E0E0E0);
+  border: 1px solid var(--focus-color, #1a1a1a);
   border-top: none;
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;

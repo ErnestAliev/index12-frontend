@@ -344,6 +344,7 @@ const ownerOptions = computed(() => {
           opts.push(option); 
       });
   }
+  opts.push({ isActionRow: true });
   return opts;
 });
 
@@ -812,6 +813,13 @@ const saveNewCategory = async () => {
     if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return;
     isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryIds.value = [...(selectedCategoryIds.value || []), item._id]; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
 
+const openCreateOwnerModal = (type) => {
+    ownerTypeToCreate.value = type;
+    newOwnerName.value = '';
+    showCreateOwnerModal.value = true;
+    nextTick(() => newOwnerInputRef.value?.focus());
+};
+
 const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => {
     if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); if (!name) return;
@@ -999,6 +1007,12 @@ watch(defaultProjectId, (defId) => {
           <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
           <div v-if="!isIncomeOffsetMode && isOwnerSelectVisible" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
               <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
+                  <template #action-item v-if="canEdit">
+                      <div class="dual-action-row">
+                          <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                          <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                      </div>
+                  </template>
               </BaseSelect>
           </div>
 
@@ -1078,11 +1092,7 @@ watch(defaultProjectId, (defId) => {
       <!-- МОДАЛКИ СОЗДАНИЯ -->
       <template v-if="showCreateOwnerModal">
         <div class="smart-create-owner">
-          <h4 class="smart-create-title">Новый владелец</h4>
-          <div class="smart-create-tabs">
-            <button :class="{ active: ownerTypeToCreate === 'company' }" @click="ownerTypeToCreate = 'company'">Компания</button>
-            <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="ownerTypeToCreate = 'individual'">Физлицо</button>
-          </div>
+          <h4 class="smart-create-title">{{ ownerTypeToCreate === 'company' ? 'Новая компания' : 'Новое физлицо' }}</h4>
           <div class="input-wrapper relative">
               <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" />
               <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length > 0" class="bank-suggestions-list">
@@ -1233,15 +1243,15 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-inline-save { 
     width: 48px; height: 48px; 
     background-color: transparent; 
-    border: 1px solid var(--color-expense); /* Оранжевый */
-    color: var(--color-expense); 
+    border: 1px solid #1a1a1a;
+    color: #1a1a1a;
     border-radius: 8px; 
     font-size: 20px; 
     cursor: pointer;
     transition: all 0.2s;
     display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
 }
-.btn-inline-save:hover:not(:disabled) { background-color: var(--color-expense); color: #fff; }
+.btn-inline-save:hover:not(:disabled) { background-color: #f2f2f2; color: #1a1a1a; }
 .btn-inline-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* Кнопка "Отмена" (Крестик) */
@@ -1263,10 +1273,10 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .btn-dual-action { 
     flex: 1; border: none; background-color: #fff; 
     font-size: 13px; font-weight: 600; 
-    color: var(--color-expense); /* Оранжевый */
+    color: #1a1a1a;
     cursor: pointer; transition: background-color 0.2s; white-space: nowrap; 
 }
-.btn-dual-action:hover { background-color: #fff3e0; }
+.btn-dual-action:hover { background-color: #f5f5f5; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 
@@ -1296,7 +1306,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 }
 
 :deep(.list-item-wrapper.is-special) { 
-    color: var(--color-expense); 
+    color: #1a1a1a; 
     font-weight: 600;
     position: sticky !important;
     bottom: 0 !important;
@@ -1305,7 +1315,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
     border-top: 1px solid #eee;
 }
 :deep(.list-item-wrapper.is-special:hover) {
-    background-color: #fff3e0;
+    background-color: #f5f5f5;
 }
 
 .relative { position: relative; }
@@ -1341,8 +1351,8 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 
 /* 🟢 Dual Action in Select */
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
-.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-withdrawal); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
-.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #1a1a1a; cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f5f5f5; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 

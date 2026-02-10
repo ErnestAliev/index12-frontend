@@ -348,8 +348,8 @@ const handleToAccountChange = (val) => {
     } 
 };
 
-const handleFromOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedFromOwner.value = null; openCreateOwnerModal('from'); } };
-const handleToOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedToOwner.value = null; openCreateOwnerModal('to'); } };
+const handleFromOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedFromOwner.value = null; openCreateOwnerModal('from', 'company'); } };
+const handleToOwnerChange = (val) => { if (val === '--CREATE_NEW--') { selectedToOwner.value = null; openCreateOwnerModal('to', 'company'); } };
 
 const onFromAccountSelected = (accountId) => {
   const selectedAccount = mainStore.accounts.find(acc => acc._id === accountId);
@@ -427,9 +427,8 @@ const onDeleteConfirmed = async () => {
 };
 const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(props.date); nextTick(() => { amountInput.value?.focus(); }); };
 
-const openCreateOwnerModal = (target) => { creatingOwnerFor.value = target; ownerTypeToCreate.value = 'company'; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
+const openCreateOwnerModal = (target, type = 'company') => { creatingOwnerFor.value = target; ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null; if (creatingOwnerFor.value === 'to' && selectedToOwner.value === '--CREATE_NEW--') selectedToOwner.value = null; };
-const setOwnerTypeToCreate = (type) => { ownerTypeToCreate.value = type; newOwnerInputRef.value?.focus(); };
 const saveNewOwner = async () => {
   if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); const type = ownerTypeToCreate.value; const target = creatingOwnerFor.value; if (!name) return; isInlineSaving.value = true; 
   try {
@@ -634,8 +633,8 @@ const closePopup = () => { emit('close'); };
             <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
                 <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                        <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
+                        <button @click="openCreateOwnerModal('from', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
                     </div>
                 </template>
             </BaseSelect>
@@ -664,8 +663,8 @@ const closePopup = () => { emit('close'); };
             <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
                 <template #action-item v-if="canEdit">
                     <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                        <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
+                        <button @click="openCreateOwnerModal('to', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
                     </div>
                 </template>
             </BaseSelect>
@@ -709,11 +708,7 @@ const closePopup = () => { emit('close'); };
 
       <template v-if="showCreateOwnerModal">
         <div class="smart-create-owner">
-          <h4 class="smart-create-title">Что вы хотите создать?</h4>
-          <div class="smart-create-tabs">
-            <button :class="{ active: ownerTypeToCreate === 'company' }" @click="setOwnerTypeToCreate('company')">Компанию</button>
-            <button :class="{ active: ownerTypeToCreate === 'individual' }" @click="setOwnerTypeToCreate('individual')">Физлицо</button>
-          </div>
+          <h4 class="smart-create-title">{{ ownerTypeToCreate === 'company' ? 'Новая компания' : 'Новое физлицо' }}</h4>
           <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
           <div class="smart-create-actions">
             <button @click="cancelCreateOwner" class="btn-modal-action btn-modal-cancel" :disabled="isInlineSaving">Отмена</button>
@@ -795,12 +790,12 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 /* Inline Create */
 .inline-create-form { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a; font-size: 15px; box-sizing: border-box; }
+.inline-create-form input { flex: 1; height: 48px; padding: 0 14px; margin: 0; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; color: #1a1a1a; font-size: 15px; box-sizing: border-box; }
 .inline-create-form input:focus { outline: none; border-color: var(--color-transfer); }
 
 /* Buttons inline */
-.btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-transfer); color: var(--color-transfer); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
-.btn-inline-save:hover { background-color: var(--color-transfer); color: #fff; }
+.btn-inline-save { width: 48px; height: 48px; background-color: transparent; border: 1px solid #1a1a1a; color: #1a1a1a; border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+.btn-inline-save:hover { background-color: #f2f2f2; color: #1a1a1a; }
 .btn-inline-cancel { width: 48px; height: 48px; background-color: transparent; border: 1px solid var(--color-danger); color: var(--color-danger); border-radius: 8px; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
 .btn-inline-cancel:hover { background-color: var(--color-danger); color: #fff; }
 
@@ -819,15 +814,15 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 /* Dual Action in Select */
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
-.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-transfer); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
-.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #1a1a1a; cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f5f5f5; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 
 /* Sticky buttons in list */
 :deep(.list-item-wrapper.is-action-row) { position: sticky; bottom: 0; z-index: 10; background-color: #fff; border-top: 1px solid #eee; }
-:deep(.list-item-wrapper.is-special) { color: var(--color-transfer); font-weight: 600; position: sticky !important; bottom: 0 !important; z-index: 10; background-color: #fff; border-top: 1px solid #eee; }
-:deep(.list-item-wrapper.is-special:hover) { background-color: #f0f8ff; }
+:deep(.list-item-wrapper.is-special) { color: #1a1a1a; font-weight: 600; position: sticky !important; bottom: 0 !important; z-index: 10; background-color: #fff; border-top: 1px solid #eee; }
+:deep(.list-item-wrapper.is-special:hover) { background-color: #f5f5f5; }
 
 .relative { position: relative; }
 .bank-suggestions-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E0E0E0; border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); z-index: 2000; list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; }
@@ -852,8 +847,8 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 /* 🟢 Dual Action in Select */
 .dual-action-row { display: flex; width: 100%; height: 46px; border-top: 1px solid #eee; }
-.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: var(--color-withdrawal); cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
-.btn-dual-action:hover { background-color: #f0f8ff; }
+.btn-dual-action { flex: 1; border: none; background-color: #fff; font-size: 13px; font-weight: 600; color: #1a1a1a; cursor: pointer; transition: background-color 0.2s; white-space: nowrap; }
+.btn-dual-action:hover { background-color: #f5f5f5; }
 .btn-dual-action.left { border-right: 1px solid #eee; border-bottom-left-radius: 8px; }
 .btn-dual-action.right { border-bottom-right-radius: 8px; }
 
