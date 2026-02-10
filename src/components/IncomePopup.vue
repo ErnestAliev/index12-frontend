@@ -452,10 +452,6 @@ watch(editableDate, (newVal, oldVal) => {
     if (!isInitialLoad.value && oldVal && newVal !== oldVal) isDateChanged.value = true;
 });
 
-watch([showCreateContractorModal, showCreateOwnerModal], ([creatingContr, creatingOwner]) => {
-    if (creatingContr || creatingOwner) selectedCategoryId.value = null;
-});
-
 const onAmountInput = (e) => {
     const raw = e.target.value.replace(/[^0-9]/g, '');
     amount.value = formatNumber(raw);
@@ -734,7 +730,13 @@ const saveNewCategory = async () => {
     });
 };
 
-const openCreateOwnerModal = (type) => { ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
+const openCreateOwnerModal = (type) => {
+    ownerTypeToCreate.value = type;
+    newOwnerName.value = '';
+    showCreateContractorModal.value = false;
+    showCreateOwnerModal.value = true;
+    nextTick(() => newOwnerInputRef.value?.focus());
+};
 const cancelCreateOwner = () => { showCreateOwnerModal.value = false; newOwnerName.value = ''; if (!selectedOwner.value) selectedOwner.value = null; };
 const saveNewOwner = async () => {
     const name = newOwnerName.value.trim(); 
@@ -751,7 +753,13 @@ const saveNewOwner = async () => {
     });
 };
 
-const openCreateContractorModal = (type) => { contractorTypeToCreate.value = type; newContractorNameInput.value = ''; showCreateContractorModal.value = true; nextTick(() => newContractorInputRef.value?.focus()); };
+const openCreateContractorModal = (type) => {
+    contractorTypeToCreate.value = type;
+    newContractorNameInput.value = '';
+    showCreateOwnerModal.value = false;
+    showCreateContractorModal.value = true;
+    nextTick(() => newContractorInputRef.value?.focus());
+};
 const cancelCreateContractorModal = () => { showCreateContractorModal.value = false; newContractorNameInput.value = ''; if (!selectedContractorValue.value) selectedContractorValue.value = null; };
 const saveNewContractorModal = async () => {
     const name = newContractorNameInput.value.trim(); 
@@ -800,138 +808,108 @@ const handleMainAction = async () => {
         </div>
       </div>
 
-      <template v-if="!showCreateOwnerModal && !showCreateContractorModal">
-        
-        <!-- СЧЕТ -->
-        <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-            <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
-                <template #action-item v-if="canEdit">
-                    <div class="dual-action-row">
-                        <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
-                        <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
-        <div v-else class="inline-create-form input-spacing relative">
-            <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @blur="handleAccountInputBlur" @focus="handleAccountInputFocus" />
-            <button @click="saveNewAccount" class="btn-inline-save">✓</button>
-            <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
-            <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
-        </div>
+      <!-- СЧЕТ -->
+      <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+          <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
+              <template #action-item v-if="canEdit">
+                  <div class="dual-action-row">
+                      <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
+                      <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else class="inline-create-form input-spacing relative">
+          <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @blur="handleAccountInputBlur" @focus="handleAccountInputFocus" />
+          <button @click="saveNewAccount" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
+          <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
+      </div>
 
-        <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
-        <div v-if="isOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов">
-                <template #action-item>
-                    <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
+      <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
+      <div v-if="isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing">
+          <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов">
+              <template #action-item>
+                  <div class="dual-action-row">
+                      <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else-if="isOwnerSelectVisible" class="inline-create-form input-spacing relative">
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" autocomplete="off" />
+          <button @click="saveNewOwner" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateOwner" class="btn-inline-cancel">✕</button>
+          <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li></ul>
+      </div>
 
-        <!-- КОНТРАГЕНТ -->
-        <div class="input-spacing">
-            <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
-                <template #action-item>
-                    <div class="dual-action-row">
-                        <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
-                        <button @click="openCreateContractorModal('individual')" class="btn-dual-action right">+ Созд. физлицо</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
+      <!-- КОНТРАГЕНТ -->
+      <div v-if="!showCreateContractorModal" class="input-spacing">
+          <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
+              <template #action-item>
+                  <div class="dual-action-row">
+                      <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
+                      <button @click="openCreateContractorModal('individual')" class="btn-dual-action right">+ Созд. физлицо</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else class="inline-create-form input-spacing relative">
+          <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" @blur="handleContractorInputBlur" @focus="handleContractorInputFocus" autocomplete="off" />
+          <button @click="saveNewContractorModal" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateContractorModal" class="btn-inline-cancel">✕</button>
+          <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li></ul>
+      </div>
 
-        <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-            <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
-        </div>
-        <div v-else class="inline-create-form input-spacing">
-            <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
-            <button @click="saveNewProject" class="btn-inline-save">✓</button>
-            <button @click="cancelCreateProject" class="btn-inline-cancel">✕</button>
-        </div>
+      <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+          <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
+      </div>
+      <div v-else class="inline-create-form input-spacing">
+          <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
+          <button @click="saveNewProject" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateProject" class="btn-inline-cancel">✕</button>
+      </div>
 
-        <!-- КАТЕГОРИЯ -->
-        <div v-if="!isCreatingCategory" class="input-spacing">
-            <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" />
-        </div>
-        <div v-else class="inline-create-form input-spacing relative">
-            <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
-            <button @click="saveNewCategory" class="btn-inline-save">✓</button>
-            <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
-            <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
-        </div>
-        
-        <div class="custom-input-box input-spacing has-value date-box" :class="{ 'is-disabled': isProtectedMode }">
-            <div class="input-inner-content">
-                <span class="floating-label">Дата операции</span>
-                <div class="date-display-row">
-                    <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
-                    
-                   <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
-                       {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
-                   </span>
+      <!-- КАТЕГОРИЯ -->
+      <div v-if="!isCreatingCategory" class="input-spacing">
+          <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" />
+      </div>
+      <div v-else class="inline-create-form input-spacing relative">
+          <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
+          <button @click="saveNewCategory" class="btn-inline-save">✓</button>
+          <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
+          <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
+      </div>
+      
+      <div class="custom-input-box input-spacing has-value date-box" :class="{ 'is-disabled': isProtectedMode }">
+          <div class="input-inner-content">
+              <span class="floating-label">Дата операции</span>
+              <div class="date-display-row">
+                  <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
+                  
+                 <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
+                     {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
+                 </span>
 
-                    <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
-                    <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                </div>
-            </div>
-        </div>
-        
-        <div class="popup-actions-row">
-            <button v-if="!isProtectedMode && canEdit" class="btn-submit save-wide" :class="mainButtonClass" @click="handleMainAction" :disabled="isSaving || isInlineSaving">
-                {{ mainButtonText }}
-            </button>
-            <div v-else-if="!canEdit" class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
-            <div v-else class="read-only-info">Только чтение</div>
-            
-            <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
-                <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
-                <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
-            </div>
-        </div>
-      </template>
-
-      <!-- МОДАЛКИ СОЗДАНИЯ -->
-      <template v-if="showCreateOwnerModal">
-        <div class="smart-create-owner">
-          <h4 class="smart-create-title">{{ ownerTypeToCreate === 'company' ? 'Новая компания' : 'Новое физлицо' }}</h4>
-          <div class="input-wrapper relative">
-              <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" />
-              <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length > 0" class="bank-suggestions-list">
-                  <li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li>
-              </ul>
+                  <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
+                  <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              </div>
           </div>
-          <div class="smart-create-actions">
-            <!-- 🟢 УНИФИЦИРОВАННЫЕ КНОПКИ -->
-            <button @click="cancelCreateOwner" class="btn-modal-action btn-modal-cancel">Отмена</button>
-            <button @click="saveNewOwner" class="btn-modal-action btn-modal-create">Создать</button>
+      </div>
+      
+      <div class="popup-actions-row">
+          <button v-if="!isProtectedMode && canEdit" class="btn-submit save-wide" :class="mainButtonClass" @click="handleMainAction" :disabled="isSaving || isInlineSaving">
+              {{ mainButtonText }}
+          </button>
+          <div v-else-if="!canEdit" class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
+          <div v-else class="read-only-info">Только чтение</div>
+          
+          <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
+              <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+              <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
           </div>
-        </div>
-      </template>
-
-      <template v-if="showCreateContractorModal">
-        <div class="smart-create-owner">
-          <h4 class="smart-create-title">Новый контрагент</h4>
-          <div class="smart-create-tabs">
-            <button :class="{ active: contractorTypeToCreate === 'contractor' }" @click="contractorTypeToCreate = 'contractor'">ТОО / ИП / БАНК</button>
-            <button :class="{ active: contractorTypeToCreate === 'individual' }" @click="contractorTypeToCreate = 'individual'">Физлицо</button>
-          </div>
-          <div class="input-wrapper relative">
-              <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" class="form-input input-spacing" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" @blur="handleContractorInputBlur" @focus="handleContractorInputFocus" />
-              <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length > 0" class="bank-suggestions-list">
-                  <li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li>
-              </ul>
-          </div>
-          <div class="smart-create-actions">
-            <!-- 🟢 УНИФИЦИРОВАННЫЕ КНОПКИ -->
-            <button @click="cancelCreateContractorModal" class="btn-modal-action btn-modal-cancel">Отмена</button>
-            <button @click="saveNewContractorModal" class="btn-modal-action btn-modal-create">Создать</button>
-          </div>
-        </div>
-      </template>
+      </div>
 
     </div>
 

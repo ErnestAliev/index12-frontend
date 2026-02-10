@@ -596,126 +596,123 @@ const closePopup = () => { emit('close'); };
     <div class="popup-content theme-transfer">
       <h3>{{ title }}</h3>
 
-      <template v-if="!showCreateOwnerModal">
-        <!-- СУММА + ВАЛИДАЦИЯ -->
-        <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
-          <div class="input-inner-content">
-             <span v-if="amount" class="floating-label">Сумма, ₸</span>
-             <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" :disabled="isReadOnly" />
-          </div>
+      <!-- СУММА + ВАЛИДАЦИЯ -->
+      <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
+        <div class="input-inner-content">
+           <span v-if="amount" class="floating-label">Сумма, ₸</span>
+           <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" :disabled="isReadOnly" />
+        </div>
+    </div>
+    
+    <!-- 🟢 Блок ошибки валидации -->
+    <div v-if="validationResult && !validationResult.isValid" class="validation-error">
+        {{ validationResult.message }}
+    </div>
+      
+      <!-- СЧЕТ ОТПРАВИТЕЛЯ (с динамическим балансом) -->
+      <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
+          <template #action-item v-if="canEdit">
+              <div class="dual-action-row">
+                  <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
+                  <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
+              </div>
+          </template>
+      </BaseSelect>
+      <div v-else class="inline-create-form input-spacing relative">
+        <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" autocomplete="off" />
+        <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
+        <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
+        <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
+            <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">{{ bank.name }}</li>
+        </ul>
+      </div>
+
+      <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
+      <div v-if="isFromOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'from')" class="input-spacing">
+          <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
+              <template #action-item v-if="canEdit">
+                  <div class="dual-action-row">
+                      <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('from', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else-if="isFromOwnerSelectVisible && creatingOwnerFor === 'from'" class="inline-create-form input-spacing">
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
+          <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+      </div>
+
+      <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
+      <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
+          <template #action-item v-if="canEdit">
+              <div class="dual-action-row">
+                  <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
+                  <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
+              </div>
+          </template>
+      </BaseSelect>
+      <div v-else class="inline-create-form input-spacing relative">
+        <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" autocomplete="off" />
+        <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
+        <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
+        <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
+            <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">{{ bank.name }}</li>
+        </ul>
+      </div>
+
+      <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
+      <div v-if="isToOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'to')" class="input-spacing">
+          <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
+              <template #action-item v-if="canEdit">
+                  <div class="dual-action-row">
+                      <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('to', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else-if="isToOwnerSelectVisible && creatingOwnerFor === 'to'" class="inline-create-form input-spacing">
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
+          <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+      </div>
+
+      <div class="input-spacing">
+          <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
+      </div>
+
+      <div class="hint-box" v-if="smartHint">{{ smartHint }}</div>
+      
+      <div class="custom-input-box input-spacing has-value date-box">
+         <div class="input-inner-content">
+            <span class="floating-label">Дата перевода</span>
+            <div class="date-display-row">
+               <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
+               
+                 <!-- 🟢 Индикатор ПЛАН/ФАКТ -->
+                 <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
+                     {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
+                 </span>
+
+               <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" :disabled="isReadOnly" />
+               <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            </div>
+         </div>
       </div>
       
-      <!-- 🟢 Блок ошибки валидации -->
-      <div v-if="validationResult && !validationResult.isValid" class="validation-error">
-          {{ validationResult.message }}
+      <div class="popup-actions-row">
+        <button v-if="canEdit" @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving || (validationResult && !validationResult.isValid)">
+          {{ buttonText }}
+        </button>
+        <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
+
+        <div v-if="props.transferToEdit && !isCloneMode" class="icon-actions">
+          <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
+          <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+        </div>
       </div>
-        
-        <!-- СЧЕТ ОТПРАВИТЕЛЯ (с динамическим балансом) -->
-        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
-            <template #action-item v-if="canEdit">
-                <div class="dual-action-row">
-                    <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
-                    <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
-                </div>
-            </template>
-        </BaseSelect>
-        <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" autocomplete="off" />
-          <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
-          <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
-              <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">{{ bank.name }}</li>
-          </ul>
-        </div>
-
-        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
-        <div v-if="isFromOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
-                <template #action-item v-if="canEdit">
-                    <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('from', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
-
-        <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
-        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
-            <template #action-item v-if="canEdit">
-                <div class="dual-action-row">
-                    <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
-                    <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
-                </div>
-            </template>
-        </BaseSelect>
-        <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" autocomplete="off" />
-          <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
-          <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
-              <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">{{ bank.name }}</li>
-          </ul>
-        </div>
-
-        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
-        <div v-if="isToOwnerSelectVisible" class="input-spacing">
-            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
-                <template #action-item v-if="canEdit">
-                    <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('to', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
-
-        <div class="input-spacing">
-            <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
-        </div>
-
-        <div class="hint-box" v-if="smartHint">{{ smartHint }}</div>
-        
-        <div class="custom-input-box input-spacing has-value date-box">
-           <div class="input-inner-content">
-              <span class="floating-label">Дата перевода</span>
-              <div class="date-display-row">
-                 <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
-                 
-                   <!-- 🟢 Индикатор ПЛАН/ФАКТ -->
-                   <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
-                       {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
-                   </span>
-
-                 <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" :disabled="isReadOnly" />
-                 <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              </div>
-           </div>
-        </div>
-
-        <div class="popup-actions-row">
-          <button v-if="canEdit" @click="handleSave" class="btn-submit save-wide" :class="buttonText === 'Сохранить' ? 'btn-submit-edit' : 'btn-submit-transfer'" :disabled="isInlineSaving || (validationResult && !validationResult.isValid)">
-            {{ buttonText }}
-          </button>
-          <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
-
-          <div v-if="props.transferToEdit && !isCloneMode" class="icon-actions">
-            <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isInlineSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
-            <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isInlineSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
-          </div>
-        </div>
-      </template>
-
-      <template v-if="showCreateOwnerModal">
-        <div class="smart-create-owner">
-          <h4 class="smart-create-title">{{ ownerTypeToCreate === 'company' ? 'Новая компания' : 'Новое физлицо' }}</h4>
-          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" class="form-input input-spacing" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
-          <div class="smart-create-actions">
-            <button @click="cancelCreateOwner" class="btn-modal-action btn-modal-cancel" :disabled="isInlineSaving">Отмена</button>
-            <button @click="saveNewOwner" class="btn-modal-action btn-modal-create" :disabled="isInlineSaving">Создать</button>
-          </div>
-        </div>
-      </template>
       
     </div>
 
