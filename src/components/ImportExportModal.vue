@@ -90,7 +90,6 @@ const formatSummaryAmount = (value) => {
 };
 
 const isPersonalTransferWithdrawal = (op) => !!op &&
-  op.isWithdrawal === true &&
   op.transferPurpose === 'personal' &&
   op.transferReason === 'personal_use';
 
@@ -123,7 +122,8 @@ const buildOperationRow = (op) => {
   const parsedDate = new Date(op?.date);
   const dateTs = Number.isNaN(parsedDate.getTime()) ? null : parsedDate.getTime();
 
-  const categoryName = resolveEntityName(op?.categoryId, mainStore.categories, 'Без категории');
+  const categoryFallback = isPersonalTransferWithdrawal(op) ? 'Вывод средств' : 'Без категории';
+  const categoryName = resolveEntityName(op?.categoryId, mainStore.categories, categoryFallback);
   const projectName = resolveEntityName(op?.projectId, mainStore.projects, 'Без проекта');
 
   let accountName = resolveEntityName(op?.accountId, mainStore.accounts, 'Без счета');
