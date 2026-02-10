@@ -79,6 +79,11 @@ const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 const projectionStore = useProjectionStore();
 const historyLoadTick = ref(0);
 
+const isPersonalTransferWithdrawal = (op) => !!op &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use' &&
+  (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
+
 // Начальный баланс (сумма initialBalance по счетам), с учетом флага includeExcludedInTotal
 const initialTotalBalance = computed(() => {
   const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
@@ -813,7 +818,8 @@ const dailyAggForSummaries = computed(() => {
         incomeMain: 0,
         prepayment: 0,
         expense: 0,
-        withdrawal: 0
+        withdrawal: 0,
+        systemTransferOut: 0
       });
     }
     return map.get(key);
@@ -823,8 +829,10 @@ const dailyAggForSummaries = computed(() => {
     if (!op) continue;
     if (!isOpVisible(op)) continue;
 
+    const isOutOfSystemTransfer = isPersonalTransferWithdrawal(op);
+
     // Игнорируем переводы (кроме вывода средств)
-    if (op.isTransfer && !op.isWithdrawal) continue;
+    if ((op.isTransfer || op.type === 'transfer') && !isOutOfSystemTransfer) continue;
 
     const dt = _coerceDate(op.date);
     if (!dt) continue;
@@ -834,6 +842,11 @@ const dailyAggForSummaries = computed(() => {
 
     const amt = Number(op.amount) || 0;
     const absAmt = Math.abs(amt);
+
+    if (isOutOfSystemTransfer) {
+      rec.systemTransferOut += absAmt;
+      continue;
+    }
 
     if (op.isWithdrawal) {
       rec.withdrawal += absAmt;
@@ -889,7 +902,10 @@ const closingTimelineForSummaries = computed(() => {
   for (const k of keys) {
     const rec = agg.get(k);
     const inc = Math.abs(Number(rec?.incomeMain || 0)) + Math.abs(Number(rec?.prepayment || 0));
-    const exp = Math.abs(Number(rec?.expense || 0)) + Math.abs(Number(rec?.withdrawal || 0));
+    const exp =
+      Math.abs(Number(rec?.expense || 0)) +
+      Math.abs(Number(rec?.withdrawal || 0)) +
+      Math.abs(Number(rec?.systemTransferOut || 0));
     running = Math.max(0, running + inc - exp);
     closingByKey.set(k, running);
     balances.push(running);
@@ -1035,7 +1051,7 @@ const accountBalancesByDateKey = computed(() => {
           if (op.toAccountId) {
             toAccId = typeof op.toAccountId === 'object' ? op.toAccountId._id : op.toAccountId;
           }
-          if (toAccId && String(toAccId) === accId) {
+          if (!isPersonalTransferWithdrawal(op) && toAccId && String(toAccId) === accId) {
             // ✅ Only apply if THIS account (to) is current account
             balance += absAmt;
             continue;
@@ -1319,11 +1335,15 @@ const getTooltipOperationList = (ops) => {
       if (!op) return null;
       
       // Handle transfers separately
-      if (op.isTransfer && !op.isWithdrawal) {
+      if (op.isTransfer || op.type === 'transfer') {
+        const isOutOfSystemTransfer = isPersonalTransferWithdrawal(op);
         return {
           isTransfer: true,
-          fromAccName: op.fromAccountId?.name || '???',
-          toAccName: op.toAccountId?.name || '???',
+          isOutOfSystemTransfer,
+          fromAccName: op.fromAccountId?.name || op.accountId?.name || '???',
+          toAccName: isOutOfSystemTransfer
+            ? (op.destination || 'Вне системы')
+            : (op.toAccountId?.name || '???'),
           amount: op.amount,
           desc: op.description
         };

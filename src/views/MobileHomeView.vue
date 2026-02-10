@@ -210,6 +210,11 @@ const infoModalMessage = ref('');
 const isContextMenuVisible = ref(false);
 const contextMenuPosition = ref({ top: '0px', left: '0px' });
 
+const isPersonalTransferWithdrawal = (op) => !!op &&
+  op.isWithdrawal === true &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use';
+
 // =================================================================
 // 🟣 AI ассистент (Mobile MVP, read-only)
 // =================================================================
@@ -989,7 +994,7 @@ const activeWidgetItems = computed(() => {
       return filtered;
   } else {
       let list = []; if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes; else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses; else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals; else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
-      const mappedList = list.map(op => { let name = op.categoryId?.name || 'Без категории'; let subName = ''; if (op.type === 'transfer' || op.isTransfer) { const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId)); const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId)); name = 'Перевод'; subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`; } else if (op.isWithdrawal) { name = 'Вывод средств'; subName = op.destination || op.description || ''; } else { const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name; const project = op.projectId?.name; const desc = op.description; if (contractor) subName = contractor; else if (project) subName = project; else if (desc) subName = desc; } return { _id: op._id, name: name, subName: subName, balance: op.amount, date: op.date, isList: true, isIncome: op.type === 'income', originalOp: op }; });
+      const mappedList = list.map(op => { let name = op.categoryId?.name || 'Без категории'; let subName = ''; if (op.type === 'transfer' || op.isTransfer || isPersonalTransferWithdrawal(op)) { const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId)); const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId)); name = 'Перевод'; subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`; } else if (op.isWithdrawal) { name = 'Вывод средств'; subName = op.destination || op.description || ''; } else { const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name; const project = op.projectId?.name; const desc = op.description; if (contractor) subName = contractor; else if (project) subName = project; else if (desc) subName = desc; } return { _id: op._id, name: name, subName: subName, balance: op.amount, date: op.date, isList: true, isIncome: op.type === 'income', originalOp: op }; });
       mappedList.sort((a, b) => new Date(b.date) - new Date(a.date)); return mappedList;
   }
 });
@@ -1089,7 +1094,7 @@ const handleEditOperation = (operation) => {
       return;
   }
 
-  if (operation.type === 'transfer' || operation.isTransfer) {
+  if (operation.type === 'transfer' || operation.isTransfer || isPersonalTransferWithdrawal(operation)) {
     isTransferPopupVisible.value = true;
     return;
   }

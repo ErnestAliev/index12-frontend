@@ -97,6 +97,7 @@ const loadTransfers = () => {
   const onlyTransfers = allOps.filter(op => 
     op.type === 'transfer' || 
     op.isTransfer === true || 
+    (op.isWithdrawal === true && op.transferPurpose === 'personal' && op.transferReason === 'personal_use') ||
     (op.categoryId && (op.categoryId.name === 'Перевод' || op.categoryId.name === 'Transfer'))
   );
 
@@ -278,11 +279,27 @@ const toggleWidgetOnDashboard = () => {
   }
 };
 
-const handleTransferComplete = async (eventData) => {
-  isCreatePopupVisible.value = false;
-  await mainStore.fetchAllEntities();
-  if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey);
-  loadTransfers();
+const handleTransferSave = async ({ mode, id, data }) => {
+  try {
+    if (mode === 'create') {
+      if (data.cellIndex === undefined) {
+        const dateKey = mainStore._getDateKey(new Date(data.date));
+        data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+      }
+      await mainStore.createTransfer(data);
+    } else {
+      await mainStore.updateTransfer(id, data);
+    }
+
+    isCreatePopupVisible.value = false;
+    await mainStore.fetchAllEntities();
+    const dateKey = data?.date ? mainStore._getDateKey(new Date(data.date)) : null;
+    if (dateKey) await mainStore.refreshDay(dateKey);
+    loadTransfers();
+  } catch (e) {
+    console.error(e);
+    alert('Ошибка сохранения перевода');
+  }
 };
 
 const askDelete = (item) => { itemToDelete.value = item; showDeleteConfirm.value = true; };
@@ -469,7 +486,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
       </div>
     </div>
 
-    <TransferPopup v-if="isCreatePopupVisible" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @transfer-complete="handleTransferComplete" />
+    <TransferPopup v-if="isCreatePopupVisible" :date="new Date()" :cellIndex="0" @close="isCreatePopupVisible = false" @save="handleTransferSave" />
     
     <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="cancelDelete">
       <div class="delete-confirm-box">

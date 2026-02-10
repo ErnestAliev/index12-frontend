@@ -644,6 +644,10 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
+    const isPersonalTransferWithdrawal = (op) => !!op &&
+        op.transferPurpose === 'personal' &&
+        op.transferReason === 'personal_use' &&
+        (op.isWithdrawal === true || isTransfer(op));
 
     // Helper function to calculate period date range
     function _getPeriodRange(period) {
@@ -760,11 +764,17 @@ export const useMainStore = defineStore('mainStore', () => {
 
         if (isTransfer(op)) {
             updateMap(s.accountBalances, op.fromAccountId, -absAmt * sign);
-            updateMap(s.accountBalances, op.toAccountId, absAmt * sign);
+            if (!isPersonalTransferWithdrawal(op)) {
+                updateMap(s.accountBalances, op.toAccountId, absAmt * sign);
+            }
             updateMap(s.companyBalances, op.fromCompanyId, -absAmt * sign);
-            updateMap(s.companyBalances, op.toCompanyId, absAmt * sign);
+            if (!isPersonalTransferWithdrawal(op)) {
+                updateMap(s.companyBalances, op.toCompanyId, absAmt * sign);
+            }
             updateMap(s.individualBalances, op.fromIndividualId, -absAmt * sign);
-            updateMap(s.individualBalances, op.toIndividualId, absAmt * sign);
+            if (!isPersonalTransferWithdrawal(op)) {
+                updateMap(s.individualBalances, op.toIndividualId, absAmt * sign);
+            }
         } else {
             if (_isRetailWriteOff(op)) return;
             const isIncome = op.type === 'income';
@@ -795,7 +805,9 @@ export const useMainStore = defineStore('mainStore', () => {
     };
 
     // ... (Computed lists for widgets remain unchanged) ...
-    const currentTransfers = computed(() => currentOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    const currentTransfers = computed(() => currentOps.value
+        .filter(op => isTransfer(op) || isPersonalTransferWithdrawal(op))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
     const currentIncomes = computed(() => currentOps.value.filter(op =>
         !isTransfer(op) &&
@@ -807,9 +819,13 @@ export const useMainStore = defineStore('mainStore', () => {
     ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
     const currentExpenses = computed(() => currentOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isIntermediaryIndividual(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    const currentWithdrawals = computed(() => currentOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    const currentWithdrawals = computed(() => currentOps.value
+        .filter(op => op.isWithdrawal && !isPersonalTransferWithdrawal(op))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
-    const futureTransfers = computed(() => futureOps.value.filter(op => isTransfer(op)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+    const futureTransfers = computed(() => futureOps.value
+        .filter(op => isTransfer(op) || isPersonalTransferWithdrawal(op))
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
     const futureIncomes = computed(() => futureOps.value.filter(op =>
         !isTransfer(op) &&
@@ -820,7 +836,9 @@ export const useMainStore = defineStore('mainStore', () => {
     ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
     const futureExpenses = computed(() => futureOps.value.filter(op => !isTransfer(op) && op.type === 'expense' && !op.isWithdrawal && !_isInterCompanyOp(op) && !_isRetailWriteOff(op) && !op.isWorkAct).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-    const futureWithdrawals = computed(() => futureOps.value.filter(op => op.isWithdrawal).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+    const futureWithdrawals = computed(() => futureOps.value
+        .filter(op => op.isWithdrawal && !isPersonalTransferWithdrawal(op))
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
 
     const getCategoryById = (id) => categories.value.find(c => _idsMatch(c._id, id));
 
@@ -880,7 +898,7 @@ export const useMainStore = defineStore('mainStore', () => {
         allPastOps.forEach(op => {
             const amt = Math.abs(Number(op.amount) || 0);
 
-            if (op.isTransfer) {
+            if (isTransfer(op)) {
                 // Handle transfers between accounts
                 const fromId = op.fromAccountId?._id || op.fromAccountId;
                 const toId = op.toAccountId?._id || op.toAccountId;
@@ -892,7 +910,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 if (fromId && balances[fromId] !== undefined && !fromHidden) {
                     balances[fromId] -= amt;
                 }
-                if (toId && balances[toId] !== undefined && !toHidden) {
+                if (!isPersonalTransferWithdrawal(op) && toId && balances[toId] !== undefined && !toHidden) {
                     balances[toId] += amt;
                 }
             } else {
@@ -1047,7 +1065,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 else continue;
                 fromId = fromId?._id || fromId; toId = toId?._id || toId;
                 if (fromId) { if (futureMap[fromId] === undefined) futureMap[fromId] = 0; futureMap[fromId] -= amt; }
-                if (toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
+                if (!isPersonalTransferWithdrawal(op) && toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
             } else {
                 if (entityIdField === 'individualId') {
                     const ownerId = op.individualId?._id || op.individualId;
@@ -1127,7 +1145,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 else continue;
                 fromId = fromId?._id || fromId; toId = toId?._id || toId;
                 if (fromId) { if (futureMap[fromId] === undefined) futureMap[fromId] = 0; futureMap[fromId] -= amt; }
-                if (toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
+                if (!isPersonalTransferWithdrawal(op) && toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
             } else {
                 if (entityIdField === 'individualId') {
                     const ownerId = op.individualId?._id || op.individualId;
@@ -1283,7 +1301,7 @@ export const useMainStore = defineStore('mainStore', () => {
                         opsMap.set(key, (opsMap.get(key) || 0) - amt);
                     }
                 }
-                if (op.toIndividualId) {
+                if (!isPersonalTransferWithdrawal(op) && op.toIndividualId) {
                     const key = _toStr(op.toIndividualId);
                     // Only count transfers for non-account-owners
                     if (!accountOwnerIds.has(key)) {
@@ -1401,7 +1419,12 @@ export const useMainStore = defineStore('mainStore', () => {
     const futureTotalBalance = computed(() => {
         let total = currentTotalBalance.value;
         for (const op of futureOps.value) {
-            if (isTransfer(op)) continue;
+            if (isTransfer(op)) {
+                if (isPersonalTransferWithdrawal(op)) {
+                    total -= Math.abs(Number(op.amount) || 0);
+                }
+                continue;
+            }
             if (!op.accountId) continue;
             if (op.isWorkAct) continue;
             const amt = Math.abs(Number(op.amount) || 0);
@@ -1461,9 +1484,19 @@ export const useMainStore = defineStore('mainStore', () => {
         bindEntity('individualId', individuals);
         bindEntity('counterpartyIndividualId', individuals);
 
-        if (populated.isTransfer) {
+        const hasTransferRouteFields = !!(
+            populated.fromAccountId || populated.toAccountId ||
+            populated.fromCompanyId || populated.toCompanyId ||
+            populated.fromIndividualId || populated.toIndividualId
+        );
+
+        if (populated.isTransfer || hasTransferRouteFields) {
             bindEntity('fromAccountId', accounts);
             bindEntity('toAccountId', accounts);
+            bindEntity('fromCompanyId', companies);
+            bindEntity('toCompanyId', companies);
+            bindEntity('fromIndividualId', individuals);
+            bindEntity('toIndividualId', individuals);
         }
 
         // Если есть splitMeta, достанем projectIds для редактирования/отображения
@@ -2376,12 +2409,23 @@ export const useMainStore = defineStore('mainStore', () => {
             if (transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use') {
                 optimisticOps.push({
                     _id: tempId,
-                    type: 'expense',
+                    type: 'transfer',
+                    isTransfer: true,
                     isWithdrawal: true,
-                    amount: -Math.abs(Number(transferData.amount)),
+                    amount: Math.abs(Number(transferData.amount)),
                     accountId: transferData.fromAccountId,
                     companyId: transferData.fromCompanyId,
                     individualId: transferData.fromIndividualId,
+                    fromAccountId: transferData.fromAccountId,
+                    toAccountId: transferData.toAccountId,
+                    fromCompanyId: transferData.fromCompanyId,
+                    toCompanyId: transferData.toCompanyId,
+                    fromIndividualId: transferData.fromIndividualId,
+                    toIndividualId: transferData.toIndividualId,
+                    transferPurpose: 'personal',
+                    transferReason: 'personal_use',
+                    destination: 'Личные нужды',
+                    description: 'Вывод на личные цели',
                     dateKey: dateKey,
                     date: finalDate,
                     isOptimistic: true
@@ -2454,7 +2498,40 @@ export const useMainStore = defineStore('mainStore', () => {
             let newCellIndex;
             if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
             else newCellIndex = await getFirstFreeCellIndex(newDateKey);
-            const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, { ...transferData, dateKey: newDateKey, cellIndex: newCellIndex, type: 'transfer', isTransfer: true });
+
+            const isPersonalWithdrawal = transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use';
+
+            const payload = isPersonalWithdrawal
+                ? {
+                    ...transferData,
+                    dateKey: newDateKey,
+                    cellIndex: newCellIndex,
+                    type: 'transfer',
+                    isTransfer: true,
+                    isWithdrawal: true,
+                    transferGroupId: null,
+                    accountId: transferData.fromAccountId || null,
+                    companyId: transferData.fromCompanyId || null,
+                    individualId: transferData.fromIndividualId || null,
+                    categoryId: null,
+                    destination: 'Личные нужды',
+                    description: 'Вывод на личные цели'
+                }
+                : {
+                    ...transferData,
+                    dateKey: newDateKey,
+                    cellIndex: newCellIndex,
+                    type: 'transfer',
+                    isTransfer: true,
+                    isWithdrawal: false,
+                    accountId: null,
+                    companyId: null,
+                    individualId: null,
+                    destination: null,
+                    description: null
+                };
+
+            const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, payload);
             if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
             await refreshDay(newDateKey);
             _triggerProjectionUpdate();
@@ -2830,7 +2907,7 @@ export const useMainStore = defineStore('mainStore', () => {
             if (isTransfer(op)) {
                 if (_idsMatch(op.fromAccountId, accountId)) {
                     isMatch = true;
-                } else if (_idsMatch(op.toAccountId, accountId)) {
+                } else if (!isPersonalTransferWithdrawal(op) && _idsMatch(op.toAccountId, accountId)) {
                     isMatch = true;
                 }
             } else {
@@ -2850,7 +2927,7 @@ export const useMainStore = defineStore('mainStore', () => {
             if (isTransfer(op)) {
                 if (_idsMatch(op.fromAccountId, accountId)) {
                     balance -= Math.abs(Number(op.amount) || 0);
-                } else if (_idsMatch(op.toAccountId, accountId)) {
+                } else if (!isPersonalTransferWithdrawal(op) && _idsMatch(op.toAccountId, accountId)) {
                     balance += Math.abs(Number(op.amount) || 0);
                 }
             } else {

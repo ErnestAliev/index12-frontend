@@ -35,10 +35,16 @@ const canInteract = computed(() => {
     return permissions.canEditOperation(op);
 });
 
+const isPersonalTransferWithdrawal = (op) => !!op &&
+  op.isWithdrawal === true &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use';
+
 /* UI-детектор перевода */
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
+  if (isPersonalTransferWithdrawal(op)) return true;
   if (op.isWithdrawal) return false; 
   
   if (op.type?.toLowerCase?.() === 'transfer') return true;
@@ -108,7 +114,7 @@ const isTechnicalOp = computed(() => {
     return op && op.type === 'expense' && !op.accountId && !op.isWithdrawal; 
 });
 
-const isWithdrawalOp = computed(() => props.operation && props.operation.isWithdrawal);
+const isWithdrawalOp = computed(() => !!props.operation && props.operation.isWithdrawal && !isPersonalTransferWithdrawal(props.operation));
 const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
 
 const toOwnerName = computed(() => {
@@ -210,7 +216,7 @@ const onDrop = (event) => {
       :class="{ 
          transfer: isTransferOp, 
          income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp, 
-         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
+         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
          
 
          

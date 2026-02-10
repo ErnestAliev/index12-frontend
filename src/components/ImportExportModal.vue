@@ -89,9 +89,14 @@ const formatSummaryAmount = (value) => {
   return `₸${formatted}`;
 };
 
+const isPersonalTransferWithdrawal = (op) => !!op &&
+  op.isWithdrawal === true &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use';
+
 const normalizeTypeLabel = (op) => {
   if (op?.isWorkAct) return 'Акт выполненных работ';
-  if (op?.type === 'transfer' || op?.isTransfer) return 'Перевод';
+  if (op?.type === 'transfer' || op?.isTransfer || isPersonalTransferWithdrawal(op)) return 'Перевод';
   if (op?.type === 'withdrawal' || op?.isWithdrawal) return 'Вывод средств';
   if (op?.type === 'prepayment') return 'Предоплата';
   if (op?.type === 'income') return 'Доход';

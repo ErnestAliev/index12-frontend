@@ -407,7 +407,7 @@ export const useProjectionStore = defineStore('projection', () => {
     for (let d = new Date(startMs); d.getTime() <= endMs; d.setDate(d.getDate() + 1)) {
       const key = _getDateKey(d);
       dateKeys.push(key);
-      byDateKey[key] = { income: 0, prepayment: 0, expense: 0, withdrawal: 0, dayTotal: 0 };
+      byDateKey[key] = { income: 0, prepayment: 0, expense: 0, withdrawal: 0, systemTransferOut: 0, dayTotal: 0 };
     }
 
     // Aggregate per-day totals
@@ -415,7 +415,6 @@ export const useProjectionStore = defineStore('projection', () => {
       if (!op) continue;
 
       const isTransfer = (op.type === 'transfer' || op.isTransfer === true);
-      if (isTransfer) continue;
       if (op.isWorkAct) continue;
 
       // Charting assumes account-routed ops (keeps consistency with balances)
@@ -427,6 +426,19 @@ export const useProjectionStore = defineStore('projection', () => {
       const rec = byDateKey[dateKey];
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
+
+      const isPersonalTransferWithdrawal =
+        isTransfer &&
+        op.transferPurpose === 'personal' &&
+        op.transferReason === 'personal_use';
+
+      if (isTransfer && !isPersonalTransferWithdrawal) continue;
+
+      if (isPersonalTransferWithdrawal) {
+        rec.systemTransferOut += absAmt;
+        rec.dayTotal -= absAmt;
+        continue;
+      }
 
       if (op.isWithdrawal) {
         rec.withdrawal += absAmt;
@@ -477,7 +489,7 @@ export const useProjectionStore = defineStore('projection', () => {
     const relativeMap = new Map();
 
     for (const key of dateKeys) {
-      const r = byDateKey[key] || { income: 0, prepayment: 0, expense: 0, withdrawal: 0, dayTotal: 0 };
+      const r = byDateKey[key] || { income: 0, prepayment: 0, expense: 0, withdrawal: 0, systemTransferOut: 0, dayTotal: 0 };
       runningRelative += r.dayTotal;
       relativeMap.set(key, { ...r, relativeBalance: runningRelative });
     }
@@ -514,6 +526,7 @@ export const useProjectionStore = defineStore('projection', () => {
         prepayment: item?.prepayment || 0,
         expense: item?.expense || 0,
         withdrawal: item?.withdrawal || 0,
+        systemTransferOut: item?.systemTransferOut || 0,
         closingBalance: (item?.relativeBalance || 0) + anchorOffset,
         date: _parseDateKey(key)
       });

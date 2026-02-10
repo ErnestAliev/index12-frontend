@@ -35,6 +35,11 @@ const formatCurrency = (val) => {
   return `${currency} ${formatted}`;
 };
 
+const isPersonalTransferWithdrawal = (op) => !!op &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use' &&
+  (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
+
 // Текущий баланс (на сегодня, не зависит от диапазона)
 const currentBalanceString = computed(() => formatCurrency(mainStore.currentTotalBalance || 0));
 
@@ -183,7 +188,7 @@ const rangeEndBalance = computed(() => {
       if (fromId && balances.has(String(fromId))) {
         balances.set(String(fromId), (balances.get(String(fromId)) || 0) - amt);
       }
-      if (toId && balances.has(String(toId))) {
+      if (!isPersonalTransferWithdrawal(op) && toId && balances.has(String(toId))) {
         balances.set(String(toId), (balances.get(String(toId)) || 0) + amt);
       }
     } else {

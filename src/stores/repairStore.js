@@ -114,15 +114,22 @@ export const useRepairStore = defineStore('repairStore', () => {
 
                 // Перевод
                 if (richOp.isTransfer || type === 'transfer') {
+                    const isPersonalTransferWithdrawal =
+                        richOp.transferPurpose === 'personal' &&
+                        richOp.transferReason === 'personal_use' &&
+                        (richOp.isWithdrawal === true || richOp.isTransfer === true || type === 'transfer');
+
                     // Списали
                     updateBalance(newSnapshot.accountBalances, richOp.fromAccountId, -absAmt);
                     updateBalance(newSnapshot.companyBalances, richOp.fromCompanyId, -absAmt);
                     updateBalance(newSnapshot.individualBalances, richOp.fromIndividualId, -absAmt);
 
                     // Начислили
-                    updateBalance(newSnapshot.accountBalances, richOp.toAccountId, absAmt);
-                    updateBalance(newSnapshot.companyBalances, richOp.toCompanyId, absAmt);
-                    updateBalance(newSnapshot.individualBalances, richOp.toIndividualId, absAmt);
+                    if (!isPersonalTransferWithdrawal) {
+                        updateBalance(newSnapshot.accountBalances, richOp.toAccountId, absAmt);
+                        updateBalance(newSnapshot.companyBalances, richOp.toCompanyId, absAmt);
+                        updateBalance(newSnapshot.individualBalances, richOp.toIndividualId, absAmt);
+                    }
                 }
                 // Доход/Расход
                 else {

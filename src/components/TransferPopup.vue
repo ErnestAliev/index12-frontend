@@ -43,13 +43,12 @@ const selectedFromOwner = ref(null);
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
 
-const transferPurpose = ref('internal'); 
+const PURPOSE_INTERNAL = 'internal';
+const PURPOSE_INTER_COMPANY = 'inter_company';
+const PURPOSE_PERSONAL_BUSINESS = 'personal_business';
+const PURPOSE_PERSONAL_WITHDRAWAL = 'personal_withdrawal';
 
-const purposeOptions = [
-  { value: 'internal', label: 'Между счетами одной компании' },
-  { value: 'inter_company', label: 'Между моими компаниями' },
-  { value: 'personal', label: 'Перевод на личную карту' }
-];
+const transferPurpose = ref(PURPOSE_INTERNAL); 
 
 // InfoModal
 const showInfoModal = ref(false);
@@ -266,6 +265,31 @@ const isTransferRouteReady = computed(() => (
   !!resolvedToOwnerKey.value
 ));
 
+const purposeOptions = computed(() => {
+  if (!isTransferRouteReady.value) return [];
+
+  const [fromType, fromId] = resolvedFromOwnerKey.value.split('-');
+  const [toType, toId] = resolvedToOwnerKey.value.split('-');
+
+  if (fromType === toType && fromId === toId) {
+    return [
+      { value: PURPOSE_INTERNAL, label: 'Между счетами одной компании' }
+    ];
+  }
+
+  if (toType === 'individual') {
+    return [
+      { value: PURPOSE_PERSONAL_BUSINESS, label: 'Перевод на личную карту' },
+      { value: PURPOSE_PERSONAL_WITHDRAWAL, label: 'Вывод средств' }
+    ];
+  }
+
+  return [
+    { value: PURPOSE_INTER_COMPANY, label: 'Между моими компаниями' },
+    { value: PURPOSE_INTERNAL, label: 'Между счетами одной компании' }
+  ];
+});
+
 const findCompanyByOwnerKey = (ownerKey) => {
   if (!ownerKey || !ownerKey.startsWith('company-')) return null;
   const companyId = ownerKey.slice('company-'.length);
@@ -284,11 +308,11 @@ const formatCompanyTax = (company) => {
 const smartHint = computed(() => {
   if (!isTransferRouteReady.value) return '';
 
-  if (transferPurpose.value === 'internal') {
+  if (transferPurpose.value === PURPOSE_INTERNAL) {
     return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
   }
 
-  if (transferPurpose.value === 'inter_company') {
+  if (transferPurpose.value === PURPOSE_INTER_COMPANY) {
     if (resolvedFromOwnerKey.value && resolvedFromOwnerKey.value.startsWith('individual-')) {
         return 'Перевод с личного счета на нужды компании (вложение средств).';
     }
@@ -302,8 +326,12 @@ const smartHint = computed(() => {
     return 'Межкомпанийский перевод. Проверьте налоговый режим и ставку компании в настройках.';
   }
 
-  if (transferPurpose.value === 'personal') {
-      return 'Перевод на личный счет: деньги бизнеса переходят в личные средства.';
+  if (transferPurpose.value === PURPOSE_PERSONAL_BUSINESS) {
+      return 'Перевод на личную карту на развитие бизнеса.';
+  }
+
+  if (transferPurpose.value === PURPOSE_PERSONAL_WITHDRAWAL) {
+      return 'Вывод средств: деньги выводятся из системы.';
   }
 
   return '';
@@ -314,8 +342,26 @@ watch([resolvedFromOwnerKey, resolvedToOwnerKey], ([newFrom, newTo]) => {
   if (!newFrom || !newTo) return;
   const [fromType, fromId] = newFrom.split('-');
   const [toType, toId] = newTo.split('-');
-  if (fromId === toId && fromType === toType) { transferPurpose.value = 'internal'; }
-  else { if (toType === 'individual') { transferPurpose.value = 'personal'; } else { transferPurpose.value = 'inter_company'; } }
+  if (fromId === toId && fromType === toType) {
+    transferPurpose.value = PURPOSE_INTERNAL;
+    return;
+  }
+
+  if (toType === 'individual') {
+    if (![PURPOSE_PERSONAL_BUSINESS, PURPOSE_PERSONAL_WITHDRAWAL].includes(transferPurpose.value)) {
+      transferPurpose.value = PURPOSE_PERSONAL_BUSINESS;
+    }
+    return;
+  }
+
+  transferPurpose.value = PURPOSE_INTER_COMPANY;
+});
+
+watch(purposeOptions, (options) => {
+  if (!Array.isArray(options) || options.length === 0) return;
+  if (!options.some((opt) => opt.value === transferPurpose.value)) {
+    transferPurpose.value = options[0].value;
+  }
 });
 
 // Autocomplete Logic
@@ -447,12 +493,24 @@ onMounted(async () => {
   if (props.transferToEdit) {
     const transfer = props.transferToEdit;
     amount.value = formatNumber(Math.abs(transfer.amount));
-    fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId;
+    fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId || transfer.accountId?._id || transfer.accountId;
     toAccountId.value = transfer.toAccountId?._id || transfer.toAccountId;
-    if (transfer.fromCompanyId) { const cId = transfer.fromCompanyId?._id || transfer.fromCompanyId; selectedFromOwner.value = `company-${cId}`; } 
-    else if (transfer.fromIndividualId) { const iId = transfer.fromIndividualId?._id || transfer.fromIndividualId; selectedFromOwner.value = `individual-${iId}`; }
+    if (transfer.fromCompanyId || transfer.companyId) { const cId = transfer.fromCompanyId?._id || transfer.fromCompanyId || transfer.companyId?._id || transfer.companyId; selectedFromOwner.value = `company-${cId}`; } 
+    else if (transfer.fromIndividualId || transfer.individualId) { const iId = transfer.fromIndividualId?._id || transfer.fromIndividualId || transfer.individualId?._id || transfer.individualId; selectedFromOwner.value = `individual-${iId}`; }
     if (transfer.toCompanyId) { const cId = transfer.toCompanyId?._id || transfer.toCompanyId; selectedToOwner.value = `company-${cId}`; } 
     else if (transfer.toIndividualId) { const iId = transfer.toIndividualId?._id || transfer.toIndividualId; selectedToOwner.value = `individual-${iId}`; }
+
+    const isPersonalWithdrawalTransfer = transfer.transferReason === 'personal_use' || (transfer.isWithdrawal && transfer.transferPurpose === 'personal');
+    if (transfer.transferPurpose === 'personal' || isPersonalWithdrawalTransfer) {
+      transferPurpose.value = transfer.transferReason === 'personal_use'
+        ? PURPOSE_PERSONAL_WITHDRAWAL
+        : PURPOSE_PERSONAL_BUSINESS;
+    } else if (transfer.transferPurpose === 'inter_company') {
+      transferPurpose.value = PURPOSE_INTER_COMPANY;
+    } else {
+      transferPurpose.value = PURPOSE_INTERNAL;
+    }
+
     categoryId.value = defaultCategoryId;
     if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
   } else {
@@ -587,8 +645,19 @@ const handleSave = async () => {
   const toCompanyId = toOwnerData.companyId;
   const toIndividualId = toOwnerData.individualId;
   
+  let apiTransferPurpose = transferPurpose.value;
+  let apiTransferReason = null;
+
+  if (transferPurpose.value === PURPOSE_PERSONAL_BUSINESS) {
+      apiTransferPurpose = 'personal';
+      apiTransferReason = 'business_growth';
+  } else if (transferPurpose.value === PURPOSE_PERSONAL_WITHDRAWAL) {
+      apiTransferPurpose = 'personal';
+      apiTransferReason = 'personal_use';
+  }
+
   let finalCategoryId = categoryId.value;
-  if (transferPurpose.value === 'inter_company') { finalCategoryId = null; }
+  if (apiTransferPurpose === PURPOSE_INTER_COMPANY) { finalCategoryId = null; }
 
   const updates = [];
   if (fromAccountId.value && selectedFromOwner.value) {
@@ -635,8 +704,8 @@ const handleSave = async () => {
       fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
-      categoryId: finalCategoryId, transferPurpose: transferPurpose.value,
-      transferReason: null
+      categoryId: finalCategoryId, transferPurpose: apiTransferPurpose,
+      transferReason: apiTransferReason
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });

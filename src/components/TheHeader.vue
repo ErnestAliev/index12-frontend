@@ -675,7 +675,23 @@ const onCategoryEdit = (widgetKey) => {
 
 
 
-const handleTransferComplete = async (eventData) => { if (eventData?.dateKey) await mainStore.refreshDay(eventData.dateKey); isTransferPopupVisible.value = false; };
+const handleTransferSave = async ({ mode, id, data }) => {
+    try {
+        if (mode === 'create') {
+            if (data.cellIndex === undefined) {
+                const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date));
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+            }
+            await mainStore.createTransfer(data);
+        } else {
+            await mainStore.updateTransfer(id, data);
+        }
+        isTransferPopupVisible.value = false;
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка сохранения перевода');
+    }
+};
 const handleOperationAdded = async ({ mode, id, data }) => {
     if (mode === 'create') {
         if (data.cellIndex === undefined) {
@@ -1076,7 +1092,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   />
   
   <EntityListEditor v-if="isListEditorVisible" :title="editorTitle" :items="editorItems" @close="isListEditorVisible = false" @save="onEntityListSave" />
-  <TransferPopup v-if="isTransferPopupVisible" :date="new Date()" :cellIndex="0" @close="isTransferPopupVisible = false" @transfer-complete="handleTransferComplete" />
+  <TransferPopup v-if="isTransferPopupVisible" :date="new Date()" :cellIndex="0" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
   <TransferListEditor v-if="isTransferEditorVisible" @close="isTransferEditorVisible = false" />
   <OperationListEditor v-if="isOperationListEditorVisible" :title="operationListEditorTitle" :type="operationListEditorType" :filter-mode="operationListEditorFilterMode" @close="isOperationListEditorVisible = false" />
   

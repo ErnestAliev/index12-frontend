@@ -22,10 +22,16 @@ const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation', '
 const mainStore = useMainStore();
 const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 
+const isPersonalTransferWithdrawal = (op) => !!op &&
+  op.isWithdrawal === true &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use';
+
 /* --- ЛОГИКА ТИПОВ ОПЕРАЦИЙ (Без изменений) --- */
 const isTransferOp = computed(() => {
   const op = props.operation;
   if (!op) return false;
+  if (isPersonalTransferWithdrawal(op)) return true;
   if (op.isWithdrawal) return false;
   if (op.type?.toLowerCase?.() === 'transfer') return true;
   if (op.isTransfer === true) return true;
@@ -90,7 +96,7 @@ const isTechnicalOp = computed(() => {
     return op && op.type === 'expense' && !op.accountId && !op.isWithdrawal; 
 });
 
-const isWithdrawalOp = computed(() => props.operation && props.operation.isWithdrawal);
+const isWithdrawalOp = computed(() => !!props.operation && props.operation.isWithdrawal && !isPersonalTransferWithdrawal(props.operation));
 const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
 const isRetailWriteOffOp = computed(() => mainStore._isRetailWriteOff(props.operation));
 
@@ -259,7 +265,7 @@ const onTouchEnd = (e) => {
       :class="{ 
          transfer: isTransferOp, 
          income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
-         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp,
+         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
          'closed-deal': isClosedDealOp,
          'work-act': isWorkActOp,
          withdrawal: isWithdrawalOp,

@@ -206,8 +206,14 @@ const _resolveEntityName = (idOrObj, storeList) => {
   return found?.name || found?.title || null;
 };
 
+const _isPersonalTransferWithdrawal = (op) => !!op &&
+  op.isWithdrawal === true &&
+  op.transferPurpose === 'personal' &&
+  op.transferReason === 'personal_use';
+
 const _normalizeOp = (op) => {
   if (!op || typeof op !== 'object') return null;
+  const isPersonalTransferWithdrawal = _isPersonalTransferWithdrawal(op);
   const baseAmount = (typeof op.amount === 'number') ? op.amount : (typeof op.sum === 'number' ? op.sum : null);
   let amount = baseAmount;
   if (op.type === 'income' && baseAmount !== null) {
@@ -220,7 +226,9 @@ const _normalizeOp = (op) => {
 
   return {
     id: op._id || op.id || null,
-    type: op.type || (op.isTransfer ? 'transfer' : (op.isWithdrawal ? 'withdrawal' : null)),
+    type: isPersonalTransferWithdrawal
+      ? 'transfer'
+      : (op.type || (op.isTransfer ? 'transfer' : (op.isWithdrawal ? 'withdrawal' : null))),
     amount,
     currency: op.currency || 'KZT',
     dateKey: op.dateKey || null,
@@ -231,7 +239,7 @@ const _normalizeOp = (op) => {
     contractor: _resolveEntityName(op.contractorId, mainStore?.contractors) || _pickName(op.contractor) || _pickName(op.contractorName) || null,
     category: _resolveEntityName(op.categoryId, mainStore?.categories) || _pickName(op.category) || _pickName(op.categoryName) || null,
     company: _resolveEntityName(op.companyId, mainStore?.companies) || _pickName(op.company) || _pickName(op.companyName) || null,
-    isTransfer: !!(op.isTransfer || op.type === 'transfer'),
+    isTransfer: !!(op.isTransfer || op.type === 'transfer' || isPersonalTransferWithdrawal),
     isWithdrawal: !!(op.isWithdrawal),
     isRefund: !!(op.isRefund),
     isPrepayment: !!(op.isPrepayment),
@@ -1158,7 +1166,7 @@ const handleEditOperation = (operation) => {
       isRefundPopupVisible.value = true;
       return;
   }
-  if (operation.type === 'transfer' || operation.isTransfer) {
+  if (operation.type === 'transfer' || operation.isTransfer || _isPersonalTransferWithdrawal(operation)) {
     isTransferPopupVisible.value = true;
     return;
   } 
