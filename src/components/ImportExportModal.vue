@@ -111,6 +111,12 @@ const parseOwnerKey = (ownerKey) => {
 
 const isTransferOperation = (op) => !!(op?.isTransfer || op?.type === 'transfer');
 const isWithdrawalTransfer = (op) => !!(op?.isWithdrawal || (op?.transferPurpose === 'personal' && op?.transferReason === 'personal_use'));
+const shouldIncludeInOperationsEditor = (op) => {
+  if (!op) return false;
+  if (op.isSplitParent) return false;
+  if (op.excludeFromTotals && !op.offsetIncomeId) return false;
+  return true;
+};
 
 const resolveEntityName = (entityOrId, sourceList, fallback = '') => {
   if (!entityOrId) return fallback;
@@ -339,7 +345,8 @@ const loadOperations = async () => {
 
   try {
     const { operations: exportedOperations } = await mainStore.exportAllOperations();
-    const sorted = Array.isArray(exportedOperations) ? [...exportedOperations] : [];
+    const source = Array.isArray(exportedOperations) ? exportedOperations : [];
+    const sorted = source.filter(shouldIncludeInOperationsEditor);
 
     sorted.sort((a, b) => {
       const dateA = new Date(a?.date).getTime() || 0;
