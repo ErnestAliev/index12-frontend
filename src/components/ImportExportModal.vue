@@ -10,6 +10,10 @@ const isLoading = ref(false);
 const loadError = ref('');
 const operations = ref([]);
 const showCopySuccess = ref(false);
+const isEditMode = ref(false);
+const isSavingEdits = ref(false);
+const editRows = ref({});
+const baseEditRows = ref({});
 const filters = ref({
   dateFrom: '',
   dateTo: '',
@@ -37,6 +41,76 @@ const TABLE_COLUMNS = Object.freeze([
 const closeModal = () => {
   emit('close');
 };
+
+const normalizeString = (value) => String(value || '').trim();
+const normalizeNameKey = (value) => normalizeString(value).toLowerCase();
+
+const getTodayIso = () => {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now - offset).toISOString().slice(0, 10);
+};
+
+const shiftIsoDate = (isoDate, diffDays) => {
+  if (!isoDate) return '';
+  const date = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  date.setDate(date.getDate() + diffDays);
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date - offset).toISOString().slice(0, 10);
+};
+
+const normalizeDateByStatus = (isoDate, statusLabel) => {
+  const input = normalizeString(isoDate);
+  if (!input) return input;
+
+  const todayIso = getTodayIso();
+  if (statusLabel === 'План' && input <= todayIso) return shiftIsoDate(todayIso, 1);
+  if (statusLabel === 'Исполнено' && input > todayIso) return todayIso;
+  return input;
+};
+
+const toDateInputValue = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date - offset).toISOString().slice(0, 10);
+};
+
+const parseAmountInput = (value) => {
+  const raw = String(value ?? '');
+  const cleaned = raw.replace(/\s/g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.abs(parsed);
+};
+
+const extractId = (entityOrId) => {
+  if (!entityOrId) return '';
+  if (typeof entityOrId === 'object') {
+    return String(entityOrId._id || entityOrId.id || '');
+  }
+  return String(entityOrId);
+};
+
+const toOwnerKey = (companyId, individualId) => {
+  if (companyId) return `company-${companyId}`;
+  if (individualId) return `individual-${individualId}`;
+  return '';
+};
+
+const parseOwnerKey = (ownerKey) => {
+  const value = normalizeString(ownerKey);
+  if (!value) return { companyId: null, individualId: null };
+  if (value.startsWith('company-')) return { companyId: value.slice(8), individualId: null };
+  if (value.startsWith('individual-')) return { companyId: null, individualId: value.slice(11) };
+  return { companyId: null, individualId: null };
+};
+
+const isTransferOperation = (op) => !!(op?.isTransfer || op?.type === 'transfer');
+const isWithdrawalTransfer = (op) => !!(op?.isWithdrawal || (op?.transferPurpose === 'personal' && op?.transferReason === 'personal_use'));
 
 const resolveEntityName = (entityOrId, sourceList, fallback = '') => {
   if (!entityOrId) return fallback;
@@ -95,8 +169,8 @@ const isPersonalTransferWithdrawal = (op) => !!op &&
 
 const normalizeTypeLabel = (op) => {
   if (op?.isWorkAct) return 'Акт выполненных работ';
-  if (op?.type === 'transfer' || op?.isTransfer || isPersonalTransferWithdrawal(op)) return 'Перевод';
   if (op?.type === 'withdrawal' || op?.isWithdrawal) return 'Вывод средств';
+  if (op?.type === 'transfer' || op?.isTransfer || isPersonalTransferWithdrawal(op)) return 'Перевод';
   if (op?.type === 'prepayment') return 'Предоплата';
   if (op?.type === 'income') return 'Доход';
   if (op?.type === 'expense') return 'Расход';
@@ -121,6 +195,8 @@ const buildOperationRow = (op) => {
   const statusLabel = normalizeStatusLabel(op);
   const parsedDate = new Date(op?.date);
   const dateTs = Number.isNaN(parsedDate.getTime()) ? null : parsedDate.getTime();
+  const isTransfer = isTransferOperation(op);
+  const isWithdrawal = isWithdrawalTransfer(op);
 
   const categoryFallback = isPersonalTransferWithdrawal(op) ? 'Вывод средств' : 'Без категории';
   const categoryName = resolveEntityName(op?.categoryId, mainStore.categories, categoryFallback);
@@ -163,9 +239,28 @@ const buildOperationRow = (op) => {
 
   return {
     rowId: String(op?._id || op?.id || `${op?.date || 'op'}-${Math.random().toString(16).slice(2)}`),
+    operationId: String(op?._id || op?.id || ''),
     type: typeLabel,
+    isTransfer,
+    isWithdrawal,
+    source: op,
     amount: amountForDisplay,
     dateTs,
+    editable: {
+      date: toDateInputValue(op?.date),
+      type: typeLabel,
+      categoryName: categoryName === 'Без категории' ? '' : categoryName,
+      projectName: projectName === 'Без проекта' ? '' : projectName,
+      amount: amountForDisplay ? String(Math.abs(amountForDisplay)) : '',
+      accountId: extractId(op?.accountId),
+      contractorName: contractorName === 'Без контрагента' ? '' : contractorName,
+      ownerKey: toOwnerKey(extractId(op?.companyId), extractId(op?.individualId)),
+      status: statusLabel,
+      fromAccountId: extractId(op?.fromAccountId),
+      toAccountId: extractId(op?.toAccountId),
+      fromOwnerKey: toOwnerKey(extractId(op?.fromCompanyId), extractId(op?.fromIndividualId)),
+      toOwnerKey: toOwnerKey(extractId(op?.toCompanyId), extractId(op?.toIndividualId))
+    },
     values: {
       'Дата': formatDate(op?.date),
       'Тип': typeLabel,
@@ -178,6 +273,64 @@ const buildOperationRow = (op) => {
       'Статус': statusLabel
     }
   };
+};
+
+const cloneDraft = (draft) => JSON.parse(JSON.stringify(draft || {}));
+
+const buildEditStateFromRows = (rows) => {
+  const nextDrafts = {};
+  const nextBase = {};
+
+  rows.forEach((row) => {
+    const draft = cloneDraft(row.editable);
+    nextDrafts[row.rowId] = draft;
+    nextBase[row.rowId] = cloneDraft(draft);
+  });
+
+  editRows.value = nextDrafts;
+  baseEditRows.value = nextBase;
+};
+
+const openEditMode = () => {
+  buildEditStateFromRows(operations.value);
+  isEditMode.value = true;
+};
+
+const cancelEditMode = () => {
+  isEditMode.value = false;
+  editRows.value = {};
+  baseEditRows.value = {};
+};
+
+const toggleEditMode = () => {
+  if (isSavingEdits.value) return;
+  if (isEditMode.value) {
+    cancelEditMode();
+    return;
+  }
+  openEditMode();
+};
+
+const normalizedDraftSnapshot = (draft) => ({
+  date: normalizeString(draft?.date),
+  type: normalizeString(draft?.type),
+  categoryName: normalizeString(draft?.categoryName),
+  projectName: normalizeString(draft?.projectName),
+  amount: parseAmountInput(draft?.amount),
+  accountId: normalizeString(draft?.accountId),
+  contractorName: normalizeString(draft?.contractorName),
+  ownerKey: normalizeString(draft?.ownerKey),
+  status: normalizeString(draft?.status),
+  fromAccountId: normalizeString(draft?.fromAccountId),
+  toAccountId: normalizeString(draft?.toAccountId),
+  fromOwnerKey: normalizeString(draft?.fromOwnerKey),
+  toOwnerKey: normalizeString(draft?.toOwnerKey)
+});
+
+const isRowChanged = (rowId) => {
+  const current = normalizedDraftSnapshot(editRows.value[rowId]);
+  const base = normalizedDraftSnapshot(baseEditRows.value[rowId]);
+  return JSON.stringify(current) !== JSON.stringify(base);
 };
 
 const loadOperations = async () => {
@@ -199,6 +352,9 @@ const loadOperations = async () => {
     });
 
     operations.value = sorted.map(buildOperationRow);
+    if (isEditMode.value) {
+      buildEditStateFromRows(operations.value);
+    }
   } catch (error) {
     loadError.value = `Не удалось загрузить операции: ${error?.message || 'Неизвестная ошибка'}`;
     operations.value = [];
@@ -251,6 +407,204 @@ const filterOptions = computed(() => {
   };
 });
 
+const ownerOptions = computed(() => {
+  const companyOpts = (mainStore.companies || []).map((item) => ({
+    value: `company-${item._id}`,
+    label: item.name || 'Компания'
+  }));
+  const individualOpts = (mainStore.individuals || []).map((item) => ({
+    value: `individual-${item._id}`,
+    label: item.name || 'Физлицо'
+  }));
+  return [...companyOpts, ...individualOpts];
+});
+
+const accountOptions = computed(() =>
+  (mainStore.accounts || []).map((item) => ({
+    value: String(item._id),
+    label: item.name || 'Счет'
+  }))
+);
+
+const typeOptionsForRow = (row) => {
+  if (row?.isTransfer) return ['Перевод', 'Вывод средств'];
+  const base = ['Доход', 'Расход'];
+  const currentType = normalizeString(editRows.value[row.rowId]?.type || row.type);
+  if (currentType && !base.includes(currentType)) return [...base, currentType];
+  return base;
+};
+
+const statusOptions = Object.freeze(['Исполнено', 'План']);
+
+const resolveEntityByName = (list, name) => {
+  const key = normalizeNameKey(name);
+  if (!key) return null;
+  return (list || []).find((item) => normalizeNameKey(item?.name) === key) || null;
+};
+
+const ensureCategoryIdByName = async (name, cache) => {
+  const normalized = normalizeString(name);
+  if (!normalized || normalized.toLowerCase() === 'без категории') return null;
+  const key = normalizeNameKey(normalized);
+  if (cache.categories.has(key)) return cache.categories.get(key);
+
+  const existing = resolveEntityByName(mainStore.categories, normalized);
+  if (existing?._id) {
+    const id = String(existing._id);
+    cache.categories.set(key, id);
+    return id;
+  }
+
+  const created = await mainStore.addCategory(normalized);
+  const id = created?._id ? String(created._id) : null;
+  if (id) cache.categories.set(key, id);
+  return id;
+};
+
+const ensureProjectIdByName = async (name, cache) => {
+  const normalized = normalizeString(name);
+  if (!normalized || normalized.toLowerCase() === 'без проекта') return null;
+  const key = normalizeNameKey(normalized);
+  if (cache.projects.has(key)) return cache.projects.get(key);
+
+  const existing = resolveEntityByName(mainStore.projects, normalized);
+  if (existing?._id) {
+    const id = String(existing._id);
+    cache.projects.set(key, id);
+    return id;
+  }
+
+  const created = await mainStore.addProject(normalized);
+  const id = created?._id ? String(created._id) : null;
+  if (id) cache.projects.set(key, id);
+  return id;
+};
+
+const resolveCounterpartyByName = async (name, cache) => {
+  const normalized = normalizeString(name);
+  if (!normalized || normalized.toLowerCase() === 'без контрагента') {
+    return { contractorId: null, counterpartyIndividualId: null };
+  }
+
+  const key = normalizeNameKey(normalized);
+  if (cache.counterparties.has(key)) return cache.counterparties.get(key);
+
+  const contractor = resolveEntityByName(mainStore.contractors, normalized);
+  if (contractor?._id) {
+    const value = { contractorId: String(contractor._id), counterpartyIndividualId: null };
+    cache.counterparties.set(key, value);
+    return value;
+  }
+
+  const individual = resolveEntityByName(mainStore.individuals, normalized);
+  if (individual?._id) {
+    const value = { contractorId: null, counterpartyIndividualId: String(individual._id) };
+    cache.counterparties.set(key, value);
+    return value;
+  }
+
+  const created = await mainStore.addContractor(normalized);
+  const value = { contractorId: created?._id ? String(created._id) : null, counterpartyIndividualId: null };
+  cache.counterparties.set(key, value);
+  return value;
+};
+
+const typeLabelToPayload = (label) => {
+  const normalized = normalizeString(label);
+  if (normalized === 'Расход') return { type: 'expense', isWithdrawal: false };
+  if (normalized === 'Вывод средств') return { type: 'expense', isWithdrawal: true };
+  if (normalized === 'Предоплата') return { type: 'income', isWithdrawal: false };
+  return { type: 'income', isWithdrawal: false };
+};
+
+const buildOperationPayload = async (row, draft, entityCache) => {
+  const adjustedDate = normalizeDateByStatus(draft.date, draft.status);
+  const fallbackDate = toDateInputValue(row?.source?.date);
+  const finalDate = adjustedDate || fallbackDate || getTodayIso();
+  const amount = parseAmountInput(draft.amount);
+  const owner = parseOwnerKey(draft.ownerKey);
+  const categoryId = await ensureCategoryIdByName(draft.categoryName, entityCache);
+  const projectId = await ensureProjectIdByName(draft.projectName, entityCache);
+  const counterparty = await resolveCounterpartyByName(draft.contractorName, entityCache);
+  const typeMeta = typeLabelToPayload(draft.type || row.type);
+
+  return {
+    date: `${finalDate}T00:00:00`,
+    amount,
+    type: typeMeta.type,
+    accountId: normalizeString(draft.accountId) || null,
+    companyId: owner.companyId || null,
+    individualId: owner.individualId || null,
+    contractorId: counterparty.contractorId,
+    counterpartyIndividualId: counterparty.counterpartyIndividualId,
+    categoryId: categoryId || null,
+    projectId: projectId || null,
+    isTransfer: false,
+    isWithdrawal: typeMeta.isWithdrawal
+  };
+};
+
+const buildTransferPayload = (row, draft) => {
+  const adjustedDate = normalizeDateByStatus(draft.date, draft.status);
+  const fallbackDate = toDateInputValue(row?.source?.date);
+  const finalDate = adjustedDate || fallbackDate || getTodayIso();
+  const amount = parseAmountInput(draft.amount);
+  const selectedType = normalizeString(draft.type || row.type);
+  const isWithdrawal = selectedType === 'Вывод средств';
+  const fromOwner = parseOwnerKey(draft.fromOwnerKey);
+  const toOwner = parseOwnerKey(draft.toOwnerKey);
+
+  return {
+    date: `${finalDate}T00:00:00`,
+    amount,
+    fromAccountId: normalizeString(draft.fromAccountId) || extractId(row?.source?.fromAccountId) || null,
+    toAccountId: isWithdrawal ? null : (normalizeString(draft.toAccountId) || extractId(row?.source?.toAccountId) || null),
+    fromCompanyId: fromOwner.companyId || null,
+    fromIndividualId: fromOwner.individualId || null,
+    toCompanyId: isWithdrawal ? null : (toOwner.companyId || null),
+    toIndividualId: isWithdrawal ? null : (toOwner.individualId || null),
+    transferPurpose: isWithdrawal ? 'personal' : (row?.source?.transferPurpose || 'inter_company'),
+    transferReason: isWithdrawal ? 'personal_use' : (row?.source?.transferReason || null)
+  };
+};
+
+const saveEdits = async () => {
+  if (isSavingEdits.value || !isEditMode.value) return;
+
+  isSavingEdits.value = true;
+  loadError.value = '';
+
+  const entityCache = {
+    categories: new Map(),
+    projects: new Map(),
+    counterparties: new Map()
+  };
+
+  try {
+    const rowsToSave = operations.value.filter((row) => isRowChanged(row.rowId));
+
+    for (const row of rowsToSave) {
+      const draft = editRows.value[row.rowId];
+      if (!draft || !row.operationId) continue;
+
+      if (row.isTransfer) {
+        const payload = buildTransferPayload(row, draft);
+        await mainStore.updateTransfer(row.operationId, payload);
+      } else {
+        const payload = await buildOperationPayload(row, draft, entityCache);
+        await mainStore.updateOperation(row.operationId, payload);
+      }
+    }
+
+    await loadOperations();
+    cancelEditMode();
+  } catch (error) {
+    loadError.value = `Не удалось сохранить изменения: ${error?.message || 'Неизвестная ошибка'}`;
+  } finally {
+    isSavingEdits.value = false;
+  }
+};
+
 const filteredOperations = computed(() => {
   const fromTs = filters.value.dateFrom
     ? new Date(`${filters.value.dateFrom}T00:00:00`).getTime()
@@ -275,6 +629,11 @@ const filteredOperations = computed(() => {
   });
 });
 
+const hasDirtyEdits = computed(() => {
+  if (!isEditMode.value) return false;
+  return operations.value.some((row) => isRowChanged(row.rowId));
+});
+
 const filteredCount = computed(() => filteredOperations.value.length);
 const totalCount = computed(() => operations.value.length);
 const summaryTotals = computed(() => {
@@ -291,7 +650,7 @@ const summaryTotals = computed(() => {
       totals.income += amount;
     } else if (row.type === 'Расход') {
       totals.expense += amount;
-    } else if (row.type === 'Перевод') {
+    } else if (row.type === 'Перевод' || row.type === 'Вывод средств') {
       totals.transfer += amount;
     }
   });
@@ -414,6 +773,28 @@ onBeforeUnmount(() => {
               <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
             </transition>
           </div>
+          <div class="edit-actions">
+            <button
+              class="icon-action-btn"
+              :class="{ active: isEditMode }"
+              :disabled="isSavingEdits"
+              @click="toggleEditMode"
+              title="Редактировать сущности"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+              </svg>
+            </button>
+            <button
+              v-if="isEditMode"
+              class="save-edit-btn"
+              :disabled="isSavingEdits || !hasDirtyEdits"
+              @click="saveEdits"
+            >
+              {{ isSavingEdits ? 'Сохранение...' : 'Сохранить' }}
+            </button>
+          </div>
           <button class="close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
@@ -529,7 +910,127 @@ onBeforeUnmount(() => {
                     column === 'Сумма' ? getAmountClass(row) : ''
                   ]"
                 >
-                  <span class="cell-text" :title="row.values[column]">{{ row.values[column] }}</span>
+                  <template v-if="isEditMode && editRows[row.rowId]">
+                    <template v-if="column === 'Дата'">
+                      <input v-model="editRows[row.rowId].date" type="date" class="cell-edit-control" />
+                    </template>
+
+                    <template v-else-if="column === 'Тип'">
+                      <select v-model="editRows[row.rowId].type" class="cell-edit-control has-arrow">
+                        <option v-for="typeOption in typeOptionsForRow(row)" :key="`${row.rowId}-${typeOption}`" :value="typeOption">
+                          {{ typeOption }}
+                        </option>
+                      </select>
+                    </template>
+
+                    <template v-else-if="column === 'Категория'">
+                      <input
+                        v-model="editRows[row.rowId].categoryName"
+                        type="text"
+                        class="cell-edit-control"
+                        placeholder="Категория"
+                      />
+                    </template>
+
+                    <template v-else-if="column === 'Проект'">
+                      <input
+                        v-model="editRows[row.rowId].projectName"
+                        type="text"
+                        class="cell-edit-control"
+                        placeholder="Проект"
+                      />
+                    </template>
+
+                    <template v-else-if="column === 'Сумма'">
+                      <input
+                        v-model="editRows[row.rowId].amount"
+                        type="text"
+                        inputmode="decimal"
+                        class="cell-edit-control align-right"
+                        placeholder="0"
+                      />
+                    </template>
+
+                    <template v-else-if="column === 'Счет'">
+                      <div v-if="row.isTransfer" class="cell-dual-control">
+                        <select v-model="editRows[row.rowId].fromAccountId" class="cell-edit-control has-arrow">
+                          <option value="">Откуда</option>
+                          <option v-for="acc in accountOptions" :key="`${row.rowId}-from-${acc.value}`" :value="acc.value">
+                            {{ acc.label }}
+                          </option>
+                        </select>
+                        <span class="dual-separator">→</span>
+                        <select
+                          v-model="editRows[row.rowId].toAccountId"
+                          class="cell-edit-control has-arrow"
+                          :disabled="editRows[row.rowId].type === 'Вывод средств'"
+                        >
+                          <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Куда' }}</option>
+                          <option v-for="acc in accountOptions" :key="`${row.rowId}-to-${acc.value}`" :value="acc.value">
+                            {{ acc.label }}
+                          </option>
+                        </select>
+                      </div>
+                      <select v-else v-model="editRows[row.rowId].accountId" class="cell-edit-control has-arrow">
+                        <option value="">Без счета</option>
+                        <option v-for="acc in accountOptions" :key="`${row.rowId}-account-${acc.value}`" :value="acc.value">
+                          {{ acc.label }}
+                        </option>
+                      </select>
+                    </template>
+
+                    <template v-else-if="column === 'Контрагент'">
+                      <input
+                        v-model="editRows[row.rowId].contractorName"
+                        type="text"
+                        class="cell-edit-control"
+                        placeholder="Контрагент"
+                      />
+                    </template>
+
+                    <template v-else-if="column === 'Компания/Физлицо'">
+                      <div v-if="row.isTransfer" class="cell-dual-control">
+                        <select v-model="editRows[row.rowId].fromOwnerKey" class="cell-edit-control has-arrow">
+                          <option value="">От кого</option>
+                          <option v-for="owner in ownerOptions" :key="`${row.rowId}-from-owner-${owner.value}`" :value="owner.value">
+                            {{ owner.label }}
+                          </option>
+                        </select>
+                        <span class="dual-separator">→</span>
+                        <select
+                          v-model="editRows[row.rowId].toOwnerKey"
+                          class="cell-edit-control has-arrow"
+                          :disabled="editRows[row.rowId].type === 'Вывод средств'"
+                        >
+                          <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Кому' }}</option>
+                          <option v-for="owner in ownerOptions" :key="`${row.rowId}-to-owner-${owner.value}`" :value="owner.value">
+                            {{ owner.label }}
+                          </option>
+                        </select>
+                      </div>
+                      <select v-else v-model="editRows[row.rowId].ownerKey" class="cell-edit-control has-arrow">
+                        <option value="">Без владельца</option>
+                        <option v-for="owner in ownerOptions" :key="`${row.rowId}-owner-${owner.value}`" :value="owner.value">
+                          {{ owner.label }}
+                        </option>
+                      </select>
+                    </template>
+
+                    <template v-else-if="column === 'Статус'">
+                      <select v-model="editRows[row.rowId].status" class="cell-edit-control has-arrow">
+                        <option v-for="statusOption in statusOptions" :key="`${row.rowId}-${statusOption}`" :value="statusOption">
+                          {{ statusOption }}
+                        </option>
+                      </select>
+                    </template>
+
+                    <template v-else>
+                      <span class="cell-text" :title="row.values[column]">{{ row.values[column] }}</span>
+                    </template>
+                  </template>
+                  <template v-else>
+                    <span class="cell-text" :title="row.values[column]">{{ row.values[column] }}</span>
+                  </template>
                 </td>
               </tr>
             </tbody>
@@ -583,6 +1084,8 @@ onBeforeUnmount(() => {
   padding: 16px 24px;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
+  gap: 12px;
+  min-width: 0;
 }
 
 .modal-header h2 {
@@ -598,6 +1101,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
+  min-width: 0;
 }
 
 .summary-line {
@@ -695,6 +1199,71 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
   white-space: nowrap;
   z-index: 1000;
+}
+
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--editor-cell-text);
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+  line-height: 0;
+}
+
+.icon-action-btn svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 0 auto;
+}
+
+.icon-action-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.icon-action-btn.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.icon-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.save-edit-btn {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #16a34a;
+  background: #22c55e;
+  color: #fff;
+  font-size: 12px;
+  font-weight: var(--fw-semi, 600);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.save-edit-btn:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.save-edit-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .fade-enter-active,
@@ -874,6 +1443,45 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   font-size: 14px;
   font-weight: var(--fw-medium, 500);
+}
+
+.cell-edit-control {
+  width: 100%;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--editor-cell-text);
+  font-size: 13px;
+  font-weight: var(--fw-medium, 500);
+  outline: none;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.cell-edit-control:hover,
+.cell-edit-control:focus {
+  border-color: var(--editor-border);
+  background: var(--editor-row-bg);
+}
+
+.cell-edit-control:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cell-dual-control {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.dual-separator {
+  color: var(--editor-muted-text);
+  font-size: 12px;
+  user-select: none;
 }
 
 .amount-cell .cell-text {

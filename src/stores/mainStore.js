@@ -1816,8 +1816,17 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!oldOp) oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, opId));
 
         if (!oldOp) {
-            const res = await axios.put(`${API_BASE_URL}/events/${opId}`, opData);
-            await refreshDay(res.data.dateKey);
+            const fallbackDateKey = opData.date ? _getDateKey(new Date(opData.date)) : opData.dateKey;
+            const fallbackPayload = {
+                ...opData,
+                dateKey: fallbackDateKey || opData.dateKey
+            };
+            if (fallbackPayload.dateKey && fallbackPayload.cellIndex === undefined) {
+                fallbackPayload.cellIndex = await getFirstFreeCellIndex(fallbackPayload.dateKey);
+            }
+
+            const res = await axios.put(`${API_BASE_URL}/events/${opId}`, fallbackPayload);
+            await refreshDay(fallbackPayload.dateKey || res.data.dateKey);
             // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
             // await fetchSnapshot();
             return res.data;
@@ -1826,12 +1835,17 @@ export const useMainStore = defineStore('mainStore', () => {
         try {
             const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldOp.dateKey);
             const isDateChanged = oldDateKey !== newDateKey;
+            const oldCellIndex = Number.isInteger(oldOp?.cellIndex) ? oldOp.cellIndex : 0;
+            const requestedCellIndex = Number.isInteger(opData?.cellIndex) ? opData.cellIndex : oldCellIndex;
+            const resolvedCellIndex = isDateChanged
+                ? await getFirstFreeCellIndex(newDateKey, requestedCellIndex)
+                : requestedCellIndex;
 
             if (_isEffectivelyPastOrToday(oldOp.date)) {
                 _applyOptimisticSnapshotUpdate(oldOp, -1);
             }
 
-            const mergedOp = { ...oldOp, ...opData };
+            const mergedOp = { ...oldOp, ...opData, dateKey: newDateKey, cellIndex: resolvedCellIndex };
             if (opData.date) mergedOp.date = new Date(opData.date);
 
             const richOp = _populateOp(mergedOp);
@@ -1857,7 +1871,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
             _triggerProjectionUpdate();
 
-            const updatePayload = { ...opData, dateKey: newDateKey };
+            const updatePayload = { ...opData, dateKey: newDateKey, cellIndex: resolvedCellIndex };
 
             const response = await axios.put(`${API_BASE_URL}/events/${opId}`, updatePayload);
 
