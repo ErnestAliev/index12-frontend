@@ -25,6 +25,13 @@ const currentYear = computed(() => currentDate.value.getFullYear());
 // Локальное состояние выбора
 const localRange = ref({ from: null, to: null });
 
+const todayIso = computed(() => {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now - offset).toISOString().slice(0, 10);
+});
+
 watch(() => props.modelValue, (newVal) => {
   localRange.value = { ...newVal };
 }, { deep: true });
@@ -115,6 +122,11 @@ const getDayClass = (dayObj) => {
   return '';
 };
 
+const isToday = (dayObj) => {
+  if (!dayObj || dayObj.isEmpty || !dayObj.date) return false;
+  return dayObj.date === todayIso.value;
+};
+
 const prevMonth = () => { currentDate.value = new Date(currentYear.value, currentMonth.value - 1, 1); };
 const nextMonth = () => { currentDate.value = new Date(currentYear.value, currentMonth.value + 1, 1); };
 
@@ -173,7 +185,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
       <div class="calendar-grid">
         <div v-for="(dayObj, idx) in calendarDays" :key="idx"
           class="calendar-cell"
-          :class="[{ 'is-empty': dayObj.isEmpty }, getDayClass(dayObj)]"
+          :class="[{ 'is-empty': dayObj.isEmpty, 'is-today': isToday(dayObj) }, getDayClass(dayObj)]"
           @click.stop="handleDayClick(dayObj)"
         >
           {{ dayObj.day }}
@@ -227,6 +239,13 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 .calendar-cell { height: 30px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border-radius: 4px; color: var(--color-text); transition: background 0.1s; }
 .calendar-cell:hover:not(.is-empty):not(.is-selected):not(.is-in-range) { background-color: var(--color-background-mute); }
 .calendar-cell.is-empty { cursor: default; }
+.calendar-cell.is-today {
+  border: 1px solid var(--color-primary);
+  font-weight: 600;
+}
 .is-selected { background-color: var(--color-heading); color: #fff; font-weight: 600; }
 .is-in-range { background-color: var(--color-background-mute); color: var(--color-text); }
+.calendar-cell.is-today.is-selected {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+}
 </style>

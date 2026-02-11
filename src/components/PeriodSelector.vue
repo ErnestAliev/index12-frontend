@@ -561,6 +561,10 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.calendar-day.today.selected {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.92);
+}
+
 .calendar-day.selected {
   background: var(--color-primary);
   color: white;

@@ -603,6 +603,10 @@ onMounted(() => {
   border: 2px solid var(--color-primary, #34c759);
 }
 
+.day-cell.is-today.is-selected {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.95);
+}
+
 .day-cell.is-selected {
   background: var(--color-primary, #34c759);
   color: #fff;
