@@ -107,46 +107,48 @@ const tooltipDetails = ref({
   withdrawal: []
 });
 
-// 🟢 1. Получаем список ID исключенных счетов (SAFE)
-const excludedAccountIds = computed(() => {
-  if (visibilityMode.value === 'all') return new Set();
-  const ids = new Set();
-  if (Array.isArray(mainStore.accounts)) {
-    mainStore.accounts.forEach((a) => {
-      if (!a) return;
-      const id = String(a._id);
-      if (visibilityMode.value === 'none') { ids.add(id); return; }
-      if (visibilityMode.value === 'open' && a.isExcluded) ids.add(id);
-      if (visibilityMode.value === 'hidden' && !a.isExcluded) ids.add(id);
-    });
-  }
-  return ids;
-});
+const resolveAccountById = (accountLike) => {
+  if (!accountLike) return null;
+  if (typeof accountLike === 'object' && accountLike._id) return accountLike;
+  const id = typeof accountLike === 'object' ? accountLike._id : accountLike;
+  if (!id) return null;
+  const accounts = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  return accounts.find((a) => a && String(a._id) === String(id)) || null;
+};
 
-// 🟢 2. Хелпер для проверки видимости операции (SAFE)
+const isAccountVisibleInCurrentMode = (accountLike) => {
+  const mode = visibilityMode.value;
+  if (mode === 'none') return false;
+  if (mode === 'all') return true;
+  const acc = resolveAccountById(accountLike);
+  if (!acc) return true;
+  if (mode === 'open') return !acc.isExcluded;
+  if (mode === 'hidden') return !!acc.isExcluded;
+  return true;
+};
+
+// 🟢 1. Хелпер для проверки видимости операции (SAFE)
 const isOpVisible = (op) => {
   if (!op) return false;
-  // Delegate to store logic if available to stay consistent with widgets and balances
-  if (typeof mainStore._isOpVisible === 'function') return mainStore._isOpVisible(op);
   // Управленческий родитель сплита — не считаем. Исключенные из итогов скрываем,
   // но оставляем взаимозачетные расходы (offsetIncomeId), чтобы видеть их на графике/в тултипах.
   if (op.excludeFromTotals && !op.offsetIncomeId) return false;
   if (op.isSplitParent) return false;
 
-  if (!mainStore.includeExcludedInTotal) {
-    const checkId = (idLike) => {
-      if (!idLike) return false;
-      const id = typeof idLike === 'object' ? idLike._id : idLike;
-      return id && excludedAccountIds.value.has(String(id));
-    };
-    if (checkId(op.accountId)) return false;
-    if (checkId(op.fromAccountId)) return false;
-    if (checkId(op.toAccountId)) return false;
-  }
-  return true;
+  // Store-level visibility rules (deletions/permissions/legacy conditions).
+  if (typeof mainStore._isOpVisible === 'function' && !mainStore._isOpVisible(op)) return false;
+
+  // Enforce account visibility mode strictly for graph tooltip data.
+  const mode = visibilityMode.value;
+  if (mode === 'none') return false;
+  if (mode === 'all') return true;
+
+  const linked = [op.accountId, op.fromAccountId, op.toAccountId].filter(Boolean);
+  if (!linked.length) return true;
+  return linked.some((accountLike) => isAccountVisibleInCurrentMode(accountLike));
 };
 
-// 🟢 3. Получаем операции для дня (для графиков/tooltip) из расчетного кэша, иначе из таймлайна
+// 🟢 2. Получаем операции для дня (для графиков/tooltip) из расчетного кэша, иначе из таймлайна
 const getOpsForDateKey = (dateKey) => {
   const calc = mainStore?.calculationCache?.value || mainStore?.calculationCache;
   const fromCalc = calc?.[dateKey];
@@ -1017,7 +1019,7 @@ const accountBalancesByDateKey = computed(() => {
     // For each account, sum all operations up to and including this day
     for (const acc of accs) {
       if (!acc) continue;
-      if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
+      if (!isAccountVisibleInCurrentMode(acc)) continue;
       
       const accId = String(acc._id);
       let balance = Number(acc.initialBalance || 0);
@@ -1647,7 +1649,7 @@ const chartOptions = computed(() => {
               const accs = mainStore?.currentAccountBalances || [];
               const visibleAccs = accs.filter(a => {
                 if (!a) return false;
-                if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
+                if (!isAccountVisibleInCurrentMode(a)) return false;
                 return true;
               });
               

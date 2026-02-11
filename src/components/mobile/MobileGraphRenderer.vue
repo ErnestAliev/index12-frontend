@@ -65,6 +65,7 @@ const normalizedVisibleDays = computed(() => {
 });
 
 const mainStore = useMainStore();
+const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 const historyLoadTick = ref(0);
 
 const isPersonalTransferWithdrawal = (op) => !!op &&
@@ -93,6 +94,26 @@ const tooltipDetails = ref({
   withdrawal: []
 });
 
+const resolveAccountById = (accountLike) => {
+  if (!accountLike) return null;
+  if (typeof accountLike === 'object' && accountLike._id) return accountLike;
+  const id = typeof accountLike === 'object' ? accountLike._id : accountLike;
+  if (!id) return null;
+  const accounts = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  return accounts.find((a) => a && String(a._id) === String(id)) || null;
+};
+
+const isAccountVisibleInCurrentMode = (accountLike) => {
+  const mode = visibilityMode.value;
+  if (mode === 'none') return false;
+  if (mode === 'all') return true;
+  const acc = resolveAccountById(accountLike);
+  if (!acc) return true;
+  if (mode === 'open') return !acc.isExcluded;
+  if (mode === 'hidden') return !!acc.isExcluded;
+  return true;
+};
+
 // Touch tracking for scroll detection
 let touchStartY = 0;
 let touchStartX = 0;
@@ -108,45 +129,29 @@ let rangeUpdateTimer = null;
 let isResizing = false;
 let resizeTimer = null;
 
-// 🟢 1. Получаем список ID исключенных счетов (SAFE)
-const excludedAccountIds = computed(() => {
-  if (mainStore.includeExcludedInTotal) return new Set();
-  const ids = new Set();
-  if (Array.isArray(mainStore.accounts)) {
-    mainStore.accounts.forEach((a) => {
-      if (a && a.isExcluded) {
-        ids.add(String(a._id)); // Always store as String
-      }
-    });
-  }
-  return ids;
-});
-
-// 🟢 2. Хелпер для проверки видимости операции (SAFE)
+// 🟢 1. Хелпер для проверки видимости операции (SAFE)
 const isOpVisible = (op) => {
   if (!op) return false;
-  // Используем основную логику стора, чтобы графики совпадали с виджетами/балансами
-  if (typeof mainStore._isOpVisible === 'function') return mainStore._isOpVisible(op);
   // Управленческие родительские сплиты не считаем.
   // Исключенные из итогов скрываем, кроме взаимозачетных расходов (offsetIncomeId),
   // чтобы они попадали в графики и тултипы.
   if (op.excludeFromTotals && !op.offsetIncomeId) return false;
   if (op.isSplitParent) return false;
 
-  if (!mainStore.includeExcludedInTotal) {
-    const checkId = (idLike) => {
-      if (!idLike) return false;
-      const id = typeof idLike === 'object' ? idLike._id : idLike;
-      return id && excludedAccountIds.value.has(String(id));
-    };
-    if (checkId(op.accountId)) return false;
-    if (checkId(op.fromAccountId)) return false;
-    if (checkId(op.toAccountId)) return false;
-  }
-  return true;
+  // Store-level visibility rules first (delete/legacy/workspace constraints).
+  if (typeof mainStore._isOpVisible === 'function' && !mainStore._isOpVisible(op)) return false;
+
+  // Enforce UI account visibility mode strictly for chart and tooltip data.
+  const mode = visibilityMode.value;
+  if (mode === 'none') return false;
+  if (mode === 'all') return true;
+
+  const linked = [op.accountId, op.fromAccountId, op.toAccountId].filter(Boolean);
+  if (!linked.length) return true;
+  return linked.some((accountLike) => isAccountVisibleInCurrentMode(accountLike));
 };
 
-// 🟢 3. Операции для дня из расчетного кэша (fallback — таймлайн)
+// 🟢 2. Операции для дня из расчетного кэша (fallback — таймлайн)
 const getOpsForDateKey = (dateKey) => {
   const calc = mainStore?.calculationCache?.value || mainStore?.calculationCache;
   const fromCalc = calc?.[dateKey];
@@ -1079,7 +1084,7 @@ const accountBalancesByDateKey = computed(() => {
     // For each account, sum all operations up to and including this day
     for (const acc of accs) {
       if (!acc) continue;
-      if (!mainStore.includeExcludedInTotal && acc.isExcluded) continue;
+      if (!isAccountVisibleInCurrentMode(acc)) continue;
       
       const accId = String(acc._id);
       let balance = Number(acc.initialBalance || 0);
@@ -1680,7 +1685,7 @@ const chartOptions = computed(() => {
               const accs = mainStore?.currentAccountBalances || [];
               const visibleAccs = accs.filter(a => {
                 if (!a) return false;
-                if (!mainStore.includeExcludedInTotal && a.isExcluded) return false;
+                if (!isAccountVisibleInCurrentMode(a)) return false;
                 return true;
               });
               
