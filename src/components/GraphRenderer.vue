@@ -55,9 +55,12 @@ const props = defineProps({
   animate: { type: Boolean, default: true },
   showSummaries: { type: Boolean, default: true },
   visibleDays: { type: Array, default: () => [] },
-  columnCount: { type: Number, default: 12 } // Number of visible columns
+  columnCount: { type: Number, default: 12 }, // Number of visible columns
+  columnTemplate: { type: String, default: '' },
+  enableColumnExpand: { type: Boolean, default: false },
+  expandedColumnIndex: { type: Number, default: -1 }
 });
-const emit = defineEmits(['update:yLabels']);
+const emit = defineEmits(['update:yLabels', 'hover-column']);
 
 // Normalize visibleDays once so ALL calculations (labels, summaries, segments) use the same indexing.
 // This fixes “разрывы/асинхрон” when the range changes (1м/3м) and when some days come in as placeholders.
@@ -515,7 +518,8 @@ const externalTooltipHandler = (context) => {
 
     // If tooltip is pinned, ignore hover updates from other bars (prevents “мешаются”).
     const dp = tooltipModel.dataPoints?.[0];
-    const activeKey = dp ? `idx:${dp.dataIndex}` : '';
+    const activeDayIndex = dp ? Number(dp.dataIndex) : -1;
+    const activeKey = activeDayIndex >= 0 ? `day:${activeDayIndex}` : '';
     if (activeKey) lastActiveKey = activeKey;
     if (tooltipPinned && !tooltipForceUpdate && activeKey && activeKey !== tooltipPinnedKey) {
       return;
@@ -1173,6 +1177,21 @@ watch(
   { immediate: true }
 );
 
+const isExpandedSummaryColumn = (index) => {
+  if (!props.enableColumnExpand) return false;
+  return Number(props.expandedColumnIndex) === Number(index);
+};
+
+const onSummaryMouseEnter = (index) => {
+  if (!props.enableColumnExpand) return;
+  emit('hover-column', index);
+};
+
+const onSummaryMouseLeave = () => {
+  if (!props.enableColumnExpand) return;
+  emit('hover-column', -1);
+};
+
 // Серый столбик = баланс на начало дня (start = остаток предыдущего дня)
 const balanceBarData = computed(() => {
   const _v = mainStore.cacheVersion;
@@ -1500,8 +1519,12 @@ const chartData = computed(() => {
     withdrawalData.push(dayWithdrawalSum);
   }
 
-  const balanceBars = (balanceBarData.value || []).slice(0, labels.length);
-  const balanceCols = (balanceColors.value || []).slice(0, labels.length);
+  const balanceBarsByDay = (balanceBarData.value || []).slice(0, labels.length);
+  const balanceColsByDay = (balanceColors.value || []).slice(0, labels.length);
+  const expenseFloatByDay = (expenseFloatData.value || []).slice(0, labels.length);
+  const expenseFloatColorsByDay = (expenseFloatColors.value || []).slice(0, labels.length);
+  const incomeFloatByDay = (incomeFloatData.value || []).slice(0, labels.length);
+  const incomeFloatColorsByDay = (incomeFloatColors.value || []).slice(0, labels.length);
 
 
   // Keep tooltip details accessible for tooltip callbacks
@@ -1514,6 +1537,10 @@ const chartData = computed(() => {
     transfer: transferDetails
   };
 
+  const renderBalanceBars = balanceBarsByDay;
+  const renderExpenseFloat = expenseFloatByDay;
+  const renderIncomeFloat = incomeFloatByDay;
+
   return {
     labels,
     datasets: [
@@ -1521,8 +1548,8 @@ const chartData = computed(() => {
       {
         type: 'bar',
         label: 'Баланс',
-        data: balanceBars,
-        backgroundColor: balanceCols,
+        data: renderBalanceBars,
+        backgroundColor: balanceColsByDay,
         yAxisID: 'yBalance',
         order: 0,
         grouped: false,
@@ -1535,8 +1562,8 @@ const chartData = computed(() => {
       {
         type: 'bar',
         label: 'Расход',
-        data: (expenseFloatData.value || []).slice(0, labels.length),
-        backgroundColor: (expenseFloatColors.value || []).slice(0, labels.length),
+        data: renderExpenseFloat,
+        backgroundColor: expenseFloatColorsByDay,
         yAxisID: 'yBalance',
         order: 6000, // Рисуется последним
         borderSkipped: false,
@@ -1548,8 +1575,8 @@ const chartData = computed(() => {
       {
         type: 'bar',
         label: 'Доход',
-        data: (incomeFloatData.value || []).slice(0, labels.length),
-        backgroundColor: (incomeFloatColors.value || []).slice(0, labels.length),
+        data: renderIncomeFloat,
+        backgroundColor: incomeFloatColorsByDay,
         yAxisID: 'yBalance',
         order: 5000,
         borderSkipped: false,
@@ -1584,7 +1611,8 @@ const chartOptions = computed(() => {
       }
 
       const usableEl = elements.find((e) => e && e.datasetIndex === 0) || elements[0];
-      const key = `idx:${usableEl.index}`;
+      const dayIndex = Number(usableEl.index);
+      const key = dayIndex >= 0 ? `day:${dayIndex}` : `idx:${usableEl.index}`;
 
       // Clicking the same bar toggles pin off
       if (tooltipPinned && tooltipPinnedKey === key) {
@@ -1620,10 +1648,11 @@ const chartOptions = computed(() => {
           label: (context) => {
             // We render ONE unified tooltip based on the base (balance) dataset only.
             if (context.datasetIndex !== 0) return '';
-            const index = context.dataIndex;
-            const dateLabel = context.chart.data.labels[index];
+            const dayIndex = Number(context.dataIndex);
+            if (dayIndex < 0) return '';
+            const dateLabel = context.chart.data.labels[dayIndex];
 
-            const daySum = Array.isArray(summaries.value) ? summaries.value[index] : null;
+            const daySum = Array.isArray(summaries.value) ? summaries.value[dayIndex] : null;
             const dayIncome = Math.abs(Number(daySum?.income) || 0);
             const dayExpense = Math.abs(Number(daySum?.expense) || 0);
             const dayBalance = Math.max(0, Number(daySum?.balance) || 0);
@@ -1632,7 +1661,7 @@ const chartOptions = computed(() => {
             const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
 
             // === ОСТАТКИ ПО СЧЕТАМ (ИСТОРИЧЕСКИЕ) ===
-            const day = normalizedVisibleDays.value[index];
+            const day = normalizedVisibleDays.value[dayIndex];
             const dateKey = day ? _getDateKey(day.date) : null;
             const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
             
@@ -1674,7 +1703,7 @@ const chartOptions = computed(() => {
             // Собираем детализацию (всегда общий tooltip): сначала доходы, потом расходы, потом переводы
             const safeGet = (key) => {
               const arr = tooltipDetails.value?.[key];
-              return Array.isArray(arr) && Array.isArray(arr[index]) ? arr[index] : [];
+              return Array.isArray(arr) && Array.isArray(arr[dayIndex]) ? arr[dayIndex] : [];
             };
 
             let incomeDetails = [...safeGet('prepayment'), ...safeGet('credit'), ...safeGet('income')];
@@ -1796,10 +1825,20 @@ watch(
       <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
     </div>
 
-    <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${summaries.length}, 1fr)` }">
-      <div v-for="(day, index) in summaries" :key="index" class="day-summary">
+    <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: columnTemplate || `repeat(${summaries.length}, 1fr)` }">
+      <div
+        v-for="(day, index) in summaries"
+        :key="index"
+        class="day-summary"
+        :class="{
+          'is-expanded': isExpandedSummaryColumn(index),
+          'is-collapsed': enableColumnExpand && expandedColumnIndex >= 0 && expandedColumnIndex !== index
+        }"
+        @mouseenter="onSummaryMouseEnter(index)"
+        @mouseleave="onSummaryMouseLeave"
+      >
         <div class="day-date">{{ columnCount >= 21 && day.day ? day.day.getDate() : day.date }}</div>
-        <template v-if="columnCount >= 21">
+        <template v-if="columnCount >= 21 && !isExpandedSummaryColumn(index)">
           <!-- Compact format for 21+ columns -->
           <div class="day-income">₸ {{ formatShortNumber(day.income) }}</div>
           <div class="day-expense">₸ {{ formatShortNumber(day.expense) }}</div>
@@ -1861,23 +1900,45 @@ watch(
   font-size: 0.8em;
   border-right: 1px solid var(--color-border);
   overflow: hidden;
+  min-width: 0;
+  transition: background-color 0.16s ease, padding 0.16s ease, opacity 0.16s ease;
+}
+.day-summary.is-expanded {
+  padding: 8px 10px;
+  background: var(--color-background-soft);
+  z-index: 2;
+}
+.day-summary.is-collapsed {
+  opacity: 0.88;
 }
 .day-date {
   color: var(--day-summary-date);
   font-weight: bold;
   margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .day-income {
   color: var(--color-primary);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .day-expense {
   color: var(--color-danger);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .day-balance {
   color: var(--day-summary-balance-value);
   font-weight: 500;
   margin-top: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

@@ -75,6 +75,7 @@ const setMonthRange = async (baseDate) => {
   start.setHours(0, 0, 0, 0);
   end.setHours(23, 59, 59, 999);
   selectedMonthStart.value = start;
+  const monthDayCount = end.getDate();
   
   // Set periodFilter for widgets - full month
   mainStore.setPeriodFilter({
@@ -90,8 +91,12 @@ const setMonthRange = async (baseDate) => {
   
   let projectionStart = new Date(start);
   let projectionEnd = new Date(end);
-  
-  if (isCurrentMonth) {
+
+  if (isFullMonthColumnMode.value) {
+    // Full-month width mode: no buffer, timeline shows one month without horizontal scroll.
+    projectionStart = new Date(start);
+    projectionEnd = new Date(end);
+  } else if (isCurrentMonth) {
     // Calculate how many days needed for centering (half of visible columns)
     const halfCols = Math.floor(VISIBLE_COLS.value / 2);
     
@@ -126,7 +131,11 @@ const setMonthRange = async (baseDate) => {
   
   mainStore.setProjectionRange(projectionStart, projectionEnd);
   await mainStore.fetchOperationsRange(projectionStart, projectionEnd);
-  scrollToMonthCenter(baseDate);
+  if (isFullMonthColumnMode.value) {
+    setColumnCount(monthDayCount, { fullMonth: true, alignToMonthStart: true });
+  } else {
+    scrollToMonthCenter(baseDate);
+  }
   triggerMonthAnimation();
 };
 
@@ -965,7 +974,19 @@ const _parseDateKey = (dateKey) => {
 const VISIBLE_COLS = ref(11); // Default: 11 columns - today centered at position 5
 const CENTER_INDEX = computed(() => Math.floor((VISIBLE_COLS.value - 1) / 2));
 const viewMode = ref('3m'); // 🔴 VISUALIZATION ONLY - does NOT affect calculations
-const isScrollActive = computed(() => true); // 🔴 FIXED: скролл всегда активен
+const isFullMonthColumnMode = ref(false);
+const getDaysInMonth = (baseDate) => new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0).getDate();
+const fullMonthDays = computed(() => {
+  const base = selectedMonthStart.value ? new Date(selectedMonthStart.value) : new Date(today.value);
+  return getDaysInMonth(base);
+});
+const fullMonthButtonLabel = computed(() => `${fullMonthDays.value}д`);
+const isFullMonthButtonActive = computed(() => isFullMonthColumnMode.value && VISIBLE_COLS.value === fullMonthDays.value);
+const timelineGridTemplateColumns = computed(() => {
+  const count = Math.max(1, Number(VISIBLE_COLS.value) || 1);
+  return `repeat(${count}, minmax(0, 1fr))`;
+});
+const isScrollActive = computed(() => !isFullMonthColumnMode.value);
 // 🔥 UNIFIED: totalDays comes from projection, NOT from viewMode
 const totalDays = computed(() => mainStore.projection?.totalDays || 30);
 watch(totalDays, async () => { await nextTick(); updateScrollbarMetrics(); });
@@ -1205,7 +1226,7 @@ const scrollInterval = ref(null);
 const isAutoScrolling = ref(false);
 const stopAutoScroll = () => { if (scrollInterval.value) { clearInterval(scrollInterval.value); scrollInterval.value = null; } isAutoScrolling.value = false; };
 const onContainerDragOver = (e) => {
-  if (viewMode.value === '11d') return;
+  if (!isScrollActive.value) return;
   if (!timelineGridRef.value) return;
   const rect = timelineGridRef.value.getBoundingClientRect();
   const mouseX = e.clientX;
@@ -1219,16 +1240,53 @@ const onContainerDragLeave = (e) => { stopAutoScroll(); };
 const handleOperationDrop = async (dropData) => { stopAutoScroll(); const operation = dropData.operation; const oldDateKey = operation.dateKey; const newDateKey = dropData.toDateKey; const newCellIndex = dropData.toCellIndex; if (!oldDateKey || !newDateKey) return; if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return; await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex); };
 const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS.value; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
 
-// Set column count and rebuild
-const setColumnCount = (count) => {
-  if (count === VISIBLE_COLS.value) return;
-  VISIBLE_COLS.value = count;
+const alignTimelineToSelectedMonthStart = () => {
+  const rangeStart = mainStore.projection?.rangeStartDate;
+  if (!rangeStart) {
+    clampVirtualStart(0);
+    return;
+  }
+
+  const projectionStart = new Date(rangeStart);
+  projectionStart.setHours(0, 0, 0, 0);
+
+  const monthStart = selectedMonthStart.value ? new Date(selectedMonthStart.value) : new Date(today.value);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const offsetDays = Math.round((monthStart.getTime() - projectionStart.getTime()) / msPerDay);
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
-  // Re-center on today
+  virtualStartIndex.value = Math.max(0, Math.min(offsetDays, maxVirtual));
+  rebuildVisibleDays();
+  nextTick(() => updateScrollbarMetrics());
+};
+
+// Set column count and rebuild
+const setColumnCount = (count, options = {}) => {
+  const { fullMonth = false, alignToMonthStart = false } = options;
+  const modeChanged = isFullMonthColumnMode.value !== fullMonth;
+  if (count === VISIBLE_COLS.value && !modeChanged) {
+    if (fullMonth && alignToMonthStart) alignTimelineToSelectedMonthStart();
+    return;
+  }
+  isFullMonthColumnMode.value = fullMonth;
+  VISIBLE_COLS.value = count;
+
+  if (fullMonth && alignToMonthStart) {
+    alignTimelineToSelectedMonthStart();
+    return;
+  }
+
+  const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
   const targetIndex = Math.max(0, Math.min(globalTodayIndex.value - CENTER_INDEX.value, maxVirtual));
   virtualStartIndex.value = targetIndex;
   rebuildVisibleDays();
   nextTick(() => updateScrollbarMetrics());
+};
+
+const setFullMonthColumnCount = () => {
+  const days = fullMonthDays.value;
+  setColumnCount(days, { fullMonth: true, alignToMonthStart: true });
 };
 
 const clampVirtualStart = (targetDayIndex) => {
@@ -1427,6 +1485,10 @@ const onTrackClick = (e) => { if (e.target.classList.contains('custom-scrollbar-
 
 // 🔴 NEW: Показать скролл и скрыть через 1.5с
 const showScrollbar = () => {
+  if (!isScrollActive.value) {
+    scrollbarVisible.value = false;
+    return;
+  }
   scrollbarVisible.value = true;
   if (scrollbarHideTimeout) clearTimeout(scrollbarHideTimeout);
   scrollbarHideTimeout = setTimeout(() => {
@@ -1795,6 +1857,14 @@ const handleRefundDelete = async (op) => {
             >
               21д
             </button>
+            <button
+              class="column-switcher-btn"
+              :class="{ 'active': isFullMonthButtonActive }"
+              @click="setFullMonthColumnCount"
+              :title="`Полный месяц (${fullMonthButtonLabel})`"
+            >
+              {{ fullMonthButtonLabel }}
+            </button>
           </div>
         </div>
         <div class="divider-placeholder"></div>
@@ -1805,7 +1875,7 @@ const handleRefundDelete = async (op) => {
           <div v-if="isDataLoading" class="section-loading-overlay">
             <div class="spinner-small"></div>
           </div>
-        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ gridTemplateColumns: `repeat(${VISIBLE_COLS}, minmax(0, 1fr))` }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
+        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
         <div class="divider-wrapper" ref="dividerWrapperRef">
@@ -1831,7 +1901,16 @@ const handleRefundDelete = async (op) => {
           <div v-if="isDataLoading" class="section-loading-overlay">
             <div class="spinner-small"></div>
           </div>
-          <GraphRenderer v-if="visibleDays.length" :visibleDays="visibleDays" :columnCount="VISIBLE_COLS" @update:yLabels="yAxisLabels = $event" class="graph-renderer-content" />
+          <GraphRenderer
+            v-if="visibleDays.length"
+            :visibleDays="visibleDays"
+            :columnCount="VISIBLE_COLS"
+            :columnTemplate="timelineGridTemplateColumns"
+            :enableColumnExpand="false"
+            :expandedColumnIndex="-1"
+            @update:yLabels="yAxisLabels = $event"
+            class="graph-renderer-content"
+          />
           <div class="summaries-container"></div>
         </div>
       </main>
@@ -2406,7 +2485,7 @@ const handleRefundDelete = async (op) => {
   cursor: not-allowed !important;
 }
 
-.timeline-grid-content { display: grid; width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
+.timeline-grid-content { display: grid; width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease, grid-template-columns 0.16s ease; }
 .timeline-grid-content.month-transition { transform: translateY(-6px); opacity: 0.9; }
 .divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
 .divider-wrapper .month-label { flex: 0 0 auto; font-weight: 600; font-size: 11px; text-transform: capitalize; color: var(--color-text); line-height: 1; }
