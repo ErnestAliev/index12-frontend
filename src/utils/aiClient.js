@@ -15,7 +15,7 @@ export async function sendAiRequest({
   includeHidden = false,
   visibleAccountIds = null,
   snapshot = null,
-  debugAi = true,
+  debugAi = false,
   periodFilter = null,
   timeline = null,
   timeout = 20000,

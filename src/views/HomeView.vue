@@ -768,7 +768,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       snapshot,
       timeline,
       periodFilter,
-      debugAi: true,
+      debugAi: false,
       timeout: 20000,
     });
     const rawSafe = (rawAnswer || '').toString().trim() || 'Нет ответа.';
