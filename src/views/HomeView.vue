@@ -178,6 +178,193 @@ const aiPaywallReason = ref('AI ассистент доступен по под�
 const aiMessagesRef = ref(null);
 const aiInputRef = ref(null);
 const deepAiMode = ref(false); // Режим развёрнутых ответов (без командных шорткатов)
+const aiAutocompleteOpen = ref(false);
+const aiAutocompleteIndex = ref(-1);
+
+const _normalizeRuToken = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/ё/g, 'е')
+  .replace(/[^a-zа-я0-9\s-]/gi, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const _levenshtein = (aRaw, bRaw) => {
+  const a = _normalizeRuToken(aRaw);
+  const b = _normalizeRuToken(bRaw);
+  if (!a || !b) return Math.max(a.length, b.length);
+  if (a === b) return 0;
+
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= n; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return dp[m][n];
+};
+
+const _similarityRu = (aRaw, bRaw) => {
+  const a = _normalizeRuToken(aRaw);
+  const b = _normalizeRuToken(bRaw);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.92;
+  const dist = _levenshtein(a, b);
+  const maxLen = Math.max(a.length, b.length) || 1;
+  return Math.max(0, 1 - (dist / maxLen));
+};
+
+const _extractEntityName = (row) => {
+  if (!row) return '';
+  if (typeof row === 'string') return row;
+  return String(
+    row.name
+    || row.title
+    || row.label
+    || row.displayName
+    || row.accountName
+    || row.projectName
+    || row.contractorName
+    || row.categoryName
+    || row.companyName
+    || ''
+  ).trim();
+};
+
+const aiAutocompleteDictionary = computed(() => {
+  const map = new Map();
+  const pushCandidate = (rawValue) => {
+    const raw = String(rawValue || '').trim();
+    const norm = _normalizeRuToken(raw);
+    if (!raw || !norm || norm.length < 2) return;
+    if (!map.has(norm)) map.set(norm, raw);
+  };
+
+  const pushEntityNames = (rows) => {
+    if (!Array.isArray(rows)) return;
+    rows.forEach((row) => {
+      const name = _extractEntityName(row);
+      if (!name) return;
+      pushCandidate(name);
+
+      const norm = _normalizeRuToken(name);
+      if (!norm) return;
+      const tokens = norm.split(' ').filter((t) => t.length >= 3);
+      tokens.forEach((token) => pushCandidate(token));
+      for (let i = 0; i < tokens.length; i += 1) {
+        if (i + 1 < tokens.length) pushCandidate(`${tokens[i]} ${tokens[i + 1]}`);
+      }
+    });
+  };
+
+  pushEntityNames(mainStore?.categories);
+  pushEntityNames(mainStore?.projects);
+  pushEntityNames(mainStore?.accounts);
+  pushEntityNames(mainStore?.currentAccountBalances);
+  pushEntityNames(mainStore?.companies);
+  pushEntityNames(mainStore?.contractors);
+  pushEntityNames(mainStore?.individuals);
+
+  const ops = Array.isArray(mainStore?.allKnownOperations) ? mainStore.allKnownOperations.slice(0, 2000) : [];
+  ops.forEach((op) => {
+    pushCandidate(op?.categoryName);
+    pushCandidate(op?.projectName);
+    pushCandidate(op?.contractorName);
+    pushCandidate(op?.accountName);
+    pushCandidate(op?.companyName);
+  });
+
+  [
+    'аренда', 'коммуналка', 'доход', 'расход', 'поступления', 'перевод',
+    'категория', 'проект', 'компания', 'контрагент', 'счет', 'операции',
+    'покажи', 'посчитай'
+  ].forEach((term) => pushCandidate(term));
+
+  return Array.from(map.entries()).map(([norm, value]) => ({ norm, value }));
+});
+
+const _extractAiSuggestionTarget = (textValue) => {
+  const text = String(textValue || '');
+  if (!text || /\s$/.test(text)) return null;
+
+  const byPo = text.match(/(?:^|\s)по\s+([a-zA-Zа-яА-Я0-9-]{2,})$/i);
+  if (byPo && byPo[1]) {
+    const token = byPo[1];
+    return {
+      token,
+      start: text.length - token.length,
+      end: text.length
+    };
+  }
+
+  const lastToken = text.match(/([a-zA-Zа-яА-Я0-9-]{2,})$/i);
+  if (lastToken && lastToken[1]) {
+    const token = lastToken[1];
+    return {
+      token,
+      start: text.length - token.length,
+      end: text.length
+    };
+  }
+  return null;
+};
+
+const aiAutocompleteTarget = computed(() => _extractAiSuggestionTarget(aiInput.value));
+
+const aiInputSuggestions = computed(() => {
+  const target = aiAutocompleteTarget.value;
+  if (!target?.token) return [];
+
+  const tokenNorm = _normalizeRuToken(target.token);
+  if (!tokenNorm || tokenNorm.length < 2) return [];
+
+  const scored = aiAutocompleteDictionary.value
+    .map((row) => {
+      const cand = row.norm;
+      if (!cand || cand === tokenNorm) return null;
+
+      let score = 0;
+      if (cand.startsWith(tokenNorm)) {
+        score = 1.1 + Math.min(0.2, tokenNorm.length / Math.max(1, cand.length));
+      } else if (cand.includes(tokenNorm)) {
+        score = 0.9 + Math.min(0.1, tokenNorm.length / Math.max(1, cand.length));
+      } else {
+        const sim = _similarityRu(tokenNorm, cand);
+        if (sim < 0.68) return null;
+        score = sim;
+      }
+
+      return { ...row, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  const unique = [];
+  const seen = new Set();
+  for (const row of scored) {
+    if (seen.has(row.norm)) continue;
+    seen.add(row.norm);
+    unique.push({ value: row.value, norm: row.norm, score: row.score });
+    if (unique.length >= 6) break;
+  }
+  return unique;
+});
+
+const aiAutocompleteVisible = computed(() => (
+  !aiLoading.value
+  && aiAutocompleteOpen.value
+  && aiInputSuggestions.value.length > 0
+));
 
 // --- Theme management ---
 const currentTheme = ref(localStorage.getItem('theme') || 'dark');
@@ -547,6 +734,30 @@ watch(
       textarea.style.height = 'auto';
       textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
     }
+
+    const target = aiAutocompleteTarget.value;
+    if (target?.token && target.token.length >= 2 && aiInputSuggestions.value.length > 0) {
+      aiAutocompleteOpen.value = true;
+      if (aiAutocompleteIndex.value < 0 || aiAutocompleteIndex.value >= aiInputSuggestions.value.length) {
+        aiAutocompleteIndex.value = 0;
+      }
+    } else {
+      aiAutocompleteOpen.value = false;
+      aiAutocompleteIndex.value = -1;
+    }
+  }
+);
+
+watch(
+  () => aiInputSuggestions.value.length,
+  (len) => {
+    if (!len) {
+      aiAutocompleteIndex.value = -1;
+      return;
+    }
+    if (aiAutocompleteIndex.value < 0 || aiAutocompleteIndex.value >= len) {
+      aiAutocompleteIndex.value = 0;
+    }
   }
 );
 
@@ -618,7 +829,69 @@ const requestAiAccess = () => {
   alert('AI доступен по подписке. Пока платежи не подключены — напиши администратору.');
 };
 
+const applyAiSuggestion = (suggestion) => {
+  const item = suggestion || aiInputSuggestions.value[aiAutocompleteIndex.value];
+  const target = aiAutocompleteTarget.value;
+  if (!item || !target) return;
+
+  const text = String(aiInput.value || '');
+  const before = text.slice(0, target.start);
+  const after = text.slice(target.end);
+  const nextText = `${before}${item.value}${after}`;
+  const caretPos = before.length + String(item.value || '').length;
+
+  aiInput.value = nextText;
+  aiAutocompleteOpen.value = false;
+  aiAutocompleteIndex.value = -1;
+
+  nextTick(() => {
+    const textarea = aiInputRef.value;
+    if (!textarea || typeof textarea.setSelectionRange !== 'function') return;
+    textarea.focus();
+    textarea.setSelectionRange(caretPos, caretPos);
+  });
+};
+
+const handleAiInputFocus = () => {
+  if (aiInputSuggestions.value.length > 0) {
+    aiAutocompleteOpen.value = true;
+    if (aiAutocompleteIndex.value < 0) aiAutocompleteIndex.value = 0;
+  }
+};
+
+const handleAiInputBlur = () => {
+  setTimeout(() => {
+    aiAutocompleteOpen.value = false;
+    aiAutocompleteIndex.value = -1;
+  }, 120);
+};
+
 const handleAiInputKeydown = (event) => {
+  if (event.key === 'Escape' && aiAutocompleteVisible.value) {
+    event.preventDefault();
+    aiAutocompleteOpen.value = false;
+    aiAutocompleteIndex.value = -1;
+    return;
+  }
+
+  if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && aiAutocompleteVisible.value) {
+    event.preventDefault();
+    const max = aiInputSuggestions.value.length - 1;
+    if (max < 0) return;
+    if (event.key === 'ArrowDown') {
+      aiAutocompleteIndex.value = aiAutocompleteIndex.value >= max ? 0 : aiAutocompleteIndex.value + 1;
+    } else {
+      aiAutocompleteIndex.value = aiAutocompleteIndex.value <= 0 ? max : aiAutocompleteIndex.value - 1;
+    }
+    return;
+  }
+
+  if ((event.key === 'Tab' || event.key === 'Enter') && !event.shiftKey && aiAutocompleteVisible.value) {
+    event.preventDefault();
+    applyAiSuggestion(aiInputSuggestions.value[Math.max(0, aiAutocompleteIndex.value)]);
+    return;
+  }
+
   // Shift+Enter: allow new line (default behavior)
   if (event.shiftKey) {
     return; // Let the default behavior add a new line
@@ -642,6 +915,9 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 
   stopAiRecordingIfNeeded();
   if (!text || aiLoading.value) return;
+
+  aiAutocompleteOpen.value = false;
+  aiAutocompleteIndex.value = -1;
 
   aiMessages.value.push(_makeAiMsg('user', text, { userQuestion: text }));
   nextTick(scrollAiToBottom);
@@ -2111,7 +2387,9 @@ const handleRefundDelete = async (op) => {
                 v-model="aiInput"
                 class="ai-input"
                 placeholder="Спросите AI..."
-                @keydown.enter="handleAiInputKeydown"
+                @keydown="handleAiInputKeydown"
+                @focus="handleAiInputFocus"
+                @blur="handleAiInputBlur"
                 rows="1"
               ></textarea>
 
@@ -2145,6 +2423,17 @@ const handleRefundDelete = async (op) => {
                 </button>
               </div>
             </div>
+            <ul v-if="aiAutocompleteVisible" class="ai-suggestions-list">
+              <li
+                v-for="(item, idx) in aiInputSuggestions"
+                :key="`${item.norm}_${idx}`"
+                :class="{ active: idx === aiAutocompleteIndex }"
+                @mouseenter="aiAutocompleteIndex = idx"
+                @mousedown.prevent="applyAiSuggestion(item)"
+              >
+                {{ item.value }}
+              </li>
+            </ul>
           </div>
         </template>
       </div>
@@ -2789,6 +3078,7 @@ const handleRefundDelete = async (op) => {
   border-top: 1px solid var(--color-border);
   background: var(--color-background-soft);
   flex-shrink: 0;
+  position: relative;
 }
 
 .ai-input-wrapper {
@@ -2847,6 +3137,31 @@ const handleRefundDelete = async (op) => {
   gap: 4px;
   flex-shrink: 0;
   align-items: flex-end;
+}
+
+.ai-suggestions-list {
+  margin: 8px 4px 0 4px;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-background);
+  max-height: 188px;
+  overflow-y: auto;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+.ai-suggestions-list li {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ai-suggestions-list li.active,
+.ai-suggestions-list li:hover {
+  background: var(--color-background-soft);
 }
 
 .ai-send-btn {
