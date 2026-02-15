@@ -1,10 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
+import { sendAiRequest } from '@/utils/aiClient.js';
 
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || (isLocalhost ? 'http://localhost:3000/api' : `${window.location.origin}/api`);
 
 const isLoading = ref(false);
 const loadError = ref('');
@@ -14,6 +18,21 @@ const isEditMode = ref(false);
 const isSavingEdits = ref(false);
 const editRows = ref({});
 const baseEditRows = ref({});
+const aiInput = ref('');
+const aiMessages = ref([]);
+const aiLoading = ref(false);
+const aiMessagesRef = ref(null);
+const aiInputRef = ref(null);
+const showAiLogModal = ref(false);
+const aiLogText = ref('');
+const isAiPaneCollapsed = ref(false);
+const aiPaneWidth = ref(25);
+const isResizingAiPane = ref(false);
+const modalBodyRef = ref(null);
+const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
+const isAiRecording = ref(false);
+let aiRecognition = null;
+let aiVoiceConfirmedText = '';
 const filters = ref({
   dateFrom: '',
   dateTo: '',
@@ -37,13 +56,72 @@ const TABLE_COLUMNS = Object.freeze([
   'Компания/Физлицо',
   'Статус'
 ]);
+const QUICK_PROMPTS = Object.freeze([
+  { label: 'Счета', prompt: 'покажи счета' },
+  { label: 'Доходы', prompt: 'покажи доходы' },
+  { label: 'Расходы', prompt: 'покажи расходы' },
+  { label: 'Переводы', prompt: 'покажи переводы' },
+  { label: 'Компании', prompt: 'покажи компании' },
+  { label: 'Проекты', prompt: 'покажи проекты' },
+  { label: 'Контрагенты', prompt: 'покажи контрагентов' },
+  { label: 'Категории', prompt: 'покажи категории' },
+  { label: 'Физлица', prompt: 'покажи физлица' }
+]);
 
 const closeModal = () => {
   emit('close');
 };
+const createAiMessage = (role, text, extra = {}) => ({
+  id: `${role}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+  role,
+  text: String(text || ''),
+  copied: false,
+  ...extra
+});
+
+const scrollAiToBottom = () => {
+  nextTick(() => {
+    const el = aiMessagesRef.value;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  });
+};
+
+const resizeAiInput = () => {
+  nextTick(() => {
+    const input = aiInputRef.value;
+    if (!input) return;
+
+    const paneEl = input.closest('.journal-ai-pane');
+    const paneHeight = paneEl?.clientHeight || window.innerHeight || 0;
+    const maxHeight = Math.max(96, Math.floor(paneHeight * 0.3));
+
+    input.style.height = 'auto';
+    const contentHeight = input.scrollHeight;
+    const nextHeight = Math.min(contentHeight, maxHeight);
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+  });
+};
 
 const normalizeString = (value) => String(value || '').trim();
 const normalizeNameKey = (value) => normalizeString(value).toLowerCase();
+
+const toUtcIsoStart = (dateIso) => {
+  const safe = normalizeString(dateIso);
+  if (!safe) return null;
+  const date = new Date(`${safe}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
+
+const toUtcIsoEnd = (dateIso) => {
+  const safe = normalizeString(dateIso);
+  if (!safe) return null;
+  const date = new Date(`${safe}T23:59:59.999`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
 
 const getTodayIso = () => {
   const now = new Date();
@@ -51,6 +129,37 @@ const getTodayIso = () => {
   const offset = now.getTimezoneOffset() * 60000;
   return new Date(now - offset).toISOString().slice(0, 10);
 };
+
+const buildPeriodFilterForAi = () => {
+  const from = normalizeString(filters.value.dateFrom);
+  const to = normalizeString(filters.value.dateTo);
+
+  if (from || to) {
+    const startIso = toUtcIsoStart(from || to || getTodayIso());
+    const endIso = toUtcIsoEnd(to || from || getTodayIso());
+    if (startIso && endIso) {
+      return {
+        mode: 'custom',
+        customStart: startIso,
+        customEnd: endIso
+      };
+    }
+  }
+
+  const storeFilter = mainStore?.periodFilter;
+  if (storeFilter && storeFilter.mode === 'custom' && (storeFilter.customStart || storeFilter.customEnd)) {
+    return storeFilter;
+  }
+
+  return null;
+};
+
+const buildAiSnapshot = () => ({
+  accounts: Array.isArray(mainStore.currentAccountBalances) && mainStore.currentAccountBalances.length
+    ? mainStore.currentAccountBalances
+    : (Array.isArray(mainStore.accounts) ? mainStore.accounts : []),
+  companies: Array.isArray(mainStore.companies) ? mainStore.companies : []
+});
 
 const shiftIsoDate = (isoDate, diffDays) => {
   if (!isoDate) return '';
@@ -665,6 +774,62 @@ const summaryTotals = computed(() => {
   return totals;
 });
 
+const uniqueSorted = (list) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ru'));
+
+const buildJournalPacketForAi = () => {
+  const rows = filteredOperations.value;
+  const operationsPayload = rows.map((row) => ({
+    id: row.operationId || row.rowId,
+    date: row.editable?.date || '',
+    dateLabel: row.values['Дата'] || '',
+    type: row.values['Тип'] || '',
+    status: row.values['Статус'] || '',
+    amount: Number(row.amount) || 0,
+    account: row.values['Счет'] || '',
+    contractor: row.values['Контрагент'] || '',
+    owner: row.values['Компания/Физлицо'] || '',
+    category: row.values['Категория'] || '',
+    project: row.values['Проект'] || ''
+  }));
+
+  const dictionary = {
+    accounts: uniqueSorted(rows.map((row) => row.values['Счет'] || '')),
+    categories: uniqueSorted(rows.map((row) => row.values['Категория'] || '')),
+    projects: uniqueSorted(rows.map((row) => row.values['Проект'] || '')),
+    contractors: uniqueSorted(rows.map((row) => row.values['Контрагент'] || '')),
+    owners: uniqueSorted(rows.map((row) => row.values['Компания/Физлицо'] || ''))
+  };
+
+  return {
+    source: 'operations_editor',
+    generatedAt: new Date().toISOString(),
+    periodFilter: buildPeriodFilterForAi(),
+    filters: {
+      dateFrom: filters.value.dateFrom || null,
+      dateTo: filters.value.dateTo || null,
+      type: filters.value.type || null,
+      category: filters.value.category || null,
+      project: filters.value.project || null,
+      account: filters.value.account || null,
+      contractor: filters.value.contractor || null,
+      owner: filters.value.owner || null,
+      status: filters.value.status || null
+    },
+    counters: {
+      filtered: filteredCount.value,
+      total: totalCount.value
+    },
+    summary: {
+      income: Number(summaryTotals.value.income) || 0,
+      expense: Number(summaryTotals.value.expense) || 0,
+      transfer: Number(summaryTotals.value.transfer) || 0,
+      net: (Number(summaryTotals.value.income) || 0) - (Number(summaryTotals.value.expense) || 0)
+    },
+    dictionary,
+    operations: operationsPayload
+  };
+};
+
 const getAmountClass = (row) => {
   if (row.type === 'Доход') return 'amount-income';
   if (row.type === 'Расход') return 'amount-expense';
@@ -737,12 +902,215 @@ const copyToClipboard = async () => {
   }
 };
 
+const copyAiText = async (message) => {
+  if (!message?.text) return;
+  try {
+    await navigator.clipboard.writeText(message.text);
+    message.copied = true;
+    setTimeout(() => { message.copied = false; }, 1200);
+  } catch (error) {
+    console.error('Failed to copy AI text:', error);
+  }
+};
+
+const openAiLog = (message) => {
+  aiLogText.value = String(message?.log || '');
+  showAiLogModal.value = true;
+};
+
+const closeAiLog = () => {
+  showAiLogModal.value = false;
+  aiLogText.value = '';
+};
+
+const toggleAiPane = () => {
+  isAiPaneCollapsed.value = !isAiPaneCollapsed.value;
+};
+
+const MIN_AI_PANE_WIDTH = 18;
+const MAX_AI_PANE_WIDTH = 60;
+
+const clampAiPaneWidth = (value) => Math.min(MAX_AI_PANE_WIDTH, Math.max(MIN_AI_PANE_WIDTH, value));
+
+const stopAiPaneResize = () => {
+  if (!isResizingAiPane.value) return;
+  isResizingAiPane.value = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('pointermove', onAiPaneResizeMove);
+  window.removeEventListener('pointerup', stopAiPaneResize);
+  window.removeEventListener('pointercancel', stopAiPaneResize);
+};
+
+const onAiPaneResizeMove = (event) => {
+  if (!isResizingAiPane.value || isAiPaneCollapsed.value) return;
+  const container = modalBodyRef.value;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  if (!rect.width) return;
+
+  const widthPercent = ((rect.right - event.clientX) / rect.width) * 100;
+  aiPaneWidth.value = clampAiPaneWidth(widthPercent);
+};
+
+const startAiPaneResize = (event) => {
+  if (isAiPaneCollapsed.value) return;
+  event.preventDefault();
+  isResizingAiPane.value = true;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', onAiPaneResizeMove);
+  window.addEventListener('pointerup', stopAiPaneResize);
+  window.addEventListener('pointercancel', stopAiPaneResize);
+};
+
+const sendAiMessage = async (forcedMessage = null, options = {}) => {
+  const source = String(options?.source || 'chat');
+  const text = String(forcedMessage === null ? aiInput.value : forcedMessage || '').trim();
+  if (!text || aiLoading.value) return;
+
+  aiMessages.value.push(createAiMessage('user', text));
+  if (forcedMessage === null) aiInput.value = '';
+  aiLoading.value = true;
+  scrollAiToBottom();
+
+  try {
+    const periodFilter = buildPeriodFilterForAi();
+    const isQuickButton = source === 'quick_button';
+    const journalPacket = buildJournalPacketForAi();
+    const { text: answerText, backendResponse, debug, request } = await sendAiRequest({
+      apiBaseUrl: API_BASE_URL,
+      message: text,
+      source,
+      mode: isQuickButton ? 'quick' : 'chat',
+      asOf: new Date().toISOString(),
+      includeHidden: true,
+      visibleAccountIds: null,
+      snapshot: buildAiSnapshot(),
+      journalPacket,
+      debugAi: false,
+      periodFilter,
+      timeline: null
+    });
+
+    const responseText = String(answerText || backendResponse?.text || '').trim() || 'Нет ответа от AI.';
+    aiMessages.value.push(createAiMessage('assistant', responseText, {
+      log: (debug || backendResponse || request)
+        ? JSON.stringify({ backendResponse, debug, request }, null, 2)
+        : null
+    }));
+  } catch (error) {
+    const serverText = String(error?.response?.data?.error || '').trim();
+    const fallbackText = serverText || 'Ошибка AI. Проверьте backend и доступ к AI.';
+    aiMessages.value.push(createAiMessage('assistant', fallbackText));
+  } finally {
+    aiLoading.value = false;
+    scrollAiToBottom();
+  }
+};
+
+const onAiInputKeydown = (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendAiMessage();
+  }
+};
+
+const useQuickPrompt = (promptText) => {
+  if (aiLoading.value) return;
+  aiInput.value = '';
+  nextTick(() => {
+    sendAiMessage(promptText, { source: 'quick_button' });
+  });
+};
+
+const ensureAiRecognition = () => {
+  if (aiRecognition) return aiRecognition;
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) return null;
+
+  const rec = new SpeechRec();
+  rec.lang = 'ru-RU';
+  rec.interimResults = true;
+  rec.continuous = true;
+
+  rec.onresult = (event) => {
+    if (!isAiRecording.value) return;
+
+    let interimText = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const res = event.results[i];
+      const transcript = String(res?.[0]?.transcript || '').trim();
+      if (!transcript) continue;
+
+      if (res.isFinal) aiVoiceConfirmedText = `${aiVoiceConfirmedText} ${transcript}`.trim();
+      else interimText = transcript;
+    }
+
+    aiInput.value = `${aiVoiceConfirmedText}${interimText ? ` ${interimText}` : ''}`.trim();
+  };
+
+  rec.onend = () => {
+    isAiRecording.value = false;
+    aiVoiceConfirmedText = '';
+  };
+
+  rec.onerror = () => {
+    isAiRecording.value = false;
+    aiVoiceConfirmedText = '';
+  };
+
+  aiRecognition = rec;
+  return rec;
+};
+
+const toggleAiRecording = async () => {
+  if (aiLoading.value || !aiSpeechSupported.value) return;
+  const rec = ensureAiRecognition();
+  if (!rec) return;
+
+  if (isAiRecording.value) {
+    try { rec.stop(); } catch (_) {}
+    isAiRecording.value = false;
+    aiVoiceConfirmedText = '';
+    return;
+  }
+
+  aiVoiceConfirmedText = '';
+  isAiRecording.value = true;
+  try {
+    rec.start();
+    await nextTick();
+    aiInputRef.value?.focus?.();
+  } catch (_) {
+    isAiRecording.value = false;
+    aiVoiceConfirmedText = '';
+  }
+};
+
+watch(() => aiMessages.value.length, () => {
+  scrollAiToBottom();
+});
+
+watch(() => aiInput.value, () => {
+  resizeAiInput();
+});
+
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   loadOperations();
+  resizeAiInput();
+  window.addEventListener('resize', resizeAiInput);
 });
 
 onBeforeUnmount(() => {
+  stopAiPaneResize();
+  if (aiRecognition) {
+    try { aiRecognition.stop(); } catch (_) {}
+    aiRecognition = null;
+  }
+  window.removeEventListener('resize', resizeAiInput);
   document.body.style.overflow = '';
 });
 </script>
@@ -750,298 +1118,434 @@ onBeforeUnmount(() => {
 <template>
   <div class="modal-overlay" @click.self="closeModal">
     <div class="editor-modal operations-editor-modal">
-      <div class="modal-header">
-        <h2>Редактор операций</h2>
+      <div
+        class="modal-header"
+        :class="{ 'ai-collapsed': isAiPaneCollapsed }"
+        :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
+      >
+        <div class="modal-header-main">
+          <h2>Редактор операций</h2>
 
-        <div class="header-actions">
-          <div class="summary-line">
-            <span class="summary-item income">Доход: {{ formatSummaryAmount(summaryTotals.income) }}</span>
-            <span class="summary-item expense">Расход: {{ formatSummaryAmount(summaryTotals.expense) }}</span>
-            <span class="summary-item transfer">Перевод: {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
+          <div class="header-actions">
+            <div class="summary-line">
+              <span class="summary-item income">Доход: {{ formatSummaryAmount(summaryTotals.income) }}</span>
+              <span class="summary-item expense">Расход: {{ formatSummaryAmount(summaryTotals.expense) }}</span>
+              <span class="summary-item transfer">Перевод: {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
+            </div>
+            <span class="counter-label">Записей: {{ filteredCount }} / {{ totalCount }}</span>
+            <div class="export-buttons">
+              <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                CSV
+              </button>
+              <button class="export-btn copy-btn" @click="copyToClipboard" title="Копировать">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                Копировать
+              </button>
+              <transition name="fade">
+                <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
+              </transition>
+            </div>
+            <div class="edit-actions">
+              <button
+                class="icon-action-btn"
+                :class="{ active: isEditMode }"
+                :disabled="isSavingEdits"
+                @click="toggleEditMode"
+                title="Редактировать сущности"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                </svg>
+              </button>
+              <button
+                v-if="isEditMode"
+                class="save-edit-btn"
+                :disabled="isSavingEdits || !hasDirtyEdits"
+                @click="saveEdits"
+              >
+                {{ isSavingEdits ? 'Сохранение...' : 'Сохранить' }}
+              </button>
+            </div>
           </div>
-          <span class="counter-label">Записей: {{ filteredCount }} / {{ totalCount }}</span>
-          <div class="export-buttons">
-            <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              CSV
-            </button>
-            <button class="export-btn copy-btn" @click="copyToClipboard" title="Копировать">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-              Копировать
-            </button>
-            <transition name="fade">
-              <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
-            </transition>
-          </div>
-          <div class="edit-actions">
-            <button
-              class="icon-action-btn"
-              :class="{ active: isEditMode }"
-              :disabled="isSavingEdits"
-              @click="toggleEditMode"
-              title="Редактировать сущности"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-              </svg>
-            </button>
-            <button
-              v-if="isEditMode"
-              class="save-edit-btn"
-              :disabled="isSavingEdits || !hasDirtyEdits"
-              @click="saveEdits"
-            >
-              {{ isSavingEdits ? 'Сохранение...' : 'Сохранить' }}
-            </button>
-          </div>
-          <button class="close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal-header-ai">
+          <span class="modal-header-ai-title">AI Ассистент</span>
+          <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
 
-      <div class="modal-body">
-        <div v-if="loadError" class="status-row">
-          <span class="status-text error">{{ loadError }}</span>
-        </div>
+      <button
+        v-if="isAiPaneCollapsed"
+        class="close-btn modal-close-floating"
+        @click="closeModal"
+        aria-label="Закрыть"
+      >
+        &times;
+      </button>
 
-        <div class="table-wrap">
-          <table class="settings-table operations-table">
-            <colgroup>
-              <col class="col-date" />
-              <col class="col-type" />
-              <col class="col-category" />
-              <col class="col-project" />
-              <col class="col-amount" />
-              <col class="col-account" />
-              <col class="col-contractor" />
-              <col class="col-owner" />
-              <col class="col-status" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>
-                  <DateRangePicker
-                    v-model="dateRangeFilter"
-                    placeholder="Дата"
-                    class="header-date-filter"
-                  />
-                </th>
+      <div
+        class="modal-body"
+        ref="modalBodyRef"
+        :class="{ 'ai-collapsed': isAiPaneCollapsed, 'ai-resizing': isResizingAiPane }"
+        :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
+      >
+        <section class="operations-pane">
+          <div v-if="loadError" class="status-row">
+            <span class="status-text error">{{ loadError }}</span>
+          </div>
 
-                <th>
-                  <select v-model="filters.type" class="header-filter-control has-arrow">
-                    <option value="">Тип</option>
-                    <option v-for="opt in filterOptions.type" :key="`type-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                </th>
+          <div class="table-wrap">
+            <table class="settings-table operations-table">
+              <colgroup>
+                <col class="col-date" />
+                <col class="col-type" />
+                <col class="col-category" />
+                <col class="col-project" />
+                <col class="col-amount" />
+                <col class="col-account" />
+                <col class="col-contractor" />
+                <col class="col-owner" />
+                <col class="col-status" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>
+                    <DateRangePicker
+                      v-model="dateRangeFilter"
+                      placeholder="Дата"
+                      class="header-date-filter"
+                    />
+                  </th>
 
-                <th>
-                  <select v-model="filters.category" class="header-filter-control has-arrow">
-                    <option value="">Категория</option>
-                    <option v-for="opt in filterOptions.category" :key="`category-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                </th>
+                  <th>
+                    <select v-model="filters.type" class="header-filter-control has-arrow">
+                      <option value="">Тип</option>
+                      <option v-for="opt in filterOptions.type" :key="`type-${opt}`" :value="opt">{{ opt }}</option>
+                    </select>
+                  </th>
 
-                <th>
-                  <select v-model="filters.project" class="header-filter-control has-arrow">
-                    <option value="">Проект</option>
-                    <option v-for="opt in filterOptions.project" :key="`project-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                </th>
+                  <th>
+                    <select v-model="filters.category" class="header-filter-control has-arrow">
+                      <option value="">Категория</option>
+                      <option v-for="opt in filterOptions.category" :key="`category-${opt}`" :value="opt">{{ opt }}</option>
+                    </select>
+                  </th>
 
-                <th class="align-right">
-                  <span class="header-static">Сумма</span>
-                </th>
+                  <th>
+                    <select v-model="filters.project" class="header-filter-control has-arrow">
+                      <option value="">Проект</option>
+                      <option v-for="opt in filterOptions.project" :key="`project-${opt}`" :value="opt">{{ opt }}</option>
+                    </select>
+                  </th>
 
-                <th>
-                  <select v-model="filters.account" class="header-filter-control has-arrow">
-                    <option value="">Счет</option>
-                    <option v-for="opt in filterOptions.account" :key="`account-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                </th>
+                  <th class="align-right">
+                    <span class="header-static">Сумма</span>
+                  </th>
 
-                <th>
-                  <select v-model="filters.contractor" class="header-filter-control has-arrow">
-                    <option value="">Контрагент</option>
-                    <option
-                      v-for="opt in filterOptions.contractor"
-                      :key="`contractor-${opt}`"
-                      :value="opt"
-                    >
-                      {{ opt }}
-                    </option>
-                  </select>
-                </th>
+                  <th>
+                    <select v-model="filters.account" class="header-filter-control has-arrow">
+                      <option value="">Счет</option>
+                      <option v-for="opt in filterOptions.account" :key="`account-${opt}`" :value="opt">{{ opt }}</option>
+                    </select>
+                  </th>
 
-                <th>
-                  <select v-model="filters.owner" class="header-filter-control has-arrow">
-                    <option value="">Компания/Физлицо</option>
-                    <option v-for="opt in filterOptions.owner" :key="`owner-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                </th>
+                  <th>
+                    <select v-model="filters.contractor" class="header-filter-control has-arrow">
+                      <option value="">Контрагент</option>
+                      <option
+                        v-for="opt in filterOptions.contractor"
+                        :key="`contractor-${opt}`"
+                        :value="opt"
+                      >
+                        {{ opt }}
+                      </option>
+                    </select>
+                  </th>
 
-                <th>
-                  <select v-model="filters.status" class="header-filter-control has-arrow">
-                    <option value="">Статус</option>
-                    <option v-for="opt in filterOptions.status" :key="`status-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                </th>
-              </tr>
-            </thead>
+                  <th>
+                    <select v-model="filters.owner" class="header-filter-control has-arrow">
+                      <option value="">Компания/Физлицо</option>
+                      <option v-for="opt in filterOptions.owner" :key="`owner-${opt}`" :value="opt">{{ opt }}</option>
+                    </select>
+                  </th>
 
-            <tbody>
-              <tr v-if="isLoading" class="placeholder-row">
-                <td :colspan="TABLE_COLUMNS.length">Загрузка операций...</td>
-              </tr>
+                  <th>
+                    <select v-model="filters.status" class="header-filter-control has-arrow">
+                      <option value="">Статус</option>
+                      <option v-for="opt in filterOptions.status" :key="`status-${opt}`" :value="opt">{{ opt }}</option>
+                    </select>
+                  </th>
+                </tr>
+              </thead>
 
-              <tr v-else-if="operations.length === 0" class="placeholder-row">
-                <td :colspan="TABLE_COLUMNS.length">Нет операций</td>
-              </tr>
+              <tbody>
+                <tr v-if="isLoading" class="placeholder-row">
+                  <td :colspan="TABLE_COLUMNS.length">Загрузка операций...</td>
+                </tr>
 
-              <tr v-else-if="filteredOperations.length === 0" class="placeholder-row">
-                <td :colspan="TABLE_COLUMNS.length">По фильтрам ничего не найдено</td>
-              </tr>
+                <tr v-else-if="operations.length === 0" class="placeholder-row">
+                  <td :colspan="TABLE_COLUMNS.length">Нет операций</td>
+                </tr>
 
-              <tr v-for="row in filteredOperations" :key="row.rowId">
-                <td
-                  v-for="column in TABLE_COLUMNS"
-                  :key="`${row.rowId}-${column}`"
-                  :class="[
-                    column === 'Сумма' ? 'align-right amount-cell' : '',
-                    column === 'Сумма' ? getAmountClass(row) : ''
-                  ]"
-                >
-                  <template v-if="isEditMode && editRows[row.rowId]">
-                    <template v-if="column === 'Дата'">
-                      <input v-model="editRows[row.rowId].date" type="date" class="cell-edit-control" />
-                    </template>
+                <tr v-else-if="filteredOperations.length === 0" class="placeholder-row">
+                  <td :colspan="TABLE_COLUMNS.length">По фильтрам ничего не найдено</td>
+                </tr>
 
-                    <template v-else-if="column === 'Тип'">
-                      <select v-model="editRows[row.rowId].type" class="cell-edit-control has-arrow">
-                        <option v-for="typeOption in typeOptionsForRow(row)" :key="`${row.rowId}-${typeOption}`" :value="typeOption">
-                          {{ typeOption }}
-                        </option>
-                      </select>
-                    </template>
+                <tr v-for="row in filteredOperations" :key="row.rowId">
+                  <td
+                    v-for="column in TABLE_COLUMNS"
+                    :key="`${row.rowId}-${column}`"
+                    :class="[
+                      column === 'Сумма' ? 'align-right amount-cell' : '',
+                      column === 'Сумма' ? getAmountClass(row) : ''
+                    ]"
+                  >
+                    <template v-if="isEditMode && editRows[row.rowId]">
+                      <template v-if="column === 'Дата'">
+                        <input v-model="editRows[row.rowId].date" type="date" class="cell-edit-control" />
+                      </template>
 
-                    <template v-else-if="column === 'Категория'">
-                      <input
-                        v-model="editRows[row.rowId].categoryName"
-                        type="text"
-                        class="cell-edit-control"
-                        placeholder="Категория"
-                      />
-                    </template>
+                      <template v-else-if="column === 'Тип'">
+                        <select v-model="editRows[row.rowId].type" class="cell-edit-control has-arrow">
+                          <option v-for="typeOption in typeOptionsForRow(row)" :key="`${row.rowId}-${typeOption}`" :value="typeOption">
+                            {{ typeOption }}
+                          </option>
+                        </select>
+                      </template>
 
-                    <template v-else-if="column === 'Проект'">
-                      <input
-                        v-model="editRows[row.rowId].projectName"
-                        type="text"
-                        class="cell-edit-control"
-                        placeholder="Проект"
-                      />
-                    </template>
+                      <template v-else-if="column === 'Категория'">
+                        <input
+                          v-model="editRows[row.rowId].categoryName"
+                          type="text"
+                          class="cell-edit-control"
+                          placeholder="Категория"
+                        />
+                      </template>
 
-                    <template v-else-if="column === 'Сумма'">
-                      <input
-                        v-model="editRows[row.rowId].amount"
-                        type="text"
-                        inputmode="decimal"
-                        class="cell-edit-control align-right"
-                        placeholder="0"
-                      />
-                    </template>
+                      <template v-else-if="column === 'Проект'">
+                        <input
+                          v-model="editRows[row.rowId].projectName"
+                          type="text"
+                          class="cell-edit-control"
+                          placeholder="Проект"
+                        />
+                      </template>
 
-                    <template v-else-if="column === 'Счет'">
-                      <div v-if="row.isTransfer" class="cell-dual-control">
-                        <select v-model="editRows[row.rowId].fromAccountId" class="cell-edit-control has-arrow">
-                          <option value="">Откуда</option>
-                          <option v-for="acc in accountOptions" :key="`${row.rowId}-from-${acc.value}`" :value="acc.value">
+                      <template v-else-if="column === 'Сумма'">
+                        <input
+                          v-model="editRows[row.rowId].amount"
+                          type="text"
+                          inputmode="decimal"
+                          class="cell-edit-control align-right"
+                          placeholder="0"
+                        />
+                      </template>
+
+                      <template v-else-if="column === 'Счет'">
+                        <div v-if="row.isTransfer" class="cell-dual-control">
+                          <select v-model="editRows[row.rowId].fromAccountId" class="cell-edit-control has-arrow">
+                            <option value="">Откуда</option>
+                            <option v-for="acc in accountOptions" :key="`${row.rowId}-from-${acc.value}`" :value="acc.value">
+                              {{ acc.label }}
+                            </option>
+                          </select>
+                          <span class="dual-separator">→</span>
+                          <select
+                            v-model="editRows[row.rowId].toAccountId"
+                            class="cell-edit-control has-arrow"
+                            :disabled="editRows[row.rowId].type === 'Вывод средств'"
+                          >
+                            <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Куда' }}</option>
+                            <option v-for="acc in accountOptions" :key="`${row.rowId}-to-${acc.value}`" :value="acc.value">
+                              {{ acc.label }}
+                            </option>
+                          </select>
+                        </div>
+                        <select v-else v-model="editRows[row.rowId].accountId" class="cell-edit-control has-arrow">
+                          <option value="">Без счета</option>
+                          <option v-for="acc in accountOptions" :key="`${row.rowId}-account-${acc.value}`" :value="acc.value">
                             {{ acc.label }}
                           </option>
                         </select>
-                        <span class="dual-separator">→</span>
-                        <select
-                          v-model="editRows[row.rowId].toAccountId"
-                          class="cell-edit-control has-arrow"
-                          :disabled="editRows[row.rowId].type === 'Вывод средств'"
-                        >
-                          <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Куда' }}</option>
-                          <option v-for="acc in accountOptions" :key="`${row.rowId}-to-${acc.value}`" :value="acc.value">
-                            {{ acc.label }}
-                          </option>
-                        </select>
-                      </div>
-                      <select v-else v-model="editRows[row.rowId].accountId" class="cell-edit-control has-arrow">
-                        <option value="">Без счета</option>
-                        <option v-for="acc in accountOptions" :key="`${row.rowId}-account-${acc.value}`" :value="acc.value">
-                          {{ acc.label }}
-                        </option>
-                      </select>
-                    </template>
+                      </template>
 
-                    <template v-else-if="column === 'Контрагент'">
-                      <input
-                        v-model="editRows[row.rowId].contractorName"
-                        type="text"
-                        class="cell-edit-control"
-                        placeholder="Контрагент"
-                      />
-                    </template>
+                      <template v-else-if="column === 'Контрагент'">
+                        <input
+                          v-model="editRows[row.rowId].contractorName"
+                          type="text"
+                          class="cell-edit-control"
+                          placeholder="Контрагент"
+                        />
+                      </template>
 
-                    <template v-else-if="column === 'Компания/Физлицо'">
-                      <div v-if="row.isTransfer" class="cell-dual-control">
-                        <select v-model="editRows[row.rowId].fromOwnerKey" class="cell-edit-control has-arrow">
-                          <option value="">От кого</option>
-                          <option v-for="owner in ownerOptions" :key="`${row.rowId}-from-owner-${owner.value}`" :value="owner.value">
+                      <template v-else-if="column === 'Компания/Физлицо'">
+                        <div v-if="row.isTransfer" class="cell-dual-control">
+                          <select v-model="editRows[row.rowId].fromOwnerKey" class="cell-edit-control has-arrow">
+                            <option value="">От кого</option>
+                            <option v-for="owner in ownerOptions" :key="`${row.rowId}-from-owner-${owner.value}`" :value="owner.value">
+                              {{ owner.label }}
+                            </option>
+                          </select>
+                          <span class="dual-separator">→</span>
+                          <select
+                            v-model="editRows[row.rowId].toOwnerKey"
+                            class="cell-edit-control has-arrow"
+                            :disabled="editRows[row.rowId].type === 'Вывод средств'"
+                          >
+                            <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Кому' }}</option>
+                            <option v-for="owner in ownerOptions" :key="`${row.rowId}-to-owner-${owner.value}`" :value="owner.value">
+                              {{ owner.label }}
+                            </option>
+                          </select>
+                        </div>
+                        <select v-else v-model="editRows[row.rowId].ownerKey" class="cell-edit-control has-arrow">
+                          <option value="">Без владельца</option>
+                          <option v-for="owner in ownerOptions" :key="`${row.rowId}-owner-${owner.value}`" :value="owner.value">
                             {{ owner.label }}
                           </option>
                         </select>
-                        <span class="dual-separator">→</span>
-                        <select
-                          v-model="editRows[row.rowId].toOwnerKey"
-                          class="cell-edit-control has-arrow"
-                          :disabled="editRows[row.rowId].type === 'Вывод средств'"
-                        >
-                          <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Кому' }}</option>
-                          <option v-for="owner in ownerOptions" :key="`${row.rowId}-to-owner-${owner.value}`" :value="owner.value">
-                            {{ owner.label }}
+                      </template>
+
+                      <template v-else-if="column === 'Статус'">
+                        <select v-model="editRows[row.rowId].status" class="cell-edit-control has-arrow">
+                          <option v-for="statusOption in statusOptions" :key="`${row.rowId}-${statusOption}`" :value="statusOption">
+                            {{ statusOption }}
                           </option>
                         </select>
-                      </div>
-                      <select v-else v-model="editRows[row.rowId].ownerKey" class="cell-edit-control has-arrow">
-                        <option value="">Без владельца</option>
-                        <option v-for="owner in ownerOptions" :key="`${row.rowId}-owner-${owner.value}`" :value="owner.value">
-                          {{ owner.label }}
-                        </option>
-                      </select>
-                    </template>
+                      </template>
 
-                    <template v-else-if="column === 'Статус'">
-                      <select v-model="editRows[row.rowId].status" class="cell-edit-control has-arrow">
-                        <option v-for="statusOption in statusOptions" :key="`${row.rowId}-${statusOption}`" :value="statusOption">
-                          {{ statusOption }}
-                        </option>
-                      </select>
+                      <template v-else>
+                        <span class="cell-text" :title="row.values[column]">{{ row.values[column] }}</span>
+                      </template>
                     </template>
-
                     <template v-else>
                       <span class="cell-text" :title="row.values[column]">{{ row.values[column] }}</span>
                     </template>
-                  </template>
-                  <template v-else>
-                    <span class="cell-text" :title="row.values[column]">{{ row.values[column] }}</span>
-                  </template>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="journal-ai-pane">
+          <div class="journal-ai-quick-row">
+            <button
+              v-for="item in QUICK_PROMPTS"
+              :key="item.prompt"
+              class="ai-quick-btn"
+              :disabled="aiLoading"
+              @click="useQuickPrompt(item.prompt)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+
+          <div class="journal-ai-messages" ref="aiMessagesRef">
+            <div v-if="aiMessages.length === 0" class="journal-ai-empty">
+              Спросите по операциям за выбранный период.
+            </div>
+
+            <div v-for="message in aiMessages" :key="message.id" class="journal-ai-message" :class="message.role">
+              <div class="journal-ai-bubble">
+                <div class="journal-ai-text">{{ message.text }}</div>
+                <div class="journal-ai-actions" v-if="message.role === 'assistant'">
+                  <button class="journal-ai-copy-btn" @click="copyAiText(message)">
+                    {{ message.copied ? '✅' : 'Копировать' }}
+                  </button>
+                  <button v-if="message.log" class="journal-ai-log-btn" @click="openAiLog(message)">Log</button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="aiLoading" class="journal-ai-typing">Думаю...</div>
+          </div>
+
+          <div class="ai-input-container">
+            <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+              </svg>
+            </button>
+
+            <textarea
+              ref="aiInputRef"
+              v-model="aiInput"
+              class="ai-input"
+              placeholder="Спросите AI Как дела?"
+              rows="1"
+              @input="resizeAiInput"
+              @keydown="onAiInputKeydown"
+            ></textarea>
+
+            <div class="ai-input-buttons">
+              <button
+                class="ai-mic-btn"
+                :class="{ recording: isAiRecording }"
+                :disabled="aiLoading || !aiSpeechSupported"
+                @click="toggleAiRecording"
+                :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+                  <path d="M19 11a7 7 0 0 1-14 0" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              </button>
+
+              <button
+                class="ai-send-btn"
+                :disabled="aiLoading || !(aiInput || '').trim()"
+                @click="sendAiMessage"
+                title="Отправить"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <div
+          v-if="!isAiPaneCollapsed"
+          class="ai-pane-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Изменить ширину панели чата"
+          @pointerdown="startAiPaneResize"
+        ></div>
+
+        <button
+          class="ai-pane-toggle-btn"
+          type="button"
+          @click="toggleAiPane"
+          :title="isAiPaneCollapsed ? 'Развернуть чат' : 'Свернуть чат'"
+          :aria-label="isAiPaneCollapsed ? 'Развернуть чат' : 'Свернуть чат'"
+          :aria-expanded="String(!isAiPaneCollapsed)"
+        >
+          {{ isAiPaneCollapsed ? '<' : '>' }}
+        </button>
+      </div>
+
+      <div v-if="showAiLogModal" class="journal-ai-log-modal" @click.self="closeAiLog">
+        <div class="journal-ai-log-content">
+          <div class="journal-ai-log-header">
+            <span>AI лог</span>
+            <button class="journal-ai-log-close" @click="closeAiLog">×</button>
+          </div>
+          <pre class="journal-ai-log-body">{{ aiLogText }}</pre>
         </div>
       </div>
     </div>
@@ -1071,6 +1575,13 @@ onBeforeUnmount(() => {
   --editor-row-alt-bg: var(--ui-panel-bg, var(--color-background-soft));
   --editor-cell-text: var(--text-main, var(--color-text));
   --editor-muted-text: var(--text-soft, var(--color-heading));
+  --ai-pane-bg: var(--color-background-soft);
+  --ai-pane-surface: var(--color-background);
+  --ai-pane-surface-soft: var(--color-background-soft);
+  --ai-pane-hover: var(--color-background-mute, var(--color-background-soft));
+  --ai-pane-border: var(--editor-border);
+  --ai-pane-text: var(--color-text);
+  --ai-pane-muted: var(--editor-muted-text);
 
   width: 95vw;
   height: 90vh;
@@ -1084,15 +1595,89 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+:global([data-theme="dark"]) .editor-modal {
+  --ai-pane-bg: #181818;
+  --ai-pane-surface: #181818;
+  --ai-pane-surface-soft: #181818;
+  --ai-pane-hover: #1d2632;
+  --ai-pane-border: #2a3442;
+  --ai-pane-text: #d5dfeb;
+  --ai-pane-muted: #99a8bb;
+}
+
+:global(html[data-theme="dark"]) .journal-ai-pane {
+  background: #181818 !important;
+  border-left-color: #1e2a39 !important;
+}
+
+:global(html[data-theme="dark"]) .editor-modal .journal-ai-messages {
+  background: #181818 !important;
+}
+
+:global([data-theme="dark"]) .ai-input-container {
+  background: #181818;
+  border-top-color: #253140;
+}
+
+:global([data-theme="dark"]) .journal-ai-bubble {
+  background: #232323;
+  border-color: #2c394b;
+}
+
+:global([data-theme="dark"]) .journal-ai-copy-btn,
+:global([data-theme="dark"]) .journal-ai-log-btn {
+  background: #17212d;
+  border-color: #2c394b;
+  color: #c8d3e2;
+}
+
 .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px;
+  --ai-pane-width: 25%;
+  display: grid;
+  grid-template-columns: calc(100% - var(--ai-pane-width)) var(--ai-pane-width);
+  align-items: stretch;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
+  min-width: 0;
+}
+
+.modal-header.ai-collapsed {
+  grid-template-columns: 1fr 0;
+}
+
+.modal-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   gap: 12px;
   min-width: 0;
+  padding: 16px 24px;
+}
+
+.modal-header-ai {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px 12px;
+  min-width: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  gap: 10px;
+}
+
+.modal-header-ai-title {
+  color: var(--ai-pane-text);
+  font-size: 13px;
+  font-weight: var(--fw-semi, 600);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.modal-header.ai-collapsed .modal-header-ai {
+  opacity: 0;
+  pointer-events: none;
+  padding: 0;
+  border-left-color: transparent;
 }
 
 .modal-header h2 {
@@ -1106,9 +1691,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 12px;
   min-width: 0;
+  flex: 1;
+  border-left: 1px solid var(--color-border);
+  padding-left: 12px;
 }
 
 .summary-line {
@@ -1284,31 +1872,58 @@ onBeforeUnmount(() => {
 }
 
 .close-btn {
-  background: none;
-  border: none;
-  font-size: 32px;
-  color: var(--editor-muted-text);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  font-size: 20px;
+  color: var(--editor-cell-text);
   cursor: pointer;
   padding: 0;
   line-height: 1;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
 
 .close-btn:hover {
-  color: var(--editor-cell-text);
+  background: var(--color-background-mute);
+  border-color: var(--color-border-hover, var(--color-border));
+}
+
+.modal-close-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.modal-close-floating {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
 }
 
 .modal-body {
+  --ai-pane-width: 25%;
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: calc(100% - var(--ai-pane-width)) var(--ai-pane-width);
   background: var(--color-background);
   min-height: 0;
+  position: relative;
+}
+
+.modal-body.ai-collapsed {
+  grid-template-columns: 1fr 0;
+}
+
+.operations-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .status-row {
@@ -1331,9 +1946,390 @@ onBeforeUnmount(() => {
 .table-wrap {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   border-top: 1px solid var(--editor-border);
   background: var(--editor-row-bg);
+}
+
+.journal-ai-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-bg);
+  overflow: hidden;
+  transition: opacity 0.22s ease, border-color 0.22s ease;
+}
+
+.modal-body.ai-collapsed .journal-ai-pane {
+  opacity: 0;
+  pointer-events: none;
+  border-left-color: transparent;
+}
+
+.ai-pane-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100% - var(--ai-pane-width));
+  width: 10px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 6;
+  touch-action: none;
+}
+
+.ai-pane-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--ai-pane-border);
+  transition: background-color 0.15s, width 0.15s;
+}
+
+.ai-pane-resizer:hover::before,
+.modal-body.ai-resizing .ai-pane-resizer::before {
+  width: 2px;
+  background: var(--color-primary);
+}
+
+.ai-pane-toggle-btn {
+  position: absolute;
+  top: 10px;
+  right: calc(var(--ai-pane-width) - 14px);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-surface);
+  color: var(--ai-pane-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 7;
+  transition: right 0.22s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.ai-pane-toggle-btn:hover {
+  background: var(--ai-pane-hover);
+  border-color: var(--color-primary);
+}
+
+.modal-body.ai-collapsed .ai-pane-toggle-btn {
+  right: 8px;
+}
+
+.journal-ai-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--ai-pane-bg);
+}
+
+.journal-ai-empty {
+  color: var(--ai-pane-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.journal-ai-message {
+  display: flex;
+}
+
+.journal-ai-message.user {
+  justify-content: flex-end;
+}
+
+.journal-ai-message.assistant {
+  justify-content: flex-start;
+}
+
+.journal-ai-bubble {
+  max-width: 92%;
+  border-radius: 12px;
+  border: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-surface);
+  padding: 10px 12px;
+}
+
+.journal-ai-message.user .journal-ai-bubble {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.journal-ai-text {
+  white-space: pre-wrap;
+  color: var(--ai-pane-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.journal-ai-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.journal-ai-copy-btn,
+.journal-ai-log-btn {
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-surface-soft);
+  color: var(--ai-pane-text);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.journal-ai-copy-btn:hover,
+.journal-ai-log-btn:hover {
+  background: var(--ai-pane-hover);
+}
+
+.journal-ai-typing {
+  color: var(--ai-pane-muted);
+  font-size: 12px;
+  padding: 0 2px 4px;
+}
+
+.journal-ai-quick-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-surface-soft);
+  flex-shrink: 0;
+}
+
+.ai-quick-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-surface-soft);
+  color: var(--ai-pane-text);
+  font-size: 12px;
+  font-weight: var(--fw-semi, 600);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ai-quick-btn:hover:not(:disabled) {
+  background: var(--ai-pane-hover);
+  border-color: var(--color-primary);
+}
+
+.ai-quick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-input-container {
+  padding: 8px 10px;
+  border-top: 1px solid var(--ai-pane-border);
+  background: var(--ai-pane-surface-soft);
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.ai-attach-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--ai-pane-muted);
+  cursor: not-allowed;
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.ai-input {
+  flex: 1;
+  min-height: 32px;
+  max-height: none;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--ai-pane-text);
+  padding: 6px 2px;
+  outline: none;
+  resize: none;
+  overflow-y: hidden;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ai-input::placeholder {
+  color: var(--ai-pane-muted);
+}
+
+.ai-input-buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: end;
+  margin-bottom: 1px;
+}
+
+.ai-send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary);
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, transform 0.08s;
+}
+
+.ai-send-btn:hover {
+  background: #28a745;
+}
+
+.ai-send-btn:active {
+  transform: scale(0.96);
+}
+
+.ai-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: var(--ai-pane-hover);
+  color: var(--ai-pane-muted);
+  transform: none;
+}
+
+.ai-mic-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--ai-pane-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, transform 0.08s;
+}
+
+.ai-mic-btn:hover {
+  background: var(--ai-pane-hover);
+}
+
+.ai-mic-btn:active {
+  transform: scale(0.96);
+}
+
+.ai-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ai-mic-btn.recording {
+  color: #fff;
+  background: var(--color-primary);
+  animation: aiPulse 1.5s ease-in-out infinite, aiWave 2s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes aiWave {
+  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.6); }
+  50% { box-shadow: 0 0 0 12px rgba(52, 199, 89, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
+}
+
+.ai-send-btn svg,
+.ai-mic-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex: none;
+}
+
+.journal-ai-log-modal {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3100;
+}
+
+.journal-ai-log-content {
+  width: min(760px, 92vw);
+  max-height: 78vh;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.journal-ai-log-header {
+  height: 42px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  color: var(--color-heading);
+  font-weight: var(--fw-semi, 600);
+}
+
+.journal-ai-log-close {
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.journal-ai-log-body {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text);
+  background: var(--color-background-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .settings-table {
@@ -1560,6 +2556,24 @@ onBeforeUnmount(() => {
   z-index: 3200;
 }
 
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-pane,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-messages,
+:global(html[data-theme="dark"]) .operations-editor-modal .ai-input-container,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-bubble,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-copy-btn,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-btn,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-content,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-header,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-body {
+  background: #181818 !important;
+}
+
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-message.user .journal-ai-bubble,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-message.assistant .journal-ai-bubble {
+  background: #232323 !important;
+  border-color: #2f2f2f !important;
+}
+
 @media (max-width: 1024px) {
   .editor-modal {
     width: 98vw;
@@ -1567,8 +2581,21 @@ onBeforeUnmount(() => {
     border-radius: 10px;
   }
 
-  .modal-header {
+  .modal-header-main {
     padding: 14px 16px;
+  }
+
+  .modal-header-ai {
+    padding: 14px 8px;
+  }
+
+  .modal-close-btn {
+    margin-left: auto;
+  }
+
+  .modal-close-floating {
+    top: 10px;
+    right: 10px;
   }
 
   .modal-header h2 {
