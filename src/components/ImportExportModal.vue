@@ -778,6 +778,24 @@ const uniqueSorted = (list) => Array.from(new Set(list.filter(Boolean))).sort((a
 
 const buildJournalPacketForAi = () => {
   const rows = filteredOperations.value;
+  const summaryByStatus = {
+    fact: { count: 0, income: 0, expense: 0, transfer: 0, net: 0 },
+    plan: { count: 0, income: 0, expense: 0, transfer: 0, net: 0 }
+  };
+
+  rows.forEach((row) => {
+    const bucket = row.values['Статус'] === 'План' ? summaryByStatus.plan : summaryByStatus.fact;
+    const amount = Math.abs(Number(row.amount) || 0);
+    bucket.count += 1;
+
+    if (row.type === 'Доход') bucket.income += amount;
+    else if (row.type === 'Расход') bucket.expense += amount;
+    else if (row.type === 'Перевод' || row.type === 'Вывод средств') bucket.transfer += amount;
+  });
+
+  summaryByStatus.fact.net = summaryByStatus.fact.income - summaryByStatus.fact.expense;
+  summaryByStatus.plan.net = summaryByStatus.plan.income - summaryByStatus.plan.expense;
+
   const operationsPayload = rows.map((row) => ({
     id: row.operationId || row.rowId,
     date: row.editable?.date || '',
@@ -825,6 +843,7 @@ const buildJournalPacketForAi = () => {
       transfer: Number(summaryTotals.value.transfer) || 0,
       net: (Number(summaryTotals.value.income) || 0) - (Number(summaryTotals.value.expense) || 0)
     },
+    summaryByStatus,
     dictionary,
     operations: operationsPayload
   };
