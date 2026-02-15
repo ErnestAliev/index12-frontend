@@ -1154,7 +1154,7 @@ onBeforeUnmount(() => {
         :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
       >
         <div class="modal-header-main">
-          <h2>Редактор операций</h2>
+          <h2>Журнал операций</h2>
 
           <div class="header-actions">
             <div class="summary-line">

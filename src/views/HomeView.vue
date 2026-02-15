@@ -1269,7 +1269,7 @@ const handleRefundDelete = async (op) => {
           </button>
 
           <!-- 🟢 NEW: Hide import/export for timeline-only -->
-          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" data-tooltip="Редактор операций">
+          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" data-tooltip="Журнал операций">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
               <path d="M5 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"></path>
