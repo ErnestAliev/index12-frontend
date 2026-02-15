@@ -177,7 +177,6 @@ const aiPaywall = ref(false);
 const aiPaywallReason = ref('AI ассистент доступен по подписке.');
 const aiMessagesRef = ref(null);
 const aiInputRef = ref(null);
-const deepAiMode = ref(false); // Режим развёрнутых ответов (без командных шорткатов)
 const aiAutocompleteOpen = ref(false);
 const aiAutocompleteIndex = ref(-1);
 const aiAutoReplaceGuard = ref(false);
@@ -1193,7 +1192,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       message: text,
       source,
       quickKey,
-      mode: deepAiMode.value ? 'deep' : 'freeform',
+      mode: 'freeform',
       asOf,
       includeHidden,
       visibleAccountIds,
@@ -2508,9 +2507,6 @@ const handleRefundDelete = async (op) => {
               <button class="ai-quick-btn" @click="useQuickPrompt('покажи категории')">Категории</button>
               <button class="ai-quick-btn" @click="useQuickPrompt('покажи физлица')">Физлица</button>
             </div>
-            <button class="ai-deep-btn" :class="{ active: deepAiMode }" @click="deepAiMode = !deepAiMode">
-              Deep
-            </button>
           </div>
 
           <div class="ai-messages" ref="aiMessagesRef">
@@ -3103,29 +3099,6 @@ const handleRefundDelete = async (op) => {
 .ai-quick-btn:hover { 
   background: var(--color-background-mute); 
   border-color: var(--color-border-hover); 
-}
-
-.ai-deep-btn {
-  margin-left: auto;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background-soft);
-  color: var(--color-text);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-}
-.ai-deep-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.ai-deep-btn.active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
-  box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.18);
 }
 
 .ai-messages {
