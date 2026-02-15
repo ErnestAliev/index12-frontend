@@ -303,7 +303,25 @@ const normalizeTypeLabel = (op) => {
   return 'Операция';
 };
 
-const normalizeStatusLabel = (op) => {
+const resolveStatusMeta = (op) => {
+  const raw = normalizeString(op?.status).toLowerCase();
+  if (raw) {
+    if (['plan', 'planned', 'forecast', 'прогноз', 'план'].includes(raw)) {
+      return { label: 'План', code: 'plan', source: 'explicit_status' };
+    }
+    if (['fact', 'done', 'executed', 'исполнено', 'выполнено'].includes(raw)) {
+      return { label: 'Исполнено', code: 'fact', source: 'explicit_status' };
+    }
+  }
+
+  if (op?.isPlanned === true || op?.planned === true || op?.isForecast === true || op?.forecast === true || op?.isPlan === true) {
+    return { label: 'План', code: 'plan', source: 'explicit_flag' };
+  }
+
+  if (op?.isPlanned === false || op?.planned === false || op?.isForecast === false || op?.forecast === false || op?.isPlan === false) {
+    return { label: 'Исполнено', code: 'fact', source: 'explicit_flag' };
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -312,13 +330,21 @@ const normalizeStatusLabel = (op) => {
     opDate.setHours(0, 0, 0, 0);
   }
 
-  const isPlan = op?.status === 'plan' || (!Number.isNaN(opDate.getTime()) && opDate.getTime() > today.getTime());
-  return isPlan ? 'План' : 'Исполнено';
+  const isPlan = !Number.isNaN(opDate.getTime()) && opDate.getTime() > today.getTime();
+  return isPlan
+    ? { label: 'План', code: 'plan', source: 'date_fallback' }
+    : { label: 'Исполнено', code: 'fact', source: 'date_fallback' };
+};
+
+const normalizeStatusLabel = (op) => {
+  const statusMeta = resolveStatusMeta(op);
+  return statusMeta.label;
 };
 
 const buildOperationRow = (op) => {
   const typeLabel = normalizeTypeLabel(op);
-  const statusLabel = normalizeStatusLabel(op);
+  const statusMeta = resolveStatusMeta(op);
+  const statusLabel = statusMeta.label;
   const parsedDate = new Date(op?.date);
   const dateTs = Number.isNaN(parsedDate.getTime()) ? null : parsedDate.getTime();
   const isTransfer = isTransferOperation(op);
@@ -371,6 +397,8 @@ const buildOperationRow = (op) => {
     isWithdrawal,
     source: op,
     amount: amountForDisplay,
+    statusCode: statusMeta.code,
+    statusSource: statusMeta.source,
     dateTs,
     editable: {
       date: toDateInputValue(op?.date),
@@ -793,19 +821,84 @@ const buildJournalPacketForAi = () => {
     fact: { count: 0, income: 0, expense: 0, transfer: 0, net: 0 },
     plan: { count: 0, income: 0, expense: 0, transfer: 0, net: 0 }
   };
+  const totalsByType = {
+    income: { fact: 0, plan: 0, total: 0, countFact: 0, countPlan: 0, countTotal: 0 },
+    expense: { fact: 0, plan: 0, total: 0, countFact: 0, countPlan: 0, countTotal: 0 },
+    transfer: { fact: 0, plan: 0, total: 0, countFact: 0, countPlan: 0, countTotal: 0 }
+  };
+  const byProject = new Map();
+  const byCategory = new Map();
+  const ensureBreakdown = (map, key, labelField) => {
+    if (!map.has(key)) {
+      map.set(key, {
+        [labelField]: key,
+        incomeFact: 0,
+        incomePlan: 0,
+        incomeTotal: 0,
+        expenseFact: 0,
+        expensePlan: 0,
+        expenseTotal: 0,
+        netFact: 0,
+        netPlan: 0,
+        netTotal: 0
+      });
+    }
+    return map.get(key);
+  };
 
   rows.forEach((row) => {
-    const bucket = row.values['Статус'] === 'План' ? summaryByStatus.plan : summaryByStatus.fact;
+    const isPlan = row.statusCode === 'plan';
+    const bucket = isPlan ? summaryByStatus.plan : summaryByStatus.fact;
+    const bucketKey = isPlan ? 'plan' : 'fact';
     const amount = Math.abs(Number(row.amount) || 0);
     bucket.count += 1;
 
-    if (row.type === 'Доход') bucket.income += amount;
-    else if (row.type === 'Расход') bucket.expense += amount;
-    else if (row.type === 'Перевод' || row.type === 'Вывод средств') bucket.transfer += amount;
+    const projectKey = row.values['Проект'] || 'Без проекта';
+    const categoryKey = row.values['Категория'] || 'Без категории';
+    const projectStats = ensureBreakdown(byProject, projectKey, 'project');
+    const categoryStats = ensureBreakdown(byCategory, categoryKey, 'category');
+
+    if (row.type === 'Доход') {
+      bucket.income += amount;
+      totalsByType.income[bucketKey] += amount;
+      totalsByType.income.total += amount;
+      totalsByType.income.countTotal += 1;
+      totalsByType.income[isPlan ? 'countPlan' : 'countFact'] += 1;
+      projectStats[isPlan ? 'incomePlan' : 'incomeFact'] += amount;
+      projectStats.incomeTotal += amount;
+      categoryStats[isPlan ? 'incomePlan' : 'incomeFact'] += amount;
+      categoryStats.incomeTotal += amount;
+    } else if (row.type === 'Расход') {
+      bucket.expense += amount;
+      totalsByType.expense[bucketKey] += amount;
+      totalsByType.expense.total += amount;
+      totalsByType.expense.countTotal += 1;
+      totalsByType.expense[isPlan ? 'countPlan' : 'countFact'] += 1;
+      projectStats[isPlan ? 'expensePlan' : 'expenseFact'] += amount;
+      projectStats.expenseTotal += amount;
+      categoryStats[isPlan ? 'expensePlan' : 'expenseFact'] += amount;
+      categoryStats.expenseTotal += amount;
+    } else if (row.type === 'Перевод' || row.type === 'Вывод средств') {
+      bucket.transfer += amount;
+      totalsByType.transfer[bucketKey] += amount;
+      totalsByType.transfer.total += amount;
+      totalsByType.transfer.countTotal += 1;
+      totalsByType.transfer[isPlan ? 'countPlan' : 'countFact'] += 1;
+    }
   });
 
   summaryByStatus.fact.net = summaryByStatus.fact.income - summaryByStatus.fact.expense;
   summaryByStatus.plan.net = summaryByStatus.plan.income - summaryByStatus.plan.expense;
+  const finalizeBreakdown = (item) => {
+    item.netFact = item.incomeFact - item.expenseFact;
+    item.netPlan = item.incomePlan - item.expensePlan;
+    item.netTotal = item.incomeTotal - item.expenseTotal;
+    return item;
+  };
+  const byProjectList = Array.from(byProject.values()).map(finalizeBreakdown)
+    .sort((a, b) => Math.abs(b.netTotal) - Math.abs(a.netTotal));
+  const byCategoryList = Array.from(byCategory.values()).map(finalizeBreakdown)
+    .sort((a, b) => Math.abs(b.netTotal) - Math.abs(a.netTotal));
 
   const operationsPayload = rows.map((row) => ({
     id: row.operationId || row.rowId,
@@ -813,6 +906,8 @@ const buildJournalPacketForAi = () => {
     dateLabel: row.values['Дата'] || '',
     type: row.values['Тип'] || '',
     status: row.values['Статус'] || '',
+    statusCode: row.statusCode || (row.values['Статус'] === 'План' ? 'plan' : 'fact'),
+    statusSource: row.statusSource || 'unknown',
     amount: Number(row.amount) || 0,
     account: row.values['Счет'] || '',
     contractor: row.values['Контрагент'] || '',
@@ -855,6 +950,23 @@ const buildJournalPacketForAi = () => {
       net: (Number(summaryTotals.value.income) || 0) - (Number(summaryTotals.value.expense) || 0)
     },
     summaryByStatus,
+    aggregates: {
+      income: totalsByType.income,
+      expense: totalsByType.expense,
+      transfer: totalsByType.transfer,
+      net: {
+        fact: summaryByStatus.fact.net,
+        plan: summaryByStatus.plan.net,
+        total: summaryByStatus.fact.net + summaryByStatus.plan.net
+      },
+      byProject: byProjectList,
+      byCategory: byCategoryList
+    },
+    statusLegend: {
+      fact: 'Исполнено',
+      plan: 'План',
+      defaultFallback: 'date_fallback'
+    },
     dictionary,
     operations: operationsPayload
   };
@@ -1015,9 +1127,9 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
       source,
       mode: isQuickButton ? 'quick' : 'chat',
       asOf: getLocalIsoNow(),
-      includeHidden: true,
+      includeHidden: isQuickButton,
       visibleAccountIds: null,
-      snapshot: buildAiSnapshot(),
+      snapshot: isQuickButton ? buildAiSnapshot() : null,
       journalPacket,
       debugAi: false,
       periodFilter,
