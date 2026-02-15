@@ -180,6 +180,9 @@ const aiInputRef = ref(null);
 const deepAiMode = ref(false); // Режим развёрнутых ответов (без командных шорткатов)
 const aiAutocompleteOpen = ref(false);
 const aiAutocompleteIndex = ref(-1);
+const aiAutoReplaceGuard = ref(false);
+const aiLastAutoReplaceKey = ref('');
+const aiAutoReplaceEnabled = ref(true);
 
 const _normalizeRuToken = (value) => String(value || '')
   .toLowerCase()
@@ -241,13 +244,52 @@ const _extractEntityName = (row) => {
   ).trim();
 };
 
+const AI_PRIORITY_VOCAB = [
+  'Счета',
+  'Доходы',
+  'Расходы',
+  'Переводы',
+  'Компании',
+  'Проекты',
+  'Контрагенты',
+  'Категории',
+  'Физлица',
+  'Физлицо',
+  'Доход',
+  'Расход',
+  'Поступления',
+  'Перевод',
+  'Категория',
+  'Проект',
+  'Компания',
+  'Контрагент',
+  'Счет',
+  'Операции',
+  'Редактор операций',
+  'Графики',
+  'Редактор счетов',
+  'AI ассистент',
+  'Рабочие области',
+  'Генератор квитанций',
+  'О сервисе',
+  'Светлая тема',
+  'Темная тема',
+];
+
 const aiAutocompleteDictionary = computed(() => {
   const map = new Map();
-  const pushCandidate = (rawValue) => {
+  const pushCandidate = (rawValue, { priority = false } = {}) => {
     const raw = String(rawValue || '').trim();
     const norm = _normalizeRuToken(raw);
     if (!raw || !norm || norm.length < 2) return;
-    if (!map.has(norm)) map.set(norm, raw);
+    const cur = map.get(norm);
+    if (!cur) {
+      map.set(norm, { value: raw, priority: !!priority });
+      return;
+    }
+    if (!cur.priority && priority) {
+      map.set(norm, { value: raw, priority: true });
+    }
   };
 
   const pushEntityNames = (rows) => {
@@ -284,13 +326,17 @@ const aiAutocompleteDictionary = computed(() => {
     pushCandidate(op?.companyName);
   });
 
+  AI_PRIORITY_VOCAB.forEach((term) => pushCandidate(term, { priority: true }));
+
   [
-    'аренда', 'коммуналка', 'доход', 'расход', 'поступления', 'перевод',
-    'категория', 'проект', 'компания', 'контрагент', 'счет', 'операции',
-    'покажи', 'посчитай'
+    'аренда', 'коммуналка', 'покажи', 'посчитай'
   ].forEach((term) => pushCandidate(term));
 
-  return Array.from(map.entries()).map(([norm, value]) => ({ norm, value }));
+  return Array.from(map.entries()).map(([norm, payload]) => ({
+    norm,
+    value: payload?.value || norm,
+    priority: !!payload?.priority
+  }));
 });
 
 const _extractAiSuggestionTarget = (textValue) => {
@@ -331,10 +377,12 @@ const aiInputSuggestions = computed(() => {
   const scored = aiAutocompleteDictionary.value
     .map((row) => {
       const cand = row.norm;
-      if (!cand || cand === tokenNorm) return null;
+      if (!cand) return null;
 
       let score = 0;
-      if (cand.startsWith(tokenNorm)) {
+      if (cand === tokenNorm) {
+        score = 1.35;
+      } else if (cand.startsWith(tokenNorm)) {
         score = 1.1 + Math.min(0.2, tokenNorm.length / Math.max(1, cand.length));
       } else if (cand.includes(tokenNorm)) {
         score = 0.9 + Math.min(0.1, tokenNorm.length / Math.max(1, cand.length));
@@ -343,6 +391,8 @@ const aiInputSuggestions = computed(() => {
         if (sim < 0.68) return null;
         score = sim;
       }
+
+      if (row.priority) score += 0.12;
 
       return { ...row, score };
     })
@@ -365,6 +415,96 @@ const aiAutocompleteVisible = computed(() => (
   && aiAutocompleteOpen.value
   && aiInputSuggestions.value.length > 0
 ));
+
+const aiRecognizedTerms = computed(() => {
+  const textNorm = _normalizeRuToken(aiInput.value);
+  if (!textNorm || textNorm.length < 2) return [];
+
+  const tokenSet = new Set(textNorm.split(' ').filter((t) => t.length >= 2));
+  const hits = aiAutocompleteDictionary.value
+    .filter((row) => {
+      if (!row?.norm) return false;
+      if (row.norm.includes(' ')) return textNorm.includes(row.norm);
+      return tokenSet.has(row.norm);
+    })
+    .sort((a, b) => b.norm.length - a.norm.length);
+
+  const out = [];
+  const seen = new Set();
+  for (const row of hits) {
+    if (seen.has(row.norm)) continue;
+    seen.add(row.norm);
+    out.push({ value: row.value, norm: row.norm });
+    if (out.length >= 8) break;
+  }
+  return out;
+});
+
+const _shouldAutoApplyAiSuggestion = ({ tokenNorm, best, second }) => {
+  if (!tokenNorm || !best) return false;
+  if (tokenNorm.length < 4) return false;
+
+  const bestNorm = _normalizeRuToken(best.norm || best.value || '');
+  if (!bestNorm || bestNorm === tokenNorm) return false;
+
+  const simBest = _similarityRu(tokenNorm, bestNorm);
+  const secondNorm = _normalizeRuToken(second?.norm || second?.value || '');
+  const simSecond = secondNorm ? _similarityRu(tokenNorm, secondNorm) : 0;
+
+  const prefixUnique = (
+    bestNorm.startsWith(tokenNorm)
+    && Number(best.score || 0) >= 1.15
+    && (!second || (Number(best.score || 0) - Number(second.score || 0)) >= 0.12)
+  );
+
+  const typoUnique = (
+    simBest >= 0.9
+    && (simBest - simSecond) >= 0.08
+  );
+
+  return prefixUnique || typoUnique;
+};
+
+const maybeAutoReplaceAiToken = () => {
+  if (aiAutoReplaceGuard.value) return;
+
+  const target = aiAutocompleteTarget.value;
+  if (!target?.token) return;
+
+  const [best, second] = aiInputSuggestions.value;
+  if (!best) return;
+
+  const tokenNorm = _normalizeRuToken(target.token);
+  if (!_shouldAutoApplyAiSuggestion({ tokenNorm, best, second })) return;
+
+  const replacement = String(best.value || '').trim();
+  if (!replacement) return;
+
+  const currentText = String(aiInput.value || '');
+  const before = currentText.slice(0, target.start);
+  const after = currentText.slice(target.end);
+  const nextText = `${before}${replacement}${after}`;
+  if (!nextText || nextText === currentText) return;
+
+  const guardKey = `${target.start}:${tokenNorm}->${_normalizeRuToken(replacement)}@${_normalizeRuToken(currentText)}`;
+  if (aiLastAutoReplaceKey.value === guardKey) return;
+  aiLastAutoReplaceKey.value = guardKey;
+
+  aiAutoReplaceGuard.value = true;
+  aiInput.value = nextText;
+  aiAutocompleteOpen.value = false;
+  aiAutocompleteIndex.value = -1;
+
+  nextTick(() => {
+    const textarea = aiInputRef.value;
+    if (textarea && typeof textarea.setSelectionRange === 'function') {
+      const caretPos = before.length + replacement.length;
+      textarea.focus();
+      textarea.setSelectionRange(caretPos, caretPos);
+    }
+    aiAutoReplaceGuard.value = false;
+  });
+};
 
 // --- Theme management ---
 const currentTheme = ref(localStorage.getItem('theme') || 'dark');
@@ -727,7 +867,7 @@ watch(
 // Auto-resize textarea based on content
 watch(
   () => aiInput.value,
-  async () => {
+  async (nextValue, prevValue) => {
     await nextTick();
     const textarea = aiInputRef.value;
     if (textarea) {
@@ -744,6 +884,15 @@ watch(
     } else {
       aiAutocompleteOpen.value = false;
       aiAutocompleteIndex.value = -1;
+    }
+
+    const nextLen = String(nextValue || '').length;
+    const prevLen = String(prevValue || '').length;
+    const isTextShrinking = nextLen < prevLen;
+    if (isTextShrinking) return;
+
+    if (!aiLoading.value && aiAutoReplaceEnabled.value) {
+      maybeAutoReplaceAiToken();
     }
   }
 );
@@ -867,6 +1016,15 @@ const handleAiInputBlur = () => {
 };
 
 const handleAiInputKeydown = (event) => {
+  // Do not interfere with ongoing IME composition (CJK, etc.)
+  if (event.isComposing || event.keyCode === 229) return;
+
+  if (event.key === 'Backspace' || event.key === 'Delete') {
+    aiAutoReplaceEnabled.value = false;
+  } else if (event.key.length === 1 || event.key === ' ' || event.key === 'Tab') {
+    aiAutoReplaceEnabled.value = true;
+  }
+
   if (event.key === 'Escape' && aiAutocompleteVisible.value) {
     event.preventDefault();
     aiAutocompleteOpen.value = false;
@@ -892,12 +1050,10 @@ const handleAiInputKeydown = (event) => {
     return;
   }
 
-  // Shift+Enter: allow new line (default behavior)
-  if (event.shiftKey) {
-    return; // Let the default behavior add a new line
-  }
-  
-  // Enter without Shift: send message
+  // Only Enter without Shift sends message. All other keys must type normally.
+  if (event.key !== 'Enter') return;
+  if (event.shiftKey) return; // newline
+
   event.preventDefault();
   sendAiMessage();
 };
@@ -2422,18 +2578,28 @@ const handleRefundDelete = async (op) => {
                   </svg>
                 </button>
               </div>
+              <ul v-if="aiAutocompleteVisible" class="ai-suggestions-list">
+                <li
+                  v-for="(item, idx) in aiInputSuggestions"
+                  :key="`${item.norm}_${idx}`"
+                  :class="{ active: idx === aiAutocompleteIndex }"
+                  @mouseenter="aiAutocompleteIndex = idx"
+                  @mousedown.prevent="applyAiSuggestion(item)"
+                >
+                  {{ item.value }}
+                </li>
+              </ul>
             </div>
-            <ul v-if="aiAutocompleteVisible" class="ai-suggestions-list">
-              <li
-                v-for="(item, idx) in aiInputSuggestions"
-                :key="`${item.norm}_${idx}`"
-                :class="{ active: idx === aiAutocompleteIndex }"
-                @mouseenter="aiAutocompleteIndex = idx"
-                @mousedown.prevent="applyAiSuggestion(item)"
+            <div v-if="aiRecognizedTerms.length > 0" class="ai-recognized-line">
+              <span class="ai-recognized-label">Найдено в системе:</span>
+              <span
+                v-for="term in aiRecognizedTerms"
+                :key="term.norm"
+                class="ai-recognized-chip"
               >
-                {{ item.value }}
-              </li>
-            </ul>
+                {{ term.value }}
+              </span>
+            </div>
           </div>
         </template>
       </div>
@@ -3082,6 +3248,7 @@ const handleRefundDelete = async (op) => {
 }
 
 .ai-input-wrapper {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -3140,8 +3307,16 @@ const handleRefundDelete = async (op) => {
 }
 
 .ai-suggestions-list {
-  margin: 8px 4px 0 4px;
+  position: absolute;
+  left: 44px;
+  right: auto;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  margin: 0;
   padding: 4px;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(420px, calc(100% - 52px));
   list-style: none;
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -3157,11 +3332,37 @@ const handleRefundDelete = async (op) => {
   font-size: 13px;
   color: var(--color-text);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ai-suggestions-list li.active,
 .ai-suggestions-list li:hover {
   background: var(--color-background-soft);
+}
+
+.ai-recognized-line {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-recognized-label {
+  font-size: 12px;
+  color: var(--color-text-mute);
+}
+
+.ai-recognized-chip {
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text);
 }
 
 .ai-send-btn {
