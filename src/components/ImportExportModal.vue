@@ -130,6 +130,17 @@ const getTodayIso = () => {
   return new Date(now - offset).toISOString().slice(0, 10);
 };
 
+const getLocalIsoNow = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  const tz = -d.getTimezoneOffset();
+  const sign = tz >= 0 ? '+' : '-';
+  const hh = pad(Math.floor(Math.abs(tz) / 60));
+  const mm = pad(Math.abs(tz) % 60);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${ms}${sign}${hh}:${mm}`;
+};
+
 const buildPeriodFilterForAi = () => {
   const from = normalizeString(filters.value.dateFrom);
   const to = normalizeString(filters.value.dateTo);
@@ -1003,7 +1014,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
       message: text,
       source,
       mode: isQuickButton ? 'quick' : 'chat',
-      asOf: new Date().toISOString(),
+      asOf: getLocalIsoNow(),
       includeHidden: true,
       visibleAccountIds: null,
       snapshot: buildAiSnapshot(),
