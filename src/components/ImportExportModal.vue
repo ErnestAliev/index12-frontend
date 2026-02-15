@@ -1471,7 +1471,7 @@ onBeforeUnmount(() => {
 
           <div class="journal-ai-messages" ref="aiMessagesRef">
             <div v-if="aiMessages.length === 0" class="journal-ai-empty">
-              Спросите по операциям за выбранный период.
+            
             </div>
 
             <div v-for="message in aiMessages" :key="message.id" class="journal-ai-message" :class="message.role">
