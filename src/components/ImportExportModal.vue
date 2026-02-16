@@ -1093,12 +1093,17 @@ const startAiPaneResize = (event) => {
 
 const sendAiMessage = async (forcedMessage = null, options = {}) => {
   const source = String(options?.source || 'chat');
-  const text = String(forcedMessage === null ? aiInput.value : forcedMessage || '').trim();
+  const isDomEvent = (x) => {
+    if (!x || typeof x !== 'object') return false;
+    return Boolean(x?.type && x?.target);
+  };
+  const hasExplicitMessage = forcedMessage !== null && forcedMessage !== undefined && !isDomEvent(forcedMessage);
+  const text = String(hasExplicitMessage ? forcedMessage : (aiInput.value || '')).trim();
   if (!text || aiLoading.value) return;
 
   aiMessages.value.push(createAiMessage('user', text));
   saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
-  if (forcedMessage === null) aiInput.value = '';
+  if (!hasExplicitMessage) aiInput.value = '';
   aiLoading.value = true;
   scrollAiToBottom();
 
@@ -1638,7 +1643,7 @@ onBeforeUnmount(() => {
               <button
                 class="ai-send-btn"
                 :disabled="aiLoading || !(aiInput || '').trim()"
-                @click="sendAiMessage"
+                @click="sendAiMessage()"
                 title="Отправить"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
