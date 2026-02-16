@@ -123,8 +123,13 @@ const cleanupOldHistory = () => {
 // 🟢 NEW: Load chat history from backend
 const loadAiHistory = async () => {
   try {
+    const asOfParam = mainStore?.asOf
+      ? String(mainStore.asOf)
+      : getLocalIsoNow();
+    const historyUrl = `${API_BASE_URL}/ai/history?asOf=${encodeURIComponent(asOfParam)}`;
+
     // Backend is the source of truth for chat history.
-    const response = await fetch(`${API_BASE}/ai/history`, {
+    const response = await fetch(historyUrl, {
       credentials: 'include'
     });
     
