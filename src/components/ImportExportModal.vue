@@ -87,6 +87,39 @@ const scrollAiToBottom = () => {
   });
 };
 
+// 🟢 NEW: Load chat history from backend
+const loadAiHistory = async () => {
+  try {
+    const response = await fetch(`${API_BASE}/ai/history`, {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      console.log('[AI History] No history found, starting fresh');
+      return;
+    }
+    
+    const data = await response.json();
+   
+    // Convert backend format to frontend format
+    aiMessages.value = data.messages.map((msg, idx) => ({
+      id: `history-${idx}-${msg.timestamp}`,
+      role: msg.role,
+      text: msg.content,
+      timestamp: msg.timestamp,
+      log: msg.metadata
+    }));
+    
+    if (aiMessages.value.length > 0) {
+      console.log(`[AI History] Loaded ${aiMessages.value.length} messages`);
+      scrollAiToBottom();
+    }
+  } catch (error) {
+    console.error('[AI History] Load failed:', error);
+    // Silent fail - start with empty history
+  }
+};
+
 const resizeAiInput = () => {
   nextTick(() => {
     const input = aiInputRef.value;
@@ -1137,6 +1170,7 @@ watch(() => aiInput.value, () => {
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   loadOperations();
+  loadAiHistory(); // 🟢 NEW: Load chat history from backend
   resizeAiInput();
   window.addEventListener('resize', resizeAiInput);
 });
