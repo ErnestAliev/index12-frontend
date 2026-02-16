@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { format } from 'date-fns';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
