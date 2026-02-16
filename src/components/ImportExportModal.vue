@@ -1120,6 +1120,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
       includeHidden: isQuickButton,
       visibleAccountIds: null,
       snapshot: isQuickButton ? buildAiSnapshot() : null,
+      accounts: mainStore.currentAccountBalances || mainStore.accounts || null,
       tableContext,
       debugAi: false,
       periodFilter,
