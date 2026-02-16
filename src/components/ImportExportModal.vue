@@ -105,23 +105,6 @@ const saveAiHistoryToLocalStorage = () => {
   }
 };
 
-const loadAiHistoryFromLocalStorage = () => {
-  try {
-    const key = getStorageKey();
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        aiMessages.value = parsed;
-        return true;
-      }
-    }
-  } catch (error) {
-    console.warn('[AI History] Failed to load from localStorage:', error);
-  }
-  return false;
-};
-
 const cleanupOldHistory = () => {
   try {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -140,20 +123,15 @@ const cleanupOldHistory = () => {
 // 🟢 NEW: Load chat history from backend
 const loadAiHistory = async () => {
   try {
-    // 1. Try localStorage first (instant)
-    if (loadAiHistoryFromLocalStorage()) {
-      console.log(`[AI History] Loaded ${aiMessages.value.length} messages from localStorage`);
-      scrollAiToBottom();
-      return;
-    }
-
-    // 2. Fallback to backend if no cache
+    // Backend is the source of truth for chat history.
     const response = await fetch(`${API_BASE}/ai/history`, {
       credentials: 'include'
     });
     
     if (!response.ok) {
-      console.log('[AI History] No history found, starting fresh');
+      aiMessages.value = [];
+      try { localStorage.removeItem(getStorageKey()); } catch (_) {}
+      console.log('[AI History] Backend history unavailable, showing empty chat');
       return;
     }
     
@@ -168,8 +146,12 @@ const loadAiHistory = async () => {
       log: msg.metadata
     }));
     
-    // Save to localStorage for next time
-    saveAiHistoryToLocalStorage();
+    // Keep local cache synced with backend state.
+    if (aiMessages.value.length > 0) {
+      saveAiHistoryToLocalStorage();
+    } else {
+      try { localStorage.removeItem(getStorageKey()); } catch (_) {}
+    }
     
     if (aiMessages.value.length > 0) {
       console.log(`[AI History] Loaded ${aiMessages.value.length} messages from backend`);
@@ -177,7 +159,8 @@ const loadAiHistory = async () => {
     }
   } catch (error) {
     console.error('[AI History] Load failed:', error);
-    // Silent fail - start with empty history
+    aiMessages.value = [];
+    try { localStorage.removeItem(getStorageKey()); } catch (_) {}
   }
 };
 
