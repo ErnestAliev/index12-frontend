@@ -938,6 +938,34 @@ export const useMainStore = defineStore('mainStore', () => {
             }));
     });
 
+    // Accounts payload for AI: independent from UI "eye" filters, but role-aware.
+    // Owner/admin -> all accounts, invited users -> open only.
+    const aiAccountBalances = computed(() => {
+        const canSeeHidden = isWorkspaceOwner.value || isWorkspaceAdmin.value;
+        const snapshotBalances = snapshot.value?.accountBalances || {};
+        const visibleBalanceMap = new Map(
+            currentAccountBalances.value.map((acc) => [String(acc._id), Number(acc.balance || 0)])
+        );
+
+        return accounts.value
+            .filter((a) => canSeeHidden || !a?.isExcluded)
+            .map((a) => {
+                const id = String(a._id);
+                const initial = Number(a.initialBalance || 0);
+                const snapDelta = Number(snapshotBalances[id]);
+                const fromSnapshot = Number.isFinite(snapDelta) ? (initial + snapDelta) : null;
+                const fromVisible = visibleBalanceMap.has(id) ? Number(visibleBalanceMap.get(id) || 0) : null;
+                const balance = Number.isFinite(fromSnapshot)
+                    ? fromSnapshot
+                    : (Number.isFinite(fromVisible) ? fromVisible : initial);
+
+                return {
+                    ...a,
+                    balance
+                };
+            });
+    });
+
     const futureAccountBalances = computed(() => {
         // Base = current account balances (already respects period filter and excluded accounts)
         const baseMap = new Map();
@@ -3105,7 +3133,7 @@ export const useMainStore = defineStore('mainStore', () => {
         workspaceRole, isWorkspaceAdmin, isWorkspaceOwner, isManager, isAnalyst, // Export role and role checks
         userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
-        currentAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
+        currentAccountBalances, aiAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
         currentIndividualBalances, currentAccountOwnerIndividuals, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns,
         currentTotalForPeriod, futureTotalForPeriod,
 

@@ -260,8 +260,8 @@ const buildPeriodFilterForAi = () => {
 };
 
 const buildAiSnapshot = () => ({
-  accounts: Array.isArray(mainStore.currentAccountBalances) && mainStore.currentAccountBalances.length
-    ? mainStore.currentAccountBalances
+  accounts: Array.isArray(mainStore.aiAccountBalances) && mainStore.aiAccountBalances.length
+    ? mainStore.aiAccountBalances
     : (Array.isArray(mainStore.accounts) ? mainStore.accounts : []),
   companies: Array.isArray(mainStore.companies) ? mainStore.companies : []
 });
@@ -1120,7 +1120,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
       includeHidden: isQuickButton,
       visibleAccountIds: null,
       snapshot: isQuickButton ? buildAiSnapshot() : null,
-      accounts: mainStore.currentAccountBalances || mainStore.accounts || null,
+      accounts: mainStore.aiAccountBalances || mainStore.accounts || null,
       tableContext,
       debugAi: false,
       periodFilter,

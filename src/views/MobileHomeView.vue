@@ -505,7 +505,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     const visibleAccountIds = null;
 
     const snapshot = {
-      accounts: Array.isArray(mainStore?.currentAccountBalances) ? mainStore.currentAccountBalances : [],
+      accounts: Array.isArray(mainStore?.aiAccountBalances) ? mainStore.aiAccountBalances : [],
       companies: Array.isArray(mainStore?.companies) ? mainStore.companies : [],
     };
 
@@ -523,6 +523,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         periodFilter: mainStore.periodFilter, // ✅ Pass period filter to backend
         mode,
         snapshot,
+        accounts: Array.isArray(mainStore?.aiAccountBalances) ? mainStore.aiAccountBalances : [],
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
       }),
     });
