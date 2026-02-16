@@ -87,9 +87,66 @@ const scrollAiToBottom = () => {
   });
 };
 
+// 🟢 NEW: localStorage helpers for chat history persistence
+const getStorageKey = () => {
+  const timelineDate = mainStore.asOf 
+    ? format(new Date(mainStore.asOf), 'yyyy-MM-dd')
+    : format(new Date(), 'yyyy-MM-dd');
+  return `aiHistory_${timelineDate}`;
+};
+
+const saveAiHistoryToLocalStorage = () => {
+  try {
+    const key = getStorageKey();
+    localStorage.setItem(key, JSON.stringify(aiMessages.value));
+  } catch (error) {
+    console.warn('[AI History] Failed to save to localStorage:', error);
+  }
+};
+
+const loadAiHistoryFromLocalStorage = () => {
+  try {
+    const key = getStorageKey();
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        aiMessages.value = parsed;
+        return true;
+      }
+    }
+  } catch (error) {
+    console.warn('[AI History] Failed to load from localStorage:', error);
+  }
+  return false;
+};
+
+const cleanupOldHistory = () => {
+  try {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.startsWith('aiHistory_') && !key.includes(today)) {
+        localStorage.removeItem(key);
+        console.log('[AI History] Cleaned up old history:', key);
+      }
+    });
+  } catch (error) {
+    console.warn('[AI History] Cleanup failed:', error);
+  }
+};
+
 // 🟢 NEW: Load chat history from backend
 const loadAiHistory = async () => {
   try {
+    // 1. Try localStorage first (instant)
+    if (loadAiHistoryFromLocalStorage()) {
+      console.log(`[AI History] Loaded ${aiMessages.value.length} messages from localStorage`);
+      scrollAiToBottom();
+      return;
+    }
+
+    // 2. Fallback to backend if no cache
     const response = await fetch(`${API_BASE}/ai/history`, {
       credentials: 'include'
     });
@@ -110,8 +167,11 @@ const loadAiHistory = async () => {
       log: msg.metadata
     }));
     
+    // Save to localStorage for next time
+    saveAiHistoryToLocalStorage();
+    
     if (aiMessages.value.length > 0) {
-      console.log(`[AI History] Loaded ${aiMessages.value.length} messages`);
+      console.log(`[AI History] Loaded ${aiMessages.value.length} messages from backend`);
       scrollAiToBottom();
     }
   } catch (error) {
@@ -1041,6 +1101,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
   if (!text || aiLoading.value) return;
 
   aiMessages.value.push(createAiMessage('user', text));
+  saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
   if (forcedMessage === null) aiInput.value = '';
   aiLoading.value = true;
   scrollAiToBottom();
@@ -1074,6 +1135,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
     const serverText = String(error?.response?.data?.error || '').trim();
     const fallbackText = serverText || 'Ошибка AI. Проверьте backend и доступ к AI.';
     aiMessages.value.push(createAiMessage('assistant', fallbackText));
+    saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
   } finally {
     aiLoading.value = false;
     scrollAiToBottom();
