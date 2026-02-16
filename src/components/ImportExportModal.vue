@@ -1131,6 +1131,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
         ? JSON.stringify({ backendResponse, debug, request }, null, 2)
         : null
     }));
+    saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
   } catch (error) {
     const serverText = String(error?.response?.data?.error || '').trim();
     const fallbackText = serverText || 'Ошибка AI. Проверьте backend и доступ к AI.';
@@ -1232,6 +1233,7 @@ watch(() => aiInput.value, () => {
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   loadOperations();
+  cleanupOldHistory(); // 🟢 Clean up old dates' history
   loadAiHistory(); // 🟢 NEW: Load chat history from backend
   resizeAiInput();
   window.addEventListener('resize', resizeAiInput);
