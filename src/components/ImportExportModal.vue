@@ -1046,6 +1046,42 @@ const openAiLog = (message) => {
   showAiLogModal.value = true;
 };
 
+const downloadAiJson = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/llm-input/latest`, {
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const payload = await response.json();
+        detail = String(payload?.error || payload?.message || '').trim();
+      } catch (_) {
+        // ignore json parse errors
+      }
+      throw new Error(detail || `HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const disposition = String(response.headers.get('content-disposition') || '');
+    const match = disposition.match(/filename\\*?=(?:UTF-8''|")?([^\";]+)/i);
+    const fileName = match?.[1] ? decodeURIComponent(match[1]) : 'llm-input-latest.json';
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Failed to download AI JSON:', error);
+    alert('Не удалось скачать JSON. Сначала отправьте запрос в AI.');
+  }
+};
+
 const closeAiLog = () => {
   showAiLogModal.value = false;
   aiLogText.value = '';
@@ -1602,6 +1638,7 @@ onBeforeUnmount(() => {
                     {{ message.copied ? '✅' : 'Копировать' }}
                   </button>
                   <button v-if="message.log" class="journal-ai-log-btn" @click="openAiLog(message)">Log</button>
+                  <button class="journal-ai-json-btn" @click="downloadAiJson">Json</button>
                 </div>
               </div>
             </div>
@@ -1764,7 +1801,8 @@ onBeforeUnmount(() => {
 }
 
 :global([data-theme="dark"]) .journal-ai-copy-btn,
-:global([data-theme="dark"]) .journal-ai-log-btn {
+:global([data-theme="dark"]) .journal-ai-log-btn,
+:global([data-theme="dark"]) .journal-ai-json-btn {
   background: #17212d;
   border-color: #2c394b;
   color: #c8d3e2;
@@ -2226,7 +2264,8 @@ onBeforeUnmount(() => {
 }
 
 .journal-ai-copy-btn,
-.journal-ai-log-btn {
+.journal-ai-log-btn,
+.journal-ai-json-btn {
   height: 24px;
   border-radius: 6px;
   border: 1px solid var(--ai-pane-border);
@@ -2238,7 +2277,8 @@ onBeforeUnmount(() => {
 }
 
 .journal-ai-copy-btn:hover,
-.journal-ai-log-btn:hover {
+.journal-ai-log-btn:hover,
+.journal-ai-json-btn:hover {
   background: var(--ai-pane-hover);
 }
 
@@ -2701,6 +2741,7 @@ onBeforeUnmount(() => {
 :global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-bubble,
 :global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-copy-btn,
 :global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-btn,
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-json-btn,
 :global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-content,
 :global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-header,
 :global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-body {
