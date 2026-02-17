@@ -145,12 +145,9 @@ const opMatchesVisibilityMode = (op, visibilityMode, accountById) => {
 
 const isOpVisibleForSnapshot = (mainStore, op, visibilityMode, accountById) => {
   if (!op) return false;
+  if (op.isDeleted) return false;
   if (op.excludeFromTotals && !op.offsetIncomeId) return false;
   if (op.isSplitParent) return false;
-
-  if (typeof mainStore?._isOpVisible === 'function' && !mainStore._isOpVisible(op)) {
-    return false;
-  }
 
   return opMatchesVisibilityMode(op, visibilityMode, accountById);
 };

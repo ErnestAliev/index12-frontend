@@ -503,7 +503,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         mainStore,
         periodFilter: mainStore.periodFilter,
         asOf,
-        visibilityMode: mainStore.accountVisibilityMode
+        visibilityMode: 'all'
       });
 
     // 🔥 SIMPLIFIED: No more uiSnapshot building - backend queries MongoDB directly!

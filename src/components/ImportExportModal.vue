@@ -1157,7 +1157,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
         mainStore,
         periodFilter,
         asOf: asOfNow,
-        visibilityMode: mainStore.accountVisibilityMode
+        visibilityMode: 'all'
       });
 
     const { text: answerText, backendResponse, debug, request } = await sendAiRequest({
