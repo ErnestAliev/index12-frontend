@@ -1,7 +1,7 @@
 // src/utils/tooltipSnapshotBuilder.js
 // Build deterministic tooltip snapshot (single source of truth for AI numeric answers).
 
-const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const toNum = (value) => {
   const n = Number(value);
@@ -35,6 +35,29 @@ const parseLocalDate = (value) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+};
+
+const parseStoreDateKey = (mainStore, dateKey) => {
+  if (!dateKey) return null;
+
+  const iso = fromDateKey(String(dateKey));
+  if (iso) return iso;
+
+  if (typeof mainStore?._parseDateKey === 'function') {
+    const parsed = mainStore._parseDateKey(String(dateKey));
+    if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
+    }
+  }
+
+  const m = String(dateKey).match(/^(\d{4})-(\d{1,3})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const dayOfYear = Number(m[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(dayOfYear)) return null;
+  const d = new Date(year, 0, 1, 12, 0, 0, 0);
+  d.setDate(dayOfYear);
+  return Number.isNaN(d.getTime()) ? null : d;
 };
 
 const addDays = (date, diff) => {
@@ -345,7 +368,7 @@ export async function buildTooltipSnapshotForRange({
   const startDateKey = range.startDateKey;
   const endDateKey = range.endDateKey;
 
-  if (!DATE_KEY_RE.test(startDateKey) || !DATE_KEY_RE.test(endDateKey)) {
+  if (!ISO_DATE_KEY_RE.test(startDateKey) || !ISO_DATE_KEY_RE.test(endDateKey)) {
     throw new Error('Invalid range for tooltip snapshot');
   }
 
@@ -374,20 +397,27 @@ export async function buildTooltipSnapshotForRange({
   });
 
   const calcCache = mainStore?.calculationCache?.value || mainStore?.calculationCache || {};
-  const opsByDateKey = new Map();
-  Object.keys(calcCache || {}).forEach((dateKey) => {
-    if (!DATE_KEY_RE.test(String(dateKey || ''))) return;
-    if (String(dateKey) > endDateKey) return;
-    const list = Array.isArray(calcCache[dateKey]) ? calcCache[dateKey] : [];
-    opsByDateKey.set(dateKey, list);
+  const opsByIsoDateKey = new Map();
+
+  Object.entries(calcCache || {}).forEach(([rawDateKey, rawOps]) => {
+    const parsedDate = parseStoreDateKey(mainStore, rawDateKey);
+    if (!parsedDate) return;
+    const isoDateKey = toDateKey(parsedDate);
+    if (!isoDateKey || isoDateKey > endDateKey) return;
+
+    const list = Array.isArray(rawOps) ? rawOps : [];
+    if (!opsByIsoDateKey.has(isoDateKey)) {
+      opsByIsoDateKey.set(isoDateKey, []);
+    }
+    opsByIsoDateKey.get(isoDateKey).push(...list);
   });
 
-  const sortedKeys = Array.from(opsByDateKey.keys()).sort((a, b) => a.localeCompare(b));
+  const sortedKeys = Array.from(opsByIsoDateKey.keys()).sort((a, b) => a.localeCompare(b));
 
   let ptr = 0;
   while (ptr < sortedKeys.length && sortedKeys[ptr] < startDateKey) {
     const key = sortedKeys[ptr];
-    const dayOps = opsByDateKey.get(key) || [];
+    const dayOps = opsByIsoDateKey.get(key) || [];
     dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op));
     ptr += 1;
   }
@@ -398,13 +428,12 @@ export async function buildTooltipSnapshotForRange({
   dayKeysInRange.forEach((dayKey) => {
     while (ptr < sortedKeys.length && sortedKeys[ptr] === dayKey) {
       const key = sortedKeys[ptr];
-      const dayOps = opsByDateKey.get(key) || [];
+      const dayOps = opsByIsoDateKey.get(key) || [];
       dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op));
       ptr += 1;
     }
 
-    const opsForDayRaw = opsByDateKey.get(dayKey)
-      || (typeof mainStore.getOperationsForDay === 'function' ? (mainStore.getOperationsForDay(dayKey) || []) : []);
+    const opsForDayRaw = opsByIsoDateKey.get(dayKey) || [];
 
     const visibleOps = (Array.isArray(opsForDayRaw) ? opsForDayRaw : [])
       .filter((op) => isOpVisibleForSnapshot(mainStore, op, visibility, accountById));
