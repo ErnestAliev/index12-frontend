@@ -58,6 +58,8 @@ const TABLE_COLUMNS = Object.freeze([
   'Статус'
 ]);
 const QUICK_PROMPTS = Object.freeze([
+  { label: 'Анализ', prompt: 'анализ' },
+  { label: 'Прогноз', prompt: 'прогноз' },
   { label: 'Счета', prompt: 'покажи счета' },
   { label: 'Доходы', prompt: 'покажи доходы' },
   { label: 'Расходы', prompt: 'покажи расходы' },

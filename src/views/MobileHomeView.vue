@@ -1352,6 +1352,8 @@ const handleOperationDelete = async (op) => {
 
           <div class="ai-modal-chips">
             <div class="ai-chip-left">
+              <button class="ai-chip" @click="runAiQuick('анализ')">Анализ</button>
+              <button class="ai-chip" @click="runAiQuick('прогноз')">Прогноз</button>
               <button class="ai-chip" @click="runAiQuick('покажи счета')">Счета</button>
               <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы</button>
               <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы</button>
