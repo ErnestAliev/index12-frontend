@@ -321,8 +321,9 @@ const calculateDayTotals = (mainStore, operations) => {
   return { income, expense };
 };
 
-const applyOperationToRunningBalances = (runningByAccountId, op) => {
+const applyOperationToRunningBalances = (runningByAccountId, op, options = {}) => {
   if (!op) return;
+  const { mainStore, visibility = 'all', accountById = new Map() } = options;
 
   const addDelta = (accountId, delta) => {
     const key = String(accountId || '');
@@ -340,6 +341,10 @@ const applyOperationToRunningBalances = (runningByAccountId, op) => {
     if (!isPersonalTransferWithdrawal(op) && toId) addDelta(toId, amount);
     return;
   }
+
+  // Align with GraphRenderer tooltip logic:
+  // regular income/expense/withdrawal affect running balances only if op is visible in current mode.
+  if (!isOpVisibleForSnapshot(mainStore, op, visibility, accountById)) return;
 
   const accountId = extractId(op.accountId);
   if (!accountId) return;
@@ -418,7 +423,11 @@ export async function buildTooltipSnapshotForRange({
   while (ptr < sortedKeys.length && sortedKeys[ptr] < startDateKey) {
     const key = sortedKeys[ptr];
     const dayOps = opsByIsoDateKey.get(key) || [];
-    dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op));
+    dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op, {
+      mainStore,
+      visibility,
+      accountById
+    }));
     ptr += 1;
   }
 
@@ -429,7 +438,11 @@ export async function buildTooltipSnapshotForRange({
     while (ptr < sortedKeys.length && sortedKeys[ptr] === dayKey) {
       const key = sortedKeys[ptr];
       const dayOps = opsByIsoDateKey.get(key) || [];
-      dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op));
+      dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op, {
+        mainStore,
+        visibility,
+        accountById
+      }));
       ptr += 1;
     }
 
