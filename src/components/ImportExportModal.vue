@@ -1,6 +1,5 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { format } from 'date-fns';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
@@ -35,6 +34,7 @@ const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeech
 const isAiRecording = ref(false);
 let aiRecognition = null;
 let aiVoiceConfirmedText = '';
+let aiDayBoundaryInterval = null;
 const filters = ref({
   dateFrom: '',
   dateTo: '',
@@ -91,12 +91,19 @@ const scrollAiToBottom = () => {
   });
 };
 
+const AI_DAY_KEY_STORAGE = 'aiModalLastDayKey';
+
+const getAiTimelineDateKey = () => {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now - offset).toISOString().slice(0, 10);
+};
+
 // 🟢 NEW: localStorage helpers for chat history persistence
 const getStorageKey = () => {
-  const timelineDate = mainStore.asOf 
-    ? format(new Date(mainStore.asOf), 'yyyy-MM-dd')
-    : format(new Date(), 'yyyy-MM-dd');
-  return `aiHistory_${timelineDate}`;
+  const timelineDateKey = getAiTimelineDateKey();
+  return `aiHistory_${timelineDateKey}`;
 };
 
 const saveAiHistoryToLocalStorage = () => {
@@ -110,7 +117,7 @@ const saveAiHistoryToLocalStorage = () => {
 
 const cleanupOldHistory = () => {
   try {
-    const today = format(new Date(), 'yyyy-MM-dd');
+    const today = getAiTimelineDateKey();
     const keys = Object.keys(localStorage);
     keys.forEach(key => {
       if (key.startsWith('aiHistory_') && !key.includes(today)) {
@@ -123,13 +130,35 @@ const cleanupOldHistory = () => {
   }
 };
 
+const syncAiHistoryDayBoundary = async () => {
+  try {
+    const todayKey = getAiTimelineDateKey();
+    const prevKey = localStorage.getItem(AI_DAY_KEY_STORAGE);
+
+    if (prevKey && prevKey !== todayKey) {
+      try {
+        await fetch(`${API_BASE_URL}/ai/history?keepDate=${encodeURIComponent(todayKey)}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+      } catch (error) {
+        console.warn('[AI History] Day-boundary cleanup failed:', error);
+      }
+      aiMessages.value = [];
+      try { localStorage.removeItem(`aiHistory_${prevKey}`); } catch (_) {}
+    }
+
+    localStorage.setItem(AI_DAY_KEY_STORAGE, todayKey);
+  } catch (error) {
+    console.warn('[AI History] Day-boundary sync failed:', error);
+  }
+};
+
 // 🟢 NEW: Load chat history from backend
 const loadAiHistory = async () => {
   try {
-    const asOfParam = mainStore?.asOf
-      ? String(mainStore.asOf)
-      : getLocalIsoNow();
-    const historyUrl = `${API_BASE_URL}/ai/history?asOf=${encodeURIComponent(asOfParam)}`;
+    const timelineDateKey = getAiTimelineDateKey();
+    const historyUrl = `${API_BASE_URL}/ai/history?timelineDate=${encodeURIComponent(timelineDateKey)}`;
 
     // Backend is the source of truth for chat history.
     const response = await fetch(historyUrl, {
@@ -1150,6 +1179,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
     const periodFilter = buildPeriodFilterForAi();
     const isQuickButton = source === 'quick_button';
     const asOfNow = getLocalIsoNow();
+    const timelineDateKey = getAiTimelineDateKey();
     const tableContext = buildAiTableContext();
     const tooltipSnapshot = isQuickButton
       ? null
@@ -1166,6 +1196,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
       source,
       mode: isQuickButton ? 'quick' : 'chat',
       asOf: asOfNow,
+      timelineDate: timelineDateKey,
       includeHidden: isQuickButton,
       visibleAccountIds: null,
       snapshot: isQuickButton ? buildAiSnapshot() : null,
@@ -1285,8 +1316,14 @@ watch(() => aiInput.value, () => {
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   loadOperations();
-  cleanupOldHistory(); // 🟢 Clean up old dates' history
-  loadAiHistory(); // 🟢 NEW: Load chat history from backend
+  (async () => {
+    await syncAiHistoryDayBoundary();
+    cleanupOldHistory(); // 🟢 Clean up old dates' history
+    await loadAiHistory(); // 🟢 NEW: Load chat history from backend
+  })();
+  aiDayBoundaryInterval = window.setInterval(() => {
+    syncAiHistoryDayBoundary();
+  }, 60 * 1000);
   resizeAiInput();
   window.addEventListener('resize', resizeAiInput);
 });
@@ -1296,6 +1333,10 @@ onBeforeUnmount(() => {
   if (aiRecognition) {
     try { aiRecognition.stop(); } catch (_) {}
     aiRecognition = null;
+  }
+  if (aiDayBoundaryInterval) {
+    window.clearInterval(aiDayBoundaryInterval);
+    aiDayBoundaryInterval = null;
   }
   window.removeEventListener('resize', resizeAiInput);
   document.body.style.overflow = '';

@@ -12,6 +12,7 @@ export async function sendAiRequest({
   quickKey = null,
   mode = 'freeform',
   asOf = null,
+  timelineDate = null,
   includeHidden = false,
   visibleAccountIds = null,
   snapshot = null,
@@ -43,6 +44,7 @@ export async function sendAiRequest({
     quickKey,
     mode,
     asOf,
+    timelineDate,
     includeHidden: effectiveIncludeHidden,
     visibleAccountIds: effectiveVisibleIds,
     accounts: accounts || null,
@@ -87,7 +89,9 @@ export async function fetchAiHistory({ apiBaseUrl, limit = 50, timeout = 8000 })
     withCredentials: true,
     timeout,
   });
-  return Array.isArray(res?.data?.history) ? res.data.history : [];
+  if (Array.isArray(res?.data?.messages)) return res.data.messages;
+  if (Array.isArray(res?.data?.history)) return res.data.history;
+  return [];
 }
 
 // Reset backend chat history (per user)
