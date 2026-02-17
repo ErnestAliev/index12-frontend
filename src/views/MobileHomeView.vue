@@ -1356,17 +1356,17 @@ const handleOperationDelete = async (op) => {
 
           <div class="ai-modal-chips">
             <div class="ai-chip-left">
-              <button class="ai-chip" @click="runAiQuick('анализ')">Анализ</button>
-              <button class="ai-chip" @click="runAiQuick('прогноз')">Прогноз</button>
-              <button class="ai-chip" @click="runAiQuick('покажи счета')">Счета</button>
-              <button class="ai-chip" @click="runAiQuick('покажи доходы')">Доходы</button>
-              <button class="ai-chip" @click="runAiQuick('покажи расходы')">Расходы</button>
-              <button class="ai-chip" @click="runAiQuick('покажи переводы')">Переводы</button>
-              <button class="ai-chip" @click="runAiQuick('покажи компании')">Компании</button>
-              <button class="ai-chip" @click="runAiQuick('покажи проекты')">Проекты</button>
-              <button class="ai-chip" @click="runAiQuick('покажи контрагентов')">Контрагенты</button>
-              <button class="ai-chip" @click="runAiQuick('покажи категории')">Категории</button>
-              <button class="ai-chip" @click="runAiQuick('покажи физлица')">Физлица</button>
+              <button class="ai-chip" @click="runAiQuick('analysis')">Анализ</button>
+              <button class="ai-chip" @click="runAiQuick('forecast')">Прогноз</button>
+              <button class="ai-chip" @click="runAiQuick('accounts')">Счета</button>
+              <button class="ai-chip" @click="runAiQuick('income')">Доходы</button>
+              <button class="ai-chip" @click="runAiQuick('expense')">Расходы</button>
+              <button class="ai-chip" @click="runAiQuick('transfers')">Переводы</button>
+              <button class="ai-chip" @click="runAiQuick('companies')">Компании</button>
+              <button class="ai-chip" @click="runAiQuick('projects')">Проекты</button>
+              <button class="ai-chip" @click="runAiQuick('contractors')">Контрагенты</button>
+              <button class="ai-chip" @click="runAiQuick('categories')">Категории</button>
+              <button class="ai-chip" @click="runAiQuick('individuals')">Физлица</button>
             </div>
             <button class="ai-deep-btn" :class="{ active: deepAiMode }" @click="deepAiMode = !deepAiMode">
               Deep
