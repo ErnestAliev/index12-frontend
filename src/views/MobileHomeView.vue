@@ -27,6 +27,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import { fetchAiHistory, resetAiHistory } from '@/utils/aiClient.js';
+import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -496,6 +497,14 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     };
 
     const asOf = _localIsoNow();
+    const tooltipSnapshot = source === 'quick_button'
+      ? null
+      : await buildTooltipSnapshotForRange({
+        mainStore,
+        periodFilter: mainStore.periodFilter,
+        asOf,
+        visibilityMode: mainStore.accountVisibilityMode
+      });
 
     // 🔥 SIMPLIFIED: No more uiSnapshot building - backend queries MongoDB directly!
     // This removes 300+ lines of snapshot building code and eliminates race conditions.
@@ -527,6 +536,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         periodFilter: mainStore.periodFilter, // ✅ Pass period filter to backend
         mode,
         snapshot,
+        tooltipSnapshot,
         accounts: Array.isArray(mainStore?.aiAccountBalances) ? mainStore.aiAccountBalances : [],
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
       }),
