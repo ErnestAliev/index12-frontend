@@ -509,13 +509,17 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
       companies: Array.isArray(mainStore?.companies) ? mainStore.companies : [],
     };
 
+    // Extract action from opts (for quick buttons)
+    const action = opts.action || null;
+
     const res = await fetch(`${API_BASE_URL}/ai/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ 
         message: q, 
-        source, 
+        source,
+        action,  // ← NEW: explicit action for quick buttons
         quickKey, 
         asOf,
         includeHidden, 
@@ -570,11 +574,11 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   }
 };
 
-const runAiQuick = async (preset) => {
-  // Быстрый запрос: не пишем в инпут, отправляем напрямую
+const runAiQuick = async (action) => {
+  // Quick button: send empty message with explicit action
   aiInput.value = '';
   await nextTick();
-  await sendAiMessage(preset, { source: 'quick_button' });
+  await sendAiMessage('', { source: 'quick_button', action });
 };
 
 // Автоскролл: держим чат внизу при новых сообщениях и при открытии окна
