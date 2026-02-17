@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
+import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
@@ -1148,18 +1149,29 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
   try {
     const periodFilter = buildPeriodFilterForAi();
     const isQuickButton = source === 'quick_button';
+    const asOfNow = getLocalIsoNow();
     const tableContext = buildAiTableContext();
+    const tooltipSnapshot = isQuickButton
+      ? null
+      : await buildTooltipSnapshotForRange({
+        mainStore,
+        periodFilter,
+        asOf: asOfNow,
+        visibilityMode: mainStore.accountVisibilityMode
+      });
+
     const { text: answerText, backendResponse, debug, request } = await sendAiRequest({
       apiBaseUrl: API_BASE_URL,
       message: text,
       source,
       mode: isQuickButton ? 'quick' : 'chat',
-      asOf: getLocalIsoNow(),
+      asOf: asOfNow,
       includeHidden: isQuickButton,
       visibleAccountIds: null,
       snapshot: isQuickButton ? buildAiSnapshot() : null,
       accounts: mainStore.aiAccountBalances || mainStore.accounts || null,
       tableContext,
+      tooltipSnapshot,
       debugAi: false,
       periodFilter,
       timeline: null

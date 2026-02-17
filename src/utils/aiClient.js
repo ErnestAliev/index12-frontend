@@ -20,6 +20,7 @@ export async function sendAiRequest({
   periodFilter = null,
   timeline = null,
   tableContext = null,
+  tooltipSnapshot = null,
   timeout = 20000,
 }) {
   if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
@@ -51,6 +52,7 @@ export async function sendAiRequest({
   };
   if (snapshot) payload.snapshot = snapshot;
   if (tableContext) payload.tableContext = tableContext;
+  if (tooltipSnapshot) payload.tooltipSnapshot = tooltipSnapshot;
 
   // Всегда идём на единый endpoint — сервер сам решает, отвечать из snapshot или БД
   const endpoint = `${apiBaseUrl}/ai/query`;
