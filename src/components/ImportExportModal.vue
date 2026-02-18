@@ -1209,9 +1209,10 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
     });
 
     const responseText = String(answerText || backendResponse?.text || '').trim() || 'Нет ответа от AI.';
+    const qualityGateSummary = backendResponse?.qualityGate || debug?.qualityGate || null;
     aiMessages.value.push(createAiMessage('assistant', responseText, {
       log: (debug || backendResponse || request)
-        ? JSON.stringify({ backendResponse, debug, request }, null, 2)
+        ? JSON.stringify({ backendResponse, qualityGateSummary, debug, request }, null, 2)
         : null
     }));
     saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
