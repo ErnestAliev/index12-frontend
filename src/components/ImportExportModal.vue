@@ -1219,7 +1219,11 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
     saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
   } catch (error) {
     const serverText = String(error?.response?.data?.error || '').trim();
-    const fallbackText = serverText || 'Ошибка AI. Проверьте backend и доступ к AI.';
+    const clientText = String(error?.message || '').trim();
+    const isTimeout = error?.code === 'ECONNABORTED' || /timeout/i.test(clientText);
+    const fallbackText = isTimeout
+      ? 'AI отвечает дольше обычного (идет проверка качества). Повторите запрос через 5-10 секунд.'
+      : (serverText || clientText || 'Ошибка AI. Проверьте backend и доступ к AI.');
     aiMessages.value.push(createAiMessage('assistant', fallbackText));
     saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
   } finally {

@@ -68,9 +68,15 @@ export async function sendAiRequest({
     payload.visibleAccountIds = null;
   }
 
+  const effectiveTimeout = (() => {
+    if (mode === 'deep') return 150000; // Deep mode: 2.5 min for quality analysis
+    if (mode === 'chat') return Math.max(Number(timeout) || 0, 90000); // Chat with discriminator may require retry
+    return timeout;
+  })();
+
   const res = await axios.post(endpoint, payload, {
     withCredentials: true,
-    timeout: mode === 'deep' ? 150000 : timeout, // Deep mode: 2.5 min for quality analysis
+    timeout: effectiveTimeout,
   });
 
   return {
