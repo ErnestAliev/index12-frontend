@@ -927,6 +927,15 @@ const summaryTotals = computed(() => {
   return totals;
 });
 
+const canManageAccountVisibility = computed(() =>
+  !mainStore.workspaceRole || mainStore.isWorkspaceOwner || mainStore.isWorkspaceAdmin
+);
+const visibilityMode = computed(() => mainStore.accountVisibilityMode);
+const showOpenActive = computed(() => visibilityMode.value === 'all' || visibilityMode.value === 'open');
+const showHiddenActive = computed(() => visibilityMode.value === 'all' || visibilityMode.value === 'hidden');
+const openEyeIcon = computed(() => (showOpenActive.value ? 'eye' : 'eye-off'));
+const hiddenEyeIcon = computed(() => (showHiddenActive.value ? 'eye' : 'eye-off'));
+
 const uniqueSorted = (list) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ru'));
 
 const buildAiTableContext = () => {
@@ -1367,6 +1376,40 @@ onBeforeUnmount(() => {
               <span class="summary-item transfer">Перевод: {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
             </div>
             <span class="counter-label">Записей: {{ filteredCount }} / {{ totalCount }}</span>
+            <div v-if="canManageAccountVisibility" class="header-visibility-toggle" aria-label="Показ счетов">
+              <button
+                class="header-eye-btn icon-only"
+                @click="mainStore.toggleOpenVisibility()"
+                :class="{ active: showOpenActive }"
+                :title="showOpenActive ? 'Отключить открытые счета' : 'Включить открытые счета'"
+              >
+                <svg v-if="openEyeIcon === 'eye'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                  <line x1="2" y1="22" x2="22" y2="2"></line>
+                </svg>
+              </button>
+              <button
+                class="header-eye-btn icon-only"
+                @click="mainStore.toggleHiddenVisibility()"
+                :class="{ active: showHiddenActive }"
+                :title="showHiddenActive ? 'Отключить скрытые счета' : 'Включить скрытые счета'"
+              >
+                <svg v-if="hiddenEyeIcon === 'eye'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                  <line x1="2" y1="22" x2="22" y2="2"></line>
+                </svg>
+              </button>
+            </div>
             <div class="export-buttons">
               <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1970,6 +2013,42 @@ onBeforeUnmount(() => {
   font-size: var(--font-sm, 13px);
   color: var(--editor-muted-text);
   font-weight: var(--fw-medium, 500);
+}
+
+.header-visibility-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-eye-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--editor-muted-text);
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.header-eye-btn.icon-only {
+  gap: 0;
+}
+
+.header-eye-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.header-eye-btn.active {
+  background: var(--color-primary, #34c759);
+  border-color: transparent;
+  color: #fff;
 }
 
 .export-buttons {
