@@ -1086,7 +1086,8 @@ const accountBalancesByDateKey = computed(() => {
       
       balancesByAccount[accId] = {
         name: acc.name || 'Счет',
-        balance: Math.max(0, balance)
+        balance: Math.max(0, balance),
+        isExcluded: !!acc.isExcluded
       };
     }
     
@@ -1664,15 +1665,38 @@ const chartOptions = computed(() => {
             const day = normalizedVisibleDays.value[dayIndex];
             const dateKey = day ? _getDateKey(day.date) : null;
             const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
+
+            const pushGroupedBalances = (accountRows, options = {}) => {
+              const openRows = accountRows.filter((acc) => !acc?.isExcluded);
+              const hiddenRows = accountRows.filter((acc) => !!acc?.isExcluded);
+              const openTitle = options.openTitle || 'Остатки на открытых счетах:';
+              const hiddenTitle = options.hiddenTitle || 'Остатки на скрытых счетах:';
+
+              if (!openRows.length && !hiddenRows.length) return;
+
+              if (openRows.length) {
+                lines.push(openTitle);
+                openRows.forEach((acc) => {
+                  const bal = Number(acc.balance) || 0;
+                  const name = acc.name || 'Счет';
+                  lines.push(`${name} — ${formatNumber(bal)} т`);
+                });
+              }
+
+              if (hiddenRows.length) {
+                if (openRows.length) lines.push('---');
+                lines.push(hiddenTitle);
+                hiddenRows.forEach((acc) => {
+                  const bal = Number(acc.balance) || 0;
+                  const name = acc.name || 'Счет';
+                  lines.push(`${name} — ${formatNumber(bal)} т`);
+                });
+              }
+            };
             
             if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
               lines.push('---');
-              lines.push('Остатки на счетах:');
-              Object.values(dateAccountBalances).forEach(acc => {
-                const bal = Number(acc.balance) || 0;
-                const name = acc.name || 'Счет';
-                lines.push(`${name} — ${formatNumber(bal)} т`);
-              });
+              pushGroupedBalances(Object.values(dateAccountBalances));
             } else {
               // Fallback to current balances if no historical data
               const accs = mainStore?.currentAccountBalances || [];
@@ -1684,11 +1708,9 @@ const chartOptions = computed(() => {
               
               if (visibleAccs.length > 0) {
                 lines.push('---');
-                lines.push('Остатки на счетах (текущие):');
-                visibleAccs.forEach(acc => {
-                  const bal = Number(acc.balance) || 0;
-                  const name = acc.name || 'Счет';
-                  lines.push(`${name} — ${formatNumber(bal)} т`);
+                pushGroupedBalances(visibleAccs, {
+                  openTitle: 'Остатки на открытых счетах (текущие):',
+                  hiddenTitle: 'Остатки на скрытых счетах (текущие):'
                 });
               }
             }
