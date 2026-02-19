@@ -496,6 +496,10 @@ const onDrop = (event) => {
   margin-right: 0;
   width: 100%;
   text-align: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .op-tooltip {
@@ -582,11 +586,11 @@ const onDrop = (event) => {
   font-weight:bold; 
   margin-right:6px; 
   white-space:nowrap; 
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  min-width: fit-content;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
 }
 .op-meta { 
   flex: 1 1 auto;
