@@ -16,7 +16,9 @@ import { usePermissions } from '@/composables/usePermissions';
 const props = defineProps({
   operation: { type: Object, default: null },
   dateKey: { type: String, required: true },
-  cellIndex: { type: Number, required: true }
+  cellIndex: { type: Number, required: true },
+  columnCount: { type: Number, default: 11 },
+  dayDate: { type: Date, default: null }
 });
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
@@ -163,6 +165,136 @@ const getDisplayAmount = (op) => {
 
 const displayAmount = computed(() => getDisplayAmount(props.operation));
 
+const TOOLTIP_EMPTY = '—';
+const showOperationTooltip = computed(() => props.columnCount === 21 || props.columnCount >= 28);
+
+const normalizeId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object') {
+    if (value._id) return String(value._id);
+    if (value.id) return String(value.id);
+    return null;
+  }
+  return String(value);
+};
+
+const resolveEntityName = (value, list) => {
+  if (!value) return TOOLTIP_EMPTY;
+  if (typeof value === 'string') {
+    const fromList = Array.isArray(list)
+      ? list.find((item) => normalizeId(item) === value || normalizeId(item?._id) === value || normalizeId(item?.id) === value)
+      : null;
+    return fromList?.name || value;
+  }
+  if (typeof value === 'object') {
+    if (value.name) return value.name;
+    const id = normalizeId(value);
+    if (!id || !Array.isArray(list)) return TOOLTIP_EMPTY;
+    const fromList = list.find((item) => normalizeId(item?._id) === id || normalizeId(item?.id) === id || normalizeId(item) === id);
+    return fromList?.name || TOOLTIP_EMPTY;
+  }
+  return TOOLTIP_EMPTY;
+};
+
+const resolveManyNames = (items, list) => {
+  if (!Array.isArray(items) || !items.length) return TOOLTIP_EMPTY;
+  const names = items
+    .map((item) => resolveEntityName(item, list))
+    .filter((name) => name && name !== TOOLTIP_EMPTY);
+  return names.length ? names.join(', ') : TOOLTIP_EMPTY;
+};
+
+const tooltipDate = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  const dateCandidate = op.date || props.dayDate;
+  if (!dateCandidate) return TOOLTIP_EMPTY;
+  const dt = new Date(dateCandidate);
+  return Number.isNaN(dt.getTime()) ? TOOLTIP_EMPTY : dt.toLocaleDateString('ru-RU');
+});
+
+const tooltipAmount = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  const absValue = Math.abs(Number(displayAmount.value ?? op.amount));
+  if (!Number.isFinite(absValue)) return TOOLTIP_EMPTY;
+  const prefix = isTransferOp.value ? '' : ((isWithdrawalOp.value || op.type === 'expense') ? '- ' : '+ ');
+  return `${prefix}${formatNumber(absValue)} ₸`;
+});
+
+const tooltipAccount = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  const mainAccount = resolveEntityName(op.accountId, mainStore.accounts);
+  if (!isTransferOp.value) return mainAccount;
+  const from = resolveEntityName(op.fromAccountId, mainStore.accounts);
+  const to = resolveEntityName(op.toAccountId, mainStore.accounts);
+  if (from !== TOOLTIP_EMPTY && to !== TOOLTIP_EMPTY) return `${from} -> ${to}`;
+  if (from !== TOOLTIP_EMPTY) return from;
+  if (to !== TOOLTIP_EMPTY) return to;
+  return mainAccount;
+});
+
+const tooltipOwner = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  const baseOwner = op.companyId
+    ? resolveEntityName(op.companyId, mainStore.companies)
+    : (op.individualId ? resolveEntityName(op.individualId, mainStore.individuals) : TOOLTIP_EMPTY);
+  if (!isTransferOp.value) return baseOwner;
+  const from = op.fromCompanyId
+    ? resolveEntityName(op.fromCompanyId, mainStore.companies)
+    : (op.fromIndividualId ? resolveEntityName(op.fromIndividualId, mainStore.individuals) : TOOLTIP_EMPTY);
+  const to = op.toCompanyId
+    ? resolveEntityName(op.toCompanyId, mainStore.companies)
+    : (op.toIndividualId ? resolveEntityName(op.toIndividualId, mainStore.individuals) : TOOLTIP_EMPTY);
+  if (from !== TOOLTIP_EMPTY && to !== TOOLTIP_EMPTY) return `${from} -> ${to}`;
+  if (from !== TOOLTIP_EMPTY) return from;
+  if (to !== TOOLTIP_EMPTY) return to;
+  return baseOwner;
+});
+
+const tooltipContractor = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  if (op.contractorId) return resolveEntityName(op.contractorId, mainStore.contractors);
+  if (op.counterpartyIndividualId) return resolveEntityName(op.counterpartyIndividualId, mainStore.individuals);
+  return TOOLTIP_EMPTY;
+});
+
+const tooltipProject = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  const projectItems = Array.isArray(op.projectIds) && op.projectIds.length
+    ? op.projectIds
+    : (op.projectId ? [op.projectId] : []);
+  return resolveManyNames(projectItems, mainStore.projects);
+});
+
+const tooltipCategory = computed(() => {
+  const op = props.operation;
+  if (!op) return TOOLTIP_EMPTY;
+  const categoryItems = Array.isArray(op.categoryIds) && op.categoryIds.length
+    ? op.categoryIds
+    : (op.categoryId ? [op.categoryId] : []);
+  return resolveManyNames(categoryItems, mainStore.categories);
+});
+
+const operationTooltip = computed(() => {
+  if (!showOperationTooltip.value || !props.operation || !isOpVisible.value) return '';
+  return [
+    `Дата: ${tooltipDate.value}`,
+    `Сумма: ${tooltipAmount.value}`,
+    `Счет: ${tooltipAccount.value}`,
+    `Владелец: ${tooltipOwner.value}`,
+    `Контрагент: ${tooltipContractor.value}`,
+    `Проект: ${tooltipProject.value}`,
+    `Категория: ${tooltipCategory.value}`
+  ].join('\n');
+});
+
+const phantomTooltip = computed(() => showOperationTooltip.value ? 'Ячейка занята операцией на скрытом счете' : '');
+
 
 
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
@@ -203,7 +335,7 @@ const onDrop = (event) => {
       v-if="isPhantom"
       class="operation-chip phantom"
       draggable="false"
-      title="Ячейка занята операцией на скрытом счете"
+      :title="phantomTooltip"
     >
       <span class="op-amount">👁️‍🗨️ Занято</span>
       <span class="op-meta">Скрытый счет</span>
@@ -227,7 +359,7 @@ const onDrop = (event) => {
           'no-permission': !canInteract
       }"
       :draggable="canInteract"
-      :title="canInteract ? '' : 'Нет прав для редактирования'"
+      :title="operationTooltip"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
