@@ -34,6 +34,7 @@ import {
   signalBackgroundAnalyticsMutation,
   stopBackgroundAnalyticsPrefetchTimer
 } from '@/utils/backgroundAnalyticsBuffer.js';
+import { buildSnapshotChecksum, evaluateSnapshotDataChange } from '@/utils/snapshotChecksum.js';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -707,6 +708,15 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         asOf,
         visibilityMode: 'all'
       });
+    const timelineDateKey = getAiTimelineDateKey();
+    const snapshotChecksum = source === 'quick_button'
+      ? ''
+      : buildSnapshotChecksum(tooltipSnapshot);
+    const checksumState = evaluateSnapshotDataChange({
+      checksum: snapshotChecksum,
+      timelineDateKey,
+      source
+    });
 
     // 🔥 SIMPLIFIED: No more uiSnapshot building - backend queries MongoDB directly!
     // This removes 300+ lines of snapshot building code and eliminates race conditions.
@@ -739,6 +749,8 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         mode,
         snapshot,
         tooltipSnapshot,
+        snapshotChecksum: snapshotChecksum || null,
+        isDataChanged: Boolean(checksumState?.isDataChanged),
         historicalContext,
         accounts: Array.isArray(mainStore?.aiAccountBalances) ? mainStore.aiAccountBalances : [],
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()

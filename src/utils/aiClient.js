@@ -1,5 +1,6 @@
 // Lightweight AI client: builds payload and sends to backend
 import axios from 'axios';
+import { buildSnapshotChecksum, evaluateSnapshotDataChange } from '@/utils/snapshotChecksum.js';
 
 /**
  * Send AI request (either main /query or snapshot-only /query_snapshot).
@@ -24,6 +25,8 @@ export async function sendAiRequest({
   tableContext = null,
   tooltipSnapshot = null,
   historicalContext = null,
+  snapshotChecksum = null,
+  isDataChanged = null,
   timeout = 20000,
 }) {
   if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
@@ -59,6 +62,25 @@ export async function sendAiRequest({
   if (tableContext) payload.tableContext = tableContext;
   if (tooltipSnapshot) payload.tooltipSnapshot = tooltipSnapshot;
   if (historicalContext) payload.historicalContext = historicalContext;
+
+  const effectiveTimelineDate = String(timelineDate || '').trim() || String(asOf || '').slice(0, 10);
+  const checksumCandidate = String(snapshotChecksum || '').trim()
+    || (source === 'quick_button' ? '' : buildSnapshotChecksum(tooltipSnapshot));
+  const changeProbe = (isDataChanged === null || isDataChanged === undefined)
+    ? evaluateSnapshotDataChange({
+      checksum: checksumCandidate,
+      timelineDateKey: effectiveTimelineDate,
+      source
+    })
+    : {
+      isDataChanged: Boolean(isDataChanged),
+      snapshotChecksum: checksumCandidate
+    };
+
+  if (checksumCandidate) payload.snapshotChecksum = checksumCandidate;
+  if (source !== 'quick_button') {
+    payload.isDataChanged = Boolean(changeProbe?.isDataChanged);
+  }
 
   // Всегда идём на единый endpoint — сервер сам решает, отвечать из snapshot или БД
   const endpoint = `${apiBaseUrl}/ai/query`;
