@@ -585,7 +585,12 @@ const handleSave = async (options = {}) => {
     }
 };
 
-const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(new Date()); nextTick(() => amountInput.value?.focus()); };
+const handleCopyClick = () => {
+    isCloneMode.value = true;
+    const sourceDate = props.operationToEdit?.date ? new Date(props.operationToEdit.date) : (props.date || new Date());
+    editableDate.value = toInputDate(sourceDate);
+    nextTick(() => amountInput.value?.focus());
+};
 const handleDeleteClick = () => { showDeleteConfirm.value = true; };
 const confirmDelete = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); };
 

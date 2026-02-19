@@ -537,7 +537,12 @@ const onDeleteConfirmed = async () => {
   const opToDelete = props.transferToEdit; emit('close'); 
   try { if (!opToDelete?._id) return; await mainStore.deleteOperation(opToDelete); await mainStore.fetchAllEntities(); } catch (e) { console.error(e); } 
 };
-const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(props.date); nextTick(() => { amountInput.value?.focus(); }); };
+const handleCopyClick = () => {
+  isCloneMode.value = true;
+  const sourceDate = props.transferToEdit?.date ? new Date(props.transferToEdit.date) : (props.date || new Date());
+  editableDate.value = toInputDate(sourceDate);
+  nextTick(() => { amountInput.value?.focus(); });
+};
 
 const openCreateOwnerModal = (target, type = 'company') => { creatingOwnerFor.value = target; ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null; if (creatingOwnerFor.value === 'to' && selectedToOwner.value === '--CREATE_NEW--') selectedToOwner.value = null; };

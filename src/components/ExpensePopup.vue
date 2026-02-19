@@ -849,7 +849,12 @@ const saveNewContractorModal = async () => {
     } catch(e){ console.error(e); showError('Ошибка создания контрагента: ' + e.message); } finally { isInlineSaving.value = false; }
 };
 
-const handleCopyClick = () => { isCloneMode.value = true; editableDate.value = toInputDate(new Date()); nextTick(() => amountInput.value?.focus()); };
+const handleCopyClick = () => {
+    isCloneMode.value = true;
+    const sourceDate = props.operationToEdit?.date ? new Date(props.operationToEdit.date) : (props.date || new Date());
+    editableDate.value = toInputDate(sourceDate);
+    nextTick(() => amountInput.value?.focus());
+};
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
 const onDeleteConfirmed = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); };
 
