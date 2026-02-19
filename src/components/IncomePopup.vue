@@ -87,6 +87,8 @@ const isInitialLoad = ref(true);
 const isDateChanged = ref(false); 
 const showDeleteConfirm = ref(false); 
 const isDeleteConfirmVisible = ref(false); 
+const effectiveMinAllowedDate = computed(() => (isCloneMode.value ? null : props.minAllowedDate));
+const effectiveMaxAllowedDate = computed(() => (isCloneMode.value ? null : props.maxAllowedDate));
 
 // --- INLINE CREATE STATES ---
 const isCreatingAccount = ref(false); const newAccountName = ref(''); const newAccountInput = ref(null);
@@ -895,7 +897,7 @@ const handleMainAction = async () => {
                      {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                  </span>
 
-                  <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minAllowedDate ? toInputDate(minAllowedDate) : null" :max="maxAllowedDate ? toInputDate(maxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
+                  <input type="date" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
                   <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
               </div>
           </div>

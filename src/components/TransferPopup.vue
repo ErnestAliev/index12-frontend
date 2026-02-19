@@ -100,8 +100,8 @@ const toInputDate = (date) => {
 };
 const toDisplayDate = (dateStr) => { if (!dateStr) return ''; const [year, month, day] = dateStr.split('-'); return `${day}.${month}.${year}`; }
 const editableDate = ref(toInputDate(props.date));
-const minDateString = computed(() => props.minAllowedDate ? toInputDate(props.minAllowedDate) : null);
-const maxDateString = computed(() => props.maxAllowedDate ? toInputDate(props.maxAllowedDate) : null);
+const minDateString = computed(() => (isCloneMode.value || !props.minAllowedDate) ? null : toInputDate(props.minAllowedDate));
+const maxDateString = computed(() => (isCloneMode.value || !props.maxAllowedDate) ? null : toInputDate(props.maxAllowedDate));
 
 // 🟢 ИСТИННОЕ ВРЕМЯ
 const createSmartDate = (str) => {
