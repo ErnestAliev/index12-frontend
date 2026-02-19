@@ -28,6 +28,12 @@ import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import { fetchAiHistory, resetAiHistory } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
+import {
+  getHistoricalContextForRequest,
+  scheduleBackgroundAnalyticsPrefetch,
+  signalBackgroundAnalyticsMutation,
+  stopBackgroundAnalyticsPrefetchTimer
+} from '@/utils/backgroundAnalyticsBuffer.js';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -669,8 +675,6 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   aiVoiceConfirmedText = ''; // Reset voice confirmed text
   aiLoading.value = true;
 
-  // 🔥 REMOVED: Prefetch no longer needed - backend queries MongoDB directly!
-
   try {
     // Важно: отправляем локальную дату/время пользователя (с offset), а не UTC.
     // Иначе около полуночи UTC может увести «сегодня» на вчера.
@@ -687,6 +691,14 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
 
     const asOf = _localIsoNow();
     const aiPeriodFilter = await buildAiPeriodFilterForMessage(q);
+    const historicalContext = source === 'quick_button'
+      ? null
+      : await getHistoricalContextForRequest({
+        mainStore,
+        periodFilter: aiPeriodFilter,
+        asOf,
+        reason: 'mobile_ai_chat_request'
+      });
     const tooltipSnapshot = source === 'quick_button'
       ? null
       : await buildTooltipSnapshotForRange({
@@ -727,6 +739,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         mode,
         snapshot,
         tooltipSnapshot,
+        historicalContext,
         accounts: Array.isArray(mainStore?.aiAccountBalances) ? mainStore.aiAccountBalances : [],
         // 🔥 REMOVED: uiSnapshot - backend uses dataProvider.buildDataPacket()
       }),
@@ -809,6 +822,35 @@ watch(
       textarea.style.height = 'auto';
       textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
     }
+  }
+);
+
+watch(
+  () => mainStore.cacheVersion,
+  () => {
+    signalBackgroundAnalyticsMutation({
+      mainStore,
+      periodFilter: mainStore?.periodFilter || null,
+      reason: 'mobile_cache_version'
+    });
+  }
+);
+
+watch(
+  () => [
+    String(mainStore?.periodFilter?.mode || ''),
+    String(mainStore?.periodFilter?.customStart || ''),
+    String(mainStore?.periodFilter?.customEnd || '')
+  ],
+  () => {
+    scheduleBackgroundAnalyticsPrefetch({
+      mainStore,
+      periodFilter: mainStore?.periodFilter || null,
+      reason: 'mobile_period_filter_change',
+      delayMs: 900,
+      jitterMs: 220,
+      force: true
+    });
   }
 );
 
@@ -1042,6 +1084,11 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', forceEndResize);
 
   await initializeMobileView();
+  scheduleBackgroundAnalyticsPrefetch({
+    mainStore,
+    periodFilter: mainStore?.periodFilter || null,
+    reason: 'mobile_bootstrap_lazy_prefetch'
+  });
   
   console.log('[MOBILE INIT] Fast load complete. Month navigation is active.');
   await checkDayChange();
@@ -1089,6 +1136,7 @@ onUnmounted(() => {
     if (el) el.removeEventListener('scroll', onTimelineScroll);
     document.removeEventListener('click', handleFilterClickOutside, true);
     if (dayChangeInterval) { clearInterval(dayChangeInterval); dayChangeInterval = null; }
+    stopBackgroundAnalyticsPrefetchTimer();
     window.removeEventListener('touchmove', onResizerMove);
     window.removeEventListener('touchend', onResizerEnd);
     window.removeEventListener('pointermove', onResizerMove);

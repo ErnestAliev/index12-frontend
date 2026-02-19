@@ -9,6 +9,7 @@ export async function sendAiRequest({
   apiBaseUrl,
   message,
   source = 'chat',
+  action = null,
   quickKey = null,
   mode = 'freeform',
   asOf = null,
@@ -22,6 +23,7 @@ export async function sendAiRequest({
   timeline = null,
   tableContext = null,
   tooltipSnapshot = null,
+  historicalContext = null,
   timeout = 20000,
 }) {
   if (!apiBaseUrl) throw new Error('apiBaseUrl is required');
@@ -41,6 +43,7 @@ export async function sendAiRequest({
   const payload = {
     message: text,
     source,
+    action,
     quickKey,
     mode,
     asOf,
@@ -55,6 +58,7 @@ export async function sendAiRequest({
   if (snapshot) payload.snapshot = snapshot;
   if (tableContext) payload.tableContext = tableContext;
   if (tooltipSnapshot) payload.tooltipSnapshot = tooltipSnapshot;
+  if (historicalContext) payload.historicalContext = historicalContext;
 
   // Всегда идём на единый endpoint — сервер сам решает, отвечать из snapshot или БД
   const endpoint = `${apiBaseUrl}/ai/query`;

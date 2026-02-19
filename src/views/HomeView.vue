@@ -5,6 +5,11 @@ import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
 import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
+import {
+  scheduleBackgroundAnalyticsPrefetch,
+  signalBackgroundAnalyticsMutation,
+  stopBackgroundAnalyticsPrefetchTimer
+} from '@/utils/backgroundAnalyticsBuffer.js';
 
 
 // Компоненты
@@ -913,6 +918,8 @@ const checkDayChange = async () => {
 };
 let dayChangeCheckerInterval = null;
 let resizeObserver = null;
+let stopBufferCacheWatcher = null;
+let stopBufferPeriodWatcher = null;
 
 // Global click handler to close context menu when clicking outside
 const handleGlobalClick = (e) => {
@@ -1063,6 +1070,41 @@ onMounted(async () => {
     if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); 
     window.addEventListener('resize', onWindowResize); 
     updateScrollbarMetrics(); 
+
+    scheduleBackgroundAnalyticsPrefetch({
+      mainStore,
+      periodFilter: mainStore?.periodFilter || null,
+      reason: 'desktop_bootstrap_lazy_prefetch'
+    });
+
+    stopBufferCacheWatcher = watch(
+      () => mainStore.cacheVersion,
+      () => {
+        signalBackgroundAnalyticsMutation({
+          mainStore,
+          periodFilter: mainStore?.periodFilter || null,
+          reason: 'desktop_cache_version'
+        });
+      }
+    );
+
+    stopBufferPeriodWatcher = watch(
+      () => [
+        String(mainStore?.periodFilter?.mode || ''),
+        String(mainStore?.periodFilter?.customStart || ''),
+        String(mainStore?.periodFilter?.customEnd || '')
+      ],
+      () => {
+        scheduleBackgroundAnalyticsPrefetch({
+          mainStore,
+          periodFilter: mainStore?.periodFilter || null,
+          reason: 'desktop_period_filter_change',
+          delayMs: 900,
+          jitterMs: 220,
+          force: true
+        });
+      }
+    );
     
     // Timeline is now initialized by setMonthRange in onMounted (line 1458)
     // No need to call setProjectionToEndOfMonth - it would overwrite timeline range
@@ -1072,7 +1114,52 @@ onMounted(async () => {
         captureBackgroundScreenshot();
     }, 2000);
 });
-onBeforeUnmount(() => { if (dayChangeCheckerInterval) { clearInterval(dayChangeCheckerInterval); dayChangeCheckerInterval = null; } mainStore.stopAutoRefresh(); if (dividerWrapperRef.value) { dividerWrapperRef.value.removeEventListener('mousedown', initResize); dividerWrapperRef.value.removeEventListener('touchstart', initResize); } if (resizerRef.value) { resizerRef.value.removeEventListener('mousedown', initResize); resizerRef.value.removeEventListener('touchstart', initResize); } if (headerResizerRef.value) { headerResizerRef.value.removeEventListener('mousedown', initHeaderResize); headerResizerRef.value.removeEventListener('touchstart', initHeaderResize); } if (timelineGridRef.value) { timelineGridRef.value.removeEventListener('wheel', onWheelScroll); timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart); timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove); timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd); timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave); } window.removeEventListener('resize', onWindowResize); document.removeEventListener('click', handleGlobalClick); if (resizeObserver && mainContentRef.value) { resizeObserver.unobserve(mainContentRef.value); } resizeObserver = null; });
+onBeforeUnmount(() => {
+  if (dayChangeCheckerInterval) {
+    clearInterval(dayChangeCheckerInterval);
+    dayChangeCheckerInterval = null;
+  }
+
+  if (typeof stopBufferCacheWatcher === 'function') {
+    stopBufferCacheWatcher();
+    stopBufferCacheWatcher = null;
+  }
+  if (typeof stopBufferPeriodWatcher === 'function') {
+    stopBufferPeriodWatcher();
+    stopBufferPeriodWatcher = null;
+  }
+  stopBackgroundAnalyticsPrefetchTimer();
+
+  mainStore.stopAutoRefresh();
+
+  if (dividerWrapperRef.value) {
+    dividerWrapperRef.value.removeEventListener('mousedown', initResize);
+    dividerWrapperRef.value.removeEventListener('touchstart', initResize);
+  }
+  if (resizerRef.value) {
+    resizerRef.value.removeEventListener('mousedown', initResize);
+    resizerRef.value.removeEventListener('touchstart', initResize);
+  }
+  if (headerResizerRef.value) {
+    headerResizerRef.value.removeEventListener('mousedown', initHeaderResize);
+    headerResizerRef.value.removeEventListener('touchstart', initHeaderResize);
+  }
+  if (timelineGridRef.value) {
+    timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
+    timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart);
+    timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove);
+    timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd);
+    timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave);
+  }
+
+  window.removeEventListener('resize', onWindowResize);
+  document.removeEventListener('click', handleGlobalClick);
+
+  if (resizeObserver && mainContentRef.value) {
+    resizeObserver.unobserve(mainContentRef.value);
+  }
+  resizeObserver = null;
+});
 
 // --- Transfer, Retail, Refund Handlers ---
 const handleTransferSave = async ({ mode, id, data }) => { 

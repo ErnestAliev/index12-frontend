@@ -4,6 +4,11 @@ import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
+import {
+  getHistoricalContextForRequest,
+  scheduleBackgroundAnalyticsPrefetch,
+  signalBackgroundAnalyticsMutation
+} from '@/utils/backgroundAnalyticsBuffer.js';
 
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
@@ -59,17 +64,17 @@ const TABLE_COLUMNS = Object.freeze([
   'Статус'
 ]);
 const QUICK_PROMPTS = Object.freeze([
-  { label: 'Анализ', prompt: 'анализ' },
-  { label: 'Прогноз', prompt: 'прогноз' },
-  { label: 'Счета', prompt: 'покажи счета' },
-  { label: 'Доходы', prompt: 'покажи доходы' },
-  { label: 'Расходы', prompt: 'покажи расходы' },
-  { label: 'Переводы', prompt: 'покажи переводы' },
-  { label: 'Компании', prompt: 'покажи компании' },
-  { label: 'Проекты', prompt: 'покажи проекты' },
-  { label: 'Контрагенты', prompt: 'покажи контрагентов' },
-  { label: 'Категории', prompt: 'покажи категории' },
-  { label: 'Физлица', prompt: 'покажи физлица' }
+  { label: 'Анализ', prompt: 'анализ', action: 'analysis' },
+  { label: 'Прогноз', prompt: 'прогноз', action: 'forecast' },
+  { label: 'Счета', prompt: 'покажи счета', action: 'accounts' },
+  { label: 'Доходы', prompt: 'покажи доходы', action: 'income' },
+  { label: 'Расходы', prompt: 'покажи расходы', action: 'expense' },
+  { label: 'Переводы', prompt: 'покажи переводы', action: 'transfers' },
+  { label: 'Компании', prompt: 'покажи компании', action: 'companies' },
+  { label: 'Проекты', prompt: 'покажи проекты', action: 'projects' },
+  { label: 'Контрагенты', prompt: 'покажи контрагентов', action: 'contractors' },
+  { label: 'Категории', prompt: 'покажи категории', action: 'categories' },
+  { label: 'Физлица', prompt: 'покажи физлица', action: 'individuals' }
 ]);
 
 const closeModal = () => {
@@ -1431,6 +1436,14 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
     const isQuickButton = source === 'quick_button';
     const asOfNow = getLocalIsoNow();
     const timelineDateKey = getAiTimelineDateKey();
+    const historicalContext = isQuickButton
+      ? null
+      : await getHistoricalContextForRequest({
+        mainStore,
+        periodFilter,
+        asOf: asOfNow,
+        reason: 'journal_ai_chat_request'
+      });
     const tableContext = buildAiTableContext(periodFilter);
     const tooltipSnapshot = isQuickButton
       ? null
@@ -1450,10 +1463,12 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
       timelineDate: timelineDateKey,
       includeHidden: isQuickButton,
       visibleAccountIds: null,
+      action: options?.action || null,
       snapshot: isQuickButton ? buildAiSnapshot() : null,
       accounts: mainStore.aiAccountBalances || mainStore.accounts || null,
       tableContext,
       tooltipSnapshot,
+      historicalContext,
       debugAi: false,
       periodFilter,
       timeline: null
@@ -1490,11 +1505,14 @@ const onAiInputKeydown = (event) => {
   }
 };
 
-const useQuickPrompt = (promptText) => {
+const useQuickPrompt = (item) => {
   if (aiLoading.value) return;
+  const promptText = String(item?.prompt || '').trim();
+  const action = item?.action ? String(item.action) : null;
+  if (!promptText) return;
   aiInput.value = '';
   nextTick(() => {
-    sendAiMessage(promptText, { source: 'quick_button' });
+    sendAiMessage(promptText, { source: 'quick_button', action });
   });
 };
 
@@ -1568,6 +1586,14 @@ watch(() => aiInput.value, () => {
   resizeAiInput();
 });
 
+watch(() => mainStore.cacheVersion, () => {
+  signalBackgroundAnalyticsMutation({
+    mainStore,
+    periodFilter: mainStore?.periodFilter || null,
+    reason: 'journal_modal_cache_version'
+  });
+});
+
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   loadOperations();
@@ -1579,6 +1605,11 @@ onMounted(() => {
   aiDayBoundaryInterval = window.setInterval(() => {
     syncAiHistoryDayBoundary();
   }, 60 * 1000);
+  scheduleBackgroundAnalyticsPrefetch({
+    mainStore,
+    periodFilter: mainStore?.periodFilter || null,
+    reason: 'journal_modal_lazy_prefetch'
+  });
   resizeAiInput();
   window.addEventListener('resize', resizeAiInput);
 });
@@ -1961,7 +1992,7 @@ onBeforeUnmount(() => {
               :key="item.prompt"
               class="ai-quick-btn"
               :disabled="aiLoading"
-              @click="useQuickPrompt(item.prompt)"
+              @click="useQuickPrompt(item)"
             >
               {{ item.label }}
             </button>
