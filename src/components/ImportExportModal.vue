@@ -283,11 +283,11 @@ const resolveMonthRangeOverride = (questionText, baseFilter = null) => {
   const asksEndOfPeriod = /(конец\s+месяц|к\s+концу\s+месяц|на\s+конец\s+месяц|конец\s+[а-я]+|остатк[аи]\s+на\s+конец|на\s+конец)/i.test(norm);
   const asksWeekScope = /недел/i.test(norm);
   const explicitMonth = resolveMonthFromQuestion(norm);
-  const hasExplicitMonth = Number.isFinite(Number(explicitMonth));
+  const hasExplicitMonth = Number.isInteger(explicitMonth) && explicitMonth >= 1 && explicitMonth <= 12;
   const asksMonthScope = (
     (
       hasExplicitMonth
-      && /(\bза\b|\bв\b|\bпо\b|месяц|итог)/i.test(norm)
+      && /((^|\\s)(за|в|по)(\\s|$)|месяц|итог)/i.test(norm)
     )
     || /итог[аи]?\s+месяц/i.test(norm)
     || /итоги\s+за\s+месяц/i.test(norm)
