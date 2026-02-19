@@ -276,14 +276,29 @@ const resolveMonthFromQuestion = (questionText) => {
   return null;
 };
 
-const resolveEndOfMonthRangeOverride = (questionText, baseFilter = null) => {
+const resolveMonthRangeOverride = (questionText, baseFilter = null) => {
   const norm = normalizeQuestionText(questionText);
   if (!norm) return null;
 
   const asksEndOfPeriod = /(конец\s+месяц|к\s+концу\s+месяц|на\s+конец\s+месяц|конец\s+[а-я]+|остатк[аи]\s+на\s+конец|на\s+конец)/i.test(norm);
-  if (!asksEndOfPeriod) return null;
-
+  const asksWeekScope = /недел/i.test(norm);
   const explicitMonth = resolveMonthFromQuestion(norm);
+  const hasExplicitMonth = Number.isFinite(Number(explicitMonth));
+  const asksMonthScope = (
+    (
+      hasExplicitMonth
+      && /(\bза\b|\bв\b|\bпо\b|месяц|итог)/i.test(norm)
+    )
+    || /итог[аи]?\s+месяц/i.test(norm)
+    || /итоги\s+за\s+месяц/i.test(norm)
+    || /за\s+месяц/i.test(norm)
+    || /весь\s+месяц/i.test(norm)
+    || /по\s+месяц/i.test(norm)
+    || /текущ(ий|его)\s+месяц/i.test(norm)
+    || /эт(от|ого)\s+месяц/i.test(norm)
+  );
+  if (asksWeekScope || (!asksEndOfPeriod && !asksMonthScope)) return null;
+
   const explicitYearMatch = norm.match(/\b(20\d{2})\b/);
   const explicitYear = explicitYearMatch ? Number(explicitYearMatch[1]) : null;
 
@@ -303,7 +318,7 @@ const resolveEndOfMonthRangeOverride = (questionText, baseFilter = null) => {
     mode: 'custom',
     customStart: start.toISOString(),
     customEnd: end.toISOString(),
-    _aiDateOverride: 'end_of_month'
+    _aiDateOverride: asksEndOfPeriod ? 'end_of_month' : 'month_scope'
   };
 };
 
@@ -342,7 +357,7 @@ const buildPeriodFilterForAi = (questionText = '') => {
     }
   }
 
-  const endMonthOverride = resolveEndOfMonthRangeOverride(questionText, baseFilter);
+  const endMonthOverride = resolveMonthRangeOverride(questionText, baseFilter);
   if (endMonthOverride) return endMonthOverride;
 
   return baseFilter || null;
