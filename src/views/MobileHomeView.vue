@@ -477,6 +477,29 @@ const resolveMonthFromQuestion = (questionText) => {
   return null;
 };
 
+const parseExplicitYearFromQuestion = (normText) => {
+  const match = String(normText || '').match(/\b((?:19|20)\d{2})\b/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  return Number.isFinite(year) ? year : null;
+};
+
+const resolveRelativeMonthYear = ({ month, explicitYear, fallbackYear, fallbackMonth }) => {
+  const monthNum = Number(month);
+  if (!Number.isFinite(monthNum) || monthNum < 1 || monthNum > 12) return null;
+  if (Number.isFinite(explicitYear)) return { year: explicitYear, month: monthNum };
+
+  const baseYear = Number.isFinite(Number(fallbackYear)) ? Number(fallbackYear) : new Date().getFullYear();
+  const baseMonth = Number.isFinite(Number(fallbackMonth)) ? Number(fallbackMonth) : (new Date().getMonth() + 1);
+  const requestedMonthIdx = monthNum - 1; // 0..11
+  const baseMonthIdx = baseMonth - 1; // 0..11
+
+  return {
+    year: requestedMonthIdx > baseMonthIdx ? (baseYear - 1) : baseYear,
+    month: monthNum
+  };
+};
+
 const buildAiPeriodFilterForMessage = (questionText) => {
   const norm = normalizeQuestionText(questionText);
   const baseFilter = mainStore?.periodFilter || null;
@@ -501,15 +524,23 @@ const buildAiPeriodFilterForMessage = (questionText) => {
   );
   if (asksWeekScope || (!asksEndOfPeriod && !asksMonthScope)) return baseFilter;
 
-  const explicitYearMatch = norm.match(/\b(20\d{2})\b/);
-  const explicitYear = explicitYearMatch ? Number(explicitYearMatch[1]) : null;
+  const explicitYear = parseExplicitYearFromQuestion(norm);
 
   const fromBase = getYearMonthFromIsoLike(baseFilter?.customEnd || baseFilter?.customStart || null);
   const now = new Date();
   const fallback = fromBase || { year: now.getFullYear(), month: now.getMonth() + 1 };
 
-  const year = Number.isFinite(explicitYear) ? explicitYear : fallback.year;
-  const month = Number.isFinite(explicitMonth) ? explicitMonth : fallback.month;
+  const resolvedMonthYear = Number.isFinite(explicitMonth)
+    ? resolveRelativeMonthYear({
+      month: explicitMonth,
+      explicitYear,
+      fallbackYear: fallback.year,
+      fallbackMonth: fallback.month
+    })
+    : null;
+
+  const year = Number.isFinite(resolvedMonthYear?.year) ? Number(resolvedMonthYear.year) : Number(fallback.year);
+  const month = Number.isFinite(resolvedMonthYear?.month) ? Number(resolvedMonthYear.month) : Number(fallback.month);
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return baseFilter;
 
   const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
