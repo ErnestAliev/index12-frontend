@@ -460,14 +460,9 @@ const AI_MONTH_PATTERNS = Object.freeze([
   { month: 12, re: /декабр/i }
 ]);
 
-const normalizeQuestionText = (value) => String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
+const AI_MONTH_YEAR_RE_FRAGMENT = 'январ[а-я]*|феврал[а-я]*|март[а-я]*|апрел[а-я]*|ма[йя][а-я]*|июн[а-я]*|июл[а-я]*|август[а-я]*|сентябр[а-я]*|октябр[а-я]*|ноябр[а-я]*|декабр[а-я]*';
 
-const getYearMonthFromIsoLike = (isoLike) => {
-  if (!isoLike) return null;
-  const d = new Date(isoLike);
-  if (Number.isNaN(d.getTime())) return null;
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
-};
+const normalizeQuestionText = (value) => String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
 
 const resolveMonthFromQuestion = (questionText) => {
   const norm = normalizeQuestionText(questionText);
@@ -477,32 +472,84 @@ const resolveMonthFromQuestion = (questionText) => {
   return null;
 };
 
+const parseShortOrFullYear = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  if (raw.length === 2) return n >= 70 ? (1900 + n) : (2000 + n);
+  if (raw.length === 4) return n;
+  return null;
+};
+
 const parseExplicitYearFromQuestion = (normText) => {
-  const match = String(normText || '').match(/\b((?:19|20)\d{2})\b/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  return Number.isFinite(year) ? year : null;
+  const text = String(normText || '');
+  const monthYearRe = new RegExp(`(?:${AI_MONTH_YEAR_RE_FRAGMENT})\\s*(\\d{2}|(?:19|20)\\d{2})\\b`, 'i');
+  const monthYearMatch = text.match(monthYearRe);
+  if (monthYearMatch?.[1]) {
+    const yearFromMonth = parseShortOrFullYear(monthYearMatch[1]);
+    if (Number.isFinite(yearFromMonth)) return yearFromMonth;
+  }
+
+  const fullYearMatch = text.match(/\b((?:19|20)\d{2})\b/);
+  if (fullYearMatch?.[1]) {
+    const fullYear = Number(fullYearMatch[1]);
+    if (Number.isFinite(fullYear)) return fullYear;
+  }
+
+  return null;
 };
 
-const resolveRelativeMonthYear = ({ month, explicitYear, fallbackYear, fallbackMonth }) => {
-  const monthNum = Number(month);
-  if (!Number.isFinite(monthNum) || monthNum < 1 || monthNum > 12) return null;
-  if (Number.isFinite(explicitYear)) return { year: explicitYear, month: monthNum };
-
-  const baseYear = Number.isFinite(Number(fallbackYear)) ? Number(fallbackYear) : new Date().getFullYear();
-  const baseMonth = Number.isFinite(Number(fallbackMonth)) ? Number(fallbackMonth) : (new Date().getMonth() + 1);
-  const requestedMonthIdx = monthNum - 1; // 0..11
-  const baseMonthIdx = baseMonth - 1; // 0..11
-
-  return {
-    year: requestedMonthIdx > baseMonthIdx ? (baseYear - 1) : baseYear,
-    month: monthNum
-  };
+const monthRange = (year, month) => {
+  const start = new Date(Number(year), Number(month) - 1, 1, 0, 0, 0, 0);
+  const end = new Date(Number(year), Number(month), 0, 23, 59, 59, 999);
+  return { start, end };
 };
 
-const buildAiPeriodFilterForMessage = (questionText) => {
+const getStoreCalculationCache = () => {
+  const raw = mainStore?.calculationCache;
+  if (!raw) return {};
+  if (typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'value')) {
+    return raw.value || {};
+  }
+  return typeof raw === 'object' ? raw : {};
+};
+
+const monthHasOperationsInCache = ({ year, month }) => {
+  const cache = getStoreCalculationCache();
+  const parseDateKey = typeof mainStore?._parseDateKey === 'function'
+    ? mainStore._parseDateKey
+    : null;
+  const { start, end } = monthRange(year, month);
+  const startTs = start.getTime();
+  const endTs = end.getTime();
+
+  for (const [dateKey, ops] of Object.entries(cache || {})) {
+    const parsed = parseDateKey ? parseDateKey(String(dateKey)) : new Date(String(dateKey));
+    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) continue;
+    const ts = parsed.getTime();
+    if (ts < startTs || ts > endTs) continue;
+    if (Array.isArray(ops) && ops.some((op) => op && !op.isDeleted)) return true;
+  }
+  return false;
+};
+
+const probeMonthHasOperations = async ({ year, month }) => {
+  if (!Number.isFinite(Number(year)) || !Number.isFinite(Number(month))) return false;
+  const { start, end } = monthRange(year, month);
+
+  if (typeof mainStore?.fetchOperationsRange === 'function') {
+    await mainStore.fetchOperationsRange(start, end, {
+      sparse: true,
+      chunkDays: 62
+    });
+  }
+
+  return monthHasOperationsInCache({ year, month });
+};
+
+const determineRangeFromQuery = async (questionText, baseFilter = null) => {
   const norm = normalizeQuestionText(questionText);
-  const baseFilter = mainStore?.periodFilter || null;
   if (!norm) return baseFilter;
 
   const asksEndOfPeriod = /(конец\s+месяц|к\s+концу\s+месяц|на\s+конец\s+месяц|конец\s+[а-я]+|остатк[аи]\s+на\s+конец|на\s+конец)/i.test(norm);
@@ -525,23 +572,49 @@ const buildAiPeriodFilterForMessage = (questionText) => {
   if (asksWeekScope || (!asksEndOfPeriod && !asksMonthScope)) return baseFilter;
 
   const explicitYear = parseExplicitYearFromQuestion(norm);
-
-  const fromBase = getYearMonthFromIsoLike(baseFilter?.customEnd || baseFilter?.customStart || null);
   const now = new Date();
-  const fallback = fromBase || { year: now.getFullYear(), month: now.getMonth() + 1 };
+  const fallback = { year: now.getFullYear(), month: now.getMonth() + 1 };
 
-  const resolvedMonthYear = Number.isFinite(explicitMonth)
-    ? resolveRelativeMonthYear({
-      month: explicitMonth,
-      explicitYear,
-      fallbackYear: fallback.year,
-      fallbackMonth: fallback.month
-    })
-    : null;
+  const currentYear = Number(fallback.year);
+  const currentMonth = Number(fallback.month); // 1..12
+  const month = Number.isFinite(Number(explicitMonth)) ? Number(explicitMonth) : currentMonth;
+  if (!Number.isFinite(currentYear) || !Number.isFinite(currentMonth) || !Number.isFinite(month) || month < 1 || month > 12) return baseFilter;
 
-  const year = Number.isFinite(resolvedMonthYear?.year) ? Number(resolvedMonthYear.year) : Number(fallback.year);
-  const month = Number.isFinite(resolvedMonthYear?.month) ? Number(resolvedMonthYear.month) : Number(fallback.month);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return baseFilter;
+  let year = Number.isFinite(explicitYear) ? Number(explicitYear) : currentYear;
+  let calendarResolution = 'explicit_or_current_month';
+
+  if (!Number.isFinite(explicitYear)) {
+    if (month < currentMonth) {
+      year = currentYear;
+      calendarResolution = 'past_same_year';
+    } else if (month > currentMonth) {
+      const hasCurrentYearData = await probeMonthHasOperations({
+        year: currentYear,
+        month
+      });
+      if (hasCurrentYearData) {
+        year = currentYear;
+        calendarResolution = 'future_month_plan_current_year';
+      } else {
+        const previousYear = currentYear - 1;
+        const hasPreviousYearData = await probeMonthHasOperations({
+          year: previousYear,
+          month
+        });
+        year = previousYear;
+        calendarResolution = hasPreviousYearData
+          ? 'history_previous_year'
+          : 'history_previous_year_default_no_data';
+      }
+    } else {
+      year = currentYear;
+      calendarResolution = 'current_month';
+    }
+  } else {
+    calendarResolution = 'explicit_year';
+  }
+
+  if (!Number.isFinite(year)) return baseFilter;
 
   const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
   const end = new Date(year, month, 0, 23, 59, 59, 999);
@@ -551,8 +624,14 @@ const buildAiPeriodFilterForMessage = (questionText) => {
     mode: 'custom',
     customStart: start.toISOString(),
     customEnd: end.toISOString(),
-    _aiDateOverride: asksEndOfPeriod ? 'end_of_month' : 'month_scope'
+    _aiDateOverride: asksEndOfPeriod ? 'end_of_month' : 'month_scope',
+    _aiCalendarResolution: calendarResolution
   };
+};
+
+const buildAiPeriodFilterForMessage = async (questionText) => {
+  const baseFilter = mainStore?.periodFilter || null;
+  return determineRangeFromQuery(questionText, baseFilter);
 };
 
 const sendAiMessage = async (forcedMsg = null, opts = {}) => {
@@ -607,7 +686,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     };
 
     const asOf = _localIsoNow();
-    const aiPeriodFilter = buildAiPeriodFilterForMessage(q);
+    const aiPeriodFilter = await buildAiPeriodFilterForMessage(q);
     const tooltipSnapshot = source === 'quick_button'
       ? null
       : await buildTooltipSnapshotForRange({
