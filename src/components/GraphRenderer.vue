@@ -1348,6 +1348,62 @@ const expenseFloatColors = computed(() => {
   });
 });
 
+const resolveNamedEntity = (entityRef, list) => {
+  if (!entityRef) return '';
+  if (typeof entityRef === 'object') {
+    if (entityRef.name) return entityRef.name;
+    entityRef = entityRef._id || entityRef.id || null;
+  }
+  if (!entityRef || !Array.isArray(list)) return '';
+  const id = String(entityRef);
+  const found = list.find((item) => String(item?._id || item?.id || '') === id);
+  return found?.name || '';
+};
+
+const resolveAccountOwnerName = (accountRef) => {
+  if (!accountRef) return '';
+
+  let accountObj = null;
+  if (typeof accountRef === 'object') {
+    accountObj = accountRef;
+  }
+
+  if (!accountObj || (!accountObj.companyId && !accountObj.individualId)) {
+    const accountId = typeof accountRef === 'object'
+      ? (accountRef._id || accountRef.id || null)
+      : accountRef;
+    if (accountId && Array.isArray(mainStore.accounts)) {
+      accountObj = mainStore.accounts.find((acc) => String(acc?._id || acc?.id || '') === String(accountId)) || accountObj;
+    }
+  }
+
+  const companyName = resolveNamedEntity(accountObj?.companyId, mainStore.companies);
+  if (companyName) return companyName;
+  const individualName = resolveNamedEntity(accountObj?.individualId, mainStore.individuals);
+  return individualName || '';
+};
+
+const resolveTransferOwnerNames = (op, isOutOfSystemTransfer) => {
+  const fromOwnerName =
+    resolveNamedEntity(op?.fromCompanyId, mainStore.companies) ||
+    resolveNamedEntity(op?.fromIndividualId, mainStore.individuals) ||
+    resolveNamedEntity(op?.companyId, mainStore.companies) ||
+    resolveNamedEntity(op?.individualId, mainStore.individuals) ||
+    resolveAccountOwnerName(op?.fromAccountId || op?.accountId) ||
+    '???';
+
+  const toOwnerName = isOutOfSystemTransfer
+    ? (op?.destination || 'Вне системы')
+    : (
+      resolveNamedEntity(op?.toCompanyId, mainStore.companies) ||
+      resolveNamedEntity(op?.toIndividualId, mainStore.individuals) ||
+      resolveAccountOwnerName(op?.toAccountId) ||
+      '???'
+    );
+
+  return { fromOwnerName, toOwnerName };
+};
+
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
   const sortedOps = [...ops].sort((a, b) => Math.abs(Number(b.amount) || 0) - Math.abs(Number(a.amount) || 0));
@@ -1359,9 +1415,12 @@ const getTooltipOperationList = (ops) => {
       // Handle transfers separately
       if (op.isTransfer || op.type === 'transfer') {
         const isOutOfSystemTransfer = isPersonalTransferWithdrawal(op);
+        const { fromOwnerName, toOwnerName } = resolveTransferOwnerNames(op, isOutOfSystemTransfer);
         return {
           isTransfer: true,
           isOutOfSystemTransfer,
+          fromOwnerName,
+          toOwnerName,
           fromAccName: op.fromAccountId?.name || op.accountId?.name || '???',
           toAccName: isOutOfSystemTransfer
             ? (op.destination || 'Вне системы')
@@ -1784,9 +1843,9 @@ const chartOptions = computed(() => {
               lines.push('ПЕРЕВОДЫ');
               transferDetails.forEach((op) => {
                 const amountStr = `${formatNumber(Math.abs(op?.amount || 0))} т`;
-                const fromAcc = op?.fromAccName || '—';
-                const toAcc = op?.toAccName || '—';
-                lines.push(`${amountStr}: ${fromAcc} → ${toAcc}`);
+                const fromOwner = op?.fromOwnerName || op?.fromAccName || '—';
+                const toOwner = op?.toOwnerName || op?.toAccName || '—';
+                lines.push(`${amountStr}: ${fromOwner} → ${toOwner}`);
               });
             }
 
