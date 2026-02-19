@@ -117,6 +117,15 @@ const isPersonalTransferWithdrawal = (op) => !!op
   && (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
 
 const isTransferLike = (op) => !!op && (op.isTransfer === true || op.type === 'transfer');
+const resolveOperationId = (op) => extractId(op?._id || op?.id);
+const resolveLinkedIncomeId = (op) => extractId(op?.offsetIncomeId || op?.linkedParentId);
+
+const isLinkedOffsetExpenseOp = (op) => {
+  if (!op) return false;
+  if (isTransferLike(op)) return false;
+  if (op.isWithdrawal) return false;
+  return op.type === 'expense' && !!resolveLinkedIncomeId(op);
+};
 
 const resolveVisibilityMode = (mainStore, visibilityMode) => {
   const raw = String(visibilityMode || mainStore?.accountVisibilityMode || 'all').toLowerCase();
@@ -169,7 +178,7 @@ const opMatchesVisibilityMode = (op, visibilityMode, accountById) => {
 const isOpVisibleForSnapshot = (mainStore, op, visibilityMode, accountById) => {
   if (!op) return false;
   if (op.isDeleted) return false;
-  if (op.excludeFromTotals && !op.offsetIncomeId) return false;
+  if (op.excludeFromTotals && !op.offsetIncomeId && !op.linkedParentId) return false;
   if (op.isSplitParent) return false;
 
   return opMatchesVisibilityMode(op, visibilityMode, accountById);
@@ -183,12 +192,58 @@ const normalizeAmountForType = (op) => {
   return raw;
 };
 
-const listEntryFromOperation = (mainStore, op) => {
+const buildOffsetMetaByIncomeId = ({ opsByIsoDateKey, mainStore, visibility, accountById }) => {
+  const map = new Map();
+
+  Array.from(opsByIsoDateKey.values()).forEach((ops) => {
+    (Array.isArray(ops) ? ops : []).forEach((op) => {
+      if (!op || op.isDeleted) return;
+      if (!isOpVisibleForSnapshot(mainStore, op, visibility, accountById)) return;
+      if (!isLinkedOffsetExpenseOp(op)) return;
+
+      const parentId = resolveLinkedIncomeId(op);
+      if (!parentId) return;
+
+      const amount = Math.abs(toNum(op?.amount));
+      if (amount <= 0) return;
+
+      const categoryName = op?.categoryId?.name || 'Без категории';
+      const offsetId = resolveOperationId(op) || null;
+      const note = `Взаимозачет: ${String(categoryName || 'Без категории')}`;
+
+      const prev = map.get(parentId) || { total: 0, offsets: [] };
+      prev.total += amount;
+      prev.offsets.push({
+        id: offsetId,
+        amount,
+        note
+      });
+      map.set(parentId, prev);
+    });
+  });
+
+  map.forEach((value) => {
+    value.offsets = (Array.isArray(value.offsets) ? value.offsets : [])
+      .sort((a, b) => toNum(b?.amount) - toNum(a?.amount));
+  });
+
+  return map;
+};
+
+const listEntryFromOperation = (mainStore, op, options = {}) => {
   if (!op) return null;
+  const offsetMetaByIncomeId = options?.offsetMetaByIncomeId instanceof Map
+    ? options.offsetMetaByIncomeId
+    : new Map();
+  const opId = resolveOperationId(op);
+  const linkedParentId = resolveLinkedIncomeId(op) || null;
 
   if (isTransferLike(op)) {
     const outOfSystem = isPersonalTransferWithdrawal(op);
     return {
+      id: opId || null,
+      linkedParentId,
+      isOffsetExpense: false,
       isTransfer: true,
       isOutOfSystemTransfer: outOfSystem,
       fromAccName: op.fromAccountId?.name || op.accountId?.name || '???',
@@ -235,7 +290,28 @@ const listEntryFromOperation = (mainStore, op) => {
     compName = op.companyId?.name || op.individualId?.name || 'Компания';
   }
 
+  const nominalAmount = Math.abs(toNum(op?.amount));
+  const linkedOffset = op?.type === 'income' && opId
+    ? (offsetMetaByIncomeId.get(opId) || null)
+    : null;
+  const offsetAmount = Math.abs(toNum(linkedOffset?.total));
+  const offsets = Array.isArray(linkedOffset?.offsets) ? linkedOffset.offsets : [];
+  const netAmount = op?.type === 'income'
+    ? Math.max(0, nominalAmount - offsetAmount)
+    : null;
+  const operationNameParts = [
+    String(catName || '').trim(),
+    String(op.contractorId?.name || op.counterpartyIndividualId?.name || '').trim()
+  ].filter(Boolean);
+  const operationName = operationNameParts.length
+    ? operationNameParts.join(' ')
+    : String(catName || 'Операция');
+
   return {
+    id: opId || null,
+    name: operationName,
+    linkedParentId,
+    isOffsetExpense: isLinkedOffsetExpenseOp(op),
     isIncome: op.type === 'income',
     isWithdrawal: !!op.isWithdrawal,
     isTax,
@@ -244,6 +320,16 @@ const listEntryFromOperation = (mainStore, op) => {
     projName: op.projectId?.name || '---',
     catName,
     amount: normalizeAmountForType(op),
+    nominalAmount: op?.type === 'income' ? nominalAmount : null,
+    netAmount,
+    offsetAmount: op?.type === 'income' ? offsetAmount : null,
+    offsets: op?.type === 'income'
+      ? offsets.map((entry) => ({
+          id: entry?.id || null,
+          amount: Math.abs(toNum(entry?.amount)),
+          note: String(entry?.note || 'Взаимозачет')
+        }))
+      : [],
     compName,
     desc: op.description || ''
   };
@@ -323,7 +409,12 @@ const calculateDayTotals = (mainStore, operations) => {
 
 const applyOperationToRunningBalances = (runningByAccountId, op, options = {}) => {
   if (!op) return;
-  const { mainStore, visibility = 'all', accountById = new Map() } = options;
+  const {
+    mainStore,
+    visibility = 'all',
+    accountById = new Map(),
+    offsetMetaByIncomeId = new Map()
+  } = options;
 
   const addDelta = (accountId, delta) => {
     const key = String(accountId || '');
@@ -350,12 +441,22 @@ const applyOperationToRunningBalances = (runningByAccountId, op, options = {}) =
   if (!accountId) return;
 
   if (op.isWithdrawal || op.type === 'expense') {
+    if (isLinkedOffsetExpenseOp(op)) {
+      // Mutual offsets are non-cash expense rows: cash impact is applied on linked income inflow.
+      return;
+    }
     addDelta(accountId, -Math.abs(toNum(op.amount)));
     return;
   }
 
   if (op.type === 'income') {
-    addDelta(accountId, toNum(op.amount));
+    const incomeId = resolveOperationId(op);
+    const linkedOffsetTotal = incomeId
+      ? Math.abs(toNum(offsetMetaByIncomeId.get(incomeId)?.total))
+      : 0;
+    const nominalAmount = Math.abs(toNum(op.amount));
+    const effectiveInflow = Math.max(0, nominalAmount - linkedOffsetTotal);
+    addDelta(accountId, effectiveInflow);
   }
 };
 
@@ -418,6 +519,12 @@ export async function buildTooltipSnapshotForRange({
   });
 
   const sortedKeys = Array.from(opsByIsoDateKey.keys()).sort((a, b) => a.localeCompare(b));
+  const offsetMetaByIncomeId = buildOffsetMetaByIncomeId({
+    opsByIsoDateKey,
+    mainStore,
+    visibility,
+    accountById
+  });
 
   let ptr = 0;
   while (ptr < sortedKeys.length && sortedKeys[ptr] < startDateKey) {
@@ -426,7 +533,8 @@ export async function buildTooltipSnapshotForRange({
     dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op, {
       mainStore,
       visibility,
-      accountById
+      accountById,
+      offsetMetaByIncomeId
     }));
     ptr += 1;
   }
@@ -441,7 +549,8 @@ export async function buildTooltipSnapshotForRange({
       dayOps.forEach((op) => applyOperationToRunningBalances(runningByAccountId, op, {
         mainStore,
         visibility,
-        accountById
+        accountById,
+        offsetMetaByIncomeId
       }));
       ptr += 1;
     }
@@ -475,10 +584,18 @@ export async function buildTooltipSnapshotForRange({
       accountBalances,
       totals,
       lists: {
-        income: classified.income.map((op) => listEntryFromOperation(mainStore, op)).filter(Boolean),
-        expense: classified.expense.map((op) => listEntryFromOperation(mainStore, op)).filter(Boolean),
-        withdrawal: classified.withdrawal.map((op) => listEntryFromOperation(mainStore, op)).filter(Boolean),
-        transfer: classified.transfer.map((op) => listEntryFromOperation(mainStore, op)).filter(Boolean)
+        income: classified.income
+          .map((op) => listEntryFromOperation(mainStore, op, { offsetMetaByIncomeId }))
+          .filter(Boolean),
+        expense: classified.expense
+          .map((op) => listEntryFromOperation(mainStore, op, { offsetMetaByIncomeId }))
+          .filter(Boolean),
+        withdrawal: classified.withdrawal
+          .map((op) => listEntryFromOperation(mainStore, op, { offsetMetaByIncomeId }))
+          .filter(Boolean),
+        transfer: classified.transfer
+          .map((op) => listEntryFromOperation(mainStore, op, { offsetMetaByIncomeId }))
+          .filter(Boolean)
       }
     });
   });
