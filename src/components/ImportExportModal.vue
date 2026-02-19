@@ -1402,7 +1402,7 @@ onBeforeUnmount(() => {
         :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
       >
         <div class="modal-header-main">
-          <h3>Журнал операций</h3>
+          <h3 class="modal-header-title">Журнал операций</h3>
 
           <div class="header-actions">
             <div class="summary-line">
@@ -1979,12 +1979,21 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.modal-header-title,
 .modal-header-ai-title {
-  color: var(--ai-pane-text);
+  margin: 0;
   font-size: 13px;
   font-weight: var(--fw-semi, 600);
   letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+.modal-header-title {
+  color: var(--editor-cell-text);
+}
+
+.modal-header-ai-title {
+  color: var(--ai-pane-text);
 }
 
 .modal-header.ai-collapsed .modal-header-ai {
