@@ -244,6 +244,69 @@ const getTodayIso = () => {
   return new Date(now - offset).toISOString().slice(0, 10);
 };
 
+const AI_MONTH_PATTERNS = Object.freeze([
+  { month: 1, re: /январ/i },
+  { month: 2, re: /феврал/i },
+  { month: 3, re: /март/i },
+  { month: 4, re: /апрел/i },
+  { month: 5, re: /ма[йя]/i },
+  { month: 6, re: /июн/i },
+  { month: 7, re: /июл/i },
+  { month: 8, re: /август/i },
+  { month: 9, re: /сентябр/i },
+  { month: 10, re: /октябр/i },
+  { month: 11, re: /ноябр/i },
+  { month: 12, re: /декабр/i }
+]);
+
+const normalizeQuestionText = (value) => normalizeString(value).toLowerCase().replace(/ё/g, 'е');
+
+const getYearMonthFromIsoLike = (isoLike) => {
+  if (!isoLike) return null;
+  const d = new Date(isoLike);
+  if (Number.isNaN(d.getTime())) return null;
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+};
+
+const resolveMonthFromQuestion = (questionText) => {
+  const norm = normalizeQuestionText(questionText);
+  for (const item of AI_MONTH_PATTERNS) {
+    if (item.re.test(norm)) return item.month;
+  }
+  return null;
+};
+
+const resolveEndOfMonthRangeOverride = (questionText, baseFilter = null) => {
+  const norm = normalizeQuestionText(questionText);
+  if (!norm) return null;
+
+  const asksEndOfPeriod = /(конец\s+месяц|к\s+концу\s+месяц|на\s+конец\s+месяц|конец\s+[а-я]+|остатк[аи]\s+на\s+конец|на\s+конец)/i.test(norm);
+  if (!asksEndOfPeriod) return null;
+
+  const explicitMonth = resolveMonthFromQuestion(norm);
+  const explicitYearMatch = norm.match(/\b(20\d{2})\b/);
+  const explicitYear = explicitYearMatch ? Number(explicitYearMatch[1]) : null;
+
+  const fromBase = getYearMonthFromIsoLike(baseFilter?.customEnd || baseFilter?.customStart || null);
+  const fromToday = getYearMonthFromIsoLike(`${getTodayIso()}T00:00:00`);
+  const fallback = fromBase || fromToday || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+
+  const year = Number.isFinite(explicitYear) ? explicitYear : fallback.year;
+  const month = Number.isFinite(explicitMonth) ? explicitMonth : fallback.month;
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+
+  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const end = new Date(year, month, 0, 23, 59, 59, 999);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  return {
+    mode: 'custom',
+    customStart: start.toISOString(),
+    customEnd: end.toISOString(),
+    _aiDateOverride: 'end_of_month'
+  };
+};
+
 const getLocalIsoNow = () => {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -255,15 +318,16 @@ const getLocalIsoNow = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${ms}${sign}${hh}:${mm}`;
 };
 
-const buildPeriodFilterForAi = () => {
+const buildPeriodFilterForAi = (questionText = '') => {
   const from = normalizeString(filters.value.dateFrom);
   const to = normalizeString(filters.value.dateTo);
+  let baseFilter = null;
 
   if (from || to) {
     const startIso = toUtcIsoStart(from || to || getTodayIso());
     const endIso = toUtcIsoEnd(to || from || getTodayIso());
     if (startIso && endIso) {
-      return {
+      baseFilter = {
         mode: 'custom',
         customStart: startIso,
         customEnd: endIso
@@ -271,12 +335,17 @@ const buildPeriodFilterForAi = () => {
     }
   }
 
-  const storeFilter = mainStore?.periodFilter;
-  if (storeFilter && storeFilter.mode === 'custom' && (storeFilter.customStart || storeFilter.customEnd)) {
-    return storeFilter;
+  if (!baseFilter) {
+    const storeFilter = mainStore?.periodFilter;
+    if (storeFilter && storeFilter.mode === 'custom' && (storeFilter.customStart || storeFilter.customEnd)) {
+      baseFilter = storeFilter;
+    }
   }
 
-  return null;
+  const endMonthOverride = resolveEndOfMonthRangeOverride(questionText, baseFilter);
+  if (endMonthOverride) return endMonthOverride;
+
+  return baseFilter || null;
 };
 
 const buildAiSnapshot = () => ({
@@ -973,7 +1042,7 @@ const summaryTotals = computed(() => {
 
 const uniqueSorted = (list) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ru'));
 
-const buildAiTableContext = () => {
+const buildAiTableContext = (questionText = '') => {
   const rows = filteredOperations.value.map((row) => ({
     id: row.operationId || row.rowId,
     date: row.editable?.date || '',
@@ -999,7 +1068,7 @@ const buildAiTableContext = () => {
   return {
     source: 'operations_table',
     generatedAt: new Date().toISOString(),
-    periodFilter: buildPeriodFilterForAi(),
+    periodFilter: buildPeriodFilterForAi(questionText),
     filters: {
       dateFrom: filters.value.dateFrom || null,
       dateTo: filters.value.dateTo || null,
@@ -1229,11 +1298,11 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
   scrollAiToBottom();
 
   try {
-    const periodFilter = buildPeriodFilterForAi();
+    const periodFilter = buildPeriodFilterForAi(text);
     const isQuickButton = source === 'quick_button';
     const asOfNow = getLocalIsoNow();
     const timelineDateKey = getAiTimelineDateKey();
-    const tableContext = buildAiTableContext();
+    const tableContext = buildAiTableContext(text);
     const tooltipSnapshot = isQuickButton
       ? null
       : await buildTooltipSnapshotForRange({

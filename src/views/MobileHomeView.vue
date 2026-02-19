@@ -445,6 +445,70 @@ const handleAiInputKeydown = (event) => {
   sendAiMessage();
 };
 
+const AI_MONTH_PATTERNS = Object.freeze([
+  { month: 1, re: /январ/i },
+  { month: 2, re: /феврал/i },
+  { month: 3, re: /март/i },
+  { month: 4, re: /апрел/i },
+  { month: 5, re: /ма[йя]/i },
+  { month: 6, re: /июн/i },
+  { month: 7, re: /июл/i },
+  { month: 8, re: /август/i },
+  { month: 9, re: /сентябр/i },
+  { month: 10, re: /октябр/i },
+  { month: 11, re: /ноябр/i },
+  { month: 12, re: /декабр/i }
+]);
+
+const normalizeQuestionText = (value) => String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
+
+const getYearMonthFromIsoLike = (isoLike) => {
+  if (!isoLike) return null;
+  const d = new Date(isoLike);
+  if (Number.isNaN(d.getTime())) return null;
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+};
+
+const resolveMonthFromQuestion = (questionText) => {
+  const norm = normalizeQuestionText(questionText);
+  for (const item of AI_MONTH_PATTERNS) {
+    if (item.re.test(norm)) return item.month;
+  }
+  return null;
+};
+
+const buildAiPeriodFilterForMessage = (questionText) => {
+  const norm = normalizeQuestionText(questionText);
+  const baseFilter = mainStore?.periodFilter || null;
+  if (!norm) return baseFilter;
+
+  const asksEndOfPeriod = /(конец\s+месяц|к\s+концу\s+месяц|на\s+конец\s+месяц|конец\s+[а-я]+|остатк[аи]\s+на\s+конец|на\s+конец)/i.test(norm);
+  if (!asksEndOfPeriod) return baseFilter;
+
+  const explicitMonth = resolveMonthFromQuestion(norm);
+  const explicitYearMatch = norm.match(/\b(20\d{2})\b/);
+  const explicitYear = explicitYearMatch ? Number(explicitYearMatch[1]) : null;
+
+  const fromBase = getYearMonthFromIsoLike(baseFilter?.customEnd || baseFilter?.customStart || null);
+  const now = new Date();
+  const fallback = fromBase || { year: now.getFullYear(), month: now.getMonth() + 1 };
+
+  const year = Number.isFinite(explicitYear) ? explicitYear : fallback.year;
+  const month = Number.isFinite(explicitMonth) ? explicitMonth : fallback.month;
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return baseFilter;
+
+  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const end = new Date(year, month, 0, 23, 59, 59, 999);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return baseFilter;
+
+  return {
+    mode: 'custom',
+    customStart: start.toISOString(),
+    customEnd: end.toISOString(),
+    _aiDateOverride: 'end_of_month'
+  };
+};
+
 const sendAiMessage = async (forcedMsg = null, opts = {}) => {
   // Vue passes the DOM event object into handlers like @click="sendAiMessage".
   // If we stringify it, we get "[object PointerEvent]" and send garbage to the backend.
@@ -497,11 +561,12 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
     };
 
     const asOf = _localIsoNow();
+    const aiPeriodFilter = buildAiPeriodFilterForMessage(q);
     const tooltipSnapshot = source === 'quick_button'
       ? null
       : await buildTooltipSnapshotForRange({
         mainStore,
-        periodFilter: mainStore.periodFilter,
+        periodFilter: aiPeriodFilter,
         asOf,
         visibilityMode: 'all'
       });
@@ -533,7 +598,7 @@ const sendAiMessage = async (forcedMsg = null, opts = {}) => {
         asOf,
         includeHidden, 
         visibleAccountIds,
-        periodFilter: mainStore.periodFilter, // ✅ Pass period filter to backend
+        periodFilter: aiPeriodFilter, // ✅ Pass effective AI period filter to backend
         mode,
         snapshot,
         tooltipSnapshot,
