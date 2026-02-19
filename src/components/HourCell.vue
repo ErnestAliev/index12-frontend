@@ -280,20 +280,21 @@ const tooltipCategory = computed(() => {
   return resolveManyNames(categoryItems, mainStore.categories);
 });
 
-const operationTooltip = computed(() => {
-  if (!showOperationTooltip.value || !props.operation || !isOpVisible.value) return '';
+const operationTooltipRows = computed(() => {
+  if (!showOperationTooltip.value || !props.operation || !isOpVisible.value) return [];
   return [
-    `Дата: ${tooltipDate.value}`,
-    `Сумма: ${tooltipAmount.value}`,
-    `Счет: ${tooltipAccount.value}`,
-    `Владелец: ${tooltipOwner.value}`,
-    `Контрагент: ${tooltipContractor.value}`,
-    `Проект: ${tooltipProject.value}`,
-    `Категория: ${tooltipCategory.value}`
-  ].join('\n');
+    { label: 'Дата', value: tooltipDate.value },
+    { label: 'Сумма', value: tooltipAmount.value },
+    { label: 'Счет', value: tooltipAccount.value },
+    { label: 'Владелец', value: tooltipOwner.value },
+    { label: 'Контрагент', value: tooltipContractor.value },
+    { label: 'Проект', value: tooltipProject.value },
+    { label: 'Категория', value: tooltipCategory.value }
+  ];
 });
 
-const phantomTooltip = computed(() => showOperationTooltip.value ? 'Ячейка занята операцией на скрытом счете' : '');
+const hasOperationTooltip = computed(() => operationTooltipRows.value.length > 0);
+const phantomTooltipText = computed(() => showOperationTooltip.value ? 'Ячейка занята операцией на скрытом счете' : '');
 
 
 
@@ -335,10 +336,14 @@ const onDrop = (event) => {
       v-if="isPhantom"
       class="operation-chip phantom"
       draggable="false"
-      :title="phantomTooltip"
     >
       <span class="op-amount">👁️‍🗨️ Занято</span>
       <span class="op-meta">Скрытый счет</span>
+      <div v-if="phantomTooltipText" class="op-tooltip op-tooltip--phantom" role="tooltip" aria-hidden="true">
+        <div class="op-tooltip-row">
+          <span class="op-tooltip-value">{{ phantomTooltipText }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- 🟢 REGULAR OPERATION: Show if visible -->
@@ -359,7 +364,6 @@ const onDrop = (event) => {
           'no-permission': !canInteract
       }"
       :draggable="canInteract"
-      :title="operationTooltip"
       @dragstart="onDragStart" @dragend="onDragEnd"
       @click.stop="onEditClick"
     >
@@ -391,6 +395,13 @@ const onDrop = (event) => {
         </span>
         <span class="op-meta">{{ chipLabel }}</span>
       </template>
+
+      <div v-if="hasOperationTooltip" class="op-tooltip" role="tooltip" aria-hidden="true">
+        <div v-for="row in operationTooltipRows" :key="row.label" class="op-tooltip-row">
+          <span class="op-tooltip-label">{{ row.label }}:</span>
+          <span class="op-tooltip-value">{{ row.value }}</span>
+        </div>
+      </div>
     </div>
 
     <div v-else class="cell-empty-space" @click="onAddClick($event)">&nbsp;</div>
@@ -403,6 +414,8 @@ const onDrop = (event) => {
   width: 100%; 
   height: 36px; 
   border-bottom: 1px solid var(--cell-border); 
+  position: relative;
+  overflow: visible;
   display:flex; 
   align-items:center; 
   padding:4px 8px; 
@@ -442,9 +455,57 @@ const onDrop = (event) => {
   width: 100%;
   min-width: 0; 
   max-width: 100%; 
-  overflow: hidden; 
+  overflow: visible; 
   cursor: pointer; 
+  position: relative;
   transition: all .15s ease-in-out; 
+}
+.operation-chip:hover { z-index: 30; }
+
+.op-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 3000;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #dcdcdc);
+  background: var(--color-background-soft, #ffffff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  color: var(--color-text, #1a1a1a);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: none;
+}
+.operation-chip:hover .op-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+.op-tooltip-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.op-tooltip-row + .op-tooltip-row {
+  margin-top: 3px;
+}
+.op-tooltip-label {
+  font-weight: 700;
+  color: var(--color-text-mute, #6f6f6f);
+  flex-shrink: 0;
+}
+.op-tooltip-value {
+  font-weight: 500;
+  word-break: break-word;
+}
+.op-tooltip--phantom {
+  min-width: 180px;
 }
 
 /* 🟢 Phantom Operation Chip - для скрытых операций */
@@ -472,8 +533,11 @@ const onDrop = (event) => {
   font-weight:bold; 
   margin-right:6px; 
   white-space:nowrap; 
+  flex-shrink: 0;
 }
 .op-meta { 
+  flex: 1 1 auto;
+  min-width: 0;
   white-space:nowrap; 
   overflow:hidden; 
   text-overflow:ellipsis; 
