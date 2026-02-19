@@ -167,6 +167,7 @@ const displayAmount = computed(() => getDisplayAmount(props.operation));
 
 const TOOLTIP_EMPTY = '—';
 const showOperationTooltip = computed(() => props.columnCount === 21 || props.columnCount >= 28);
+const isCompactChipMode = computed(() => showOperationTooltip.value);
 
 const normalizeId = (value) => {
   if (!value) return null;
@@ -295,6 +296,14 @@ const operationTooltipRows = computed(() => {
 
 const hasOperationTooltip = computed(() => operationTooltipRows.value.length > 0);
 const phantomTooltipText = computed(() => showOperationTooltip.value ? 'Ячейка занята операцией на скрытом счете' : '');
+const tooltipAmountTone = computed(() => {
+  const op = props.operation;
+  if (!op) return '';
+  if (isTransferOp.value) return 'transfer';
+  if (op.type === 'income' && !isWithdrawalOp.value) return 'income';
+  if (op.type === 'expense' || isWithdrawalOp.value) return 'expense';
+  return '';
+});
 
 const isOperationHovered = ref(false);
 const isPhantomHovered = ref(false);
@@ -303,6 +312,10 @@ const onOperationMouseEnter = () => { if (hasOperationTooltip.value) isOperation
 const onOperationMouseLeave = () => { isOperationHovered.value = false; };
 const onPhantomMouseEnter = () => { if (phantomTooltipText.value) isPhantomHovered.value = true; };
 const onPhantomMouseLeave = () => { isPhantomHovered.value = false; };
+const getTooltipValueClass = (rowLabel) => {
+  if (rowLabel !== 'Сумма') return '';
+  return tooltipAmountTone.value ? `op-tooltip-value--${tooltipAmountTone.value}` : '';
+};
 
 
 
@@ -365,7 +378,8 @@ const onDrop = (event) => {
             'work-act': isWorkActOp,
             technical: isTechnicalOp, 
             'credit-income': isCreditIncomeOp,
-            'no-permission': !canInteract
+            'no-permission': !canInteract,
+            compact: isCompactChipMode
         }"
         :draggable="canInteract"
         @mouseenter="onOperationMouseEnter"
@@ -375,23 +389,23 @@ const onDrop = (event) => {
       >
         <template v-if="isTransferOp">
           <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
-          <span class="op-meta">{{ toOwnerName }}</span>
+          <span v-if="!isCompactChipMode" class="op-meta">{{ toOwnerName }}</span>
         </template>
         <template v-else-if="isWithdrawalOp">
           <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
-          <span class="op-meta">{{ operation.destination || 'Вывод' }}</span>
+          <span v-if="!isCompactChipMode" class="op-meta">{{ operation.destination || 'Вывод' }}</span>
         </template>
         <template v-else-if="isWorkActOp">
           <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
-          <span class="op-meta">{{ chipLabel }}</span>
+          <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
         </template>
         <template v-else-if="isTechnicalOp">
           <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
-          <span class="op-meta">{{ chipLabel }}</span>
+          <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
         </template>
         <template v-else-if="isCreditIncomeOp">
           <span class="op-amount">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
-          <span class="op-meta">Кредит</span>
+          <span v-if="!isCompactChipMode" class="op-meta">Кредит</span>
         </template>
 
         <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
@@ -399,7 +413,7 @@ const onDrop = (event) => {
           <span class="op-amount">
               {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
           </span>
-          <span class="op-meta">{{ chipLabel }}</span>
+          <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
         </template>
       </div>
     </template>
@@ -415,7 +429,7 @@ const onDrop = (event) => {
     <div v-if="operation && isOpVisible && hasOperationTooltip && isOperationHovered" class="op-tooltip" role="tooltip" aria-hidden="true">
       <div v-for="row in operationTooltipRows" :key="row.label" class="op-tooltip-row">
         <span class="op-tooltip-label">{{ row.label }}:</span>
-        <span class="op-tooltip-value">{{ row.value }}</span>
+        <span class="op-tooltip-value" :class="getTooltipValueClass(row.label)">{{ row.value }}</span>
       </div>
     </div>
   </div>
@@ -474,14 +488,24 @@ const onDrop = (event) => {
   transition: all .15s ease-in-out; 
 }
 .operation-chip:hover { z-index: 30; }
+.operation-chip.compact {
+  padding: 2px 4px;
+  gap: 0;
+}
+.operation-chip.compact .op-amount {
+  margin-right: 0;
+  width: 100%;
+  text-align: center;
+}
 
 .op-tooltip {
   position: absolute;
   left: 0;
   top: calc(100% + 4px);
   z-index: 3000;
-  min-width: 220px;
-  max-width: 320px;
+  width: max-content;
+  min-width: 240px;
+  max-width: calc(100vw - 24px);
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--color-border, #dcdcdc);
@@ -490,7 +514,9 @@ const onDrop = (event) => {
   color: var(--color-text, #1a1a1a);
   font-size: 12px;
   line-height: 1.3;
-  white-space: normal;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
   pointer-events: none;
   transition: none;
 }
@@ -498,6 +524,7 @@ const onDrop = (event) => {
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  white-space: nowrap;
 }
 .op-tooltip-row + .op-tooltip-row {
   margin-top: 3px;
@@ -509,10 +536,24 @@ const onDrop = (event) => {
 }
 .op-tooltip-value {
   font-weight: 500;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .op-tooltip--phantom {
   min-width: 180px;
+}
+.op-tooltip-value--income {
+  color: var(--op-income-color, #2cc56f);
+  font-weight: 700;
+}
+.op-tooltip-value--expense {
+  color: var(--op-expense-color, #ff5b5b);
+  font-weight: 700;
+}
+.op-tooltip-value--transfer {
+  color: var(--op-transfer-color, #4f7dff);
+  font-weight: 700;
 }
 
 /* 🟢 Phantom Operation Chip - для скрытых операций */
