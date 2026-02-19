@@ -296,6 +296,14 @@ const operationTooltipRows = computed(() => {
 const hasOperationTooltip = computed(() => operationTooltipRows.value.length > 0);
 const phantomTooltipText = computed(() => showOperationTooltip.value ? 'Ячейка занята операцией на скрытом счете' : '');
 
+const isOperationHovered = ref(false);
+const isPhantomHovered = ref(false);
+
+const onOperationMouseEnter = () => { if (hasOperationTooltip.value) isOperationHovered.value = true; };
+const onOperationMouseLeave = () => { isOperationHovered.value = false; };
+const onPhantomMouseEnter = () => { if (phantomTooltipText.value) isPhantomHovered.value = true; };
+const onPhantomMouseLeave = () => { isPhantomHovered.value = false; };
+
 
 
 const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
@@ -331,80 +339,85 @@ const onDrop = (event) => {
 
 <template>
   <div class="hour-cell" :class="{ 'drag-over': isDragOver }" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
-    <!-- 🟢 PHANTOM: Show placeholder for hidden excluded operations -->
-    <div
-      v-if="isPhantom"
-      class="operation-chip phantom"
-      draggable="false"
-    >
-      <span class="op-amount">👁️‍🗨️ Занято</span>
-      <span class="op-meta">Скрытый счет</span>
-      <div v-if="phantomTooltipText" class="op-tooltip op-tooltip--phantom" role="tooltip" aria-hidden="true">
-        <div class="op-tooltip-row">
-          <span class="op-tooltip-value">{{ phantomTooltipText }}</span>
-        </div>
+    <template v-if="isPhantom">
+      <div
+        class="operation-chip phantom"
+        draggable="false"
+        @mouseenter="onPhantomMouseEnter"
+        @mouseleave="onPhantomMouseLeave"
+      >
+        <span class="op-amount">👁️‍🗨️ Занято</span>
+        <span class="op-meta">Скрытый счет</span>
       </div>
-    </div>
+    </template>
 
-    <!-- 🟢 REGULAR OPERATION: Show if visible -->
-    <div
-      v-else-if="operation && isOpVisible"
-      class="operation-chip"
-      :class="{ 
-         transfer: isTransferOp, 
-         income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp, 
-         expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
-         
+    <template v-else-if="operation && isOpVisible">
+      <div
+        class="operation-chip"
+        :class="{ 
+           transfer: isTransferOp, 
+           income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp, 
+           expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
+           
 
-         
-         withdrawal: isWithdrawalOp,
-          'work-act': isWorkActOp,
-          technical: isTechnicalOp, 
-          'credit-income': isCreditIncomeOp,
-          'no-permission': !canInteract
-      }"
-      :draggable="canInteract"
-      @dragstart="onDragStart" @dragend="onDragEnd"
-      @click.stop="onEditClick"
-    >
-      <template v-if="isTransferOp">
-        <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
-        <span class="op-meta">{{ toOwnerName }}</span>
-      </template>
-      <template v-else-if="isWithdrawalOp">
-        <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
-        <span class="op-meta">{{ operation.destination || 'Вывод' }}</span>
-      </template>
-      <template v-else-if="isWorkActOp">
-        <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
-        <span class="op-meta">{{ chipLabel }}</span>
-      </template>
-      <template v-else-if="isTechnicalOp">
-        <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
-        <span class="op-meta">{{ chipLabel }}</span>
-      </template>
-      <template v-else-if="isCreditIncomeOp">
-        <span class="op-amount">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
-        <span class="op-meta">Кредит</span>
-      </template>
+           
+           withdrawal: isWithdrawalOp,
+            'work-act': isWorkActOp,
+            technical: isTechnicalOp, 
+            'credit-income': isCreditIncomeOp,
+            'no-permission': !canInteract
+        }"
+        :draggable="canInteract"
+        @mouseenter="onOperationMouseEnter"
+        @mouseleave="onOperationMouseLeave"
+        @dragstart="onDragStart" @dragend="onDragEnd"
+        @click.stop="onEditClick"
+      >
+        <template v-if="isTransferOp">
+          <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
+          <span class="op-meta">{{ toOwnerName }}</span>
+        </template>
+        <template v-else-if="isWithdrawalOp">
+          <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-meta">{{ operation.destination || 'Вывод' }}</span>
+        </template>
+        <template v-else-if="isWorkActOp">
+          <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-meta">{{ chipLabel }}</span>
+        </template>
+        <template v-else-if="isTechnicalOp">
+          <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-meta">{{ chipLabel }}</span>
+        </template>
+        <template v-else-if="isCreditIncomeOp">
+          <span class="op-amount">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-meta">Кредит</span>
+        </template>
 
-      <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
-      <template v-else>
-        <span class="op-amount">
-            {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
-        </span>
-        <span class="op-meta">{{ chipLabel }}</span>
-      </template>
-
-      <div v-if="hasOperationTooltip" class="op-tooltip" role="tooltip" aria-hidden="true">
-        <div v-for="row in operationTooltipRows" :key="row.label" class="op-tooltip-row">
-          <span class="op-tooltip-label">{{ row.label }}:</span>
-          <span class="op-tooltip-value">{{ row.value }}</span>
-        </div>
+        <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
+        <template v-else>
+          <span class="op-amount">
+              {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
+          </span>
+          <span class="op-meta">{{ chipLabel }}</span>
+        </template>
       </div>
-    </div>
+    </template>
 
     <div v-else class="cell-empty-space" @click="onAddClick($event)">&nbsp;</div>
+
+    <div v-if="isPhantom && phantomTooltipText && isPhantomHovered" class="op-tooltip op-tooltip--phantom" role="tooltip" aria-hidden="true">
+      <div class="op-tooltip-row">
+        <span class="op-tooltip-value">{{ phantomTooltipText }}</span>
+      </div>
+    </div>
+
+    <div v-if="operation && isOpVisible && hasOperationTooltip && isOperationHovered" class="op-tooltip" role="tooltip" aria-hidden="true">
+      <div v-for="row in operationTooltipRows" :key="row.label" class="op-tooltip-row">
+        <span class="op-tooltip-label">{{ row.label }}:</span>
+        <span class="op-tooltip-value">{{ row.value }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -455,7 +468,7 @@ const onDrop = (event) => {
   width: 100%;
   min-width: 0; 
   max-width: 100%; 
-  overflow: visible; 
+  overflow: hidden; 
   cursor: pointer; 
   position: relative;
   transition: all .15s ease-in-out; 
@@ -479,13 +492,7 @@ const onDrop = (event) => {
   line-height: 1.3;
   white-space: normal;
   pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
   transition: none;
-}
-.operation-chip:hover .op-tooltip {
-  opacity: 1;
-  visibility: visible;
 }
 .op-tooltip-row {
   display: flex;
@@ -530,10 +537,15 @@ const onDrop = (event) => {
 .operation-chip:active { cursor:grabbing; }
 
 .op-amount { 
+  display: block;
   font-weight:bold; 
   margin-right:6px; 
   white-space:nowrap; 
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .op-meta { 
   flex: 1 1 auto;
