@@ -1203,6 +1203,14 @@ const startAiPaneResize = (event) => {
   window.addEventListener('pointercancel', stopAiPaneResize);
 };
 
+const stopAiRecording = () => {
+  if (!isAiRecording.value) return;
+  // Turn off mic UI immediately, then stop recognition engine.
+  isAiRecording.value = false;
+  aiVoiceConfirmedText = '';
+  try { aiRecognition?.stop(); } catch (_) {}
+};
+
 const sendAiMessage = async (forcedMessage = null, options = {}) => {
   const source = String(options?.source || 'chat');
   const isDomEvent = (x) => {
@@ -1212,6 +1220,7 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
   const hasExplicitMessage = forcedMessage !== null && forcedMessage !== undefined && !isDomEvent(forcedMessage);
   const text = String(hasExplicitMessage ? forcedMessage : (aiInput.value || '')).trim();
   if (!text || aiLoading.value) return;
+  stopAiRecording();
 
   aiMessages.value.push(createAiMessage('user', text));
   saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
@@ -1337,9 +1346,7 @@ const toggleAiRecording = async () => {
   if (!rec) return;
 
   if (isAiRecording.value) {
-    try { rec.stop(); } catch (_) {}
-    isAiRecording.value = false;
-    aiVoiceConfirmedText = '';
+    stopAiRecording();
     return;
   }
 
