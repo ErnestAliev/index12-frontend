@@ -63,6 +63,10 @@ const NON_OPERATIONAL_CATEGORIES = ['Вывод средств', 'Перевод
 const NON_OPERATIONAL_CATEGORY_KEYS = NON_OPERATIONAL_CATEGORIES
   .map((item) => normalizeCategoryKey(item))
   .filter(Boolean);
+const OFFSET_SIGNAL_CATEGORIES = ['Взаимозачет', 'Взаимовычет', 'Netting', 'Offset'];
+const OFFSET_SIGNAL_CATEGORY_KEYS = OFFSET_SIGNAL_CATEGORIES
+  .map((item) => normalizeCategoryKey(item))
+  .filter(Boolean);
 
 const isNonOperationalCategory = (value) => {
   const key = normalizeCategoryKey(value);
@@ -70,6 +74,23 @@ const isNonOperationalCategory = (value) => {
   return NON_OPERATIONAL_CATEGORY_KEYS.some((baseKey) => (
     key === baseKey || key.includes(baseKey) || baseKey.includes(key)
   ));
+};
+
+const isOffsetSignalCategory = (value) => {
+  const key = normalizeCategoryKey(value);
+  if (!key) return false;
+  return OFFSET_SIGNAL_CATEGORY_KEYS.some((baseKey) => (
+    key === baseKey || key.includes(baseKey) || baseKey.includes(key)
+  ));
+};
+
+const isOffsetExpenseItem = (item, fallbackCategory = '') => {
+  const row = item && typeof item === 'object' ? item : {};
+  if (row?.isOffsetExpense === true) return true;
+  const linkedParentId = String(row?.linkedParentId || row?.offsetIncomeId || '').trim();
+  if (linkedParentId) return true;
+  const category = String(row?.catName || row?.category || fallbackCategory || '').trim();
+  return isOffsetSignalCategory(category);
 };
 
 const normalizeDepth = (value, fallback) => {
@@ -152,16 +173,31 @@ const aggregatePeriodDays = ({ days }) => {
   let operationalExpense = 0;
   const topCategoryMap = new Map();
   const ownerDrawByCategoryMap = new Map();
+  const offsetNettingByCategoryMap = new Map();
 
-  const pushExpense = (categoryName, amountValue) => {
+  const pushOffsetNetting = (categoryName, amountValue) => {
     const amount = toPositiveMoney(amountValue);
     if (amount <= 0) return;
-    const category = String(categoryName || 'Без категории');
+    const category = String(categoryName || 'Взаимозачет');
+    pushByCategory(offsetNettingByCategoryMap, category, amount);
+  };
+
+  const pushExpense = (item, fallbackCategoryName = 'Без категории') => {
+    const row = item && typeof item === 'object'
+      ? item
+      : { amount: item, catName: fallbackCategoryName };
+    const amount = toPositiveMoney(row?.amount);
+    if (amount <= 0) return;
+    const category = String(row?.catName || row?.category || fallbackCategoryName || 'Без категории');
     if (isNonOperationalCategory(category)) {
       pushByCategory(ownerDrawByCategoryMap, category, amount);
       return;
     }
     operationalExpense += amount;
+    if (isOffsetExpenseItem(row, category)) {
+      pushOffsetNetting(category, amount);
+      return;
+    }
     pushByCategory(topCategoryMap, category, amount);
   };
 
@@ -172,21 +208,23 @@ const aggregatePeriodDays = ({ days }) => {
     });
 
     (Array.isArray(lists?.expense) ? lists.expense : []).forEach((item) => {
-      pushExpense(item?.catName || 'Без категории', item?.amount);
+      pushExpense(item, 'Без категории');
     });
 
     (Array.isArray(lists?.withdrawal) ? lists.withdrawal : []).forEach((item) => {
-      pushExpense(item?.catName || 'Вывод средств', item?.amount);
+      pushExpense(item, 'Вывод средств');
     });
 
     (Array.isArray(lists?.transfer) ? lists.transfer : []).forEach((item) => {
       if (!item?.isOutOfSystemTransfer) return;
-      pushExpense(item?.catName || 'Перевод', item?.amount);
+      pushExpense(item, 'Перевод');
     });
   });
 
   const ownerDrawByCategory = mapToSortedRows(ownerDrawByCategoryMap);
   const ownerDrawAmount = ownerDrawByCategory.reduce((sum, row) => sum + toNum(row?.amount), 0);
+  const offsetNettingByCategory = mapToSortedRows(offsetNettingByCategoryMap);
+  const offsetNettingAmount = offsetNettingByCategory.reduce((sum, row) => sum + toNum(row?.amount), 0);
   const topCategoriesRaw = mapToSortedRows(topCategoryMap);
   const operationalExpenseSafe = toNum(operationalExpense);
   const topCategories = topCategoriesRaw.slice(0, 5).map((row) => ({
@@ -216,6 +254,10 @@ const aggregatePeriodDays = ({ days }) => {
     ownerDraw: {
       amount: toNum(ownerDrawAmount),
       byCategory: ownerDrawByCategory
+    },
+    offsetNetting: {
+      amount: toNum(offsetNettingAmount),
+      byCategory: offsetNettingByCategory
     },
     endBalances: {
       open: toNum(endOpen),
@@ -323,6 +365,7 @@ const buildBufferEntries = async ({
       totals: aggregated.totals,
       topCategories: aggregated.topCategories,
       ownerDraw: aggregated.ownerDraw,
+      offsetNetting: aggregated.offsetNetting,
       endBalances: aggregated.endBalances
     });
   });
