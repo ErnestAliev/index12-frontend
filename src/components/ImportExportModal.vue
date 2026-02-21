@@ -573,15 +573,18 @@ const resolveEntityName = (entityOrId, sourceList, fallback = '') => {
   if (!entityOrId) return fallback;
 
   if (typeof entityOrId === 'object') {
-    if (entityOrId.name) return entityOrId.name;
     if (entityOrId._id) {
-      const found = sourceList.find((item) => item && item._id === entityOrId._id);
-      return found?.name || fallback;
+      const targetId = extractId(entityOrId);
+      const found = sourceList.find((item) => extractId(item) === targetId);
+      if (found?.name) return found.name;
+    }
+    if (entityOrId.name) {
+      return entityOrId.name;
     }
   }
 
   if (typeof entityOrId === 'string') {
-    const foundById = sourceList.find((item) => item && item._id === entityOrId);
+    const foundById = sourceList.find((item) => extractId(item) === entityOrId);
     if (foundById?.name) return foundById.name;
 
     const foundByName = sourceList.find(
@@ -1073,6 +1076,23 @@ const getInlineSelectedLabel = (value, options, emptyLabel) => {
   return normalizedValue;
 };
 
+const estimateMenuLabelWidth = (text) => {
+  const value = String(text || '');
+  if (!value) return 0;
+  return Math.ceil(value.length * 8.2);
+};
+
+const getHeaderMenuStyle = (options = []) => {
+  const labels = (Array.isArray(options) ? options : [])
+    .map((opt) => normalizeString(opt?.label))
+    .filter(Boolean);
+
+  const longestLabelPx = labels.reduce((max, label) => Math.max(max, estimateMenuLabelWidth(label)), 120);
+  const reservedButtonsPx = 76; // two icon slots + gaps/padding
+  const widthPx = Math.min(760, Math.max(250, Math.ceil(longestLabelPx + reservedButtonsPx)));
+  return { '--header-inline-menu-width': `${widthPx}px` };
+};
+
 const setFilterField = (field, value) => {
   if (!Object.prototype.hasOwnProperty.call(filters.value, field)) return;
   filters.value[field] = normalizeString(value);
@@ -1147,7 +1167,7 @@ const confirmInlineRename = async () => {
   if (!state.dropdownId || !state.entityPath || !state.entityId || state.saving) return;
 
   const list = entityListByPath(state.entityPath);
-  const source = list.find((item) => String(item?._id || '') === state.entityId);
+  const source = list.find((item) => extractId(item) === state.entityId);
   if (!source) {
     alert('Сущность не найдена. Обновите список.');
     cancelInlineRename();
@@ -1167,7 +1187,7 @@ const confirmInlineRename = async () => {
   }
 
   const duplicate = list.find((item) =>
-    String(item?._id || '') !== state.entityId &&
+    extractId(item) !== state.entityId &&
     normalizeNameKey(item?.name) === normalizeNameKey(nextName)
   );
 
@@ -2016,7 +2036,12 @@ onBeforeUnmount(() => {
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
-                      <div v-if="isInlineDropdownOpen('filter-category')" class="inline-select-menu" @click.stop>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-category')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(categoryFilterOptions)"
+                        @click.stop
+                      >
                         <button type="button" class="inline-select-option clear-option" @click="setFilterField('category', '')">
                           Категория
                         </button>
@@ -2070,7 +2095,12 @@ onBeforeUnmount(() => {
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
-                      <div v-if="isInlineDropdownOpen('filter-project')" class="inline-select-menu" @click.stop>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-project')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(projectFilterOptions)"
+                        @click.stop
+                      >
                         <button type="button" class="inline-select-option clear-option" @click="setFilterField('project', '')">
                           Проект
                         </button>
@@ -2128,7 +2158,12 @@ onBeforeUnmount(() => {
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
-                      <div v-if="isInlineDropdownOpen('filter-account')" class="inline-select-menu" @click.stop>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-account')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(accountFilterOptions)"
+                        @click.stop
+                      >
                         <button type="button" class="inline-select-option clear-option" @click="setFilterField('account', '')">
                           Счет
                         </button>
@@ -2182,7 +2217,12 @@ onBeforeUnmount(() => {
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
-                      <div v-if="isInlineDropdownOpen('filter-contractor')" class="inline-select-menu" @click.stop>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-contractor')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(contractorFilterOptions)"
+                        @click.stop
+                      >
                         <button type="button" class="inline-select-option clear-option" @click="setFilterField('contractor', '')">
                           Контрагент
                         </button>
@@ -2236,7 +2276,12 @@ onBeforeUnmount(() => {
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
-                      <div v-if="isInlineDropdownOpen('filter-owner')" class="inline-select-menu" @click.stop>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-owner')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(ownerFilterOptions)"
+                        @click.stop
+                      >
                         <button type="button" class="inline-select-option clear-option" @click="setFilterField('owner', '')">
                           Компания/Физлицо
                         </button>
@@ -3970,32 +4015,33 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   max-height: 260px;
-  overflow-y: auto;
+  overflow: auto;
   border: 1px solid var(--editor-border);
   border-radius: 8px;
   background: var(--editor-row-bg);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.34),
+    0 6px 16px rgba(0, 0, 0, 0.24);
   z-index: 30;
 }
 
 .header-inline-select .inline-select-menu {
   left: 0;
   right: auto;
-  width: max-content;
+  width: var(--header-inline-menu-width, calc(100% + 88px));
   min-width: calc(100% + 88px);
   max-width: min(92vw, 760px);
 }
 
 .header-inline-select .inline-select-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
-  align-items: center;
+  width: 100%;
 }
 
 .header-inline-select .inline-select-option {
+  width: 100%;
   white-space: nowrap;
-  overflow: visible;
-  text-overflow: clip;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cell-inline-select .inline-select-menu {
@@ -4003,7 +4049,8 @@ onBeforeUnmount(() => {
 }
 
 .inline-select-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px 30px;
   align-items: center;
   gap: 4px;
   padding: 2px 4px;
@@ -4011,7 +4058,8 @@ onBeforeUnmount(() => {
 }
 
 .inline-select-option {
-  flex: 1 1 auto;
+  grid-column: 1 / 2;
+  width: 100%;
   min-width: 0;
   height: 30px;
   border: none;
@@ -4026,6 +4074,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.inline-select-row > .inline-icon-btn.rename {
+  grid-column: 3;
+  justify-self: end;
 }
 
 .inline-select-option:hover {
@@ -4046,33 +4099,37 @@ onBeforeUnmount(() => {
 }
 
 .inline-icon-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--editor-muted-text);
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
+  padding: 0;
+  line-height: 0;
+  transition: all 0.2s;
 }
 
 .inline-icon-btn svg {
-  width: 13px;
-  height: 13px;
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 0 auto;
 }
 
 .inline-icon-btn.rename:hover {
-  color: var(--color-primary, #22c55e);
-  background: var(--editor-row-alt-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .inline-icon-btn.rename {
-  border: 1px solid var(--editor-border);
-  background: var(--editor-row-alt-bg);
-  color: #16a34a;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--editor-cell-text);
   opacity: 1;
 }
 
@@ -4098,7 +4155,8 @@ onBeforeUnmount(() => {
 }
 
 .inline-rename-input {
-  flex: 1;
+  grid-column: 1 / 2;
+  width: 100%;
   min-width: 0;
   height: 30px;
   border: 1px solid var(--editor-border);
@@ -4109,6 +4167,16 @@ onBeforeUnmount(() => {
   font-weight: var(--fw-medium, 500);
   outline: none;
   padding: 0 8px;
+}
+
+.inline-select-row > .inline-icon-btn.confirm {
+  grid-column: 2;
+  justify-self: end;
+}
+
+.inline-select-row > .inline-icon-btn.cancel {
+  grid-column: 3;
+  justify-self: end;
 }
 
 .inline-rename-input:focus {
