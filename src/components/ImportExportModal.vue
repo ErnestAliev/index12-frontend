@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 import {
@@ -965,6 +966,16 @@ const inlineRenameState = ref({
   saving: false
 });
 const inlineRenameInputRef = ref(null);
+const inlineSearchByDropdown = ref({});
+const inlineDeleteState = ref({
+  show: false,
+  dropdownId: '',
+  optionValue: '',
+  entityPath: '',
+  entityId: '',
+  label: '',
+  deleting: false
+});
 
 const entityListByPath = (path) => {
   if (path === 'accounts') return Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
@@ -1051,9 +1062,45 @@ const resetInlineRenameState = () => {
   };
 };
 
+const resetInlineDeleteState = () => {
+  inlineDeleteState.value = {
+    show: false,
+    dropdownId: '',
+    optionValue: '',
+    entityPath: '',
+    entityId: '',
+    label: '',
+    deleting: false
+  };
+};
+
+const getInlineSearchValue = (dropdownId) => String(inlineSearchByDropdown.value[dropdownId] || '');
+const setInlineSearchValue = (dropdownId, value) => {
+  inlineSearchByDropdown.value = {
+    ...inlineSearchByDropdown.value,
+    [dropdownId]: String(value || '')
+  };
+};
+
+const clearInlineSearchValue = (dropdownId) => {
+  if (!dropdownId) return;
+  const next = { ...inlineSearchByDropdown.value };
+  delete next[dropdownId];
+  inlineSearchByDropdown.value = next;
+};
+
+const getFilteredInlineOptions = (dropdownId, options = []) => {
+  const query = normalizeNameKey(getInlineSearchValue(dropdownId));
+  if (!query) return Array.isArray(options) ? options : [];
+  return (Array.isArray(options) ? options : []).filter((opt) => normalizeNameKey(opt?.label).includes(query));
+};
+
 const closeInlineDropdown = () => {
+  const activeDropdownId = openInlineDropdownId.value;
   openInlineDropdownId.value = '';
+  clearInlineSearchValue(activeDropdownId);
   resetInlineRenameState();
+  resetInlineDeleteState();
 };
 
 const toggleInlineDropdown = (dropdownId) => {
@@ -1061,12 +1108,34 @@ const toggleInlineDropdown = (dropdownId) => {
     closeInlineDropdown();
     return;
   }
+  if (openInlineDropdownId.value) {
+    clearInlineSearchValue(openInlineDropdownId.value);
+  }
   openInlineDropdownId.value = dropdownId;
+  setInlineSearchValue(dropdownId, '');
   resetInlineRenameState();
+  resetInlineDeleteState();
 };
 
-const canInlineRenameOption = (option) =>
-  !!(option?.entityPath && option?.entityId && normalizeString(option?.label));
+const INLINE_SYSTEM_LABEL_KEYS = new Set([
+  'без категории',
+  'без проекта',
+  'без счета',
+  'без контрагента',
+  'без владельца',
+  'без компании/физлица',
+  'вне системы'
+]);
+
+const isSystemInlineLabel = (label) => INLINE_SYSTEM_LABEL_KEYS.has(normalizeNameKey(label));
+
+const canInlineRenameOption = (option) => {
+  const label = normalizeString(option?.label);
+  if (!label || isSystemInlineLabel(label)) return false;
+  return !!(option?.entityPath && option?.entityId);
+};
+
+const canInlineDeleteOption = (option) => canInlineRenameOption(option);
 
 const getInlineSelectedLabel = (value, options, emptyLabel) => {
   const normalizedValue = normalizeString(value);
@@ -1121,6 +1190,21 @@ const syncFiltersAfterRename = ({ entityPath, oldName, newName }) => {
   }
 };
 
+const syncFiltersAfterDelete = ({ entityPath, deletedName }) => {
+  const safeDeletedName = normalizeString(deletedName);
+  if (!safeDeletedName) return;
+
+  if (entityPath === 'categories' && filters.value.category === safeDeletedName) filters.value.category = '';
+  if (entityPath === 'projects' && filters.value.project === safeDeletedName) filters.value.project = '';
+  if (entityPath === 'accounts' && filters.value.account === safeDeletedName) filters.value.account = '';
+  if (entityPath === 'contractors' && filters.value.contractor === safeDeletedName) filters.value.contractor = '';
+  if (entityPath === 'companies' && filters.value.owner === safeDeletedName) filters.value.owner = '';
+  if (entityPath === 'individuals') {
+    if (filters.value.owner === safeDeletedName) filters.value.owner = '';
+    if (filters.value.contractor === safeDeletedName) filters.value.contractor = '';
+  }
+};
+
 const refreshOperationLabelsFromStore = () => {
   operations.value = operations.value.map((row) => {
     const rebuilt = buildOperationRow(row.source);
@@ -1139,10 +1223,7 @@ const refreshOperationLabelsFromStore = () => {
 };
 
 const startInlineRename = (dropdownId, option) => {
-  if (!canInlineRenameOption(option)) {
-    alert('Это значение нельзя переименовать из фильтра.');
-    return;
-  }
+  if (!canInlineRenameOption(option)) return;
   inlineRenameState.value = {
     dropdownId,
     optionValue: String(option.value),
@@ -1213,8 +1294,75 @@ const confirmInlineRename = async () => {
   }
 };
 
+const inlineDeleteMessage = computed(() => {
+  const label = normalizeString(inlineDeleteState.value.label);
+  if (!label) {
+    return 'Удалить выбранную сущность? Связи в операциях будут сняты автоматически.';
+  }
+  return `Удалить «${label}»? Связи в операциях будут сняты автоматически.`;
+});
+
+const requestInlineDelete = (dropdownId, option) => {
+  if (!canInlineDeleteOption(option)) return;
+
+  inlineDeleteState.value = {
+    show: true,
+    dropdownId: String(dropdownId || ''),
+    optionValue: String(option.value || ''),
+    entityPath: String(option.entityPath || ''),
+    entityId: String(option.entityId || ''),
+    label: String(option.label || ''),
+    deleting: false
+  };
+};
+
+const requestInlineDeleteFromRename = () => {
+  const state = inlineRenameState.value;
+  if (!state?.dropdownId || !state?.entityPath || !state?.entityId) return;
+
+  const list = entityListByPath(state.entityPath);
+  const source = list.find((item) => extractId(item) === state.entityId);
+  const label = normalizeString(source?.name || state.draftName || '');
+  requestInlineDelete(state.dropdownId, {
+    value: state.optionValue || state.entityId,
+    entityPath: state.entityPath,
+    entityId: state.entityId,
+    label
+  });
+};
+
+const closeInlineDeleteDialog = () => {
+  if (inlineDeleteState.value.deleting) return;
+  resetInlineDeleteState();
+};
+
+const confirmInlineDelete = async () => {
+  const state = inlineDeleteState.value;
+  if (!state.show || !state.entityPath || !state.entityId || state.deleting) return;
+
+  inlineDeleteState.value = { ...state, deleting: true };
+  try {
+    await mainStore.deleteEntity(state.entityPath, state.entityId, false);
+    syncFiltersAfterDelete({
+      entityPath: state.entityPath,
+      deletedName: state.label
+    });
+    resetInlineDeleteState();
+    closeInlineDropdown();
+    await loadOperations();
+  } catch (error) {
+    inlineDeleteState.value = { ...state, deleting: false };
+    const backendError = normalizeString(error?.response?.data?.error || error?.response?.data?.message);
+    const httpStatus = Number(error?.response?.status || 0);
+    const fallback = normalizeString(error?.message) || 'Неизвестная ошибка';
+    const detail = backendError || fallback;
+    alert(`${httpStatus === 409 ? 'Удаление отклонено' : 'Не удалось удалить'}: ${detail}`);
+  }
+};
+
 const handleInlineDropdownGlobalPointerDown = (event) => {
   const target = event?.target;
+  if (target && typeof target.closest === 'function' && target.closest('.dialog-overlay')) return;
   if (target && typeof target.closest === 'function' && target.closest('.inline-entity-select')) return;
   closeInlineDropdown();
 };
@@ -2042,10 +2190,20 @@ onBeforeUnmount(() => {
                         :style="getHeaderMenuStyle(categoryFilterOptions)"
                         @click.stop
                       >
-                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('category', '')">
-                          Категория
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-category')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-category', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('category', '')">
+                          Все
                         </button>
-                        <div v-for="opt in categoryFilterOptions" :key="`filter-category-${opt.value}`" class="inline-select-row">
+                        <div v-for="opt in getFilteredInlineOptions('filter-category', categoryFilterOptions)" :key="`filter-category-${opt.value}`" class="inline-select-row">
                           <template v-if="isInlineRenameActive('filter-category', opt.value)">
                             <input
                               ref="inlineRenameInputRef"
@@ -2056,7 +2214,7 @@ onBeforeUnmount(() => {
                               @keydown.esc.prevent="cancelInlineRename"
                             />
                             <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                            <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                           </template>
                           <template v-else>
                             <button
@@ -2070,11 +2228,23 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
+                              v-if="canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-category', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 20h9"></path>
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-icon-btn delete"
+                              :disabled="!canInlineDeleteOption(opt)"
+                              @click.stop="requestInlineDelete('filter-category', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                               </svg>
                             </button>
                           </template>
@@ -2101,10 +2271,20 @@ onBeforeUnmount(() => {
                         :style="getHeaderMenuStyle(projectFilterOptions)"
                         @click.stop
                       >
-                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('project', '')">
-                          Проект
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-project')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-project', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('project', '')">
+                          Все
                         </button>
-                        <div v-for="opt in projectFilterOptions" :key="`filter-project-${opt.value}`" class="inline-select-row">
+                        <div v-for="opt in getFilteredInlineOptions('filter-project', projectFilterOptions)" :key="`filter-project-${opt.value}`" class="inline-select-row">
                           <template v-if="isInlineRenameActive('filter-project', opt.value)">
                             <input
                               ref="inlineRenameInputRef"
@@ -2115,7 +2295,7 @@ onBeforeUnmount(() => {
                               @keydown.esc.prevent="cancelInlineRename"
                             />
                             <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                            <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                           </template>
                           <template v-else>
                             <button
@@ -2129,11 +2309,23 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
+                              v-if="canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-project', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 20h9"></path>
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-icon-btn delete"
+                              :disabled="!canInlineDeleteOption(opt)"
+                              @click.stop="requestInlineDelete('filter-project', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                               </svg>
                             </button>
                           </template>
@@ -2164,10 +2356,20 @@ onBeforeUnmount(() => {
                         :style="getHeaderMenuStyle(accountFilterOptions)"
                         @click.stop
                       >
-                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('account', '')">
-                          Счет
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-account')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-account', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('account', '')">
+                          Все
                         </button>
-                        <div v-for="opt in accountFilterOptions" :key="`filter-account-${opt.value}`" class="inline-select-row">
+                        <div v-for="opt in getFilteredInlineOptions('filter-account', accountFilterOptions)" :key="`filter-account-${opt.value}`" class="inline-select-row">
                           <template v-if="isInlineRenameActive('filter-account', opt.value)">
                             <input
                               ref="inlineRenameInputRef"
@@ -2178,7 +2380,7 @@ onBeforeUnmount(() => {
                               @keydown.esc.prevent="cancelInlineRename"
                             />
                             <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                            <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                           </template>
                           <template v-else>
                             <button
@@ -2192,11 +2394,23 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
+                              v-if="canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-account', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 20h9"></path>
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-icon-btn delete"
+                              :disabled="!canInlineDeleteOption(opt)"
+                              @click.stop="requestInlineDelete('filter-account', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                               </svg>
                             </button>
                           </template>
@@ -2223,10 +2437,20 @@ onBeforeUnmount(() => {
                         :style="getHeaderMenuStyle(contractorFilterOptions)"
                         @click.stop
                       >
-                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('contractor', '')">
-                          Контрагент
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-contractor')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-contractor', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('contractor', '')">
+                          Все
                         </button>
-                        <div v-for="opt in contractorFilterOptions" :key="`filter-contractor-${opt.value}`" class="inline-select-row">
+                        <div v-for="opt in getFilteredInlineOptions('filter-contractor', contractorFilterOptions)" :key="`filter-contractor-${opt.value}`" class="inline-select-row">
                           <template v-if="isInlineRenameActive('filter-contractor', opt.value)">
                             <input
                               ref="inlineRenameInputRef"
@@ -2237,7 +2461,7 @@ onBeforeUnmount(() => {
                               @keydown.esc.prevent="cancelInlineRename"
                             />
                             <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                            <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                           </template>
                           <template v-else>
                             <button
@@ -2251,11 +2475,23 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
+                              v-if="canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-contractor', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 20h9"></path>
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-icon-btn delete"
+                              :disabled="!canInlineDeleteOption(opt)"
+                              @click.stop="requestInlineDelete('filter-contractor', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                               </svg>
                             </button>
                           </template>
@@ -2282,10 +2518,20 @@ onBeforeUnmount(() => {
                         :style="getHeaderMenuStyle(ownerFilterOptions)"
                         @click.stop
                       >
-                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('owner', '')">
-                          Компания/Физлицо
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-owner')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-owner', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('owner', '')">
+                          Все
                         </button>
-                        <div v-for="opt in ownerFilterOptions" :key="`filter-owner-${opt.value}`" class="inline-select-row">
+                        <div v-for="opt in getFilteredInlineOptions('filter-owner', ownerFilterOptions)" :key="`filter-owner-${opt.value}`" class="inline-select-row">
                           <template v-if="isInlineRenameActive('filter-owner', opt.value)">
                             <input
                               ref="inlineRenameInputRef"
@@ -2296,7 +2542,7 @@ onBeforeUnmount(() => {
                               @keydown.esc.prevent="cancelInlineRename"
                             />
                             <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                            <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                           </template>
                           <template v-else>
                             <button
@@ -2310,11 +2556,23 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
+                              v-if="canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-owner', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 20h9"></path>
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-icon-btn delete"
+                              :disabled="!canInlineDeleteOption(opt)"
+                              @click.stop="requestInlineDelete('filter-owner', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                               </svg>
                             </button>
                           </template>
@@ -2380,15 +2638,25 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-arrow">▾</span>
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-category`)" class="inline-select-menu" @click.stop>
+                            <div class="inline-select-search-row">
+                              <input
+                                :value="getInlineSearchValue(`row-${row.rowId}-category`)"
+                                class="inline-select-search-input"
+                                type="text"
+                                placeholder="Поиск..."
+                                @input="setInlineSearchValue(`row-${row.rowId}-category`, $event.target.value)"
+                                @keydown.stop
+                              />
+                            </div>
                             <button
                               type="button"
-                              class="inline-select-option clear-option"
+                              class="inline-select-option inline-select-meta-option"
                               @click="setRowDraftField(row.rowId, 'categoryId', '')"
                             >
                               Без категории
                             </button>
                             <div
-                              v-for="opt in categoryOptions"
+                              v-for="opt in getFilteredInlineOptions(`row-${row.rowId}-category`, categoryOptions)"
                               :key="`${row.rowId}-category-opt-${opt.value}`"
                               class="inline-select-row"
                             >
@@ -2402,7 +2670,7 @@ onBeforeUnmount(() => {
                                   @keydown.esc.prevent="cancelInlineRename"
                                 />
                                 <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                               </template>
                               <template v-else>
                                 <button
@@ -2416,11 +2684,23 @@ onBeforeUnmount(() => {
                                 <button
                                   type="button"
                                   class="inline-icon-btn rename"
+                                  v-if="canInlineRenameOption(opt)"
                                   @click.stop="startInlineRename(`row-${row.rowId}-category`, opt)"
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 20h9"></path>
                                     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn delete"
+                                  :disabled="!canInlineDeleteOption(opt)"
+                                  @click.stop="requestInlineDelete(`row-${row.rowId}-category`, opt)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                   </svg>
                                 </button>
                               </template>
@@ -2442,15 +2722,25 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-arrow">▾</span>
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-project`)" class="inline-select-menu" @click.stop>
+                            <div class="inline-select-search-row">
+                              <input
+                                :value="getInlineSearchValue(`row-${row.rowId}-project`)"
+                                class="inline-select-search-input"
+                                type="text"
+                                placeholder="Поиск..."
+                                @input="setInlineSearchValue(`row-${row.rowId}-project`, $event.target.value)"
+                                @keydown.stop
+                              />
+                            </div>
                             <button
                               type="button"
-                              class="inline-select-option clear-option"
+                              class="inline-select-option inline-select-meta-option"
                               @click="setRowDraftField(row.rowId, 'projectId', '')"
                             >
                               Без проекта
                             </button>
                             <div
-                              v-for="opt in projectOptions"
+                              v-for="opt in getFilteredInlineOptions(`row-${row.rowId}-project`, projectOptions)"
                               :key="`${row.rowId}-project-opt-${opt.value}`"
                               class="inline-select-row"
                             >
@@ -2464,7 +2754,7 @@ onBeforeUnmount(() => {
                                   @keydown.esc.prevent="cancelInlineRename"
                                 />
                                 <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                               </template>
                               <template v-else>
                                 <button
@@ -2478,11 +2768,23 @@ onBeforeUnmount(() => {
                                 <button
                                   type="button"
                                   class="inline-icon-btn rename"
+                                  v-if="canInlineRenameOption(opt)"
                                   @click.stop="startInlineRename(`row-${row.rowId}-project`, opt)"
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 20h9"></path>
                                     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn delete"
+                                  :disabled="!canInlineDeleteOption(opt)"
+                                  @click.stop="requestInlineDelete(`row-${row.rowId}-project`, opt)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                   </svg>
                                 </button>
                               </template>
@@ -2515,15 +2817,25 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-arrow">▾</span>
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-from-account`)" class="inline-select-menu" @click.stop>
+                              <div class="inline-select-search-row">
+                                <input
+                                  :value="getInlineSearchValue(`row-${row.rowId}-from-account`)"
+                                  class="inline-select-search-input"
+                                  type="text"
+                                  placeholder="Поиск..."
+                                  @input="setInlineSearchValue(`row-${row.rowId}-from-account`, $event.target.value)"
+                                  @keydown.stop
+                                />
+                              </div>
                               <button
                                 type="button"
-                                class="inline-select-option clear-option"
+                                class="inline-select-option inline-select-meta-option"
                                 @click="setRowDraftField(row.rowId, 'fromAccountId', '')"
                               >
                                 Откуда
                               </button>
                               <div
-                                v-for="acc in accountOptions"
+                                v-for="acc in getFilteredInlineOptions(`row-${row.rowId}-from-account`, accountOptions)"
                                 :key="`${row.rowId}-from-${acc.value}`"
                                 class="inline-select-row"
                               >
@@ -2537,7 +2849,7 @@ onBeforeUnmount(() => {
                                     @keydown.esc.prevent="cancelInlineRename"
                                   />
                                   <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                  <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                                 </template>
                                 <template v-else>
                                   <button
@@ -2551,11 +2863,23 @@ onBeforeUnmount(() => {
                                   <button
                                     type="button"
                                     class="inline-icon-btn rename"
+                                    v-if="canInlineRenameOption(acc)"
                                     @click.stop="startInlineRename(`row-${row.rowId}-from-account`, acc)"
                                   >
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                       <path d="M12 20h9"></path>
                                       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn delete"
+                                    :disabled="!canInlineDeleteOption(acc)"
+                                    @click.stop="requestInlineDelete(`row-${row.rowId}-from-account`, acc)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <polyline points="3 6 5 6 21 6"></polyline>
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                     </svg>
                                   </button>
                                 </template>
@@ -2576,15 +2900,25 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-arrow">▾</span>
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-to-account`) && editRows[row.rowId].type !== 'Вывод средств'" class="inline-select-menu" @click.stop>
+                              <div class="inline-select-search-row">
+                                <input
+                                  :value="getInlineSearchValue(`row-${row.rowId}-to-account`)"
+                                  class="inline-select-search-input"
+                                  type="text"
+                                  placeholder="Поиск..."
+                                  @input="setInlineSearchValue(`row-${row.rowId}-to-account`, $event.target.value)"
+                                  @keydown.stop
+                                />
+                              </div>
                               <button
                                 type="button"
-                                class="inline-select-option clear-option"
+                                class="inline-select-option inline-select-meta-option"
                                 @click="setRowDraftField(row.rowId, 'toAccountId', '')"
                               >
                                 Куда
                               </button>
                               <div
-                                v-for="acc in accountOptions"
+                                v-for="acc in getFilteredInlineOptions(`row-${row.rowId}-to-account`, accountOptions)"
                                 :key="`${row.rowId}-to-${acc.value}`"
                                 class="inline-select-row"
                               >
@@ -2598,7 +2932,7 @@ onBeforeUnmount(() => {
                                     @keydown.esc.prevent="cancelInlineRename"
                                   />
                                   <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                  <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                                 </template>
                                 <template v-else>
                                   <button
@@ -2612,11 +2946,23 @@ onBeforeUnmount(() => {
                                   <button
                                     type="button"
                                     class="inline-icon-btn rename"
+                                    v-if="canInlineRenameOption(acc)"
                                     @click.stop="startInlineRename(`row-${row.rowId}-to-account`, acc)"
                                   >
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                       <path d="M12 20h9"></path>
                                       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn delete"
+                                    :disabled="!canInlineDeleteOption(acc)"
+                                    @click.stop="requestInlineDelete(`row-${row.rowId}-to-account`, acc)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <polyline points="3 6 5 6 21 6"></polyline>
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                     </svg>
                                   </button>
                                 </template>
@@ -2636,15 +2982,25 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-arrow">▾</span>
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-account`)" class="inline-select-menu" @click.stop>
+                            <div class="inline-select-search-row">
+                              <input
+                                :value="getInlineSearchValue(`row-${row.rowId}-account`)"
+                                class="inline-select-search-input"
+                                type="text"
+                                placeholder="Поиск..."
+                                @input="setInlineSearchValue(`row-${row.rowId}-account`, $event.target.value)"
+                                @keydown.stop
+                              />
+                            </div>
                             <button
                               type="button"
-                              class="inline-select-option clear-option"
+                              class="inline-select-option inline-select-meta-option"
                               @click="setRowDraftField(row.rowId, 'accountId', '')"
                             >
                               Без счета
                             </button>
                             <div
-                              v-for="acc in accountOptions"
+                              v-for="acc in getFilteredInlineOptions(`row-${row.rowId}-account`, accountOptions)"
                               :key="`${row.rowId}-account-${acc.value}`"
                               class="inline-select-row"
                             >
@@ -2658,7 +3014,7 @@ onBeforeUnmount(() => {
                                   @keydown.esc.prevent="cancelInlineRename"
                                 />
                                 <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                               </template>
                               <template v-else>
                                 <button
@@ -2672,11 +3028,23 @@ onBeforeUnmount(() => {
                                 <button
                                   type="button"
                                   class="inline-icon-btn rename"
+                                  v-if="canInlineRenameOption(acc)"
                                   @click.stop="startInlineRename(`row-${row.rowId}-account`, acc)"
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 20h9"></path>
                                     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn delete"
+                                  :disabled="!canInlineDeleteOption(acc)"
+                                  @click.stop="requestInlineDelete(`row-${row.rowId}-account`, acc)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                   </svg>
                                 </button>
                               </template>
@@ -2698,15 +3066,25 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-arrow">▾</span>
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-counterparty`)" class="inline-select-menu" @click.stop>
+                            <div class="inline-select-search-row">
+                              <input
+                                :value="getInlineSearchValue(`row-${row.rowId}-counterparty`)"
+                                class="inline-select-search-input"
+                                type="text"
+                                placeholder="Поиск..."
+                                @input="setInlineSearchValue(`row-${row.rowId}-counterparty`, $event.target.value)"
+                                @keydown.stop
+                              />
+                            </div>
                             <button
                               type="button"
-                              class="inline-select-option clear-option"
+                              class="inline-select-option inline-select-meta-option"
                               @click="setRowDraftField(row.rowId, 'counterpartyKey', '')"
                             >
                               Без контрагента
                             </button>
                             <div
-                              v-for="opt in counterpartyOptions"
+                              v-for="opt in getFilteredInlineOptions(`row-${row.rowId}-counterparty`, counterpartyOptions)"
                               :key="`${row.rowId}-counterparty-opt-${opt.value}`"
                               class="inline-select-row"
                             >
@@ -2720,7 +3098,7 @@ onBeforeUnmount(() => {
                                   @keydown.esc.prevent="cancelInlineRename"
                                 />
                                 <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                               </template>
                               <template v-else>
                                 <button
@@ -2734,11 +3112,23 @@ onBeforeUnmount(() => {
                                 <button
                                   type="button"
                                   class="inline-icon-btn rename"
+                                  v-if="canInlineRenameOption(opt)"
                                   @click.stop="startInlineRename(`row-${row.rowId}-counterparty`, opt)"
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 20h9"></path>
                                     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn delete"
+                                  :disabled="!canInlineDeleteOption(opt)"
+                                  @click.stop="requestInlineDelete(`row-${row.rowId}-counterparty`, opt)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                   </svg>
                                 </button>
                               </template>
@@ -2761,15 +3151,25 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-arrow">▾</span>
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-from-owner`)" class="inline-select-menu" @click.stop>
+                              <div class="inline-select-search-row">
+                                <input
+                                  :value="getInlineSearchValue(`row-${row.rowId}-from-owner`)"
+                                  class="inline-select-search-input"
+                                  type="text"
+                                  placeholder="Поиск..."
+                                  @input="setInlineSearchValue(`row-${row.rowId}-from-owner`, $event.target.value)"
+                                  @keydown.stop
+                                />
+                              </div>
                               <button
                                 type="button"
-                                class="inline-select-option clear-option"
+                                class="inline-select-option inline-select-meta-option"
                                 @click="setRowDraftField(row.rowId, 'fromOwnerKey', '')"
                               >
                                 От кого
                               </button>
                               <div
-                                v-for="owner in ownerOptions"
+                                v-for="owner in getFilteredInlineOptions(`row-${row.rowId}-from-owner`, ownerOptions)"
                                 :key="`${row.rowId}-from-owner-${owner.value}`"
                                 class="inline-select-row"
                               >
@@ -2783,7 +3183,7 @@ onBeforeUnmount(() => {
                                     @keydown.esc.prevent="cancelInlineRename"
                                   />
                                   <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                  <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                                 </template>
                                 <template v-else>
                                   <button
@@ -2797,11 +3197,23 @@ onBeforeUnmount(() => {
                                   <button
                                     type="button"
                                     class="inline-icon-btn rename"
+                                    v-if="canInlineRenameOption(owner)"
                                     @click.stop="startInlineRename(`row-${row.rowId}-from-owner`, owner)"
                                   >
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                       <path d="M12 20h9"></path>
                                       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn delete"
+                                    :disabled="!canInlineDeleteOption(owner)"
+                                    @click.stop="requestInlineDelete(`row-${row.rowId}-from-owner`, owner)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <polyline points="3 6 5 6 21 6"></polyline>
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                     </svg>
                                   </button>
                                 </template>
@@ -2822,15 +3234,25 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-arrow">▾</span>
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-to-owner`) && editRows[row.rowId].type !== 'Вывод средств'" class="inline-select-menu" @click.stop>
+                              <div class="inline-select-search-row">
+                                <input
+                                  :value="getInlineSearchValue(`row-${row.rowId}-to-owner`)"
+                                  class="inline-select-search-input"
+                                  type="text"
+                                  placeholder="Поиск..."
+                                  @input="setInlineSearchValue(`row-${row.rowId}-to-owner`, $event.target.value)"
+                                  @keydown.stop
+                                />
+                              </div>
                               <button
                                 type="button"
-                                class="inline-select-option clear-option"
+                                class="inline-select-option inline-select-meta-option"
                                 @click="setRowDraftField(row.rowId, 'toOwnerKey', '')"
                               >
                                 Кому
                               </button>
                               <div
-                                v-for="owner in ownerOptions"
+                                v-for="owner in getFilteredInlineOptions(`row-${row.rowId}-to-owner`, ownerOptions)"
                                 :key="`${row.rowId}-to-owner-${owner.value}`"
                                 class="inline-select-row"
                               >
@@ -2844,7 +3266,7 @@ onBeforeUnmount(() => {
                                     @keydown.esc.prevent="cancelInlineRename"
                                   />
                                   <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                  <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                                 </template>
                                 <template v-else>
                                   <button
@@ -2858,11 +3280,23 @@ onBeforeUnmount(() => {
                                   <button
                                     type="button"
                                     class="inline-icon-btn rename"
+                                    v-if="canInlineRenameOption(owner)"
                                     @click.stop="startInlineRename(`row-${row.rowId}-to-owner`, owner)"
                                   >
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                       <path d="M12 20h9"></path>
                                       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn delete"
+                                    :disabled="!canInlineDeleteOption(owner)"
+                                    @click.stop="requestInlineDelete(`row-${row.rowId}-to-owner`, owner)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <polyline points="3 6 5 6 21 6"></polyline>
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                     </svg>
                                   </button>
                                 </template>
@@ -2882,15 +3316,25 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-arrow">▾</span>
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-owner`)" class="inline-select-menu" @click.stop>
+                            <div class="inline-select-search-row">
+                              <input
+                                :value="getInlineSearchValue(`row-${row.rowId}-owner`)"
+                                class="inline-select-search-input"
+                                type="text"
+                                placeholder="Поиск..."
+                                @input="setInlineSearchValue(`row-${row.rowId}-owner`, $event.target.value)"
+                                @keydown.stop
+                              />
+                            </div>
                             <button
                               type="button"
-                              class="inline-select-option clear-option"
+                              class="inline-select-option inline-select-meta-option"
                               @click="setRowDraftField(row.rowId, 'ownerKey', '')"
                             >
                               Без владельца
                             </button>
                             <div
-                              v-for="owner in ownerOptions"
+                              v-for="owner in getFilteredInlineOptions(`row-${row.rowId}-owner`, ownerOptions)"
                               :key="`${row.rowId}-owner-${owner.value}`"
                               class="inline-select-row"
                             >
@@ -2904,7 +3348,7 @@ onBeforeUnmount(() => {
                                   @keydown.esc.prevent="cancelInlineRename"
                                 />
                                 <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
-                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                <button type="button" class="inline-icon-btn rename-delete" :disabled="inlineRenameState.saving" @click.stop="requestInlineDeleteFromRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                               </template>
                               <template v-else>
                                 <button
@@ -2918,11 +3362,23 @@ onBeforeUnmount(() => {
                                 <button
                                   type="button"
                                   class="inline-icon-btn rename"
+                                  v-if="canInlineRenameOption(owner)"
                                   @click.stop="startInlineRename(`row-${row.rowId}-owner`, owner)"
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 20h9"></path>
                                     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn delete"
+                                  :disabled="!canInlineDeleteOption(owner)"
+                                  @click.stop="requestInlineDelete(`row-${row.rowId}-owner`, owner)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                   </svg>
                                 </button>
                               </template>
@@ -3065,6 +3521,17 @@ onBeforeUnmount(() => {
           <pre class="journal-ai-log-body">{{ aiLogText }}</pre>
         </div>
       </div>
+
+      <ConfirmDialog
+        :show="inlineDeleteState.show"
+        :loading="inlineDeleteState.deleting"
+        title="Удаление сущности"
+        :message="inlineDeleteMessage"
+        confirm-text="Удалить"
+        cancel-text="Отмена"
+        @confirm="confirmInlineDelete"
+        @cancel="closeInlineDeleteDialog"
+      />
     </div>
   </div>
 </template>
@@ -4081,6 +4548,17 @@ onBeforeUnmount(() => {
   justify-self: end;
 }
 
+.inline-select-row > .inline-icon-btn.delete {
+  grid-column: 3;
+  justify-self: end;
+  display: none;
+}
+
+.inline-select-row > .inline-icon-btn.rename-delete {
+  grid-column: 3;
+  justify-self: end;
+}
+
 .inline-select-option:hover {
   background: var(--editor-row-alt-bg);
 }
@@ -4091,7 +4569,35 @@ onBeforeUnmount(() => {
   font-weight: var(--fw-semi, 600);
 }
 
-.inline-select-option.clear-option {
+.inline-select-search-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px;
+  border-bottom: 1px solid var(--editor-border);
+  background: var(--editor-row-bg);
+}
+
+.inline-select-search-input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  background: var(--editor-row-bg);
+  color: var(--editor-cell-text);
+  font-size: 13px;
+  font-weight: var(--fw-medium, 500);
+  outline: none;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.inline-select-search-input:focus {
+  border-color: var(--color-primary, #22c55e);
+}
+
+.inline-select-option.inline-select-meta-option {
+  display: block;
   border-radius: 0;
   border-bottom: 1px solid var(--editor-border);
   color: var(--editor-muted-text);
@@ -4131,6 +4637,30 @@ onBeforeUnmount(() => {
   background: var(--color-background-soft);
   color: var(--editor-cell-text);
   opacity: 1;
+}
+
+.inline-icon-btn.delete {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: #ef4444;
+  opacity: 1;
+}
+
+.inline-icon-btn.delete:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.inline-icon-btn.rename-delete {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: #ef4444;
+  opacity: 1;
+}
+
+.inline-icon-btn.rename-delete:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .inline-icon-btn.confirm {

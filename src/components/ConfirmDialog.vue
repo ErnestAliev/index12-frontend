@@ -1,11 +1,23 @@
 <template>
   <div v-if="show" class="dialog-overlay" @click.self="onCancel">
     <div class="dialog-box">
-      <h3 class="dialog-title">{{ title }}</h3>
-      <p class="dialog-message">{{ message }}</p>
-      <div class="dialog-actions">
-        <button class="btn-cancel" @click="onCancel">{{ cancelText }}</button>
-        <button class="btn-confirm" @click="onConfirm">{{ confirmText }}</button>
+      <template v-if="loading">
+        <h3 class="dialog-title">Удаление...</h3>
+        <p class="dialog-message">Пожалуйста, подождите, обновляем данные.</p>
+        <div class="progress-container">
+          <div class="progress-bar"></div>
+        </div>
+      </template>
+      <template v-else>
+        <h3 class="dialog-title">{{ title }}</h3>
+        <p class="dialog-message">{{ message }}</p>
+        <div class="dialog-actions">
+          <button class="btn-cancel" @click="onCancel">{{ cancelText }}</button>
+          <button class="btn-confirm" @click="onConfirm">{{ confirmText }}</button>
+        </div>
+      </template>
+      <div v-if="loading" class="dialog-actions loading-actions">
+        <button class="btn-cancel" disabled>Удаляем...</button>
       </div>
     </div>
   </div>
@@ -14,6 +26,7 @@
 <script setup>
 const props = defineProps({
   show: Boolean,
+  loading: { type: Boolean, default: false },
   title: { type: String, default: 'Подтверждение' },
   message: { type: String, required: true },
   confirmText: { type: String, default: 'Подтвердить' },
@@ -23,10 +36,12 @@ const props = defineProps({
 const emit = defineEmits(['confirm', 'cancel']);
 
 function onConfirm() {
+  if (props.loading) return;
   emit('confirm');
 }
 
 function onCancel() {
+  if (props.loading) return;
   emit('cancel');
 }
 </script>
@@ -74,6 +89,11 @@ function onCancel() {
   justify-content: flex-end;
 }
 
+.loading-actions {
+  justify-content: center;
+  margin-top: 16px;
+}
+
 .btn-cancel,
 .btn-confirm {
   padding: 10px 20px;
@@ -101,5 +121,35 @@ function onCancel() {
 
 .btn-confirm:hover {
   opacity: 0.9;
+}
+
+.btn-cancel:disabled,
+.btn-confirm:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.progress-container {
+  width: 100%;
+  height: 6px;
+  background-color: var(--color-background-mute, #eee);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 100%;
+  background-color: var(--color-heading, #222);
+  position: absolute;
+  left: -100%;
+  animation: indeterminate 1.5s infinite ease-in-out;
+}
+
+@keyframes indeterminate {
+  0% { left: -100%; width: 50%; }
+  50% { left: 25%; width: 50%; }
+  100% { left: 100%; width: 50%; }
 }
 </style>
