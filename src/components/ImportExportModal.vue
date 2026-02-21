@@ -546,6 +546,20 @@ const parseOwnerKey = (ownerKey) => {
   return { companyId: null, individualId: null };
 };
 
+const toCounterpartyKey = (contractorId, individualId) => {
+  if (contractorId) return `contractor-${contractorId}`;
+  if (individualId) return `individual-${individualId}`;
+  return '';
+};
+
+const parseCounterpartyKey = (counterpartyKey) => {
+  const value = normalizeString(counterpartyKey);
+  if (!value) return { contractorId: null, counterpartyIndividualId: null };
+  if (value.startsWith('contractor-')) return { contractorId: value.slice(11), counterpartyIndividualId: null };
+  if (value.startsWith('individual-')) return { contractorId: null, counterpartyIndividualId: value.slice(11) };
+  return { contractorId: null, counterpartyIndividualId: null };
+};
+
 const isTransferOperation = (op) => !!(op?.isTransfer || op?.type === 'transfer');
 const isWithdrawalTransfer = (op) => !!(op?.isWithdrawal || (op?.transferPurpose === 'personal' && op?.transferReason === 'personal_use'));
 const shouldIncludeInOperationsEditor = (op) => {
@@ -720,11 +734,11 @@ const buildOperationRow = (op) => {
     editable: {
       date: toDateInputValue(op?.date),
       type: typeLabel,
-      categoryName: categoryName === 'Без категории' ? '' : categoryName,
-      projectName: projectName === 'Без проекта' ? '' : projectName,
+      categoryId: extractId(op?.categoryId),
+      projectId: extractId(op?.projectId),
       amount: amountForDisplay ? String(Math.abs(amountForDisplay)) : '',
       accountId: extractId(op?.accountId),
-      contractorName: contractorName === 'Без контрагента' ? '' : contractorName,
+      counterpartyKey: toCounterpartyKey(extractId(op?.contractorId), extractId(op?.counterpartyIndividualId)),
       ownerKey: toOwnerKey(extractId(op?.companyId), extractId(op?.individualId)),
       status: statusLabel,
       fromAccountId: extractId(op?.fromAccountId),
@@ -785,11 +799,11 @@ const toggleEditMode = () => {
 const normalizedDraftSnapshot = (draft) => ({
   date: normalizeString(draft?.date),
   type: normalizeString(draft?.type),
-  categoryName: normalizeString(draft?.categoryName),
-  projectName: normalizeString(draft?.projectName),
+  categoryId: normalizeString(draft?.categoryId),
+  projectId: normalizeString(draft?.projectId),
   amount: parseAmountInput(draft?.amount),
   accountId: normalizeString(draft?.accountId),
-  contractorName: normalizeString(draft?.contractorName),
+  counterpartyKey: normalizeString(draft?.counterpartyKey),
   ownerKey: normalizeString(draft?.ownerKey),
   status: normalizeString(draft?.status),
   fromAccountId: normalizeString(draft?.fromAccountId),
@@ -882,11 +896,15 @@ const filterOptions = computed(() => {
 const ownerOptions = computed(() => {
   const companyOpts = (mainStore.companies || []).map((item) => ({
     value: `company-${item._id}`,
-    label: item.name || 'Компания'
+    label: item.name || 'Компания',
+    entityPath: 'companies',
+    entityId: String(item._id)
   }));
   const individualOpts = (mainStore.individuals || []).map((item) => ({
     value: `individual-${item._id}`,
-    label: item.name || 'Физлицо'
+    label: item.name || 'Физлицо',
+    entityPath: 'individuals',
+    entityId: String(item._id)
   }));
   return [...companyOpts, ...individualOpts];
 });
@@ -894,9 +912,297 @@ const ownerOptions = computed(() => {
 const accountOptions = computed(() =>
   (mainStore.accounts || []).map((item) => ({
     value: String(item._id),
-    label: item.name || 'Счет'
+    label: item.name || 'Счет',
+    entityPath: 'accounts',
+    entityId: String(item._id)
   }))
 );
+
+const categoryOptions = computed(() =>
+  (mainStore.categories || []).map((item) => ({
+    value: String(item._id),
+    label: item.name || 'Категория',
+    entityPath: 'categories',
+    entityId: String(item._id)
+  }))
+);
+
+const projectOptions = computed(() =>
+  (mainStore.projects || []).map((item) => ({
+    value: String(item._id),
+    label: item.name || 'Проект',
+    entityPath: 'projects',
+    entityId: String(item._id)
+  }))
+);
+
+const counterpartyOptions = computed(() => {
+  const contractorOpts = (mainStore.contractors || []).map((item) => ({
+    value: `contractor-${item._id}`,
+    label: item.name || 'Контрагент',
+    entityPath: 'contractors',
+    entityId: String(item._id)
+  }));
+  const individualOpts = (mainStore.individuals || []).map((item) => ({
+    value: `individual-${item._id}`,
+    label: item.name || 'Физлицо',
+    entityPath: 'individuals',
+    entityId: String(item._id)
+  }));
+  return [...contractorOpts, ...individualOpts];
+});
+
+const openInlineDropdownId = ref('');
+const inlineRenameState = ref({
+  dropdownId: '',
+  optionValue: '',
+  entityPath: '',
+  entityId: '',
+  draftName: '',
+  saving: false
+});
+const inlineRenameInputRef = ref(null);
+
+const entityListByPath = (path) => {
+  if (path === 'accounts') return Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+  if (path === 'companies') return Array.isArray(mainStore.companies) ? mainStore.companies : [];
+  if (path === 'individuals') return Array.isArray(mainStore.individuals) ? mainStore.individuals : [];
+  if (path === 'contractors') return Array.isArray(mainStore.contractors) ? mainStore.contractors : [];
+  if (path === 'projects') return Array.isArray(mainStore.projects) ? mainStore.projects : [];
+  if (path === 'categories') return Array.isArray(mainStore.categories) ? mainStore.categories : [];
+  return [];
+};
+
+const findUniqueEntityMatch = (list, name) => {
+  const key = normalizeNameKey(name);
+  if (!key) return null;
+  const matches = (list || []).filter((item) => normalizeNameKey(item?.name) === key);
+  return matches.length === 1 ? matches[0] : null;
+};
+
+const mapFilterOptionWithRename = (label, candidates = []) => {
+  const normalizedLabel = normalizeString(label);
+  const matches = candidates
+    .map(({ path, list }) => {
+      const found = findUniqueEntityMatch(list, normalizedLabel);
+      if (!found?._id) return null;
+      return {
+        path,
+        id: String(found._id)
+      };
+    })
+    .filter(Boolean);
+
+  const uniqueMatches = matches.filter((item, idx, arr) =>
+    arr.findIndex((x) => x.path === item.path && x.id === item.id) === idx
+  );
+
+  if (uniqueMatches.length !== 1) {
+    return { value: normalizedLabel, label: normalizedLabel };
+  }
+
+  return {
+    value: normalizedLabel,
+    label: normalizedLabel,
+    entityPath: uniqueMatches[0].path,
+    entityId: uniqueMatches[0].id
+  };
+};
+
+const categoryFilterOptions = computed(() =>
+  (filterOptions.value.category || []).map((label) =>
+    mapFilterOptionWithRename(label, [{ path: 'categories', list: mainStore.categories }]))
+);
+
+const projectFilterOptions = computed(() =>
+  (filterOptions.value.project || []).map((label) =>
+    mapFilterOptionWithRename(label, [{ path: 'projects', list: mainStore.projects }]))
+);
+
+const accountFilterOptions = computed(() =>
+  (filterOptions.value.account || []).map((label) =>
+    mapFilterOptionWithRename(label, [{ path: 'accounts', list: mainStore.accounts }]))
+);
+
+const contractorFilterOptions = computed(() =>
+  (filterOptions.value.contractor || []).map((label) =>
+    mapFilterOptionWithRename(label, [
+      { path: 'contractors', list: mainStore.contractors },
+      { path: 'individuals', list: mainStore.individuals }
+    ]))
+);
+
+const ownerFilterOptions = computed(() =>
+  (filterOptions.value.owner || []).map((label) =>
+    mapFilterOptionWithRename(label, [
+      { path: 'companies', list: mainStore.companies },
+      { path: 'individuals', list: mainStore.individuals }
+    ]))
+);
+
+const isInlineDropdownOpen = (dropdownId) => openInlineDropdownId.value === dropdownId;
+const isInlineRenameActive = (dropdownId, optionValue) =>
+  inlineRenameState.value.dropdownId === dropdownId &&
+  inlineRenameState.value.optionValue === String(optionValue || '');
+
+const resetInlineRenameState = () => {
+  inlineRenameState.value = {
+    dropdownId: '',
+    optionValue: '',
+    entityPath: '',
+    entityId: '',
+    draftName: '',
+    saving: false
+  };
+};
+
+const closeInlineDropdown = () => {
+  openInlineDropdownId.value = '';
+  resetInlineRenameState();
+};
+
+const toggleInlineDropdown = (dropdownId) => {
+  if (isInlineDropdownOpen(dropdownId)) {
+    closeInlineDropdown();
+    return;
+  }
+  openInlineDropdownId.value = dropdownId;
+  resetInlineRenameState();
+};
+
+const canInlineRenameOption = (option) =>
+  !!(option?.entityPath && option?.entityId && normalizeString(option?.label));
+
+const getInlineSelectedLabel = (value, options, emptyLabel) => {
+  const normalizedValue = normalizeString(value);
+  if (!normalizedValue) return emptyLabel;
+  const found = (options || []).find((opt) => String(opt.value) === normalizedValue);
+  if (found?.label) return found.label;
+  return normalizedValue;
+};
+
+const setFilterField = (field, value) => {
+  if (!Object.prototype.hasOwnProperty.call(filters.value, field)) return;
+  filters.value[field] = normalizeString(value);
+  closeInlineDropdown();
+};
+
+const setRowDraftField = (rowId, field, value) => {
+  if (!rowId || !field || !editRows.value[rowId]) return;
+  editRows.value[rowId][field] = normalizeString(value);
+  closeInlineDropdown();
+};
+
+const syncFiltersAfterRename = ({ entityPath, oldName, newName }) => {
+  const safeOld = normalizeString(oldName);
+  const safeNew = normalizeString(newName);
+  if (!safeOld || !safeNew || safeOld === safeNew) return;
+
+  if (entityPath === 'categories' && filters.value.category === safeOld) filters.value.category = safeNew;
+  if (entityPath === 'projects' && filters.value.project === safeOld) filters.value.project = safeNew;
+  if (entityPath === 'accounts' && filters.value.account === safeOld) filters.value.account = safeNew;
+  if (entityPath === 'contractors' && filters.value.contractor === safeOld) filters.value.contractor = safeNew;
+  if (entityPath === 'companies' && filters.value.owner === safeOld) filters.value.owner = safeNew;
+  if (entityPath === 'individuals') {
+    if (filters.value.owner === safeOld) filters.value.owner = safeNew;
+    if (filters.value.contractor === safeOld) filters.value.contractor = safeNew;
+  }
+};
+
+const refreshOperationLabelsFromStore = () => {
+  operations.value = operations.value.map((row) => {
+    const rebuilt = buildOperationRow(row.source);
+    return {
+      ...row,
+      type: rebuilt.type,
+      isTransfer: rebuilt.isTransfer,
+      isWithdrawal: rebuilt.isWithdrawal,
+      amount: rebuilt.amount,
+      statusCode: rebuilt.statusCode,
+      statusSource: rebuilt.statusSource,
+      dateTs: rebuilt.dateTs,
+      values: rebuilt.values
+    };
+  });
+};
+
+const startInlineRename = (dropdownId, option) => {
+  if (!canInlineRenameOption(option)) return;
+  inlineRenameState.value = {
+    dropdownId,
+    optionValue: String(option.value),
+    entityPath: String(option.entityPath),
+    entityId: String(option.entityId),
+    draftName: String(option.label || ''),
+    saving: false
+  };
+
+  nextTick(() => {
+    inlineRenameInputRef.value?.focus?.();
+    inlineRenameInputRef.value?.select?.();
+  });
+};
+
+const cancelInlineRename = () => {
+  resetInlineRenameState();
+};
+
+const confirmInlineRename = async () => {
+  const state = inlineRenameState.value;
+  if (!state.dropdownId || !state.entityPath || !state.entityId || state.saving) return;
+
+  const list = entityListByPath(state.entityPath);
+  const source = list.find((item) => String(item?._id || '') === state.entityId);
+  if (!source) {
+    alert('Сущность не найдена. Обновите список.');
+    cancelInlineRename();
+    return;
+  }
+
+  const nextName = normalizeString(state.draftName);
+  if (!nextName) {
+    alert('Введите название');
+    return;
+  }
+
+  const currentName = normalizeString(source.name);
+  if (normalizeNameKey(nextName) === normalizeNameKey(currentName)) {
+    cancelInlineRename();
+    return;
+  }
+
+  const duplicate = list.find((item) =>
+    String(item?._id || '') !== state.entityId &&
+    normalizeNameKey(item?.name) === normalizeNameKey(nextName)
+  );
+
+  if (duplicate) {
+    alert('Такое название уже существует. Выберите существующую запись из списка.');
+    return;
+  }
+
+  inlineRenameState.value = { ...state, saving: true };
+
+  try {
+    await mainStore.batchUpdateEntities(state.entityPath, [{ ...source, name: nextName }]);
+    syncFiltersAfterRename({
+      entityPath: state.entityPath,
+      oldName: currentName,
+      newName: nextName
+    });
+    refreshOperationLabelsFromStore();
+    cancelInlineRename();
+  } catch (error) {
+    inlineRenameState.value = { ...state, saving: false };
+    alert(`Не удалось переименовать: ${error?.message || 'Неизвестная ошибка'}`);
+  }
+};
+
+const handleInlineDropdownGlobalPointerDown = (event) => {
+  const target = event?.target;
+  if (target && typeof target.closest === 'function' && target.closest('.inline-entity-select')) return;
+  closeInlineDropdown();
+};
 
 const typeOptionsForRow = (row) => {
   if (row?.isTransfer) return ['Перевод', 'Вывод средств'];
@@ -908,79 +1214,6 @@ const typeOptionsForRow = (row) => {
 
 const statusOptions = Object.freeze(['Исполнено', 'План']);
 
-const resolveEntityByName = (list, name) => {
-  const key = normalizeNameKey(name);
-  if (!key) return null;
-  return (list || []).find((item) => normalizeNameKey(item?.name) === key) || null;
-};
-
-const ensureCategoryIdByName = async (name, cache) => {
-  const normalized = normalizeString(name);
-  if (!normalized || normalized.toLowerCase() === 'без категории') return null;
-  const key = normalizeNameKey(normalized);
-  if (cache.categories.has(key)) return cache.categories.get(key);
-
-  const existing = resolveEntityByName(mainStore.categories, normalized);
-  if (existing?._id) {
-    const id = String(existing._id);
-    cache.categories.set(key, id);
-    return id;
-  }
-
-  const created = await mainStore.addCategory(normalized);
-  const id = created?._id ? String(created._id) : null;
-  if (id) cache.categories.set(key, id);
-  return id;
-};
-
-const ensureProjectIdByName = async (name, cache) => {
-  const normalized = normalizeString(name);
-  if (!normalized || normalized.toLowerCase() === 'без проекта') return null;
-  const key = normalizeNameKey(normalized);
-  if (cache.projects.has(key)) return cache.projects.get(key);
-
-  const existing = resolveEntityByName(mainStore.projects, normalized);
-  if (existing?._id) {
-    const id = String(existing._id);
-    cache.projects.set(key, id);
-    return id;
-  }
-
-  const created = await mainStore.addProject(normalized);
-  const id = created?._id ? String(created._id) : null;
-  if (id) cache.projects.set(key, id);
-  return id;
-};
-
-const resolveCounterpartyByName = async (name, cache) => {
-  const normalized = normalizeString(name);
-  if (!normalized || normalized.toLowerCase() === 'без контрагента') {
-    return { contractorId: null, counterpartyIndividualId: null };
-  }
-
-  const key = normalizeNameKey(normalized);
-  if (cache.counterparties.has(key)) return cache.counterparties.get(key);
-
-  const contractor = resolveEntityByName(mainStore.contractors, normalized);
-  if (contractor?._id) {
-    const value = { contractorId: String(contractor._id), counterpartyIndividualId: null };
-    cache.counterparties.set(key, value);
-    return value;
-  }
-
-  const individual = resolveEntityByName(mainStore.individuals, normalized);
-  if (individual?._id) {
-    const value = { contractorId: null, counterpartyIndividualId: String(individual._id) };
-    cache.counterparties.set(key, value);
-    return value;
-  }
-
-  const created = await mainStore.addContractor(normalized);
-  const value = { contractorId: created?._id ? String(created._id) : null, counterpartyIndividualId: null };
-  cache.counterparties.set(key, value);
-  return value;
-};
-
 const typeLabelToPayload = (label) => {
   const normalized = normalizeString(label);
   if (normalized === 'Расход') return { type: 'expense', isWithdrawal: false };
@@ -989,15 +1222,13 @@ const typeLabelToPayload = (label) => {
   return { type: 'income', isWithdrawal: false };
 };
 
-const buildOperationPayload = async (row, draft, entityCache) => {
+const buildOperationPayload = (row, draft) => {
   const adjustedDate = normalizeDateByStatus(draft.date, draft.status);
   const fallbackDate = toDateInputValue(row?.source?.date);
   const finalDate = adjustedDate || fallbackDate || getTodayIso();
   const amount = parseAmountInput(draft.amount);
   const owner = parseOwnerKey(draft.ownerKey);
-  const categoryId = await ensureCategoryIdByName(draft.categoryName, entityCache);
-  const projectId = await ensureProjectIdByName(draft.projectName, entityCache);
-  const counterparty = await resolveCounterpartyByName(draft.contractorName, entityCache);
+  const counterparty = parseCounterpartyKey(draft.counterpartyKey);
   const typeMeta = typeLabelToPayload(draft.type || row.type);
 
   return {
@@ -1007,10 +1238,10 @@ const buildOperationPayload = async (row, draft, entityCache) => {
     accountId: normalizeString(draft.accountId) || null,
     companyId: owner.companyId || null,
     individualId: owner.individualId || null,
-    contractorId: counterparty.contractorId,
-    counterpartyIndividualId: counterparty.counterpartyIndividualId,
-    categoryId: categoryId || null,
-    projectId: projectId || null,
+    contractorId: counterparty.contractorId || null,
+    counterpartyIndividualId: counterparty.counterpartyIndividualId || null,
+    categoryId: normalizeString(draft.categoryId) || null,
+    projectId: normalizeString(draft.projectId) || null,
     isTransfer: false,
     isWithdrawal: typeMeta.isWithdrawal
   };
@@ -1046,12 +1277,6 @@ const saveEdits = async () => {
   isSavingEdits.value = true;
   loadError.value = '';
 
-  const entityCache = {
-    categories: new Map(),
-    projects: new Map(),
-    counterparties: new Map()
-  };
-
   try {
     const rowsToSave = operations.value.filter((row) => isRowChanged(row.rowId));
 
@@ -1063,7 +1288,7 @@ const saveEdits = async () => {
         const payload = buildTransferPayload(row, draft);
         await mainStore.updateTransfer(row.operationId, payload);
       } else {
-        const payload = await buildOperationPayload(row, draft, entityCache);
+        const payload = buildOperationPayload(row, draft);
         await mainStore.updateOperation(row.operationId, payload);
       }
     }
@@ -1596,6 +1821,7 @@ watch(() => mainStore.cacheVersion, () => {
 
 onMounted(() => {
   document.body.style.overflow = 'hidden';
+  document.addEventListener('pointerdown', handleInlineDropdownGlobalPointerDown);
   loadOperations();
   (async () => {
     await syncAiHistoryDayBoundary();
@@ -1615,6 +1841,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleInlineDropdownGlobalPointerDown);
+  closeInlineDropdown();
   stopAiPaneResize();
   if (aiRecognition) {
     try { aiRecognition.stop(); } catch (_) {}
@@ -1782,17 +2010,113 @@ onBeforeUnmount(() => {
                   </th>
 
                   <th>
-                    <select v-model="filters.category" class="header-filter-control has-arrow">
-                      <option value="">Категория</option>
-                      <option v-for="opt in filterOptions.category" :key="`category-${opt}`" :value="opt">{{ opt }}</option>
-                    </select>
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-category')"
+                      >
+                        <span class="inline-select-trigger-text">
+                          {{ getInlineSelectedLabel(filters.category, categoryFilterOptions, 'Категория') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div v-if="isInlineDropdownOpen('filter-category')" class="inline-select-menu" @click.stop>
+                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('category', '')">
+                          Категория
+                        </button>
+                        <div v-for="opt in categoryFilterOptions" :key="`filter-category-${opt.value}`" class="inline-select-row">
+                          <template v-if="isInlineRenameActive('filter-category', opt.value)">
+                            <input
+                              ref="inlineRenameInputRef"
+                              v-model="inlineRenameState.draftName"
+                              class="inline-rename-input"
+                              type="text"
+                              @keydown.enter.prevent="confirmInlineRename"
+                              @keydown.esc.prevent="cancelInlineRename"
+                            />
+                            <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                          </template>
+                          <template v-else>
+                            <button
+                              type="button"
+                              class="inline-select-option"
+                              :class="{ selected: filters.category === opt.value }"
+                              @click="setFilterField('category', opt.value)"
+                            >
+                              {{ opt.label }}
+                            </button>
+                            <button
+                              v-if="canInlineRenameOption(opt)"
+                              type="button"
+                              class="inline-icon-btn rename"
+                              @click.stop="startInlineRename('filter-category', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                   </th>
 
                   <th>
-                    <select v-model="filters.project" class="header-filter-control has-arrow">
-                      <option value="">Проект</option>
-                      <option v-for="opt in filterOptions.project" :key="`project-${opt}`" :value="opt">{{ opt }}</option>
-                    </select>
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-project')"
+                      >
+                        <span class="inline-select-trigger-text">
+                          {{ getInlineSelectedLabel(filters.project, projectFilterOptions, 'Проект') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div v-if="isInlineDropdownOpen('filter-project')" class="inline-select-menu" @click.stop>
+                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('project', '')">
+                          Проект
+                        </button>
+                        <div v-for="opt in projectFilterOptions" :key="`filter-project-${opt.value}`" class="inline-select-row">
+                          <template v-if="isInlineRenameActive('filter-project', opt.value)">
+                            <input
+                              ref="inlineRenameInputRef"
+                              v-model="inlineRenameState.draftName"
+                              class="inline-rename-input"
+                              type="text"
+                              @keydown.enter.prevent="confirmInlineRename"
+                              @keydown.esc.prevent="cancelInlineRename"
+                            />
+                            <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                          </template>
+                          <template v-else>
+                            <button
+                              type="button"
+                              class="inline-select-option"
+                              :class="{ selected: filters.project === opt.value }"
+                              @click="setFilterField('project', opt.value)"
+                            >
+                              {{ opt.label }}
+                            </button>
+                            <button
+                              v-if="canInlineRenameOption(opt)"
+                              type="button"
+                              class="inline-icon-btn rename"
+                              @click.stop="startInlineRename('filter-project', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                   </th>
 
                   <th class="align-right">
@@ -1800,30 +2124,168 @@ onBeforeUnmount(() => {
                   </th>
 
                   <th>
-                    <select v-model="filters.account" class="header-filter-control has-arrow">
-                      <option value="">Счет</option>
-                      <option v-for="opt in filterOptions.account" :key="`account-${opt}`" :value="opt">{{ opt }}</option>
-                    </select>
-                  </th>
-
-                  <th>
-                    <select v-model="filters.contractor" class="header-filter-control has-arrow">
-                      <option value="">Контрагент</option>
-                      <option
-                        v-for="opt in filterOptions.contractor"
-                        :key="`contractor-${opt}`"
-                        :value="opt"
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-account')"
                       >
-                        {{ opt }}
-                      </option>
-                    </select>
+                        <span class="inline-select-trigger-text">
+                          {{ getInlineSelectedLabel(filters.account, accountFilterOptions, 'Счет') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div v-if="isInlineDropdownOpen('filter-account')" class="inline-select-menu" @click.stop>
+                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('account', '')">
+                          Счет
+                        </button>
+                        <div v-for="opt in accountFilterOptions" :key="`filter-account-${opt.value}`" class="inline-select-row">
+                          <template v-if="isInlineRenameActive('filter-account', opt.value)">
+                            <input
+                              ref="inlineRenameInputRef"
+                              v-model="inlineRenameState.draftName"
+                              class="inline-rename-input"
+                              type="text"
+                              @keydown.enter.prevent="confirmInlineRename"
+                              @keydown.esc.prevent="cancelInlineRename"
+                            />
+                            <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                          </template>
+                          <template v-else>
+                            <button
+                              type="button"
+                              class="inline-select-option"
+                              :class="{ selected: filters.account === opt.value }"
+                              @click="setFilterField('account', opt.value)"
+                            >
+                              {{ opt.label }}
+                            </button>
+                            <button
+                              v-if="canInlineRenameOption(opt)"
+                              type="button"
+                              class="inline-icon-btn rename"
+                              @click.stop="startInlineRename('filter-account', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                   </th>
 
                   <th>
-                    <select v-model="filters.owner" class="header-filter-control has-arrow">
-                      <option value="">Компания/Физлицо</option>
-                      <option v-for="opt in filterOptions.owner" :key="`owner-${opt}`" :value="opt">{{ opt }}</option>
-                    </select>
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-contractor')"
+                      >
+                        <span class="inline-select-trigger-text">
+                          {{ getInlineSelectedLabel(filters.contractor, contractorFilterOptions, 'Контрагент') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div v-if="isInlineDropdownOpen('filter-contractor')" class="inline-select-menu" @click.stop>
+                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('contractor', '')">
+                          Контрагент
+                        </button>
+                        <div v-for="opt in contractorFilterOptions" :key="`filter-contractor-${opt.value}`" class="inline-select-row">
+                          <template v-if="isInlineRenameActive('filter-contractor', opt.value)">
+                            <input
+                              ref="inlineRenameInputRef"
+                              v-model="inlineRenameState.draftName"
+                              class="inline-rename-input"
+                              type="text"
+                              @keydown.enter.prevent="confirmInlineRename"
+                              @keydown.esc.prevent="cancelInlineRename"
+                            />
+                            <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                          </template>
+                          <template v-else>
+                            <button
+                              type="button"
+                              class="inline-select-option"
+                              :class="{ selected: filters.contractor === opt.value }"
+                              @click="setFilterField('contractor', opt.value)"
+                            >
+                              {{ opt.label }}
+                            </button>
+                            <button
+                              v-if="canInlineRenameOption(opt)"
+                              type="button"
+                              class="inline-icon-btn rename"
+                              @click.stop="startInlineRename('filter-contractor', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </th>
+
+                  <th>
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-owner')"
+                      >
+                        <span class="inline-select-trigger-text">
+                          {{ getInlineSelectedLabel(filters.owner, ownerFilterOptions, 'Компания/Физлицо') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div v-if="isInlineDropdownOpen('filter-owner')" class="inline-select-menu" @click.stop>
+                        <button type="button" class="inline-select-option clear-option" @click="setFilterField('owner', '')">
+                          Компания/Физлицо
+                        </button>
+                        <div v-for="opt in ownerFilterOptions" :key="`filter-owner-${opt.value}`" class="inline-select-row">
+                          <template v-if="isInlineRenameActive('filter-owner', opt.value)">
+                            <input
+                              ref="inlineRenameInputRef"
+                              v-model="inlineRenameState.draftName"
+                              class="inline-rename-input"
+                              type="text"
+                              @keydown.enter.prevent="confirmInlineRename"
+                              @keydown.esc.prevent="cancelInlineRename"
+                            />
+                            <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                            <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                          </template>
+                          <template v-else>
+                            <button
+                              type="button"
+                              class="inline-select-option"
+                              :class="{ selected: filters.owner === opt.value }"
+                              @click="setFilterField('owner', opt.value)"
+                            >
+                              {{ opt.label }}
+                            </button>
+                            <button
+                              v-if="canInlineRenameOption(opt)"
+                              type="button"
+                              class="inline-icon-btn rename"
+                              @click.stop="startInlineRename('filter-owner', opt)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                              </svg>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                   </th>
 
                   <th>
@@ -1871,21 +2333,127 @@ onBeforeUnmount(() => {
                       </template>
 
                       <template v-else-if="column === 'Категория'">
-                        <input
-                          v-model="editRows[row.rowId].categoryName"
-                          type="text"
-                          class="cell-edit-control"
-                          placeholder="Категория"
-                        />
+                        <div class="inline-entity-select cell-inline-select">
+                          <button
+                            type="button"
+                            class="inline-select-trigger cell-edit-control"
+                            @click.stop="toggleInlineDropdown(`row-${row.rowId}-category`)"
+                          >
+                            <span class="inline-select-trigger-text">
+                              {{ getInlineSelectedLabel(editRows[row.rowId].categoryId, categoryOptions, 'Без категории') }}
+                            </span>
+                            <span class="inline-select-trigger-arrow">▾</span>
+                          </button>
+                          <div v-if="isInlineDropdownOpen(`row-${row.rowId}-category`)" class="inline-select-menu" @click.stop>
+                            <button
+                              type="button"
+                              class="inline-select-option clear-option"
+                              @click="setRowDraftField(row.rowId, 'categoryId', '')"
+                            >
+                              Без категории
+                            </button>
+                            <div
+                              v-for="opt in categoryOptions"
+                              :key="`${row.rowId}-category-opt-${opt.value}`"
+                              class="inline-select-row"
+                            >
+                              <template v-if="isInlineRenameActive(`row-${row.rowId}-category`, opt.value)">
+                                <input
+                                  ref="inlineRenameInputRef"
+                                  v-model="inlineRenameState.draftName"
+                                  class="inline-rename-input"
+                                  type="text"
+                                  @keydown.enter.prevent="confirmInlineRename"
+                                  @keydown.esc.prevent="cancelInlineRename"
+                                />
+                                <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                              </template>
+                              <template v-else>
+                                <button
+                                  type="button"
+                                  class="inline-select-option"
+                                  :class="{ selected: editRows[row.rowId].categoryId === opt.value }"
+                                  @click="setRowDraftField(row.rowId, 'categoryId', opt.value)"
+                                >
+                                  {{ opt.label }}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn rename"
+                                  @click.stop="startInlineRename(`row-${row.rowId}-category`, opt)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                       </template>
 
                       <template v-else-if="column === 'Проект'">
-                        <input
-                          v-model="editRows[row.rowId].projectName"
-                          type="text"
-                          class="cell-edit-control"
-                          placeholder="Проект"
-                        />
+                        <div class="inline-entity-select cell-inline-select">
+                          <button
+                            type="button"
+                            class="inline-select-trigger cell-edit-control"
+                            @click.stop="toggleInlineDropdown(`row-${row.rowId}-project`)"
+                          >
+                            <span class="inline-select-trigger-text">
+                              {{ getInlineSelectedLabel(editRows[row.rowId].projectId, projectOptions, 'Без проекта') }}
+                            </span>
+                            <span class="inline-select-trigger-arrow">▾</span>
+                          </button>
+                          <div v-if="isInlineDropdownOpen(`row-${row.rowId}-project`)" class="inline-select-menu" @click.stop>
+                            <button
+                              type="button"
+                              class="inline-select-option clear-option"
+                              @click="setRowDraftField(row.rowId, 'projectId', '')"
+                            >
+                              Без проекта
+                            </button>
+                            <div
+                              v-for="opt in projectOptions"
+                              :key="`${row.rowId}-project-opt-${opt.value}`"
+                              class="inline-select-row"
+                            >
+                              <template v-if="isInlineRenameActive(`row-${row.rowId}-project`, opt.value)">
+                                <input
+                                  ref="inlineRenameInputRef"
+                                  v-model="inlineRenameState.draftName"
+                                  class="inline-rename-input"
+                                  type="text"
+                                  @keydown.enter.prevent="confirmInlineRename"
+                                  @keydown.esc.prevent="cancelInlineRename"
+                                />
+                                <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                              </template>
+                              <template v-else>
+                                <button
+                                  type="button"
+                                  class="inline-select-option"
+                                  :class="{ selected: editRows[row.rowId].projectId === opt.value }"
+                                  @click="setRowDraftField(row.rowId, 'projectId', opt.value)"
+                                >
+                                  {{ opt.label }}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn rename"
+                                  @click.stop="startInlineRename(`row-${row.rowId}-project`, opt)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                       </template>
 
                       <template v-else-if="column === 'Сумма'">
@@ -1900,67 +2468,432 @@ onBeforeUnmount(() => {
 
                       <template v-else-if="column === 'Счет'">
                         <div v-if="row.isTransfer" class="cell-dual-control">
-                          <select v-model="editRows[row.rowId].fromAccountId" class="cell-edit-control has-arrow">
-                            <option value="">Откуда</option>
-                            <option v-for="acc in accountOptions" :key="`${row.rowId}-from-${acc.value}`" :value="acc.value">
-                              {{ acc.label }}
-                            </option>
-                          </select>
+                          <div class="inline-entity-select cell-inline-select">
+                            <button
+                              type="button"
+                              class="inline-select-trigger cell-edit-control"
+                              @click.stop="toggleInlineDropdown(`row-${row.rowId}-from-account`)"
+                            >
+                              <span class="inline-select-trigger-text">
+                                {{ getInlineSelectedLabel(editRows[row.rowId].fromAccountId, accountOptions, 'Откуда') }}
+                              </span>
+                              <span class="inline-select-trigger-arrow">▾</span>
+                            </button>
+                            <div v-if="isInlineDropdownOpen(`row-${row.rowId}-from-account`)" class="inline-select-menu" @click.stop>
+                              <button
+                                type="button"
+                                class="inline-select-option clear-option"
+                                @click="setRowDraftField(row.rowId, 'fromAccountId', '')"
+                              >
+                                Откуда
+                              </button>
+                              <div
+                                v-for="acc in accountOptions"
+                                :key="`${row.rowId}-from-${acc.value}`"
+                                class="inline-select-row"
+                              >
+                                <template v-if="isInlineRenameActive(`row-${row.rowId}-from-account`, acc.value)">
+                                  <input
+                                    ref="inlineRenameInputRef"
+                                    v-model="inlineRenameState.draftName"
+                                    class="inline-rename-input"
+                                    type="text"
+                                    @keydown.enter.prevent="confirmInlineRename"
+                                    @keydown.esc.prevent="cancelInlineRename"
+                                  />
+                                  <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                </template>
+                                <template v-else>
+                                  <button
+                                    type="button"
+                                    class="inline-select-option"
+                                    :class="{ selected: editRows[row.rowId].fromAccountId === acc.value }"
+                                    @click="setRowDraftField(row.rowId, 'fromAccountId', acc.value)"
+                                  >
+                                    {{ acc.label }}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn rename"
+                                    @click.stop="startInlineRename(`row-${row.rowId}-from-account`, acc)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <path d="M12 20h9"></path>
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                </template>
+                              </div>
+                            </div>
+                          </div>
                           <span class="dual-separator">→</span>
-                          <select
-                            v-model="editRows[row.rowId].toAccountId"
-                            class="cell-edit-control has-arrow"
-                            :disabled="editRows[row.rowId].type === 'Вывод средств'"
-                          >
-                            <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Куда' }}</option>
-                            <option v-for="acc in accountOptions" :key="`${row.rowId}-to-${acc.value}`" :value="acc.value">
-                              {{ acc.label }}
-                            </option>
-                          </select>
+                          <div class="inline-entity-select cell-inline-select">
+                            <button
+                              type="button"
+                              class="inline-select-trigger cell-edit-control"
+                              :disabled="editRows[row.rowId].type === 'Вывод средств'"
+                              @click.stop="toggleInlineDropdown(`row-${row.rowId}-to-account`)"
+                            >
+                              <span class="inline-select-trigger-text">
+                                {{ getInlineSelectedLabel(editRows[row.rowId].toAccountId, accountOptions, editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Куда') }}
+                              </span>
+                              <span class="inline-select-trigger-arrow">▾</span>
+                            </button>
+                            <div v-if="isInlineDropdownOpen(`row-${row.rowId}-to-account`) && editRows[row.rowId].type !== 'Вывод средств'" class="inline-select-menu" @click.stop>
+                              <button
+                                type="button"
+                                class="inline-select-option clear-option"
+                                @click="setRowDraftField(row.rowId, 'toAccountId', '')"
+                              >
+                                Куда
+                              </button>
+                              <div
+                                v-for="acc in accountOptions"
+                                :key="`${row.rowId}-to-${acc.value}`"
+                                class="inline-select-row"
+                              >
+                                <template v-if="isInlineRenameActive(`row-${row.rowId}-to-account`, acc.value)">
+                                  <input
+                                    ref="inlineRenameInputRef"
+                                    v-model="inlineRenameState.draftName"
+                                    class="inline-rename-input"
+                                    type="text"
+                                    @keydown.enter.prevent="confirmInlineRename"
+                                    @keydown.esc.prevent="cancelInlineRename"
+                                  />
+                                  <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                </template>
+                                <template v-else>
+                                  <button
+                                    type="button"
+                                    class="inline-select-option"
+                                    :class="{ selected: editRows[row.rowId].toAccountId === acc.value }"
+                                    @click="setRowDraftField(row.rowId, 'toAccountId', acc.value)"
+                                  >
+                                    {{ acc.label }}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn rename"
+                                    @click.stop="startInlineRename(`row-${row.rowId}-to-account`, acc)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <path d="M12 20h9"></path>
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                </template>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <select v-else v-model="editRows[row.rowId].accountId" class="cell-edit-control has-arrow">
-                          <option value="">Без счета</option>
-                          <option v-for="acc in accountOptions" :key="`${row.rowId}-account-${acc.value}`" :value="acc.value">
-                            {{ acc.label }}
-                          </option>
-                        </select>
+                        <div v-else class="inline-entity-select cell-inline-select">
+                          <button
+                            type="button"
+                            class="inline-select-trigger cell-edit-control"
+                            @click.stop="toggleInlineDropdown(`row-${row.rowId}-account`)"
+                          >
+                            <span class="inline-select-trigger-text">
+                              {{ getInlineSelectedLabel(editRows[row.rowId].accountId, accountOptions, 'Без счета') }}
+                            </span>
+                            <span class="inline-select-trigger-arrow">▾</span>
+                          </button>
+                          <div v-if="isInlineDropdownOpen(`row-${row.rowId}-account`)" class="inline-select-menu" @click.stop>
+                            <button
+                              type="button"
+                              class="inline-select-option clear-option"
+                              @click="setRowDraftField(row.rowId, 'accountId', '')"
+                            >
+                              Без счета
+                            </button>
+                            <div
+                              v-for="acc in accountOptions"
+                              :key="`${row.rowId}-account-${acc.value}`"
+                              class="inline-select-row"
+                            >
+                              <template v-if="isInlineRenameActive(`row-${row.rowId}-account`, acc.value)">
+                                <input
+                                  ref="inlineRenameInputRef"
+                                  v-model="inlineRenameState.draftName"
+                                  class="inline-rename-input"
+                                  type="text"
+                                  @keydown.enter.prevent="confirmInlineRename"
+                                  @keydown.esc.prevent="cancelInlineRename"
+                                />
+                                <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                              </template>
+                              <template v-else>
+                                <button
+                                  type="button"
+                                  class="inline-select-option"
+                                  :class="{ selected: editRows[row.rowId].accountId === acc.value }"
+                                  @click="setRowDraftField(row.rowId, 'accountId', acc.value)"
+                                >
+                                  {{ acc.label }}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn rename"
+                                  @click.stop="startInlineRename(`row-${row.rowId}-account`, acc)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                       </template>
 
                       <template v-else-if="column === 'Контрагент'">
-                        <input
-                          v-model="editRows[row.rowId].contractorName"
-                          type="text"
-                          class="cell-edit-control"
-                          placeholder="Контрагент"
-                        />
+                        <div class="inline-entity-select cell-inline-select">
+                          <button
+                            type="button"
+                            class="inline-select-trigger cell-edit-control"
+                            @click.stop="toggleInlineDropdown(`row-${row.rowId}-counterparty`)"
+                          >
+                            <span class="inline-select-trigger-text">
+                              {{ getInlineSelectedLabel(editRows[row.rowId].counterpartyKey, counterpartyOptions, 'Без контрагента') }}
+                            </span>
+                            <span class="inline-select-trigger-arrow">▾</span>
+                          </button>
+                          <div v-if="isInlineDropdownOpen(`row-${row.rowId}-counterparty`)" class="inline-select-menu" @click.stop>
+                            <button
+                              type="button"
+                              class="inline-select-option clear-option"
+                              @click="setRowDraftField(row.rowId, 'counterpartyKey', '')"
+                            >
+                              Без контрагента
+                            </button>
+                            <div
+                              v-for="opt in counterpartyOptions"
+                              :key="`${row.rowId}-counterparty-opt-${opt.value}`"
+                              class="inline-select-row"
+                            >
+                              <template v-if="isInlineRenameActive(`row-${row.rowId}-counterparty`, opt.value)">
+                                <input
+                                  ref="inlineRenameInputRef"
+                                  v-model="inlineRenameState.draftName"
+                                  class="inline-rename-input"
+                                  type="text"
+                                  @keydown.enter.prevent="confirmInlineRename"
+                                  @keydown.esc.prevent="cancelInlineRename"
+                                />
+                                <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                              </template>
+                              <template v-else>
+                                <button
+                                  type="button"
+                                  class="inline-select-option"
+                                  :class="{ selected: editRows[row.rowId].counterpartyKey === opt.value }"
+                                  @click="setRowDraftField(row.rowId, 'counterpartyKey', opt.value)"
+                                >
+                                  {{ opt.label }}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn rename"
+                                  @click.stop="startInlineRename(`row-${row.rowId}-counterparty`, opt)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                       </template>
 
                       <template v-else-if="column === 'Компания/Физлицо'">
                         <div v-if="row.isTransfer" class="cell-dual-control">
-                          <select v-model="editRows[row.rowId].fromOwnerKey" class="cell-edit-control has-arrow">
-                            <option value="">От кого</option>
-                            <option v-for="owner in ownerOptions" :key="`${row.rowId}-from-owner-${owner.value}`" :value="owner.value">
-                              {{ owner.label }}
-                            </option>
-                          </select>
+                          <div class="inline-entity-select cell-inline-select">
+                            <button
+                              type="button"
+                              class="inline-select-trigger cell-edit-control"
+                              @click.stop="toggleInlineDropdown(`row-${row.rowId}-from-owner`)"
+                            >
+                              <span class="inline-select-trigger-text">
+                                {{ getInlineSelectedLabel(editRows[row.rowId].fromOwnerKey, ownerOptions, 'От кого') }}
+                              </span>
+                              <span class="inline-select-trigger-arrow">▾</span>
+                            </button>
+                            <div v-if="isInlineDropdownOpen(`row-${row.rowId}-from-owner`)" class="inline-select-menu" @click.stop>
+                              <button
+                                type="button"
+                                class="inline-select-option clear-option"
+                                @click="setRowDraftField(row.rowId, 'fromOwnerKey', '')"
+                              >
+                                От кого
+                              </button>
+                              <div
+                                v-for="owner in ownerOptions"
+                                :key="`${row.rowId}-from-owner-${owner.value}`"
+                                class="inline-select-row"
+                              >
+                                <template v-if="isInlineRenameActive(`row-${row.rowId}-from-owner`, owner.value)">
+                                  <input
+                                    ref="inlineRenameInputRef"
+                                    v-model="inlineRenameState.draftName"
+                                    class="inline-rename-input"
+                                    type="text"
+                                    @keydown.enter.prevent="confirmInlineRename"
+                                    @keydown.esc.prevent="cancelInlineRename"
+                                  />
+                                  <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                </template>
+                                <template v-else>
+                                  <button
+                                    type="button"
+                                    class="inline-select-option"
+                                    :class="{ selected: editRows[row.rowId].fromOwnerKey === owner.value }"
+                                    @click="setRowDraftField(row.rowId, 'fromOwnerKey', owner.value)"
+                                  >
+                                    {{ owner.label }}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn rename"
+                                    @click.stop="startInlineRename(`row-${row.rowId}-from-owner`, owner)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <path d="M12 20h9"></path>
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                </template>
+                              </div>
+                            </div>
+                          </div>
                           <span class="dual-separator">→</span>
-                          <select
-                            v-model="editRows[row.rowId].toOwnerKey"
-                            class="cell-edit-control has-arrow"
-                            :disabled="editRows[row.rowId].type === 'Вывод средств'"
-                          >
-                            <option value="">{{ editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Кому' }}</option>
-                            <option v-for="owner in ownerOptions" :key="`${row.rowId}-to-owner-${owner.value}`" :value="owner.value">
-                              {{ owner.label }}
-                            </option>
-                          </select>
+                          <div class="inline-entity-select cell-inline-select">
+                            <button
+                              type="button"
+                              class="inline-select-trigger cell-edit-control"
+                              :disabled="editRows[row.rowId].type === 'Вывод средств'"
+                              @click.stop="toggleInlineDropdown(`row-${row.rowId}-to-owner`)"
+                            >
+                              <span class="inline-select-trigger-text">
+                                {{ getInlineSelectedLabel(editRows[row.rowId].toOwnerKey, ownerOptions, editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Кому') }}
+                              </span>
+                              <span class="inline-select-trigger-arrow">▾</span>
+                            </button>
+                            <div v-if="isInlineDropdownOpen(`row-${row.rowId}-to-owner`) && editRows[row.rowId].type !== 'Вывод средств'" class="inline-select-menu" @click.stop>
+                              <button
+                                type="button"
+                                class="inline-select-option clear-option"
+                                @click="setRowDraftField(row.rowId, 'toOwnerKey', '')"
+                              >
+                                Кому
+                              </button>
+                              <div
+                                v-for="owner in ownerOptions"
+                                :key="`${row.rowId}-to-owner-${owner.value}`"
+                                class="inline-select-row"
+                              >
+                                <template v-if="isInlineRenameActive(`row-${row.rowId}-to-owner`, owner.value)">
+                                  <input
+                                    ref="inlineRenameInputRef"
+                                    v-model="inlineRenameState.draftName"
+                                    class="inline-rename-input"
+                                    type="text"
+                                    @keydown.enter.prevent="confirmInlineRename"
+                                    @keydown.esc.prevent="cancelInlineRename"
+                                  />
+                                  <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                  <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                                </template>
+                                <template v-else>
+                                  <button
+                                    type="button"
+                                    class="inline-select-option"
+                                    :class="{ selected: editRows[row.rowId].toOwnerKey === owner.value }"
+                                    @click="setRowDraftField(row.rowId, 'toOwnerKey', owner.value)"
+                                  >
+                                    {{ owner.label }}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="inline-icon-btn rename"
+                                    @click.stop="startInlineRename(`row-${row.rowId}-to-owner`, owner)"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <path d="M12 20h9"></path>
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                    </svg>
+                                  </button>
+                                </template>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <select v-else v-model="editRows[row.rowId].ownerKey" class="cell-edit-control has-arrow">
-                          <option value="">Без владельца</option>
-                          <option v-for="owner in ownerOptions" :key="`${row.rowId}-owner-${owner.value}`" :value="owner.value">
-                            {{ owner.label }}
-                          </option>
-                        </select>
+                        <div v-else class="inline-entity-select cell-inline-select">
+                          <button
+                            type="button"
+                            class="inline-select-trigger cell-edit-control"
+                            @click.stop="toggleInlineDropdown(`row-${row.rowId}-owner`)"
+                          >
+                            <span class="inline-select-trigger-text">
+                              {{ getInlineSelectedLabel(editRows[row.rowId].ownerKey, ownerOptions, 'Без владельца') }}
+                            </span>
+                            <span class="inline-select-trigger-arrow">▾</span>
+                          </button>
+                          <div v-if="isInlineDropdownOpen(`row-${row.rowId}-owner`)" class="inline-select-menu" @click.stop>
+                            <button
+                              type="button"
+                              class="inline-select-option clear-option"
+                              @click="setRowDraftField(row.rowId, 'ownerKey', '')"
+                            >
+                              Без владельца
+                            </button>
+                            <div
+                              v-for="owner in ownerOptions"
+                              :key="`${row.rowId}-owner-${owner.value}`"
+                              class="inline-select-row"
+                            >
+                              <template v-if="isInlineRenameActive(`row-${row.rowId}-owner`, owner.value)">
+                                <input
+                                  ref="inlineRenameInputRef"
+                                  v-model="inlineRenameState.draftName"
+                                  class="inline-rename-input"
+                                  type="text"
+                                  @keydown.enter.prevent="confirmInlineRename"
+                                  @keydown.esc.prevent="cancelInlineRename"
+                                />
+                                <button type="button" class="inline-icon-btn confirm" :disabled="inlineRenameState.saving" @click="confirmInlineRename">✓</button>
+                                <button type="button" class="inline-icon-btn cancel" :disabled="inlineRenameState.saving" @click="cancelInlineRename">✕</button>
+                              </template>
+                              <template v-else>
+                                <button
+                                  type="button"
+                                  class="inline-select-option"
+                                  :class="{ selected: editRows[row.rowId].ownerKey === owner.value }"
+                                  @click="setRowDraftField(row.rowId, 'ownerKey', owner.value)"
+                                >
+                                  {{ owner.label }}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="inline-icon-btn rename"
+                                  @click.stop="startInlineRename(`row-${row.rowId}-owner`, owner)"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                                  </svg>
+                                </button>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                       </template>
 
                       <template v-else-if="column === 'Статус'">
@@ -3005,6 +3938,162 @@ onBeforeUnmount(() => {
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
   padding-right: 28px;
+}
+
+.inline-entity-select {
+  position: relative;
+  width: 100%;
+}
+
+.inline-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inline-select-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.inline-select-trigger-text {
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inline-select-trigger-arrow {
+  flex-shrink: 0;
+  color: var(--editor-muted-text);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.inline-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: var(--editor-row-bg);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  z-index: 30;
+}
+
+.cell-inline-select .inline-select-menu {
+  min-width: 190px;
+}
+
+.inline-select-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+}
+
+.inline-select-option {
+  width: 100%;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--editor-cell-text);
+  font-size: 13px;
+  font-weight: var(--fw-medium, 500);
+  text-align: left;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inline-select-option:hover {
+  background: var(--editor-row-alt-bg);
+}
+
+.inline-select-option.selected {
+  background: rgba(34, 197, 94, 0.18);
+  color: var(--color-primary, #22c55e);
+  font-weight: var(--fw-semi, 600);
+}
+
+.inline-select-option.clear-option {
+  border-radius: 0;
+  border-bottom: 1px solid var(--editor-border);
+  color: var(--editor-muted-text);
+  font-weight: var(--fw-semi, 600);
+}
+
+.inline-icon-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--editor-muted-text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.inline-icon-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.inline-icon-btn.rename:hover {
+  color: var(--color-primary, #22c55e);
+  background: var(--editor-row-alt-bg);
+}
+
+.inline-icon-btn.confirm {
+  color: #16a34a;
+}
+
+.inline-icon-btn.confirm:hover {
+  background: rgba(22, 163, 74, 0.14);
+}
+
+.inline-icon-btn.cancel {
+  color: #ef4444;
+}
+
+.inline-icon-btn.cancel:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.inline-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inline-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  background: var(--editor-row-bg);
+  color: var(--editor-cell-text);
+  font-size: 13px;
+  font-weight: var(--fw-medium, 500);
+  outline: none;
+  padding: 0 8px;
+}
+
+.inline-rename-input:focus {
+  border-color: var(--color-primary, #22c55e);
 }
 
 .header-static {
