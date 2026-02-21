@@ -2040,9 +2040,9 @@ onBeforeUnmount(() => {
                               {{ opt.label }}
                             </button>
                             <button
-                              v-if="canInlineRenameOption(opt)"
                               type="button"
                               class="inline-icon-btn rename"
+                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-category', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2095,9 +2095,9 @@ onBeforeUnmount(() => {
                               {{ opt.label }}
                             </button>
                             <button
-                              v-if="canInlineRenameOption(opt)"
                               type="button"
                               class="inline-icon-btn rename"
+                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-project', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2154,9 +2154,9 @@ onBeforeUnmount(() => {
                               {{ opt.label }}
                             </button>
                             <button
-                              v-if="canInlineRenameOption(opt)"
                               type="button"
                               class="inline-icon-btn rename"
+                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-account', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2209,9 +2209,9 @@ onBeforeUnmount(() => {
                               {{ opt.label }}
                             </button>
                             <button
-                              v-if="canInlineRenameOption(opt)"
                               type="button"
                               class="inline-icon-btn rename"
+                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-contractor', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2264,9 +2264,9 @@ onBeforeUnmount(() => {
                               {{ opt.label }}
                             </button>
                             <button
-                              v-if="canInlineRenameOption(opt)"
                               type="button"
                               class="inline-icon-btn rename"
+                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-owner', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3980,6 +3980,10 @@ onBeforeUnmount(() => {
   z-index: 30;
 }
 
+.header-inline-select .inline-select-menu {
+  min-width: calc(100% + 56px);
+}
+
 .cell-inline-select .inline-select-menu {
   min-width: 190px;
 }
@@ -3989,10 +3993,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   padding: 2px 4px;
+  min-width: 0;
 }
 
 .inline-select-option {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 30px;
   border: none;
   background: transparent;
@@ -4047,6 +4053,10 @@ onBeforeUnmount(() => {
 .inline-icon-btn.rename:hover {
   color: var(--color-primary, #22c55e);
   background: var(--editor-row-alt-bg);
+}
+
+.inline-icon-btn.rename:disabled {
+  opacity: 0.35;
 }
 
 .inline-icon-btn.confirm {
