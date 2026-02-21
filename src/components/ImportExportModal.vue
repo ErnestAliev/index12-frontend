@@ -44,14 +44,24 @@ let aiDayBoundaryInterval = null;
 const filters = ref({
   dateFrom: '',
   dateTo: '',
-  type: '',
-  category: '',
-  project: '',
-  account: '',
-  contractor: '',
-  owner: '',
-  status: ''
+  type: [],
+  category: [],
+  project: [],
+  account: [],
+  contractor: [],
+  owner: [],
+  status: []
 });
+
+const MULTI_FILTER_FIELDS = new Set([
+  'type',
+  'category',
+  'project',
+  'account',
+  'contractor',
+  'owner',
+  'status'
+]);
 
 const TABLE_COLUMNS = Object.freeze([
   'Дата',
@@ -1046,6 +1056,20 @@ const ownerFilterOptions = computed(() =>
     ]))
 );
 
+const typeFilterOptions = computed(() =>
+  (filterOptions.value.type || []).map((label) => ({
+    value: normalizeString(label),
+    label: normalizeString(label)
+  }))
+);
+
+const statusFilterOptions = computed(() =>
+  (filterOptions.value.status || []).map((label) => ({
+    value: normalizeString(label),
+    label: normalizeString(label)
+  }))
+);
+
 const isInlineDropdownOpen = (dropdownId) => openInlineDropdownId.value === dropdownId;
 const isInlineRenameActive = (dropdownId, optionValue) =>
   inlineRenameState.value.dropdownId === dropdownId &&
@@ -1145,6 +1169,42 @@ const getInlineSelectedLabel = (value, options, emptyLabel) => {
   return normalizedValue;
 };
 
+const normalizeFilterList = (value) => {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((item) => normalizeString(item)).filter(Boolean)));
+  }
+
+  const single = normalizeString(value);
+  return single ? [single] : [];
+};
+
+const getFilterFieldValues = (field) => {
+  if (!Object.prototype.hasOwnProperty.call(filters.value, field)) return [];
+  if (MULTI_FILTER_FIELDS.has(field)) return normalizeFilterList(filters.value[field]);
+  const single = normalizeString(filters.value[field]);
+  return single ? [single] : [];
+};
+
+const isFilterOptionSelected = (field, value) => {
+  const target = normalizeString(value);
+  if (!target) return false;
+  return getFilterFieldValues(field).includes(target);
+};
+
+const getFilterTriggerLabel = (field, options, emptyLabel) => {
+  const selectedValues = getFilterFieldValues(field);
+  if (selectedValues.length === 0) return emptyLabel;
+
+  const labels = selectedValues.map((selectedValue) => {
+    const found = (options || []).find((opt) => String(opt?.value) === selectedValue);
+    return normalizeString(found?.label || selectedValue);
+  }).filter(Boolean);
+
+  if (labels.length === 0) return emptyLabel;
+  if (labels.length === 1) return labels[0];
+  return `${labels[0]} +${labels.length - 1}`;
+};
+
 const estimateMenuLabelWidth = (text) => {
   const value = String(text || '');
   if (!value) return 0;
@@ -1162,10 +1222,43 @@ const getHeaderMenuStyle = (options = []) => {
   return { '--header-inline-menu-width': `${widthPx}px` };
 };
 
-const setFilterField = (field, value) => {
+const setFilterField = (field, value, { closeDropdown = true } = {}) => {
   if (!Object.prototype.hasOwnProperty.call(filters.value, field)) return;
-  filters.value[field] = normalizeString(value);
-  closeInlineDropdown();
+  if (MULTI_FILTER_FIELDS.has(field)) {
+    filters.value[field] = normalizeFilterList(value);
+  } else {
+    filters.value[field] = normalizeString(value);
+  }
+
+  if (closeDropdown) closeInlineDropdown();
+};
+
+const clearFilterField = (field) => {
+  if (!Object.prototype.hasOwnProperty.call(filters.value, field)) return;
+  if (MULTI_FILTER_FIELDS.has(field)) {
+    setFilterField(field, [], { closeDropdown: false });
+  } else {
+    setFilterField(field, '', { closeDropdown: false });
+  }
+};
+
+const toggleFilterFieldValue = (field, value) => {
+  if (!Object.prototype.hasOwnProperty.call(filters.value, field)) return;
+
+  if (!MULTI_FILTER_FIELDS.has(field)) {
+    setFilterField(field, value);
+    return;
+  }
+
+  const target = normalizeString(value);
+  if (!target) return;
+
+  const current = getFilterFieldValues(field);
+  const next = current.includes(target)
+    ? current.filter((item) => item !== target)
+    : [...current, target];
+
+  setFilterField(field, next, { closeDropdown: false });
 };
 
 const setRowDraftField = (rowId, field, value) => {
@@ -1174,19 +1267,35 @@ const setRowDraftField = (rowId, field, value) => {
   closeInlineDropdown();
 };
 
+const replaceFilterValue = (field, oldValue, newValue) => {
+  if (!MULTI_FILTER_FIELDS.has(field)) return;
+  const current = getFilterFieldValues(field);
+  if (!current.includes(oldValue)) return;
+  const next = current.map((item) => (item === oldValue ? newValue : item));
+  setFilterField(field, next, { closeDropdown: false });
+};
+
+const removeFilterValue = (field, targetValue) => {
+  if (!MULTI_FILTER_FIELDS.has(field)) return;
+  const current = getFilterFieldValues(field);
+  if (!current.includes(targetValue)) return;
+  const next = current.filter((item) => item !== targetValue);
+  setFilterField(field, next, { closeDropdown: false });
+};
+
 const syncFiltersAfterRename = ({ entityPath, oldName, newName }) => {
   const safeOld = normalizeString(oldName);
   const safeNew = normalizeString(newName);
   if (!safeOld || !safeNew || safeOld === safeNew) return;
 
-  if (entityPath === 'categories' && filters.value.category === safeOld) filters.value.category = safeNew;
-  if (entityPath === 'projects' && filters.value.project === safeOld) filters.value.project = safeNew;
-  if (entityPath === 'accounts' && filters.value.account === safeOld) filters.value.account = safeNew;
-  if (entityPath === 'contractors' && filters.value.contractor === safeOld) filters.value.contractor = safeNew;
-  if (entityPath === 'companies' && filters.value.owner === safeOld) filters.value.owner = safeNew;
+  if (entityPath === 'categories') replaceFilterValue('category', safeOld, safeNew);
+  if (entityPath === 'projects') replaceFilterValue('project', safeOld, safeNew);
+  if (entityPath === 'accounts') replaceFilterValue('account', safeOld, safeNew);
+  if (entityPath === 'contractors') replaceFilterValue('contractor', safeOld, safeNew);
+  if (entityPath === 'companies') replaceFilterValue('owner', safeOld, safeNew);
   if (entityPath === 'individuals') {
-    if (filters.value.owner === safeOld) filters.value.owner = safeNew;
-    if (filters.value.contractor === safeOld) filters.value.contractor = safeNew;
+    replaceFilterValue('owner', safeOld, safeNew);
+    replaceFilterValue('contractor', safeOld, safeNew);
   }
 };
 
@@ -1194,14 +1303,14 @@ const syncFiltersAfterDelete = ({ entityPath, deletedName }) => {
   const safeDeletedName = normalizeString(deletedName);
   if (!safeDeletedName) return;
 
-  if (entityPath === 'categories' && filters.value.category === safeDeletedName) filters.value.category = '';
-  if (entityPath === 'projects' && filters.value.project === safeDeletedName) filters.value.project = '';
-  if (entityPath === 'accounts' && filters.value.account === safeDeletedName) filters.value.account = '';
-  if (entityPath === 'contractors' && filters.value.contractor === safeDeletedName) filters.value.contractor = '';
-  if (entityPath === 'companies' && filters.value.owner === safeDeletedName) filters.value.owner = '';
+  if (entityPath === 'categories') removeFilterValue('category', safeDeletedName);
+  if (entityPath === 'projects') removeFilterValue('project', safeDeletedName);
+  if (entityPath === 'accounts') removeFilterValue('account', safeDeletedName);
+  if (entityPath === 'contractors') removeFilterValue('contractor', safeDeletedName);
+  if (entityPath === 'companies') removeFilterValue('owner', safeDeletedName);
   if (entityPath === 'individuals') {
-    if (filters.value.owner === safeDeletedName) filters.value.owner = '';
-    if (filters.value.contractor === safeDeletedName) filters.value.contractor = '';
+    removeFilterValue('owner', safeDeletedName);
+    removeFilterValue('contractor', safeDeletedName);
   }
 };
 
@@ -1514,20 +1623,26 @@ const filteredOperations = computed(() => {
   const toTs = filters.value.dateTo
     ? new Date(`${filters.value.dateTo}T23:59:59.999`).getTime()
     : null;
+  const typeFilter = getFilterFieldValues('type');
+  const categoryFilter = getFilterFieldValues('category');
+  const projectFilter = getFilterFieldValues('project');
+  const accountFilter = getFilterFieldValues('account');
+  const contractorFilter = getFilterFieldValues('contractor');
+  const ownerFilter = getFilterFieldValues('owner');
+  const statusFilter = getFilterFieldValues('status');
 
   return operations.value.filter((row) => {
     if (!isRowVisibleByAccountMode(row)) return false;
 
     if (fromTs !== null && (row.dateTs === null || row.dateTs < fromTs)) return false;
     if (toTs !== null && (row.dateTs === null || row.dateTs > toTs)) return false;
-
-    if (filters.value.type && row.values['Тип'] !== filters.value.type) return false;
-    if (filters.value.category && row.values['Категория'] !== filters.value.category) return false;
-    if (filters.value.project && row.values['Проект'] !== filters.value.project) return false;
-    if (filters.value.account && row.values['Счет'] !== filters.value.account) return false;
-    if (filters.value.contractor && row.values['Контрагент'] !== filters.value.contractor) return false;
-    if (filters.value.owner && row.values['Компания/Физлицо'] !== filters.value.owner) return false;
-    if (filters.value.status && row.values['Статус'] !== filters.value.status) return false;
+    if (typeFilter.length > 0 && !typeFilter.includes(row.values['Тип'])) return false;
+    if (categoryFilter.length > 0 && !categoryFilter.includes(row.values['Категория'])) return false;
+    if (projectFilter.length > 0 && !projectFilter.includes(row.values['Проект'])) return false;
+    if (accountFilter.length > 0 && !accountFilter.includes(row.values['Счет'])) return false;
+    if (contractorFilter.length > 0 && !contractorFilter.includes(row.values['Контрагент'])) return false;
+    if (ownerFilter.length > 0 && !ownerFilter.includes(row.values['Компания/Физлицо'])) return false;
+    if (statusFilter.length > 0 && !statusFilter.includes(row.values['Статус'])) return false;
 
     return true;
   });
@@ -1594,13 +1709,13 @@ const buildAiTableContext = (resolvedPeriodFilter = null) => {
     filters: {
       dateFrom: filters.value.dateFrom || null,
       dateTo: filters.value.dateTo || null,
-      type: filters.value.type || null,
-      category: filters.value.category || null,
-      project: filters.value.project || null,
-      account: filters.value.account || null,
-      contractor: filters.value.contractor || null,
-      owner: filters.value.owner || null,
-      status: filters.value.status || null
+      type: getFilterFieldValues('type'),
+      category: getFilterFieldValues('category'),
+      project: getFilterFieldValues('project'),
+      account: getFilterFieldValues('account'),
+      contractor: getFilterFieldValues('contractor'),
+      owner: getFilterFieldValues('owner'),
+      status: getFilterFieldValues('status')
     },
     counters: {
       filtered: rows.length,
@@ -2166,10 +2281,48 @@ onBeforeUnmount(() => {
                   </th>
 
                   <th>
-                    <select v-model="filters.type" class="header-filter-control has-arrow">
-                      <option value="">Тип</option>
-                      <option v-for="opt in filterOptions.type" :key="`type-${opt}`" :value="opt">{{ opt }}</option>
-                    </select>
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-type')"
+                      >
+                        <span class="inline-select-trigger-text">
+                          {{ getFilterTriggerLabel('type', typeFilterOptions, 'Тип') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-type')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(typeFilterOptions)"
+                        @click.stop
+                      >
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-type')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-type', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('type')">
+                          Все
+                        </button>
+                        <div v-for="opt in getFilteredInlineOptions('filter-type', typeFilterOptions)" :key="`filter-type-${opt.value}`" class="inline-select-row">
+                          <button
+                            type="button"
+                            class="inline-select-option"
+                            :class="{ selected: isFilterOptionSelected('type', opt.value) }"
+                            @click="toggleFilterFieldValue('type', opt.value)"
+                          >
+                            {{ opt.label }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </th>
 
                   <th>
@@ -2180,7 +2333,7 @@ onBeforeUnmount(() => {
                         @click.stop="toggleInlineDropdown('filter-category')"
                       >
                         <span class="inline-select-trigger-text">
-                          {{ getInlineSelectedLabel(filters.category, categoryFilterOptions, 'Категория') }}
+                          {{ getFilterTriggerLabel('category', categoryFilterOptions, 'Категория') }}
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
@@ -2200,7 +2353,7 @@ onBeforeUnmount(() => {
                             @keydown.stop
                           />
                         </div>
-                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('category', '')">
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('category')">
                           Все
                         </button>
                         <div v-for="opt in getFilteredInlineOptions('filter-category', categoryFilterOptions)" :key="`filter-category-${opt.value}`" class="inline-select-row">
@@ -2220,8 +2373,8 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-select-option"
-                              :class="{ selected: filters.category === opt.value }"
-                              @click="setFilterField('category', opt.value)"
+                              :class="{ selected: isFilterOptionSelected('category', opt.value) }"
+                              @click="toggleFilterFieldValue('category', opt.value)"
                             >
                               {{ opt.label }}
                             </button>
@@ -2261,7 +2414,7 @@ onBeforeUnmount(() => {
                         @click.stop="toggleInlineDropdown('filter-project')"
                       >
                         <span class="inline-select-trigger-text">
-                          {{ getInlineSelectedLabel(filters.project, projectFilterOptions, 'Проект') }}
+                          {{ getFilterTriggerLabel('project', projectFilterOptions, 'Проект') }}
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
@@ -2281,7 +2434,7 @@ onBeforeUnmount(() => {
                             @keydown.stop
                           />
                         </div>
-                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('project', '')">
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('project')">
                           Все
                         </button>
                         <div v-for="opt in getFilteredInlineOptions('filter-project', projectFilterOptions)" :key="`filter-project-${opt.value}`" class="inline-select-row">
@@ -2301,8 +2454,8 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-select-option"
-                              :class="{ selected: filters.project === opt.value }"
-                              @click="setFilterField('project', opt.value)"
+                              :class="{ selected: isFilterOptionSelected('project', opt.value) }"
+                              @click="toggleFilterFieldValue('project', opt.value)"
                             >
                               {{ opt.label }}
                             </button>
@@ -2346,7 +2499,7 @@ onBeforeUnmount(() => {
                         @click.stop="toggleInlineDropdown('filter-account')"
                       >
                         <span class="inline-select-trigger-text">
-                          {{ getInlineSelectedLabel(filters.account, accountFilterOptions, 'Счет') }}
+                          {{ getFilterTriggerLabel('account', accountFilterOptions, 'Счет') }}
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
@@ -2366,7 +2519,7 @@ onBeforeUnmount(() => {
                             @keydown.stop
                           />
                         </div>
-                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('account', '')">
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('account')">
                           Все
                         </button>
                         <div v-for="opt in getFilteredInlineOptions('filter-account', accountFilterOptions)" :key="`filter-account-${opt.value}`" class="inline-select-row">
@@ -2386,8 +2539,8 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-select-option"
-                              :class="{ selected: filters.account === opt.value }"
-                              @click="setFilterField('account', opt.value)"
+                              :class="{ selected: isFilterOptionSelected('account', opt.value) }"
+                              @click="toggleFilterFieldValue('account', opt.value)"
                             >
                               {{ opt.label }}
                             </button>
@@ -2427,7 +2580,7 @@ onBeforeUnmount(() => {
                         @click.stop="toggleInlineDropdown('filter-contractor')"
                       >
                         <span class="inline-select-trigger-text">
-                          {{ getInlineSelectedLabel(filters.contractor, contractorFilterOptions, 'Контрагент') }}
+                          {{ getFilterTriggerLabel('contractor', contractorFilterOptions, 'Контрагент') }}
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
@@ -2447,7 +2600,7 @@ onBeforeUnmount(() => {
                             @keydown.stop
                           />
                         </div>
-                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('contractor', '')">
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('contractor')">
                           Все
                         </button>
                         <div v-for="opt in getFilteredInlineOptions('filter-contractor', contractorFilterOptions)" :key="`filter-contractor-${opt.value}`" class="inline-select-row">
@@ -2467,8 +2620,8 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-select-option"
-                              :class="{ selected: filters.contractor === opt.value }"
-                              @click="setFilterField('contractor', opt.value)"
+                              :class="{ selected: isFilterOptionSelected('contractor', opt.value) }"
+                              @click="toggleFilterFieldValue('contractor', opt.value)"
                             >
                               {{ opt.label }}
                             </button>
@@ -2508,7 +2661,7 @@ onBeforeUnmount(() => {
                         @click.stop="toggleInlineDropdown('filter-owner')"
                       >
                         <span class="inline-select-trigger-text">
-                          {{ getInlineSelectedLabel(filters.owner, ownerFilterOptions, 'Компания/Физлицо') }}
+                          {{ getFilterTriggerLabel('owner', ownerFilterOptions, 'Компания/Физлицо') }}
                         </span>
                         <span class="inline-select-trigger-arrow">▾</span>
                       </button>
@@ -2528,7 +2681,7 @@ onBeforeUnmount(() => {
                             @keydown.stop
                           />
                         </div>
-                        <button type="button" class="inline-select-option inline-select-meta-option" @click="setFilterField('owner', '')">
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('owner')">
                           Все
                         </button>
                         <div v-for="opt in getFilteredInlineOptions('filter-owner', ownerFilterOptions)" :key="`filter-owner-${opt.value}`" class="inline-select-row">
@@ -2548,8 +2701,8 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-select-option"
-                              :class="{ selected: filters.owner === opt.value }"
-                              @click="setFilterField('owner', opt.value)"
+                              :class="{ selected: isFilterOptionSelected('owner', opt.value) }"
+                              @click="toggleFilterFieldValue('owner', opt.value)"
                             >
                               {{ opt.label }}
                             </button>
@@ -2582,10 +2735,48 @@ onBeforeUnmount(() => {
                   </th>
 
                   <th>
-                    <select v-model="filters.status" class="header-filter-control has-arrow">
-                      <option value="">Статус</option>
-                      <option v-for="opt in filterOptions.status" :key="`status-${opt}`" :value="opt">{{ opt }}</option>
-                    </select>
+                    <div class="inline-entity-select header-inline-select">
+                      <button
+                        type="button"
+                        class="inline-select-trigger header-filter-control"
+                        @click.stop="toggleInlineDropdown('filter-status')"
+                      >
+                        <span class="inline-select-trigger-text">
+                          {{ getFilterTriggerLabel('status', statusFilterOptions, 'Статус') }}
+                        </span>
+                        <span class="inline-select-trigger-arrow">▾</span>
+                      </button>
+                      <div
+                        v-if="isInlineDropdownOpen('filter-status')"
+                        class="inline-select-menu"
+                        :style="getHeaderMenuStyle(statusFilterOptions)"
+                        @click.stop
+                      >
+                        <div class="inline-select-search-row">
+                          <input
+                            :value="getInlineSearchValue('filter-status')"
+                            class="inline-select-search-input"
+                            type="text"
+                            placeholder="Поиск..."
+                            @input="setInlineSearchValue('filter-status', $event.target.value)"
+                            @keydown.stop
+                          />
+                        </div>
+                        <button type="button" class="inline-select-option inline-select-meta-option" @click="clearFilterField('status')">
+                          Все
+                        </button>
+                        <div v-for="opt in getFilteredInlineOptions('filter-status', statusFilterOptions)" :key="`filter-status-${opt.value}`" class="inline-select-row">
+                          <button
+                            type="button"
+                            class="inline-select-option"
+                            :class="{ selected: isFilterOptionSelected('status', opt.value) }"
+                            @click="toggleFilterFieldValue('status', opt.value)"
+                          >
+                            {{ opt.label }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </th>
                 </tr>
               </thead>
