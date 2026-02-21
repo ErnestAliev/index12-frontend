@@ -1119,7 +1119,10 @@ const refreshOperationLabelsFromStore = () => {
 };
 
 const startInlineRename = (dropdownId, option) => {
-  if (!canInlineRenameOption(option)) return;
+  if (!canInlineRenameOption(option)) {
+    alert('Это значение нельзя переименовать из фильтра.');
+    return;
+  }
   inlineRenameState.value = {
     dropdownId,
     optionValue: String(option.value),
@@ -2042,7 +2045,6 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
-                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-category', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2097,7 +2099,6 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
-                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-project', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2156,7 +2157,6 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
-                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-account', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2211,7 +2211,6 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
-                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-contractor', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2266,7 +2265,6 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="inline-icon-btn rename"
-                              :disabled="!canInlineRenameOption(opt)"
                               @click.stop="startInlineRename('filter-owner', opt)"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3981,7 +3979,23 @@ onBeforeUnmount(() => {
 }
 
 .header-inline-select .inline-select-menu {
-  min-width: calc(100% + 56px);
+  left: 0;
+  right: auto;
+  width: max-content;
+  min-width: calc(100% + 88px);
+  max-width: min(92vw, 760px);
+}
+
+.header-inline-select .inline-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+}
+
+.header-inline-select .inline-select-option {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .cell-inline-select .inline-select-menu {
@@ -4055,8 +4069,11 @@ onBeforeUnmount(() => {
   background: var(--editor-row-alt-bg);
 }
 
-.inline-icon-btn.rename:disabled {
-  opacity: 0.35;
+.inline-icon-btn.rename {
+  border: 1px solid var(--editor-border);
+  background: var(--editor-row-alt-bg);
+  color: #16a34a;
+  opacity: 1;
 }
 
 .inline-icon-btn.confirm {
