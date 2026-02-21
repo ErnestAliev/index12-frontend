@@ -3631,7 +3631,10 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-if="aiLoading" class="journal-ai-typing">Думаю...</div>
+            <div v-if="aiLoading" class="journal-ai-typing" aria-live="polite" aria-label="AI готовит ответ">
+              <span class="journal-ai-typing-word">Думаю</span>
+              <span class="journal-ai-typing-dots" aria-hidden="true"></span>
+            </div>
           </div>
 
           <div class="ai-input-container">
@@ -4330,6 +4333,53 @@ onBeforeUnmount(() => {
   color: var(--ai-pane-muted);
   font-size: 12px;
   padding: 0 2px 4px;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.journal-ai-typing-word {
+  display: inline-block;
+  animation: aiThinkingPulse 1.4s ease-in-out infinite;
+}
+
+.journal-ai-typing-dots {
+  display: inline-block;
+  min-width: 3ch;
+}
+
+.journal-ai-typing-dots::after {
+  content: '...';
+  display: inline-block;
+  width: 0ch;
+  overflow: hidden;
+  animation: aiThinkingDots 1.2s steps(4, end) infinite;
+}
+
+@keyframes aiThinkingPulse {
+  0%, 100% {
+    opacity: 0.55;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes aiThinkingDots {
+  0% {
+    width: 0ch;
+  }
+  33% {
+    width: 1ch;
+  }
+  66% {
+    width: 2ch;
+  }
+  100% {
+    width: 3ch;
+  }
 }
 
 .journal-ai-quick-row {
