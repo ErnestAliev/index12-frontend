@@ -581,7 +581,10 @@ const mergedContractorBalances = computed(() => {
     return allMerged.filter(contr => !myCompanyNames.has(contr.name.trim().toLowerCase()));
 });
 
-const mergedProjectBalances = computed(() => mergeBalances(mainStore.currentProjectBalances, mainStore.futureProjectChanges, true));
+const mergedProjectBalances = computed(() => {
+    const list = Array.isArray(mainStore.projectPnlBalances) ? mainStore.projectPnlBalances : [];
+    return [...list].sort((a, b) => (a.order || 0) - (b.order || 0));
+});
 
 const mergedIndividualBalances = computed(() => {
     const allMerged = mergeBalances(mainStore.currentIndividualBalances, mainStore.futureIndividualChanges, true);

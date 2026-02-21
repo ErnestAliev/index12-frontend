@@ -231,6 +231,23 @@ export function useWidgetData() {
         }
 
         if (k === 'projects') {
+            const merged = Array.isArray(mainStore.projectPnlBalances) ? mainStore.projectPnlBalances : [];
+            if (merged.length > 0) {
+                return merged.map(item => {
+                    const currentVal = toNum(item?.balance);
+                    const delta = toNum(item?.futureBalance);
+                    const forecast = toNum(item?.forecastBalance ?? (currentVal + delta));
+
+                    return {
+                        ...item,
+                        currentBalance: currentVal,
+                        futureChange: delta,
+                        futureBalance: delta,
+                        totalForecast: forecast
+                    };
+                });
+            }
+
             const current = Array.isArray(mainStore.currentProjectBalances) ? mainStore.currentProjectBalances : [];
             const future = Array.isArray(mainStore.futureProjectChanges) ? mainStore.futureProjectChanges : [];
             const futureMap = new Map(future.map(p => [getItemKey(p), pickNum(p)]));

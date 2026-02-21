@@ -371,27 +371,49 @@ export const useMainStore = defineStore('mainStore', () => {
         return map;
     };
 
-    // Детализированная агрегация (разделяем доход/расход)
-    const _calculateAggregatedBalanceDetailed = (ops, groupByField, sumField = 'amount') => {
+    const _resolveSingleProjectId = (op) => {
+        if (!op) return null;
+
+        const direct = op.projectId?._id || op.projectId;
+        if (direct) return _toStr(direct);
+
+        if (Array.isArray(op.projectIds) && op.projectIds.length === 1) {
+            const fromArray = op.projectIds[0]?._id || op.projectIds[0];
+            if (fromArray) return _toStr(fromArray);
+        }
+
+        return null;
+    };
+
+    const _calculateProjectBreakdown = (ops) => {
         const map = new Map();
-        ops.forEach(op => {
-            if (!op) return;
-            if (op.isWorkAct) return;
-            if (!_isOpVisible(op)) return;
 
-            let key = null;
-            const rawKey = op[groupByField];
-            key = _toStr(rawKey);
-            if (!key) return;
+        for (const op of (Array.isArray(ops) ? ops : [])) {
+            if (!op) continue;
+            if (op.isWorkAct) continue;
+            if (!_isOpVisible(op)) continue;
+            if (isTransfer(op)) continue;
 
-            if ((op.type === 'transfer' || op.isTransfer) && groupByField !== 'individualId') return;
+            const pid = _resolveSingleProjectId(op);
+            if (!pid) continue;
 
-            const amt = Math.abs(op[sumField] || 0);
-            const rec = map.get(key) || { incomeAbs: 0, expenseAbs: 0 };
-            if (op.type === 'income') rec.incomeAbs += amt;
-            else if (op.type === 'expense') rec.expenseAbs += amt;
-            map.set(key, rec);
-        });
+            const rawAmt = Number(op.amount) || 0;
+            const absAmt = Math.abs(rawAmt);
+            const rec = map.get(pid) || { incomeAbs: 0, expenseAbs: 0, delta: 0 };
+
+            if (op.type === 'income') {
+                rec.incomeAbs += absAmt;
+                rec.delta += rawAmt;
+            } else if (op.type === 'expense') {
+                rec.expenseAbs += absAmt;
+                rec.delta -= absAmt;
+            } else {
+                continue;
+            }
+
+            map.set(pid, rec);
+        }
+
         return map;
     };
 
@@ -1045,22 +1067,16 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const currentProjectBalances = computed(() => {
-        // Always calculate from filtered currentOps to respect period filter
-        const aggregated = _calculateAggregatedBalanceDetailed(currentOps.value, 'projectId');
-
-        const result = projects.value.map(p => {
-            const rec = aggregated.get(String(p._id)) || { incomeAbs: 0, expenseAbs: 0 };
-            const balance = (rec.incomeAbs || 0) - (rec.expenseAbs || 0);
-
+        const breakdown = _calculateProjectBreakdown(currentOps.value);
+        return projects.value.map(p => {
+            const rec = breakdown.get(String(p._id)) || { incomeAbs: 0, expenseAbs: 0, delta: 0 };
             return {
                 ...p,
                 incomeAbs: rec.incomeAbs || 0,
                 expenseAbs: rec.expenseAbs || 0,
-                balance
+                balance: rec.delta || 0
             };
         });
-
-        return result;
     });
 
     const futureProjectBalances = computed(() => futureProjectChanges.value);
@@ -1116,38 +1132,51 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const futureProjectChanges = computed(() => {
-        const deltaMap = {};
-        const incomeMap = {};
-        const expenseMap = {};
+        const filteredFuture = (futureOps.value || []).filter(op => !_isRetailWriteOff(op));
+        const breakdown = _calculateProjectBreakdown(filteredFuture);
 
-        for (const op of futureOps.value) {
-            if (_isRetailWriteOff(op) || op.isWorkAct) continue;
-            if (isTransfer(op)) continue; // Проекты не затрагиваются чистыми переводами
+        return projects.value.map(p => {
+            const rec = breakdown.get(String(p._id)) || { incomeAbs: 0, expenseAbs: 0, delta: 0 };
+            return {
+                ...p,
+                balance: rec.delta || 0,
+                futureIncomeAbs: rec.incomeAbs || 0,
+                futureExpenseAbs: rec.expenseAbs || 0
+            };
+        });
+    });
 
-            let pid = op.projectId?._id || op.projectId;
-            if (!pid && Array.isArray(op.projectIds) && op.projectIds.length === 1) {
-                pid = op.projectIds[0]?._id || op.projectIds[0];
-            }
-            if (!pid) continue;
+    const projectPnlBalances = computed(() => {
+        const currentMap = new Map((currentProjectBalances.value || []).map(item => [String(item._id), item]));
+        const futureMap = new Map((futureProjectChanges.value || []).map(item => [String(item._id), item]));
 
-            const rawAmt = Number(op.amount) || 0;
-            const absAmt = Math.abs(rawAmt);
+        return projects.value.map(p => {
+            const cur = currentMap.get(String(p._id)) || {};
+            const fut = futureMap.get(String(p._id)) || {};
 
-            if (op.type === 'income') {
-                incomeMap[pid] = (incomeMap[pid] || 0) + absAmt;
-                deltaMap[pid] = (deltaMap[pid] || 0) + rawAmt;
-            } else {
-                expenseMap[pid] = (expenseMap[pid] || 0) + absAmt;
-                deltaMap[pid] = (deltaMap[pid] || 0) - absAmt;
-            }
-        }
+            const factIncomeAbs = Number(cur.incomeAbs) || 0;
+            const factExpenseAbs = Number(cur.expenseAbs) || 0;
+            const factProfit = Number(cur.balance) || 0;
 
-        return projects.value.map(p => ({
-            ...p,
-            balance: deltaMap[p._id] || 0,
-            futureIncomeAbs: incomeMap[p._id] || 0,
-            futureExpenseAbs: expenseMap[p._id] || 0
-        }));
+            const planIncomeAbs = Number(fut.futureIncomeAbs) || 0;
+            const planExpenseAbs = Number(fut.futureExpenseAbs) || 0;
+            const planDelta = Number(fut.balance) || 0;
+            const forecastBalance = factProfit + planDelta;
+
+            return {
+                ...p,
+                incomeAbs: factIncomeAbs,
+                expenseAbs: factExpenseAbs,
+                balance: factProfit,
+                currentBalance: factProfit,
+                futureBalance: planDelta,
+                futureChange: planDelta,
+                totalForecast: forecastBalance,
+                forecastBalance,
+                futureIncomeAbs: planIncomeAbs,
+                futureExpenseAbs: planExpenseAbs
+            };
+        });
     });
 
     const futureIndividualChanges = computed(() => {
@@ -3133,7 +3162,7 @@ export const useMainStore = defineStore('mainStore', () => {
         workspaceRole, isWorkspaceAdmin, isWorkspaceOwner, isManager, isAnalyst, // Export role and role checks
         userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
-        currentAccountBalances, aiAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances,
+        currentAccountBalances, aiAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances, projectPnlBalances,
         currentIndividualBalances, currentAccountOwnerIndividuals, currentTotalBalance, futureTotalBalance, currentCategoryBreakdowns,
         currentTotalForPeriod, futureTotalForPeriod,
 
