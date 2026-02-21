@@ -973,39 +973,31 @@ const entityListByPath = (path) => {
   return [];
 };
 
-const findUniqueEntityMatch = (list, name) => {
+const findFirstEntityMatch = (list, name) => {
   const key = normalizeNameKey(name);
   if (!key) return null;
-  const matches = (list || []).filter((item) => normalizeNameKey(item?.name) === key);
-  return matches.length === 1 ? matches[0] : null;
+  return (list || []).find((item) => normalizeNameKey(item?.name) === key) || null;
 };
 
 const mapFilterOptionWithRename = (label, candidates = []) => {
   const normalizedLabel = normalizeString(label);
-  const matches = candidates
+  const match = candidates
     .map(({ path, list }) => {
-      const found = findUniqueEntityMatch(list, normalizedLabel);
+      const found = findFirstEntityMatch(list, normalizedLabel);
       if (!found?._id) return null;
-      return {
-        path,
-        id: String(found._id)
-      };
+      return { path, id: String(found._id) };
     })
-    .filter(Boolean);
+    .find(Boolean);
 
-  const uniqueMatches = matches.filter((item, idx, arr) =>
-    arr.findIndex((x) => x.path === item.path && x.id === item.id) === idx
-  );
-
-  if (uniqueMatches.length !== 1) {
+  if (!match) {
     return { value: normalizedLabel, label: normalizedLabel };
   }
 
   return {
     value: normalizedLabel,
     label: normalizedLabel,
-    entityPath: uniqueMatches[0].path,
-    entityId: uniqueMatches[0].id
+    entityPath: match.path,
+    entityId: match.id
   };
 };
 
