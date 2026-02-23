@@ -74,12 +74,14 @@ const generateVisibleDays = () => {
   visibleDays.value = days;
 };
 
-const loadGraphData = async (mode, baseDate = null) => {
+const loadGraphData = async () => {
   isLoading.value = true;
   await nextTick();
   try {
-    if (mainStore.loadCalculationData) {
-      await mainStore.loadCalculationData(mode, baseDate || currentMonthStart.value || today.value);
+    // IMPORTANT: Graph modal must not mutate global projection/timeline range.
+    // Load only operations for the modal's local range.
+    if (mainStore.fetchOperationsRange) {
+      await mainStore.fetchOperationsRange(rangeStartDate.value, rangeEndDate.value);
     }
     generateVisibleDays();
   } catch (error) {
@@ -101,15 +103,14 @@ const refreshDataForRange = () => {
   const end = rangeEndDate.value;
   const spanDays = Math.max(1, Math.floor((end - start) / 86400000) + 1);
   const mode = pickModeBySpan(spanDays);
-  const mid = new Date((start.getTime() + end.getTime()) / 2);
   currentViewMode.value = mode;
-  loadGraphData(mode, mid);
+  loadGraphData();
 };
 
 const onChangeView = (newMode) => {
   if (newMode === currentViewMode.value) return;
   currentViewMode.value = newMode;
-  loadGraphData(newMode);
+  loadGraphData();
 };
 
 onMounted(() => {
