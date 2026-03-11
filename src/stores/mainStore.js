@@ -42,6 +42,10 @@ export const useMainStore = defineStore('mainStore', () => {
     });
     const isManager = computed(() => workspaceRole.value === 'manager');
     const isAnalyst = computed(() => workspaceRole.value === 'analyst');
+    const managerAccessibleAccountIds = computed(() => {
+        const ids = user.value?.managerAccessibleAccountIds;
+        return Array.isArray(ids) ? ids.map((id) => String(id)) : [];
+    });
 
     // Permissions
     // Workspace admin has FULL access (same as global admin)
@@ -3160,6 +3164,7 @@ export const useMainStore = defineStore('mainStore', () => {
         user, isAuthLoading,
         // 🟢 NEW: Role-based access
         workspaceRole, isWorkspaceAdmin, isWorkspaceOwner, isManager, isAnalyst, // Export role and role checks
+        managerAccessibleAccountIds,
         userRole, isAdmin, isFullAccess, isTimelineOnly, canDelete, canEdit, canInvite,
 
         currentAccountBalances, aiAccountBalances, currentCompanyBalances, currentContractorBalances, currentProjectBalances, projectPnlBalances,

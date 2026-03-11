@@ -24,6 +24,10 @@ export function usePermissions() {
     const isAnalyst = computed(() => role.value === 'analyst');
     const isManager = computed(() => role.value === 'manager');
     const isAdmin = computed(() => role.value === 'admin');
+    const managerAccessibleAccountIds = computed(() => {
+        const ids = mainStore.managerAccessibleAccountIds;
+        return Array.isArray(ids) ? ids.map((id) => String(id)) : [];
+    });
 
     // ==========================================
     // BASIC PERMISSIONS
@@ -181,6 +185,20 @@ export function usePermissions() {
      */
     const shouldShowBalance = computed(() => canSeeBalances.value);
 
+    function canAccessAccount(accountId) {
+        if (!accountId) return false;
+        if (isAdmin.value) return true;
+        if (isAnalyst.value) return false;
+        if (!isManager.value) return true;
+        return managerAccessibleAccountIds.value.includes(String(accountId));
+    }
+
+    function canSeeAccountBalance(accountId) {
+        if (isAdmin.value) return true;
+        if (!isManager.value) return false;
+        return canAccessAccount(accountId);
+    }
+
     /**
      * Should show Transfer button in UI?
      */
@@ -242,11 +260,14 @@ export function usePermissions() {
         canManageWorkspace,
         canInvite,
         isReadOnly,
+        managerAccessibleAccountIds,
 
         // Operation-specific
         canEditOperation,
         canDeleteOperation,
         canMoveOperation,
+        canAccessAccount,
+        canSeeAccountBalance,
 
         // UI helpers
         shouldShowBalance,

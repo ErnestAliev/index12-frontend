@@ -298,7 +298,9 @@ const accountOptions = computed(() => {
   const targetDate = createSmartDate(editableDate.value);
   const isFuture = isFutureDate.value;
 
-  const opts = mainStore.currentAccountBalances.map(acc => {
+  const opts = mainStore.currentAccountBalances
+    .filter(acc => permissions.canAccessAccount(acc._id))
+    .map(acc => {
     const owner = getOwnerName(acc);
     
     let displayBalance = acc.balance || 0;
@@ -313,7 +315,7 @@ const accountOptions = computed(() => {
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
-    if (permissions.shouldShowBalance.value) {
+    if (permissions.canSeeAccountBalance(acc._id)) {
         option.rightText = `${formatNumber(Math.round(displayBalance))} ₸`;
     }
     return option;

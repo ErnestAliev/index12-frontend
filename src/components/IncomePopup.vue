@@ -32,6 +32,7 @@ const emit = defineEmits(['close', 'save', 'operation-deleted']);
 
 const mainStore = useMainStore();
 const permissions = usePermissions();
+const canManageAccounts = computed(() => permissions.isAdmin.value);
 
 // --- ДАННЫЕ ---
 const amount = ref('');
@@ -280,7 +281,9 @@ const accountOptions = computed(() => {
   const targetDate = createSmartDate(editableDate.value);
   const isFuture = isFutureDate.value;
 
-  const opts = mainStore.currentAccountBalances.map(acc => {
+  const opts = mainStore.currentAccountBalances
+    .filter(acc => permissions.canAccessAccount(acc._id))
+    .map(acc => {
     const owner = getOwnerName(acc);
     let displayBalance = acc.balance || 0;
     if (isFuture && mainStore.getBalanceAtDate) {
@@ -293,13 +296,14 @@ const accountOptions = computed(() => {
         tooltip: owner ? `Владелец: ${owner}` : 'Нет привязки',
         isSpecial: false
     };
-    // Show balance only if allowed by permissions
-    if (permissions.shouldShowBalance.value) {
+    if (permissions.canSeeAccountBalance(acc._id)) {
         option.rightText = `${formatNumber(Math.round(displayBalance))} ₸`;
     }
     return option;
   });
-  opts.push({ isActionRow: true }); 
+  if (canManageAccounts.value) {
+    opts.push({ isActionRow: true });
+  }
   return opts;
 });
 
@@ -821,7 +825,7 @@ const handleMainAction = async () => {
       <!-- СЧЕТ -->
       <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
           <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
-              <template #action-item v-if="canEdit">
+              <template #action-item v-if="canManageAccounts">
                   <div class="dual-action-row">
                       <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
                       <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>

@@ -129,9 +129,18 @@
                   </select>
                   <span class="share-date">{{ formatDate(share.sharedAt) }}</span>
                 </div>
-                <button class="btn-revoke" @click="revokeAccess(workspace._id, share.userId)">
-                  Отозвать доступ
-                </button>
+                <div class="share-actions">
+                  <button
+                    v-if="share.role === 'manager'"
+                    class="btn-role-settings"
+                    @click="openRoleSettingsDialog(workspace, share)"
+                  >
+                    Настройка роли
+                  </button>
+                  <button class="btn-revoke" @click="revokeAccess(workspace._id, share.userId)">
+                    Отозвать доступ
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -248,6 +257,69 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showRoleSettingsDialog" class="create-dialog-overlay" @click.self="closeRoleSettingsDialog">
+      <div class="create-dialog role-settings-dialog">
+        <h3>Настройка роли</h3>
+        <p class="dialog-subtitle">
+          {{ roleSettingsShare?.email }} · {{ roleSettingsWorkspace?.name }}
+        </p>
+
+        <div v-if="roleSettingsLoading" class="creating-loader">
+          <div class="spinner"></div>
+          <p>Загрузка счетов и касс...</p>
+        </div>
+
+        <template v-else>
+          <div class="role-settings-group">
+            <h4>Счета</h4>
+            <div v-if="roleSettingsAccounts.length" class="role-settings-list">
+              <label
+                v-for="account in roleSettingsAccounts"
+                :key="account._id"
+                class="role-settings-option"
+              >
+                <input
+                  v-model="roleSettingsSelectedAccountIds"
+                  type="checkbox"
+                  :value="account._id"
+                />
+                <span>{{ account.name }}</span>
+                <span v-if="account.isExcluded" class="role-settings-badge">Скрытый</span>
+              </label>
+            </div>
+            <p v-else class="role-settings-empty">Счета не найдены</p>
+          </div>
+
+          <div class="role-settings-group">
+            <h4>Кассы</h4>
+            <div v-if="roleSettingsCashRegisters.length" class="role-settings-list">
+              <label
+                v-for="account in roleSettingsCashRegisters"
+                :key="account._id"
+                class="role-settings-option"
+              >
+                <input
+                  v-model="roleSettingsSelectedAccountIds"
+                  type="checkbox"
+                  :value="account._id"
+                />
+                <span>{{ account.name }}</span>
+                <span v-if="account.isExcluded" class="role-settings-badge">Скрытая</span>
+              </label>
+            </div>
+            <p v-else class="role-settings-empty">Кассы не найдены</p>
+          </div>
+
+          <div class="dialog-actions">
+            <button class="btn-cancel" @click="closeRoleSettingsDialog">Отмена</button>
+            <button class="btn-create" :disabled="roleSettingsSaving" @click="saveRoleSettings">
+              {{ roleSettingsSaving ? 'Сохранение...' : 'Сохранить' }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 
   <!-- Fullscreen loader -->
@@ -317,6 +389,15 @@ const workspaceToRename = ref(null);
 const renameName = ref('');
 const renameInput = ref(null);
 
+// Manager role settings state
+const showRoleSettingsDialog = ref(false);
+const roleSettingsWorkspace = ref(null);
+const roleSettingsShare = ref(null);
+const roleSettingsAccountOptions = ref([]);
+const roleSettingsSelectedAccountIds = ref([]);
+const roleSettingsLoading = ref(false);
+const roleSettingsSaving = ref(false);
+
 // Current project card ref
 const currentProjectCard = ref(null);
 
@@ -349,6 +430,14 @@ const ownedWorkspaces = computed(() => {
 
 const sharedWorkspaces = computed(() => {
   return workspaces.value.filter(w => w.isShared);
+});
+
+const roleSettingsAccounts = computed(() => {
+  return roleSettingsAccountOptions.value.filter(account => !account.isCashRegister);
+});
+
+const roleSettingsCashRegisters = computed(() => {
+  return roleSettingsAccountOptions.value.filter(account => account.isCashRegister);
 });
 
 function getRoleLabel(role) {
@@ -590,6 +679,71 @@ function closeShareDialog() {
   linkCopied.value = false;
 }
 
+async function openRoleSettingsDialog(workspace, share) {
+  roleSettingsWorkspace.value = workspace;
+  roleSettingsShare.value = share;
+  roleSettingsSelectedAccountIds.value = Array.isArray(share?.accessibleAccountIds)
+    ? share.accessibleAccountIds.map(id => String(id))
+    : [];
+  roleSettingsAccountOptions.value = [];
+  roleSettingsLoading.value = true;
+  roleSettingsSaving.value = false;
+  showRoleSettingsDialog.value = true;
+
+  try {
+    const res = await axios.get(
+      `${API_BASE_URL}/workspaces/${workspace._id}/account-access-options`,
+      { withCredentials: true }
+    );
+    roleSettingsAccountOptions.value = Array.isArray(res.data) ? res.data : [];
+  } catch (err) {
+    console.error('Failed to load role settings options:', err);
+    showConfirm('Ошибка', 'Не удалось загрузить список счетов и касс', () => {}, 'ОК');
+    closeRoleSettingsDialog();
+  } finally {
+    roleSettingsLoading.value = false;
+  }
+}
+
+function closeRoleSettingsDialog() {
+  showRoleSettingsDialog.value = false;
+  roleSettingsWorkspace.value = null;
+  roleSettingsShare.value = null;
+  roleSettingsAccountOptions.value = [];
+  roleSettingsSelectedAccountIds.value = [];
+  roleSettingsLoading.value = false;
+  roleSettingsSaving.value = false;
+}
+
+async function saveRoleSettings() {
+  if (!roleSettingsWorkspace.value || !roleSettingsShare.value) return;
+
+  try {
+    roleSettingsSaving.value = true;
+    const payload = {
+      accessibleAccountIds: [...new Set(roleSettingsSelectedAccountIds.value.map(id => String(id)))]
+    };
+
+    const res = await axios.patch(
+      `${API_BASE_URL}/workspaces/${roleSettingsWorkspace.value._id}/members/${roleSettingsShare.value.userId}/account-access`,
+      payload,
+      { withCredentials: true }
+    );
+
+    const savedIds = Array.isArray(res.data?.share?.accessibleAccountIds)
+      ? res.data.share.accessibleAccountIds.map(id => String(id))
+      : payload.accessibleAccountIds;
+
+    roleSettingsShare.value.accessibleAccountIds = savedIds;
+    closeRoleSettingsDialog();
+  } catch (err) {
+    console.error('Failed to save role settings:', err);
+    showConfirm('Ошибка', 'Не удалось сохранить настройки роли', () => {}, 'ОК');
+  } finally {
+    roleSettingsSaving.value = false;
+  }
+}
+
 async function generateShareLink() {
   if (!workspaceToShare.value) return;
 
@@ -729,6 +883,9 @@ async function updateUserRole(workspaceId, userId, newRole) {
 
         // Update local state
         share.role = newRole;
+        if (newRole === 'manager' && !Array.isArray(share.accessibleAccountIds)) {
+          share.accessibleAccountIds = [];
+        }
         console.log('✅ Role updated successfully');
       } catch (err) {
         console.error('Failed to update role:', err);
@@ -1148,6 +1305,12 @@ onMounted(async () => {
   flex: 1;
 }
 
+.share-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .share-email,
 .invite-token {
   font-weight: 500;
@@ -1200,6 +1363,22 @@ onMounted(async () => {
 
 .btn-revoke:hover {
   background: rgba(255, 59, 48, 0.1);
+}
+
+.btn-role-settings {
+  padding: 8px 14px;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-role-settings:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .no-shares {
@@ -1257,6 +1436,12 @@ onMounted(async () => {
   margin: 0 0 16px 0;
   font-size: 1.3rem;
   color: var(--color-text);
+}
+
+.role-settings-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
 }
 
 .dialog-subtitle {
@@ -1359,6 +1544,47 @@ onMounted(async () => {
 .link-hint {
   margin: 12px 0 0 0;
   font-size: 0.85rem;
+  color: var(--color-text-mute);
+}
+
+.role-settings-group + .role-settings-group {
+  margin-top: 18px;
+}
+
+.role-settings-group h4 {
+  margin: 0 0 10px 0;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.role-settings-list {
+  display: grid;
+  gap: 10px;
+}
+
+.role-settings-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+}
+
+.role-settings-option input {
+  margin: 0;
+}
+
+.role-settings-badge {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--color-text-mute);
+}
+
+.role-settings-empty {
+  margin: 0;
   color: var(--color-text-mute);
 }
 
