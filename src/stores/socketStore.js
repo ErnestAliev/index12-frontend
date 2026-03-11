@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useMainStore } from './mainStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const CLIENT_INSTANCE_STORAGE_KEY = 'index12-client-instance-id';
 
 // Логика определения URL сокета
 let SOCKET_URL = '';
@@ -16,11 +17,47 @@ try {
     SOCKET_URL = API_BASE_URL.replace('/api', '');
 }
 
+const getClientInstanceId = () => {
+    if (typeof window === 'undefined') {
+        return 'server';
+    }
+
+    try {
+        const existingId = window.sessionStorage.getItem(CLIENT_INSTANCE_STORAGE_KEY);
+        if (existingId) return existingId;
+
+        const nextId = window.crypto?.randomUUID?.() || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        window.sessionStorage.setItem(CLIENT_INSTANCE_STORAGE_KEY, nextId);
+        return nextId;
+    } catch (error) {
+        console.warn('[socketStore] Failed to access sessionStorage for client instance id.', error);
+        return window.crypto?.randomUUID?.() || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+};
+
+const CLIENT_INSTANCE_ID = getClientInstanceId();
+
+axios.defaults.headers.common['X-Client-Instance-ID'] = CLIENT_INSTANCE_ID;
+
 export const useSocketStore = defineStore('socket', () => {
 
 
     const socket = ref(null);
     const isConnected = ref(false);
+
+    const shouldIgnoreSocketEvent = (meta) => {
+        if (!meta) return false;
+
+        if (meta.sourceSocketId && socket.value?.id && meta.sourceSocketId === socket.value.id) {
+            return true;
+        }
+
+        if (meta.sourceClientInstanceId && meta.sourceClientInstanceId === CLIENT_INSTANCE_ID) {
+            return true;
+        }
+
+        return false;
+    };
 
     /**
      * Инициализация подключения к сокету
@@ -60,19 +97,23 @@ export const useSocketStore = defineStore('socket', () => {
         // --- Обработчики событий Операций ---
         // Мы предполагаем, что mainStore экспортирует публичные методы для обработки этих событий
 
-        socket.value.on('operation_added', (op) => {
+        socket.value.on('operation_added', (op, meta) => {
+            if (shouldIgnoreSocketEvent(meta)) return;
             if (mainStore.onSocketOperationAdded) mainStore.onSocketOperationAdded(op);
         });
 
-        socket.value.on('operation_updated', (op) => {
+        socket.value.on('operation_updated', (op, meta) => {
+            if (shouldIgnoreSocketEvent(meta)) return;
             if (mainStore.onSocketOperationUpdated) mainStore.onSocketOperationUpdated(op);
         });
 
-        socket.value.on('operation_deleted', (id) => {
+        socket.value.on('operation_deleted', (id, meta) => {
+            if (shouldIgnoreSocketEvent(meta)) return;
             if (mainStore.onSocketOperationDeleted) mainStore.onSocketOperationDeleted(id);
         });
 
-        socket.value.on('operations_imported', (count) => {
+        socket.value.on('operations_imported', (count, meta) => {
+            if (shouldIgnoreSocketEvent(meta)) return;
             console.log(`[socketStore] Server imported ${count} ops. Refreshing...`);
             mainStore.forceRefreshAll();
         });
@@ -81,15 +122,18 @@ export const useSocketStore = defineStore('socket', () => {
         const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category'];
 
         entityTypes.forEach(type => {
-            socket.value.on(`${type}_added`, (item) => {
+            socket.value.on(`${type}_added`, (item, meta) => {
+                if (shouldIgnoreSocketEvent(meta)) return;
                 if (mainStore.onSocketEntityAdded) mainStore.onSocketEntityAdded(type, item);
             });
 
-            socket.value.on(`${type}_deleted`, (id) => {
+            socket.value.on(`${type}_deleted`, (id, meta) => {
+                if (shouldIgnoreSocketEvent(meta)) return;
                 if (mainStore.onSocketEntityDeleted) mainStore.onSocketEntityDeleted(type, id);
             });
 
-            socket.value.on(`${type}_list_updated`, (newList) => {
+            socket.value.on(`${type}_list_updated`, (newList, meta) => {
+                if (shouldIgnoreSocketEvent(meta)) return;
                 if (mainStore.onSocketEntityListUpdated) mainStore.onSocketEntityListUpdated(type, newList);
             });
         });
