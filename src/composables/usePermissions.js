@@ -118,6 +118,9 @@ export function usePermissions() {
         if (operation?.isOptimistic) {
             return false;
         }
+        if (mainStore.isOperationMovePending?.(operation?._id)) {
+            return false;
+        }
         if (!canEdit.value) {
             console.log('🔐 [canEditOperation] User cannot edit (role restriction)');
             return false;

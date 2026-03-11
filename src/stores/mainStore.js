@@ -176,6 +176,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const displayCache = ref({});
     const calculationCache = ref({});
+    const pendingOperationMoves = ref({});
 
     const accounts = ref([]);
     const companies = ref([]);
@@ -400,6 +401,69 @@ export const useMainStore = defineStore('mainStore', () => {
         if (isAdmin.value) return true;
         if (!isManager.value) return false;
         return String(op.createdBy || '') === String(user.value?.id || '');
+    };
+
+    const _getPendingMoveEntries = () => Object.values(pendingOperationMoves.value || {});
+
+    const _setPendingOperationMove = (op, fromDateKey, toDateKey, cellIndex, dateObj) => {
+        if (!op?._id || !fromDateKey || !toDateKey) return;
+
+        const nextDate = dateObj ? new Date(dateObj) : (op.date ? new Date(op.date) : _parseDateKey(toDateKey));
+        const nextDayOfYear = _getDayOfYear(nextDate);
+        const previewOp = _populateOp({
+            ...op,
+            dateKey: toDateKey,
+            date: nextDate,
+            dayOfYear: nextDayOfYear,
+            cellIndex,
+            isPendingTimelineMove: true
+        });
+
+        pendingOperationMoves.value = {
+            ...pendingOperationMoves.value,
+            [String(op._id)]: {
+                opId: String(op._id),
+                fromDateKey,
+                toDateKey,
+                previewOp
+            }
+        };
+    };
+
+    const _clearPendingOperationMove = (opId) => {
+        const normalizedId = _toStr(opId);
+        if (!normalizedId || !pendingOperationMoves.value[normalizedId]) return;
+
+        const next = { ...pendingOperationMoves.value };
+        delete next[normalizedId];
+        pendingOperationMoves.value = next;
+    };
+
+    const isOperationMovePending = (opOrId) => {
+        const normalizedId = _toStr(opOrId);
+        if (!normalizedId) return false;
+        return Boolean(pendingOperationMoves.value[normalizedId]);
+    };
+
+    const _getTimelineOpsForDate = (dateKey) => {
+        const baseOps = Array.isArray(displayCache.value[dateKey]) ? [...displayCache.value[dateKey]] : [];
+        const pendingMoves = _getPendingMoveEntries();
+        if (!pendingMoves.length) return baseOps;
+
+        let nextOps = baseOps;
+
+        pendingMoves.forEach((move) => {
+            if (!move || (move.fromDateKey !== dateKey && move.toDateKey !== dateKey)) return;
+
+            nextOps = nextOps.filter((op) => !_idsMatch(op?._id, move.opId));
+
+            if (move.toDateKey === dateKey && move.previewOp) {
+                nextOps.push(move.previewOp);
+            }
+        });
+
+        nextOps.sort((a, b) => (a?.cellIndex || 0) - (b?.cellIndex || 0));
+        return nextOps;
     };
 
     const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
@@ -2331,7 +2395,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     function getOperationsForDay(dateKey) {
-        const ops = displayCache.value[dateKey];
+        const ops = _getTimelineOpsForDate(dateKey);
         if (!Array.isArray(ops)) return []; // Safety check
         // Filter out deleted operations and null/undefined entries
         // Work acts are now visible on timeline with special styling
@@ -2345,7 +2409,7 @@ export const useMainStore = defineStore('mainStore', () => {
      * This prevents users from creating operations in occupied cells
      */
     function getPhantomOperations(dateKey) {
-        const ops = displayCache.value[dateKey];
+        const ops = _getTimelineOpsForDate(dateKey);
         if (!Array.isArray(ops)) return [];
         const phantoms = [];
 
@@ -2463,6 +2527,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null) {
         if (!oldDateKey || !newDateKey) return;
+        if (isOperationMovePending(operation?._id)) return;
         if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
         if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
 
@@ -2498,10 +2563,22 @@ export const useMainStore = defineStore('mainStore', () => {
                     sourceOp.cellIndex = targetIndex;
                 }
 
+                const finalSourceCellIndex = sourceOp.cellIndex;
+
                 // Дочерние сплиты повторяют индекс родителя
                 splitChildren.forEach(child => {
                     const idx = ops.findIndex(o => _idsMatch(o._id, child._id));
-                    if (idx !== -1) ops[idx] = { ...ops[idx], cellIndex: targetIndex };
+                    if (idx !== -1) ops[idx] = { ...ops[idx], cellIndex: finalSourceCellIndex };
+                });
+
+                _setPendingOperationMove(sourceOp, oldDateKey, oldDateKey, finalSourceCellIndex, sourceOp.date);
+                if (isMerged) {
+                    const mergedSibling = ops.find(o => _idsMatch(o._id, operation._id2));
+                    if (mergedSibling) _setPendingOperationMove(mergedSibling, oldDateKey, oldDateKey, finalSourceCellIndex, mergedSibling.date || sourceOp.date);
+                }
+                splitChildren.forEach(child => {
+                    const pendingChild = ops.find(o => _idsMatch(o._id, child._id)) || child;
+                    _setPendingOperationMove(pendingChild, oldDateKey, oldDateKey, finalSourceCellIndex, pendingChild.date || sourceOp.date);
                 });
 
                 _syncCaches(oldDateKey, ops);
@@ -2511,23 +2588,29 @@ export const useMainStore = defineStore('mainStore', () => {
                 splitChildren.forEach(child => _dedupeOperationEntries(child._id, oldDateKey));
 
                 const promises = [
-                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: sourceOp.cellIndex })
+                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: finalSourceCellIndex })
                 ];
                 if (targetOp) {
                     promises.push(axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: targetOp.cellIndex }));
                 }
-                if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: sourceOp.cellIndex }));
+                if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: finalSourceCellIndex }));
                 splitChildren.forEach(child => {
-                    promises.push(axios.put(`${API_BASE_URL}/events/${child._id}`, { cellIndex: sourceOp.cellIndex }));
+                    promises.push(axios.put(`${API_BASE_URL}/events/${child._id}`, { cellIndex: finalSourceCellIndex }));
                 });
 
                 try {
                     const responses = await Promise.all(promises);
                     responses.forEach((response) => {
                         const serverOp = response?.data;
-                        if (serverOp?._id) onSocketOperationUpdated(serverOp);
+                        if (serverOp?._id) {
+                            _clearPendingOperationMove(serverOp._id);
+                            onSocketOperationUpdated(serverOp);
+                        }
                     });
                 } catch {
+                    _clearPendingOperationMove(sourceOp._id);
+                    if (isMerged && operation._id2) _clearPendingOperationMove(operation._id2);
+                    splitChildren.forEach(child => _clearPendingOperationMove(child._id));
                     await refreshDay(oldDateKey);
                 }
             }
@@ -2560,6 +2643,13 @@ export const useMainStore = defineStore('mainStore', () => {
                 dayOfYear: newDayOfYear,
                 cellIndex: finalIndex
             }));
+
+            if (movedParent) _setPendingOperationMove(movedParent, oldDateKey, newDateKey, finalIndex, newDateObj);
+            if (isMerged) {
+                const mergedSibling = oldOps.find(o => _idsMatch(o._id, operation._id2)) || allOperationsFlat.value.find(o => _idsMatch(o._id, operation._id2));
+                if (mergedSibling) _setPendingOperationMove(mergedSibling, oldDateKey, newDateKey, finalIndex, newDateObj);
+            }
+            movedChildren.forEach(child => _setPendingOperationMove(child, oldDateKey, newDateKey, finalIndex, newDateObj));
 
             if (movedParent) newOps.push(movedParent);
             movedChildren.forEach(ch => newOps.push(ch));
@@ -2605,10 +2695,16 @@ export const useMainStore = defineStore('mainStore', () => {
                 .then((responses) => {
                     responses.forEach((response) => {
                         const serverOp = response?.data;
-                        if (serverOp?._id) onSocketOperationUpdated(serverOp);
+                        if (serverOp?._id) {
+                            _clearPendingOperationMove(serverOp._id);
+                            onSocketOperationUpdated(serverOp);
+                        }
                     });
                 })
                 .catch(() => {
+                    if (movedParent?._id) _clearPendingOperationMove(movedParent._id);
+                    if (isMerged && operation._id2) _clearPendingOperationMove(operation._id2);
+                    movedChildren.forEach(child => _clearPendingOperationMove(child._id));
                     refreshDay(oldDateKey);
                     refreshDay(newDateKey);
                     fetchSnapshot();
@@ -2906,7 +3002,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function getFirstFreeCellIndex(dateKey, startIndex = 0) {
         if (!displayCache.value[dateKey]) await fetchOperations(dateKey);
-        const arr = displayCache.value[dateKey] || [];
+        const arr = _getTimelineOpsForDate(dateKey);
         const used = new Set(arr.map(o => Number.isInteger(o?.cellIndex) ? o.cellIndex : -1));
         let idx = Math.max(0, startIndex | 0);
         while (used.has(idx)) idx++;
@@ -3367,6 +3463,7 @@ export const useMainStore = defineStore('mainStore', () => {
         startAutoRefresh, stopAutoRefresh, forceRefreshAll,
 
         getFirstFreeCellIndex, _parseDateKey, _getDateKey, _isEffectivelyPastOrToday, // Exported helper
+        isOperationMovePending,
 
         _isRetailWriteOff,
 
