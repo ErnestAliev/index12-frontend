@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
+import { usePermissions } from '@/composables/usePermissions';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v3.4 - HIDE EXCLUDED MOBILE ---
@@ -20,7 +21,15 @@ const props = defineProps({
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation', 'show-menu']);
 const mainStore = useMainStore();
+const permissions = usePermissions();
 const visibilityMode = computed(() => mainStore.accountVisibilityMode);
+const isPhantom = computed(() => props.operation?.isPhantom === true);
+const canInteract = computed(() => {
+    const op = props.operation;
+    if (!op) return true;
+    if (op.isPhantom) return false;
+    return permissions.canEditOperation(op);
+});
 
 const isPersonalTransferWithdrawal = (op) => !!op &&
   op.isWithdrawal === true &&
@@ -65,6 +74,7 @@ const excludedAccountIds = computed(() => {
 const isOpVisible = computed(() => {
     const op = props.operation;
     if (!op) return false;
+    if (op.isPhantom) return true;
     
     // Если включен режим «Все» - всегда true
     if (visibilityMode.value === 'all') return true;
@@ -140,6 +150,11 @@ const showCheckmark = computed(() => {
     return true;
 });
 
+const phantomLabel = computed(() => {
+    if (!isPhantom.value) return '';
+    return props.operation?.phantomKind === 'restricted' ? 'Нет доступа' : 'Скрытый счет';
+});
+
 // Клик по пустой ячейке -> Меню
 const onAddClick = (event) => {
     emit('show-menu', { 
@@ -151,6 +166,7 @@ const onAddClick = (event) => {
 
 // Клик по операции -> Меню (или редактирование)
 const onEditClick = (event) => { 
+    if (!canInteract.value) return;
     if (props.operation) {
         // Можно передать event для позиционирования меню редактирования, если нужно
         emit('show-menu', { operation: props.operation, event: event });
@@ -161,7 +177,7 @@ const onEditClick = (event) => {
 const touchState = ref({ active: false, clone: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
 
 const onTouchStart = (e) => {
-    if (!props.operation) return;
+    if (!props.operation || !canInteract.value) return;
     // e.preventDefault(); // Не блокируем скролл сразу
     
     const touch = e.touches[0];
@@ -260,7 +276,15 @@ const onTouchEnd = (e) => {
   >
     <!-- 🟢 FIX: Добавлено условие isOpVisible для скрытия -->
     <div
-      v-if="operation && isOpVisible"
+      v-if="isPhantom"
+      class="op-chip phantom"
+    >
+      <span class="amt">Занято</span>
+      <span class="desc">{{ phantomLabel }}</span>
+    </div>
+
+    <div
+      v-else-if="operation && isOpVisible"
       class="op-chip"
       :class="{ 
          transfer: isTransferOp, 
@@ -270,7 +294,8 @@ const onTouchEnd = (e) => {
          'work-act': isWorkActOp,
          withdrawal: isWithdrawalOp,
          writeoff: isRetailWriteOffOp,
-         'credit-income': isCreditIncomeOp 
+         'credit-income': isCreditIncomeOp,
+         'no-permission': !canInteract
       }"
       @click.stop="onEditClick($event)"
       @touchstart="onTouchStart"
@@ -351,6 +376,22 @@ const onTouchEnd = (e) => {
   background: var(--op-default-bg);
   border: 1px solid var(--op-default-border);
   white-space: nowrap;
+}
+
+.op-chip.phantom {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.08) 6px,
+    rgba(255, 255, 255, 0.14) 6px,
+    rgba(255, 255, 255, 0.14) 12px
+  );
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.op-chip.no-permission {
+  opacity: 0.82;
 }
 
 .amt { font-weight: 700; margin-right: 4px; }

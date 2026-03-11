@@ -23,13 +23,19 @@ const operations = computed(() => {
   return mainStore.getOperationsForDay(props.dateKey);
 });
 
+const phantoms = computed(() => {
+  return mainStore.getPhantomOperations(props.dateKey);
+});
+
 const cells = computed(() => {
   const cellArray = [];
   const ops = operations.value;
+  const phants = phantoms.value;
   for (let i = 0; i < 32; i++) { // 🟢 UPDATED: 24 -> 32 rows to match desktop
+    const realOp = ops.find(op => op.cellIndex === i);
     cellArray.push({
       id: i,
-      operation: ops.find(op => op.cellIndex === i) || null 
+      operation: realOp || phants.find(op => op.cellIndex === i) || null
     });
   }
   return cellArray;

@@ -295,7 +295,16 @@ const operationTooltipRows = computed(() => {
 });
 
 const hasOperationTooltip = computed(() => operationTooltipRows.value.length > 0);
-const phantomTooltipText = computed(() => showOperationTooltip.value ? 'Ячейка занята операцией на скрытом счете' : '');
+const phantomChipTitle = computed(() => {
+  if (!isPhantom.value) return '';
+  return props.operation?.phantomKind === 'restricted' ? 'Нет доступа' : 'Скрытый счет';
+});
+const phantomTooltipText = computed(() => {
+  if (!showOperationTooltip.value || !isPhantom.value) return '';
+  return props.operation?.phantomKind === 'restricted'
+    ? 'Ячейка занята операцией без доступа для менеджера'
+    : 'Ячейка занята операцией на скрытом счете';
+});
 const tooltipAmountTone = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -360,7 +369,7 @@ const onDrop = (event) => {
         @mouseleave="onPhantomMouseLeave"
       >
         <span class="op-amount">👁️‍🗨️ Занято</span>
-        <span class="op-meta">Скрытый счет</span>
+        <span class="op-meta">{{ phantomChipTitle }}</span>
       </div>
     </template>
 

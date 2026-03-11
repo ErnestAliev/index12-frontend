@@ -349,6 +349,52 @@ export const useMainStore = defineStore('mainStore', () => {
         return true;
     };
 
+    const _collectOperationAccountIds = (op) => {
+        if (!op) return [];
+
+        const ids = new Set();
+        const addId = (value) => {
+            const normalized = _toStr(value);
+            if (normalized) ids.add(normalized);
+        };
+
+        addId(op.accountId);
+        addId(op.fromAccountId);
+        addId(op.toAccountId);
+        addId(op.account);
+
+        if (!ids.size && op.relatedEventId) {
+            const parentId = typeof op.relatedEventId === 'object'
+                ? String(op.relatedEventId._id)
+                : String(op.relatedEventId);
+
+            let parent = allOpsMap.value.get(parentId);
+            if (!parent) {
+                parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
+            }
+
+            if (parent) {
+                addId(parent.accountId);
+                addId(parent.fromAccountId);
+                addId(parent.toAccountId);
+                addId(parent.account);
+            }
+        }
+
+        return Array.from(ids);
+    };
+
+    const _canManagerAccessTimelineOperation = (op) => {
+        if (!isManager.value) return true;
+        if (!op) return false;
+
+        const allowed = new Set(managerAccessibleAccountIds.value || []);
+        const accountIds = _collectOperationAccountIds(op);
+
+        if (!accountIds.length) return false;
+        return accountIds.every((accountId) => allowed.has(String(accountId)));
+    };
+
     const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
         const map = new Map();
         ops.forEach(op => {
@@ -2221,7 +2267,7 @@ export const useMainStore = defineStore('mainStore', () => {
         // Filter out deleted operations and null/undefined entries
         // Work acts are now visible on timeline with special styling
         // Also filter by visibility (excluded accounts)
-        return ops.filter(op => op && !op.isDeleted && _isTimelineVisible(op));
+        return ops.filter(op => op && !op.isDeleted && _isTimelineVisible(op) && _canManagerAccessTimelineOperation(op));
     }
 
     /**
@@ -2230,9 +2276,6 @@ export const useMainStore = defineStore('mainStore', () => {
      * This prevents users from creating operations in occupied cells
      */
     function getPhantomOperations(dateKey) {
-        // If excluded accounts are visible, no phantoms needed
-        if (includeExcludedInTotal.value) return [];
-
         const ops = displayCache.value[dateKey];
         if (!Array.isArray(ops)) return [];
         const phantoms = [];
@@ -2243,6 +2286,7 @@ export const useMainStore = defineStore('mainStore', () => {
             // ✅ FIX: For transfers, check BOTH accounts
             // If ANY account is excluded, create phantom
             let shouldCreatePhantom = false;
+            let phantomKind = null;
 
             // Check regular operations (income/expense)
             if (op.accountId) {
@@ -2250,6 +2294,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 const account = accounts.value.find(a => _idsMatch(a._id, accountId));
                 if (account?.isExcluded) {
                     shouldCreatePhantom = true;
+                    phantomKind = 'excluded';
                 }
             }
 
@@ -2259,6 +2304,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 const fromAccount = accounts.value.find(a => _idsMatch(a._id, fromId));
                 if (fromAccount?.isExcluded) {
                     shouldCreatePhantom = true;
+                    phantomKind = 'excluded';
                 }
             }
 
@@ -2268,13 +2314,20 @@ export const useMainStore = defineStore('mainStore', () => {
                 const toAccount = accounts.value.find(a => _idsMatch(a._id, toId));
                 if (toAccount?.isExcluded) {
                     shouldCreatePhantom = true;
+                    phantomKind = 'excluded';
                 }
+            }
+
+            if (!shouldCreatePhantom && !_canManagerAccessTimelineOperation(op)) {
+                shouldCreatePhantom = true;
+                phantomKind = 'restricted';
             }
 
             if (shouldCreatePhantom) {
                 phantoms.push({
                     _id: `phantom-${op._id}`,
                     isPhantom: true,
+                    phantomKind: phantomKind || 'excluded',
                     cellIndex: op.cellIndex,
                     dateKey: op.dateKey || dateKey
                 });
