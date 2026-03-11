@@ -50,6 +50,12 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:yLabels']);
 
+const formatSummaryBalance = (value) => {
+  const num = Number(value) || 0;
+  const formatted = formatNumber(Math.abs(num));
+  return num < 0 ? `- ₸ ${formatted}` : `₸ ${formatted}`;
+};
+
 // Normalize visibleDays once so ALL calculations (labels, summaries, segments) use the same indexing.
 // This fixes “разрывы/асинхрон” when the range changes (1м/3м) and when some days come in as placeholders.
 const normalizedVisibleDays = computed(() => {
@@ -1896,7 +1902,7 @@ watch(
         <div class="day-date">{{ day.date }}</div>
         <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
         <div class="day-expense">₸ {{ formatNumber(day.expense) }}</div>
-        <div class="day-balance">₸ {{ formatNumber(day.balance) }}</div>
+        <div class="day-balance" :class="{ negative: Number(day.balance) < 0 }">{{ formatSummaryBalance(day.balance) }}</div>
       </div>
     </div>
   </div>
@@ -1964,5 +1970,8 @@ watch(
   color: var(--day-summary-balance-value);
   font-weight: 500;
   margin-top: 5px;
+}
+.day-balance.negative {
+  color: var(--color-danger);
 }
 </style>

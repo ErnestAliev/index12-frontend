@@ -62,6 +62,13 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:yLabels', 'hover-column']);
 
+const formatSummaryBalance = (value, compact = false) => {
+  const num = Number(value) || 0;
+  const formatter = compact ? formatShortNumber : formatNumber;
+  const formatted = formatter(Math.abs(num));
+  return num < 0 ? `- ₸ ${formatted}` : `₸ ${formatted}`;
+};
+
 // Normalize visibleDays once so ALL calculations (labels, summaries, segments) use the same indexing.
 // This fixes “разрывы/асинхрон” when the range changes (1м/3м) and when some days come in as placeholders.
 const normalizedVisibleDays = computed(() => {
@@ -1923,13 +1930,13 @@ watch(
           <!-- Compact format for 21+ columns -->
           <div class="day-income">₸ {{ formatShortNumber(day.income) }}</div>
           <div class="day-expense">₸ {{ formatShortNumber(day.expense) }}</div>
-          <div class="day-balance">₸ {{ formatShortNumber(day.balance) }}</div>
+          <div class="day-balance" :class="{ negative: Number(day.balance) < 0 }">{{ formatSummaryBalance(day.balance, true) }}</div>
         </template>
         <template v-else>
           <!-- Full format for 7-12 columns -->
           <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
           <div class="day-expense">₸ {{ formatNumber(day.expense) }}</div>
-          <div class="day-balance">₸ {{ formatNumber(day.balance) }}</div>
+          <div class="day-balance" :class="{ negative: Number(day.balance) < 0 }">{{ formatSummaryBalance(day.balance) }}</div>
         </template>
       </div>
     </div>
@@ -2021,5 +2028,8 @@ watch(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.day-balance.negative {
+  color: var(--color-danger);
 }
 </style>
