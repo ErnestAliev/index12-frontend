@@ -395,6 +395,13 @@ export const useMainStore = defineStore('mainStore', () => {
         return accountIds.every((accountId) => allowed.has(String(accountId)));
     };
 
+    const _canCurrentUserEditOperation = (op) => {
+        if (!op) return false;
+        if (isAdmin.value) return true;
+        if (!isManager.value) return false;
+        return String(op.createdBy || '') === String(user.value?.id || '');
+    };
+
     const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
         const map = new Map();
         ops.forEach(op => {
@@ -2477,10 +2484,13 @@ export const useMainStore = defineStore('mainStore', () => {
         if (oldDateKey === newDateKey) {
             const ops = [...(displayCache.value[oldDateKey] || [])];
             const sourceOp = ops.find(o => _idsMatch(o._id, operation._id));
-            const targetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
+            const rawTargetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
+            const targetOp = rawTargetOp && _canCurrentUserEditOperation(rawTargetOp) ? rawTargetOp : null;
 
             if (sourceOp) {
-                if (targetOp) {
+                if (rawTargetOp && !targetOp) {
+                    sourceOp.cellIndex = await getFirstFreeCellIndex(oldDateKey, targetIndex);
+                } else if (targetOp) {
                     const originalSourceIndex = sourceOp.cellIndex;
                     sourceOp.cellIndex = targetIndex;
                     targetOp.cellIndex = originalSourceIndex;
@@ -2495,19 +2505,31 @@ export const useMainStore = defineStore('mainStore', () => {
                 });
 
                 _syncCaches(oldDateKey, ops);
+                _dedupeOperationEntries(sourceOp._id, oldDateKey);
+                if (targetOp?._id) _dedupeOperationEntries(targetOp._id, oldDateKey);
+                if (isMerged && operation._id2) _dedupeOperationEntries(operation._id2, oldDateKey);
+                splitChildren.forEach(child => _dedupeOperationEntries(child._id, oldDateKey));
 
                 const promises = [
-                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: targetIndex })
+                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: sourceOp.cellIndex })
                 ];
                 if (targetOp) {
                     promises.push(axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: targetOp.cellIndex }));
                 }
-                if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: targetIndex }));
+                if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: sourceOp.cellIndex }));
                 splitChildren.forEach(child => {
-                    promises.push(axios.put(`${API_BASE_URL}/events/${child._id}`, { cellIndex: targetIndex }));
+                    promises.push(axios.put(`${API_BASE_URL}/events/${child._id}`, { cellIndex: sourceOp.cellIndex }));
                 });
 
-                Promise.all(promises).catch(() => refreshDay(oldDateKey));
+                try {
+                    const responses = await Promise.all(promises);
+                    responses.forEach((response) => {
+                        const serverOp = response?.data;
+                        if (serverOp?._id) onSocketOperationUpdated(serverOp);
+                    });
+                } catch {
+                    await refreshDay(oldDateKey);
+                }
             }
         } else {
             let oldOps = [...(displayCache.value[oldDateKey] || [])];
@@ -2545,6 +2567,9 @@ export const useMainStore = defineStore('mainStore', () => {
             // Сортировка по cellIndex для стабильного порядка
             newOps.sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
             _syncCaches(newDateKey, newOps);
+            if (movedParent?._id) _dedupeOperationEntries(movedParent._id, newDateKey);
+            if (isMerged && operation._id2) _dedupeOperationEntries(operation._id2, newDateKey);
+            movedChildren.forEach(child => _dedupeOperationEntries(child._id, newDateKey));
 
             const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
             const isInSnapshot = _isEffectivelyPastOrToday(newDateObj);
@@ -2576,11 +2601,18 @@ export const useMainStore = defineStore('mainStore', () => {
                 promises.push(axios.put(`${API_BASE_URL}/events/${occupant._id}`, { cellIndex: occupant.cellIndex }));
             }
 
-            await Promise.all(promises).catch(() => {
-                refreshDay(oldDateKey);
-                refreshDay(newDateKey);
-                fetchSnapshot();
-            });
+            await Promise.all(promises)
+                .then((responses) => {
+                    responses.forEach((response) => {
+                        const serverOp = response?.data;
+                        if (serverOp?._id) onSocketOperationUpdated(serverOp);
+                    });
+                })
+                .catch(() => {
+                    refreshDay(oldDateKey);
+                    refreshDay(newDateKey);
+                    fetchSnapshot();
+                });
         }
     }
 

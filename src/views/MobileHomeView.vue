@@ -1387,11 +1387,11 @@ const handleContextMenuSelect = (type) => {
 };
 
 const handleOperationDrop = async (dropData) => {
-    const { operation, toDateKey, toCellIndex } = dropData;
+    const { operation, toDateKey, toCellIndex, targetDate } = dropData;
     if (!operation || !toDateKey) return;
     const oldDateKey = operation.dateKey;
     if (oldDateKey === toDateKey && operation.cellIndex === toCellIndex) return;
-    try { await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex); } catch(e) { console.error("Drop Error:", e); }
+    try { await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex, targetDate || null); } catch(e) { console.error("Drop Error:", e); }
 };
 
 const handleOperationSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
