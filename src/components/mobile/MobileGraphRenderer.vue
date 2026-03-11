@@ -1151,7 +1151,7 @@ const accountBalancesByDateKey = computed(() => {
       
       balancesByAccount[accId] = {
         name: acc.name || 'Счет',
-        balance: Math.max(0, balance)
+        balance
       };
     }
     
@@ -1721,7 +1721,7 @@ const chartOptions = computed(() => {
             const daySum = Array.isArray(summaries.value) ? summaries.value[index] : null;
             const dayIncome = Math.abs(Number(daySum?.income) || 0);
             const dayExpense = Math.abs(Number(daySum?.expense) || 0);
-            const dayBalance = Math.max(0, Number(daySum?.balance) || 0);
+            const dayBalance = Number(daySum?.balance) || 0;
 
             // === HEADER: Дата + Общий баланс ===
             const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];

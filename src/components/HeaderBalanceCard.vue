@@ -211,6 +211,8 @@ const getFutureColor = (item) => {
     const current = Number(item.balance) || 0;
     const future = Number(item.futureBalance) || 0;
 
+    if (future < 0) return 'expense';
+
     if (future > current) return 'income';
     if (future < current) return 'expense';
     

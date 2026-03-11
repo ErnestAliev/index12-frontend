@@ -158,16 +158,17 @@ const getRightValue = (item) => {
 
 const getRightValueFormatted = (item) => {
     const val = getRightValue(item);
-    const num = Math.abs(toNum(val));
+    const raw = toNum(val);
+    const num = Math.abs(raw);
     const formatted = formatNumber(num);
 
-    if (isBalanceWidget.value) return `${formatted} ₸`;
+    if (isBalanceWidget.value) return formatVal(raw);
     if (num === 0) return `${formatted} ₸`;
     if (isAlwaysNegativeWidget.value) return `- ${formatted} ₸`;
     if (isTransferWidget.value) return `${formatted} ₸`;
 
     // ⚡️ ПЛАН/ПРОГНОЗ: Всегда с плюсом для положительных значений
-    if (toNum(val) > 0) return `+ ${formatted} ₸`;
+    if (raw > 0) return `+ ${formatted} ₸`;
     return `- ${formatted} ₸`;
 };
 
@@ -175,6 +176,8 @@ const getRightValueFormatted = (item) => {
 const getRightValueClass = (item) => {
     // 🟢 Спец. логика для Счетов и Компаний
     if (isBalanceWidget.value) {
+        const futureTotal = getRightValue(item);
+        if (futureTotal < 0) return 'red-text';
         const change = toNum(item?.futureChange);
         // Рост -> Зеленый
         if (change > 0) return 'green-text';
@@ -230,11 +233,11 @@ const cardStyleClass = computed(() => {
 // UI snapshot (screen = truth)
 // =========================
 const _formatPlanSum = (val) => {
-  const num = Math.abs(toNum(val));
-  const formatted = formatNumber(num);
+    const num = Math.abs(toNum(val));
+    const formatted = formatNumber(num);
 
-  // Balance widgets show future TOTAL (no +/- sign)
-  if (isBalanceWidget.value) return `${formatted} ₸`;
+    // Balance widgets show future TOTAL (no +/- sign)
+    if (isBalanceWidget.value) return formatVal(val);
 
   // 0 always without sign
   if (num === 0) return `${formatted} ₸`;
