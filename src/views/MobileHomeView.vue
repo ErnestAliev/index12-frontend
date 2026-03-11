@@ -372,6 +372,7 @@ const showUserMenuModal = ref(false);
 const showAboutModal = ref(false);
 
 const openProjectsModal = () => {
+  if (mainStore.workspaceRole === 'manager') return;
   showProjectsModal.value = true;
   try { document.body.style.overflow = 'hidden'; } catch (_) {}
 };
@@ -1596,7 +1597,7 @@ const handleOperationDelete = async (op) => {
 
 
     <!-- Mobile Modals -->
-    <MobileProjectSwitcher v-if="showProjectsModal" @close="closeProjectsModal" />
+    <MobileProjectSwitcher v-if="showProjectsModal && mainStore.workspaceRole !== 'manager'" @close="closeProjectsModal" />
     <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" />
     <AboutModal v-if="showAboutModal" @close="closeAboutModal" />
 
