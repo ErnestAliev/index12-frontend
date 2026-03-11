@@ -85,7 +85,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
                  <span class="selected-text">{{ displayText }}</span>
                  <span v-if="!multiple && selectedOptions[0]?.subLabel" class="sub-text">{{ selectedOptions[0].subLabel }}</span>
              </div>
-             <span v-if="!multiple && selectedOptions[0]?.rightText" class="right-text">{{ selectedOptions[0].rightText }}</span>
+             <span v-if="!multiple && selectedOptions[0]?.rightText" class="right-text" :class="selectedOptions[0]?.rightTextClass">{{ selectedOptions[0].rightText }}</span>
           </div>
         </div>
 
@@ -129,7 +129,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
                 <!-- 🟢 subLabel в списке -->
                 <span v-if="option.subLabel" class="option-sub">{{ option.subLabel }}</span>
             </div>
-            <span v-if="option.rightText" class="option-right">{{ option.rightText }}</span>
+            <span v-if="option.rightText" class="option-right" :class="option.rightTextClass">{{ option.rightText }}</span>
           </div>
         </li>
       </ul>
@@ -233,6 +233,12 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   font-size: 13px;
   color: #999;
   flex-shrink: 0;
+}
+
+.right-text.is-negative,
+.option-right.is-negative {
+  color: var(--color-danger, #ff3b30);
+  font-weight: 600;
 }
 
 .placeholder { 

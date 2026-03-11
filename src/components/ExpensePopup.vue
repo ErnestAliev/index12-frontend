@@ -20,7 +20,7 @@ import { knownBanks } from '@/data/knownBanks.js';
  * 1. (LOGIC) Интеграция с mainStore.validateTransaction для проверки баланса на конкретную дату.
  * 2. (UI) Динамический заголовок ("Запланировать расход" vs "Новый расход").
  * 3. (UI) accountOptions теперь показывают прогнозируемый баланс, если выбрана будущая дата.
- * 4. (UI) Блокировка сохранения при недостатке средств.
+ * 4. (UI) Недостаток средств больше не блокирует сохранение, отрицательный остаток допустим.
  */
 
 const props = defineProps({
@@ -317,6 +317,7 @@ const accountOptions = computed(() => {
     };
     if (permissions.canSeeAccountBalance(acc._id)) {
         option.rightText = `${formatNumber(Math.round(displayBalance))} ₸`;
+        option.rightTextClass = displayBalance < 0 ? 'is-negative' : '';
     }
     return option;
   });
@@ -481,17 +482,24 @@ const myCreditsProjectId = computed(() => {
     return p ? p._id : null;
 });
 
-// 🟢 ВАЛИДАЦИЯ БАЛАНСА 🟢
-const validationResult = computed(() => {
-    // Не валидируем, если не выбран счет или сумма некорректна
-    if (!selectedAccountId.value) return { isValid: true };
-    const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
-    if (!rawAmount || rawAmount <= 0) return { isValid: true };
+const projectedBalanceAfterExpense = computed(() => {
+    if (!selectedAccountId.value) return null;
 
+    const rawAmount = parseFloat((amount.value || '').replace(/\s/g, ''));
     const targetDate = createSmartDate(editableDate.value);
-    
-    // Вызываем проверку из Store
-    return mainStore.validateTransaction(selectedAccountId.value, rawAmount, targetDate);
+    const currentBalance = isFutureDate.value
+        ? mainStore.getBalanceAtDate(selectedAccountId.value, targetDate)
+        : Number(mainStore.currentAccountBalances.find(acc => acc._id === selectedAccountId.value)?.balance || 0);
+
+    const nextBalance = (!rawAmount || rawAmount <= 0)
+        ? currentBalance
+        : currentBalance - rawAmount;
+
+    return {
+        currentBalance,
+        nextBalance,
+        willBeNegative: nextBalance < 0
+    };
 });
 
 // 🟢 ЛОГИКА СКРЫТИЯ ВЛАДЕЛЬЦА
@@ -646,12 +654,6 @@ const handleSave = async () => {
             const rest = (selectedCategoryIds.value || []).filter(v => v && v !== offsetCategoryId.value);
             selectedCategoryIds.value = [offsetCategoryId.value, ...rest];
         }
-    }
-
-    // 🟢 ВАЛИДАЦИЯ ПЕРЕД СОХРАНЕНИЕМ
-    if (validationResult.value && !validationResult.value.isValid) {
-        showError(validationResult.value.message);
-        return;
     }
 
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
@@ -990,17 +992,16 @@ watch(defaultProjectId, (defId) => {
         </button>
       </div>
       
-      <!-- СУММА + ВАЛИДАЦИЯ -->
-      <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
+      <!-- СУММА -->
+      <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
              <span v-if="amount" class="floating-label">Сумма расхода, ₸</span>
              <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isReadOnly" />
           </div>
       </div>
       
-      <!-- 🟢 Блок ошибки валидации -->
-      <div v-if="validationResult && !validationResult.isValid" class="validation-error">
-          {{ validationResult.message }}
+      <div v-if="projectedBalanceAfterExpense" class="validation-error" :class="{ 'validation-warning': !projectedBalanceAfterExpense.willBeNegative }">
+          После расхода: {{ formatNumber(Math.round(projectedBalanceAfterExpense.nextBalance)) }} ₸
       </div>
 
       <div v-if="isIncomeOffsetMode && selectedIncomeOp" class="offset-hint">
@@ -1108,7 +1109,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ -->
       <div class="popup-actions-row">
-          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="handleSave" :disabled="isSaving || isInlineSaving || (validationResult && !validationResult.isValid)">
+          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="handleSave" :disabled="isSaving || isInlineSaving">
               {{ buttonText }}
           </button>
           <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
@@ -1190,6 +1191,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 /* 🟢 Ошибка валидации */
 .custom-input-box.is-invalid { border-color: #FF3B30 !important; box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.2) !important; }
 .validation-error { color: #FF3B30; font-size: 13px; margin-top: 6px; font-weight: 500; margin-left: 2px; }
+.validation-error.validation-warning { color: #8e8e93; }
 
 .input-inner-content { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .floating-label { font-size: 11px; color: #999; margin-bottom: -2px; margin-top: 4px; font-weight: 500; }

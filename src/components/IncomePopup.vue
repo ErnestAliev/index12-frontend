@@ -298,6 +298,7 @@ const accountOptions = computed(() => {
     };
     if (permissions.canSeeAccountBalance(acc._id)) {
         option.rightText = `${formatNumber(Math.round(displayBalance))} ₸`;
+        option.rightTextClass = displayBalance < 0 ? 'is-negative' : '';
     }
     return option;
   });
