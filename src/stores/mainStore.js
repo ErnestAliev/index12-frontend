@@ -1623,6 +1623,74 @@ export const useMainStore = defineStore('mainStore', () => {
         cacheVersion.value++;
     };
 
+    const _findOperationEntries = (opId) => {
+        const matches = [];
+        if (!opId) return matches;
+
+        for (const dk in displayCache.value) {
+            const list = Array.isArray(displayCache.value[dk]) ? displayCache.value[dk] : [];
+            list.forEach((item, index) => {
+                if (_idsMatch(item?._id, opId) || _idsMatch(item?._id2, opId)) {
+                    matches.push({ dateKey: dk, index, item });
+                }
+            });
+        }
+
+        return matches;
+    };
+
+    const _dedupeOperationEntries = (opId, preferredDateKey = null) => {
+        const matches = _findOperationEntries(opId);
+        if (matches.length <= 1) return;
+
+        const keeper = preferredDateKey
+            ? (matches.find((entry) => entry.dateKey === preferredDateKey) || matches[matches.length - 1])
+            : matches[matches.length - 1];
+
+        const removalsByDay = new Map();
+        matches.forEach((entry) => {
+            if (entry === keeper) return;
+            if (!removalsByDay.has(entry.dateKey)) removalsByDay.set(entry.dateKey, []);
+            removalsByDay.get(entry.dateKey).push(entry.index);
+        });
+
+        removalsByDay.forEach((indices, dateKey) => {
+            const sorted = [...indices].sort((a, b) => b - a);
+            const list = [...(displayCache.value[dateKey] || [])];
+            sorted.forEach((index) => {
+                if (index >= 0 && index < list.length) list.splice(index, 1);
+            });
+            displayCache.value[dateKey] = list;
+            calculationCache.value[dateKey] = [...list];
+        });
+    };
+
+    const _replaceOptimisticOperation = (tempId, serverOp) => {
+        let replaced = false;
+        const richServerOp = _populateOp(serverOp);
+
+        for (const dk in displayCache.value) {
+            const list = Array.isArray(displayCache.value[dk]) ? [...displayCache.value[dk]] : [];
+            const idx = list.findIndex((item) => _idsMatch(item?._id, tempId));
+            if (idx === -1) continue;
+
+            list[idx] = richServerOp;
+            displayCache.value[dk] = list;
+            calculationCache.value[dk] = [...list];
+            replaced = true;
+        }
+
+        const dealIdx = dealOperations.value.findIndex((item) => _idsMatch(item?._id, tempId));
+        if (dealIdx !== -1) {
+            const nextDeals = [...dealOperations.value];
+            nextDeals[dealIdx] = serverOp;
+            dealOperations.value = nextDeals;
+        }
+
+        _dedupeOperationEntries(serverOp._id, richServerOp.dateKey);
+        return replaced;
+    };
+
     const onSocketOperationAdded = async (op) => {
         if (op.categoryId) {
             const catId = typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId;
@@ -1633,7 +1701,10 @@ export const useMainStore = defineStore('mainStore', () => {
         }
 
         const existingOp = allOperationsFlat.value.find(o => _idsMatch(o._id, op._id));
-        if (existingOp) return;
+        if (existingOp) {
+            onSocketOperationUpdated(op);
+            return;
+        }
 
         const richOp = _populateOp(op);
         const dk = richOp.dateKey;
@@ -1681,6 +1752,7 @@ export const useMainStore = defineStore('mainStore', () => {
         displayCache.value[dk].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
 
         calculationCache.value[dk] = [...displayCache.value[dk]];
+        _dedupeOperationEntries(richOp._id, dk);
 
         if (_isEffectivelyPastOrToday(richOp.date)) {
             _applyOptimisticSnapshotUpdate(richOp, 1);
@@ -1737,6 +1809,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         displayCache.value[newDateKey].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
         calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
+        _dedupeOperationEntries(op._id, newDateKey);
 
         if (_isEffectivelyPastOrToday(richOp.date)) {
             _applyOptimisticSnapshotUpdate(richOp, 1);
@@ -1881,19 +1954,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
             const response = await axios.post(`${API_BASE_URL}/events`, eventData);
             const serverOp = response.data;
-
-            const idx = displayCache.value[dk].findIndex(o => _idsMatch(o._id, tempId));
-            if (idx !== -1) {
-                displayCache.value[dk][idx] = _populateOp(serverOp);
-                calculationCache.value[dk] = [...displayCache.value[dk]];
-            }
-
-            const dealIdx = dealOperations.value.findIndex(d => _idsMatch(d._id, tempId));
-            if (dealIdx !== -1) {
-                const newDeals = [...dealOperations.value];
-                newDeals[dealIdx] = serverOp;
-                dealOperations.value = newDeals;
-            }
+            _replaceOptimisticOperation(tempId, serverOp);
 
             await fetchSnapshot();
 
@@ -1991,6 +2052,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     calculationCache.value[newDateKey] = [...targetList];
                 }
             }
+            _dedupeOperationEntries(serverOp._id, newDateKey);
 
             // 🔴 REMOVED: fetchSnapshot() returns empty data before MongoDB aggregation completes
             // Optimistic updates work correctly, socket events provide sync after 4-6 sec

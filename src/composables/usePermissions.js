@@ -115,6 +115,9 @@ export function usePermissions() {
      * @returns {boolean}
      */
     function canEditOperation(operation) {
+        if (operation?.isOptimistic) {
+            return false;
+        }
         if (!canEdit.value) {
             console.log('🔐 [canEditOperation] User cannot edit (role restriction)');
             return false;
