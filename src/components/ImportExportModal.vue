@@ -686,6 +686,52 @@ const normalizeStatusLabel = (op) => {
   return statusMeta.label;
 };
 
+const buildAccountFilterMeta = (op, fallbackLabel = '') => {
+  const tokens = new Set();
+  const entriesByValue = new Map();
+
+  const pushAccount = (accountRef, fallback = '') => {
+    const id = extractId(accountRef);
+    const label = normalizeString(resolveEntityName(accountRef, mainStore.accounts, fallback || ''));
+
+    if (id) {
+      tokens.add(id);
+      if (!entriesByValue.has(id)) {
+        entriesByValue.set(id, {
+          value: id,
+          label: label || fallback || 'Счет',
+          entityPath: 'accounts',
+          entityId: id
+        });
+      }
+    }
+
+    if (label) {
+      tokens.add(label);
+    }
+  };
+
+  pushAccount(op?.accountId, fallbackLabel);
+  pushAccount(op?.fromAccountId);
+  pushAccount(op?.toAccountId);
+
+  if (entriesByValue.size === 0) {
+    const label = normalizeString(fallbackLabel || 'Без счета');
+    if (label) {
+      tokens.add(label);
+      entriesByValue.set(`label:${label}`, {
+        value: label,
+        label
+      });
+    }
+  }
+
+  return {
+    tokens: Array.from(tokens),
+    entries: Array.from(entriesByValue.values())
+  };
+};
+
 const buildOperationRow = (op) => {
   const typeLabel = normalizeTypeLabel(op);
   const statusMeta = resolveStatusMeta(op);
@@ -733,6 +779,7 @@ const buildOperationRow = (op) => {
       ? Math.abs(rawAmount)
       : rawAmount
     : 0;
+  const accountFilterMeta = buildAccountFilterMeta(op, accountName);
 
   return {
     rowId: String(op?._id || op?.id || `${op?.date || 'op'}-${Math.random().toString(16).slice(2)}`),
@@ -745,6 +792,8 @@ const buildOperationRow = (op) => {
     statusCode: statusMeta.code,
     statusSource: statusMeta.source,
     dateTs,
+    accountFilterTokens: accountFilterMeta.tokens,
+    accountFilterEntries: accountFilterMeta.entries,
     editable: {
       date: toDateInputValue(op?.date),
       type: typeLabel,
@@ -1036,8 +1085,15 @@ const projectFilterOptions = computed(() =>
 );
 
 const accountFilterOptions = computed(() =>
-  (filterOptions.value.account || []).map((label) =>
-    mapFilterOptionWithRename(label, [{ path: 'accounts', list: mainStore.accounts }]))
+  operations.value
+    .flatMap((row) => (Array.isArray(row.accountFilterEntries) ? row.accountFilterEntries : []))
+    .reduce((acc, option) => {
+      const value = normalizeString(option?.value);
+      if (!value || acc.some((item) => String(item.value) === value)) return acc;
+      acc.push(option);
+      return acc;
+    }, [])
+    .sort((a, b) => normalizeString(a?.label).localeCompare(normalizeString(b?.label), 'ru'))
 );
 
 const contractorFilterOptions = computed(() =>
@@ -1639,7 +1695,10 @@ const filteredOperations = computed(() => {
     if (typeFilter.length > 0 && !typeFilter.includes(row.values['Тип'])) return false;
     if (categoryFilter.length > 0 && !categoryFilter.includes(row.values['Категория'])) return false;
     if (projectFilter.length > 0 && !projectFilter.includes(row.values['Проект'])) return false;
-    if (accountFilter.length > 0 && !accountFilter.includes(row.values['Счет'])) return false;
+    if (accountFilter.length > 0) {
+      const rowAccountTokens = Array.isArray(row.accountFilterTokens) ? row.accountFilterTokens : [];
+      if (!accountFilter.some((value) => rowAccountTokens.includes(value))) return false;
+    }
     if (contractorFilter.length > 0 && !contractorFilter.includes(row.values['Контрагент'])) return false;
     if (ownerFilter.length > 0 && !ownerFilter.includes(row.values['Компания/Физлицо'])) return false;
     if (statusFilter.length > 0 && !statusFilter.includes(row.values['Статус'])) return false;
