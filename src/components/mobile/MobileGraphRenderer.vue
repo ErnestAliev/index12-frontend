@@ -1169,6 +1169,7 @@ const accountBalancesByDateKey = computed(() => {
       }
       
       balancesByAccount[accId] = {
+        _id: accId,
         name: acc.name || 'Счет',
         balance
       };
