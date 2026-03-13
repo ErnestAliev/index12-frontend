@@ -67,3 +67,90 @@ export const ICON_EXPORT =
 
 export const ICON_CHECK =
     '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+const TOOLTIP_ACCOUNT_BALANCE_PREFIX = '__tooltip_account_balance__:';
+
+const normalizeTooltipMarkers = (markers) => {
+    const safe = Array.isArray(markers) ? markers : [];
+    return Array.from(new Set(
+        safe
+            .map((marker) => String(marker || '').trim().toLowerCase())
+            .filter((marker) => marker === 'income' || marker === 'expense')
+    ));
+};
+
+const getTooltipMarkerMeta = (marker) => {
+    if (marker === 'income') return { color: '#34c759', label: 'Доход' };
+    if (marker === 'expense') return { color: '#ff3b30', label: 'Расход' };
+    return null;
+};
+
+export const buildTooltipAccountBalanceLine = ({ name = 'Счет', balance = 0, balanceText = '', markers = [] } = {}) => {
+    const payload = {
+        name: String(name || 'Счет'),
+        balance: Number.isFinite(Number(balance)) ? Number(balance) : 0,
+        balanceText: String(balanceText || ''),
+        markers: normalizeTooltipMarkers(markers)
+    };
+    return `${TOOLTIP_ACCOUNT_BALANCE_PREFIX}${JSON.stringify(payload)}`;
+};
+
+export const parseTooltipAccountBalanceLine = (line) => {
+    if (line && typeof line === 'object') {
+        return {
+            name: String(line?.name || 'Счет'),
+            balance: Number.isFinite(Number(line?.balance)) ? Number(line.balance) : 0,
+            balanceText: String(line?.balanceText || ''),
+            markers: normalizeTooltipMarkers(line?.markers)
+        };
+    }
+
+    const raw = String(line || '');
+    if (!raw.startsWith(TOOLTIP_ACCOUNT_BALANCE_PREFIX)) return null;
+    try {
+        const payload = JSON.parse(raw.slice(TOOLTIP_ACCOUNT_BALANCE_PREFIX.length));
+        return {
+            name: String(payload?.name || 'Счет'),
+            balance: Number.isFinite(Number(payload?.balance)) ? Number(payload.balance) : 0,
+            balanceText: String(payload?.balanceText || ''),
+            markers: normalizeTooltipMarkers(payload?.markers)
+        };
+    } catch (error) {
+        return null;
+    }
+};
+
+export const formatTooltipAccountBalanceExportLine = (payload) => {
+    const accountLine = parseTooltipAccountBalanceLine(payload);
+    if (!accountLine) return String(payload || '');
+    const markerText = accountLine.markers
+        .map((marker) => (marker === 'income' ? '[+]' : '[-]'))
+        .join(' ');
+    const balanceText = accountLine.balanceText || `${formatNumber(accountLine.balance)} т`;
+    return `${markerText ? `${markerText} ` : ''}${accountLine.name} — ${balanceText}`;
+};
+
+export const renderTooltipAccountBalanceHtml = (payload) => {
+    const accountLine = parseTooltipAccountBalanceLine(payload);
+    if (!accountLine) return '';
+
+    const markersHtml = accountLine.markers
+        .map((marker) => {
+            const meta = getTooltipMarkerMeta(marker);
+            if (!meta) return '';
+            return `<span title="${escapeHtml(meta.label)}" aria-label="${escapeHtml(meta.label)}" style="width:8px; height:8px; border-radius:999px; background:${meta.color}; display:inline-block; flex:0 0 auto;"></span>`;
+        })
+        .join('');
+
+    const balanceText = accountLine.balanceText || `${formatNumber(accountLine.balance)} т`;
+
+    return `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 2px;">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto;">
+                ${markersHtml ? `<span style="display:inline-flex; align-items:center; gap:4px; flex:0 0 auto;">${markersHtml}</span>` : ''}
+                <span style="color:var(--tooltip-text-main); font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(accountLine.name || 'Счет')}</span>
+            </div>
+            <span style="color:var(--tooltip-text-main); font-weight:500; white-space:nowrap; flex:0 0 auto;">${escapeHtml(balanceText)}</span>
+        </div>
+    `;
+};

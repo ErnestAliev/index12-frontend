@@ -10,7 +10,11 @@ import {
   escapeHtml,
   ICON_COPY,
   ICON_EXPORT,
-  ICON_CHECK
+  ICON_CHECK,
+  buildTooltipAccountBalanceLine,
+  parseTooltipAccountBalanceLine,
+  formatTooltipAccountBalanceExportLine,
+  renderTooltipAccountBalanceHtml
 } from '@/composables/useGraphTooltip.js';
 
 // Unique tooltip element ids per component instance (GraphModal + main chart must not collide)
@@ -586,7 +590,10 @@ const externalTooltipHandler = (context) => {
     }
 
     lastTooltipExportText = bodyLines
-      .map((l) => (l === '---' ? '----------------' : l))
+      .map((l) => {
+        if (l === '---') return '----------------';
+        return formatTooltipAccountBalanceExportLine(l);
+      })
       .filter((l) => l !== undefined && l !== null)
       .filter((l) => String(l).trim() !== '')
       .join('\n');
@@ -599,6 +606,12 @@ const externalTooltipHandler = (context) => {
         return;
       }
       if (!line) return;
+
+      const accountBalanceLine = parseTooltipAccountBalanceLine(line);
+      if (accountBalanceLine) {
+        innerHtml += renderTooltipAccountBalanceHtml(accountBalanceLine);
+        return;
+      }
 
       // 1) Date line (top)
       if (i === 0) {
@@ -1166,6 +1179,71 @@ const accountBalancesByDateKey = computed(() => {
   
   return result;
 });
+
+const accountActivityByDateKey = computed(() => {
+  const _v = mainStore.cacheVersion;
+  const _h = historyLoadTick.value;
+  const days = normalizedVisibleDays.value;
+  const result = new Map();
+
+  const markAccountActivity = (dayMap, accountLike, kind) => {
+    if (!dayMap || !accountLike || !kind) return;
+    const acc = resolveAccountById(accountLike);
+    const accId = acc?._id
+      ? String(acc._id)
+      : (typeof accountLike === 'object' ? String(accountLike._id || accountLike.id || '') : String(accountLike || ''));
+    if (!accId) return;
+    if (acc && !isAccountVisibleInCurrentMode(acc)) return;
+    const current = dayMap.get(accId) || { income: false, expense: false };
+    current[kind] = true;
+    dayMap.set(accId, current);
+  };
+
+  for (const day of days) {
+    if (!day?.date) continue;
+    const dateKey = _getDateKey(day.date instanceof Date ? day.date : new Date(day.date));
+    const dayMap = new Map();
+    const dayOps = getOpsForDateKey(dateKey).filter((op) => op && !op.isDeleted && isOpVisible(op));
+
+    dayOps.forEach((op) => {
+      if (!op) return;
+
+      if (op.isWithdrawal) {
+        markAccountActivity(dayMap, op.accountId || op.fromAccountId, 'expense');
+        return;
+      }
+
+      if (op.isTransfer || op.type === 'transfer') return;
+
+      if (op.type === 'expense') {
+        markAccountActivity(dayMap, op.accountId, 'expense');
+        return;
+      }
+
+      if (op.type === 'income') {
+        markAccountActivity(dayMap, op.accountId, 'income');
+      }
+    });
+
+    result.set(dateKey, dayMap);
+  }
+
+  return result;
+});
+
+const getAccountTooltipMarkers = (dayMap, accountLike) => {
+  if (!(dayMap instanceof Map) || !accountLike) return [];
+  const accId = typeof accountLike === 'object'
+    ? String(accountLike._id || accountLike.id || '')
+    : String(accountLike || '');
+  if (!accId) return [];
+  const activity = dayMap.get(accId);
+  if (!activity) return [];
+  const markers = [];
+  if (activity.income) markers.push('income');
+  if (activity.expense) markers.push('expense');
+  return markers;
+};
 
 // Баланс на начало дня (вчерашний итог): start = end - income + expense
 const startBalanceValues = computed(() => {
@@ -1736,6 +1814,7 @@ const chartOptions = computed(() => {
             const day = normalizedVisibleDays.value[index];
             const dateKey = day ? _getDateKey(day.date) : null;
             const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
+            const dayAccountActivity = dateKey ? accountActivityByDateKey.value.get(dateKey) : null;
             
             if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
               lines.push('---');
@@ -1743,7 +1822,12 @@ const chartOptions = computed(() => {
               Object.values(dateAccountBalances).forEach(acc => {
                 const bal = Number(acc.balance) || 0;
                 const name = acc.name || 'Счет';
-                lines.push(`${name} — ${formatNumber(bal)} т`);
+                lines.push(buildTooltipAccountBalanceLine({
+                  name,
+                  balance: bal,
+                  balanceText: `${formatNumber(bal)} т`,
+                  markers: getAccountTooltipMarkers(dayAccountActivity, acc)
+                }));
               });
             } else {
               // Fallback to current balances if no historical data
@@ -1760,7 +1844,12 @@ const chartOptions = computed(() => {
                 visibleAccs.forEach(acc => {
                   const bal = Number(acc.balance) || 0;
                   const name = acc.name || 'Счет';
-                  lines.push(`${name} — ${formatNumber(bal)} т`);
+                  lines.push(buildTooltipAccountBalanceLine({
+                    name,
+                    balance: bal,
+                    balanceText: `${formatNumber(bal)} т`,
+                    markers: getAccountTooltipMarkers(dayAccountActivity, acc)
+                  }));
                 });
               }
             }
