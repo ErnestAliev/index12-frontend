@@ -134,6 +134,15 @@ const cleanDescription = (desc) => {
     return cleaned || desc;
 };
 
+const resolveCategoryNameForChip = (value) => {
+  if (!value) return '';
+  const rawId = typeof value === 'object' ? value._id : value;
+  const fromStore = mainStore.categories.find((item) => String(item?._id || '') === String(rawId || ''));
+  if (fromStore?.name) return fromStore.name;
+  if (typeof value === 'object' && value.name && value.name !== '...') return value.name;
+  return '';
+};
+
 const chipLabel = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -144,7 +153,7 @@ const chipLabel = computed(() => {
   
   if (isTechnicalOp.value) return op.description || 'Техническая операция';
   
-  return op.categoryId?.name || 'Без категории';
+  return resolveCategoryNameForChip(op.categoryId) || 'Без категории';
 });
 
 // Отображаемая сумма с учетом взаимозачетов (для доходов)

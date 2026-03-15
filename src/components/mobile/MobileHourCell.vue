@@ -137,16 +137,25 @@ const toOwnerName = computed(() => {
   return op.toAccountId?.name || 'Счет...';
 });
 
+const resolveCategoryNameForChip = (value) => {
+  if (!value) return '';
+  const rawId = typeof value === 'object' ? value._id : value;
+  const fromStore = mainStore.categories.find((item) => String(item?._id || '') === String(rawId || ''));
+  if (fromStore?.name) return fromStore.name;
+  if (typeof value === 'object' && value.name && value.name !== '...') return value.name;
+  return '';
+};
+
 const chipLabel = computed(() => {
   const op = props.operation;
   if (!op) return '';
   if (isClosedDealOp.value) {
-      if (isRetailClient.value) return op.categoryId?.name || 'Выручка';
+      if (isRetailClient.value) return resolveCategoryNameForChip(op.categoryId) || 'Выручка';
       return 'Сделка закрыта'; 
   }
   if (isWorkActOp.value) return 'Отработано';
   if (isTechnicalOp.value) return op.description || 'Техническая';
-  return op.categoryId?.name || 'Без категории';
+  return resolveCategoryNameForChip(op.categoryId) || 'Без категории';
 });
 
 const showCheckmark = computed(() => {
@@ -343,7 +352,7 @@ const onTouchEnd = (e) => {
           {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
         </span>
         <span class="desc">
-          {{ operation.categoryId?.name || 'Без категории' }}
+          {{ chipLabel }}
         </span>
       </template>
     </div>

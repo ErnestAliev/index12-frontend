@@ -627,7 +627,7 @@ const processSave = (preparedCategoryIds = []) => {
         payload.offsetIncomeId = selectedIncomeOpId.value;
         payload.excludeFromTotals = true; // не учитываем в общих итогах
     }
-    
+
     if (contrId || contrIndId) {
          const type = contrId ? 'contractors' : 'individuals';
          const id = contrId || contrIndId;
