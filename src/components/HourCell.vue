@@ -143,6 +143,16 @@ const resolveCategoryNameForChip = (value) => {
   return '';
 };
 
+const getPrimaryCategoryValueForChip = (op) => {
+  if (!op) return null;
+  if (op.offsetIncomeId) return op.categoryId;
+  if (resolveCategoryNameForChip(op.categoryId)) return op.categoryId;
+  const categoryItems = Array.isArray(op.categoryIds) ? op.categoryIds.filter(Boolean) : [];
+  if (!categoryItems.length) return op.categoryId;
+  const resolvedCategory = [...categoryItems].reverse().find((item) => resolveCategoryNameForChip(item));
+  return resolvedCategory || op.categoryId || categoryItems[categoryItems.length - 1];
+};
+
 const chipLabel = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -153,7 +163,7 @@ const chipLabel = computed(() => {
   
   if (isTechnicalOp.value) return op.description || 'Техническая операция';
   
-  return resolveCategoryNameForChip(op.categoryId) || 'Без категории';
+  return resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
 });
 
 // Отображаемая сумма с учетом взаимозачетов (для доходов)

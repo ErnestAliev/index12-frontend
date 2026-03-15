@@ -477,6 +477,34 @@ const isSelectedContractorBank = computed(() => {
     return false;
 });
 
+const buildCounterpartyDefaultsPayload = () => {
+    let contrId = null;
+    let contrIndId = null;
+    if (selectedContractorValue.value) {
+        const [type, id] = selectedContractorValue.value.split('_');
+        if (type === 'contr') contrId = id;
+        else contrIndId = id;
+    }
+    if (!contrId && !contrIndId) return null;
+
+    const entityPath = contrId ? 'contractors' : 'individuals';
+    const entityId = contrId || contrIndId;
+    const updateData = { _id: entityId };
+    let needsUpdate = false;
+
+    if (primaryProjectId.value) {
+        updateData.defaultProjectId = primaryProjectId.value;
+        needsUpdate = true;
+    }
+    if (selectedCategoryId.value) {
+        updateData.defaultCategoryId = selectedCategoryId.value;
+        needsUpdate = true;
+    }
+
+    if (!needsUpdate) return null;
+    return { entityPath, updateData };
+};
+
 const preparePayload = (options = {}) => {
     let cId = null, iId = null;
     if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
@@ -488,16 +516,6 @@ const preparePayload = (options = {}) => {
 
     let targetCellIndex = undefined;
     if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) targetCellIndex = props.cellIndex;
-
-    if (contrId || contrIndId) {
-         const type = contrId ? 'contractors' : 'individuals';
-         const id = contrId || contrIndId;
-         const updateData = { _id: id };
-         let needsUpdate = false;
-         if (primaryProjectId.value) { updateData.defaultProjectId = primaryProjectId.value; needsUpdate = true; }
-         if (selectedCategoryId.value) { updateData.defaultCategoryId = selectedCategoryId.value; needsUpdate = true; }
-         if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
-    }
 
     let projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
     if (!projectIdsClean.length && defaultProjectId.value) {
@@ -552,6 +570,7 @@ const handleSave = async (options = {}) => {
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
     
     const payload = preparePayload(options);
+    const counterpartyDefaults = buildCounterpartyDefaultsPayload();
 
     try {
         await syncSelectedAccountOwner();
@@ -566,7 +585,11 @@ const handleSave = async (options = {}) => {
     if (!isEditMode.value) {
         emit('close'); // Закрываем виджет мгновенно
         
-        mainStore.createEvent(payload).catch(e => {
+        mainStore.createEvent(payload).then(async () => {
+            if (counterpartyDefaults) {
+                await mainStore.batchUpdateEntities(counterpartyDefaults.entityPath, [counterpartyDefaults.updateData]);
+            }
+        }).catch(e => {
             console.error('Background create error:', e);
             // Так как виджет закрыт, мы не можем использовать showError.
             // В идеале здесь должен быть глобальный тост с ошибкой.
@@ -581,6 +604,9 @@ const handleSave = async (options = {}) => {
     
     try {
         await mainStore.updateOperation(props.operationToEdit._id, payload);
+        if (counterpartyDefaults) {
+            await mainStore.batchUpdateEntities(counterpartyDefaults.entityPath, [counterpartyDefaults.updateData]);
+        }
         emit('close');
     } catch (e) {
         console.error(e);

@@ -296,7 +296,7 @@ const handlePrepaymentSave = async (finalData) => {
 
 
 
-const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
+const handleOperationSave = async ({ mode, id, data, originalOperation, counterpartyDefaults = null }) => {
     if (data.type === 'income') isIncomePopupVisible.value = false;
     else isExpensePopupVisible.value = false;
     
@@ -311,6 +311,9 @@ const handleOperationSave = async ({ mode, id, data, originalOperation }) => {
              await mainStore.createEvent(data);
         } else if (mode === 'edit') {
             await mainStore.updateOperation(id, data);
+        }
+        if (counterpartyDefaults) {
+            await mainStore.batchUpdateEntities(counterpartyDefaults.entityPath, [counterpartyDefaults.updateData]);
         }
         // 🟢 FIX: Убрана loadCalculationData, store сам обновляет проекцию
     } catch (error) {

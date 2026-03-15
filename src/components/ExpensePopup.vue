@@ -573,6 +573,63 @@ const onAmountInput = (e) => {
 
 const toDisplayDate = (d) => { if (!d) return ''; const [y,m,d_] = d.split('-'); return `${d_}.${m}.${y}`; };
 
+const normalizeExpenseCategorySelection = (values) => {
+    const nextValues = Array.isArray(values) ? values : [values];
+    const normalized = Array.from(new Set(
+        nextValues
+            .filter(v => v !== null && v !== undefined && v !== '--CREATE_NEW--')
+            .map(normalizeId)
+            .filter(Boolean)
+    ));
+
+    if (!normalized.length) return [];
+
+    const offId = normalizeId(offsetCategoryId.value);
+    if (isIncomeOffsetMode.value && offId) {
+        const userCats = normalized.filter(v => !idsMatch(v, offId));
+        const primaryUserCat = userCats.length ? userCats[userCats.length - 1] : null;
+        return primaryUserCat ? [offId, primaryUserCat] : [offId];
+    }
+
+    return [normalized[normalized.length - 1]];
+};
+
+const getPrimaryExpenseDefaultCategoryId = (values = selectedCategoryIds.value) => {
+    const normalized = normalizeExpenseCategorySelection(values);
+    const offId = normalizeId(offsetCategoryId.value);
+    const nonOffset = normalized.find(v => v && (!offId || !idsMatch(v, offId)));
+    return nonOffset || normalized[0] || null;
+};
+
+const buildCounterpartyDefaultsPayload = () => {
+    let contrId = null;
+    let contrIndId = null;
+    if (selectedContractorValue.value) {
+        const [type, id] = selectedContractorValue.value.split('_');
+        if (type === 'contr') contrId = id;
+        else contrIndId = id;
+    }
+    if (!contrId && !contrIndId) return null;
+
+    const entityPath = contrId ? 'contractors' : 'individuals';
+    const entityId = contrId || contrIndId;
+    const updateData = { _id: entityId };
+    let needsUpdate = false;
+
+    if (primaryProjectId.value) {
+        updateData.defaultProjectId = primaryProjectId.value;
+        needsUpdate = true;
+    }
+    const primaryCategoryId = getPrimaryExpenseDefaultCategoryId();
+    if (primaryCategoryId) {
+        updateData.defaultCategoryId = primaryCategoryId;
+        needsUpdate = true;
+    }
+
+    if (!needsUpdate) return null;
+    return { entityPath, updateData };
+};
+
 const processSave = (preparedCategoryIds = []) => {
     let cId = null, iId = null;
     if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
@@ -628,17 +685,13 @@ const processSave = (preparedCategoryIds = []) => {
         payload.excludeFromTotals = true; // не учитываем в общих итогах
     }
 
-    if (contrId || contrIndId) {
-         const type = contrId ? 'contractors' : 'individuals';
-         const id = contrId || contrIndId;
-         const updateData = { _id: id };
-         let needsUpdate = false;
-        if (primaryProjectId.value) { updateData.defaultProjectId = primaryProjectId.value; needsUpdate = true; }
-        if (selectedCategoryIds.value && selectedCategoryIds.value.length) { updateData.defaultCategoryId = selectedCategoryIds.value[0]; needsUpdate = true; }
-        if (needsUpdate) mainStore.batchUpdateEntities(type, [updateData]);
-    }
-
-    emit('save', { mode: isEditMode.value ? 'edit' : 'create', id: props.operationToEdit?._id, data: payload, originalOperation: props.operationToEdit });
+    emit('save', {
+        mode: isEditMode.value ? 'edit' : 'create',
+        id: props.operationToEdit?._id,
+        data: payload,
+        originalOperation: props.operationToEdit,
+        counterpartyDefaults: buildCounterpartyDefaultsPayload()
+    });
     isSaving.value = false;
     isCreditWarningVisible.value = false;
 };
@@ -664,7 +717,7 @@ const handleSave = async () => {
         return;
     }
     const projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
-    const preparedCategoryIdsBase = (selectedCategoryIds.value || []).filter(v => v !== null && v !== undefined);
+    const preparedCategoryIdsBase = normalizeExpenseCategorySelection(selectedCategoryIds.value || []);
     if (projectIdsClean.length > 1 && preparedCategoryIdsBase.length === 0) {
         showError('Укажите категорию для разбиения по проектам');
         return;
@@ -803,9 +856,9 @@ const handleProjectChange = (val) => {
 };
 const handleCategoryChange = (val) => { 
     if (!Array.isArray(val)) return;
-    if (val.includes('--CREATE_NEW--')) { selectedCategoryIds.value = selectedCategoryIds.value.filter(v => v !== '--CREATE_NEW--'); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); return; }
+    if (val.includes('--CREATE_NEW--')) { selectedCategoryIds.value = normalizeExpenseCategorySelection(selectedCategoryIds.value); isCreatingCategory.value = true; nextTick(() => newCategoryInput.value?.focus()); return; }
     const hasReal = val.some(v => v !== null && v !== undefined);
-    selectedCategoryIds.value = hasReal ? val.filter(v => v !== null && v !== undefined) : val;
+    selectedCategoryIds.value = hasReal ? normalizeExpenseCategorySelection(val) : val;
 };
 
 const cancelCreateProject = () => { isCreatingProject.value = false; newProjectName.value = ''; };
@@ -817,7 +870,7 @@ const saveNewProject = async () => {
 const cancelCreateCategory = () => { isCreatingCategory.value = false; newCategoryName.value = ''; };
 const saveNewCategory = async () => {
     if (isInlineSaving.value) return; const name = newCategoryName.value.trim(); if (!name) return;
-    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryIds.value = [...(selectedCategoryIds.value || []), item._id]; cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
+    isInlineSaving.value = true; try { const item = await mainStore.addCategory(name); selectedCategoryIds.value = normalizeExpenseCategorySelection([...(selectedCategoryIds.value || []), item._id]); cancelCreateCategory(); } catch(e){ console.error(e); showError('Ошибка создания категории: ' + e.message); } finally { isInlineSaving.value = false; } };
 
 const openCreateOwnerModal = (type) => {
     ownerTypeToCreate.value = type;
