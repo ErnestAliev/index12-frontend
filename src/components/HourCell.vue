@@ -164,6 +164,11 @@ const getDisplayAmount = (op) => {
 };
 
 const displayAmount = computed(() => getDisplayAmount(props.operation));
+const showManagerMarker = computed(() => {
+  const op = props.operation;
+  if (!op || isPhantom.value || !isOpVisible.value) return false;
+  return mainStore.isWorkspaceOwner === true && op.createdByRole === 'manager';
+});
 
 const TOOLTIP_EMPTY = '—';
 const showOperationTooltip = computed(() => props.columnCount === 21 || props.columnCount >= 28);
@@ -396,6 +401,12 @@ const onDrop = (event) => {
         @dragstart="onDragStart" @dragend="onDragEnd"
         @click.stop="onEditClick"
       >
+        <span
+          v-if="showManagerMarker"
+          class="operation-chip-marker"
+          title="Операция создана менеджером"
+          aria-hidden="true"
+        ></span>
         <template v-if="isTransferOp">
           <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
           <span v-if="!isCompactChipMode" class="op-meta">{{ toOwnerName }}</span>
@@ -497,6 +508,16 @@ const onDrop = (event) => {
   transition: all .15s ease-in-out; 
 }
 .operation-chip:hover { z-index: 30; }
+.operation-chip-marker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-top: 12px solid #ff7a00;
+  border-left: 12px solid transparent;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
+}
 .operation-chip.compact {
   padding: 2px 4px;
   gap: 0;

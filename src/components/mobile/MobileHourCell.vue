@@ -123,6 +123,11 @@ const displayAmount = computed(() => {
     }
     return amt;
 });
+const showManagerMarker = computed(() => {
+    const op = props.operation;
+    if (!op || isPhantom.value || !isOpVisible.value) return false;
+    return mainStore.isWorkspaceOwner === true && op.createdByRole === 'manager';
+});
 
 const toOwnerName = computed(() => {
   const op = props.operation;
@@ -302,6 +307,12 @@ const onTouchEnd = (e) => {
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
     >
+      <span
+        v-if="showManagerMarker"
+        class="op-chip-marker"
+        title="Операция создана менеджером"
+        aria-hidden="true"
+      ></span>
       <template v-if="isTransferOp">
         <span class="amt">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
         <span class="desc">{{ toOwnerName }}</span>
@@ -376,6 +387,18 @@ const onTouchEnd = (e) => {
   background: var(--op-default-bg);
   border: 1px solid var(--op-default-border);
   white-space: nowrap;
+  position: relative;
+}
+
+.op-chip-marker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-top: 10px solid #ff7a00;
+  border-left: 10px solid transparent;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
 }
 
 .op-chip.phantom {
