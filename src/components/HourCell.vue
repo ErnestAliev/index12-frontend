@@ -186,7 +186,12 @@ const displayAmount = computed(() => getDisplayAmount(props.operation));
 const showManagerMarker = computed(() => {
   const op = props.operation;
   if (!op || isPhantom.value || !isOpVisible.value) return false;
-  return mainStore.isWorkspaceOwner === true && op.createdByRole === 'manager';
+  return mainStore.isWorkspaceOwner === true && (op.createdByRole === 'manager' || op.updatedByRole === 'manager');
+});
+const showOwnerEditedMarker = computed(() => {
+  const op = props.operation;
+  if (!op || isPhantom.value || !isOpVisible.value) return false;
+  return mainStore.isWorkspaceOwner !== true && op.updatedByRole === 'admin';
 });
 
 const TOOLTIP_EMPTY = '—';
@@ -423,7 +428,13 @@ const onDrop = (event) => {
         <span
           v-if="showManagerMarker"
           class="operation-chip-marker"
-          title="Операция создана менеджером"
+          :title="operation.updatedByRole === 'manager' ? 'Операция изменена менеджером' : 'Операция создана менеджером'"
+          aria-hidden="true"
+        ></span>
+        <span
+          v-else-if="showOwnerEditedMarker"
+          class="operation-chip-marker operation-chip-marker--owner-edit"
+          title="Операция изменена владельцем"
           aria-hidden="true"
         ></span>
         <template v-if="isTransferOp">
@@ -536,6 +547,9 @@ const onDrop = (event) => {
   border-top: 12px solid #ff7a00;
   border-left: 12px solid transparent;
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
+}
+.operation-chip-marker--owner-edit {
+  border-top-color: #1ca7ff;
 }
 .operation-chip.compact {
   padding: 2px 4px;

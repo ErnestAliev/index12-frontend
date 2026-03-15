@@ -123,12 +123,6 @@ const displayAmount = computed(() => {
     }
     return amt;
 });
-const showManagerMarker = computed(() => {
-    const op = props.operation;
-    if (!op || isPhantom.value || !isOpVisible.value) return false;
-    return mainStore.isWorkspaceOwner === true && op.createdByRole === 'manager';
-});
-
 const toOwnerName = computed(() => {
   const op = props.operation;
   if (!op) return '';
@@ -172,6 +166,18 @@ const showCheckmark = computed(() => {
     if (!isClosedDealOp.value) return false;
     if (isRetailClient.value) return false; 
     return true;
+});
+
+const showManagerMarker = computed(() => {
+    const op = props.operation;
+    if (!op || isPhantom.value || !isOpVisible.value) return false;
+    return mainStore.isWorkspaceOwner === true && (op.createdByRole === 'manager' || op.updatedByRole === 'manager');
+});
+
+const showOwnerEditedMarker = computed(() => {
+    const op = props.operation;
+    if (!op || isPhantom.value || !isOpVisible.value) return false;
+    return mainStore.isWorkspaceOwner !== true && op.updatedByRole === 'admin';
 });
 
 const phantomLabel = computed(() => {
@@ -329,7 +335,13 @@ const onTouchEnd = (e) => {
       <span
         v-if="showManagerMarker"
         class="op-chip-marker"
-        title="Операция создана менеджером"
+        :title="operation.updatedByRole === 'manager' ? 'Операция изменена менеджером' : 'Операция создана менеджером'"
+        aria-hidden="true"
+      ></span>
+      <span
+        v-else-if="showOwnerEditedMarker"
+        class="op-chip-marker op-chip-marker--owner-edit"
+        title="Операция изменена владельцем"
         aria-hidden="true"
       ></span>
       <template v-if="isTransferOp">
@@ -418,6 +430,9 @@ const onTouchEnd = (e) => {
   border-top: 10px solid #ff7a00;
   border-left: 10px solid transparent;
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
+}
+.op-chip-marker--owner-edit {
+  border-top-color: #1ca7ff;
 }
 
 .op-chip.phantom {
