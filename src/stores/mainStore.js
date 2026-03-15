@@ -445,10 +445,51 @@ export const useMainStore = defineStore('mainStore', () => {
         return Boolean(pendingOperationMoves.value[normalizedId]);
     };
 
+    const _dedupeOperationList = (list) => {
+        if (!Array.isArray(list) || !list.length) return [];
+
+        const unique = new Map();
+
+        list.forEach((item, index) => {
+            if (!item || typeof item !== 'object') return;
+
+            const primaryId = _toStr(item._id);
+            const secondaryId = _toStr(item._id2);
+            const transferGroupId = item.transferGroupId ? String(item.transferGroupId) : '';
+            const dateKey = item.dateKey ? String(item.dateKey) : '';
+            const cellIndex = Number.isInteger(item.cellIndex) ? item.cellIndex : -1;
+            const fallbackKey = `${item.type || 'op'}:${transferGroupId || dateKey}:${cellIndex}:${index}`;
+            const key = primaryId || secondaryId || fallbackKey;
+
+            const prev = unique.get(key);
+            if (!prev) {
+                unique.set(key, item);
+                return;
+            }
+
+            const prevScore =
+                (prev.isOptimistic ? 0 : 4) +
+                (prev.isPendingTimelineMove ? 1 : 0) +
+                (prev.isDeleted ? -10 : 0) +
+                (_toStr(prev._id2) ? 1 : 0);
+            const nextScore =
+                (item.isOptimistic ? 0 : 4) +
+                (item.isPendingTimelineMove ? 1 : 0) +
+                (item.isDeleted ? -10 : 0) +
+                (_toStr(item._id2) ? 1 : 0);
+
+            if (nextScore >= prevScore) {
+                unique.set(key, item);
+            }
+        });
+
+        return Array.from(unique.values()).sort((a, b) => (a?.cellIndex || 0) - (b?.cellIndex || 0));
+    };
+
     const _getTimelineOpsForDate = (dateKey) => {
         const baseOps = Array.isArray(displayCache.value[dateKey]) ? [...displayCache.value[dateKey]] : [];
         const pendingMoves = _getPendingMoveEntries();
-        if (!pendingMoves.length) return baseOps;
+        if (!pendingMoves.length) return _dedupeOperationList(baseOps);
 
         let nextOps = baseOps;
 
@@ -463,7 +504,7 @@ export const useMainStore = defineStore('mainStore', () => {
         });
 
         nextOps.sort((a, b) => (a?.cellIndex || 0) - (b?.cellIndex || 0));
-        return nextOps;
+        return _dedupeOperationList(nextOps);
     };
 
     const _calculateAggregatedBalance = (ops, groupByField, sumField = 'amount') => {
@@ -731,7 +772,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 dayOps.forEach(op => { if (op && typeof op === 'object') { allOps.push(op); } });
             }
         });
-        return allOps;
+        return _dedupeOperationList(allOps);
     });
 
 
@@ -783,7 +824,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 displayOps.push(...dayOps.filter(op => op && typeof op === 'object'));
             }
         });
-        return displayOps;
+        return _dedupeOperationList(displayOps);
     });
 
     const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
@@ -1731,8 +1772,9 @@ export const useMainStore = defineStore('mainStore', () => {
             sorted.forEach((index) => {
                 if (index >= 0 && index < list.length) list.splice(index, 1);
             });
-            displayCache.value[dateKey] = list;
-            calculationCache.value[dateKey] = [...list];
+            const deduped = _dedupeOperationList(list);
+            displayCache.value[dateKey] = deduped;
+            calculationCache.value[dateKey] = [...deduped];
         });
     };
 
@@ -1746,8 +1788,9 @@ export const useMainStore = defineStore('mainStore', () => {
             if (idx === -1) continue;
 
             list[idx] = richServerOp;
-            displayCache.value[dk] = list;
-            calculationCache.value[dk] = [...list];
+            const deduped = _dedupeOperationList(list);
+            displayCache.value[dk] = deduped;
+            calculationCache.value[dk] = [...deduped];
             replaced = true;
         }
 
@@ -1820,8 +1863,7 @@ export const useMainStore = defineStore('mainStore', () => {
             displayCache.value[dk].push(richOp);
         }
 
-        displayCache.value[dk].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
-
+        displayCache.value[dk] = _dedupeOperationList(displayCache.value[dk]);
         calculationCache.value[dk] = [...displayCache.value[dk]];
         _dedupeOperationEntries(richOp._id, dk);
 
@@ -1851,6 +1893,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         if (oldDateKey && displayCache.value[oldDateKey]) {
             displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, op._id));
+            displayCache.value[oldDateKey] = _dedupeOperationList(displayCache.value[oldDateKey]);
             calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
         }
 
@@ -1878,7 +1921,7 @@ export const useMainStore = defineStore('mainStore', () => {
             }
         }
 
-        displayCache.value[newDateKey].sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
+        displayCache.value[newDateKey] = _dedupeOperationList(displayCache.value[newDateKey]);
         calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
         _dedupeOperationEntries(op._id, newDateKey);
 
@@ -2015,6 +2058,7 @@ export const useMainStore = defineStore('mainStore', () => {
             const dk = richOp.dateKey;
             if (!displayCache.value[dk]) displayCache.value[dk] = [];
             displayCache.value[dk].push(richOp);
+            displayCache.value[dk] = _dedupeOperationList(displayCache.value[dk]);
             calculationCache.value[dk] = [...displayCache.value[dk]];
 
             if (_isEffectivelyPastOrToday(richOp.date)) {
@@ -2092,16 +2136,19 @@ export const useMainStore = defineStore('mainStore', () => {
             if (isDateChanged) {
                 if (displayCache.value[oldDateKey]) {
                     displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
+                    displayCache.value[oldDateKey] = _dedupeOperationList(displayCache.value[oldDateKey]);
                     calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
                 }
                 if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
                 displayCache.value[newDateKey].push(richOp);
+                displayCache.value[newDateKey] = _dedupeOperationList(displayCache.value[newDateKey]);
                 calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
             } else {
                 const list = displayCache.value[oldDateKey];
                 const idx = list.findIndex(o => _idsMatch(o._id, opId));
                 if (idx !== -1) list[idx] = richOp;
-                calculationCache.value[oldDateKey] = [...list];
+                displayCache.value[oldDateKey] = _dedupeOperationList(list);
+                calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
             }
 
             if (_isEffectivelyPastOrToday(richOp.date)) {
@@ -2120,7 +2167,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 const i = targetList.findIndex(o => _idsMatch(o._id, opId));
                 if (i !== -1) {
                     targetList[i] = _populateOp(serverOp);
-                    calculationCache.value[newDateKey] = [...targetList];
+                    displayCache.value[newDateKey] = _dedupeOperationList(targetList);
+                    calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
                 }
             }
             _dedupeOperationEntries(serverOp._id, newDateKey);
@@ -2278,8 +2326,9 @@ export const useMainStore = defineStore('mainStore', () => {
                     .filter(o => o && typeof o === 'object')
                     .sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
 
-                displayCache.value[dateKey] = finalOps;
-                calculationCache.value[dateKey] = [...finalOps];
+                const deduped = _dedupeOperationList(finalOps);
+                displayCache.value[dateKey] = deduped;
+                calculationCache.value[dateKey] = [...deduped];
             };
 
             if (useSparse) {
@@ -2303,8 +2352,9 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     const _syncCaches = (key, ops) => {
-        displayCache.value[key] = [...ops];
-        calculationCache.value[key] = [...ops];
+        const deduped = _dedupeOperationList(ops);
+        displayCache.value[key] = [...deduped];
+        calculationCache.value[key] = [...deduped];
         cacheVersion.value++;
     };
 
@@ -2389,7 +2439,7 @@ export const useMainStore = defineStore('mainStore', () => {
             const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
             const raw = Array.isArray(res.data) ? res.data.slice() : [];
             const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
-            displayCache.value[dateKey] = processedOps.map(_populateOp);
+            displayCache.value[dateKey] = _dedupeOperationList(processedOps.map(_populateOp));
             calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     }
@@ -2777,6 +2827,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     _applyOptimisticSnapshotUpdate(richOp, 1);
                 }
             });
+            displayCache.value[dateKey] = _dedupeOperationList(displayCache.value[dateKey]);
             calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
 
             _triggerProjectionUpdate();

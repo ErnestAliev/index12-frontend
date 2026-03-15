@@ -163,14 +163,25 @@ const isOpVisible = (op) => {
 };
 
 // 🟢 2. Получаем операции для дня (для графиков/tooltip) из расчетного кэша, иначе из таймлайна
+const dedupeTooltipOps = (ops) => {
+  if (!Array.isArray(ops) || !ops.length) return [];
+  const unique = new Map();
+  ops.forEach((op, index) => {
+    if (!op || typeof op !== 'object') return;
+    const key = String(op._id || op.id || `${op.type || 'op'}:${op.dateKey || ''}:${op.cellIndex ?? -1}:${index}`);
+    unique.set(key, op);
+  });
+  return Array.from(unique.values());
+};
+
 const getOpsForDateKey = (dateKey) => {
   const calc = mainStore?.calculationCache?.value || mainStore?.calculationCache;
   const fromCalc = calc?.[dateKey];
-  if (Array.isArray(fromCalc)) return fromCalc;
+  if (Array.isArray(fromCalc)) return dedupeTooltipOps(fromCalc);
 
   if (typeof mainStore?.getOperationsForDay === 'function') {
     const fromTimeline = mainStore.getOperationsForDay(dateKey);
-    if (Array.isArray(fromTimeline)) return fromTimeline;
+    if (Array.isArray(fromTimeline)) return dedupeTooltipOps(fromTimeline);
   }
   return [];
 };
