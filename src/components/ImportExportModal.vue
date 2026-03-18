@@ -2300,10 +2300,10 @@ onBeforeUnmount(() => {
             </button>
             <div v-if="canManageAccountVisibility" class="header-visibility-toggle" aria-label="Показ счетов">
               <button
-                class="header-eye-btn icon-only"
+                class="header-eye-btn icon-only header-hover-tip"
                 @click="mainStore.toggleOpenVisibility()"
                 :class="{ active: showOpenActive }"
-                :title="showOpenActive ? 'Отключить открытые счета' : 'Включить открытые счета'"
+                :data-tooltip="showOpenActive ? 'Отключить открытые счета' : 'Включить открытые счета'"
               >
                 <svg v-if="openEyeIcon === 'eye'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path>
@@ -2316,10 +2316,10 @@ onBeforeUnmount(() => {
                 </svg>
               </button>
               <button
-                class="header-eye-btn icon-only"
+                class="header-eye-btn icon-only header-hover-tip"
                 @click="mainStore.toggleHiddenVisibility()"
                 :class="{ active: showHiddenActive }"
-                :title="showHiddenActive ? 'Отключить скрытые счета' : 'Включить скрытые счета'"
+                :data-tooltip="showHiddenActive ? 'Отключить скрытые счета' : 'Включить скрытые счета'"
               >
                 <svg v-if="hiddenEyeIcon === 'eye'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path>
