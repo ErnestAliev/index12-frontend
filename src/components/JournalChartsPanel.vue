@@ -236,11 +236,16 @@ const chartCards = computed(() => {
       if (!item) return [];
 
       if (card.key === 'projects') {
+        if (context.datasetIndex === 0) {
+          return [
+            `Доход проекта: ${formatMoney(item.income)}`,
+            `Доля от всех доходов: ${formatPercent(item.income, totalIncome)}`
+          ];
+        }
+
         return [
-          `Доход проекта: ${formatMoney(item.income)}`,
           `Расход проекта: ${formatMoney(item.expense)}`,
-          `Доход от всех доходов: ${formatPercent(item.income, totalIncome)}`,
-          `Расход от всех расходов: ${formatPercent(item.expense, totalExpense)}`,
+          `Доля от всех расходов: ${formatPercent(item.expense, totalExpense)}`,
           `Расход от дохода проекта: ${formatPercent(item.expense, item.income)}`
         ];
       }
