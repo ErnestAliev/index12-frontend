@@ -19,6 +19,19 @@ const formatMoney = (value) => {
   return `₸${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(amount)}`;
 };
 
+const formatPercent = (value, total) => {
+  const safeValue = Number(value) || 0;
+  const safeTotal = Number(total) || 0;
+  if (safeTotal <= 0) return '0%';
+
+  const percent = (safeValue / safeTotal) * 100;
+  const rounded = Math.round(percent * 10) / 10;
+  return `${new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: rounded % 1 === 0 ? 0 : 1,
+    maximumFractionDigits: 1
+  }).format(rounded)}%`;
+};
+
 const getOperationKind = (row) => {
   if (row?.type === 'Доход') return 'income';
   if (row?.type === 'Расход') return 'expense';
@@ -94,21 +107,38 @@ const baseChartOptions = {
     legend: {
       display: false
     },
+    tooltip: {}
+  }
+};
+
+const buildChartOptions = (card) => ({
+  ...baseChartOptions,
+  plugins: {
+    ...baseChartOptions.plugins,
     tooltip: {
       callbacks: {
+        title(items) {
+          if (card.key === 'ratio') return '';
+          return items?.[0]?.label || '';
+        },
         label(context) {
-          const label = context.label || '';
+          if (typeof card.getTooltipLines === 'function') {
+            return card.getTooltipLines(context);
+          }
+
           const value = Number(context.raw) || 0;
           const datasetLabel = context.dataset?.label ? `${context.dataset.label}: ` : '';
-          return `${label} • ${datasetLabel}${formatMoney(value)}`;
+          return `${datasetLabel}${formatMoney(value)}`;
         }
       }
     }
   }
-};
+});
 
 const chartCards = computed(() => {
   const ratioItems = buildRatioItems();
+  const totalIncome = ratioItems.find((item) => item.label === 'Доход')?.total || 0;
+  const totalExpense = ratioItems.find((item) => item.label === 'Расход')?.total || 0;
   const groupedCards = [
     {
       key: 'projects',
@@ -158,7 +188,20 @@ const chartCards = computed(() => {
         }
       ]
     },
-    legend: ratioItems
+    legend: ratioItems,
+    getTooltipLines(context) {
+      const item = ratioItems[context.dataIndex];
+      if (!item) return [];
+
+      if (item.label === 'Расход') {
+        return [
+          `Сумма расхода: ${formatMoney(item.total)}`,
+          `От дохода: ${formatPercent(item.total, totalIncome)}`
+        ];
+      }
+
+      return [`Сумма дохода: ${formatMoney(item.total)}`];
+    }
   };
 
   const restCards = groupedCards.map((card) => ({
@@ -187,12 +230,35 @@ const chartCards = computed(() => {
         }
       ]
     },
-    legend: card.items
+    legend: card.items,
+    getTooltipLines(context) {
+      const item = card.items[context.dataIndex];
+      if (!item) return [];
+
+      if (card.key === 'projects') {
+        return [
+          `Доход проекта: ${formatMoney(item.income)}`,
+          `Расход проекта: ${formatMoney(item.expense)}`,
+          `Доход от всех доходов: ${formatPercent(item.income, totalIncome)}`,
+          `Расход от всех расходов: ${formatPercent(item.expense, totalExpense)}`,
+          `Расход от дохода проекта: ${formatPercent(item.expense, item.income)}`
+        ];
+      }
+
+      const value = Number(context.raw) || 0;
+      const total = context.datasetIndex === 0 ? totalIncome : totalExpense;
+      const datasetLabel = context.datasetIndex === 0 ? 'Доход' : 'Расход';
+
+      return [
+        `${datasetLabel}: ${formatMoney(value)}`,
+        `Доля: ${formatPercent(value, total)}`
+      ];
+    }
   }));
 
   return [ratioCard, ...restCards].map((card) => ({
     ...card,
-    options: baseChartOptions
+    options: buildChartOptions(card)
   }));
 });
 </script>
