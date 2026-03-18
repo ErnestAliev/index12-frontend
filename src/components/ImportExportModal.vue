@@ -2233,25 +2233,26 @@ onBeforeUnmount(() => {
 
           <div class="header-actions">
             <div class="summary-line">
-              <span class="summary-item income"><span class="summary-symbol">(+)</span> {{ formatSummaryAmount(summaryTotals.income) }}</span>
-              <span class="summary-item expense"><span class="summary-symbol">(-)</span> {{ formatSummaryAmount(summaryTotals.expense) }}</span>
-              <span class="summary-item transfer"><span class="summary-symbol">(&lt;&gt;)</span> {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
+              <span class="summary-item income header-hover-tip" data-tooltip="Доход">{{ formatSummaryAmount(summaryTotals.income) }}</span>
+              <span class="summary-item expense header-hover-tip" data-tooltip="Расход">{{ formatSummaryAmount(summaryTotals.expense) }}</span>
+              <span class="summary-item transfer header-hover-tip" data-tooltip="Перевод">{{ formatSummaryAmount(summaryTotals.transfer) }}</span>
             </div>
-            <span class="counter-label">{{ filteredCount }} / {{ totalCount }}</span>
+            <span class="counter-label header-hover-tip" data-tooltip="Всего операций за выбранный период">{{ filteredCount }} / {{ totalCount }}</span>
             <div class="header-actions-menu">
               <button
-                class="icon-action-btn menu-trigger-btn"
+                class="header-menu-btn"
                 :class="{ active: showHeaderActionsMenu }"
                 @click.stop="toggleHeaderActionsMenu"
-                title="Действия"
-                aria-label="Действия"
+                title="Меню"
+                aria-label="Меню"
                 :aria-expanded="showHeaderActionsMenu ? 'true' : 'false'"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="5" r="1.6"></circle>
-                  <circle cx="12" cy="12" r="1.6"></circle>
-                  <circle cx="12" cy="19" r="1.6"></circle>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7h16"></path>
+                  <path d="M7 12h10"></path>
+                  <path d="M10 17h4"></path>
                 </svg>
+                <span>Меню</span>
                 <svg class="menu-trigger-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
@@ -4012,12 +4013,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.summary-symbol {
-  font-size: 10px;
-  color: var(--editor-muted-text);
-  letter-spacing: 0.02em;
-}
-
 .summary-item.income {
   color: #10b981;
 }
@@ -4035,6 +4030,34 @@ onBeforeUnmount(() => {
   color: var(--editor-muted-text);
   font-weight: var(--fw-medium, 500);
   white-space: nowrap;
+}
+
+.header-hover-tip {
+  position: relative;
+  cursor: help;
+}
+
+.header-hover-tip[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: var(--color-primary, #34c759);
+  color: #fff;
+  font-size: 12px;
+  font-weight: var(--fw-medium, 500);
+  white-space: nowrap;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  z-index: 100;
+}
+
+.header-hover-tip[data-tooltip]:hover::before {
+  opacity: 1;
 }
 
 .header-visibility-toggle {
@@ -4079,11 +4102,39 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-.menu-trigger-btn {
-  width: auto;
-  min-width: 34px;
-  padding: 0 8px;
-  gap: 4px;
+.header-menu-btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: var(--fw-semi, 600);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.header-menu-btn svg:first-child {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.header-menu-btn:hover {
+  background: var(--color-background-mute);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.header-menu-btn.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(34, 197, 94, 0.1);
 }
 
 .menu-trigger-caret {
