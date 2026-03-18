@@ -21,6 +21,7 @@ const isLoading = ref(false);
 const loadError = ref('');
 const operations = ref([]);
 const showCopySuccess = ref(false);
+const showHeaderActionsMenu = ref(false);
 const isEditMode = ref(false);
 const isSavingEdits = ref(false);
 const editRows = ref({});
@@ -1529,6 +1530,8 @@ const handleInlineDropdownGlobalPointerDown = (event) => {
   const target = event?.target;
   if (target && typeof target.closest === 'function' && target.closest('.dialog-overlay')) return;
   if (target && typeof target.closest === 'function' && target.closest('.inline-entity-select')) return;
+  if (target && typeof target.closest === 'function' && target.closest('.header-actions-menu')) return;
+  closeHeaderActionsMenu();
   closeInlineDropdown();
 };
 
@@ -1869,6 +1872,29 @@ const copyToClipboard = async () => {
   }
 };
 
+const closeHeaderActionsMenu = () => {
+  showHeaderActionsMenu.value = false;
+};
+
+const toggleHeaderActionsMenu = () => {
+  showHeaderActionsMenu.value = !showHeaderActionsMenu.value;
+};
+
+const handleExportToCSV = () => {
+  closeHeaderActionsMenu();
+  exportToCSV();
+};
+
+const handleCopyToClipboard = async () => {
+  closeHeaderActionsMenu();
+  await copyToClipboard();
+};
+
+const handleToggleEditMode = () => {
+  closeHeaderActionsMenu();
+  toggleEditMode();
+};
+
 const copyAiText = async (message) => {
   if (!message?.text) return;
   try {
@@ -2203,57 +2229,74 @@ onBeforeUnmount(() => {
         :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
       >
         <div class="modal-header-main">
-          <h3 class="modal-header-title">Журнал операций</h3>
+          <h3 class="modal-header-title">Журнал</h3>
 
           <div class="header-actions">
             <div class="summary-line">
-              <span class="summary-item income">Доход: {{ formatSummaryAmount(summaryTotals.income) }}</span>
-              <span class="summary-item expense">Расход: {{ formatSummaryAmount(summaryTotals.expense) }}</span>
-              <span class="summary-item transfer">Перевод: {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
+              <span class="summary-item income"><span class="summary-symbol">(+)</span> {{ formatSummaryAmount(summaryTotals.income) }}</span>
+              <span class="summary-item expense"><span class="summary-symbol">(-)</span> {{ formatSummaryAmount(summaryTotals.expense) }}</span>
+              <span class="summary-item transfer"><span class="summary-symbol">(&lt;&gt;)</span> {{ formatSummaryAmount(summaryTotals.transfer) }}</span>
             </div>
-            <span class="counter-label">Записей: {{ filteredCount }} / {{ totalCount }}</span>
-            <div class="export-buttons">
-              <button class="export-btn" @click="exportToCSV" title="Экспорт в CSV">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
+            <span class="counter-label">{{ filteredCount }} / {{ totalCount }}</span>
+            <div class="header-actions-menu">
+              <button
+                class="icon-action-btn menu-trigger-btn"
+                :class="{ active: showHeaderActionsMenu }"
+                @click.stop="toggleHeaderActionsMenu"
+                title="Действия"
+                aria-label="Действия"
+                :aria-expanded="showHeaderActionsMenu ? 'true' : 'false'"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="5" r="1.6"></circle>
+                  <circle cx="12" cy="12" r="1.6"></circle>
+                  <circle cx="12" cy="19" r="1.6"></circle>
                 </svg>
-                CSV
-              </button>
-              <button class="export-btn copy-btn" @click="copyToClipboard" title="Копировать">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                <svg class="menu-trigger-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
-                Копировать
               </button>
+              <div v-if="showHeaderActionsMenu" class="header-actions-dropdown" @click.stop>
+                <button class="header-actions-item" @click="handleExportToCSV">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>CSV</span>
+                </button>
+                <button class="header-actions-item" @click="handleCopyToClipboard">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Копировать</span>
+                </button>
+                <button
+                  class="header-actions-item"
+                  :class="{ active: isEditMode }"
+                  :disabled="isSavingEdits"
+                  @click="handleToggleEditMode"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 20h9"></path>
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                  </svg>
+                  <span>{{ isEditMode ? 'Завершить редакт.' : 'Редактировать' }}</span>
+                </button>
+              </div>
               <transition name="fade">
                 <div v-if="showCopySuccess" class="copy-success">✓ Скопировано!</div>
               </transition>
             </div>
-            <div class="edit-actions">
-              <button
-                class="icon-action-btn"
-                :class="{ active: isEditMode }"
-                :disabled="isSavingEdits"
-                @click="toggleEditMode"
-                title="Редактировать сущности"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 20h9"></path>
-                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-                </svg>
-              </button>
-              <button
-                v-if="isEditMode"
-                class="save-edit-btn"
-                :disabled="isSavingEdits || !hasDirtyEdits"
-                @click="saveEdits"
-              >
-                {{ isSavingEdits ? 'Сохранение...' : 'Сохранить' }}
-              </button>
-            </div>
+            <button
+              v-if="isEditMode"
+              class="save-edit-btn"
+              :disabled="isSavingEdits || !hasDirtyEdits"
+              @click="saveEdits"
+            >
+              {{ isSavingEdits ? 'Сохранение...' : 'Сохранить' }}
+            </button>
             <div v-if="canManageAccountVisibility" class="header-visibility-toggle" aria-label="Показ счетов">
               <button
                 class="header-eye-btn icon-only"
@@ -3887,9 +3930,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  padding: 16px 24px;
+  padding: 12px 18px;
 }
 
 .modal-header-ai {
@@ -3914,6 +3957,7 @@ onBeforeUnmount(() => {
 
 .modal-header-title {
   color: var(--editor-cell-text);
+  flex-shrink: 0;
 }
 
 .modal-header-ai-title {
@@ -3938,31 +3982,40 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 8px;
   min-width: 0;
   flex: 1;
   border-left: 1px solid var(--color-border);
-  padding-left: 12px;
+  padding-left: 10px;
 }
 
 .summary-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .summary-item {
-  height: 28px;
-  padding: 0 10px;
+  height: 24px;
+  padding: 0 8px;
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
   border: 1px solid var(--editor-border);
   background: var(--editor-row-bg);
-  font-size: 12px;
+  gap: 5px;
+  font-size: 11px;
   font-weight: var(--fw-semi, 600);
   white-space: nowrap;
+}
+
+.summary-symbol {
+  font-size: 10px;
+  color: var(--editor-muted-text);
+  letter-spacing: 0.02em;
 }
 
 .summary-item.income {
@@ -3978,9 +4031,10 @@ onBeforeUnmount(() => {
 }
 
 .counter-label {
-  font-size: var(--font-sm, 13px);
+  font-size: 12px;
   color: var(--editor-muted-text);
   font-weight: var(--fw-medium, 500);
+  white-space: nowrap;
 }
 
 .header-visibility-toggle {
@@ -4019,21 +4073,48 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
-.export-buttons {
+.header-actions-menu {
   display: flex;
   align-items: center;
-  gap: 8px;
   position: relative;
 }
 
-.export-btn {
+.menu-trigger-btn {
+  width: auto;
+  min-width: 34px;
+  padding: 0 8px;
+  gap: 4px;
+}
+
+.menu-trigger-caret {
+  width: 12px;
+  height: 12px;
+}
+
+.header-actions-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 176px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.16),
+    0 6px 16px rgba(0, 0, 0, 0.12);
+  z-index: 40;
+}
+
+.header-actions-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
   padding: 0 10px;
-  background: var(--color-background-soft);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: none;
   border-radius: 8px;
   font-size: 12px;
   font-weight: var(--fw-semi, 600);
@@ -4041,33 +4122,41 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+  text-align: left;
 }
 
-.export-btn svg {
+.header-actions-item svg {
   width: 14px;
   height: 14px;
   stroke: var(--editor-muted-text);
   transition: stroke 0.2s;
+  flex-shrink: 0;
 }
 
-.export-btn:hover {
+.header-actions-item:hover:not(:disabled) {
   background: var(--color-background-mute);
-  border-color: #10b981;
   color: #10b981;
 }
 
-.export-btn:hover svg {
+.header-actions-item:hover:not(:disabled) svg,
+.header-actions-item.active svg {
   stroke: #10b981;
 }
 
-.export-btn:active {
-  transform: scale(0.98);
+.header-actions-item.active {
+  color: #10b981;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.header-actions-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .copy-success {
   position: absolute;
   right: 0;
-  top: -30px;
+  top: calc(100% + 8px);
   background: #10b981;
   color: white;
   padding: 6px 10px;
@@ -4077,12 +4166,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
   white-space: nowrap;
   z-index: 1000;
-}
-
-.edit-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .icon-action-btn {
@@ -5186,7 +5269,7 @@ onBeforeUnmount(() => {
   }
 
   .modal-header-main {
-    padding: 14px 16px;
+    padding: 12px 14px;
   }
 
   .modal-header-ai {
@@ -5206,16 +5289,6 @@ onBeforeUnmount(() => {
     font-size: 1.1rem;
   }
 
-  .counter-label {
-    display: none;
-  }
-
-  .export-btn {
-    height: 28px;
-    padding: 0 8px;
-    font-size: 11px;
-  }
-
   .summary-line {
     gap: 6px;
   }
@@ -5224,6 +5297,10 @@ onBeforeUnmount(() => {
     height: 24px;
     padding: 0 8px;
     font-size: 11px;
+  }
+
+  .header-actions-dropdown {
+    min-width: 164px;
   }
 
   .settings-table th {
