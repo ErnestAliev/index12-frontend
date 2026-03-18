@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import JournalChartsPanel from '@/components/JournalChartsPanel.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 import {
@@ -33,6 +34,7 @@ const aiMessagesRef = ref(null);
 const aiInputRef = ref(null);
 const showAiLogModal = ref(false);
 const aiLogText = ref('');
+const activeSidebarTab = ref('charts');
 const isAiPaneCollapsed = ref(false);
 const aiPaneWidth = ref(25);
 const isResizingAiPane = ref(false);
@@ -2335,7 +2337,28 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="modal-header-ai">
-          <span class="modal-header-ai-title">AI Ассистент</span>
+          <div class="sidebar-tabs" role="tablist" aria-label="Правая панель">
+            <button
+              class="sidebar-tab-btn"
+              :class="{ active: activeSidebarTab === 'charts' }"
+              type="button"
+              role="tab"
+              :aria-selected="activeSidebarTab === 'charts' ? 'true' : 'false'"
+              @click="activeSidebarTab = 'charts'"
+            >
+              Графики
+            </button>
+            <button
+              class="sidebar-tab-btn"
+              :class="{ active: activeSidebarTab === 'ai' }"
+              type="button"
+              role="tab"
+              :aria-selected="activeSidebarTab === 'ai' ? 'true' : 'false'"
+              @click="activeSidebarTab = 'ai'"
+            >
+              AI
+            </button>
+          </div>
           <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
@@ -3704,88 +3727,93 @@ onBeforeUnmount(() => {
         </section>
 
         <aside class="journal-ai-pane">
-          <div class="journal-ai-quick-row">
-            <button
-              v-for="item in QUICK_PROMPTS"
-              :key="item.prompt"
-              class="ai-quick-btn"
-              :disabled="aiLoading"
-              @click="useQuickPrompt(item)"
-            >
-              {{ item.label }}
-            </button>
-          </div>
+          <JournalChartsPanel
+            v-if="activeSidebarTab === 'charts'"
+            :rows="filteredOperations"
+          />
 
-          <div class="journal-ai-messages" ref="aiMessagesRef">
-            <div v-if="aiMessages.length === 0" class="journal-ai-empty">
-            
+          <template v-else>
+            <div class="journal-ai-quick-row">
+              <button
+                v-for="item in QUICK_PROMPTS"
+                :key="item.prompt"
+                class="ai-quick-btn"
+                :disabled="aiLoading"
+                @click="useQuickPrompt(item)"
+              >
+                {{ item.label }}
+              </button>
             </div>
 
-            <div v-for="message in aiMessages" :key="message.id" class="journal-ai-message" :class="message.role">
-              <div class="journal-ai-bubble">
-                <div class="journal-ai-text">{{ message.text }}</div>
-                <div class="journal-ai-actions" v-if="message.role === 'assistant'">
-                  <button class="journal-ai-copy-btn" @click="copyAiText(message)">
-                    {{ message.copied ? '✅' : 'Копировать' }}
-                  </button>
-                  <button v-if="message.log" class="journal-ai-log-btn" @click="openAiLog(message)">Log</button>
-                  <button class="journal-ai-json-btn" @click="downloadAiJson">Json</button>
+            <div class="journal-ai-messages" ref="aiMessagesRef">
+              <div v-if="aiMessages.length === 0" class="journal-ai-empty"></div>
+
+              <div v-for="message in aiMessages" :key="message.id" class="journal-ai-message" :class="message.role">
+                <div class="journal-ai-bubble">
+                  <div class="journal-ai-text">{{ message.text }}</div>
+                  <div class="journal-ai-actions" v-if="message.role === 'assistant'">
+                    <button class="journal-ai-copy-btn" @click="copyAiText(message)">
+                      {{ message.copied ? '✅' : 'Копировать' }}
+                    </button>
+                    <button v-if="message.log" class="journal-ai-log-btn" @click="openAiLog(message)">Log</button>
+                    <button class="journal-ai-json-btn" @click="downloadAiJson">Json</button>
+                  </div>
                 </div>
+              </div>
+
+              <div v-if="aiLoading" class="journal-ai-typing" aria-live="polite" aria-label="AI готовит ответ">
+                <span class="journal-ai-typing-word">Думаю</span>
+                <span class="journal-ai-typing-dots" aria-hidden="true"></span>
               </div>
             </div>
 
-            <div v-if="aiLoading" class="journal-ai-typing" aria-live="polite" aria-label="AI готовит ответ">
-              <span class="journal-ai-typing-word">Думаю</span>
-              <span class="journal-ai-typing-dots" aria-hidden="true"></span>
-            </div>
-          </div>
-
-          <div class="ai-input-container">
-            <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-              </svg>
-            </button>
-
-            <textarea
-              ref="aiInputRef"
-              v-model="aiInput"
-              class="ai-input"
-              placeholder="Спросите AI Как дела?"
-              rows="1"
-              @input="resizeAiInput"
-              @keydown="onAiInputKeydown"
-            ></textarea>
-
-            <div class="ai-input-buttons">
-              <button
-                class="ai-mic-btn"
-                :class="{ recording: isAiRecording }"
-                :disabled="aiLoading || !aiSpeechSupported"
-                @click="toggleAiRecording"
-                :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
-              >
+            <div class="ai-input-container">
+              <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-                  <path d="M19 11a7 7 0 0 1-14 0" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
                 </svg>
               </button>
 
-              <button
-                class="ai-send-btn"
-                :disabled="aiLoading || !(aiInput || '').trim()"
-                @click="sendAiMessage()"
-                title="Отправить"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
+              <textarea
+                ref="aiInputRef"
+                v-model="aiInput"
+                class="ai-input"
+                placeholder="Спросите AI Как дела?"
+                rows="1"
+                @input="resizeAiInput"
+                @keydown="onAiInputKeydown"
+              ></textarea>
+
+              <div class="ai-input-buttons">
+                <button
+                  class="ai-mic-btn"
+                  :class="{ recording: isAiRecording }"
+                  :disabled="aiLoading || !aiSpeechSupported"
+                  @click="toggleAiRecording"
+                  :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
+                    <path d="M19 11a7 7 0 0 1-14 0" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                </button>
+
+                <button
+                  class="ai-send-btn"
+                  :disabled="aiLoading || !(aiInput || '').trim()"
+                  @click="sendAiMessage()"
+                  title="Отправить"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
+          </template>
         </aside>
 
         <div
@@ -3793,7 +3821,7 @@ onBeforeUnmount(() => {
           class="ai-pane-resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Изменить ширину панели чата"
+          aria-label="Изменить ширину правой панели"
           @pointerdown="startAiPaneResize"
         ></div>
 
@@ -3801,8 +3829,8 @@ onBeforeUnmount(() => {
           class="ai-pane-toggle-btn"
           type="button"
           @click="toggleAiPane"
-          :title="isAiPaneCollapsed ? 'Развернуть чат' : 'Свернуть чат'"
-          :aria-label="isAiPaneCollapsed ? 'Развернуть чат' : 'Свернуть чат'"
+          :title="isAiPaneCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'"
+          :aria-label="isAiPaneCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'"
           :aria-expanded="String(!isAiPaneCollapsed)"
         >
           {{ isAiPaneCollapsed ? '<' : '>' }}
@@ -3939,7 +3967,7 @@ onBeforeUnmount(() => {
 .modal-header-ai {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   padding: 16px 12px;
   min-width: 0;
   border-left: 1px solid var(--color-border);
@@ -3963,6 +3991,41 @@ onBeforeUnmount(() => {
 
 .modal-header-ai-title {
   color: var(--ai-pane-text);
+}
+
+.sidebar-tabs {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.sidebar-tab-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--editor-muted-text);
+  font-size: 12px;
+  font-weight: var(--fw-semi, 600);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.sidebar-tab-btn:hover {
+  color: var(--editor-cell-text);
+  background: var(--color-background-mute);
+}
+
+.sidebar-tab-btn.active {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--color-primary);
 }
 
 .modal-header.ai-collapsed .modal-header-ai {
@@ -5325,6 +5388,16 @@ onBeforeUnmount(() => {
 
   .modal-header-ai {
     padding: 14px 8px;
+  }
+
+  .sidebar-tabs {
+    gap: 4px;
+    padding: 3px;
+  }
+
+  .sidebar-tab-btn {
+    padding: 0 10px;
+    font-size: 11px;
   }
 
   .modal-close-btn {
