@@ -4041,7 +4041,7 @@ onBeforeUnmount(() => {
   content: attr(data-tooltip);
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   transform: translateX(-50%);
   padding: 6px 10px;
   background: var(--color-primary, #34c759);
