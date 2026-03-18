@@ -4431,6 +4431,43 @@ onBeforeUnmount(() => {
   background: var(--editor-row-bg);
 }
 
+.table-wrap,
+.journal-ai-messages {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-track-bg);
+}
+
+.table-wrap::-webkit-scrollbar,
+.journal-ai-messages::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.table-wrap::-webkit-scrollbar-track,
+.journal-ai-messages::-webkit-scrollbar-track {
+  background: var(--scrollbar-track-bg);
+  border-radius: 999px;
+}
+
+.table-wrap::-webkit-scrollbar-thumb,
+.journal-ai-messages::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg);
+  border-radius: 999px;
+  border: 2px solid var(--scrollbar-track-bg);
+}
+
+.table-wrap::-webkit-scrollbar-thumb:hover,
+.journal-ai-messages::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:active,
+.journal-ai-messages::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-bg-active);
+}
+
+.table-wrap::-webkit-scrollbar-corner,
+.journal-ai-messages::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track-bg);
+}
+
 .journal-ai-pane {
   min-width: 0;
   min-height: 0;

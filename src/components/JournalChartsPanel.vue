@@ -319,6 +319,28 @@ const chartCards = computed(() => {
   overflow-y: auto;
   padding: 12px;
   background: var(--ai-pane-bg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-track-bg);
+}
+
+.journal-charts-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.journal-charts-panel::-webkit-scrollbar-track {
+  background: var(--scrollbar-track-bg);
+  border-radius: 999px;
+}
+
+.journal-charts-panel::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg);
+  border-radius: 999px;
+  border: 2px solid var(--scrollbar-track-bg);
+}
+
+.journal-charts-panel::-webkit-scrollbar-thumb:hover,
+.journal-charts-panel::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-bg-active);
 }
 
 .journal-charts-stack {
