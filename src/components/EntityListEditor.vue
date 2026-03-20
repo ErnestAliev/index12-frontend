@@ -5,6 +5,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
 import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
+import DateRangePicker from './DateRangePicker.vue';
 
 // 🟢 ИМПОРТ ДАННЫХ ДЛЯ АВТОПОДСТАНОВКИ
 import { accountSuggestions } from '@/data/accountSuggestions.js';
@@ -26,7 +27,9 @@ const props = defineProps({
   items: { type: Array, required: true },
   entityType: { type: String, default: '' }, // 'accounts', 'companies', etc.
   widgetKey: { type: String, default: null }, // Optional: corresponding widget key for dashboard toggle
-  embedded: { type: Boolean, default: false }
+  embedded: { type: Boolean, default: false },
+  showHeader: { type: Boolean, default: true },
+  showFooter: { type: Boolean, default: true }
 });
 const emit = defineEmits(['close', 'save']);
 
@@ -127,6 +130,55 @@ const pickerHintText = computed(() => {
 
 const companiesList = computed(() => mainStore.companies || []);
 const individualsList = computed(() => mainStore.individuals || []);
+const availableProjects = computed(() => mainStore.projects || []);
+const availableCategories = computed(() => mainStore.categories || []);
+
+const contractorFilters = ref({
+  dateRange: { from: null, to: null },
+  name: '',
+  projectId: '',
+  categoryId: '',
+  identificationNumber: '',
+  contractNumber: ''
+});
+
+const normalizeSearch = (value) => String(value ?? '').trim().toLowerCase();
+const normalizeDigits = (value) => String(value ?? '').replace(/\D/g, '');
+const idsMatch = (a, b) => String(a ?? '') === String(b ?? '');
+
+const filteredContractorItems = computed(() => {
+  if (!isContractorEditor) return localItems.value;
+
+  const { dateRange, name, projectId, categoryId, identificationNumber, contractNumber } = contractorFilters.value;
+  const rangeFrom = dateRange?.from || null;
+  const rangeTo = dateRange?.to || null;
+  const nameFilter = normalizeSearch(name);
+  const idNumberFilter = normalizeDigits(identificationNumber);
+  const contractNumberFilter = normalizeSearch(contractNumber);
+
+  return localItems.value.filter((item) => {
+    const itemName = normalizeSearch(item.name);
+    if (nameFilter && !itemName.includes(nameFilter)) return false;
+
+    const projectIds = Array.isArray(item.selectedProjectIds) ? item.selectedProjectIds : [];
+    if (projectId && !projectIds.some((id) => idsMatch(id, projectId))) return false;
+
+    const categoryIds = Array.isArray(item.selectedCategoryIds) ? item.selectedCategoryIds : [];
+    if (categoryId && !categoryIds.some((id) => idsMatch(id, categoryId))) return false;
+
+    const itemIdNumber = normalizeDigits(item.identificationNumber);
+    if (idNumberFilter && !itemIdNumber.includes(idNumberFilter)) return false;
+
+    const itemContractNumber = normalizeSearch(item.contractNumber);
+    if (contractNumberFilter && !itemContractNumber.includes(contractNumberFilter)) return false;
+
+    const itemContractDate = toInputDate(item.contractDate);
+    if (rangeFrom && (!itemContractDate || itemContractDate < rangeFrom)) return false;
+    if (rangeTo && (!itemContractDate || itemContractDate > rangeTo)) return false;
+
+    return true;
+  });
+});
 
 // --- ЛОГИКА СОЗДАНИЯ ВЛАДЕЛЬЦА "НА ЛЕТУ" ---
 const showCreateOwnerPopup = ref(false);
@@ -229,7 +281,7 @@ const handleCreateNew = async () => {
       const mappedItem = { ...newItem };
       if (isAccountEditor) { mappedItem.initialBalance = 0; mappedItem.initialBalanceFormatted = '0'; mappedItem.ownerValue = null; }
       if (isContractorEditor || isIndividualEditor) { mappedItem.defaultProjectId = null; mappedItem.defaultCategoryId = null; mappedItem.selectedProjectIds = []; mappedItem.selectedCategoryIds = []; }
-      if (isContractorEditor) { mappedItem.identificationNumber = ''; mappedItem.contractNumber = ''; mappedItem.contractDate = null; } 
+      if (isContractorEditor) { mappedItem.identificationNumber = ''; mappedItem.contractNumber = ''; mappedItem.contractDate = ''; } 
       
       if (isCompanyEditor) { 
           mappedItem.selectedAccountIds = [];
@@ -300,7 +352,7 @@ onMounted(() => {
       // 🟢 NEW: Initialize legal data fields
       const identificationNumber = item.identificationNumber || '';
       const contractNumber = item.contractNumber || '';
-      const contractDate = item.contractDate || null;
+      const contractDate = toInputDate(item.contractDate) || '';
       return { ...item, selectedProjectIds: pIds, selectedCategoryIds: cIds, identificationNumber, contractNumber, contractDate };
     }
     if (isCompanyEditor) {
@@ -621,14 +673,15 @@ const toggleWidgetOnDashboard = () => {
 
 // Expose methods for parent components
 defineExpose({
-  triggerCreate: startCreation
+  triggerCreate: startCreation,
+  triggerSave: handleSave
 });
 </script>
 
 <template>
   <div class="popup-overlay" :class="{ embedded: props.embedded }" @click.self="!props.embedded && $emit('close')">
     <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor, embedded: props.embedded }">
-      <div class="header-with-toggle">
+      <div v-if="props.showHeader" class="header-with-toggle">
         <h3>{{ title }}</h3>
         <button 
           v-if="widgetKey && isWidgetOnDashboard !== null"
@@ -648,7 +701,7 @@ defineExpose({
         </button>
       </div>
       
-      <template v-if="!isIndividualEditor && !isAccountEditor && localItems.length > 0">
+      <template v-if="!isIndividualEditor && !isAccountEditor && !isContractorEditor && localItems.length > 0">
         <div v-if="isCompanyEditor" class="editor-header owner-header">
           <span class="header-name">Название Компании</span>
           <span class="header-accounts">Привязанные счета</span>
@@ -666,7 +719,7 @@ defineExpose({
         </div>
       </template>
       
-      <div class="list-editor">
+      <div class="list-editor" :class="{ 'contractor-list-editor': isContractorEditor }">
         
         <!-- СТАНДАРТНЫЙ DRAGGABLE -->
         <!-- 🟢 Добавлен group="accounts" для счетов -->
@@ -695,6 +748,50 @@ defineExpose({
                         </div>
                     </template>
                 </draggable>
+            </div>
+        </template>
+
+        <template v-else-if="isContractorEditor">
+            <div class="contractor-filters-row">
+                <div class="contractor-col-name">
+                    <input type="text" v-model="contractorFilters.name" class="contractor-filter-input" placeholder="Название" />
+                </div>
+                <div class="contractor-col-project">
+                    <select v-model="contractorFilters.projectId" class="contractor-filter-input contractor-filter-select">
+                        <option value="">Проект</option>
+                        <option v-for="project in availableProjects" :key="project._id" :value="project._id">{{ project.name }}</option>
+                    </select>
+                </div>
+                <div class="contractor-col-category">
+                    <select v-model="contractorFilters.categoryId" class="contractor-filter-input contractor-filter-select">
+                        <option value="">Категория</option>
+                        <option v-for="category in availableCategories" :key="category._id" :value="category._id">{{ category.name }}</option>
+                    </select>
+                </div>
+                <div class="contractor-col-bin">
+                    <input type="text" v-model="contractorFilters.identificationNumber" class="contractor-filter-input" placeholder="ИИН/БИН" />
+                </div>
+                <div class="contractor-col-contract-num">
+                    <input type="text" v-model="contractorFilters.contractNumber" class="contractor-filter-input" placeholder="Номер договора" />
+                </div>
+                <div class="contractor-col-contract-date">
+                    <DateRangePicker v-model="contractorFilters.dateRange" placeholder="Дата договора" />
+                </div>
+                <div class="contractor-col-trash"></div>
+            </div>
+
+            <div v-if="filteredContractorItems.length === 0" class="contractor-empty-state">
+                Контрагенты не найдены.
+            </div>
+
+            <div v-for="item in filteredContractorItems" :key="item._id" class="contractor-grid-row">
+                <input type="text" v-model="item.name" class="edit-input edit-name contractor-name-cell" @blur="debouncedSave" />
+                <button type="button" class="edit-input edit-picker-btn contractor-project-cell" @click="openMultiSelect(item, 'projects')">{{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Проект' }}</button>
+                <button type="button" class="edit-input edit-picker-btn contractor-category-cell" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Категория' }}</button>
+                <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin contractor-bin-cell" placeholder="БИН/ИИН" @blur="debouncedSave" />
+                <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num contractor-contract-num-cell" placeholder="Номер договора" @blur="debouncedSave" />
+                <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date contractor-contract-date-cell" @input="debouncedSave" />
+                <button class="delete-btn contractor-trash-cell" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
             </div>
         </template>
 
@@ -848,7 +945,7 @@ defineExpose({
       </div>
       
       <!-- Sticky Footer with Actions -->
-      <div class="editor-footer">
+      <div v-if="props.showFooter" class="editor-footer">
         <!-- Left: Create button -->
         <div class="footer-left">
           <button v-if="!isCreating" class="btn-add-new" @click="startCreation">
@@ -1038,6 +1135,82 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 .edit-company-bin { flex-shrink: 0; width: 150px; }
 .edit-tax-regime { flex-shrink: 0; width: 130px; }
 .edit-tax-percent { flex-shrink: 0; width: 70px; text-align: center; }
+.contractor-list-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.contractor-filters-row,
+.contractor-grid-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.45fr) minmax(180px, 1fr) minmax(180px, 1fr) 150px 160px 190px 40px;
+  gap: 12px;
+  align-items: center;
+  padding: 0 1.5rem;
+}
+.contractor-filters-row {
+  margin: 0 0 10px;
+}
+.contractor-grid-row {
+  padding: 8px 1.5rem;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  min-height: 44px;
+}
+.contractor-grid-row:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.contractor-filter-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  font-size: 13px;
+  box-sizing: border-box;
+  margin: 0;
+}
+.contractor-filter-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+.contractor-filter-select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.contractor-name-cell,
+.contractor-project-cell,
+.contractor-category-cell,
+.contractor-bin-cell,
+.contractor-contract-num-cell,
+.contractor-contract-date-cell {
+  width: 100% !important;
+  min-width: 0;
+}
+.contractor-grid-row .edit-picker-btn {
+  background-color: var(--color-background);
+}
+.contractor-trash-cell {
+  justify-self: start;
+}
+.contractor-empty-state {
+  text-align: center;
+  padding: 4rem 1.5rem;
+  color: var(--color-text-soft);
+  font-style: italic;
+}
 
 .delete-btn { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--color-border); background: var(--color-background); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; box-sizing: border-box; margin: 0; }
 .delete-btn svg { width: 14px; height: 14px; stroke: var(--color-text-soft); transition: stroke 0.2s; }
