@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 /**
  * * --- КОМПОНЕНТ: MultiSelectModal v1.1 - HTML TITLE ---
@@ -18,8 +18,28 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'save']);
 
-const localSelectedIds = ref(new Set(props.initialSelectedIds));
+const normalizeId = (value) => {
+  if (value == null) return null;
+  if (typeof value === 'object') return value._id || value.id || null;
+  return value;
+};
+
+const normalizeIdArray = (values) => {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(
+    values
+      .map(normalizeId)
+      .filter((value) => value !== null && value !== undefined && value !== '')
+      .map((value) => String(value))
+  ));
+};
+
+const localSelectedIds = ref(new Set(normalizeIdArray(props.initialSelectedIds)));
 const searchQuery = ref('');
+
+watch(() => props.initialSelectedIds, (newValue) => {
+  localSelectedIds.value = new Set(normalizeIdArray(newValue));
+}, { deep: true });
 
 const filteredItems = computed(() => {
   if (!searchQuery.value) return props.items;
@@ -28,15 +48,19 @@ const filteredItems = computed(() => {
 });
 
 const toggleItem = (id) => {
-  if (localSelectedIds.value.has(id)) {
-    localSelectedIds.value.delete(id);
+  const normalizedId = normalizeId(id);
+  if (normalizedId == null) return;
+  const stringId = String(normalizedId);
+
+  if (localSelectedIds.value.has(stringId)) {
+    localSelectedIds.value.delete(stringId);
   } else {
-    localSelectedIds.value.add(id);
+    localSelectedIds.value.add(stringId);
   }
 };
 
 const handleSave = () => {
-  emit('save', Array.from(localSelectedIds.value));
+  emit('save', normalizeIdArray(Array.from(localSelectedIds.value)));
 };
 </script>
 
@@ -57,7 +81,7 @@ const handleSave = () => {
         <label v-for="item in filteredItems" :key="item._id" class="list-item">
           <input
             type="checkbox"
-            :checked="localSelectedIds.has(item._id)"
+            :checked="localSelectedIds.has(String(normalizeId(item._id)))"
             @change="toggleItem(item._id)"
           />
           <span class="item-name">{{ item.name }}</span>

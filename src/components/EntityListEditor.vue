@@ -89,13 +89,35 @@ const onAccountPickerSave = (newSelectedIds) => {
   currentItemForPicker.value = null; 
   debouncedSave(); // Auto-save after selection
 };
-const openMultiSelect = (item, type) => { currentItemForPicker.value = item; multiSelectType.value = type; showMultiSelect.value = true; };
+const extractEntityId = (value) => {
+  if (value == null) return null;
+  if (typeof value === 'object') return value._id || value.id || null;
+  return value;
+};
+
+const normalizeIdArray = (values) => {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(
+    values
+      .map(extractEntityId)
+      .filter((value) => value !== null && value !== undefined && value !== '')
+      .map((value) => String(value))
+  ));
+};
+
+const openMultiSelect = (item, type) => {
+  if (type === 'projects') item.selectedProjectIds = normalizeIdArray(item.selectedProjectIds);
+  if (type === 'categories') item.selectedCategoryIds = normalizeIdArray(item.selectedCategoryIds);
+  currentItemForPicker.value = item;
+  multiSelectType.value = type;
+  showMultiSelect.value = true;
+};
 const onMultiSelectSave = (newIds) => { 
   if (currentItemForPicker.value) { 
     if (multiSelectType.value === 'projects') { 
-      currentItemForPicker.value.selectedProjectIds = newIds; 
+      currentItemForPicker.value.selectedProjectIds = normalizeIdArray(newIds); 
     } else if (multiSelectType.value === 'categories') { 
-      currentItemForPicker.value.selectedCategoryIds = newIds; 
+      currentItemForPicker.value.selectedCategoryIds = normalizeIdArray(newIds); 
     } 
   } 
   showMultiSelect.value = false; 
@@ -117,8 +139,8 @@ const multiSelectItems = computed(() => {
 });
 const multiSelectInitialIds = computed(() => {
   if (!currentItemForPicker.value) return [];
-  if (multiSelectType.value === 'projects') return currentItemForPicker.value.selectedProjectIds || [];
-  if (multiSelectType.value === 'categories') return currentItemForPicker.value.selectedCategoryIds || [];
+  if (multiSelectType.value === 'projects') return normalizeIdArray(currentItemForPicker.value.selectedProjectIds);
+  if (multiSelectType.value === 'categories') return normalizeIdArray(currentItemForPicker.value.selectedCategoryIds);
   return [];
 });
 const pickerHintText = computed(() => {
@@ -144,7 +166,7 @@ const contractorFilters = ref({
 
 const normalizeSearch = (value) => String(value ?? '').trim().toLowerCase();
 const normalizeDigits = (value) => String(value ?? '').replace(/\D/g, '');
-const idsMatch = (a, b) => String(a ?? '') === String(b ?? '');
+const idsMatch = (a, b) => String(extractEntityId(a) ?? '') === String(extractEntityId(b) ?? '');
 
 const filteredContractorItems = computed(() => {
   if (!isContractorEditor) return localItems.value;
@@ -160,10 +182,10 @@ const filteredContractorItems = computed(() => {
     const itemName = normalizeSearch(item.name);
     if (nameFilter && !itemName.includes(nameFilter)) return false;
 
-    const projectIds = Array.isArray(item.selectedProjectIds) ? item.selectedProjectIds : [];
+    const projectIds = normalizeIdArray(item.selectedProjectIds);
     if (projectId && !projectIds.some((id) => idsMatch(id, projectId))) return false;
 
-    const categoryIds = Array.isArray(item.selectedCategoryIds) ? item.selectedCategoryIds : [];
+    const categoryIds = normalizeIdArray(item.selectedCategoryIds);
     if (categoryId && !categoryIds.some((id) => idsMatch(id, categoryId))) return false;
 
     const itemIdNumber = normalizeDigits(item.identificationNumber);
@@ -345,10 +367,18 @@ onMounted(() => {
       return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal, isExcluded, isCashRegister }
     }
     if (isContractorEditor || isIndividualEditor) {
-      let pIds = item.defaultProjectIds || [];
-      if (!pIds.length && item.defaultProjectId) { const pId = (typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId; if(pId) pIds.push(pId); }
-      let cIds = item.defaultCategoryIds || [];
-      if (!cIds.length && item.defaultCategoryId) { const cId = (typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId; if(cId) cIds.push(cId); }
+      let pIds = normalizeIdArray(item.defaultProjectIds);
+      if (!pIds.length && item.defaultProjectId) {
+        const pId = extractEntityId(item.defaultProjectId);
+        if (pId) pIds.push(String(pId));
+      }
+      pIds = normalizeIdArray(pIds);
+      let cIds = normalizeIdArray(item.defaultCategoryIds);
+      if (!cIds.length && item.defaultCategoryId) {
+        const cId = extractEntityId(item.defaultCategoryId);
+        if (cId) cIds.push(String(cId));
+      }
+      cIds = normalizeIdArray(cIds);
       // 🟢 NEW: Initialize legal data fields
       const identificationNumber = item.identificationNumber || '';
       const contractNumber = item.contractNumber || '';
@@ -425,10 +455,18 @@ watch(() => props.items, (newItems) => {
       return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal, isExcluded, isCashRegister }
     }
     if (isContractorEditor || isIndividualEditor) {
-      let pIds = item.defaultProjectIds || [];
-      if (!pIds.length && item.defaultProjectId) { const pId = (typeof item.defaultProjectId === 'object') ? item.defaultProjectId._id : item.defaultProjectId; if(pId) pIds.push(pId); }
-      let cIds = item.defaultCategoryIds || [];
-      if (!cIds.length && item.defaultCategoryId) { const cId = (typeof item.defaultCategoryId === 'object') ? item.defaultCategoryId._id : item.defaultCategoryId; if(cId) cIds.push(cId); }
+      let pIds = normalizeIdArray(item.defaultProjectIds);
+      if (!pIds.length && item.defaultProjectId) {
+        const pId = extractEntityId(item.defaultProjectId);
+        if (pId) pIds.push(String(pId));
+      }
+      pIds = normalizeIdArray(pIds);
+      let cIds = normalizeIdArray(item.defaultCategoryIds);
+      if (!cIds.length && item.defaultCategoryId) {
+        const cId = extractEntityId(item.defaultCategoryId);
+        if (cId) cIds.push(String(cId));
+      }
+      cIds = normalizeIdArray(cIds);
       const identificationNumber = item.identificationNumber || '';
       const contractNumber = item.contractNumber || '';
       const contractDate = toInputDate(item.contractDate) || '';
@@ -525,7 +563,8 @@ const runSave = async () => {
         }
     }
     if (isContractorEditor || isIndividualEditor) { 
-        data.defaultProjectIds = item.selectedProjectIds || []; data.defaultCategoryIds = item.selectedCategoryIds || [];
+        data.defaultProjectIds = normalizeIdArray(item.selectedProjectIds);
+        data.defaultCategoryIds = normalizeIdArray(item.selectedCategoryIds);
         data.defaultProjectId = data.defaultProjectIds[0] || null; data.defaultCategoryId = data.defaultCategoryIds[0] || null;
     }
     if (isContractorEditor) {
@@ -786,8 +825,8 @@ defineExpose({
 
             <div v-for="item in filteredContractorItems" :key="item._id" class="contractor-grid-row">
                 <input type="text" v-model="item.name" class="edit-input edit-name contractor-name-cell" @blur="debouncedSave" />
-                <button type="button" class="edit-input edit-picker-btn contractor-project-cell" @click="openMultiSelect(item, 'projects')">{{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Проект' }}</button>
-                <button type="button" class="edit-input edit-picker-btn contractor-category-cell" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Категория' }}</button>
+                <button type="button" class="edit-input edit-picker-btn contractor-project-cell" @click="openMultiSelect(item, 'projects')">{{ normalizeIdArray(item.selectedProjectIds).length ? `Проекты (${normalizeIdArray(item.selectedProjectIds).length})` : 'Проект' }}</button>
+                <button type="button" class="edit-input edit-picker-btn contractor-category-cell" @click="openMultiSelect(item, 'categories')">{{ normalizeIdArray(item.selectedCategoryIds).length ? `Категории (${normalizeIdArray(item.selectedCategoryIds).length})` : 'Категория' }}</button>
                 <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin contractor-bin-cell" placeholder="БИН/ИИН" @blur="debouncedSave" />
                 <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num contractor-contract-num-cell" placeholder="Номер договора" @blur="debouncedSave" />
                 <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date contractor-contract-date-cell" @input="debouncedSave" />
@@ -918,8 +957,8 @@ defineExpose({
                       <input type="text" v-model="item.name" class="edit-input edit-name" @blur="debouncedSave" />
                       
                       <template v-if="isContractorEditor">
-                        <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">{{ item.selectedProjectIds.length ? `Проекты (${item.selectedProjectIds.length})` : 'Нет' }}</button>
-                        <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">{{ item.selectedCategoryIds.length ? `Категории (${item.selectedCategoryIds.length})` : 'Нет' }}</button>
+                        <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'projects')">{{ normalizeIdArray(item.selectedProjectIds).length ? `Проекты (${normalizeIdArray(item.selectedProjectIds).length})` : 'Нет' }}</button>
+                        <button type="button" class="edit-input edit-picker-btn" @click="openMultiSelect(item, 'categories')">{{ normalizeIdArray(item.selectedCategoryIds).length ? `Категории (${normalizeIdArray(item.selectedCategoryIds).length})` : 'Нет' }}</button>
                         <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin" placeholder="БИН/ИИН" @blur="debouncedSave" />
                         <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num" placeholder="Номер договора" @blur="debouncedSave" />
                         <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date" @input="debouncedSave" />
