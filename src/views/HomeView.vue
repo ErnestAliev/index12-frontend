@@ -35,6 +35,7 @@ import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
 import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 import PaymentReceiptModal from '@/components/PaymentReceiptModal.vue';
 import EditorModal from '@/components/EditorModal.vue';
+import ContractorEditorModal from '@/components/ContractorEditorModal.vue';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
@@ -61,6 +62,7 @@ const showAboutModal = ref(false);
 const showWorkspaceModal = ref(false); // 🟢 NEW: Unified workspace/project modal
 const showReceiptModal = ref(false);   // 🟢 NEW: Payment receipt generator
 const showEditorModal = ref(false);    // Editor modal opens from header button
+const showContractorEditorModal = ref(false);
 
 // Период управляется через перелистывание месяцев, без отдельного окна выбора
 const selectedMonthStart = ref(null);
@@ -1413,6 +1415,20 @@ const handleRefundDelete = async (op) => {
             </svg>
           </button>
 
+          <button
+            v-if="!mainStore.isManager"
+            class="icon-btn contractor-editor-btn"
+            @click="showContractorEditorModal = true"
+            data-tooltip="Редактор контрагентов"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </button>
+
           <!-- 🆕 NEW: Payment Receipt Generator Button -->
           <button 
             v-if="!mainStore.isTimelineOnly"
@@ -1496,6 +1512,7 @@ const handleRefundDelete = async (op) => {
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
     <EditorModal v-if="showEditorModal && !mainStore.isManager" @close="showEditorModal = false" />
+    <ContractorEditorModal v-if="showContractorEditorModal && !mainStore.isManager" @close="showContractorEditorModal = false" />
     <!-- 🟢 Unified Workspace/Project Dashboard Modal -->
     <WorkspaceDashboardModal v-if="showWorkspaceModal" @close="showWorkspaceModal = false" />
     

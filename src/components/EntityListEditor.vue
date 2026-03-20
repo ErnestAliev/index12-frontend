@@ -25,7 +25,8 @@ const props = defineProps({
   title: { type: String, required: true },
   items: { type: Array, required: true },
   entityType: { type: String, default: '' }, // 'accounts', 'companies', etc.
-  widgetKey: { type: String, default: null } // Optional: corresponding widget key for dashboard toggle
+  widgetKey: { type: String, default: null }, // Optional: corresponding widget key for dashboard toggle
+  embedded: { type: Boolean, default: false }
 });
 const emit = defineEmits(['close', 'save']);
 
@@ -625,8 +626,8 @@ defineExpose({
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="$emit('close')">
-    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor }">
+  <div class="popup-overlay" :class="{ embedded: props.embedded }" @click.self="!props.embedded && $emit('close')">
+    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor, embedded: props.embedded }">
       <div class="header-with-toggle">
         <h3>{{ title }}</h3>
         <button 
@@ -896,6 +897,9 @@ defineExpose({
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: var(--color-background-soft); padding: 2rem; border-radius: 12px; color: var(--color-text); width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
 .popup-content.wide { width: 90%; max-width: 1400px; }
+.popup-overlay.embedded { position: relative; width: 100%; height: 100%; background: transparent; display: block; overflow: hidden; }
+.popup-content.embedded { display: flex; flex-direction: column; width: 100%; max-width: none; height: 100%; margin: 0; border-radius: 0; box-shadow: none; padding: 1.5rem 1.75rem 2rem; background: var(--color-background); }
+.popup-content.embedded.wide { width: 100%; max-width: none; }
 h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 
 /* Widget Toggle Button */
@@ -1005,6 +1009,10 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
   scrollbar-width: none; 
   -ms-overflow-style: none;
   max-height: none;
+}
+.popup-content.embedded .list-editor {
+  flex: 1;
+  min-height: 0;
 }
 .list-editor::-webkit-scrollbar { display: none; }
 .edit-item { display: flex; align-items: center; margin-bottom: 6px; gap: 10px; }
