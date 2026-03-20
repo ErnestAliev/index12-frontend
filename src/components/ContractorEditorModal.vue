@@ -8,7 +8,7 @@ const emit = defineEmits(['close']);
 const mainStore = useMainStore();
 
 const contractorItems = computed(() => mainStore.contractors || []);
-const contractorCount = computed(() => contractorItems.value.length);
+const contractorStats = ref({ filtered: contractorItems.value.length, total: contractorItems.value.length });
 
 const contractorEditorRef = ref(null);
 const showCreateEntityModal = ref(false);
@@ -32,6 +32,13 @@ const openCreateModal = () => {
 const handleCreated = () => {
   showCreateEntityModal.value = false;
 };
+
+const handleStatsChange = (stats) => {
+  contractorStats.value = {
+    filtered: Number(stats?.filtered ?? contractorItems.value.length),
+    total: Number(stats?.total ?? contractorItems.value.length)
+  };
+};
 </script>
 
 <template>
@@ -42,13 +49,13 @@ const handleCreated = () => {
           <h3>Редактор контрагентов</h3>
 
           <div class="header-actions">
-            <div class="summary-bar" :title="`Всего контрагентов: ${contractorCount}`">
-              <span class="summary-label">Контрагентов:</span>
-              <span class="summary-value">{{ contractorCount }}</span>
+            <div class="summary-bar" :title="`Показано ${contractorStats.filtered} из ${contractorStats.total} контрагентов`">
+              <span class="summary-label">Контрагенты:</span>
+              <span class="summary-value">{{ contractorStats.filtered }} / {{ contractorStats.total }}</span>
             </div>
-
-            <button class="close-icon-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
           </div>
+
+          <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
 
@@ -63,6 +70,7 @@ const handleCreated = () => {
           :items="contractorItems"
           @close="closeModal"
           @save="handleBatchSave"
+          @stats-change="handleStatsChange"
         />
       </div>
 
@@ -129,7 +137,7 @@ h3 {
 
 .header-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -165,23 +173,31 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-.close-icon-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--color-border);
+.close-btn {
   background: var(--color-background-soft);
-  border-radius: 8px;
-  color: var(--color-text-soft);
-  font-size: 24px;
-  line-height: 1;
+  border: 1px solid var(--color-border);
+  font-size: 20px;
+  color: var(--color-heading);
   cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
 
-.close-icon-btn:hover {
+.close-btn:hover {
   background: var(--color-background-mute);
-  border-color: var(--color-border-hover);
-  color: var(--color-text);
+  border-color: var(--color-border-hover, var(--color-border));
+}
+
+.modal-close-btn {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .popup-body {

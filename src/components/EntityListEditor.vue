@@ -31,7 +31,7 @@ const props = defineProps({
   showHeader: { type: Boolean, default: true },
   showFooter: { type: Boolean, default: true }
 });
-const emit = defineEmits(['close', 'save']);
+const emit = defineEmits(['close', 'save', 'stats-change']);
 
 const mainStore = useMainStore();
 const permissions = usePermissions();
@@ -201,6 +201,11 @@ const filteredContractorItems = computed(() => {
     return true;
   });
 });
+
+const contractorStats = computed(() => ({
+  filtered: filteredContractorItems.value.length,
+  total: localItems.value.length
+}));
 
 // --- ЛОГИКА СОЗДАНИЯ ВЛАДЕЛЬЦА "НА ЛЕТУ" ---
 const showCreateOwnerPopup = ref(false);
@@ -505,6 +510,11 @@ watch(() => props.items, (newItems) => {
       localItems.value = processedItems; 
   }
 }, { deep: true });
+
+watch(contractorStats, (stats) => {
+  if (!isContractorEditor) return;
+  emit('stats-change', stats);
+}, { immediate: true });
 
 // � FIX: Removed auto-save watchers on array length - they caused race condition
 // Save is now triggered by @end event on draggable components
