@@ -19,7 +19,9 @@ const props = defineProps({
   isToday: { type: Boolean, default: false },
   isTomorrow: { type: Boolean, default: false },
   dateKey: { type: String, required: true },
-  columnCount: { type: Number, default: 12 } // Number of visible columns
+  columnCount: { type: Number, default: 12 }, // Number of visible columns
+  selectedOperationIds: { type: Array, default: () => [] },
+  selectionModeActive: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
@@ -166,7 +168,7 @@ const onDrop = (dropDataFromHourCell) => {
 </script>
 
 <template>
-  <div class="day-column" :class="{ 'today': isToday, 'tomorrow': isTomorrow }">
+  <div class="day-column" :class="{ 'today': isToday, 'tomorrow': isTomorrow }" :data-date-key="props.dateKey">
     <div class="column-header">
       {{ formattedDate }}
     </div>
@@ -180,6 +182,8 @@ const onDrop = (dropDataFromHourCell) => {
         :cellIndex="cell.id"
         :column-count="props.columnCount"
         :day-date="props.date"
+        :selected-operation-ids="props.selectedOperationIds"
+        :selection-mode-active="props.selectionModeActive"
         @edit-operation="onEdit"
         @add-operation="onAdd"
         @drop-operation="onDrop"

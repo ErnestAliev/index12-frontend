@@ -177,6 +177,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const displayCache = ref({});
     const calculationCache = ref({});
     const pendingOperationMoves = ref({});
+    const dayMutationVersions = ref({});
 
     const accounts = ref([]);
     const companies = ref([]);
@@ -443,6 +444,22 @@ export const useMainStore = defineStore('mainStore', () => {
         const normalizedId = _toStr(opOrId);
         if (!normalizedId) return false;
         return Boolean(pendingOperationMoves.value[normalizedId]);
+    };
+
+    const _getDayMutationVersion = (dateKey) => {
+        if (!dateKey) return 0;
+        return Number(dayMutationVersions.value[dateKey] || 0);
+    };
+
+    const _bumpDayMutationVersions = (...dateKeys) => {
+        const normalizedKeys = [...new Set(dateKeys.filter(Boolean).map((item) => String(item)))];
+        if (!normalizedKeys.length) return;
+
+        const next = { ...dayMutationVersions.value };
+        normalizedKeys.forEach((dateKey) => {
+            next[dateKey] = Number(next[dateKey] || 0) + 1;
+        });
+        dayMutationVersions.value = next;
     };
 
     const _dedupeOperationList = (list) => {
@@ -1822,6 +1839,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         const richOp = _populateOp(op);
         const dk = richOp.dateKey;
+        _bumpDayMutationVersions(dk);
 
         if (!displayCache.value[dk]) displayCache.value[dk] = [];
 
@@ -1890,6 +1908,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         const newDateKey = op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : oldDateKey);
         const richOp = _populateOp({ ...op, date: new Date(op.date) });
+        _bumpDayMutationVersions(oldDateKey, newDateKey);
 
         if (oldDateKey && displayCache.value[oldDateKey]) {
             displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, op._id));
@@ -1947,6 +1966,7 @@ export const useMainStore = defineStore('mainStore', () => {
         }
 
         if (oldDateKey && displayCache.value[oldDateKey]) {
+            _bumpDayMutationVersions(oldDateKey);
             displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o =>
                 !_idsMatch(o._id, opId) && !_idsMatch(o._id2, opId)
             );
@@ -2279,6 +2299,12 @@ export const useMainStore = defineStore('mainStore', () => {
             start.setHours(0, 0, 0, 0);
             end.setHours(23, 59, 59, 999);
 
+            const requestVersionByDay = new Map();
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const dateKey = _getDateKey(d);
+                requestVersionByDay.set(dateKey, _getDayMutationVersion(dateKey));
+            }
+
             const dayCount = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
 
             // For very large history requests (years), DO NOT iterate day-by-day (it freezes UI).
@@ -2319,6 +2345,10 @@ export const useMainStore = defineStore('mainStore', () => {
             });
 
             const applyDay = (dateKey, serverOps) => {
+                if (_getDayMutationVersion(dateKey) !== Number(requestVersionByDay.get(dateKey) || 0)) {
+                    return;
+                }
+
                 const existing = Array.isArray(displayCache.value[dateKey]) ? displayCache.value[dateKey] : [];
                 const existingOptimistic = existing.filter(o => o && o.isOptimistic);
 
@@ -2435,10 +2465,12 @@ export const useMainStore = defineStore('mainStore', () => {
     async function fetchOperations(dateKey, force = false) {
         if (!dateKey) return;
         if (displayCache.value[dateKey] && !force) return;
+        const requestVersion = _getDayMutationVersion(dateKey);
         try {
             const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
             const raw = Array.isArray(res.data) ? res.data.slice() : [];
             const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+            if (_getDayMutationVersion(dateKey) !== requestVersion) return;
             displayCache.value[dateKey] = _dedupeOperationList(processedOps.map(_populateOp));
             calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
@@ -2567,10 +2599,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function refreshDay(dateKey) {
         if (!dateKey) return;
+        const requestVersion = _getDayMutationVersion(dateKey);
         try {
             const res = await axios.get(`${API_BASE_URL}/events?dateKey=${dateKey}`);
             const raw = Array.isArray(res.data) ? res.data.slice() : [];
             const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
+            if (_getDayMutationVersion(dateKey) !== requestVersion) return;
             _syncCaches(dateKey, processedOps.map(_populateOp));
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     }
@@ -2580,6 +2614,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (isOperationMovePending(operation?._id)) return;
         if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
         if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
+        _bumpDayMutationVersions(oldDateKey, newDateKey);
 
         const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
         const isMerged = operation.isTransfer && operation._id2;
@@ -2759,6 +2794,82 @@ export const useMainStore = defineStore('mainStore', () => {
                     refreshDay(newDateKey);
                     fetchSnapshot();
                 });
+        }
+    }
+
+    async function moveOperationsBatch(operations, anchorOperation, targetDateKey, targetCellIndex, specificTargetDate = null) {
+        const uniqueOperations = Array.from(new Map(
+            (Array.isArray(operations) ? operations : [])
+                .filter((op) => op?._id)
+                .map((op) => [String(op._id), op])
+        ).values());
+
+        if (!uniqueOperations.length || !targetDateKey) return;
+
+        const anchor = uniqueOperations.find((op) => _idsMatch(op._id, anchorOperation?._id))
+            || anchorOperation
+            || uniqueOperations[0];
+
+        if (!anchor?._id) return;
+
+        const normalizeDayStart = (dateInput) => {
+            const d = new Date(dateInput);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        };
+
+        const msPerDay = 86400000;
+        const anchorDate = normalizeDayStart(_parseDateKey(anchor.dateKey || targetDateKey));
+        const targetBaseDate = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(targetDateKey);
+        const targetAnchorDate = normalizeDayStart(targetBaseDate);
+        const anchorCellIndex = Number.isInteger(anchor.cellIndex) ? anchor.cellIndex : 0;
+        const targetCell = Number.isInteger(targetCellIndex) ? targetCellIndex : 0;
+
+        const dayShift = Math.round((targetAnchorDate.getTime() - anchorDate.getTime()) / msPerDay);
+        const cellShift = targetCell - anchorCellIndex;
+        const movingForward = dayShift > 0 || (dayShift === 0 && cellShift > 0);
+
+        const plans = uniqueOperations.map((op) => {
+            const opDate = normalizeDayStart(_parseDateKey(op.dateKey || anchor.dateKey || targetDateKey));
+            const relativeDayShift = Math.round((opDate.getTime() - anchorDate.getTime()) / msPerDay);
+            const relativeCellShift = (Number.isInteger(op.cellIndex) ? op.cellIndex : 0) - anchorCellIndex;
+
+            const nextDate = new Date(targetBaseDate);
+            nextDate.setDate(nextDate.getDate() + relativeDayShift);
+            if (!specificTargetDate || relativeDayShift !== 0) {
+                nextDate.setHours(12, 0, 0, 0);
+            }
+
+            const nextDateKey = _getDateKey(nextDate);
+            return {
+                operation: op,
+                oldDateKey: op.dateKey || anchor.dateKey || nextDateKey,
+                newDateKey: nextDateKey,
+                desiredCellIndex: Math.max(0, targetCell + relativeCellShift),
+                targetDate: nextDate
+            };
+        });
+
+        plans.sort((a, b) => {
+            const aDate = normalizeDayStart(_parseDateKey(a.oldDateKey)).getTime();
+            const bDate = normalizeDayStart(_parseDateKey(b.oldDateKey)).getTime();
+            if (aDate !== bDate) return movingForward ? (bDate - aDate) : (aDate - bDate);
+
+            const aCell = Number.isInteger(a.operation?.cellIndex) ? a.operation.cellIndex : 0;
+            const bCell = Number.isInteger(b.operation?.cellIndex) ? b.operation.cellIndex : 0;
+            return movingForward ? (bCell - aCell) : (aCell - bCell);
+        });
+
+        for (const plan of plans) {
+            const currentCellIndex = Number.isInteger(plan.operation?.cellIndex) ? plan.operation.cellIndex : 0;
+            if (plan.oldDateKey === plan.newDateKey && currentCellIndex === plan.desiredCellIndex) continue;
+            await moveOperation(
+                plan.operation,
+                plan.oldDateKey,
+                plan.newDateKey,
+                plan.desiredCellIndex,
+                plan.targetDate
+            );
         }
     }
 
@@ -3068,6 +3179,8 @@ export const useMainStore = defineStore('mainStore', () => {
     async function forceRefreshAll() {
         try {
             displayCache.value = {}; calculationCache.value = {};
+            pendingOperationMoves.value = {};
+            dayMutationVersions.value = {};
             await fetchAllEntities();
 
             const ps = useProjectionStore();
@@ -3496,7 +3609,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         fetchAllEntities, fetchOperations, refreshDay,
 
-        addOperation, deleteOperation, moveOperation,
+        addOperation, deleteOperation, moveOperation, moveOperationsBatch,
         addAccount, addCompany, addContractor, addProject, addCategory,
         addIndividual, deleteEntity, batchUpdateEntities,
         addCredit,

@@ -18,7 +18,9 @@ const props = defineProps({
   dateKey: { type: String, required: true },
   cellIndex: { type: Number, required: true },
   columnCount: { type: Number, default: 11 },
-  dayDate: { type: Date, default: null }
+  dayDate: { type: Date, default: null },
+  selectedOperationIds: { type: Array, default: () => [] },
+  selectionModeActive: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
@@ -343,6 +345,12 @@ const tooltipAmountTone = computed(() => {
   return '';
 });
 
+const isSelected = computed(() => {
+  const opId = props.operation?._id;
+  if (!opId || isPhantom.value) return false;
+  return props.selectedOperationIds.map((item) => String(item)).includes(String(opId));
+});
+
 const isOperationHovered = ref(false);
 const isPhantomHovered = ref(false);
 
@@ -357,9 +365,13 @@ const getTooltipValueClass = (rowLabel) => {
 
 
 
-const onAddClick = (event) => emit('add-operation', event, props.cellIndex);
+const onAddClick = (event) => {
+  if (props.selectionModeActive) return;
+  emit('add-operation', event, props.cellIndex);
+};
 
 const onEditClick = () => { 
+    if (props.selectionModeActive) return;
     // 🟢 Block editing of phantom operations and operations user can't edit
     if (!canInteract.value) return;
     if (props.operation) emit('edit-operation', props.operation); 
@@ -372,7 +384,15 @@ const onDragStart = (event) => {
       return;
   }
   if (!props.operation) return;
-  event.dataTransfer.setData('application/json', JSON.stringify(props.operation));
+  const normalizedSelectedIds = props.selectedOperationIds.map((item) => String(item));
+  const payload = {
+    operation: props.operation,
+    anchorOperationId: props.operation._id,
+    selectedOperationIds: isSelected.value && normalizedSelectedIds.length > 1
+      ? normalizedSelectedIds
+      : [String(props.operation._id)]
+  };
+  event.dataTransfer.setData('application/json', JSON.stringify(payload));
   event.dataTransfer.effectAllowed = 'move';
   event.currentTarget.style.opacity = '0.5';
 };
@@ -382,14 +402,28 @@ const onDragLeave = () => { isDragOver.value = false; };
 const onDrop = (event) => {
   event.preventDefault(); isDragOver.value = false;
   const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
-  let operationData = null; try { operationData = JSON.parse(raw); } catch { return; }
+  let payload = null; try { payload = JSON.parse(raw); } catch { return; }
+  const operationData = payload?.operation?._id ? payload.operation : payload;
   if (!operationData || !operationData._id) return;
-  emit('drop-operation', { operation: operationData, toCellIndex: props.cellIndex });
+  emit('drop-operation', {
+    operation: operationData,
+    anchorOperationId: payload?.anchorOperationId || operationData._id,
+    selectedOperationIds: Array.isArray(payload?.selectedOperationIds) ? payload.selectedOperationIds : [String(operationData._id)],
+    toCellIndex: props.cellIndex
+  });
 };
 </script>
 
 <template>
-  <div class="hour-cell" :class="{ 'drag-over': isDragOver }" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+  <div
+    class="hour-cell"
+    :class="{ 'drag-over': isDragOver }"
+    :data-date-key="props.dateKey"
+    :data-cell-index="props.cellIndex"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
     <template v-if="isPhantom">
       <div
         class="operation-chip phantom"
@@ -417,8 +451,10 @@ const onDrop = (event) => {
             technical: isTechnicalOp, 
             'credit-income': isCreditIncomeOp,
             'no-permission': !canInteract,
-            compact: isCompactChipMode
+            compact: isCompactChipMode,
+            selected: isSelected
         }"
+        :data-operation-id="operation._id"
         :draggable="canInteract"
         @mouseenter="onOperationMouseEnter"
         @mouseleave="onOperationMouseLeave"
@@ -536,6 +572,10 @@ const onDrop = (event) => {
   cursor: pointer; 
   position: relative;
   transition: all .15s ease-in-out; 
+}
+.operation-chip.selected {
+  box-shadow: 0 0 0 2px rgba(80, 160, 255, 0.9), 0 8px 18px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
 }
 .operation-chip:hover { z-index: 30; }
 .operation-chip-marker {

@@ -10,6 +10,7 @@ import {
   signalBackgroundAnalyticsMutation,
   stopBackgroundAnalyticsPrefetchTimer
 } from '@/utils/backgroundAnalyticsBuffer.js';
+import { usePermissions } from '@/composables/usePermissions';
 
 
 // Компоненты
@@ -41,6 +42,7 @@ import ContractorEditorModal from '@/components/ContractorEditorModal.vue';
 
 const mainStore = useMainStore();
 const projectionStore = useProjectionStore();
+const permissions = usePermissions();
 
 // --- CONSTANTS ---
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -399,6 +401,19 @@ const contextMenuPosition = ref({ top: '0px', left: '0px' });
 const selectedDay = ref(null);
 const selectedCellIndex = ref(0);
 const operationToEdit = ref(null);
+const selectedOperationIds = ref([]);
+const isShiftPressed = ref(false);
+const isTimelineSelecting = ref(false);
+const timelineSelectionBox = ref(null);
+const suppressContextMenuUntil = ref(0);
+
+const TIMELINE_SELECTION_THRESHOLD = 4;
+const CONTEXT_MENU_SUPPRESS_MS = 180;
+const selectionGesture = {
+  startClientX: 0,
+  startClientY: 0,
+  hasMoved: false
+};
 
 const minDateFromProjection = computed(() => mainStore.projection.rangeStartDate ? new Date(mainStore.projection.rangeStartDate) : null);
 const maxDateFromProjection = computed(() => mainStore.projection.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null);
@@ -427,6 +442,127 @@ const HEADER_MAX_H_RATIO = 0.8;
 const headerHeightPx = ref(HEADER_MIN_H); 
 const timelineHeightPx = ref(318);
 
+const clearTimelineSelection = () => {
+  selectedOperationIds.value = [];
+};
+
+const markContextMenuSuppressed = (durationMs = CONTEXT_MENU_SUPPRESS_MS) => {
+  suppressContextMenuUntil.value = Date.now() + durationMs;
+};
+
+const shouldSuppressContextMenu = () => {
+  return isTimelineSelecting.value || Date.now() < suppressContextMenuUntil.value;
+};
+
+const getTimelineBounds = () => timelineGridRef.value?.getBoundingClientRect() || null;
+
+const clampPointToTimeline = (clientX, clientY) => {
+  const rect = getTimelineBounds();
+  if (!rect) return null;
+
+  return {
+    x: Math.max(rect.left, Math.min(clientX, rect.right)),
+    y: Math.max(rect.top, Math.min(clientY, rect.bottom))
+  };
+};
+
+const rectsIntersect = (a, b) => {
+  if (!a || !b) return false;
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+};
+
+const updateTimelineSelection = (clientX, clientY) => {
+  const rect = getTimelineBounds();
+  const clamped = clampPointToTimeline(clientX, clientY);
+  const container = timelineGridRef.value;
+  if (!rect || !clamped || !container) return;
+
+  const left = Math.min(selectionGesture.startClientX, clamped.x);
+  const right = Math.max(selectionGesture.startClientX, clamped.x);
+  const top = Math.min(selectionGesture.startClientY, clamped.y);
+  const bottom = Math.max(selectionGesture.startClientY, clamped.y);
+  const width = right - left;
+  const height = bottom - top;
+
+  timelineSelectionBox.value = {
+    left: left - rect.left + container.scrollLeft,
+    top: top - rect.top + container.scrollTop,
+    width,
+    height
+  };
+
+  if (width < TIMELINE_SELECTION_THRESHOLD && height < TIMELINE_SELECTION_THRESHOLD) {
+    return;
+  }
+
+  selectionGesture.hasMoved = true;
+
+  const selectionRect = { left, right, top, bottom };
+  const chipNodes = Array.from(container.querySelectorAll('.operation-chip[data-operation-id]'));
+  const nextSelectedIds = chipNodes
+    .filter((node) => rectsIntersect(selectionRect, node.getBoundingClientRect()))
+    .map((node) => String(node.dataset.operationId))
+    .filter(Boolean);
+
+  selectedOperationIds.value = Array.from(new Set(nextSelectedIds));
+};
+
+const detachTimelineSelectionListeners = () => {
+  window.removeEventListener('mousemove', handleTimelineSelectionMouseMove);
+  window.removeEventListener('mouseup', handleTimelineSelectionMouseUp);
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+};
+
+function handleTimelineSelectionMouseMove(event) {
+  if (!isTimelineSelecting.value) return;
+  updateTimelineSelection(event.clientX, event.clientY);
+}
+
+function handleTimelineSelectionMouseUp(event) {
+  if (!isTimelineSelecting.value) return;
+  updateTimelineSelection(event.clientX, event.clientY);
+  detachTimelineSelectionListeners();
+  isTimelineSelecting.value = false;
+  timelineSelectionBox.value = null;
+  markContextMenuSuppressed();
+}
+
+const handleTimelineMouseDownCapture = (event) => {
+  if (event.button !== 0) return;
+
+  const targetChip = event.target.closest('.operation-chip[data-operation-id]');
+  const targetChipId = targetChip?.dataset?.operationId ? String(targetChip.dataset.operationId) : null;
+
+  if (!event.shiftKey) {
+    if (selectedOperationIds.value.length && (!targetChipId || !selectedOperationIds.value.includes(targetChipId))) {
+      clearTimelineSelection();
+    }
+    return;
+  }
+
+  if (!timelineGridRef.value || mainStore.workspaceRole === 'analyst') return;
+
+  const clamped = clampPointToTimeline(event.clientX, event.clientY);
+  if (!clamped) return;
+
+  isContextMenuVisible.value = false;
+  isTimelineSelecting.value = true;
+  selectionGesture.startClientX = clamped.x;
+  selectionGesture.startClientY = clamped.y;
+  selectionGesture.hasMoved = false;
+  selectedOperationIds.value = [];
+  timelineSelectionBox.value = { left: 0, top: 0, width: 0, height: 0 };
+
+  window.addEventListener('mousemove', handleTimelineSelectionMouseMove);
+  window.addEventListener('mouseup', handleTimelineSelectionMouseUp);
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'crosshair';
+
+  event.preventDefault();
+  event.stopPropagation();
+};
+
 // Charts expansion state
 const isChartsExpanded = ref(true);
 
@@ -447,6 +583,7 @@ watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
 
 const openContextMenu = (day, event, cellIndex) => {
   event.stopPropagation();
+  if (event.shiftKey || shouldSuppressContextMenu()) return;
   // 🟢 PERMISSION CHECK
   if (!mainStore.canEdit) return;
   
@@ -606,7 +743,43 @@ const onContainerDragOver = (e) => {
   if (direction !== 0) { if (!isAutoScrolling.value) { isAutoScrolling.value = true; scrollInterval.value = setInterval(() => { const nextVal = virtualStartIndex.value + direction; if (nextVal >= 0 && nextVal <= maxVirtual) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); } else { stopAutoScroll(); } }, 100); } } else { stopAutoScroll(); }
 };
 const onContainerDragLeave = (e) => { stopAutoScroll(); };
-const handleOperationDrop = async (dropData) => { stopAutoScroll(); const operation = dropData.operation; const oldDateKey = operation.dateKey; const newDateKey = dropData.toDateKey; const newCellIndex = dropData.toCellIndex; const targetDate = dropData.targetDate || null; if (!oldDateKey || !newDateKey) return; if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return; await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex, targetDate); };
+const handleOperationDrop = async (dropData) => {
+  stopAutoScroll();
+
+  const operation = dropData.operation;
+  const oldDateKey = operation?.dateKey;
+  const newDateKey = dropData.toDateKey;
+  const newCellIndex = dropData.toCellIndex;
+  const targetDate = dropData.targetDate || null;
+
+  if (!operation?._id || !oldDateKey || !newDateKey) return;
+
+  const selectedIds = Array.isArray(dropData.selectedOperationIds)
+    ? Array.from(new Set(dropData.selectedOperationIds.map((item) => String(item))))
+    : [String(operation._id)];
+
+  const selectedOpsMap = new Map(
+    (Array.isArray(mainStore.displayOperationsFlat) ? mainStore.displayOperationsFlat : [])
+      .filter((item) => item?._id)
+      .map((item) => [String(item._id), item])
+  );
+
+  const selectedOps = selectedIds
+    .map((id) => selectedOpsMap.get(id))
+    .filter((item) => item && permissions.canMoveOperation(item));
+
+  const anchorOperation = selectedOps.find((item) => String(item._id) === String(dropData.anchorOperationId))
+    || selectedOps.find((item) => String(item._id) === String(operation._id))
+    || operation;
+
+  if (selectedOps.length > 1) {
+    await mainStore.moveOperationsBatch(selectedOps, anchorOperation, newDateKey, newCellIndex, targetDate);
+    return;
+  }
+
+  if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
+  await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex, targetDate);
+};
 const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS.value; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
 
 const alignTimelineToSelectedMonthStart = () => {
@@ -926,6 +1099,28 @@ let resizeObserver = null;
 let stopBufferCacheWatcher = null;
 let stopBufferPeriodWatcher = null;
 
+const handleGlobalKeyDown = (event) => {
+  if (event.key === 'Shift') {
+    isShiftPressed.value = true;
+  }
+
+  if (event.key === 'Escape') {
+    if (isTimelineSelecting.value) {
+      detachTimelineSelectionListeners();
+      isTimelineSelecting.value = false;
+      timelineSelectionBox.value = null;
+    }
+    clearTimelineSelection();
+    isContextMenuVisible.value = false;
+  }
+};
+
+const handleGlobalKeyUp = (event) => {
+  if (event.key === 'Shift') {
+    isShiftPressed.value = false;
+  }
+};
+
 // Global click handler to close context menu when clicking outside
 const handleGlobalClick = (e) => {
   if (isContextMenuVisible.value) {
@@ -933,6 +1128,11 @@ const handleGlobalClick = (e) => {
     if (contextMenuEl && !contextMenuEl.contains(e.target)) {
       isContextMenuVisible.value = false;
     }
+  }
+
+  const clickedSelectedChip = e.target.closest('.operation-chip[data-operation-id]');
+  if (!clickedSelectedChip && !timelineGridRef.value?.contains(e.target)) {
+    clearTimelineSelection();
   }
 };
 
@@ -1055,6 +1255,7 @@ onMounted(async () => {
     } 
     if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } 
     if (timelineGridRef.value) { 
+      timelineGridRef.value.addEventListener('mousedown', handleTimelineMouseDownCapture, true);
       timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); 
       timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); 
       timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); 
@@ -1064,6 +1265,8 @@ onMounted(async () => {
     
     // Add global click listener to close context menu when clicking outside
     document.addEventListener('click', handleGlobalClick);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    window.addEventListener('keyup', handleGlobalKeyUp);
     
     resizeObserver = new ResizeObserver(() => { 
       // Don't interfere while user is actively dragging
@@ -1150,6 +1353,7 @@ onBeforeUnmount(() => {
     headerResizerRef.value.removeEventListener('touchstart', initHeaderResize);
   }
   if (timelineGridRef.value) {
+    timelineGridRef.value.removeEventListener('mousedown', handleTimelineMouseDownCapture, true);
     timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
     timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart);
     timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove);
@@ -1159,6 +1363,9 @@ onBeforeUnmount(() => {
 
   window.removeEventListener('resize', onWindowResize);
   document.removeEventListener('click', handleGlobalClick);
+  window.removeEventListener('keydown', handleGlobalKeyDown);
+  window.removeEventListener('keyup', handleGlobalKeyUp);
+  detachTimelineSelectionListeners();
 
   if (resizeObserver && mainContentRef.value) {
     resizeObserver.unobserve(mainContentRef.value);
@@ -1298,11 +1505,31 @@ const handleRefundDelete = async (op) => {
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
       <main class="home-main-content" ref="mainContentRef">
-        <div class="timeline-grid-wrapper" :class="{ 'analyst-readonly': mainStore.workspaceRole === 'analyst' }" ref="timelineGridRef" @dragover="onContainerDragOver" @dragleave="onContainerDragLeave">
+        <div
+          class="timeline-grid-wrapper"
+          :class="{
+            'analyst-readonly': mainStore.workspaceRole === 'analyst',
+            'selection-armed': isShiftPressed,
+            'selection-active': isTimelineSelecting
+          }"
+          ref="timelineGridRef"
+          @dragover="onContainerDragOver"
+          @dragleave="onContainerDragLeave"
+        >
           <div v-if="isDataLoading" class="section-loading-overlay">
             <div class="spinner-small"></div>
           </div>
-        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
+          <div
+            v-if="timelineSelectionBox"
+            class="timeline-selection-box"
+            :style="{
+              left: `${timelineSelectionBox.left}px`,
+              top: `${timelineSelectionBox.top}px`,
+              width: `${timelineSelectionBox.width}px`,
+              height: `${timelineSelectionBox.height}px`
+            }"
+          ></div>
+        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" :selected-operation-ids="selectedOperationIds" :selection-mode-active="isTimelineSelecting" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
         <div class="divider-wrapper" ref="dividerWrapperRef">
@@ -1774,6 +2001,24 @@ const handleRefundDelete = async (op) => {
 }
 .home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
 .timeline-grid-wrapper { position: relative; height: var(--timeline-height, 318px); flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; transition: height 0.12s ease; }
+.timeline-grid-wrapper.selection-armed { cursor: crosshair; }
+.timeline-grid-wrapper.selection-active {
+  cursor: crosshair;
+}
+.timeline-grid-wrapper.selection-active .timeline-grid-content,
+.timeline-grid-wrapper.selection-active .hour-cell,
+.timeline-grid-wrapper.selection-active .operation-chip {
+  user-select: none;
+}
+.timeline-selection-box {
+  position: absolute;
+  z-index: 35;
+  border: 1px solid rgba(90, 170, 255, 0.95);
+  background: rgba(90, 170, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(90, 170, 255, 0.08);
+  pointer-events: none;
+  border-radius: 8px;
+}
 
 /* 🟢 NEW: Full height timeline for timeline-only users */
 .home-main-content:has(.graph-area-wrapper[style*="display: none"]) .timeline-grid-wrapper,
