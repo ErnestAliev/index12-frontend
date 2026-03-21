@@ -2609,9 +2609,10 @@ export const useMainStore = defineStore('mainStore', () => {
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     }
 
-    async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null) {
+    async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null, options = {}) {
+        const ignorePending = options?.ignorePending === true;
         if (!oldDateKey || !newDateKey) return;
-        if (isOperationMovePending(operation?._id)) return;
+        if (isOperationMovePending(operation?._id) && !ignorePending) return;
         if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
         if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
         _bumpDayMutationVersions(oldDateKey, newDateKey);
@@ -2860,15 +2861,31 @@ export const useMainStore = defineStore('mainStore', () => {
             return movingForward ? (bCell - aCell) : (aCell - bCell);
         });
 
-        for (const plan of plans) {
+        const changedPlans = plans.filter((plan) => {
             const currentCellIndex = Number.isInteger(plan.operation?.cellIndex) ? plan.operation.cellIndex : 0;
-            if (plan.oldDateKey === plan.newDateKey && currentCellIndex === plan.desiredCellIndex) continue;
-            await moveOperation(
+            return !(plan.oldDateKey === plan.newDateKey && currentCellIndex === plan.desiredCellIndex);
+        });
+
+        if (!changedPlans.length) return;
+
+        changedPlans.forEach((plan) => {
+            _setPendingOperationMove(
                 plan.operation,
                 plan.oldDateKey,
                 plan.newDateKey,
                 plan.desiredCellIndex,
                 plan.targetDate
+            );
+        });
+
+        for (const plan of changedPlans) {
+            await moveOperation(
+                plan.operation,
+                plan.oldDateKey,
+                plan.newDateKey,
+                plan.desiredCellIndex,
+                plan.targetDate,
+                { ignorePending: true }
             );
         }
     }

@@ -28,6 +28,7 @@ const isDragOver = ref(false);
 const mainStore = useMainStore();
 const permissions = usePermissions();
 const visibilityMode = computed(() => mainStore.accountVisibilityMode);
+let activeDragPreviewEl = null;
 
 // 🟢 Permission Check - can user interact with this operation?
 const canInteract = computed(() => {
@@ -363,6 +364,84 @@ const getTooltipValueClass = (rowLabel) => {
   return tooltipAmountTone.value ? `op-tooltip-value--${tooltipAmountTone.value}` : '';
 };
 
+const cleanupDragArtifacts = () => {
+  if (activeDragPreviewEl?.parentNode) {
+    activeDragPreviewEl.parentNode.removeChild(activeDragPreviewEl);
+  }
+  activeDragPreviewEl = null;
+
+  if (typeof document !== 'undefined') {
+    document.querySelectorAll('.operation-chip.drag-group-member').forEach((node) => {
+      node.classList.remove('drag-group-member');
+    });
+  }
+};
+
+const markDraggedGroupMembers = (operationIds) => {
+  if (typeof document === 'undefined') return;
+  const targetIds = new Set((Array.isArray(operationIds) ? operationIds : []).map((item) => String(item)));
+  document.querySelectorAll('.operation-chip[data-operation-id]').forEach((node) => {
+    const opId = String(node.dataset.operationId || '');
+    if (targetIds.has(opId)) {
+      node.classList.add('drag-group-member');
+    }
+  });
+};
+
+const buildGroupDragPreview = (operationIds) => {
+  if (typeof document === 'undefined') return null;
+
+  const ids = Array.from(new Set((Array.isArray(operationIds) ? operationIds : []).map((item) => String(item))));
+  if (ids.length <= 1) return null;
+
+  const sourceNodes = Array.from(document.querySelectorAll('.operation-chip[data-operation-id]'))
+    .filter((node) => ids.includes(String(node.dataset.operationId || '')))
+    .slice(0, 4);
+
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '-9999px';
+  container.style.left = '-9999px';
+  container.style.pointerEvents = 'none';
+  container.style.zIndex = '99999';
+  container.style.width = '280px';
+  container.style.paddingTop = `${Math.max(0, sourceNodes.length - 1) * 10}px`;
+  container.style.fontFamily = 'inherit';
+
+  sourceNodes.forEach((node, index) => {
+    const clone = node.cloneNode(true);
+    clone.classList.remove('selected', 'drag-group-member');
+    clone.style.width = '280px';
+    clone.style.maxWidth = '280px';
+    clone.style.boxSizing = 'border-box';
+    clone.style.position = 'absolute';
+    clone.style.left = '0';
+    clone.style.top = `${index * 10}px`;
+    clone.style.opacity = String(Math.max(0.56, 1 - (index * 0.14)));
+    clone.style.transform = `translate(${index * 6}px, ${index * 2}px)`;
+    clone.style.boxShadow = '0 10px 24px rgba(0,0,0,0.22)';
+    container.appendChild(clone);
+  });
+
+  const badge = document.createElement('div');
+  badge.textContent = ids.length > 1 ? `${ids.length} операций` : '1 операция';
+  badge.style.position = 'absolute';
+  badge.style.right = '-8px';
+  badge.style.top = '-10px';
+  badge.style.padding = '4px 10px';
+  badge.style.borderRadius = '999px';
+  badge.style.background = '#2d7ff9';
+  badge.style.color = '#ffffff';
+  badge.style.fontSize = '12px';
+  badge.style.fontWeight = '700';
+  badge.style.boxShadow = '0 6px 18px rgba(45,127,249,0.35)';
+  container.appendChild(badge);
+
+  document.body.appendChild(container);
+  activeDragPreviewEl = container;
+  return container;
+};
+
 
 
 const onAddClick = (event) => {
@@ -385,18 +464,30 @@ const onDragStart = (event) => {
   }
   if (!props.operation) return;
   const normalizedSelectedIds = props.selectedOperationIds.map((item) => String(item));
+  const draggedOperationIds = isSelected.value && normalizedSelectedIds.length > 1
+    ? normalizedSelectedIds
+    : [String(props.operation._id)];
   const payload = {
     operation: props.operation,
     anchorOperationId: props.operation._id,
-    selectedOperationIds: isSelected.value && normalizedSelectedIds.length > 1
-      ? normalizedSelectedIds
-      : [String(props.operation._id)]
+    selectedOperationIds: draggedOperationIds
   };
+  cleanupDragArtifacts();
+  if (draggedOperationIds.length > 1) {
+    markDraggedGroupMembers(draggedOperationIds);
+  }
   event.dataTransfer.setData('application/json', JSON.stringify(payload));
   event.dataTransfer.effectAllowed = 'move';
+  const dragPreviewEl = buildGroupDragPreview(draggedOperationIds);
+  if (dragPreviewEl) {
+    event.dataTransfer.setDragImage(dragPreviewEl, 36, 18);
+  }
   event.currentTarget.style.opacity = '0.5';
 };
-const onDragEnd = (event) => { event.currentTarget.style.opacity = '1'; };
+const onDragEnd = (event) => {
+  event.currentTarget.style.opacity = '1';
+  cleanupDragArtifacts();
+};
 const onDragOver = (event) => { event.preventDefault(); isDragOver.value = true; event.dataTransfer.dropEffect = 'move'; };
 const onDragLeave = () => { isDragOver.value = false; };
 const onDrop = (event) => {
@@ -576,6 +667,10 @@ const onDrop = (event) => {
 .operation-chip.selected {
   box-shadow: 0 0 0 2px rgba(80, 160, 255, 0.9), 0 8px 18px rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);
+}
+.operation-chip.drag-group-member {
+  opacity: 0.38;
+  transform: translateY(-1px) scale(0.985);
 }
 .operation-chip:hover { z-index: 30; }
 .operation-chip-marker {
