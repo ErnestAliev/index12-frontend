@@ -83,6 +83,13 @@ const isPersonalTransferWithdrawal = (op) => !!op &&
   op.transferReason === 'personal_use' &&
   (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
 
+const isTransferLike = (op) => !!op && (op.isTransfer === true || op.type === 'transfer');
+
+const sumAccountBalances = (accountRows) => {
+  const rows = Array.isArray(accountRows) ? accountRows : [];
+  return rows.reduce((sum, acc) => sum + (Number(acc?.balance) || 0), 0);
+};
+
 // Начальный баланс (сумма initialBalance по счетам), с учетом флага includeExcludedInTotal
 const initialTotalBalance = computed(() => {
   const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
@@ -1131,7 +1138,7 @@ const accountBalancesByDateKey = computed(() => {
         const absAmt = Math.abs(amt);
         
         // Handle transfers - apply partially based on account visibility
-        if (op.isTransfer) {
+        if (isTransferLike(op)) {
           // Transfer FROM this account (decreases balance)
           let fromAccId = null;
           if (op.fromAccountId) {
@@ -1182,7 +1189,8 @@ const accountBalancesByDateKey = computed(() => {
       balancesByAccount[accId] = {
         _id: accId,
         name: acc.name || 'Счет',
-        balance
+        balance,
+        isExcluded: !!acc.isExcluded
       };
     }
     
@@ -1627,7 +1635,7 @@ const chartData = computed(() => {
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
 
-      if (op.isTransfer) {
+      if (isTransferLike(op)) {
         transferOps.push(op);
       } else if (op.isWithdrawal) {
         withdrawalOps.push(op);
@@ -1817,21 +1825,44 @@ const chartOptions = computed(() => {
             const daySum = Array.isArray(summaries.value) ? summaries.value[index] : null;
             const dayIncome = Math.abs(Number(daySum?.income) || 0);
             const dayExpense = Math.abs(Number(daySum?.expense) || 0);
-            const dayBalance = Number(daySum?.balance) || 0;
-
-            // === HEADER: Дата + Общий баланс ===
-            const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
+            const summaryDayBalance = Number(daySum?.balance) || 0;
 
             // === ОСТАТКИ ПО СЧЕТАМ (ИСТОРИЧЕСКИЕ) ===
             const day = normalizedVisibleDays.value[index];
             const dateKey = day ? _getDateKey(day.date) : null;
             const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
             const dayAccountActivity = dateKey ? accountActivityByDateKey.value.get(dateKey) : null;
-            
+
+            let tooltipAccountRows = [];
+            let accountSectionTitle = 'Остатки на счетах:';
+
             if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
+              tooltipAccountRows = Object.values(dateAccountBalances);
+            } else {
+              const accs = mainStore?.currentAccountBalances || [];
+              const visibleAccs = accs.filter(a => {
+                if (!a) return false;
+                if (!isAccountVisibleInCurrentMode(a)) return false;
+                return true;
+              });
+
+              if (visibleAccs.length > 0) {
+                tooltipAccountRows = visibleAccs;
+                accountSectionTitle = 'Остатки на счетах (текущие):';
+              }
+            }
+
+            const dayBalance = tooltipAccountRows.length
+              ? sumAccountBalances(tooltipAccountRows)
+              : summaryDayBalance;
+
+            // === HEADER: Дата + Общий баланс ===
+            const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
+
+            if (tooltipAccountRows.length) {
               lines.push('---');
-              lines.push('Остатки на счетах:');
-              Object.values(dateAccountBalances).forEach(acc => {
+              lines.push(accountSectionTitle);
+              tooltipAccountRows.forEach(acc => {
                 const bal = Number(acc.balance) || 0;
                 const name = acc.name || 'Счет';
                 lines.push(buildTooltipAccountBalanceLine({
@@ -1841,29 +1872,6 @@ const chartOptions = computed(() => {
                   markers: getAccountTooltipMarkers(dayAccountActivity, acc)
                 }));
               });
-            } else {
-              // Fallback to current balances if no historical data
-              const accs = mainStore?.currentAccountBalances || [];
-              const visibleAccs = accs.filter(a => {
-                if (!a) return false;
-                if (!isAccountVisibleInCurrentMode(a)) return false;
-                return true;
-              });
-              
-              if (visibleAccs.length > 0) {
-                lines.push('---');
-                lines.push('Остатки на счетах (текущие):');
-                visibleAccs.forEach(acc => {
-                  const bal = Number(acc.balance) || 0;
-                  const name = acc.name || 'Счет';
-                  lines.push(buildTooltipAccountBalanceLine({
-                    name,
-                    balance: bal,
-                    balanceText: `${formatNumber(bal)} т`,
-                    markers: getAccountTooltipMarkers(dayAccountActivity, acc)
-                  }));
-                });
-              }
             }
 
             // === СВОДКА ДОХОД/РАСХОД ===

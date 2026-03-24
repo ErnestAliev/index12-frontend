@@ -98,6 +98,13 @@ const isPersonalTransferWithdrawal = (op) => !!op &&
   op.transferReason === 'personal_use' &&
   (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
 
+const isTransferLike = (op) => !!op && (op.isTransfer === true || op.type === 'transfer');
+
+const sumAccountBalances = (accountRows) => {
+  const rows = Array.isArray(accountRows) ? accountRows : [];
+  return rows.reduce((sum, acc) => sum + (Number(acc?.balance) || 0), 0);
+};
+
 // Начальный баланс (сумма initialBalance по счетам), с учетом флага includeExcludedInTotal
 const initialTotalBalance = computed(() => {
   const accs = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
@@ -1071,7 +1078,7 @@ const accountBalancesByDateKey = computed(() => {
         const absAmt = Math.abs(amt);
         
         // Handle transfers - apply partially based on account visibility
-        if (op.isTransfer) {
+        if (isTransferLike(op)) {
           // Transfer FROM this account (decreases balance)
           let fromAccId = null;
           if (op.fromAccountId) {
@@ -1624,7 +1631,7 @@ const chartData = computed(() => {
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
 
-      if (op.isTransfer) {
+      if (isTransferLike(op)) {
         transferOps.push(op);
       } else if (op.isWithdrawal) {
         withdrawalOps.push(op);
@@ -1812,16 +1819,42 @@ const chartOptions = computed(() => {
             const daySum = Array.isArray(summaries.value) ? summaries.value[dayIndex] : null;
             const dayIncome = Math.abs(Number(daySum?.income) || 0);
             const dayExpense = Math.abs(Number(daySum?.expense) || 0);
-            const dayBalance = Number(daySum?.balance) || 0;
-
-            // === HEADER: Дата + Общий баланс ===
-            const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
+            const summaryDayBalance = Number(daySum?.balance) || 0;
 
             // === ОСТАТКИ ПО СЧЕТАМ (ИСТОРИЧЕСКИЕ) ===
             const day = normalizedVisibleDays.value[dayIndex];
             const dateKey = day ? _getDateKey(day.date) : null;
             const dateAccountBalances = dateKey ? accountBalancesByDateKey.value.get(dateKey) : null;
             const dayAccountActivity = dateKey ? accountActivityByDateKey.value.get(dateKey) : null;
+
+            let tooltipAccountRows = [];
+            let tooltipAccountOptions = null;
+
+            if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
+              tooltipAccountRows = Object.values(dateAccountBalances);
+            } else {
+              const accs = mainStore?.currentAccountBalances || [];
+              const visibleAccs = accs.filter(a => {
+                if (!a) return false;
+                if (!isAccountVisibleInCurrentMode(a)) return false;
+                return true;
+              });
+
+              if (visibleAccs.length > 0) {
+                tooltipAccountRows = visibleAccs;
+                tooltipAccountOptions = {
+                  openTitle: 'Остатки на открытых счетах (текущие):',
+                  hiddenTitle: 'Остатки на скрытых счетах (текущие):'
+                };
+              }
+            }
+
+            const dayBalance = tooltipAccountRows.length
+              ? sumAccountBalances(tooltipAccountRows)
+              : summaryDayBalance;
+
+            // === HEADER: Дата + Общий баланс ===
+            const lines = [`${dateLabel}`, `Баланс общий: ${formatNumber(dayBalance)} т`];
 
             const pushGroupedBalances = (accountRows, options = {}) => {
               const openRows = accountRows.filter((acc) => !acc?.isExcluded);
@@ -1861,25 +1894,9 @@ const chartOptions = computed(() => {
               }
             };
             
-            if (dateAccountBalances && Object.keys(dateAccountBalances).length > 0) {
+            if (tooltipAccountRows.length) {
               lines.push('---');
-              pushGroupedBalances(Object.values(dateAccountBalances));
-            } else {
-              // Fallback to current balances if no historical data
-              const accs = mainStore?.currentAccountBalances || [];
-              const visibleAccs = accs.filter(a => {
-                if (!a) return false;
-                if (!isAccountVisibleInCurrentMode(a)) return false;
-                return true;
-              });
-              
-              if (visibleAccs.length > 0) {
-                lines.push('---');
-                pushGroupedBalances(visibleAccs, {
-                  openTitle: 'Остатки на открытых счетах (текущие):',
-                  hiddenTitle: 'Остатки на скрытых счетах (текущие):'
-                });
-              }
+              pushGroupedBalances(tooltipAccountRows, tooltipAccountOptions || undefined);
             }
 
             // === СВОДКА ДОХОД/РАСХОД ===
