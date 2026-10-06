@@ -533,9 +533,9 @@ const buttonText = computed(() => {
 });
 
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
-const onDeleteConfirmed = async () => {
+const onDeleteConfirmed = () => {
   const opToDelete = props.transferToEdit; emit('close'); 
-  try { if (!opToDelete?._id) return; await mainStore.deleteOperation(opToDelete); await mainStore.fetchAllEntities(); } catch (e) { console.error(e); } 
+  if (opToDelete?._id) emit('operation-deleted', opToDelete);
 };
 const handleCopyClick = () => {
   isCloneMode.value = true;

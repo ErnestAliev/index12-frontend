@@ -6,6 +6,7 @@ import { useProjectionStore } from './projectionStore';
 import { useTransferStore } from './transferStore';
 import { useSocketStore } from './socketStore';
 import { useWidgetStore } from './widgetStore';
+import { createOperationSync } from '@/utils/operationSync';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName, normalizeTaxRegime } from '@/utils/companyTax';
 
 axios.defaults.withCredentials = true;
@@ -178,6 +179,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const calculationCache = ref({});
     const pendingOperationMoves = ref({});
     const dayMutationVersions = ref({});
+    const cacheGeneration = ref(0);
+    const operationSync = createOperationSync();
+    let snapshotMutationVersion = 0;
 
     const accounts = ref([]);
     const companies = ref([]);
@@ -278,7 +282,7 @@ export const useMainStore = defineStore('mainStore', () => {
         // Include deal operations
         dealOperations.value.forEach(addOperation);
 
-        return Array.from(uniqueMap.values());
+        return operationSync.apply(Array.from(uniqueMap.values()));
     });
 
     const allOpsMap = computed(() => {
@@ -413,7 +417,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const _getDayMutationVersion = (dateKey) => {
         if (!dateKey) return 0;
-        return Number(dayMutationVersions.value[dateKey] || 0);
+        return `${cacheGeneration.value}:${Number(dayMutationVersions.value[dateKey] || 0)}`;
     };
 
     const _bumpDayMutationVersions = (...dateKeys) => {
@@ -469,7 +473,7 @@ export const useMainStore = defineStore('mainStore', () => {
     };
 
     const _getTimelineOpsForDate = (dateKey) => {
-        const baseOps = Array.isArray(displayCache.value[dateKey]) ? [...displayCache.value[dateKey]] : [];
+        const baseOps = operationSync.apply(displayCache.value[dateKey], dateKey);
         const pendingMoves = _getPendingMoveEntries();
         if (!pendingMoves.length) return _dedupeOperationList(baseOps);
 
@@ -754,7 +758,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 dayOps.forEach(op => { if (op && typeof op === 'object') { allOps.push(op); } });
             }
         });
-        return _dedupeOperationList(allOps);
+        return _dedupeOperationList(operationSync.apply(allOps));
     });
 
 
@@ -899,11 +903,14 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     async function fetchSnapshot() {
+        const requestVersion = snapshotMutationVersion;
         try {
             const clientDate = new Date().toISOString();
             const res = await axios.get(`${API_BASE_URL}/snapshot`, {
                 params: { date: clientDate }
             });
+            if (requestVersion !== snapshotMutationVersion ||
+                Object.values(operationSync.entries.value).some(entry => entry.pending)) return;
             snapshot.value = res.data;
         } catch (e) {
             console.error('Failed to fetch snapshot:', e);
@@ -912,6 +919,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     // ... (Snapshot optimistics logic remains unchanged) ...
     const _applyOptimisticSnapshotUpdate = (op, sign) => {
+        snapshotMutationVersion++;
         const s = snapshot.value;
         s.timestamp = new Date().toISOString();
 
@@ -1741,11 +1749,12 @@ export const useMainStore = defineStore('mainStore', () => {
     };
 
     const onSocketOperationAdded = async (op) => {
+        if (!op || operationSync.isDeleted(op)) return;
         if (op.categoryId) {
             const catId = typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId;
             const exists = categories.value.find(c => _idsMatch(c._id, catId));
             if (!exists) {
-                await fetchAllEntities();
+                void fetchAllEntities();
             }
         }
 
@@ -1754,6 +1763,9 @@ export const useMainStore = defineStore('mainStore', () => {
             onSocketOperationUpdated(op);
             return;
         }
+
+        // A category fetch can yield while a local delete/edit is in progress.
+        if (!operationSync.receive(op)) return;
 
         const richOp = _populateOp(op);
         const dk = richOp.dateKey;
@@ -1806,11 +1818,11 @@ export const useMainStore = defineStore('mainStore', () => {
         if (_isEffectivelyPastOrToday(richOp.date)) {
             _applyOptimisticSnapshotUpdate(richOp, 1);
         }
-        _updateDealCache(richOp, 'add');
         _triggerProjectionUpdate();
     };
 
-    const onSocketOperationUpdated = (op) => {
+    const onSocketOperationUpdated = (op, meta = {}) => {
+        if (!operationSync.receive(op)) return;
         let oldOp = null;
         let oldDateKey = null;
 
@@ -1826,7 +1838,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         const newDateKey = op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : oldDateKey);
         const richOp = _populateOp({ ...op, date: new Date(op.date) });
-        _bumpDayMutationVersions(oldDateKey, newDateKey);
+        _bumpDayMutationVersions(oldDateKey, newDateKey, ...(meta.affectedDateKeys || []));
 
         if (oldDateKey && displayCache.value[oldDateKey]) {
             displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, op._id));
@@ -1869,29 +1881,21 @@ export const useMainStore = defineStore('mainStore', () => {
         _triggerProjectionUpdate();
     };
 
-    const onSocketOperationDeleted = (opId) => {
-        let oldOp = null;
-        let oldDateKey = null;
-
-        for (const dk in displayCache.value) {
-            const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId) || _idsMatch(o._id2, opId));
-            if (found) { oldOp = found; oldDateKey = dk; break; }
-        }
-        if (!oldOp) return;
-
-        if (_isEffectivelyPastOrToday(oldOp.date)) {
-            _applyOptimisticSnapshotUpdate(oldOp, -1);
-        }
-
-        if (oldDateKey && displayCache.value[oldDateKey]) {
-            _bumpDayMutationVersions(oldDateKey);
-            displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o =>
-                !_idsMatch(o._id, opId) && !_idsMatch(o._id2, opId)
-            );
-            calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
-        }
-
-        _triggerProjectionUpdate();
+    const onSocketOperationDeleted = (opId, meta = {}) => {
+        const ids = new Set([_toStr(opId), ...(meta.deletedOperationIds || []).map(_toStr)].filter(Boolean));
+        const affected = allKnownOperations.value.filter(op =>
+            ids.has(_toStr(op._id)) || ids.has(_toStr(op._id2)) || ids.has(_toStr(op.parentOpId)));
+        affected.forEach(op => _transitionSnapshot(op, null));
+        affected.forEach(op => { ids.add(_toStr(op._id)); if (op._id2) ids.add(_toStr(op._id2)); });
+        ids.forEach(id => {
+            const op = affected.find(item => _idsMatch(item._id, id)) || { _id: id };
+            const token = operationSync.begin(op, 'delete');
+            operationSync.acknowledge(id, token);
+            _clearPendingOperationMove(id);
+        });
+        const days = [...affected.map(op => op.dateKey), ...(meta.affectedDateKeys || [])];
+        _bumpDayMutationVersions(...days);
+        _publishOperationState(...days);
     };
 
     const _getListRefByType = (type) => {
@@ -2020,180 +2024,139 @@ export const useMainStore = defineStore('mainStore', () => {
         }
     }
 
-    async function updateOperation(opId, opData) {
-        // 🟢 NEW: Check edit permission
-        if (!canEdit.value) {
-            throw new Error('У вас нет прав на редактирование операций');
+    const _publishOperationState = (...dateKeys) => {
+        const keys = new Set(dateKeys.filter(Boolean));
+        keys.forEach(key => _syncCaches(key, displayCache.value[key] || []));
+        dealOperations.value = dealOperations.value
+            .filter(op => !operationSync.isDeleted(op))
+            .map(op => operationSync.entries.value[_toStr(op._id)]?.op || op);
+        _triggerProjectionUpdate();
+    };
+
+    const _transitionSnapshot = (before, after) => {
+        snapshotMutationVersion++;
+        if (before && !before.excludeFromTotals && _isEffectivelyPastOrToday(before.date)) {
+            _applyOptimisticSnapshotUpdate(before, -1);
         }
-
-        let oldOp = null;
-        let oldDateKey = null;
-
-        for (const dk in displayCache.value) {
-            const found = displayCache.value[dk].find(o => _idsMatch(o._id, opId));
-            if (found) { oldOp = found; oldDateKey = dk; break; }
+        if (after && !after.excludeFromTotals && _isEffectivelyPastOrToday(after.date)) {
+            _applyOptimisticSnapshotUpdate(after, 1);
         }
+    };
 
-        if (!oldOp) oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, opId));
+    const _findFreeCachedCell = (dateKey, startIndex = 0, ignoredIds = []) => {
+        const ignored = new Set(ignoredIds.map(_toStr));
+        const used = new Set(_getTimelineOpsForDate(dateKey)
+            .filter(op => !ignored.has(_toStr(op._id)) && !ignored.has(_toStr(op.parentOpId)))
+            .map(op => op.cellIndex));
+        let index = Math.max(0, startIndex);
+        while (used.has(index)) index++;
+        return index;
+    };
 
-        if (!oldOp) {
-            const fallbackDateKey = opData.date ? _getDateKey(new Date(opData.date)) : opData.dateKey;
-            const fallbackPayload = {
-                ...opData,
-                dateKey: fallbackDateKey || opData.dateKey
-            };
-            if (fallbackPayload.dateKey && fallbackPayload.cellIndex === undefined) {
-                fallbackPayload.cellIndex = await getFirstFreeCellIndex(fallbackPayload.dateKey);
-            }
-
-            const res = await axios.put(`${API_BASE_URL}/events/${opId}`, fallbackPayload);
-            await refreshDay(fallbackPayload.dateKey || res.data.dateKey);
-            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
-            // await fetchSnapshot();
-            return res.data;
-        }
+    async function updateOperation(opId, opData, options = {}) {
+        options.beforeWrite?.catch(() => {});
+        if (!canEdit.value) throw new Error('У вас нет прав на редактирование операций');
+        const oldOp = allKnownOperations.value.find(op => _idsMatch(op._id, opId))
+            || options.originalOperation
+            || { ...opData, _id: opId };
+        if (operationSync.isDeleted(oldOp)) throw new Error('Операция уже удалена');
+        const oldDateKey = oldOp.dateKey;
+        const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldDateKey);
+        if (!newDateKey) throw new Error('Не указана дата операции');
+        const targetWasLoaded = Array.isArray(displayCache.value[newDateKey]);
+        const requestedIndex = Number.isInteger(opData.cellIndex) ? opData.cellIndex : (oldOp.cellIndex || 0);
+        const isDateChanged = oldDateKey !== newDateKey;
+        const cellIndex = isDateChanged && !options.keepCellIndex
+            ? _findFreeCachedCell(newDateKey, requestedIndex, [opId]) : requestedIndex;
+        let preview = _populateOp({ ...oldOp, ...opData, _id: opId, dateKey: newDateKey, cellIndex });
+        _transitionSnapshot(oldOp, preview);
+        const token = operationSync.begin(preview, 'upsert', oldOp);
+        _clearPendingOperationMove(opId);
+        _bumpDayMutationVersions(oldDateKey, newDateKey);
+        _publishOperationState(oldDateKey, newDateKey);
 
         try {
-            const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldOp.dateKey);
-            const isDateChanged = oldDateKey !== newDateKey;
-            const oldCellIndex = Number.isInteger(oldOp?.cellIndex) ? oldOp.cellIndex : 0;
-            const requestedCellIndex = Number.isInteger(opData?.cellIndex) ? opData.cellIndex : oldCellIndex;
-            const resolvedCellIndex = isDateChanged
-                ? await getFirstFreeCellIndex(newDateKey, requestedCellIndex)
-                : requestedCellIndex;
-
-            if (_isEffectivelyPastOrToday(oldOp.date)) {
-                _applyOptimisticSnapshotUpdate(oldOp, -1);
-            }
-
-            const mergedOp = { ...oldOp, ...opData, dateKey: newDateKey, cellIndex: resolvedCellIndex };
-            if (opData.date) mergedOp.date = new Date(opData.date);
-
-            const richOp = _populateOp(mergedOp);
-
-            if (isDateChanged) {
-                if (displayCache.value[oldDateKey]) {
-                    displayCache.value[oldDateKey] = displayCache.value[oldDateKey].filter(o => !_idsMatch(o._id, opId));
-                    displayCache.value[oldDateKey] = _dedupeOperationList(displayCache.value[oldDateKey]);
-                    calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
+            // Show the new position before loading an unseen target day. Resolve
+            // occupied cells before writing, without replacing the local preview.
+            const response = await operationSync.enqueue(opId, async () => {
+                if (isDateChanged && !targetWasLoaded && !options.keepCellIndex) {
+                    await fetchOperations(newDateKey, true);
+                    preview = { ...preview, cellIndex: _findFreeCachedCell(newDateKey, requestedIndex, [opId]) };
                 }
-                if (!displayCache.value[newDateKey]) displayCache.value[newDateKey] = [];
-                displayCache.value[newDateKey].push(richOp);
-                displayCache.value[newDateKey] = _dedupeOperationList(displayCache.value[newDateKey]);
-                calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
-            } else {
-                const list = displayCache.value[oldDateKey];
-                const idx = list.findIndex(o => _idsMatch(o._id, opId));
-                if (idx !== -1) list[idx] = richOp;
-                displayCache.value[oldDateKey] = _dedupeOperationList(list);
-                calculationCache.value[oldDateKey] = [...displayCache.value[oldDateKey]];
-            }
-
-            if (_isEffectivelyPastOrToday(richOp.date)) {
-                _applyOptimisticSnapshotUpdate(richOp, 1);
-            }
-
-            _triggerProjectionUpdate();
-
-            const updatePayload = { ...opData, dateKey: newDateKey, cellIndex: resolvedCellIndex };
-
-            const response = await axios.put(`${API_BASE_URL}/events/${opId}`, updatePayload);
-
-            const serverOp = response.data;
-            const targetList = displayCache.value[newDateKey];
-            if (targetList) {
-                const i = targetList.findIndex(o => _idsMatch(o._id, opId));
-                if (i !== -1) {
-                    targetList[i] = _populateOp(serverOp);
-                    displayCache.value[newDateKey] = _dedupeOperationList(targetList);
-                    calculationCache.value[newDateKey] = [...displayCache.value[newDateKey]];
+                if (options.beforeWrite) preview = { ...preview, ...await options.beforeWrite };
+                operationSync.preview(opId, token, preview);
+                _publishOperationState(newDateKey);
+                const payload = { ...opData, dateKey: newDateKey, cellIndex: preview.cellIndex };
+                const result = await axios.put(`${API_BASE_URL}/events/${opId}`, payload);
+                if (options.syncLegacyPair && oldOp._id2) {
+                    await axios.put(`${API_BASE_URL}/events/${oldOp._id2}`, payload);
                 }
+                return result;
+            });
+            const serverOp = _populateOp(oldOp._id2 ? {
+                ...oldOp, ...response.data, _id2: oldOp._id2,
+                type: 'transfer', isTransfer: true, amount: Math.abs(Number(response.data.amount)),
+            } : response.data);
+            const displayed = operationSync.entries.value[_toStr(opId)]?.op;
+            if (operationSync.acknowledge(opId, token, serverOp)) {
+                _transitionSnapshot(displayed, operationSync.entries.value[_toStr(opId)]?.op);
+                _bumpDayMutationVersions(oldDateKey, newDateKey, serverOp.dateKey);
+                _publishOperationState(oldDateKey, newDateKey, serverOp.dateKey);
             }
-            _dedupeOperationEntries(serverOp._id, newDateKey);
-
-            // 🔴 REMOVED: fetchSnapshot() returns empty data before MongoDB aggregation completes
-            // Optimistic updates work correctly, socket events provide sync after 4-6 sec
-            // await fetchSnapshot();
-
-            return serverOp;
-        } catch (e) {
-            console.error("Optimistic Update Failed:", e);
-            refreshDay(oldDateKey);
-            fetchSnapshot();
-            throw e;
+            return response.data;
+        } catch (error) {
+            const displayed = operationSync.entries.value[_toStr(opId)]?.op;
+            if (operationSync.reject(opId, token)) {
+                _transitionSnapshot(displayed, operationSync.entries.value[_toStr(opId)]?.op);
+                _bumpDayMutationVersions(oldDateKey, newDateKey);
+                _publishOperationState(oldDateKey, newDateKey);
+            }
+            throw error;
         }
     }
 
     const deleteOperation = async (operation) => {
-        // 🟢 NEW: Check delete permission
-        if (!canDelete.value) {
-            throw new Error('У вас нет прав на удаление операций');
-        }
-
-        const opId = operation._id || operation.id;
-        const dateKey = operation.dateKey;
+        if (!canDelete.value) throw new Error('У вас нет прав на удаление операций');
+        const opId = _toStr(operation?._id || operation?.id);
         if (!opId) return;
-
-        // Подтянем свежие данные операции, чтобы точно знать offsetIncomeId и amount
-        let opForDelete = operation;
+        if (operationSync.entries.value[opId]?.kind === 'delete') return;
+        const original = allKnownOperations.value.find(op => _idsMatch(op._id, opId)) || operation;
+        const affected = allKnownOperations.value.filter(op =>
+            _idsMatch(op._id, opId) || _idsMatch(op._id2, opId) || _idsMatch(op.parentOpId, opId));
+        if (!affected.length) affected.push(original);
+        affected.forEach(op => _transitionSnapshot(op, null));
+        const ids = new Set([opId, _toStr(original._id2)].filter(Boolean));
+        affected.forEach(op => { ids.add(_toStr(op._id)); if (op._id2) ids.add(_toStr(op._id2)); });
+        const tokens = new Map();
+        ids.forEach(id => {
+            const originalOp = affected.find(item => _idsMatch(item._id, id));
+            const op = originalOp || { _id: id };
+            tokens.set(id, operationSync.begin(op, 'delete', originalOp || null));
+            _clearPendingOperationMove(id);
+        });
+        const days = affected.map(op => op.dateKey || (op.date ? _getDateKey(new Date(op.date)) : null));
+        _bumpDayMutationVersions(...days);
+        _publishOperationState(...days);
         try {
-            const res = await axios.get(`${API_BASE_URL}/events/${opId}`);
-            opForDelete = res.data || operation;
-        } catch(e) { /* оставляем переданный */ }
-
-        const effectiveDateKey = dateKey || opForDelete.dateKey || (opForDelete.date ? _getDateKey(new Date(opForDelete.date)) : null);
-        if (!effectiveDateKey) return;
-
-        try {
-
-            // Взаимозачеты больше не изменяют сумму дохода — никаких откатов
-
-            const isSplitParent = operation.isSplitParent === true;
-
-            // Удаляем из кэша отображения (родителя и дочерние сплиты)
-            const purgeFromCaches = (parentId) => {
-                for (const dk in displayCache.value) {
-                    const list = displayCache.value[dk];
-                    if (!Array.isArray(list)) continue;
-                    const filtered = list.filter(o => !_idsMatch(o._id, parentId) && !_idsMatch(o.parentOpId, parentId));
-                    displayCache.value[dk] = filtered;
-                    calculationCache.value[dk] = [...filtered];
-                }
-            };
-            purgeFromCaches(operation._id);
-
-            // 🟢 IMPORTANT: Update dealCache BEFORE recalculating anything
-            // This ensures dealOperations is in sync with displayCache
-            _triggerProjectionUpdate();
-
-
-
-
-
-            if (isTransfer(operation) && operation._id2) {
-                await Promise.all([axios.delete(`${API_BASE_URL}/events/${operation._id}`), axios.delete(`${API_BASE_URL}/events/${operation._id2}`)]);
-            } else {
-                // Если родитель сплита — удаляем и дочерние
-                if (isSplitParent) {
-                    await axios.delete(`${API_BASE_URL}/events/${operation._id}`, { params: { cascadeSplit: true } });
-                } else {
-                    await axios.delete(`${API_BASE_URL}/events/${operation._id}`);
-                }
-            }
-
-            await fetchSnapshot();
-            _triggerProjectionUpdate();
-
-        } catch (e) {
-            if (e.response && (e.response.status === 404 || e.response.status === 200)) {
-                return;
-            }
-            console.error("Delete Failed:", e);
-            refreshDay(dateKey);
-            fetchSnapshot();
-
+            const requestIds = [opId];
+            await Promise.all(requestIds.map(id => operationSync.enqueue(id, async () => {
+                try { return await axios.delete(`${API_BASE_URL}/events/${id}`, { params: { cascadeTransfer: true } }); }
+                catch (error) { if (error.response?.status !== 404) throw error; }
+            })));
+            tokens.forEach((token, id) => operationSync.acknowledge(id, token));
+            _bumpDayMutationVersions(...days);
+            _publishOperationState(...days);
+        } catch (error) {
+            tokens.forEach((token, id) => operationSync.reject(id, token));
+            affected.forEach(op => {
+                const entry = operationSync.entries.value[_toStr(op._id)];
+                if (entry?.kind === 'upsert') _transitionSnapshot(null, entry.op);
+            });
+            _bumpDayMutationVersions(...days);
+            _publishOperationState(...days);
+            throw error;
         }
-    }
+    };
 
     async function fetchOperationsRange(startDate, endDate, options = {}) {
         try {
@@ -2263,7 +2226,7 @@ export const useMainStore = defineStore('mainStore', () => {
             });
 
             const applyDay = (dateKey, serverOps) => {
-                if (_getDayMutationVersion(dateKey) !== Number(requestVersionByDay.get(dateKey) || 0)) {
+                if (_getDayMutationVersion(dateKey) !== requestVersionByDay.get(dateKey)) {
                     return;
                 }
 
@@ -2275,8 +2238,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     .sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
 
                 const deduped = _dedupeOperationList(finalOps);
-                displayCache.value[dateKey] = deduped;
-                calculationCache.value[dateKey] = [...deduped];
+                operationSync.reconcileDay(deduped, dateKey);
+                _syncCaches(dateKey, deduped);
             };
 
             if (useSparse) {
@@ -2300,7 +2263,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
 
     const _syncCaches = (key, ops) => {
-        const deduped = _dedupeOperationList(ops);
+        const deduped = _dedupeOperationList(operationSync.apply(ops, key));
         displayCache.value[key] = [...deduped];
         calculationCache.value[key] = [...deduped];
         cacheVersion.value++;
@@ -2365,7 +2328,8 @@ export const useMainStore = defineStore('mainStore', () => {
             contractors.value = _sortByOrder(contrRes.data);
             projects.value = _sortByOrder(projRes.data);
             individuals.value = _sortByOrder(indRes.data);
-            dealOperations.value = dealsRes.data;
+            dealsRes.data.forEach(op => operationSync.receive(op));
+            dealOperations.value = dealsRes.data.filter(op => !operationSync.isDeleted(op));
 
             categories.value = _sortByOrder(catRes.data);
 
@@ -2389,8 +2353,9 @@ export const useMainStore = defineStore('mainStore', () => {
             const raw = Array.isArray(res.data) ? res.data.slice() : [];
             const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
             if (_getDayMutationVersion(dateKey) !== requestVersion) return;
-            displayCache.value[dateKey] = _dedupeOperationList(processedOps.map(_populateOp));
-            calculationCache.value[dateKey] = [...displayCache.value[dateKey]];
+            const populated = processedOps.map(_populateOp);
+            operationSync.reconcileDay(populated, dateKey);
+            _syncCaches(dateKey, populated);
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     }
 
@@ -2488,6 +2453,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 if (expenseOp && incomeOp) {
                     mergedTransfers.push({
                         _id: incomeOp._id, _id2: expenseOp._id, type: 'transfer', isTransfer: true,
+                        syncVersion: Math.max(Number(incomeOp.syncVersion || 0), Number(expenseOp.syncVersion || 0)),
                         transferGroupId: groupId, amount: Math.abs(Number(incomeOp.amount)),
                         fromAccountId: expenseOp.accountId, toAccountId: incomeOp.accountId,
                         fromCompanyId: expenseOp.companyId, toCompanyId: incomeOp.companyId,
@@ -2523,197 +2489,49 @@ export const useMainStore = defineStore('mainStore', () => {
             const raw = Array.isArray(res.data) ? res.data.slice() : [];
             const processedOps = _mergeTransfers(raw).map(op => ({ ...op, dateKey: dateKey }));
             if (_getDayMutationVersion(dateKey) !== requestVersion) return;
-            _syncCaches(dateKey, processedOps.map(_populateOp));
+            const populated = processedOps.map(_populateOp);
+            operationSync.reconcileDay(populated, dateKey);
+            _syncCaches(dateKey, populated);
         } catch (e) { if (e.response && e.response.status === 401) user.value = null; }
     }
 
-    async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null, options = {}) {
-        const ignorePending = options?.ignorePending === true;
-        if (!oldDateKey || !newDateKey) return;
-        if (isOperationMovePending(operation?._id) && !ignorePending) return;
-        if (!displayCache.value[oldDateKey]) await fetchOperations(oldDateKey);
-        if (!displayCache.value[newDateKey]) await fetchOperations(newDateKey);
-        _bumpDayMutationVersions(oldDateKey, newDateKey);
-
+    async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null) {
+        if (!operation?._id || !oldDateKey || !newDateKey) return;
+        const source = allKnownOperations.value.find(op => _idsMatch(op._id, operation._id)) || operation;
         const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
-        const isMerged = operation.isTransfer && operation._id2;
-        const isSplitParent = operation.isSplitParent === true;
-        const splitChildren = isSplitParent
-            ? allOperationsFlat.value.filter(o => _idsMatch(o.parentOpId, operation._id))
-            : [];
-
-        const updateSnapshotForList = (opsList, sign) => {
-            opsList.forEach(op => {
-                if (_isEffectivelyPastOrToday(op.date)) {
-                    _applyOptimisticSnapshotUpdate(op, sign);
-                }
-            });
-        };
-
-        if (oldDateKey === newDateKey) {
-            const ops = [...(displayCache.value[oldDateKey] || [])];
-            const sourceOp = ops.find(o => _idsMatch(o._id, operation._id));
-            const rawTargetOp = ops.find(o => o.cellIndex === targetIndex && !_idsMatch(o._id, operation._id));
-            const targetOp = rawTargetOp && _canCurrentUserEditOperation(rawTargetOp) ? rawTargetOp : null;
-
-            if (sourceOp) {
-                if (rawTargetOp && !targetOp) {
-                    sourceOp.cellIndex = await getFirstFreeCellIndex(oldDateKey, targetIndex);
-                } else if (targetOp) {
-                    const originalSourceIndex = sourceOp.cellIndex;
-                    sourceOp.cellIndex = targetIndex;
-                    targetOp.cellIndex = originalSourceIndex;
-                } else {
-                    sourceOp.cellIndex = targetIndex;
-                }
-
-                const finalSourceCellIndex = sourceOp.cellIndex;
-
-                // Дочерние сплиты повторяют индекс родителя
-                splitChildren.forEach(child => {
-                    const idx = ops.findIndex(o => _idsMatch(o._id, child._id));
-                    if (idx !== -1) ops[idx] = { ...ops[idx], cellIndex: finalSourceCellIndex };
-                });
-
-                _setPendingOperationMove(sourceOp, oldDateKey, oldDateKey, finalSourceCellIndex, sourceOp.date);
-                if (isMerged) {
-                    const mergedSibling = ops.find(o => _idsMatch(o._id, operation._id2));
-                    if (mergedSibling) _setPendingOperationMove(mergedSibling, oldDateKey, oldDateKey, finalSourceCellIndex, mergedSibling.date || sourceOp.date);
-                }
-                splitChildren.forEach(child => {
-                    const pendingChild = ops.find(o => _idsMatch(o._id, child._id)) || child;
-                    _setPendingOperationMove(pendingChild, oldDateKey, oldDateKey, finalSourceCellIndex, pendingChild.date || sourceOp.date);
-                });
-
-                _syncCaches(oldDateKey, ops);
-                _dedupeOperationEntries(sourceOp._id, oldDateKey);
-                if (targetOp?._id) _dedupeOperationEntries(targetOp._id, oldDateKey);
-                if (isMerged && operation._id2) _dedupeOperationEntries(operation._id2, oldDateKey);
-                splitChildren.forEach(child => _dedupeOperationEntries(child._id, oldDateKey));
-
-                const promises = [
-                    axios.put(`${API_BASE_URL}/events/${sourceOp._id}`, { cellIndex: finalSourceCellIndex })
-                ];
-                if (targetOp) {
-                    promises.push(axios.put(`${API_BASE_URL}/events/${targetOp._id}`, { cellIndex: targetOp.cellIndex }));
-                }
-                if (isMerged) promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, { cellIndex: finalSourceCellIndex }));
-                splitChildren.forEach(child => {
-                    promises.push(axios.put(`${API_BASE_URL}/events/${child._id}`, { cellIndex: finalSourceCellIndex }));
-                });
-
-                try {
-                    const responses = await Promise.all(promises);
-                    responses.forEach((response) => {
-                        const serverOp = response?.data;
-                        if (serverOp?._id) {
-                            _clearPendingOperationMove(serverOp._id);
-                            onSocketOperationUpdated(serverOp);
-                        }
-                    });
-                } catch {
-                    _clearPendingOperationMove(sourceOp._id);
-                    if (isMerged && operation._id2) _clearPendingOperationMove(operation._id2);
-                    splitChildren.forEach(child => _clearPendingOperationMove(child._id));
-                    await refreshDay(oldDateKey);
-                }
-            }
-        } else {
-            let oldOps = [...(displayCache.value[oldDateKey] || [])];
-            const sourceOpData = oldOps.find(o => _idsMatch(o._id, operation._id));
-
-            // Уберем родителя и все дочерние сплиты из старого дня
-            oldOps = oldOps.filter(o => !_idsMatch(o._id, operation._id) && !_idsMatch(o.parentOpId, operation._id));
-            _syncCaches(oldDateKey, oldOps);
-
-            let newOps = [...(displayCache.value[newDateKey] || [])];
-            const occupant = newOps.find(o => o.cellIndex === targetIndex);
-            let finalIndex = targetIndex;
-            if (occupant) {
-                const usedIndices = new Set(newOps.map(o => o.cellIndex));
-                while (usedIndices.has(finalIndex)) finalIndex++;
-            }
-
-            const newDateObj = specificTargetDate ? new Date(specificTargetDate) : _parseDateKey(newDateKey);
-            const newDayOfYear = _getDayOfYear(newDateObj);
-
-            const movedParent = sourceOpData ? { ...sourceOpData, dateKey: newDateKey, date: newDateObj, dayOfYear: newDayOfYear, cellIndex: finalIndex } : null;
-
-            // Перенесем дочерние сплиты
-            const movedChildren = splitChildren.map(child => ({
-                ...child,
-                dateKey: newDateKey,
-                date: newDateObj,
-                dayOfYear: newDayOfYear,
-                cellIndex: finalIndex
-            }));
-
-            if (movedParent) _setPendingOperationMove(movedParent, oldDateKey, newDateKey, finalIndex, newDateObj);
-            if (isMerged) {
-                const mergedSibling = oldOps.find(o => _idsMatch(o._id, operation._id2)) || allOperationsFlat.value.find(o => _idsMatch(o._id, operation._id2));
-                if (mergedSibling) _setPendingOperationMove(mergedSibling, oldDateKey, newDateKey, finalIndex, newDateObj);
-            }
-            movedChildren.forEach(child => _setPendingOperationMove(child, oldDateKey, newDateKey, finalIndex, newDateObj));
-
-            if (movedParent) newOps.push(movedParent);
-            movedChildren.forEach(ch => newOps.push(ch));
-
-            // Сортировка по cellIndex для стабильного порядка
-            newOps.sort((a, b) => (a.cellIndex || 0) - (b.cellIndex || 0));
-            _syncCaches(newDateKey, newOps);
-            if (movedParent?._id) _dedupeOperationEntries(movedParent._id, newDateKey);
-            if (isMerged && operation._id2) _dedupeOperationEntries(operation._id2, newDateKey);
-            movedChildren.forEach(child => _dedupeOperationEntries(child._id, newDateKey));
-
-            const wasInSnapshot = _isEffectivelyPastOrToday(_parseDateKey(oldDateKey));
-            const isInSnapshot = _isEffectivelyPastOrToday(newDateObj);
-            const needsSnapshotUpdate = wasInSnapshot !== isInSnapshot;
-
-            if (needsSnapshotUpdate) {
-                const sign = isInSnapshot ? 1 : -1;
-                const listForSnapshot = isSplitParent ? movedChildren : (movedParent ? [movedParent] : []);
-                updateSnapshotForList(listForSnapshot, sign);
-            }
-
-            _triggerProjectionUpdate();
-
-            const promises = [];
-            if (movedParent) {
-                const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: movedParent.date, dayOfYear: newDayOfYear };
-                promises.push(axios.put(`${API_BASE_URL}/events/${movedParent._id}`, payload));
-            }
-            if (isMerged) {
-                const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: newDateObj, dayOfYear: newDayOfYear };
-                promises.push(axios.put(`${API_BASE_URL}/events/${operation._id2}`, payload));
-            }
-            movedChildren.forEach(ch => {
-                const payload = { dateKey: newDateKey, cellIndex: finalIndex, date: ch.date, dayOfYear: newDayOfYear };
-                promises.push(axios.put(`${API_BASE_URL}/events/${ch._id}`, payload));
-            });
-
-            if (occupant) {
-                promises.push(axios.put(`${API_BASE_URL}/events/${occupant._id}`, { cellIndex: occupant.cellIndex }));
-            }
-
-            await Promise.all(promises)
-                .then((responses) => {
-                    responses.forEach((response) => {
-                        const serverOp = response?.data;
-                        if (serverOp?._id) {
-                            _clearPendingOperationMove(serverOp._id);
-                            onSocketOperationUpdated(serverOp);
-                        }
-                    });
-                })
-                .catch(() => {
-                    if (movedParent?._id) _clearPendingOperationMove(movedParent._id);
-                    if (isMerged && operation._id2) _clearPendingOperationMove(operation._id2);
-                    movedChildren.forEach(child => _clearPendingOperationMove(child._id));
-                    refreshDay(oldDateKey);
-                    refreshDay(newDateKey);
-                    fetchSnapshot();
-                });
+        const target = _getTimelineOpsForDate(newDateKey).find(op =>
+            op.cellIndex === targetIndex && !_idsMatch(op._id, source._id) && !_idsMatch(op.parentOpId, source._id));
+        const swap = oldDateKey === newDateKey && target && _canCurrentUserEditOperation(target);
+        const finalIndex = target && !swap ? _findFreeCachedCell(newDateKey, targetIndex, [source._id]) : targetIndex;
+        const date = specificTargetDate ? new Date(specificTargetDate)
+            : (oldDateKey === newDateKey ? new Date(source.date) : _parseDateKey(newDateKey));
+        const changes = [{ op: source, payload: { date, dateKey: newDateKey, dayOfYear: _getDayOfYear(date), cellIndex: finalIndex } }];
+        if (source.isSplitParent) {
+            allKnownOperations.value.filter(op => _idsMatch(op.parentOpId, source._id))
+                .forEach(op => changes.push({ op, payload: { ...changes[0].payload } }));
         }
+        if (swap) {
+            changes.push({ op: target, payload: { cellIndex: source.cellIndex || 0 } });
+            if (target.isSplitParent) {
+                allKnownOperations.value.filter(op => _idsMatch(op.parentOpId, target._id))
+                    .forEach(op => changes.push({ op, payload: { cellIndex: source.cellIndex || 0 } }));
+            }
+        }
+        // Child previews appear with their parent immediately. Their writes wait
+        // for its resolved target cell, including when the target day was unloaded.
+        const sourceSaving = updateOperation(source._id, changes[0].payload, {
+            originalOperation: source, keepCellIndex: oldDateKey === newDateKey,
+            syncLegacyPair: true,
+        });
+        const writes = [sourceSaving];
+        for (const { op, payload } of changes.slice(1)) {
+            const isSourceChild = _idsMatch(op.parentOpId, source._id);
+            writes.push(updateOperation(op._id, payload, {
+                originalOperation: op, keepCellIndex: true,
+                beforeWrite: isSourceChild ? sourceSaving.then(result => ({ cellIndex: result.cellIndex })) : null,
+            }));
+        }
+        await Promise.all(writes);
     }
 
     async function moveOperationsBatch(operations, anchorOperation, targetDateKey, targetCellIndex, specificTargetDate = null) {
@@ -2796,16 +2614,10 @@ export const useMainStore = defineStore('mainStore', () => {
             );
         });
 
-        for (const plan of changedPlans) {
-            await moveOperation(
-                plan.operation,
-                plan.oldDateKey,
-                plan.newDateKey,
-                plan.desiredCellIndex,
-                plan.targetDate,
-                { ignorePending: true }
-            );
-        }
+        await Promise.all(changedPlans.map(plan => moveOperation(
+            plan.operation, plan.oldDateKey, plan.newDateKey,
+            plan.desiredCellIndex, plan.targetDate
+        )));
     }
 
     function _generateTransferGroupId() { return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
@@ -2912,7 +2724,7 @@ export const useMainStore = defineStore('mainStore', () => {
             const oldOp = allOperationsFlat.value.find(o => _idsMatch(o._id, transferId));
             let newCellIndex;
             if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
-            else newCellIndex = await getFirstFreeCellIndex(newDateKey);
+            else newCellIndex = _findFreeCachedCell(newDateKey);
 
             const isPersonalWithdrawal = transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use';
 
@@ -2946,15 +2758,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     description: null
                 };
 
-            const response = await axios.put(`${API_BASE_URL}/events/${transferId}`, payload);
-            if (oldOp && oldOp.dateKey !== newDateKey) await refreshDay(oldOp.dateKey);
-            await refreshDay(newDateKey);
-            _triggerProjectionUpdate();
-
-            // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
-            // await fetchSnapshot();
-
-            return response.data;
+            return await updateOperation(transferId, payload);
         } catch (error) { throw error; }
     }
 
@@ -3113,9 +2917,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
     async function forceRefreshAll() {
         try {
+            cacheGeneration.value++;
             displayCache.value = {}; calculationCache.value = {};
-            pendingOperationMoves.value = {};
-            dayMutationVersions.value = {};
             await fetchAllEntities();
 
             const ps = useProjectionStore();
@@ -3160,6 +2963,10 @@ export const useMainStore = defineStore('mainStore', () => {
         useSocketStore().disconnect();
 
         // Clear all caches
+        cacheGeneration.value++;
+        operationSync.clear();
+        pendingOperationMoves.value = {};
+        dealOperations.value = [];
         displayCache.value = {};
         calculationCache.value = {};
 
@@ -3671,6 +3478,9 @@ export const useMainStore = defineStore('mainStore', () => {
 
         // 🟢 NEW: Workspace switching
         async resetStore() {
+            cacheGeneration.value++;
+            operationSync.clear();
+            pendingOperationMoves.value = {};
             allEvents.value = [];
             accounts.value = [];
             companies.value = [];

@@ -623,7 +623,7 @@ const handleCopyClick = () => {
     nextTick(() => amountInput.value?.focus());
 };
 const handleDeleteClick = () => { showDeleteConfirm.value = true; };
-const confirmDelete = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); };
+const confirmDelete = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); };
 
 onMounted(async () => {
     isInitialLoad.value = true;

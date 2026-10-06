@@ -718,14 +718,16 @@ const handleCloseWithdrawalPopup = () => { isWithdrawalPopupVisible.value = fals
 
 const debouncedFetchVisibleDays = debounce(() => { visibleDays.value.forEach(day => mainStore.fetchOperations(day.dateKey)); }, 300); 
 const recalcProjectionForCurrentView = async () => { await mainStore.loadCalculationData(viewMode.value, today.value); };
-const handleOperationDelete = async (operation) => { 
-    if (!operation) return; 
-    await mainStore.deleteOperation(operation); 
-    // 🟢 FIX: Убрана явная перезагрузка проекции
-    visibleDays.value = [...visibleDays.value]; 
-    handleClosePopup(); 
+const handleOperationDelete = async (operation) => {
+    if (!operation) return;
+    handleClosePopup();
     handleCloseTransferPopup();
     handleCloseWithdrawalPopup();
+    try {
+        await mainStore.deleteOperation(operation);
+    } catch (error) {
+        alert('Ошибка удаления: ' + error.message);
+    }
 };
 
 const scrollInterval = ref(null);
@@ -772,13 +774,16 @@ const handleOperationDrop = async (dropData) => {
     || selectedOps.find((item) => String(item._id) === String(operation._id))
     || operation;
 
-  if (selectedOps.length > 1) {
-    await mainStore.moveOperationsBatch(selectedOps, anchorOperation, newDateKey, newCellIndex, targetDate);
-    return;
+  try {
+    if (selectedOps.length > 1) {
+      await mainStore.moveOperationsBatch(selectedOps, anchorOperation, newDateKey, newCellIndex, targetDate);
+      return;
+    }
+    if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
+    await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex, targetDate);
+  } catch (error) {
+    alert('Ошибка перемещения: ' + error.message);
   }
-
-  if (oldDateKey === newDateKey && operation.cellIndex === newCellIndex) return;
-  await mainStore.moveOperation(operation, oldDateKey, newDateKey, newCellIndex, targetDate);
 };
 const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS.value; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
 
@@ -1730,7 +1735,7 @@ const handleRefundDelete = async (op) => {
 
 
 
-    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" />
+    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" @operation-deleted="handleOperationDelete" />
 
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />

@@ -104,12 +104,12 @@ export const useSocketStore = defineStore('socket', () => {
 
         socket.value.on('operation_updated', (op, meta) => {
             if (shouldIgnoreSocketEvent(meta)) return;
-            if (mainStore.onSocketOperationUpdated) mainStore.onSocketOperationUpdated(op);
+            if (mainStore.onSocketOperationUpdated) mainStore.onSocketOperationUpdated(op, meta);
         });
 
         socket.value.on('operation_deleted', (id, meta) => {
             if (shouldIgnoreSocketEvent(meta)) return;
-            if (mainStore.onSocketOperationDeleted) mainStore.onSocketOperationDeleted(id);
+            if (mainStore.onSocketOperationDeleted) mainStore.onSocketOperationDeleted(id, meta);
         });
 
         socket.value.on('operations_imported', (count, meta) => {

@@ -1391,11 +1391,47 @@ const handleOperationDrop = async (dropData) => {
     if (!operation || !toDateKey) return;
     const oldDateKey = operation.dateKey;
     if (oldDateKey === toDateKey && operation.cellIndex === toCellIndex) return;
-    try { await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex, targetDate || null); } catch(e) { console.error("Drop Error:", e); }
+    try { await mainStore.moveOperation(operation, oldDateKey, toDateKey, toCellIndex, targetDate || null); } catch(e) { console.error("Drop Error:", e); alert("Ошибка перемещения: " + e.message); }
 };
 
-const handleOperationSave = async ({ mode, id, data, counterpartyDefaults = null }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createEvent(data); } else { await mainStore.updateOperation(id, data); } if (counterpartyDefaults) { await mainStore.batchUpdateEntities(counterpartyDefaults.entityPath, [counterpartyDefaults.updateData]); } isIncomePopupVisible.value = false; isExpensePopupVisible.value = false; operationToEdit.value = null; } catch (e) { console.error("Mobile Save Error", e); alert("Ошибка сохранения"); } };
-const handleTransferSave = async ({ mode, id, data }) => { try { if (mode === 'create') { if (data.cellIndex === undefined) { const dateKey = mainStore._getDateKey(new Date(data.date)); data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey); } await mainStore.createTransfer(data); } else { await mainStore.updateTransfer(id, data); } isTransferPopupVisible.value = false; } catch (e) { console.error("Mobile Transfer Save Error", e); alert("Ошибка перевода"); } };
+const handleOperationSave = async ({ mode, id, data, counterpartyDefaults = null }) => {
+    handleClosePopup();
+    try {
+        if (mode === 'create') {
+            if (data.cellIndex === undefined) {
+                const dateKey = data.dateKey || mainStore._getDateKey(new Date(data.date));
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+            }
+            await mainStore.createEvent(data);
+        } else {
+            await mainStore.updateOperation(id, data);
+        }
+        if (counterpartyDefaults) {
+            await mainStore.batchUpdateEntities(counterpartyDefaults.entityPath, [counterpartyDefaults.updateData]);
+        }
+    } catch (error) {
+        console.error('Mobile Save Error', error);
+        alert('Ошибка сохранения: ' + error.message);
+    }
+};
+const handleTransferSave = async ({ mode, id, data }) => {
+    isTransferPopupVisible.value = false;
+    operationToEdit.value = null;
+    try {
+        if (mode === 'create') {
+            if (data.cellIndex === undefined) {
+                const dateKey = mainStore._getDateKey(new Date(data.date));
+                data.cellIndex = await mainStore.getFirstFreeCellIndex(dateKey);
+            }
+            await mainStore.createTransfer(data);
+        } else {
+            await mainStore.updateTransfer(id, data);
+        }
+    } catch (error) {
+        console.error('Mobile Transfer Save Error', error);
+        alert('Ошибка перевода: ' + error.message);
+    }
+};
 
 
 const handleItemClick = (item) => {
@@ -1416,9 +1452,10 @@ const handleClosePopup = () => { isIncomePopupVisible.value = false; isExpensePo
 const handleAction = () => {};
 const handleOperationDelete = async (op) => {
     if (!op) return;
+    handleClosePopup();
+    isTransferPopupVisible.value = false;
     try {
         await mainStore.deleteOperation(op);
-        handleClosePopup();
     } catch(e) {
         alert("Ошибка удаления: " + e.message);
     }
@@ -1590,7 +1627,7 @@ const handleOperationDelete = async (op) => {
     <ExpensePopup v-if="isExpensePopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :operation-to-edit="operationToEdit" @close="handleClosePopup" @save="handleOperationSave" @operation-deleted="handleOperationDelete" />
 
 
-    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :transferToEdit="operationToEdit" @close="isTransferPopupVisible = false" @save="handleTransferSave" />
+    <TransferPopup v-if="isTransferPopupVisible" :date="selectedDate" :cellIndex="selectedCellIndex" :transferToEdit="operationToEdit" @close="isTransferPopupVisible = false" @save="handleTransferSave" @operation-deleted="handleOperationDelete" />
 
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
     <RefundPopup v-if="isRefundPopupVisible" :operation-to-edit="operationToEdit" @close="isRefundPopupVisible = false" @save="handleRefundSave" @delete="handleRefundDelete" />

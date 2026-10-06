@@ -913,7 +913,7 @@ const handleCopyClick = () => {
     nextTick(() => amountInput.value?.focus());
 };
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
-const onDeleteConfirmed = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); mainStore.deleteOperation(props.operationToEdit); };
+const onDeleteConfirmed = () => { isDeleteConfirmVisible.value = false; emit('close'); emit('operation-deleted', props.operationToEdit); };
 
 const toggleIncomeOffsetMode = () => {
     if (isReadOnly.value) return;
