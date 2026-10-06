@@ -96,7 +96,7 @@ const initialTotalBalance = computed(() => {
   let sum = 0;
   for (const a of accs) {
     if (!a) continue;
-    if (!mainStore.includeExcludedInTotal && a.isExcluded) continue;
+    if (!isAccountVisibleInCurrentMode(a)) continue;
     sum += Number(a.initialBalance || 0);
   }
   return Math.max(0, sum);
@@ -1146,7 +1146,7 @@ const accountBalancesByDateKey = computed(() => {
           }
           if (fromAccId && String(fromAccId) === accId) {
             // Only subtract if the 'from' account is visible
-            if (isOpVisible(op, fromAccId)) {
+            if (isAccountVisibleInCurrentMode(fromAccId)) {
               balance -= absAmt;
             }
             continue;
@@ -1159,7 +1159,7 @@ const accountBalancesByDateKey = computed(() => {
           }
           if (!isPersonalTransferWithdrawal(op) && toAccId && String(toAccId) === accId) {
             // Only add if the 'to' account is visible
-            if (isOpVisible(op, toAccId)) {
+            if (isAccountVisibleInCurrentMode(toAccId)) {
               balance += absAmt;
             }
             continue;

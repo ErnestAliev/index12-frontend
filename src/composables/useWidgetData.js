@@ -143,7 +143,7 @@ export function useWidgetData() {
 
             // COMPANIES
             else if (k === 'companies') {
-                const accounts = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+                const accounts = Array.isArray(mainStore.currentAccountBalances) ? mainStore.currentAccountBalances : [];
                 const companyAccounts = accounts.filter(acc => String(getId(acc.companyId)) === String(itemId));
 
                 if (companyAccounts.length > 0) {
@@ -161,7 +161,7 @@ export function useWidgetData() {
 
             // INDIVIDUALS
             else if (k === 'individuals') {
-                const accounts = Array.isArray(mainStore.accounts) ? mainStore.accounts : [];
+                const accounts = Array.isArray(mainStore.currentAccountBalances) ? mainStore.currentAccountBalances : [];
                 const linkedAccounts = accounts.filter(acc => String(getId(acc.individualId)) === String(itemId));
 
                 if (linkedAccounts.length > 0) {
@@ -339,34 +339,35 @@ export function useWidgetData() {
             };
 
             // Prefer already-prepared lists from mainStore (desktop uses them)
-            let currentList = [];
-            if (k === 'incomeList') currentList = pickStoreArray('currentIncomes', 'currentIncome', 'incomesCurrent') || [];
-            else if (k === 'expenseList') currentList = pickStoreArray('currentExpenses', 'currentExpense', 'expensesCurrent') || [];
-            else if (k === 'withdrawalList') currentList = pickStoreArray('currentWithdrawals', 'currentWithdrawal', 'withdrawalsCurrent') || [];
-            else if (k === 'transfers') currentList = pickStoreArray('currentTransfers', 'currentTransfer', 'transfersCurrent') || [];
+            let currentList = null;
+            if (k === 'incomeList') currentList = pickStoreArray('currentIncomes', 'currentIncome', 'incomesCurrent');
+            else if (k === 'expenseList') currentList = pickStoreArray('currentExpenses', 'currentExpense', 'expensesCurrent');
+            else if (k === 'withdrawalList') currentList = pickStoreArray('currentWithdrawals', 'currentWithdrawal', 'withdrawalsCurrent');
+            else if (k === 'transfers') currentList = pickStoreArray('currentTransfers', 'currentTransfer', 'transfersCurrent');
 
-            let futureList = [];
-            if (k === 'incomeList') futureList = pickStoreArray('futureIncomes', 'incomesFuture') || [];
-            else if (k === 'expenseList') futureList = pickStoreArray('futureExpenses', 'expensesFuture') || [];
-            else if (k === 'withdrawalList') futureList = pickStoreArray('futureWithdrawals', 'withdrawalsFuture') || [];
-            else if (k === 'transfers') futureList = pickStoreArray('futureTransfers', 'transfersFuture') || [];
+            let futureList = null;
+            if (k === 'incomeList') futureList = pickStoreArray('futureIncomes', 'incomesFuture');
+            else if (k === 'expenseList') futureList = pickStoreArray('futureExpenses', 'expensesFuture');
+            else if (k === 'withdrawalList') futureList = pickStoreArray('futureWithdrawals', 'withdrawalsFuture');
+            else if (k === 'transfers') futureList = pickStoreArray('futureTransfers', 'transfersFuture');
 
-            // Fallback if lists are empty in mobile (but operations exist)
-            if (currentList.length === 0 && allOps.length > 0) {
+            // An empty prepared list is authoritative: visibility/period filters
+            // may intentionally remove every operation. Fallback only if absent.
+            if (currentList === null && allOps.length > 0) {
                 const now = new Date();
                 currentList = allOps.filter(op => {
                     const t = getOpType(op);
-                    if (!matchType(t)) return false;
+                    if (!matchType(t) || !mainStore._isOpVisible(op)) return false;
                     if (isPlanned(op)) return false;
                     const d = getOpDate(op);
                     return d ? d <= now : true;
                 });
             }
-            if (futureList.length === 0 && allOps.length > 0) {
+            if (futureList === null && allOps.length > 0) {
                 const now = new Date();
                 futureList = allOps.filter(op => {
                     const t = getOpType(op);
-                    if (!matchType(t)) return false;
+                    if (!matchType(t) || !mainStore._isOpVisible(op)) return false;
                     const d = getOpDate(op);
                     const isFutureByDate = d ? d > now : false;
                     if (!isPlanned(op) && !isFutureByDate) return false;

@@ -291,7 +291,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!id) return false;
         const accId = typeof id === 'object' ? String(id._id) : String(id);
         const acc = accounts.value.find(a => _idsMatch(a._id, accId));
-        const isExcluded = acc?.isExcluded === true;
+        const isExcluded = (acc || (typeof id === 'object' ? id : null))?.isExcluded === true;
 
         const mode = accountVisibilityMode.value;
         if (mode === 'none') return true;               // hide everything
@@ -304,38 +304,9 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!op) return false;
         // Управленческий родитель (исключен из итогов) скрываем, НО показываем взаимозачетные расходы для управления ими
         if (op.excludeFromTotals && !op.offsetIncomeId) return false;
-        // Дальше проверка скрытых счетов
-        if (includeExcludedInTotal.value) return true;
-
-        if (op.accountId && _isAccountExcluded(op.accountId)) return false;
-
-        // IMPORTANT: some ops (prepayments/deals/legacy) may carry account routing in from/to fields
-        // even when they are NOT marked as transfer. If any related account is excluded, hide the op.
-        if (op.fromAccountId && _isAccountExcluded(op.fromAccountId)) return false;
-        if (op.toAccountId && _isAccountExcluded(op.toAccountId)) return false;
-
-        // Fallback for older payloads
-        if (op.account && _isAccountExcluded(op.account)) return false;
-
-        if (op.relatedEventId && !op.accountId) {
-            const parentId = typeof op.relatedEventId === 'object'
-                ? String(op.relatedEventId._id)
-                : String(op.relatedEventId);
-
-            let parent = allOpsMap.value.get(parentId);
-            if (!parent) {
-                parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
-            }
-
-            if (parent) {
-                if (parent.accountId && _isAccountExcluded(parent.accountId)) return false;
-                if (parent.fromAccountId && _isAccountExcluded(parent.fromAccountId)) return false;
-                if (parent.toAccountId && _isAccountExcluded(parent.toAccountId)) return false;
-                if (parent.account && _isAccountExcluded(parent.account)) return false;
-            }
-        }
-
-        return true;
+        if (accountVisibilityMode.value === 'none') return false;
+        if (accountVisibilityMode.value === 'all') return true;
+        return !_collectOperationAccountIds(op).some(_isAccountExcluded);
     };
 
     // Видимость на таймлайне: показываем родителя, скрываем дочерние разбиения,
@@ -343,12 +314,9 @@ export const useMainStore = defineStore('mainStore', () => {
     const _isTimelineVisible = (op) => {
         if (!op) return false;
         if (op.isSplitChild) return false;
-        if (includeExcludedInTotal.value) return true;
-        if (op.accountId && _isAccountExcluded(op.accountId)) return false;
-        if (op.fromAccountId && _isAccountExcluded(op.fromAccountId)) return false;
-        if (op.toAccountId && _isAccountExcluded(op.toAccountId)) return false;
-        if (op.account && _isAccountExcluded(op.account)) return false;
-        return true;
+        if (accountVisibilityMode.value === 'none') return false;
+        if (accountVisibilityMode.value === 'all') return true;
+        return !_collectOperationAccountIds(op).some(_isAccountExcluded);
     };
 
     const _collectOperationAccountIds = (op) => {
@@ -360,28 +328,25 @@ export const useMainStore = defineStore('mainStore', () => {
             if (normalized) ids.add(normalized);
         };
 
-        addId(op.accountId);
-        addId(op.fromAccountId);
-        addId(op.toAccountId);
-        addId(op.account);
+        const visited = new Set();
+        const collect = (event) => {
+            if (!event || visited.has(event)) return;
+            visited.add(event);
+            addId(event.accountId);
+            addId(event.fromAccountId);
+            addId(event.toAccountId);
+            addId(event.account);
 
-        if (!ids.size && op.relatedEventId) {
-            const parentId = typeof op.relatedEventId === 'object'
-                ? String(op.relatedEventId._id)
-                : String(op.relatedEventId);
-
-            let parent = allOpsMap.value.get(parentId);
-            if (!parent) {
-                parent = dealOperations.value.find(d => _idsMatch(d._id, parentId));
+            // Linked expenses and split children inherit routing even when their
+            // own account fields are absent. Resolve against unfiltered operations.
+            for (const link of [event.relatedEventId, event.offsetIncomeId, event.parentOpId]) {
+                if (!link) continue;
+                const parent = allOpsMap.value.get(_toStr(link))
+                    || (typeof link === 'object' ? link : null);
+                collect(parent);
             }
-
-            if (parent) {
-                addId(parent.accountId);
-                addId(parent.fromAccountId);
-                addId(parent.toAccountId);
-                addId(parent.account);
-            }
-        }
+        };
+        collect(op);
 
         return Array.from(ids);
     };
@@ -829,10 +794,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         return out;
     }
-    const futureOps = computed(() => {
-        const rawFuture = useProjectionStore().futureOps;
-        return rawFuture.filter(op => _isOpVisible(op));
-    });
+    const futureOps = computed(() => useProjectionStore().futureOps);
 
     const displayOperationsFlat = computed(() => {
         const displayOps = [];
@@ -1043,27 +1005,10 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const getCategoryById = (id) => categories.value.find(c => _idsMatch(c._id, id));
 
-    const currentCategoryBreakdowns = computed(() => {
-        if (includeExcludedInTotal.value) {
-            const raw = snapshot.value.categoryTotals || {};
-            const mapped = {};
-            Object.keys(raw).forEach(id => { mapped[`cat_${id}`] = raw[id]; });
-            return mapped;
-        }
-
-        const aggregated = _calculateAggregatedBalance(currentOps.value, 'categoryId');
-
-        const mapped = {};
-        aggregated.forEach((val, key) => {
-            mapped[`cat_${key}`] = { total: val };
-        });
-        return mapped;
-    });
-
-    const futureCategoryBreakdowns = computed(() => {
+    const _calculateCategoryBreakdowns = (ops) => {
         const map = {};
-        for (const op of futureOps.value) {
-            if (isTransfer(op)) continue;
+        for (const op of ops) {
+            if (isTransfer(op) || op.isWorkAct) continue;
             if (!op?.categoryId) continue;
             const cId = op.categoryId._id || op.categoryId;
             if (!map[cId]) map[cId] = { income: 0, expense: 0, total: 0 };
@@ -1074,7 +1019,10 @@ export const useMainStore = defineStore('mainStore', () => {
         const widgetMap = {};
         Object.keys(map).forEach(id => { widgetMap[`cat_${id}`] = map[id]; });
         return widgetMap;
-    });
+    };
+
+    const currentCategoryBreakdowns = computed(() => _calculateCategoryBreakdowns(currentOps.value));
+    const futureCategoryBreakdowns = computed(() => _calculateCategoryBreakdowns(futureOps.value));
 
     const canToggleAccountVisibility = computed(() => {
         if (isWorkspaceOwner.value || isWorkspaceAdmin.value) {
@@ -1276,7 +1224,12 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const _calculateFutureEntityChange = (entityIdField) => {
         const futureMap = {};
-        for (const op of futureOps.value) {
+        // Account balances apply each visible transfer leg, just like current balances.
+        // Other widgets use whole operations filtered by all related accounts.
+        const isAccountBalance = entityIdField === 'accountId';
+        const ops = isAccountBalance ? useProjectionStore().rawFutureOps : futureOps.value;
+        for (const op of ops) {
+            if (isAccountBalance && (op.excludeFromTotals || (!isTransfer(op) && !_isOpVisible(op)))) continue;
             if (_isRetailWriteOff(op) || op.isWorkAct) continue;
             const amt = Math.abs(Number(op.amount) || 0);
             if (entityIdField === 'accountId' && !op.accountId && !op.fromAccountId && !op.toAccountId) continue;
@@ -1287,8 +1240,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 else if (entityIdField === 'individualId') { fromId = op.fromIndividualId; toId = op.toIndividualId; }
                 else continue;
                 fromId = fromId?._id || fromId; toId = toId?._id || toId;
-                if (fromId) { if (futureMap[fromId] === undefined) futureMap[fromId] = 0; futureMap[fromId] -= amt; }
-                if (!isPersonalTransferWithdrawal(op) && toId) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
+                if (fromId && (!isAccountBalance || !_isAccountExcluded(fromId))) { if (futureMap[fromId] === undefined) futureMap[fromId] = 0; futureMap[fromId] -= amt; }
+                if (!isPersonalTransferWithdrawal(op) && toId && (!isAccountBalance || !_isAccountExcluded(toId))) { if (futureMap[toId] === undefined) futureMap[toId] = 0; futureMap[toId] += amt; }
             } else {
                 if (entityIdField === 'individualId') {
                     const ownerId = op.individualId?._id || op.individualId;
@@ -1453,26 +1406,15 @@ export const useMainStore = defineStore('mainStore', () => {
     // 🟢 Account Owner Individuals: Individuals who own accounts (account-based balances)
     const currentAccountOwnerIndividuals = computed(() => {
         const ownerIds = new Set();
-        accounts.value.forEach(a => {
+        currentAccountBalances.value.forEach(a => {
             if (a.individualId) {
                 const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
                 if (iId) ownerIds.add(String(iId));
             }
         });
 
-        const hiddenIndividualIds = new Set();
-        if (!includeExcludedInTotal.value) {
-            accounts.value.forEach(a => {
-                if (a && a.isExcluded && a.individualId) {
-                    const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
-                    if (iId) hiddenIndividualIds.add(String(iId));
-                }
-            });
-        }
-
         return individuals.value
             .filter(i => ownerIds.has(String(i._id)))
-            .filter(i => !hiddenIndividualIds.has(String(i._id)))
             .map(i => {
                 const linkedAccounts = currentAccountBalances.value.filter(a => {
                     const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
@@ -1485,26 +1427,15 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const futureAccountOwnerIndividuals = computed(() => {
         const ownerIds = new Set();
-        accounts.value.forEach(a => {
+        futureAccountBalances.value.forEach(a => {
             if (a.individualId) {
                 const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
                 if (iId) ownerIds.add(String(iId));
             }
         });
 
-        const hiddenIndividualIds = new Set();
-        if (!includeExcludedInTotal.value) {
-            accounts.value.forEach(a => {
-                if (a && a.isExcluded && a.individualId) {
-                    const iId = typeof a.individualId === 'object' ? a.individualId._id : a.individualId;
-                    if (iId) hiddenIndividualIds.add(String(iId));
-                }
-            });
-        }
-
         return individuals.value
             .filter(i => ownerIds.has(String(i._id)))
-            .filter(i => !hiddenIndividualIds.has(String(i._id)))
             .map(i => {
                 const linkedAccounts = futureAccountBalances.value.filter(a => {
                     const indId = (a.individualId && typeof a.individualId === 'object') ? a.individualId._id : a.individualId;
@@ -1652,22 +1583,9 @@ export const useMainStore = defineStore('mainStore', () => {
         return incomes - expenses;
     });
 
-    const futureTotalBalance = computed(() => {
-        let total = currentTotalBalance.value;
-        for (const op of futureOps.value) {
-            if (isTransfer(op)) {
-                if (isPersonalTransferWithdrawal(op)) {
-                    total -= Math.abs(Number(op.amount) || 0);
-                }
-                continue;
-            }
-            if (!op.accountId) continue;
-            if (op.isWorkAct) continue;
-            const amt = Math.abs(Number(op.amount) || 0);
-            if (op.type === 'income') total += (Number(op.amount) || 0); else total -= amt;
-        }
-        return total;
-    });
+    const futureTotalBalance = computed(() =>
+        futureAccountBalances.value.reduce((sum, account) => sum + account.balance, 0)
+    );
 
     function _populateOp(op) {
         const populated = { ...op };
@@ -3661,7 +3579,7 @@ export const useMainStore = defineStore('mainStore', () => {
         retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId,
         _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
 
-        getAllRelevantOps,
+        getAllRelevantOps, allKnownOperations, _isOpVisible,
         checkInsufficientFunds, // 🟢 Export
 
 

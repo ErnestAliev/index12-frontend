@@ -177,7 +177,7 @@ export const useProjectionStore = defineStore('projection', () => {
 
   // --- 5. Computed: Logic ---
 
-  const futureOps = computed(() => {
+  const rawFutureOps = computed(() => {
     const mainStore = useMainStore();
     // force reactivity
     const _v = mainStore.cacheVersion;
@@ -224,10 +224,11 @@ export const useProjectionStore = defineStore('projection', () => {
       }
     }
 
-    // Prefer canonical ops if available (so future ops are not limited by view range)
-    const opsSource = Array.isArray(mainStore.getAllRelevantOps)
-      ? mainStore.getAllRelevantOps
-      : (Array.isArray(mainStore.allKnownOperations) ? mainStore.allKnownOperations : []);
+    // Keep account routing here. mainStore filters whole operations for widgets,
+    // while account balances need both legs of transfers across visibility groups.
+    const opsSource = Array.isArray(mainStore.allKnownOperations)
+      ? mainStore.allKnownOperations
+      : (Array.isArray(mainStore.getAllRelevantOps) ? mainStore.getAllRelevantOps : []);
 
     for (const op of opsSource) {
       if (!op?.date) continue;
@@ -265,6 +266,11 @@ export const useProjectionStore = defineStore('projection', () => {
     }
 
     return result;
+  });
+
+  const futureOps = computed(() => {
+    const mainStore = useMainStore();
+    return rawFutureOps.value.filter(mainStore._isOpVisible);
   });
 
   // 🟢 CORE: Data for chart (anchored to today's real balance, independent from view switcher)
@@ -545,6 +551,6 @@ export const useProjectionStore = defineStore('projection', () => {
     updateProjectionFromCalculationData,
     updateFutureProjectionByMode,
     setProjectionRange,
-    futureOps, dailyChartData
+    rawFutureOps, futureOps, dailyChartData
   };
 });

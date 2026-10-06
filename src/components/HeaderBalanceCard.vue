@@ -276,7 +276,7 @@ const processedItems = computed(() => {
           const totalBalance = balances.get(itemId) || 0;
           color = getStatusColor(totalBalance, maxBalance);
 
-          const companyAccounts = mainStore.accounts.filter(acc => getId(acc.companyId) === itemId);
+          const companyAccounts = mainStore.currentAccountBalances.filter(acc => getId(acc.companyId) === itemId);
 
           if (companyAccounts.length > 0) {
               hasLink = true;
@@ -289,7 +289,7 @@ const processedItems = computed(() => {
       }
 
       else if (props.widgetKey === 'individuals') {
-          const linkedAccounts = mainStore.accounts.filter(acc => getId(acc.individualId) === itemId);
+          const linkedAccounts = mainStore.currentAccountBalances.filter(acc => getId(acc.individualId) === itemId);
 
           if (linkedAccounts.length > 0) {
               hasLink = true;
