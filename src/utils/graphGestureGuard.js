@@ -8,6 +8,9 @@ export function createGraphGestureGuard({ onDismiss = () => {}, now = Date.now, 
   let authorized = false;
   let blocked = false;
   let lastScrollAt = -Infinity;
+  let lastMousePosition = null;
+  let mousePositionAtScroll = null;
+  let lastScrollEventTimeStamp = -Infinity;
 
   const dismiss = () => {
     const wasBlocked = blocked;
@@ -43,6 +46,7 @@ export function createGraphGestureGuard({ onDismiss = () => {}, now = Date.now, 
   const move = (point) => {
     if (point.pointerType === 'mouse' && !gesture) {
       touchMode = false;
+      lastMousePosition = { x: point.x, y: point.y };
       return;
     }
     if (!gesture || gesture.id !== point.id) return;
@@ -66,25 +70,38 @@ export function createGraphGestureGuard({ onDismiss = () => {}, now = Date.now, 
     dismiss();
   };
 
-  const scroll = () => {
+  const scroll = (eventTimeStamp) => {
     lastScrollAt = now();
+    mousePositionAtScroll = lastMousePosition;
+    if (Number.isFinite(eventTimeStamp)) lastScrollEventTimeStamp = eventTimeStamp;
     if (gesture) gesture.cancelled = true;
     dismiss();
   };
 
   const allowEvent = (event, replay = false) => {
     if (!event || gesture) return false;
-    if (replay) return !touchMode && !tapOnly && !blocked;
+    if (replay) return !touchMode && !tapOnly && !blocked && now() - lastScrollAt >= 150;
     const fromTouch = touchMode || event.sourceCapabilities?.firesTouchEvents || event.pointerType === 'touch';
     if (event.type === 'click') {
-      if (fromTouch && (!tap || event.target !== tap.target || now() - tap.endedAt > 800 ||
+      const sameTarget = tap && (event.target === tap.target || event.target?.contains?.(tap.target));
+      if (fromTouch && (!sameTarget || now() - tap.endedAt > 800 ||
         Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > slop)) return false;
       authorized = true;
       blocked = false;
       return true;
     }
     if (fromTouch || tapOnly) return false;
-    if (event.type === 'mousemove') blocked = false;
+    if (event.type === 'mousemove') {
+      // Safari can send mousemove as the canvas slides under a stationary
+      // cursor. That is not a new hover while wheel momentum is still running.
+      if (now() - lastScrollAt < 150) return false;
+      if (Number.isFinite(event.timeStamp) && event.timeStamp <= lastScrollEventTimeStamp) return false;
+      if (blocked && mousePositionAtScroll && event.clientX === mousePositionAtScroll.x && event.clientY === mousePositionAtScroll.y) return false;
+      blocked = false;
+      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+        lastMousePosition = { x: event.clientX, y: event.clientY };
+      }
+    }
     return !blocked;
   };
 

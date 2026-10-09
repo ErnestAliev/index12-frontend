@@ -131,6 +131,37 @@ test('desktop hover and click still work, including switching from touch to a re
   assert.equal(s.guard.allowEvent(s.click()), true);
 });
 
+test('Safari mousemove during wheel inertia cannot reopen a summary under a stationary cursor', () => {
+  const s = setup(false);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove' }), true);
+  s.guard.scroll();
+  s.guard.move(s.point(100, 50, { pointerType: 'mouse' }));
+  assert.equal(s.guard.allowEvent({ type: 'mousemove' }), false);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove' }, true), false);
+  s.advance(200);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove' }), true);
+});
+
+test('a stationary cursor remains blocked after wheel scrolling stops until the mouse actually moves', () => {
+  const s = setup(false);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove', clientX: 50, clientY: 100 }), true);
+  s.guard.scroll();
+  s.advance(400);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove', clientX: 50, clientY: 100 }), false);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove', clientX: 51, clientY: 100 }), true);
+});
+
+test('a hover queued before the wheel event cannot reopen the card after a delayed chart frame', () => {
+  const s = setup(false);
+  s.guard.move(s.point(50, 100, { pointerType: 'mouse' }));
+  s.guard.scroll(200);
+  s.advance(500);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove', clientX: 50, clientY: 100, timeStamp: 100 }), false);
+  assert.equal(s.guard.allowEvent({ type: 'mousemove', clientX: 50, clientY: 100, timeStamp: 700 }), false);
+  s.guard.move(s.point(51, 100, { pointerType: 'mouse' }));
+  assert.equal(s.guard.allowEvent({ type: 'mousemove', clientX: 51, clientY: 100, timeStamp: 800 }), true);
+});
+
 // Exercise the actual Chart.js event and tooltip pipeline, not just the guard:
 // the defect survives an onClick-only fix because tooltip.afterEvent still runs.
 for (const [name, filename, tapOnly] of [

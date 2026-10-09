@@ -5,6 +5,9 @@ import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
 import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
+import { getWorkspaceWindow } from '@/utils/workspaceScroll.js';
+import { createGraphGestureGuard } from '@/utils/graphGestureGuard.js';
+import { bindGraphGestureGuard } from '@/utils/graphGestureListeners.js';
 import {
   scheduleBackgroundAnalyticsPrefetch,
   signalBackgroundAnalyticsMutation,
@@ -354,7 +357,7 @@ const fullMonthDays = computed(() => {
 const fullMonthButtonLabel = computed(() => `${fullMonthDays.value}д`);
 const isFullMonthButtonActive = computed(() => isFullMonthColumnMode.value && VISIBLE_COLS.value === fullMonthDays.value);
 const timelineGridTemplateColumns = computed(() => {
-  const count = Math.max(1, Number(VISIBLE_COLS.value) || 1);
+  const count = Math.max(1, renderedColumnCount.value);
   return `repeat(${count}, minmax(0, 1fr))`;
 });
 const isScrollActive = computed(() => !isFullMonthColumnMode.value);
@@ -419,6 +422,40 @@ const minDateFromProjection = computed(() => mainStore.projection.rangeStartDate
 const maxDateFromProjection = computed(() => mainStore.projection.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : null);
 
 const mainContentRef = ref(null);
+const workspaceScrollRef = ref(null);
+const workspaceWidth = ref(0);
+const workspaceScrollLeft = ref(0);
+const workspaceWindow = computed(() => getWorkspaceWindow({
+  viewportWidth: workspaceWidth.value,
+  visibleColumns: VISIBLE_COLS.value,
+  totalDays: totalDays.value,
+  scrollLeft: workspaceScrollLeft.value,
+  enabled: isScrollActive.value,
+  lockedStartIndex: virtualStartIndex.value,
+}));
+// Stable scalar dependencies keep the canvas and cells unchanged on pixel
+// scroll events. Only crossing a buffered page replaces their shared dates.
+const renderedStartIndex = computed(() => workspaceWindow.value.startIndex);
+const renderedColumnCount = computed(() => workspaceWindow.value.count);
+const workspaceDays = computed(() => {
+  // Until projection dates arrive there is no stable date key to render.
+  // Reusing today's key for every placeholder breaks keyed column identity.
+  if (!mainStore.projection?.rangeStartDate) return [];
+  const tomorrow = new Date(today.value);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return Array.from({ length: renderedColumnCount.value }, (_, i) => {
+    const index = renderedStartIndex.value + i;
+    const date = dateFromGlobalIndex(index);
+    return { id: _getDateKey(date), date, dateKey: _getDateKey(date),
+      isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date) };
+  });
+});
+const workspaceColumnWidth = computed(() => workspaceWidth.value / Math.max(1, VISIBLE_COLS.value));
+const workspacePaneStyle = computed(() => ({
+  width: `${renderedColumnCount.value * workspaceColumnWidth.value}px`,
+  marginLeft: `${isScrollActive.value ? renderedStartIndex.value * workspaceColumnWidth.value : 0}px`,
+}));
+const workspaceContentStyle = computed(() => ({ width: `${workspaceWindow.value.totalWidth}px` }));
 const timelineGridRef = ref(null);
 const timelineGridContentRef = ref(null);
 const yAxisLabels = ref([]); 
@@ -454,7 +491,13 @@ const shouldSuppressContextMenu = () => {
   return isTimelineSelecting.value || Date.now() < suppressContextMenuUntil.value;
 };
 
-const getTimelineBounds = () => timelineGridRef.value?.getBoundingClientRect() || null;
+const getTimelineBounds = () => {
+  const rect = timelineGridRef.value?.getBoundingClientRect();
+  const viewport = workspaceScrollRef.value?.getBoundingClientRect();
+  if (!rect || !viewport) return rect || null;
+  return { left: Math.max(rect.left, viewport.left), right: Math.min(rect.right, viewport.right),
+    top: rect.top, bottom: rect.bottom };
+};
 
 const clampPointToTimeline = (clientX, clientY) => {
   const rect = getTimelineBounds();
@@ -485,7 +528,7 @@ const updateTimelineSelection = (clientX, clientY) => {
   const height = bottom - top;
 
   timelineSelectionBox.value = {
-    left: left - rect.left + container.scrollLeft,
+    left: left - container.getBoundingClientRect().left + container.scrollLeft,
     top: top - rect.top + container.scrollTop,
     width,
     height
@@ -736,7 +779,7 @@ const stopAutoScroll = () => { if (scrollInterval.value) { clearInterval(scrollI
 const onContainerDragOver = (e) => {
   if (!isScrollActive.value) return;
   if (!timelineGridRef.value) return;
-  const rect = timelineGridRef.value.getBoundingClientRect();
+  const rect = getTimelineBounds();
   const mouseX = e.clientX;
   const threshold = 80;
   const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value);
@@ -785,7 +828,19 @@ const handleOperationDrop = async (dropData) => {
     alert('Ошибка перемещения: ' + error.message);
   }
 };
-const rebuildVisibleDays = () => { const days = []; const tomorrow = new Date(today.value); tomorrow.setDate(tomorrow.getDate() + 1); for (let i = 0; i < VISIBLE_COLS.value; i++) { const gIdx = globalIndexFromLocal(i); const date = dateFromGlobalIndex(gIdx); days.push({ id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow), dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) }); } visibleDays.value = days; debouncedFetchVisibleDays(); };
+const rebuildVisibleDays = ({ fromScroll = false } = {}) => {
+  const tomorrow = new Date(today.value);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  visibleDays.value = Array.from({ length: VISIBLE_COLS.value }, (_, i) => {
+    const date = dateFromGlobalIndex(globalIndexFromLocal(i));
+    return { id: i, date, isToday: sameDay(date, today.value), isTomorrow: sameDay(date, tomorrow),
+      dayOfYear: getDayOfYear(date), dateKey: _getDateKey(date) };
+  });
+  debouncedFetchVisibleDays();
+  // Never write scrollLeft back during native scrolling: doing so cancels
+  // Safari's momentum and snaps a fractional swipe to a whole day.
+  if (!fromScroll) nextTick(syncWorkspaceScrollToIndex);
+};
 
 const alignTimelineToSelectedMonthStart = () => {
   const rangeStart = mainStore.projection?.rangeStartDate;
@@ -1019,12 +1074,26 @@ const centerCharts = () => {
   applyHeights(318);
   isChartsExpanded.value = true;
 };
-const updateScrollbarMetrics = () => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth || 0; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); if (maxVirtual <= 0) { scrollbarThumbWidth.value = trackWidth; scrollbarThumbX.value = 0; return; } const ratio = VISIBLE_COLS.value / Math.max(VISIBLE_COLS.value, totalDays.value); let tWidth = trackWidth * ratio; tWidth = Math.max(50, tWidth); scrollbarThumbWidth.value = tWidth; const availableSpace = trackWidth - tWidth; const progress = virtualStartIndex.value / maxVirtual; scrollbarThumbX.value = progress * availableSpace; };
+const updateScrollbarMetrics = () => {
+  if (!customScrollbarTrackRef.value) return;
+  const trackWidth = customScrollbarTrackRef.value.clientWidth || 0;
+  const maxLeft = workspaceWindow.value.maxScrollLeft;
+  if (maxLeft <= 0) { scrollbarThumbWidth.value = trackWidth; scrollbarThumbX.value = 0; return; }
+  scrollbarThumbWidth.value = Math.min(trackWidth, Math.max(50, trackWidth * VISIBLE_COLS.value / Math.max(VISIBLE_COLS.value, totalDays.value)));
+  scrollbarThumbX.value = (workspaceScrollLeft.value / maxLeft) * (trackWidth - scrollbarThumbWidth.value);
+};
 const scrollState = { isDragging: false, startX: 0, startThumbX: 0 };
 const onScrollThumbMouseDown = (e) => { startDrag(e.clientX); };
 const onScrollThumbTouchStart = (e) => { startDrag(e.touches[0].clientX); };
 const startDrag = (clientX) => { scrollState.isDragging = true; scrollState.startX = clientX; scrollState.startThumbX = scrollbarThumbX.value; window.addEventListener('mousemove', onScrollThumbMove); window.addEventListener('mouseup', onScrollThumbEnd); window.addEventListener('touchmove', onScrollThumbTouchMove, { passive: false }); window.addEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = 'none'; document.body.style.cursor = 'grabbing'; };
-const calculateScrollFromDrag = (clientX) => { if (!customScrollbarTrackRef.value) return; const trackWidth = customScrollbarTrackRef.value.clientWidth; const availableSpace = trackWidth - scrollbarThumbWidth.value; if (availableSpace <= 0) return; const delta = clientX - scrollState.startX; let newThumbX = scrollState.startThumbX + delta; newThumbX = Math.max(0, Math.min(newThumbX, availableSpace)); scrollbarThumbX.value = newThumbX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); const ratio = newThumbX / availableSpace; const newIndex = Math.round(ratio * maxVirtual); if (newIndex !== virtualStartIndex.value) { virtualStartIndex.value = newIndex; rebuildVisibleDays(); } };
+const calculateScrollFromDrag = (clientX) => {
+  if (!customScrollbarTrackRef.value || !workspaceScrollRef.value) return;
+  const availableSpace = customScrollbarTrackRef.value.clientWidth - scrollbarThumbWidth.value;
+  if (availableSpace <= 0) return;
+  const nextX = Math.max(0, Math.min(scrollState.startThumbX + clientX - scrollState.startX, availableSpace));
+  workspaceScrollRef.value.scrollLeft = (nextX / availableSpace) * workspaceWindow.value.maxScrollLeft;
+  onWorkspaceScroll();
+};
 const onScrollThumbMove = (e) => { if (!scrollState.isDragging) return; calculateScrollFromDrag(e.clientX); };
 const onScrollThumbTouchMove = (e) => { if (!scrollState.isDragging) return; e.preventDefault(); calculateScrollFromDrag(e.touches[0].clientX); };
 const onScrollThumbEnd = () => { scrollState.isDragging = false; window.removeEventListener('mousemove', onScrollThumbMove); window.removeEventListener('mouseup', onScrollThumbEnd); window.removeEventListener('touchmove', onScrollThumbTouchMove); window.removeEventListener('touchend', onScrollThumbEnd); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
@@ -1043,17 +1112,38 @@ const showScrollbar = () => {
   }, 1500);
 };
 
-const autoExpandTimeline = () => {
-  return;
+const syncWorkspaceScrollToIndex = () => {
+  const viewport = workspaceScrollRef.value;
+  if (!viewport || !workspaceWidth.value) return;
+  const target = isScrollActive.value ? virtualStartIndex.value * workspaceColumnWidth.value : 0;
+  if (Math.abs(viewport.scrollLeft - target) > 0.5) viewport.scrollLeft = target;
+  workspaceScrollLeft.value = viewport.scrollLeft;
 };
-
-
-
-const onWheelScroll = (event) => { if (!isScrollActive.value) return; const isHorizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY); if (isHorizontal) { if (event.cancelable && !event.ctrlKey) event.preventDefault(); const delta = event.deltaX; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); if (Math.abs(delta) > 1) { const direction = delta > 0 ? 1 : -1; const speed = Math.abs(delta) > 50 ? 2 : 1; let nextVal = virtualStartIndex.value + (direction * speed); nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); showScrollbar(); autoExpandTimeline(); } } } };
-const contentTouchState = { startX: 0, startIndex: 0, isDragging: false };
-const onContentTouchStart = (e) => { if (!isScrollActive.value) return; contentTouchState.isDragging = true; contentTouchState.startX = e.touches[0].clientX; contentTouchState.startIndex = virtualStartIndex.value; };
-const onContentTouchMove = (e) => { if (!contentTouchState.isDragging) return; const deltaPx = contentTouchState.startX - e.touches[0].clientX; const pxPerDay = 50; const deltaDays = Math.round(deltaPx / pxPerDay); const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); let nextVal = contentTouchState.startIndex + deltaDays; nextVal = Math.max(0, Math.min(nextVal, maxVirtual)); if (e.cancelable) e.preventDefault(); if (nextVal !== virtualStartIndex.value) { virtualStartIndex.value = nextVal; rebuildVisibleDays(); updateScrollbarMetrics(); autoExpandTimeline(); } };
-const onContentTouchEnd = () => { contentTouchState.isDragging = false; };
+const measureWorkspaceWidth = () => {
+  const width = mainContentRef.value?.clientWidth || 0;
+  if (!width || width === workspaceWidth.value) return;
+  const position = workspaceColumnWidth.value ? workspaceScrollLeft.value / workspaceColumnWidth.value : virtualStartIndex.value;
+  workspaceWidth.value = width;
+  nextTick(() => {
+    const viewport = workspaceScrollRef.value;
+    if (!viewport) return;
+    viewport.scrollLeft = isScrollActive.value ? position * workspaceColumnWidth.value : 0;
+    onWorkspaceScroll();
+  });
+};
+const onWorkspaceScroll = () => {
+  const viewport = workspaceScrollRef.value;
+  if (!viewport) return;
+  workspaceScrollLeft.value = viewport.scrollLeft;
+  if (isScrollActive.value && workspaceWindow.value.firstVisibleIndex !== virtualStartIndex.value) {
+    virtualStartIndex.value = workspaceWindow.value.firstVisibleIndex;
+    rebuildVisibleDays({ fromScroll: true });
+  }
+  updateScrollbarMetrics();
+  showScrollbar();
+};
+watch([VISIBLE_COLS, isScrollActive, totalDays], () => nextTick(syncWorkspaceScrollToIndex));
+let removeWorkspaceGestureListeners;
 const centerToday = () => { scrollToMonthCenter(selectedMonthStart.value || new Date()); };
 // OLD: onChangeView - controls both timeline AND forecast
 const onChangeView = async (newView) => { const currentStartDate = visibleDays.value[0]?.date || new Date(today.value); viewMode.value = newView; await nextTick(); const msPerDay = 1000 * 60 * 60 * 24; const diffDays = Math.round((currentStartDate.getTime() - today.value.getTime()) / msPerDay); const newGlobalTodayIndex = (viewMode.value === '12d') ? CENTER_INDEX.value : Math.floor(totalDays.value / 2); let targetIndex = newGlobalTodayIndex + diffDays; const maxVirtual = Math.max(0, totalDays.value - VISIBLE_COLS.value); targetIndex = Math.max(0, Math.min(targetIndex, maxVirtual)); virtualStartIndex.value = targetIndex; rebuildVisibleDays(); await nextTick(); setTimeout(() => { updateScrollbarMetrics(); recalcProjectionForCurrentView(); }, 50); };
@@ -1247,6 +1337,7 @@ onMounted(async () => {
     mainStore.setToday(todayDay); 
     generateVisibleDays(); 
     await nextTick(); 
+    measureWorkspaceWidth();
     centerToday(); 
     await nextTick(); 
     applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
@@ -1261,13 +1352,15 @@ onMounted(async () => {
     if (headerResizerRef.value) { headerResizerRef.value.addEventListener('mousedown', initHeaderResize); headerResizerRef.value.addEventListener('touchstart', initHeaderResize, { passive: false }); } 
     if (timelineGridRef.value) { 
       timelineGridRef.value.addEventListener('mousedown', handleTimelineMouseDownCapture, true);
-      timelineGridRef.value.addEventListener('wheel', onWheelScroll, { passive: false }); 
-      timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); 
-      timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); 
-      timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); 
-      timelineGridRef.value.addEventListener('touchcancel', onContentTouchEnd);
       timelineGridRef.value.addEventListener('mouseleave', handleTimelineMouseLeave);
     } 
+    if (workspaceScrollRef.value) {
+      const tapGuard = createGraphGestureGuard({ onDismiss: () => {
+        isContextMenuVisible.value = false;
+        markContextMenuSuppressed();
+      } });
+      removeWorkspaceGestureListeners = bindGraphGestureGuard(tapGuard, workspaceScrollRef.value, { guardClicks: true });
+    }
     
     // Add global click listener to close context menu when clicking outside
     document.addEventListener('click', handleGlobalClick);
@@ -1275,6 +1368,7 @@ onMounted(async () => {
     window.addEventListener('keyup', handleGlobalKeyUp);
     
     resizeObserver = new ResizeObserver(() => { 
+      measureWorkspaceWidth();
       // Don't interfere while user is actively dragging
       if (!isDraggingResizer) {
         applyHeights(clampTimelineHeight(timelineHeightPx.value)); 
@@ -1329,6 +1423,7 @@ onMounted(async () => {
     }, 2000);
 });
 onBeforeUnmount(() => {
+  removeWorkspaceGestureListeners?.();
   if (dayChangeCheckerInterval) {
     clearInterval(dayChangeCheckerInterval);
     dayChangeCheckerInterval = null;
@@ -1360,11 +1455,6 @@ onBeforeUnmount(() => {
   }
   if (timelineGridRef.value) {
     timelineGridRef.value.removeEventListener('mousedown', handleTimelineMouseDownCapture, true);
-    timelineGridRef.value.removeEventListener('wheel', onWheelScroll);
-    timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart);
-    timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove);
-    timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd);
-    timelineGridRef.value.removeEventListener('touchcancel', onContentTouchEnd);
     timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave);
   }
 
@@ -1512,6 +1602,9 @@ const handleRefundDelete = async (op) => {
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
       <main class="home-main-content" ref="mainContentRef" data-graph-workspace>
+        <div class="workspace-scroll-viewport" ref="workspaceScrollRef" @scroll.passive="onWorkspaceScroll"
+          tabindex="0" role="region" aria-label="Рабочая область: операции, график и итоги по дням">
+        <div class="workspace-scroll-content" :style="workspaceContentStyle">
         <div
           class="timeline-grid-wrapper"
           :class="{
@@ -1536,10 +1629,10 @@ const handleRefundDelete = async (op) => {
               height: `${timelineSelectionBox.height}px`
             }"
           ></div>
-        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in visibleDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" :selected-operation-ids="selectedOperationIds" :selection-mode-active="isTimelineSelecting" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
+        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ ...workspacePaneStyle, gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in workspaceDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" :selected-operation-ids="selectedOperationIds" :selection-mode-active="isTimelineSelecting" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
-        <div class="divider-wrapper" ref="dividerWrapperRef">
+        <div class="divider-wrapper" ref="dividerWrapperRef" :style="{ width: `${workspaceWidth}px` }">
           <div class="month-nav">
             <button class="month-nav-btn left" @click="goPrevMonth" title="Предыдущий месяц">←</button>
             <div class="month-label">{{ prevMonthLabel }}</div>
@@ -1563,8 +1656,10 @@ const handleRefundDelete = async (op) => {
             <div class="spinner-small"></div>
           </div>
           <GraphRenderer
-            v-if="visibleDays.length"
-            :visibleDays="visibleDays"
+            v-if="workspaceDays.length && workspaceWidth"
+            :visibleDays="workspaceDays"
+            :style="workspacePaneStyle"
+            :animate="false"
             :columnCount="VISIBLE_COLS"
             :columnTemplate="timelineGridTemplateColumns"
             :enableColumnExpand="false"
@@ -1573,6 +1668,8 @@ const handleRefundDelete = async (op) => {
             class="graph-renderer-content"
           />
           <div class="summaries-container"></div>
+        </div>
+        </div>
         </div>
       </main>
       <aside class="home-right-panel">
@@ -2006,8 +2103,12 @@ const handleRefundDelete = async (op) => {
  
   padding: 0;
 }
-.home-main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-.timeline-grid-wrapper { position: relative; height: var(--timeline-height, 318px); flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-y; transition: height 0.12s ease; }
+.home-main-content { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.workspace-scroll-viewport { flex: 1; min-height: 0; width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x pan-y; overscroll-behavior-x: contain; }
+.workspace-scroll-viewport::-webkit-scrollbar { display: none; }
+.workspace-scroll-viewport:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.workspace-scroll-content { height: 100%; display: flex; flex-direction: column; }
+.timeline-grid-wrapper { position: relative; height: var(--timeline-height, 318px); flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; touch-action: pan-x pan-y; transition: height 0.12s ease; }
 .timeline-grid-wrapper.selection-armed { cursor: crosshair; }
 .timeline-grid-wrapper.selection-active {
   cursor: crosshair;
@@ -2045,9 +2146,9 @@ const handleRefundDelete = async (op) => {
   cursor: not-allowed !important;
 }
 
-.timeline-grid-content { display: grid; width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease, grid-template-columns 0.16s ease; }
+.timeline-grid-content { display: grid; width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
 .timeline-grid-content.month-transition { transform: translateY(-6px); opacity: 0.9; }
-.divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); width: 100%; background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: relative; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
+.divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: sticky; left: 0; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
 .divider-wrapper .month-label { flex: 0 0 auto; font-weight: 600; font-size: 11px; text-transform: capitalize; color: var(--color-text); line-height: 1; }
 .month-nav { display: inline-flex; align-items: center; gap: 4px; width: 140px; justify-content: center; }
 .month-nav.center { flex: 1; justify-content: center; }

@@ -674,6 +674,13 @@ const externalTooltipHandler = (context) => {
   const hostW = host?.clientWidth || hostRect.width || 0;
   const hostH = host?.clientHeight || hostRect.height || 0;
 
+  // The canvas can now include offscreen days. Clamp the card to the visible
+  // workspace, not to the full buffered canvas, so edge taps remain readable.
+  const viewportRect = host?.closest?.('.workspace-scroll-viewport')?.getBoundingClientRect() || hostRect;
+  const visibleLeft = Math.max(0, viewportRect.left - hostRect.left);
+  const visibleRight = Math.min(hostW, viewportRect.right - hostRect.left);
+  tooltipEl.style.maxWidth = `${Math.max(0, visibleRight - visibleLeft - 20)}px`;
+
   const tooltipWidth = tooltipEl.offsetWidth;
   const tooltipHeight = tooltipEl.offsetHeight;
 
@@ -688,11 +695,11 @@ const externalTooltipHandler = (context) => {
 
   // Горизонталь: стараемся быть по центру, но если упираемся в край — прыгаем влево/вправо
   let transformX = '-50%';
-  if (left - tooltipWidth / 2 < M) {
-    left = M;
+  if (left - tooltipWidth / 2 < visibleLeft + M) {
+    left = visibleLeft + M;
     transformX = '0%';
-  } else if (left + tooltipWidth / 2 > hostW - M) {
-    left = hostW - M;
+  } else if (left + tooltipWidth / 2 > visibleRight - M) {
+    left = visibleRight - M;
     transformX = '-100%';
   }
 
@@ -2054,6 +2061,7 @@ watch(
         v-for="(day, index) in summaries"
         :key="index"
         class="day-summary"
+        :data-date-key="normalizedVisibleDays[index]?.dateKey"
         :class="{
           'is-expanded': isExpandedSummaryColumn(index),
           'is-collapsed': enableColumnExpand && expandedColumnIndex >= 0 && expandedColumnIndex !== index
