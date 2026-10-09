@@ -10,10 +10,13 @@ export function createGraphGestureGuard({ onDismiss = () => {}, now = Date.now, 
   let lastScrollAt = -Infinity;
 
   const dismiss = () => {
+    const wasBlocked = blocked;
     authorized = false;
     tap = null;
     blocked = true;
-    onDismiss();
+    // One invalidation is enough for the entire swipe (including inertia and
+    // date-range updates). Repainting a chart on every move stalls iPad scroll.
+    if (!wasBlocked) onDismiss();
   };
 
   const start = (point) => {

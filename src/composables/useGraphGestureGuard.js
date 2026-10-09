@@ -5,7 +5,7 @@ export function useGraphGestureGuard(chartRef, onDismiss, { tapOnly = false } = 
   const guard = createGraphGestureGuard({ tapOnly, onDismiss: () => {
     onDismiss();
     const chart = chartRef.value?.chart;
-    if (chart) {
+    if (chart && (chart.getActiveElements().length || chart.tooltip?.getActiveElements().length)) {
       chart.setActiveElements([]);
       chart.tooltip?.setActiveElements([], { x: 0, y: 0 });
       chart.render();

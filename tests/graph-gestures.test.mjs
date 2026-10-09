@@ -81,6 +81,29 @@ test('a scroll after touch release invalidates a delayed browser click', () => {
   assert.equal(s.guard.allowEvent(s.click()), false);
 });
 
+test('a continuous swipe and its range updates dismiss once instead of repainting on every move', () => {
+  const s = setup(false);
+  s.guard.start(s.point());
+  s.guard.end(s.point());
+  assert.equal(s.guard.allowEvent(s.click()), true);
+  s.guard.start(s.point());
+  for (let x = 110; x <= 600; x += 10) {
+    s.guard.move(s.point(x));
+    s.guard.dismiss(); // virtual day range update
+  }
+  s.guard.end(s.point(600));
+  for (let i = 0; i < 30; i++) s.guard.scroll(); // native scroll / inertia
+  assert.equal(s.dismissals(), 1);
+  assert.equal(s.guard.canShowTooltip(), false);
+  assert.equal(s.guard.allowEvent(s.click()), false);
+  s.advance(200);
+  s.guard.start(s.point());
+  s.guard.end(s.point());
+  assert.equal(s.guard.allowEvent(s.click()), true);
+  s.guard.scroll();
+  assert.equal(s.dismissals(), 2, 'a newly opened summary is still dismissed by the next scroll');
+});
+
 test('dismissal and a shifted date range require a new tap, not a replay or stale touch hover', () => {
   const s = setup(false);
   s.guard.start(s.point());
