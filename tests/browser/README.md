@@ -12,5 +12,7 @@ Chromium, WebKit wheel input, stationary-cursor events, normal and edge taps,
 vertical scrolling, buffered range recycling, resize and month navigation.
 They also check that tapped summaries stay open, switch days with one tap,
 close on outside taps, and preserve desktop hover behavior.
+Bootstrap checks hold entity and operation responses separately, verify full
+work-area widths and centered loaders, and resize the page while data is pending.
 They do not replace checking Safari on a physical iPad: WebKit's public
 automation API exposes taps and wheel input, but not a native touch fling.

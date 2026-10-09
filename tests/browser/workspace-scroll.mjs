@@ -14,7 +14,9 @@ const server = await createServer({
 });
 let browser;
 
-async function mockApi(page) {
+async function mockApi(page, beforeResponse = async () => {}) {
+  // This scenario reloads an existing workspace, after its data migration.
+  await page.addInitScript(() => localStorage.setItem('app_data_version', '1'));
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     let data = [];
@@ -22,6 +24,7 @@ async function mockApi(page) {
     if (path.endsWith('/accounts')) data = [{ _id: 'scroll-account', name: 'Test account', initialBalance: 100000, isExcluded: false }];
     if (path.endsWith('/snapshot')) data = { timestamp: new Date().toISOString(), accountBalances: { 'scroll-account': 100000 }, companyBalances: {}, individualBalances: {}, contractorBalances: {} };
     if (route.request().method() !== 'GET') data = { ...route.request().postDataJSON(), _id: `test-${path}` };
+    await beforeResponse(path);
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
 }
@@ -83,6 +86,91 @@ try {
   const executablePath = process.env.SCROLL_TEST_CHROME ||
     (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined);
   browser = await (engine === 'webkit' ? webkit.launch() : chromium.launch({ executablePath }));
+  // Hold each bootstrap stage independently: the layout must be usable before
+  // entity responses and must retain its loaders while operations are pending.
+  for (const width of [1916, 1024]) {
+    const context = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: width === 1024,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15' });
+    if (width === 1024) await context.addInitScript(() => Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 }));
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    let releaseEntities, releaseOperations;
+    const entitiesReady = new Promise(resolve => { releaseEntities = resolve; });
+    const operationsReady = new Promise(resolve => { releaseOperations = resolve; });
+    let operationsRequested = false;
+    await mockApi(page, async path => {
+      if (path.startsWith('/api/events')) { operationsRequested = true; await operationsReady; }
+      else if (!path.endsWith('/auth/me')) await entitiesReady;
+    });
+    await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.home-main-content');
+    // Vite injects component/base CSS after module evaluation. WebKit can
+    // expose the DOM before those styles while API responses are held.
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.home-layout')).display === 'flex' &&
+      getComputedStyle(document.body).margin === '0px');
+    const checkLoadingLayout = async () => {
+      const geometry = await page.evaluate(() => {
+        const viewport = document.querySelector('.workspace-scroll-viewport').getBoundingClientRect();
+        const rect = selector => {
+          const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+          return { x, y, width, height };
+        };
+        return { viewport: { x: viewport.x, width: viewport.width }, divider: rect('.divider-wrapper'),
+          timeline: rect('.timeline-grid-wrapper'), graph: rect('.graph-area-wrapper'),
+          loaders: [...document.querySelectorAll('.section-loading-overlay')].map(el => {
+            const box = el.getBoundingClientRect();
+            const spinner = el.querySelector('.spinner-small').getBoundingClientRect();
+            return { x: box.x, width: box.width, center: spinner.x + spinner.width / 2 };
+          }) };
+      });
+      assert.ok(geometry.viewport.width > page.viewportSize().width - 150);
+      for (const area of [geometry.timeline, geometry.graph, geometry.divider]) {
+        assert.ok(area.width >= geometry.viewport.width - 1, `pending data cannot collapse a work area: ${JSON.stringify(geometry)}`);
+        assert.ok(area.height > 20, `pending data preserves area heights: ${JSON.stringify(geometry)}`);
+      }
+      assert.ok(Math.abs(geometry.divider.width - geometry.viewport.width) < 1, 'month controls span the viewport before data arrives');
+      assert.equal(geometry.loaders.length, 2, 'both work areas keep their loaders until bootstrap completes');
+      for (const loader of geometry.loaders) {
+        assert.ok(Math.abs(loader.width - geometry.viewport.width) < 1);
+        assert.ok(Math.abs(loader.center - geometry.viewport.x - geometry.viewport.width / 2) < 1, 'loading spinner stays centered in the visible viewport');
+      }
+    };
+    try {
+      await page.waitForTimeout(100);
+      await checkLoadingLayout();
+      if (width === 1916) {
+        await page.waitForTimeout(5000);
+        await checkLoadingLayout();
+        if (process.env.SCROLL_TEST_SCREENSHOT) await page.screenshot({ path: process.env.SCROLL_TEST_SCREENSHOT });
+      }
+      await page.setViewportSize({ width: width - 120, height: 900 });
+      await page.waitForTimeout(100);
+      await checkLoadingLayout();
+      await page.setViewportSize({ width, height: 1000 });
+      await page.waitForFunction(() => Math.abs(document.querySelector('.divider-wrapper').getBoundingClientRect().width -
+        document.querySelector('.workspace-scroll-viewport').clientWidth) < 1);
+      releaseEntities();
+      const deadline = Date.now() + 5000;
+      while (!operationsRequested && Date.now() < deadline) await page.waitForTimeout(50);
+      assert.ok(operationsRequested, 'operation loading follows entity loading');
+      await page.waitForTimeout(100);
+      await checkLoadingLayout();
+      releaseOperations();
+      await page.waitForFunction(() => !document.querySelector('.section-loading-overlay'));
+      await page.waitForSelector('.workspace-scroll-viewport canvas');
+      await page.evaluate(async engine => {
+        const { Chart } = await import(`/node_modules/.vite-scroll-${engine}/deps/chart__js_auto.js`);
+        window.__scrollChart = Chart.getChart(document.querySelector('.workspace-scroll-viewport canvas'));
+      }, engine);
+      checkFrame(await page.evaluate(measureFrame));
+      assert.deepEqual(errors, []);
+      console.log(`${engine} ${width}px: delayed entities, delayed operations, loading resize and ready layout passed`);
+    } finally {
+      releaseEntities(); releaseOperations();
+      await context.close();
+    }
+  }
   for (const width of [1024, 834]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: true,
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15' });

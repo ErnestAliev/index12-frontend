@@ -173,11 +173,10 @@ const nextMonthLabel = computed(() => {
 });
 
 // 🟢 Loading state for timeline and graphs
+const isWorkspaceInitializing = ref(true);
 const isDataLoading = computed(() => {
-  // Show loader if no visible days yet or auth is loading
-  if (mainStore.isAuthLoading) return true;
-  if (!visibleDays.value || visibleDays.value.length === 0) return true;
-  return false;
+  return mainStore.isAuthLoading || isWorkspaceInitializing.value ||
+    !workspaceWidth.value || !workspaceDays.value.length;
 });
 const currentTheme = ref(localStorage.getItem('theme') || 'dark');
 
@@ -425,6 +424,8 @@ const mainContentRef = ref(null);
 const workspaceScrollRef = ref(null);
 const workspaceWidth = ref(0);
 const workspaceScrollLeft = ref(0);
+let resizeObserver = null;
+let workspaceResizeFrame = null;
 const workspaceWindow = computed(() => getWorkspaceWindow({
   viewportWidth: workspaceWidth.value,
   visibleColumns: VISIBLE_COLS.value,
@@ -456,6 +457,10 @@ const workspacePaneStyle = computed(() => ({
   marginLeft: `${isScrollActive.value ? renderedStartIndex.value * workspaceColumnWidth.value : 0}px`,
 }));
 const workspaceContentStyle = computed(() => ({ width: `${workspaceWindow.value.totalWidth}px` }));
+const workspaceLoadingStyle = computed(() => ({
+  width: workspaceWidth.value ? `${workspaceWidth.value}px` : '100%',
+  left: `${workspaceScrollLeft.value}px`,
+}));
 const timelineGridRef = ref(null);
 const timelineGridContentRef = ref(null);
 const yAxisLabels = ref([]); 
@@ -1143,6 +1148,30 @@ const onWorkspaceScroll = () => {
   showScrollbar();
 };
 watch([VISIBLE_COLS, isScrollActive, totalDays], () => nextTick(syncWorkspaceScrollToIndex));
+// Auth can reveal the workspace seconds before data arrives. Measure its DOM
+// immediately and observe loading-time resizes independently of API completion.
+watch(mainContentRef, (element) => {
+  resizeObserver?.disconnect();
+  if (workspaceResizeFrame !== null) cancelAnimationFrame(workspaceResizeFrame);
+  workspaceResizeFrame = null;
+  if (!element) return;
+  measureWorkspaceWidth();
+  resizeObserver = new ResizeObserver(() => {
+    // Apply layout writes on the next frame, outside ResizeObserver delivery.
+    // Safari otherwise reports a resize loop during bootstrap or rotation.
+    if (workspaceResizeFrame !== null) return;
+    workspaceResizeFrame = requestAnimationFrame(() => {
+      workspaceResizeFrame = null;
+      if (mainContentRef.value !== element) return;
+      measureWorkspaceWidth();
+      if (!isDraggingResizer) {
+        applyHeights(clampTimelineHeight(timelineHeightPx.value));
+        updateScrollbarMetrics();
+      }
+    });
+  });
+  resizeObserver.observe(element);
+}, { flush: 'post' });
 let removeWorkspaceGestureListeners;
 const centerToday = () => { scrollToMonthCenter(selectedMonthStart.value || new Date()); };
 // OLD: onChangeView - controls both timeline AND forecast
@@ -1169,6 +1198,7 @@ const onChangeTimelineWidth = async (newWidth) => {
   updateScrollbarMetrics();
 };
 const onWindowResize = () => {
+  measureWorkspaceWidth();
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));
   updateScrollbarMetrics();
@@ -1190,7 +1220,6 @@ const checkDayChange = async () => {
   }
 };
 let dayChangeCheckerInterval = null;
-let resizeObserver = null;
 let stopBufferCacheWatcher = null;
 let stopBufferPeriodWatcher = null;
 
@@ -1295,6 +1324,7 @@ const captureBackgroundScreenshot = async () => {
 };
 
 onMounted(async () => { 
+    window.addEventListener('resize', onWindowResize);
     // Initialize theme
     document.documentElement.setAttribute('data-theme', currentTheme.value);
     
@@ -1343,6 +1373,7 @@ onMounted(async () => {
     applyHeaderHeight(clampHeaderHeight(headerHeightPx.value)); 
     const initialTop = (timelineGridRef.value && timelineGridRef.value.style.height) ? parseFloat(timelineGridRef.value.style.height) : timelineHeightPx.value; 
     applyHeights(clampTimelineHeight(initialTop)); 
+    isWorkspaceInitializing.value = false;
     
     // Attach resize handlers to divider-wrapper (for top/bottom edge dragging)
     if (dividerWrapperRef.value) {
@@ -1367,16 +1398,6 @@ onMounted(async () => {
     window.addEventListener('keydown', handleGlobalKeyDown);
     window.addEventListener('keyup', handleGlobalKeyUp);
     
-    resizeObserver = new ResizeObserver(() => { 
-      measureWorkspaceWidth();
-      // Don't interfere while user is actively dragging
-      if (!isDraggingResizer) {
-        applyHeights(clampTimelineHeight(timelineHeightPx.value)); 
-        updateScrollbarMetrics(); 
-      }
-    }); 
-    if (mainContentRef.value) resizeObserver.observe(mainContentRef.value); 
-    window.addEventListener('resize', onWindowResize); 
     updateScrollbarMetrics(); 
 
     scheduleBackgroundAnalyticsPrefetch({
@@ -1464,10 +1485,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleGlobalKeyUp);
   detachTimelineSelectionListeners();
 
-  if (resizeObserver && mainContentRef.value) {
-    resizeObserver.unobserve(mainContentRef.value);
-  }
+  resizeObserver?.disconnect();
   resizeObserver = null;
+  if (workspaceResizeFrame !== null) cancelAnimationFrame(workspaceResizeFrame);
+  workspaceResizeFrame = null;
 });
 
 // --- Transfer, Retail, Refund Handlers ---
@@ -1601,7 +1622,7 @@ const handleRefundDelete = async (op) => {
         <div class="divider-placeholder"></div>
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
-      <main class="home-main-content" ref="mainContentRef" data-graph-workspace>
+      <main class="home-main-content" ref="mainContentRef" data-graph-workspace :aria-busy="isDataLoading">
         <div class="workspace-scroll-viewport" ref="workspaceScrollRef" @scroll.passive="onWorkspaceScroll"
           tabindex="0" role="region" aria-label="Рабочая область: операции, график и итоги по дням">
         <div class="workspace-scroll-content" :style="workspaceContentStyle">
@@ -1616,7 +1637,7 @@ const handleRefundDelete = async (op) => {
           @dragover="onContainerDragOver"
           @dragleave="onContainerDragLeave"
         >
-          <div v-if="isDataLoading" class="section-loading-overlay">
+          <div v-if="isDataLoading" class="section-loading-overlay" :style="workspaceLoadingStyle">
             <div class="spinner-small"></div>
           </div>
           <div
@@ -1632,7 +1653,7 @@ const handleRefundDelete = async (op) => {
         <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ ...workspacePaneStyle, gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in workspaceDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" :selected-operation-ids="selectedOperationIds" :selection-mode-active="isTimelineSelecting" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
-        <div class="divider-wrapper" ref="dividerWrapperRef" :style="{ width: `${workspaceWidth}px` }">
+        <div class="divider-wrapper" ref="dividerWrapperRef" :style="{ width: workspaceWidth ? `${workspaceWidth}px` : '100%' }">
           <div class="month-nav">
             <button class="month-nav-btn left" @click="goPrevMonth" title="Предыдущий месяц">←</button>
             <div class="month-label">{{ prevMonthLabel }}</div>
@@ -1652,7 +1673,7 @@ const handleRefundDelete = async (op) => {
         </div>
         <!-- 🟢 NEW: Hide graphs for timeline-only users -->
         <div v-if="!mainStore.isTimelineOnly" class="graph-area-wrapper" ref="graphAreaRef">
-          <div v-if="isDataLoading" class="section-loading-overlay">
+          <div v-if="isDataLoading" class="section-loading-overlay" :style="workspaceLoadingStyle">
             <div class="spinner-small"></div>
           </div>
           <GraphRenderer
@@ -2107,7 +2128,7 @@ const handleRefundDelete = async (op) => {
 .workspace-scroll-viewport { flex: 1; min-height: 0; width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x pan-y; overscroll-behavior-x: contain; }
 .workspace-scroll-viewport::-webkit-scrollbar { display: none; }
 .workspace-scroll-viewport:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
-.workspace-scroll-content { height: 100%; display: flex; flex-direction: column; }
+.workspace-scroll-content { min-width: 100%; height: 100%; display: flex; flex-direction: column; }
 .timeline-grid-wrapper { position: relative; height: var(--timeline-height, 318px); flex-shrink: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); scrollbar-width: none; -ms-overflow-style: none; touch-action: pan-x pan-y; transition: height 0.12s ease; }
 .timeline-grid-wrapper.selection-armed { cursor: crosshair; }
 .timeline-grid-wrapper.selection-active {
