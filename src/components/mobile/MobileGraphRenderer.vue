@@ -15,22 +15,13 @@ import {
   buildTooltipAccountBalanceLine,
   parseTooltipAccountBalanceLine,
   formatTooltipAccountBalanceExportLine,
-  renderTooltipAccountBalanceHtml
+  renderTooltipAccountBalanceHtml,
+  shouldDismissGraphTooltip
 } from '@/composables/useGraphTooltip.js';
 
 // Unique tooltip element ids per component instance (GraphModal + main chart must not collide)
 const TOOLTIP_EL_ID = `chartjs-custom-tooltip-${Math.random().toString(36).slice(2)}`;
 const TOOLTIP_STYLE_ID = `${TOOLTIP_EL_ID}-style`;
-
-let tooltipAutoUnpinTimer = null;
-const TOOLTIP_PIN_AUTORELEASE_MS = 1800;
-
-const _clearTooltipAutoUnpinTimer = () => {
-  if (tooltipAutoUnpinTimer) {
-    clearTimeout(tooltipAutoUnpinTimer);
-    tooltipAutoUnpinTimer = null;
-  }
-};
 
 // Mobile-specific tooltip state
 let tooltipPinned = false;
@@ -298,21 +289,11 @@ onMounted(() => {
     subtree: true
   });
   
-  // Also add global click listener to hide tooltip when clicking on modals
+  // Outside taps dismiss the card without swallowing a tap on another bar.
   const globalClickHandler = (e) => {
     const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
-    if (!tooltipEl) return;
-    
-    // If clicking on modal overlay or modal content, hide tooltip
-    const isModalClick = e.target.classList.contains('modal-overlay') || 
-                        e.target.closest('.modal-content') ||
-                        e.target.closest('.modal-overlay');
-    
-    if (isModalClick) {
-      tooltipEl.style.opacity = 0;
-      tooltipEl.style.pointerEvents = 'none';
-      const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
-      if (backdrop) backdrop.classList.remove('visible');
+    if (shouldDismissGraphTooltip(e.target, chartRef.value?.chart?.canvas, tooltipEl)) {
+      gestureGuard.dismiss();
     }
   };
   
@@ -470,7 +451,8 @@ const externalTooltipHandler = (context) => {
           }
           #${TOOLTIP_EL_ID}-backdrop.visible {
             opacity: 1;
-            pointer-events: auto;
+            /* Let an outside tap reach another bar; document capture dismisses. */
+            pointer-events: none;
           }
         }
       `;
@@ -710,8 +692,6 @@ onUnmounted(() => {
   if (styleEl) styleEl.remove();
   document.getElementById(`${TOOLTIP_EL_ID}-backdrop`)?.remove();
   clearTimeout(resizeTimer);
-
-  _clearTooltipAutoUnpinTimer();
 
   if (tooltipCopyFeedbackTimer) {
     clearTimeout(tooltipCopyFeedbackTimer);

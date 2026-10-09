@@ -14,6 +14,24 @@ const server = await createServer({
 });
 let browser;
 
+async function mockApi(page) {
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { _id: 'scroll-test', workspaceRole: 'admin', role: 'admin', createdAt: '2026-01-01' };
+    if (path.endsWith('/accounts')) data = [{ _id: 'scroll-account', name: 'Test account', initialBalance: 100000, isExcluded: false }];
+    if (path.endsWith('/snapshot')) data = { timestamp: new Date().toISOString(), accountBalances: { 'scroll-account': 100000 }, companyBalances: {}, individualBalances: {}, contractorBalances: {} };
+    if (route.request().method() !== 'GET') data = { ...route.request().postDataJSON(), _id: `test-${path}` };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+  });
+}
+
+function visibleCards() {
+  return [...document.querySelectorAll('div[id^="chartjs-custom-tooltip-"]')]
+    .filter(el => !el.id.endsWith('-backdrop') && Number(el.style.opacity) > 0)
+    .map(el => ({ text: el.textContent, left: el.getBoundingClientRect().left, top: el.getBoundingClientRect().top }));
+}
+
 // Sample every rendered frame, including during inertia and window recycling.
 function measureFrame() {
   const viewport = document.querySelector('.workspace-scroll-viewport');
@@ -72,15 +90,7 @@ try {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.route('**/api/**', async route => {
-      const path = new URL(route.request().url()).pathname;
-      let data = [];
-      if (path.endsWith('/auth/me')) data = { _id: 'scroll-test', workspaceRole: 'admin', role: 'admin', createdAt: '2026-01-01' };
-      if (path.endsWith('/accounts')) data = [{ _id: 'scroll-account', name: 'Test account', initialBalance: 100000, isExcluded: false }];
-      if (path.endsWith('/snapshot')) data = { timestamp: new Date().toISOString(), accountBalances: { 'scroll-account': 100000 }, companyBalances: {}, individualBalances: {}, contractorBalances: {} };
-      if (route.request().method() !== 'GET') data = { ...route.request().postDataJSON(), _id: `test-${path}` };
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
-    });
+    await mockApi(page);
     await page.goto(server.resolvedUrls.local[0]);
     await page.waitForSelector('.workspace-scroll-viewport canvas');
     await page.evaluate(async (engine) => {
@@ -162,6 +172,11 @@ try {
         active: window.__scrollChart.getActiveElements().map(e => ({ index: e.index, datasetIndex: e.datasetIndex })), opacity: window.__scrollChart.tooltip.opacity })));
       throw error;
     }
+    await page.waitForTimeout(3500);
+    assert.equal((await page.evaluate(measureFrame)).overlays, 1, 'a tapped summary stays open until an explicit dismissal');
+    await page.mouse.move(10, 10);
+    await page.waitForTimeout(100);
+    assert.equal((await page.evaluate(measureFrame)).overlays, 1, 'compatibility mouse movement does not dismiss a tapped summary');
     for (const edge of ['left', 'right']) {
       const point = await page.evaluate(edge => {
         const chart = window.__scrollChart;
@@ -170,7 +185,7 @@ try {
         const columnWidth = rect.width / chart.data.labels.length;
         const index = edge === 'left' ? Math.ceil((viewport.left - rect.left) / columnWidth) : Math.floor((viewport.right - rect.left) / columnWidth) - 1;
         const center = chart.getDatasetMeta(0).data[index].getCenterPoint();
-        return { x: rect.x + center.x * rect.width / chart.width, y: rect.y + center.y * rect.height / chart.height };
+        return { x: rect.x + center.x * rect.width / chart.width, y: rect.y + center.y * rect.height / chart.height, label: chart.data.labels[index] };
       }, edge);
       await page.touchscreen.tap(point.x, point.y);
       await page.waitForTimeout(80);
@@ -181,8 +196,19 @@ try {
         return { visible: !!card, left: rect?.left, right: rect?.right, viewportLeft: viewport.left, viewportRight: viewport.right };
       });
       assert.equal(bounds.visible, true);
+      const cards = await page.evaluate(visibleCards);
+      assert.equal(cards.length, 1);
+      assert.ok(cards[0].text.includes(point.label), 'one tap on another bar replaces the displayed day');
       assert.ok(bounds.left >= bounds.viewportLeft && bounds.right <= bounds.viewportRight, 'edge tap card stays inside the visible workspace');
     }
+    // Blank gutter beside the chart (the top-left corner is the menu button).
+    const chartGutter = await page.locator('.chart-wrapper').boundingBox();
+    await page.touchscreen.tap(5, chartGutter.y + chartGutter.height / 2);
+    await page.waitForTimeout(80);
+    assert.equal((await page.evaluate(measureFrame)).overlays, 0, 'a tap outside the chart and card dismisses the summary');
+    await page.touchscreen.tap(target.x, target.y);
+    await page.waitForTimeout(80);
+    assert.equal((await page.evaluate(measureFrame)).overlays, 1, 'a dismissed summary can be reopened');
 
     // Vertical table scroll is independent of the shared horizontal position.
     const before = await page.evaluate(measureFrame);
@@ -244,6 +270,62 @@ try {
     checkFrame(await page.evaluate(measureFrame));
     assert.deepEqual(errors, []);
     console.log(`${engine} ${width}px: tap, vertical scroll, long forecast, resize and month navigation passed`);
+    await context.close();
+  }
+
+  for (const mobile of [true, false]) {
+    const context = await browser.newContext({ viewport: { width: mobile ? 390 : 1366, height: mobile ? 844 : 1000 }, hasTouch: mobile,
+      ...(mobile ? { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1' } : {}) });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await mockApi(page);
+    await page.goto(server.resolvedUrls.local[0]);
+    const selector = mobile ? '.mobile-chart-section canvas' : '.workspace-scroll-viewport canvas';
+    await page.waitForSelector(selector);
+    await page.evaluate(async ({ engine, selector }) => {
+      const { Chart } = await import(`/node_modules/.vite-scroll-${engine}/deps/chart__js_auto.js`);
+      window.__scrollChart = Chart.getChart(document.querySelector(selector));
+    }, { engine, selector });
+    await page.waitForTimeout(400);
+    const points = await page.evaluate(() => {
+      const chart = window.__scrollChart;
+      const rect = chart.canvas.getBoundingClientRect();
+      return chart.getDatasetMeta(0).data.map((bar, index) => ({ x: rect.x + bar.x * rect.width / chart.width,
+        y: rect.y + (bar.base - 12) * rect.height / chart.height, label: chart.data.labels[index] }))
+        .filter(p => p.x > 20 && p.x < innerWidth - 20 && p.y > 0 && p.y < innerHeight - 10);
+    });
+    assert.ok(points.length >= 2, 'at least two graph bars are available');
+    if (mobile) {
+      await page.touchscreen.tap(points[0].x, points[0].y);
+      await page.waitForTimeout(3500);
+      let cards = await page.evaluate(visibleCards);
+      assert.equal(cards.length, 1, 'phone summary has no auto-close timeout');
+      assert.ok(cards[0].text.includes(points[0].label));
+      await page.touchscreen.tap(cards[0].left + 30, cards[0].top + 50);
+      await page.waitForTimeout(100);
+      assert.equal((await page.evaluate(visibleCards)).length, 1, 'touching card content keeps it open');
+      await page.touchscreen.tap(points[1].x, points[1].y);
+      await page.waitForTimeout(100);
+      cards = await page.evaluate(visibleCards);
+      assert.equal(cards.length, 1);
+      assert.ok(cards[0].text.includes(points[1].label), 'the backdrop allows another day to open with one tap');
+      await page.touchscreen.tap(5, 400);
+      await page.waitForTimeout(100);
+      assert.equal((await page.evaluate(visibleCards)).length, 0, 'outside phone tap dismisses the card');
+      await page.touchscreen.tap(points[0].x, points[0].y);
+      await page.waitForTimeout(100);
+      assert.equal((await page.evaluate(visibleCards)).length, 1, 'phone card can reopen after dismissal');
+    } else {
+      await page.mouse.move(points[0].x, points[0].y);
+      await page.waitForTimeout(100);
+      assert.equal((await page.evaluate(visibleCards)).length, 1, 'desktop hover still opens the summary');
+      await page.mouse.move(5, 400);
+      await page.waitForTimeout(2700);
+      assert.equal((await page.evaluate(visibleCards)).length, 0, 'desktop hover still dismisses after leaving');
+    }
+    assert.deepEqual(errors, []);
+    console.log(`${engine}: ${mobile ? 'phone tap persistence, day switching and outside dismissal' : 'desktop hover'} passed`);
     await context.close();
   }
 } finally {

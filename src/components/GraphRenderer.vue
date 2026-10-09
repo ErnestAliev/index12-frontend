@@ -16,23 +16,14 @@ import {
   buildTooltipAccountBalanceLine,
   parseTooltipAccountBalanceLine,
   formatTooltipAccountBalanceExportLine,
-  renderTooltipAccountBalanceHtml
+  renderTooltipAccountBalanceHtml,
+  shouldDismissGraphTooltip
 } from '@/composables/useGraphTooltip.js';
 
 // Unique tooltip element ids per component instance (GraphModal + main chart must not collide)
 const TOOLTIP_EL_ID = `chartjs-custom-tooltip-${Math.random().toString(36).slice(2)}`;
 const TOOLTIP_STYLE_ID = `${TOOLTIP_EL_ID}-style`;
 
-
-let tooltipAutoUnpinTimer = null;
-const TOOLTIP_PIN_AUTORELEASE_MS = 1800;
-
-const _clearTooltipAutoUnpinTimer = () => {
-  if (tooltipAutoUnpinTimer) {
-    clearTimeout(tooltipAutoUnpinTimer);
-    tooltipAutoUnpinTimer = null;
-  }
-};
 
 // --- Tooltip copy/export helpers ---
 let lastTooltipExportText = '';
@@ -63,7 +54,6 @@ const gestureGuard = useGraphGestureGuard(chartRef, () => {
   tooltipForceUpdate = false;
   tooltipIsHovering = false;
   _clearTooltipHideTimer();
-  _clearTooltipAutoUnpinTimer();
   const el = document.getElementById(TOOLTIP_EL_ID);
   if (el) {
     el.style.opacity = 0;
@@ -312,28 +302,17 @@ onMounted(() => {
     subtree: true
   });
   
-  // Also add global click listener to hide tooltip when clicking on modals
+  // A tapped card stays pinned until an outside click or another bar selection.
   const globalClickHandler = (e) => {
     const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
-    if (!tooltipEl) return;
-    
-    // 🟢 FIX: Don't hide if clicking inside GraphModal
-    const isGraphModalClick = e.target.closest('.graph-modal-content');
-    if (isGraphModalClick) return; // Allow tooltips in GraphModal
-    
-    // If clicking on modal overlay or modal content, hide tooltip
-    const isModalClick = e.target.classList.contains('modal-overlay') || 
-                        e.target.closest('.modal-content') ||
-                        e.target.closest('.modal-overlay');
-    
-    if (isModalClick) {
-      tooltipEl.style.opacity = 0;
-      tooltipEl.style.pointerEvents = 'none';
+    if (shouldDismissGraphTooltip(e.target, chartRef.value?.chart?.canvas, tooltipEl)) {
+      gestureGuard.dismiss();
     }
   };
   
   // Add global mousemove listener to hide tooltip when cursor leaves canvas
   const globalMouseMoveHandler = (e) => {
+    if (tooltipPinned) return;
     const tooltipEl = document.getElementById(TOOLTIP_EL_ID);
     if (!tooltipEl) return;
     
@@ -483,22 +462,10 @@ const externalTooltipHandler = (context) => {
     tooltipEl.addEventListener('mouseenter', () => {
       tooltipIsHovering = true;
       _clearTooltipHideTimer();
-      _clearTooltipAutoUnpinTimer();
     });
 
     tooltipEl.addEventListener('mouseleave', () => {
       tooltipIsHovering = false;
-
-      // if user pinned by tap/click, auto-release after a short delay (mobile-friendly)
-      _clearTooltipAutoUnpinTimer();
-      if (tooltipPinned) {
-        tooltipAutoUnpinTimer = setTimeout(() => {
-          tooltipPinned = false;
-          tooltipPinnedKey = '';
-          tooltipForceUpdate = false;
-          try { tooltipEl.style.opacity = 0; } catch (e) {}
-        }, TOOLTIP_PIN_AUTORELEASE_MS);
-      }
 
       if (!tooltipPinned) {
         _clearTooltipHideTimer();
@@ -510,17 +477,6 @@ const externalTooltipHandler = (context) => {
   }
 
   const tooltipModel = context.tooltip;
-  
-  // If pinned on mobile by tap, don't let it stick forever
-  if (tooltipPinned && !tooltipIsHovering) {
-    _clearTooltipAutoUnpinTimer();
-    tooltipAutoUnpinTimer = setTimeout(() => {
-      tooltipPinned = false;
-      tooltipPinnedKey = '';
-      tooltipForceUpdate = false;
-      try { tooltipEl.style.opacity = 0; } catch (e) {}
-    }, TOOLTIP_PIN_AUTORELEASE_MS);
-  }
   
   // Force hide tooltip function (for modals, etc)
   const forceHideTooltip = () => {
@@ -730,7 +686,7 @@ onUnmounted(() => {
   const styleEl = document.getElementById(TOOLTIP_STYLE_ID);
   if (styleEl) styleEl.remove();
 
-  _clearTooltipAutoUnpinTimer();
+  _clearTooltipHideTimer();
 
   if (tooltipCopyFeedbackTimer) {
     clearTimeout(tooltipCopyFeedbackTimer);
@@ -1808,6 +1764,7 @@ const chartOptions = computed(() => {
       const elementsToActivate = [usableEl];
 
       // Pin to clicked bar
+      _clearTooltipHideTimer();
       tooltipPinned = true;
       tooltipPinnedKey = key;
       tooltipForceUpdate = true;

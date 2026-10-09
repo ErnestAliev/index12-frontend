@@ -190,7 +190,8 @@ for (const [name, filename, tapOnly] of [
     const source = readFileSync(new URL(`../src/components/${filename}`, import.meta.url), 'utf8');
     const clickStart = source.indexOf('onClick: (event, elements, chart) =>');
     const clickEnd = source.indexOf('\n    plugins:', clickStart);
-    context = vm.createContext({ gestureGuard: guard, tooltipPinned: false, tooltipPinnedKey: '', tooltipForceUpdate: false });
+    context = vm.createContext({ gestureGuard: guard, tooltipPinned: false, tooltipPinnedKey: '', tooltipForceUpdate: false,
+      _clearTooltipHideTimer: () => {} });
     const onClick = vm.runInContext(`({ ${source.slice(clickStart, clickEnd)} }).onClick`, context);
     const events = source.match(/events: \[([^\]]+)\]/)[1].match(/'([^']+)'/g).map(s => s.slice(1, -1));
     assert.ok(!events.includes('touchstart') && !events.includes('touchmove'));

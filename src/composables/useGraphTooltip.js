@@ -2,6 +2,11 @@
  * Shared utilities for graph tooltips (desktop and mobile)
  */
 
+// Keep clicks inside the card and on its own canvas for their local handlers.
+// A different canvas dismisses this instance while opening that chart's day.
+export const shouldDismissGraphTooltip = (target, canvas, tooltip) =>
+    !!tooltip && !tooltip.contains(target) && !canvas?.contains(target);
+
 export const formatNumber = (num) => {
     if (num == null || isNaN(num)) return '0';
     const abs = Math.abs(Number(num));
