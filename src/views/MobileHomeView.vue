@@ -1464,7 +1464,7 @@ const handleOperationDelete = async (op) => {
 </script>
 
 <template>
-  <div class="mobile-layout" @click="(e) => { if (isContextMenuVisible && !e.target.closest('.context-menu')) isContextMenuVisible = false; }">
+  <div class="mobile-layout" data-graph-workspace @click="(e) => { if (isContextMenuVisible && !e.target.closest('.context-menu')) isContextMenuVisible = false; }">
 
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>

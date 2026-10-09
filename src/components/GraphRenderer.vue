@@ -5,6 +5,7 @@ import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber, formatShortNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS } from 'chart.js/auto';
+import { useGraphGestureGuard } from '@/composables/useGraphGestureGuard.js';
 import { 
   downloadTextFile, 
   copyToClipboard, 
@@ -54,6 +55,22 @@ const _clearTooltipHideTimer = () => {
 };
 
 let tooltipCopyFeedbackTimer = null;
+
+const chartRef = ref(null);
+const gestureGuard = useGraphGestureGuard(chartRef, () => {
+  tooltipPinned = false;
+  tooltipPinnedKey = '';
+  tooltipForceUpdate = false;
+  tooltipIsHovering = false;
+  _clearTooltipHideTimer();
+  _clearTooltipAutoUnpinTimer();
+  const el = document.getElementById(TOOLTIP_EL_ID);
+  if (el) {
+    el.style.opacity = 0;
+    el.style.pointerEvents = 'none';
+  }
+});
+const chartPlugins = [gestureGuard.plugin];
 
 const props = defineProps({
   animate: { type: Boolean, default: true },
@@ -380,6 +397,7 @@ watch(
 
 // ... (externalTooltipHandler logic) ...
 const externalTooltipHandler = (context) => {
+  if (!gestureGuard.canShowTooltip()) return;
   let tooltipEl = document.getElementById(TOOLTIP_EL_ID);
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
@@ -1758,19 +1776,15 @@ const chartOptions = computed(() => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    events: ['mousemove', 'mouseout', 'click'],
     interaction: {
       mode: 'index',
       intersect: true
     },
     onClick: (event, elements, chart) => {
-      const el = document.getElementById(TOOLTIP_EL_ID);
-
       // Click on empty space -> unpin and hide
       if (!elements || elements.length === 0) {
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
-        if (el && !tooltipIsHovering) el.style.opacity = 0;
+        gestureGuard.dismiss();
         return;
       }
 
@@ -1780,10 +1794,7 @@ const chartOptions = computed(() => {
 
       // Clicking the same bar toggles pin off
       if (tooltipPinned && tooltipPinnedKey === key) {
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
-        if (el && !tooltipIsHovering) el.style.opacity = 0;
+        gestureGuard.dismiss();
         return;
       }
 
@@ -1797,7 +1808,11 @@ const chartOptions = computed(() => {
       try {
         const pos = { x: event?.x ?? event?.native?.offsetX, y: event?.y ?? event?.native?.offsetY };
         chart.setActiveElements(elementsToActivate);
-        if (chart.tooltip?.setActiveElements) chart.tooltip.setActiveElements(elementsToActivate, pos);
+        if (chart.tooltip?.setActiveElements) {
+          // Refresh even when Chart.js retained this bar after dismissal.
+          chart.tooltip.setActiveElements([], pos);
+          chart.tooltip.setActiveElements(elementsToActivate, pos);
+        }
         chart.update('none');
       } catch (e) {}
     },
@@ -2010,7 +2025,10 @@ const chartOptions = computed(() => {
   return options;
 });
 
-const chartRef = ref(null);
+watch(
+  () => props.visibleDays.map(day => day.dateKey || day.date?.getTime()).join('|'),
+  () => gestureGuard.dismiss()
+);
 
 watch(
   [chartData, chartOptions],
@@ -2028,7 +2046,7 @@ watch(
 <template>
   <div class="graph-area" :class="{ 'no-anim': !animate }">
     <div class="chart-wrapper">
-      <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
+      <Bar ref="chartRef" :data="chartData" :options="chartOptions" :plugins="chartPlugins" />
     </div>
 
     <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: columnTemplate || `repeat(${summaries.length}, 1fr)` }">

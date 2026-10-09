@@ -4,6 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS } from 'chart.js/auto';
+import { useGraphGestureGuard } from '@/composables/useGraphGestureGuard.js';
 import { 
   downloadTextFile, 
   copyToClipboard, 
@@ -40,12 +41,21 @@ let lastTooltipExportFilename = 'chart-tooltip.txt';
 let tooltipCopyFeedbackTimer = null;
 
 // Tooltip state
-let tooltipIsHovering = false;
 let lastActiveKey = '';
 
-// Mobile tap detection
-let isTouching = false;
-let pendingTooltipData = null;
+const chartRef = ref(null);
+const gestureGuard = useGraphGestureGuard(chartRef, () => {
+  tooltipPinned = false;
+  tooltipPinnedKey = '';
+  tooltipForceUpdate = false;
+  const el = document.getElementById(TOOLTIP_EL_ID);
+  if (el) {
+    el.style.opacity = 0;
+    el.style.pointerEvents = 'none';
+  }
+  document.getElementById(`${TOOLTIP_EL_ID}-backdrop`)?.classList.remove('visible');
+}, { tapOnly: true });
+const chartPlugins = [gestureGuard.plugin];
 
 const props = defineProps({
   visibleDays: { type: Array, required: true, default: () => [] },
@@ -130,17 +140,6 @@ const isAccountVisibleInCurrentMode = (accountLike) => {
   if (mode === 'hidden') return !!acc.isExcluded;
   return true;
 };
-
-// Touch tracking for scroll detection
-let touchStartY = 0;
-let touchStartX = 0;
-let touchMoveDistance = 0;
-let isScrolling = false;
-let scrollEndTimer = null;
-
-// Block tooltips during range updates
-let isRangeUpdating = false;
-let rangeUpdateTimer = null;
 
 // Block tooltips during resize
 let isResizing = false;
@@ -373,20 +372,16 @@ watch(
   { immediate: true }
 );
 
-// Watch for range changes to block tooltips temporarily
+// A shifted range can have the same length. Dismiss the previous day's overlay
+// and require a new tap, rather than reopening it during Chart.js event replay.
 watch(
-  () => props.visibleDays?.length,
-  () => {
-    if (rangeUpdateTimer) clearTimeout(rangeUpdateTimer);
-    isRangeUpdating = true;
-    rangeUpdateTimer = setTimeout(() => {
-      isRangeUpdating = false;
-    }, 800); // Block tooltips for 800ms after range change
-  }
+  () => props.visibleDays.map(day => day.dateKey || day.date?.getTime()).join('|'),
+  () => gestureGuard.dismiss()
 );
 
 // ... (externalTooltipHandler logic) ...
 const externalTooltipHandler = (context) => {
+  if (!gestureGuard.canShowTooltip()) return;
   let tooltipEl = document.getElementById(TOOLTIP_EL_ID);
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
@@ -511,12 +506,7 @@ const externalTooltipHandler = (context) => {
       
       // Click on backdrop dismisses tooltip
       backdropEl.addEventListener('click', () => {
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
-        tooltipEl.style.opacity = 0;
-        tooltipEl.style.pointerEvents = 'none';
-        backdropEl.classList.remove('visible');
+        gestureGuard.dismiss();
       });
     }
     
@@ -573,16 +563,6 @@ const externalTooltipHandler = (context) => {
   // Block tooltips when in fullscreen widget mode
   const fullscreenOverlay = document.querySelector('.fullscreen-widget-overlay');
   if (fullscreenOverlay) {
-    return;
-  }
-  
-  // Block tooltips during range updates
-  if (isRangeUpdating) {
-    return;
-  }
-  
-  // Block tooltips during scrolling
-  if (isScrolling) {
     return;
   }
   
@@ -709,13 +689,7 @@ const externalTooltipHandler = (context) => {
       backBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
-        tooltipEl.style.opacity = 0;
-        tooltipEl.style.pointerEvents = 'none';
-        const backdrop = document.getElementById(`${TOOLTIP_EL_ID}-backdrop`);
-        if (backdrop) backdrop.classList.remove('visible');
+        gestureGuard.dismiss();
       };
     }
   }
@@ -734,6 +708,8 @@ onUnmounted(() => {
 
   const styleEl = document.getElementById(TOOLTIP_STYLE_ID);
   if (styleEl) styleEl.remove();
+  document.getElementById(`${TOOLTIP_EL_ID}-backdrop`)?.remove();
+  clearTimeout(resizeTimer);
 
   _clearTooltipAutoUnpinTimer();
 
@@ -1766,19 +1742,15 @@ const chartOptions = computed(() => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    events: ['click'],
     interaction: {
       mode: 'index',
       intersect: true
     },
     onClick: (event, elements, chart) => {
-      const el = document.getElementById(TOOLTIP_EL_ID);
-
       // Click on empty space -> unpin and hide
       if (!elements || elements.length === 0) {
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
-        if (el && !tooltipIsHovering) el.style.opacity = 0;
+        gestureGuard.dismiss();
         return;
       }
 
@@ -1787,10 +1759,7 @@ const chartOptions = computed(() => {
 
       // Clicking the same bar toggles pin off
       if (tooltipPinned && tooltipPinnedKey === key) {
-        tooltipPinned = false;
-        tooltipPinnedKey = '';
-        tooltipForceUpdate = false;
-        if (el && !tooltipIsHovering) el.style.opacity = 0;
+        gestureGuard.dismiss();
         return;
       }
 
@@ -1804,7 +1773,12 @@ const chartOptions = computed(() => {
       try {
         const pos = { x: event?.x ?? event?.native?.offsetX, y: event?.y ?? event?.native?.offsetY };
         chart.setActiveElements(elementsToActivate);
-        if (chart.tooltip?.setActiveElements) chart.tooltip.setActiveElements(elementsToActivate, pos);
+        if (chart.tooltip?.setActiveElements) {
+          // Chart.js may retain the same bar after a dismissed click. Reset it
+          // so a new intentional tap also refreshes the external overlay.
+          chart.tooltip.setActiveElements([], pos);
+          chart.tooltip.setActiveElements(elementsToActivate, pos);
+        }
         chart.update('none');
       } catch (e) {}
     },
@@ -1985,8 +1959,6 @@ const chartOptions = computed(() => {
   return options;
 });
 
-const chartRef = ref(null);
-
 watch(
   [chartData, chartOptions],
   async () => {
@@ -2003,7 +1975,7 @@ watch(
 <template>
   <div class="graph-area" :class="{ 'no-anim': !animate }">
     <div class="chart-wrapper">
-      <Bar ref="chartRef" :data="chartData" :options="chartOptions" />
+      <Bar ref="chartRef" :data="chartData" :options="chartOptions" :plugins="chartPlugins" />
     </div>
 
     <div v-if="showSummaries" class="summaries-wrapper" :style="{ gridTemplateColumns: `repeat(${summaries.length}, 1fr)` }">

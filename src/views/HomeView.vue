@@ -1265,6 +1265,7 @@ onMounted(async () => {
       timelineGridRef.value.addEventListener('touchstart', onContentTouchStart, { passive: true }); 
       timelineGridRef.value.addEventListener('touchmove', onContentTouchMove, { passive: false }); 
       timelineGridRef.value.addEventListener('touchend', onContentTouchEnd); 
+      timelineGridRef.value.addEventListener('touchcancel', onContentTouchEnd);
       timelineGridRef.value.addEventListener('mouseleave', handleTimelineMouseLeave);
     } 
     
@@ -1363,6 +1364,7 @@ onBeforeUnmount(() => {
     timelineGridRef.value.removeEventListener('touchstart', onContentTouchStart);
     timelineGridRef.value.removeEventListener('touchmove', onContentTouchMove);
     timelineGridRef.value.removeEventListener('touchend', onContentTouchEnd);
+    timelineGridRef.value.removeEventListener('touchcancel', onContentTouchEnd);
     timelineGridRef.value.removeEventListener('mouseleave', handleTimelineMouseLeave);
   }
 
@@ -1509,7 +1511,7 @@ const handleRefundDelete = async (op) => {
         <div class="divider-placeholder"></div>
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
-      <main class="home-main-content" ref="mainContentRef">
+      <main class="home-main-content" ref="mainContentRef" data-graph-workspace>
         <div
           class="timeline-grid-wrapper"
           :class="{
