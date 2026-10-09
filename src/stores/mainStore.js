@@ -182,6 +182,8 @@ export const useMainStore = defineStore('mainStore', () => {
     const cacheGeneration = ref(0);
     const operationSync = createOperationSync();
     let snapshotMutationVersion = 0;
+    const pendingCreationSlots = new Map();
+    let operationCreationSequence = 0;
 
     const accounts = ref([]);
     const companies = ref([]);
@@ -1932,11 +1934,11 @@ export const useMainStore = defineStore('mainStore', () => {
     };
 
     async function createEvent(eventData) {
+        let reservation;
         try {
             if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
-            if (eventData.cellIndex === undefined) {
-                eventData.cellIndex = await getFirstFreeCellIndex(eventData.dateKey);
-            }
+            reservation = await _reserveCreationSlot(eventData.dateKey, eventData.cellIndex);
+            eventData.cellIndex = reservation.cellIndex;
 
             const projectIds = Array.isArray(eventData.projectIds) ? eventData.projectIds.filter(Boolean) : [];
             const isSplit = projectIds.length > 1 && (eventData.type === 'income' || eventData.type === 'expense');
@@ -1987,7 +1989,7 @@ export const useMainStore = defineStore('mainStore', () => {
             }
 
 
-            const tempId = `temp_${Date.now()}`;
+            const tempId = `temp_${Date.now()}_${++operationCreationSequence}`;
             const tempOp = {
                 ...eventData,
                 _id: tempId,
@@ -2021,6 +2023,8 @@ export const useMainStore = defineStore('mainStore', () => {
             if (eventData.dateKey) refreshDay(eventData.dateKey);
             fetchSnapshot();
             throw error;
+        } finally {
+            _releaseCreationSlot(reservation);
         }
     }
 
@@ -2623,12 +2627,14 @@ export const useMainStore = defineStore('mainStore', () => {
     function _generateTransferGroupId() { return `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
     async function createTransfer(transferData) {
+        let reservation;
         try {
             const finalDate = new Date(transferData.date);
             const dateKey = _getDateKey(finalDate);
             const transferCategory = await _getOrCreateTransferCategory();
+            reservation = await _reserveCreationSlot(dateKey, transferData.cellIndex);
 
-            const tempId = `temp_tr_${Date.now()}`;
+            const tempId = `temp_tr_${Date.now()}_${++operationCreationSequence}`;
 
             let optimisticOps = [];
 
@@ -2653,6 +2659,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     destination: 'Личные нужды',
                     description: 'Вывод на личные цели',
                     dateKey: dateKey,
+                    cellIndex: reservation.cellIndex,
                     date: finalDate,
                     isOptimistic: true
                 });
@@ -2670,6 +2677,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     fromIndividualId: transferData.fromIndividualId,
                     toIndividualId: transferData.toIndividualId,
                     dateKey: dateKey,
+                    cellIndex: reservation.cellIndex,
                     date: finalDate,
                     isOptimistic: true
                 });
@@ -2693,6 +2701,7 @@ export const useMainStore = defineStore('mainStore', () => {
             const payload = {
                 ...transferData,
                 dateKey,
+                cellIndex: reservation.cellIndex,
                 categoryId: transferData.transferPurpose === 'inter_company'
                     ? null
                     : (transferData.categoryId || transferCategory)
@@ -2700,8 +2709,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
             const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
             const data = response.data;
-
-            await refreshDay(dateKey);
+            _replaceOptimisticOperation(tempId, data);
+            _triggerProjectionUpdate();
 
             // 🔴 REMOVED: fetchSnapshot() returns empty data before aggregation completes
             // await fetchSnapshot();
@@ -2714,6 +2723,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 refreshDay(k);
             }
             throw error;
+        } finally {
+            _releaseCreationSlot(reservation);
         }
     }
 
@@ -2905,9 +2916,32 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!displayCache.value[dateKey]) await fetchOperations(dateKey);
         const arr = _getTimelineOpsForDate(dateKey);
         const used = new Set(arr.map(o => Number.isInteger(o?.cellIndex) ? o.cellIndex : -1));
+        pendingCreationSlots.get(dateKey)?.forEach(index => used.add(index));
         let idx = Math.max(0, startIndex | 0);
         while (used.has(idx)) idx++;
         return idx;
+    }
+
+    async function _reserveCreationSlot(dateKey, preferredIndex = 0) {
+        if (!dateKey) throw new Error('Не указана дата операции');
+        if (!displayCache.value[dateKey]) await fetchOperations(dateKey);
+        // Choose and reserve synchronously after loading the day, so two copies
+        // created together cannot select the same cell before their previews appear.
+        const slots = pendingCreationSlots.get(dateKey) || new Set();
+        pendingCreationSlots.set(dateKey, slots);
+        const used = new Set(_getTimelineOpsForDate(dateKey).map(op => op.cellIndex));
+        let cellIndex = Number.isInteger(preferredIndex) && preferredIndex >= 0 ? preferredIndex : 0;
+        while (used.has(cellIndex) || slots.has(cellIndex)) cellIndex++;
+        slots.add(cellIndex);
+        return { dateKey, cellIndex, slots };
+    }
+
+    function _releaseCreationSlot(reservation) {
+        if (!reservation) return;
+        reservation.slots.delete(reservation.cellIndex);
+        if (!reservation.slots.size && pendingCreationSlots.get(reservation.dateKey) === reservation.slots) {
+            pendingCreationSlots.delete(reservation.dateKey);
+        }
     }
 
     function startAutoRefresh(intervalMs = 30000) {
@@ -2965,6 +2999,7 @@ export const useMainStore = defineStore('mainStore', () => {
         // Clear all caches
         cacheGeneration.value++;
         operationSync.clear();
+        pendingCreationSlots.clear();
         pendingOperationMoves.value = {};
         dealOperations.value = [];
         displayCache.value = {};
@@ -3480,6 +3515,7 @@ export const useMainStore = defineStore('mainStore', () => {
         async resetStore() {
             cacheGeneration.value++;
             operationSync.clear();
+            pendingCreationSlots.clear();
             pendingOperationMoves.value = {};
             allEvents.value = [];
             accounts.value = [];

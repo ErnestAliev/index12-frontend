@@ -366,3 +366,72 @@ test('a stale range load cannot restore a chip deleted before the range arrives'
   requests.find(request => request.method === 'delete').response.resolve(op);
   await saving;
 });
+
+test('creating an operation with an occupied slot allocates another cell', async () => {
+  const { store, op, dateKey } = fixture();
+  let payload;
+  axios.defaults.adapter = async config => {
+    if (config.method === 'post') {
+      payload = JSON.parse(config.data);
+      return { data: { ...payload, _id: 'copy' }, status: 201 };
+    }
+    return { data: {}, status: 200 };
+  };
+  await store.createEvent({ type: op.type, amount: op.amount, date: op.date, cellIndex: 0 });
+  assert.equal(payload.cellIndex, 1);
+  assert.deepEqual(store.getOperationsForDay(dateKey).map(op => op.cellIndex), [0, 1]);
+});
+
+test('two copies started together reserve distinct slots before either POST finishes', async () => {
+  const { store, op, dateKey, requests } = fixture();
+  const copies = [store.createEvent({ type: op.type, amount: op.amount, date: op.date }),
+    store.createEvent({ type: op.type, amount: op.amount, date: op.date })];
+  await tick();
+  const posts = requests.filter(request => request.method === 'post');
+  assert.equal(posts.length, 2);
+  assert.deepEqual(posts.map(request => JSON.parse(request.data).cellIndex), [1, 2]);
+  const previews = store.getOperationsForDay(dateKey);
+  assert.deepEqual(previews.map(op => op.cellIndex), [0, 1, 2]);
+  assert.equal(new Set(previews.map(op => op._id)).size, 3);
+  posts.forEach((request, index) => request.response.resolve({ ...JSON.parse(request.data), _id: `copy-${index}` }));
+  await tick();
+  requests.filter(request => request.method === 'get').forEach(request => request.response.resolve({}));
+  await Promise.all(copies);
+  assert.deepEqual(store.getOperationsForDay(dateKey).map(op => op.cellIndex), [0, 1, 2]);
+});
+
+test('hidden chips also occupy their cells when allocating a copy', async () => {
+  const { store, op, dateKey } = fixture();
+  store.accounts = [{ _id: 'hidden', isExcluded: true }];
+  store.accountVisibilityMode = 'open';
+  store.displayCache[dateKey][0].accountId = 'hidden';
+  let payload;
+  axios.defaults.adapter = async config => {
+    if (config.method === 'post') {
+      payload = JSON.parse(config.data);
+      return { data: { ...payload, _id: 'copy' }, status: 201 };
+    }
+    return { data: {}, status: 200 };
+  };
+  await store.createEvent({ type: op.type, amount: op.amount, date: op.date });
+  assert.equal(payload.cellIndex, 1);
+});
+
+for (const purpose of ['internal', 'personal']) {
+  test(`${purpose} transfer copies have a free slot in the preview and saved chip`, async () => {
+    const { store, op, dateKey, requests } = fixture();
+    store.categories = [{ _id: 'transfer-category', name: 'Перевод' }];
+    const saving = store.createTransfer({ date: op.date, amount: 100, cellIndex: 0,
+      fromAccountId: 'from', toAccountId: 'to', transferPurpose: purpose,
+      transferReason: purpose === 'personal' ? 'personal_use' : null });
+    await tick();
+    const post = requests.find(request => request.method === 'post');
+    const payload = JSON.parse(post.data);
+    assert.equal(payload.cellIndex, 1);
+    assert.deepEqual(store.getOperationsForDay(dateKey).map(op => op.cellIndex), [0, 1]);
+    post.response.resolve({ ...payload, _id: 'copy', type: 'transfer', isTransfer: true });
+    await saving;
+    assert.deepEqual(store.getOperationsForDay(dateKey).map(op => op.cellIndex), [0, 1]);
+    assert.deepEqual(requests.map(request => request.method), ['post']);
+  });
+}

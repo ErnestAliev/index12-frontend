@@ -660,7 +660,7 @@ const processSave = (preparedCategoryIds = []) => {
     }
 
     let targetCellIndex = undefined;
-    if (!isDateChanged.value && (!isEditMode.value || !isCloneMode.value)) targetCellIndex = props.cellIndex;
+    if (!isDateChanged.value && !isCloneMode.value) targetCellIndex = props.cellIndex;
 
     let projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
     if (!projectIdsClean.length && defaultProjectId.value) {
