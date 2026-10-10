@@ -2169,7 +2169,8 @@ const handleRefundDelete = async (op) => {
 
 .timeline-grid-content { display: grid; width: 100%; min-height: 100%; transition: transform 0.3s ease, opacity 0.3s ease; }
 .timeline-grid-content.month-transition { transform: translateY(-6px); opacity: 0.9; }
-.divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: sticky; left: 0; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
+/* Sticky creates a stacking context: raise the divider so its switcher can overlap both work areas. */
+.divider-wrapper { flex-shrink: 0; height: var(--divider-height, 28px); background-color: var(--divider-wrapper-bg); border-bottom: 1px solid var(--divider-wrapper-border); position: sticky; z-index: 40; left: 0; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: row-resize; }
 .divider-wrapper .month-label { flex: 0 0 auto; font-weight: 600; font-size: 11px; text-transform: capitalize; color: var(--color-text); line-height: 1; }
 .month-nav { display: inline-flex; align-items: center; gap: 4px; width: 140px; justify-content: center; }
 .month-nav.center { flex: 1; justify-content: center; }

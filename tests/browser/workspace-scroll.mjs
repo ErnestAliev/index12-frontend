@@ -81,6 +81,50 @@ async function waitForScrollStop(page) {
   }, null, { polling: 50 });
 }
 
+async function checkTimelineSwitcher(page) {
+  const checkButtons = async () => {
+    await page.locator('.vertical-resizer').hover();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.timeline-switcher')).opacity === '1');
+    const buttons = await page.locator('.timeline-switcher .control-btn').evaluateAll(elements => elements.map(button => {
+      const rect = button.getBoundingClientRect();
+      const unobscured = [0.15, 0.5, 0.85].every(x => [0.15, 0.5, 0.85].every(y =>
+        button.contains(document.elementFromPoint(rect.x + rect.width * x, rect.y + rect.height * y))));
+      return { title: button.title, unobscured };
+    }));
+    assert.equal(buttons.length, 3);
+    for (const button of buttons) assert.ok(button.unobscured, `switcher action is covered: ${button.title}`);
+  };
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
+    await checkButtons();
+    if (theme === 'dark' && process.env.SCROLL_TEST_SWITCHER_SCREENSHOT) {
+      await page.screenshot({ path: process.env.SCROLL_TEST_SWITCHER_SCREENSHOT });
+    }
+    for (const [selector, direction] of [['.arrow-down-btn', 'down'], ['.arrow-up-btn', 'up']]) {
+      await page.locator(`.timeline-switcher ${selector}`).click({ timeout: 2000 });
+      await page.waitForFunction(direction => {
+        const height = document.querySelector('.timeline-grid-wrapper').getBoundingClientRect().height;
+        return direction === 'down' ? height > 318 : Math.abs(height - 100) < 1;
+      }, direction);
+      await checkButtons();
+      await page.locator('.timeline-switcher .grip-handle').click({ timeout: 2000 });
+      await page.waitForFunction(() => Math.abs(document.querySelector('.timeline-grid-wrapper').getBoundingClientRect().height - 318) < 1);
+      await checkButtons();
+    }
+  }
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    const viewport = document.querySelector('.workspace-scroll-viewport');
+    viewport.scrollLeft = viewport.clientWidth / 2;
+  });
+  await waitForScrollStop(page);
+  await checkButtons();
+  await page.evaluate(() => document.querySelector('.workspace-scroll-viewport').scrollLeft = 0);
+  await waitForScrollStop(page);
+  await page.mouse.move(5, 5);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.timeline-switcher')).opacity === '0');
+}
+
 try {
   await server.listen();
   const executablePath = process.env.SCROLL_TEST_CHROME ||
@@ -164,7 +208,9 @@ try {
         window.__scrollChart = Chart.getChart(document.querySelector('.workspace-scroll-viewport canvas'));
       }, engine);
       checkFrame(await page.evaluate(measureFrame));
+      await checkTimelineSwitcher(page);
       assert.deepEqual(errors, []);
+      console.log(`${engine} ${width}px: all three switcher actions remain unobscured in both themes, expanded states and after scrolling`);
       console.log(`${engine} ${width}px: delayed entities, delayed operations, loading resize and ready layout passed`);
     } finally {
       releaseEntities(); releaseOperations();

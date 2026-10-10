@@ -14,5 +14,8 @@ They also check that tapped summaries stay open, switch days with one tap,
 close on outside taps, and preserve desktop hover behavior.
 Bootstrap checks hold entity and operation responses separately, verify full
 work-area widths and centered loaders, and resize the page while data is pending.
+Switcher checks hover the divider, verify all three buttons are unobscured in
+both themes and after horizontal scrolling, and click expand up, expand down,
+and reset while checking the resulting table height.
 They do not replace checking Safari on a physical iPad: WebKit's public
 automation API exposes taps and wheel input, but not a native touch fling.
