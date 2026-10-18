@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'; 
 import { useMainStore } from '@/stores/mainStore';
+import { getHeaderWidgetColumns } from '@/utils/homeLayout.js';
 
 // Карточки
 import HeaderTotalCard from './HeaderTotalCard.vue';
@@ -97,37 +98,15 @@ const closeDropdown = () => {
   activeDropdown.value = null;
 };
 
-// ... adaptive utils ...
-const windowWidth = ref(window.innerWidth);
-const updateWidth = () => { windowWidth.value = window.innerWidth; };
-
-// 🟢 Tablet Detection via MatchMedia (Sync with CSS)
-const tabletMediaQuery = window.matchMedia('(min-width: 768px) and (max-width: 1400px)');
-const isTabletGrid = ref(tabletMediaQuery.matches);
-
-const handleTabletChange = (e) => {
-  isTabletGrid.value = e.matches;
+// Keep the widget order and CSS grid in sync when rotating a tablet.
+const windowSize = ref({ width: window.innerWidth, height: window.innerHeight });
+const updateSize = () => {
+  windowSize.value = { width: window.innerWidth, height: window.innerHeight };
 };
-
-onMounted(() => {
-  window.addEventListener('resize', updateWidth);
-  if (tabletMediaQuery.addEventListener) {
-    tabletMediaQuery.addEventListener('change', handleTabletChange);
-  } else {
-    tabletMediaQuery.addListener(handleTabletChange);
-  }
-});
-
-onUnmounted(() => {
-  window.removeEventListener('resize', updateWidth);
-  if (tabletMediaQuery.removeEventListener) {
-    tabletMediaQuery.removeEventListener('change', handleTabletChange);
-  } else {
-    tabletMediaQuery.removeListener(handleTabletChange);
-  }
-});
-
-const isTablet = computed(() => windowWidth.value < 1400); 
+const widgetColumns = computed(() => getHeaderWidgetColumns(windowSize.value));
+const isPortraitTablet = computed(() => widgetColumns.value === 4);
+onMounted(() => window.addEventListener('resize', updateSize));
+onUnmounted(() => window.removeEventListener('resize', updateSize));
 
 const ruSuperShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 const todayStr = computed(() => { const d = new Date(); return ruSuperShort.format(d); });
@@ -138,11 +117,9 @@ const futureUntilStr = computed(() => {
 
 const localWidgets = computed({
   get: () => {
-    const rowSize = isTabletGrid.value ? 5 : 6;
-    const MAX_WIDGETS = 16; // 3 rows × 6 cols - 2 fixed widgets
+    const rowSize = widgetColumns.value;
     
-    // Limit layout to prevent 4th row - temporarily disabled to debug
-    const layout = [...mainStore.dashboardLayout]; // .slice(0, MAX_WIDGETS);
+    const layout = [...mainStore.dashboardLayout];
     
     // Insert fixed widgets at their positions in first row
     const result = [];
@@ -151,7 +128,6 @@ const localWidgets = computed({
     result.push('currentTotal');
     
     // Positions 1 to (rowSize-2): from dashboardLayout
-    const lastPos = rowSize - 1;
     const middleCount = rowSize - 2;
     
     for (let i = 0; i < middleCount; i++) {
@@ -195,7 +171,7 @@ const localWidgets = computed({
     return result;
   },
   set: (newOrder) => {
-    const rowSize = isTabletGrid.value ? 5 : 6;
+    const rowSize = widgetColumns.value;
     
     // Remove positions 0 (currentTotal) and rowSize-1 from first row (futureTotal)
     const filtered = newOrder.filter((k, index) => {
@@ -212,14 +188,14 @@ const localWidgets = computed({
       return true;
     });
     
-    mainStore.dashboardLayout = filtered;
+    mainStore.dashboardLayout = [...filtered, ...mainStore.dashboardLayout.slice(widgetColumns.value * 3 - 2)];
   }
 });
 
 // Hidden widgets: widgets that exist but are NOT in dashboardLayout and NOT fixed widgets
 // These need to be mounted invisibly so AI can access their data
 const hiddenWidgets = computed(() => {
-  const layoutSet = new Set(mainStore.dashboardLayout);
+  const layoutSet = new Set(localWidgets.value);
   return mainStore.allWidgets
     .map(w => w.key)
     .filter(key => {
@@ -281,7 +257,7 @@ const handleDrop = (event, index) => {
   newLocalWidgets[draggedIndex.value] = targetWidget;
 
   // Build layout without placeholders and fixed widgets
-  const rowSize = isTabletGrid.value ? 5 : 6;
+  const rowSize = widgetColumns.value;
   const filtered = newLocalWidgets.filter((widget, idx) => {
     if (!widget) return false;
     const isPlaceholder = typeof widget === 'string' && widget.startsWith('placeholder_');
@@ -292,7 +268,7 @@ const handleDrop = (event, index) => {
     return true;
   });
 
-  mainStore.dashboardLayout = filtered;
+  mainStore.dashboardLayout = [...filtered, ...mainStore.dashboardLayout.slice(widgetColumns.value * 3 - 2)];
   
   draggedIndex.value = null;
   dropTargetIndex.value = null;
@@ -323,7 +299,7 @@ const handleCardClick = (event, widgetKey) => {
 // SWAP WITH NEIGHBOR
 // ===============================
 const canSwapLeft = (index) => {
-  const rowSize = isTabletGrid.value ? 5 : 6;
+  const rowSize = widgetColumns.value;
   const currentWidget = localWidgets.value[index];
   
   // Can't swap fixed widgets
@@ -345,7 +321,7 @@ const canSwapLeft = (index) => {
 };
 
 const canSwapRight = (index) => {
-  const rowSize = isTabletGrid.value ? 5 : 6;
+  const rowSize = widgetColumns.value;
   const currentWidget = localWidgets.value[index];
   
   // Can't swap fixed widgets
@@ -367,7 +343,7 @@ const canSwapRight = (index) => {
 };
 
 const swapWithNeighbor = (index, direction) => {
-  const rowSize = isTabletGrid.value ? 5 : 6;
+  const rowSize = widgetColumns.value;
   const targetIndex = direction === 'left' ? index - 1 : index + 1;
   
   // Safety checks
@@ -437,7 +413,7 @@ const registerFullscreenWidgetRef = (key, el) => {
 const getVisibleGridWidgetKeys = () => {
   const keys = (localWidgets.value || []).filter(k => k && typeof k === 'string' && !k.startsWith('placeholder_'));
   if (mainStore.isHeaderExpanded) return keys;
-  const rowSize = isTabletGrid.value ? 5 : 6;
+  const rowSize = widgetColumns.value;
   return keys.slice(0, rowSize);
 };
 
@@ -841,7 +817,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <!-- NATIVE HTML5 DRAG-AND-DROP GRID -->
   <div 
     class="header-dashboard"
-    :class="{ 'expanded': mainStore.isHeaderExpanded }"
+    :class="{ 'expanded': mainStore.isHeaderExpanded, 'portrait-tablet': isPortraitTablet }"
+    :style="{ '--widget-columns': widgetColumns }"
   >
     <div
       v-for="(widgetKey, index) in localWidgets"
@@ -1106,7 +1083,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 </template>
 
 <style scoped>
-.header-dashboard { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--widget-grid-gap); padding: var(--widget-grid-padding); background-color: var(--widget-grid-color); border-radius: var(--widget-grid-border-radius); border: var(--widget-grid-border-width) solid var(--widget-grid-color); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
+.header-dashboard { display: grid; grid-template-columns: repeat(var(--widget-columns), minmax(0, 1fr)); gap: var(--widget-grid-gap); padding: var(--widget-grid-padding); background-color: var(--widget-grid-color); border-radius: var(--widget-grid-border-radius); border: var(--widget-grid-border-width) solid var(--widget-grid-color); margin-bottom: 0.4rem; height: 100%; box-sizing: border-box; min-height: 0; width: 100%; overflow: hidden; grid-template-rows: 1fr; }
 .dashboard-card-wrapper { position: relative; display: flex; flex-direction: column; background-color: var(--widget-background); min-width: 0; min-height: 0; cursor: default; transition: background-color 0.2s; }
 .dashboard-card-wrapper[draggable="true"] { cursor: grab; }
 .dashboard-card-wrapper[draggable="true"]:active { cursor: grabbing; }
@@ -1187,10 +1164,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+7) { display: none; }
 .header-dashboard:not(.expanded) .dashboard-card-wrapper { border-bottom: none !important; }
 
-/* 🟢 TABLET LOGIC (5 columns) */
+/* Tablet typography; column count is shared with the widget ordering. */
 @media (min-width: 768px) and (max-width: 1400px) {
-  .header-dashboard { grid-template-columns: repeat(5, 1fr); }
-
   :deep(.dashboard-card),
   :deep(.card-items-list),
   :deep(.card-item),
@@ -1208,6 +1183,35 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   .header-dashboard:not(.expanded) .dashboard-card-wrapper:nth-child(n+6) { display: none; }
   .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+5) { border-bottom: none !important; }
 }
+
+/* Portrait tablets need room for complete totals and usable widget controls. */
+.header-dashboard.portrait-tablet:not(.expanded) .dashboard-card-wrapper:nth-child(n+5) { display: none; }
+.header-dashboard.portrait-tablet.expanded .dashboard-card-wrapper { display: flex; }
+.header-dashboard.portrait-tablet :deep(.dashboard-card) { padding: 8px 10px !important; overflow: hidden; }
+.header-dashboard.portrait-tablet :deep(.card-title-container) {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  height: 48px;
+  min-height: 48px;
+  margin-bottom: 6px;
+}
+.header-dashboard.portrait-tablet :deep(.is-mirrored .card-title-container) { align-items: flex-end; }
+.header-dashboard.portrait-tablet :deep(.card-title) { font-size: 12px; line-height: 1.25; }
+.header-dashboard.portrait-tablet :deep(.card-actions) { gap: 4px; flex-shrink: 0; }
+.header-dashboard.portrait-tablet :deep(.action-square-btn) { width: 22px; height: 22px; flex-shrink: 0; }
+.header-dashboard.portrait-tablet :deep(.card-item) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.header-dashboard.portrait-tablet :deep(.card-items-list) { padding-right: 0; }
+.header-dashboard.portrait-tablet :deep(.card-items-list.forecast-mode) { display: flex; }
+.header-dashboard.portrait-tablet :deep(.forecast-mode .card-item) { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.header-dashboard.portrait-tablet :deep(.forecast-display) { display: flex; justify-content: flex-end; gap: 4px; }
+.header-dashboard.portrait-tablet :deep(.card-item),
+.header-dashboard.portrait-tablet :deep(.card-items-list.forecast-mode) { font-size: 12px !important; }
+.header-dashboard.portrait-tablet :deep(.summary-row) { flex-direction: column; align-items: stretch; gap: 4px; }
+.header-dashboard.portrait-tablet :deep(.summary-value-block) { display: flex; justify-content: flex-end; flex-wrap: wrap; }
+.header-dashboard.portrait-tablet :deep(.category-item span:first-child) { min-width: 0; }
+.header-dashboard.portrait-tablet :deep(.card-sub-balance) { font-size: 12px; line-height: 1.4; }
 
 /* 🟢 EXPANDED LOGIC */
 .header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }

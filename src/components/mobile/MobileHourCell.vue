@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, onBeforeUnmount } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
@@ -194,56 +194,75 @@ const onAddClick = (event) => {
     });
 };
 
-// Клик по операции -> Меню (или редактирование)
-const onEditClick = (event) => { 
-    if (!canInteract.value) return;
-    if (props.operation) {
-        // Можно передать event для позиционирования меню редактирования, если нужно
-        emit('show-menu', { operation: props.operation, event: event });
-    }
+// A short tap opens the operation; only a long press starts a drag.
+const onEditClick = () => {
+    if (!canInteract.value || Date.now() < suppressClickUntil) return;
+    if (props.operation) emit('edit-operation', props.operation);
 };
 
 /* --- DRAG & DROP LOGIC --- */
-const touchState = ref({ active: false, clone: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
+const touchState = ref({ active: false, clone: null, offsetX: 0, offsetY: 0 });
+let holdTimer = null;
+let touchOrigin = null;
+let suppressClickUntil = 0;
+const clearHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+const cleanupDrag = () => {
+    clearHold();
+    touchState.value.clone?.remove();
+    if (touchOrigin?.target) touchOrigin.target.style.opacity = '';
+    touchState.value = { active: false, clone: null, offsetX: 0, offsetY: 0 };
+    touchOrigin = null;
+};
+onBeforeUnmount(cleanupDrag);
 
 const onTouchStart = (e) => {
-    if (!props.operation || !canInteract.value) return;
-    // e.preventDefault(); // Не блокируем скролл сразу
-    
+    cleanupDrag();
+    if (!props.operation || !canInteract.value || e.touches.length !== 1) return;
     const touch = e.touches[0];
-    const target = e.currentTarget;
-    const rect = target.getBoundingClientRect();
+    touchOrigin = { x: touch.clientX, y: touch.clientY, target: e.currentTarget };
+    holdTimer = setTimeout(() => {
+        if (!touchOrigin) return;
+        const target = touchOrigin.target;
+        const rect = target.getBoundingClientRect();
+        // Создаем визуальный клон
+        const clone = target.cloneNode(true);
+        clone.style.position = 'fixed';
+        clone.style.left = `${rect.left}px`;
+        clone.style.top = `${rect.top}px`;
+        clone.style.width = `${rect.width}px`;
+        clone.style.height = `${rect.height}px`;
+        clone.style.zIndex = '9999';
+        clone.style.opacity = '0.9';
+        clone.style.pointerEvents = 'none'; // Чтобы события проходили сквозь клон
+        clone.style.boxShadow = '0 10px 20px rgba(0,0,0,0.5)';
+        clone.style.transform = 'scale(1.05)';
+        clone.classList.add('dragging-clone');
     
-    // Создаем визуальный клон
-    const clone = target.cloneNode(true);
-    clone.style.position = 'fixed';
-    clone.style.left = `${rect.left}px`;
-    clone.style.top = `${rect.top}px`;
-    clone.style.width = `${rect.width}px`;
-    clone.style.height = `${rect.height}px`;
-    clone.style.zIndex = '9999';
-    clone.style.opacity = '0.9';
-    clone.style.pointerEvents = 'none'; // Чтобы события проходили сквозь клон
-    clone.style.boxShadow = '0 10px 20px rgba(0,0,0,0.5)';
-    clone.style.transform = 'scale(1.05)';
-    clone.classList.add('dragging-clone');
+        document.body.appendChild(clone);
     
-    document.body.appendChild(clone);
+        touchState.value = {
+            active: true,
+            clone: clone,
+            offsetX: touch.clientX - rect.left,
+            offsetY: touch.clientY - rect.top
+        };
     
-    touchState.value = {
-        active: true,
-        clone: clone,
-        offsetX: touch.clientX - rect.left,
-        offsetY: touch.clientY - rect.top
-    };
-    
-    // Делаем оригинал полупрозрачным
-    target.style.opacity = '0.3';
+        // Делаем оригинал полупрозрачным
+        target.style.opacity = '0.3';
+    }, 350);
 };
 
 const onTouchMove = (e) => {
-    if (!touchState.value.active) return;
+    if (e.touches.length !== 1) { cleanupDrag(); return; }
     const touch = e.touches[0];
+    if (!touchState.value.active) {
+        if (touchOrigin && Math.hypot(touch.clientX - touchOrigin.x, touch.clientY - touchOrigin.y) > 8) {
+            clearHold();
+            touchOrigin = null;
+            suppressClickUntil = Date.now() + 500;
+        }
+        return;
+    }
     
     // Блокируем скролл страницы только если мы реально тащим элемент
     if (e.cancelable) e.preventDefault();
@@ -256,7 +275,10 @@ const onTouchMove = (e) => {
 };
 
 const onTouchEnd = (e) => {
-    if (!touchState.value.active) return;
+    clearHold();
+    if (!touchState.value.active) { touchOrigin = null; return; }
+    suppressClickUntil = Date.now() + 500;
+    if (e.cancelable) e.preventDefault();
     const touch = e.changedTouches[0];
     
     // Удаляем клон
@@ -278,7 +300,7 @@ const onTouchEnd = (e) => {
     originalEl.style.display = prevDisplay;
     originalEl.style.opacity = '1';
     
-    touchState.value.active = false;
+    cleanupDrag();
     
     // Ищем ячейку (.hour-cell)
     const cellEl = targetEl?.closest('.hour-cell');
@@ -327,10 +349,17 @@ const onTouchEnd = (e) => {
          'credit-income': isCreditIncomeOp,
          'no-permission': !canInteract
       }"
+      role="button"
+      :tabindex="canInteract ? 0 : -1"
+      :aria-disabled="!canInteract"
+      :aria-label="`Открыть ${isTransferOp ? 'перевод' : operation.type === 'income' ? 'доход' : 'расход'}: ${formatNumber(Math.abs(operation.amount))}`"
       @click.stop="onEditClick($event)"
+      @keydown.enter.stop.prevent="onEditClick($event)"
+      @keydown.space.stop.prevent="onEditClick($event)"
       @touchstart="onTouchStart"
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
+      @touchcancel="cleanupDrag"
     >
       <span
         v-if="showManagerMarker"
@@ -408,6 +437,8 @@ const onTouchEnd = (e) => {
 .op-chip {
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -447,7 +478,10 @@ const onTouchEnd = (e) => {
   color: rgba(255, 255, 255, 0.88);
 }
 
+.op-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
 .op-chip.no-permission {
+  cursor: default;
   opacity: 0.82;
 }
 

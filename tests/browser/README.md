@@ -19,3 +19,9 @@ both themes and after horizontal scrolling, and click expand up, expand down,
 and reset while checking the resulting table height.
 They do not replace checking Safari on a physical iPad: WebKit's public
 automation API exposes taps and wheel input, but not a native touch fling.
+
+Run `node tests/browser/responsive.mjs` to check portrait tablet widgets at
+768/834/1024px, rotation to landscape, desktop columns, expanded header height,
+and mobile touch opening for income, expense and transfer. It also checks
+swipes and long-press cancellation. API requests use isolated mock data;
+screenshots are saved under `output/playwright/`.

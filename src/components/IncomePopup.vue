@@ -1139,4 +1139,19 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 .multi-project .multi-list { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 .multi-project .multi-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .multi-project .multi-hint { margin-top: 6px; font-size: 11px; color: var(--color-text-soft, #999); }
+
+/* Keep operation forms within a phone viewport, including long account names. */
+@media (max-width: 600px) {
+  .popup-overlay { align-items: flex-start; padding: 16px 0; box-sizing: border-box; }
+  .popup-content {
+    box-sizing: border-box;
+    width: calc(100% - 32px);
+    min-width: 0;
+    max-width: none;
+    flex-shrink: 0;
+    margin: auto 16px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 </style>

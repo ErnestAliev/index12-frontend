@@ -16,7 +16,7 @@ const props = defineProps({
 });
 
 // 🟢 FIX: Добавлен 'drop-operation' в emits
-const emit = defineEmits(['show-menu', 'drop-operation']); 
+const emit = defineEmits(['show-menu', 'edit-operation', 'drop-operation']);
 const mainStore = useMainStore();
 
 const operations = computed(() => {
@@ -118,6 +118,7 @@ const handleShowMenu = (payload) => {
         :operation="cell.operation"
         :date-key="dateKey"
         :cell-index="cell.id"
+        @edit-operation="(operation) => emit('edit-operation', operation)"
         @show-menu="handleShowMenu"
         @drop-operation="(payload) => emit('drop-operation', payload)"
       />

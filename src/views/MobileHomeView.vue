@@ -201,7 +201,6 @@ const isTransferPopupVisible = ref(false);
 
 const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
-const isTaxDetailsPopupVisible = ref(false);
 
 
 
@@ -1336,17 +1335,13 @@ const handleShowMenu = (payload) => {
 
 
 const handleEditOperation = (operation) => {
+  isContextMenuVisible.value = false;
   operationToEdit.value = operation;
   if (operation.dateKey) {
       selectedDate.value = mainStore._parseDateKey(operation.dateKey);
   }
   if (operation.cellIndex !== undefined) {
       selectedCellIndex.value = operation.cellIndex;
-  }
-
-  if (mainStore._isTaxPayment(operation)) {
-      isTaxDetailsPopupVisible.value = true;
-      return;
   }
 
   if (mainStore._isRetailWriteOff(operation)) {
@@ -1360,13 +1355,8 @@ const handleEditOperation = (operation) => {
       return;
   }
 
-  if (operation.type === 'transfer' || operation.isTransfer || isPersonalTransferWithdrawal(operation)) {
+  if (operation.type === 'transfer' || operation.isTransfer || operation.transferGroupId || isPersonalTransferWithdrawal(operation)) {
     isTransferPopupVisible.value = true;
-    return;
-  }
-
-  if (operation.isWithdrawal) {
-    isWithdrawalPopupVisible.value = true;
     return;
   }
 
@@ -1580,7 +1570,7 @@ const handleOperationDelete = async (op) => {
                 :style="{ height: timelineHeight + 'px', flexShrink: 0 }"
               >
                 <div v-if="isTimelineLoading" class="section-loading"><div class="spinner-small"></div></div>
-                <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @drop-operation="handleOperationDrop" />
+                <MobileTimeline v-else ref="timelineRef" @show-menu="handleShowMenu" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" />
               </div>
 
               <!-- Hide resizer for manager (no charts to resize) -->

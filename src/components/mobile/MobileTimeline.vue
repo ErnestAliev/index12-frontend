@@ -3,7 +3,7 @@ import { ref, onMounted, watch, nextTick, computed, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import MobileDayColumn from './MobileDayColumn.vue';
 
-const emit = defineEmits(['show-menu', 'drop-operation']);
+const emit = defineEmits(['show-menu', 'edit-operation', 'drop-operation']);
 const mainStore = useMainStore();
 
 const allDays = ref([]);
@@ -281,6 +281,7 @@ const gridStyle = computed(() => ({
             :date="day.date"
             :is-today="day.isToday"
             :date-key="day.dateKey"
+            @edit-operation="(operation) => emit('edit-operation', operation)"
             @show-menu="(payload) => emit('show-menu', payload)"
             @drop-operation="(payload) => emit('drop-operation', payload)"
           />

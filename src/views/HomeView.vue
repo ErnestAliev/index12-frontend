@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 import { useMainStore } from '@/stores/mainStore';
 import { useProjectionStore } from '@/stores/projectionStore';
 import { formatNumber } from '@/utils/formatters.js';
+import { getHeaderWidgetColumns } from '@/utils/homeLayout.js';
 import { getWorkspaceWindow } from '@/utils/workspaceScroll.js';
 import { createGraphGestureGuard } from '@/utils/graphGestureGuard.js';
 import { bindGraphGestureGuard } from '@/utils/graphGestureListeners.js';
@@ -618,8 +619,8 @@ watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
         // Calculate rows needed: dashboardLayout + 2 fixed widgets (currentTotal, futureTotal)
         const totalWidgets = mainStore.dashboardLayout.length + 2;
-        const rowSize = 6;
-        const rows = Math.ceil(totalWidgets / rowSize);
+        const rowSize = getHeaderWidgetColumns({ width: window.innerWidth, height: window.innerHeight });
+        const rows = Math.min(3, Math.ceil(totalWidgets / rowSize));
         // Each row: 130px + padding between rows
         headerHeightPx.value = rows * 130 + 20; 
     } else {
@@ -1197,7 +1198,13 @@ const onChangeTimelineWidth = async (newWidth) => {
   // Only update scrollbar - DO NOT recalculate projections
   updateScrollbarMetrics();
 };
+let previousHeaderColumns = getHeaderWidgetColumns({ width: window.innerWidth, height: window.innerHeight });
 const onWindowResize = () => {
+  const columns = getHeaderWidgetColumns({ width: window.innerWidth, height: window.innerHeight });
+  if (mainStore.isHeaderExpanded && columns !== previousHeaderColumns) {
+    headerHeightPx.value = Math.min(3, Math.ceil((mainStore.dashboardLayout.length + 2) / columns)) * 130 + 20;
+  }
+  previousHeaderColumns = columns;
   measureWorkspaceWidth();
   applyHeaderHeight(clampHeaderHeight(headerHeightPx.value));
   applyHeights(clampTimelineHeight(timelineHeightPx.value));

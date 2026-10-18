@@ -623,7 +623,7 @@ defineExpose({ getSnapshot });
             :title="item.linkTooltip"
           ></span>
 
-          {{ item.name }}
+          <span class="item-name" :title="item.name">{{ item.name }}</span>
           
           <span 
             v-if="item.isLinked" 
@@ -795,6 +795,8 @@ defineExpose({ getSnapshot });
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   display: flex; align-items: center; gap: 6px;
 }
+
+.item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .color-dot {
   width: 8px; 

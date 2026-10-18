@@ -70,6 +70,7 @@ defineExpose({ getSnapshot });
     <div 
       class="card-total-balance"
       :class="{ 'expense': props.totalBalance < 0 }"
+      :style="{ '--balance-length': formattedValue.length + sign.length + 2 }"
     >
       <template v-if="!isFuture">
         <span class="currency-symbol">₸</span>&nbsp;{{ sign }}{{ formattedValue }}
@@ -101,6 +102,7 @@ defineExpose({ getSnapshot });
   border-right: 1px solid var(--color-border); 
   position: relative; 
   text-align: left;
+  container-type: inline-size;
 }
 .dashboard-card:last-child { border-right: none; padding-right: 0; }
 
@@ -137,7 +139,7 @@ defineExpose({ getSnapshot });
 
 /* Крупная сумма */
 .card-total-balance { 
-  font-size: var(--font-3xl); /* 32px */
+  font-size: min(var(--font-3xl), calc(100cqi / (var(--balance-length) * 0.65)));
   font-weight: var(--fw-bold); 
   color: var(--text-main); 
   margin-bottom: 4px; 
