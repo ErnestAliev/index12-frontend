@@ -5,6 +5,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
+import { formatAmountInput } from '@/utils/amountInput.js';
 import BaseSelect from './BaseSelect.vue';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
@@ -463,8 +464,7 @@ watch(editableDate, (newVal, oldVal) => {
 });
 
 const onAmountInput = (e) => {
-    const raw = e.target.value.replace(/[^0-9]/g, '');
-    amount.value = formatNumber(raw);
+    amount.value = formatAmountInput(e.target.value);
 };
 
 const isSelectedContractorBank = computed(() => {
@@ -631,7 +631,7 @@ onMounted(async () => {
     
     if (props.operationToEdit) {
         const op = props.operationToEdit;
-        amount.value = formatNumber(Math.abs(op.amount));
+        amount.value = formatAmountInput(Math.abs(op.amount));
         selectedAccountId.value = op.accountId?._id || op.accountId;
         const projIds = Array.isArray(op.projectIds)
             ? op.projectIds.map(normalizeId).filter(Boolean)
