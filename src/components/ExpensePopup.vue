@@ -1,4 +1,5 @@
 <script setup>
+import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
@@ -51,6 +52,7 @@ const normalizeId = (val) => {
 };
 // Категории — мультиселект
 const selectedCategoryIds = ref([]);
+const selectedSubcategoryId = ref(null);
 
 // Default project "Без проекта"
 const defaultProjectId = computed(() => {
@@ -674,6 +676,7 @@ const processSave = (preparedCategoryIds = []) => {
         accountId: selectedAccountId.value, companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: preparedCategoryIds[0] || null,
+        subcategoryId: selectedSubcategoryId.value,
         categoryIds: preparedCategoryIds.length ? preparedCategoryIds : undefined,
         projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
         projectIds: projectIdsClean.length > 1 ? projectIdsClean : (projectIdsClean.length === 1 ? undefined : (defaultProjectId.value ? [defaultProjectId.value] : undefined)),
@@ -968,6 +971,7 @@ onMounted(async () => {
     
     if (props.operationToEdit) {
         const op = props.operationToEdit;
+        selectedSubcategoryId.value = op.subcategoryId?._id || op.subcategoryId || null;
         amount.value = formatNumber(Math.abs(op.amount));
         selectedAccountId.value = op.accountId?._id || op.accountId;
         const projIds = Array.isArray(op.projectIds)
@@ -1138,6 +1142,8 @@ watch(defaultProjectId, (defId) => {
           <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
+      <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="selectedCategoryIds" :disabled="isReadOnly" />
+
 
       <!-- ДАТА + ИНДИКАТОР -->
       <div class="custom-input-box input-spacing has-value date-box">

@@ -254,6 +254,8 @@ export function useWidgetData() {
             return current.map(item => mapItem(item, futureMap, 'delta'));
         }
 
+        if (k === 'subcategories') return isForecastActive ? mainStore.futureSubcategoryBreakdowns : mainStore.currentSubcategoryBreakdowns;
+
         if (k === 'categories') {
             const current = Array.isArray(mainStore.currentCategoryBalances) ? mainStore.currentCategoryBalances : [];
 

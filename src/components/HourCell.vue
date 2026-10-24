@@ -166,7 +166,9 @@ const chipLabel = computed(() => {
   
   if (isTechnicalOp.value) return op.description || 'Техническая операция';
   
-  return resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
+  const categoryName = resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
+  const childName = mainStore.getOperationSubcategoryName(op);
+  return childName ? `${categoryName} → ${childName}` : categoryName;
 });
 
 // Отображаемая сумма с учетом взаимозачетов (для доходов)
@@ -322,7 +324,8 @@ const operationTooltipRows = computed(() => {
     { label: 'Владелец', value: tooltipOwner.value },
     { label: 'Контрагент', value: tooltipContractor.value },
     { label: 'Проект', value: tooltipProject.value },
-    { label: 'Категория', value: tooltipCategory.value }
+    { label: 'Категория', value: tooltipCategory.value },
+    { label: 'Подкатегория', value: mainStore.getOperationSubcategoryName(props.operation) || 'Без подкатегории' }
   ];
 });
 

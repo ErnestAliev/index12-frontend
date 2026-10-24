@@ -4,6 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { getHeaderWidgetColumns } from '@/utils/homeLayout.js';
 
 // Карточки
+import HeaderSubcategoryCard from './HeaderSubcategoryCard.vue';
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
@@ -150,20 +151,9 @@ const localWidgets = computed({
       }
     }
     
-    // HARD LIMIT: Never exceed max slots (3 rows × rowSize)
-    // Desktop: 6 cols × 3 rows = 18 slots
-    // Tablet: 5 cols × 3 rows = 15 slots
-    const MAX_TOTAL_SLOTS = rowSize * 3;
-    if (result.length > MAX_TOTAL_SLOTS) {
-      result.length = MAX_TOTAL_SLOTS; // Truncate to max
-    }
-    
-    // Always add placeholders to fill grid (max 3 rows)
-    const MAX_ROWS = 3;
-    // Calculate slots based on actual content in layout, not arbitrary limit
-    const rows = Math.min(Math.ceil(Math.max(result.length, rowSize) / rowSize), MAX_ROWS);
-    const totalSlots = Math.max(Math.min(rows * rowSize, MAX_TOTAL_SLOTS), result.length);
-    
+    // Keep every saved widget available; expanded grids can scroll after three rows.
+    const totalSlots = Math.ceil(Math.max(result.length, rowSize) / rowSize) * rowSize;
+
     while (result.length < totalSlots) {
       result.push(`placeholder_${result.length}`);
     }
@@ -188,7 +178,7 @@ const localWidgets = computed({
       return true;
     });
     
-    mainStore.dashboardLayout = [...filtered, ...mainStore.dashboardLayout.slice(widgetColumns.value * 3 - 2)];
+    mainStore.dashboardLayout = filtered;
   }
 });
 
@@ -268,7 +258,7 @@ const handleDrop = (event, index) => {
     return true;
   });
 
-  mainStore.dashboardLayout = [...filtered, ...mainStore.dashboardLayout.slice(widgetColumns.value * 3 - 2)];
+  mainStore.dashboardLayout = filtered;
   
   draggedIndex.value = null;
   dropTargetIndex.value = null;
@@ -706,8 +696,9 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           <div class="fullscreen-card-container">
              <!-- Рендерим нужный виджет на основе fullscreenWidgetKey -->
              
+             <HeaderSubcategoryCard v-if="fullscreenWidgetKey === 'subcategories'" :ref="(el) => registerFullscreenWidgetRef('subcategories', el)" />
              <HeaderTotalCard
-                v-if="fullscreenWidgetKey === 'currentTotal'"
+                v-else-if="fullscreenWidgetKey === 'currentTotal'"
                 :ref="(el) => registerFullscreenWidgetRef(fullscreenWidgetKey, el)"
                 :title="'Всего на счетах\nна текущий момент'"
                 :totalBalance="loggedCurrentTotal" 
@@ -837,6 +828,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     >
         <div v-if="widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
+        <HeaderSubcategoryCard v-else-if="widgetKey === 'subcategories'" :ref="(el) => registerGridWidgetRef('subcategories', el)" />
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
           :ref="(el) => registerGridWidgetRef(widgetKey, el)"
@@ -955,8 +947,9 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   <!-- HIDDEN WIDGETS: Mounted invisibly so AI can get their data -->
   <div class="hidden-widgets-container" style="display: none;">
     <template v-for="widgetKey in hiddenWidgets" :key="`hidden_${widgetKey}`">
+      <HeaderSubcategoryCard v-if="widgetKey === 'subcategories'" :ref="(el) => registerGridWidgetRef('subcategories', el)" />
       <HeaderTotalCard
-        v-if="widgetKey === 'currentTotal'"
+        v-else-if="widgetKey === 'currentTotal'"
         :ref="(el) => registerGridWidgetRef(widgetKey, el)"
         :title="'Всего на счетах\nна текущий момент'"
         :totalBalance="loggedCurrentTotal" 
@@ -1214,7 +1207,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard.portrait-tablet :deep(.card-sub-balance) { font-size: 12px; line-height: 1.4; }
 
 /* 🟢 EXPANDED LOGIC */
-.header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow: hidden; }
+.header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow-x: hidden; overflow-y: auto; }
 
 @media (min-width: 1401px) {
   .header-dashboard.expanded .dashboard-card-wrapper:nth-last-child(-n+6) { border-bottom: none !important; }

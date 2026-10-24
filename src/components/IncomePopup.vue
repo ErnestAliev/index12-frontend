@@ -1,4 +1,5 @@
 <script setup>
+import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
@@ -50,6 +51,7 @@ const normalizeId = (val) => {
     return String(val);
 };
 const selectedCategoryId = ref(null);
+const selectedSubcategoryId = ref(null);
 
 // Default project "Без проекта"
 const defaultProjectId = computed(() => {
@@ -530,6 +532,7 @@ const preparePayload = (options = {}) => {
         companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: selectedCategoryId.value,
+        subcategoryId: selectedSubcategoryId.value,
         projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
         projectIds: projectIdsClean.length > 1 ? projectIdsClean : (projectIdsClean.length === 1 ? undefined : (defaultProjectId.value ? [defaultProjectId.value] : undefined)),
         description: description.value, cellIndex: targetCellIndex
@@ -643,6 +646,7 @@ onMounted(async () => {
             selectedProjectIds.value = projId ? [projId] : [];
         }
         selectedCategoryId.value = op.categoryId?._id || op.categoryId;
+        selectedSubcategoryId.value = op.subcategoryId?._id || op.subcategoryId || null;
         description.value = op.description || '';
         if (op.date) editableDate.value = toInputDate(new Date(op.date));
         if (op.companyId) selectedOwner.value = `company-${op.companyId._id || op.companyId}`;
@@ -922,6 +926,8 @@ const handleMainAction = async () => {
           <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
+      <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="[selectedCategoryId]" :disabled="isReadOnly || isProtectedMode" />
+
       
       <div class="custom-input-box input-spacing has-value date-box" :class="{ 'is-disabled': isProtectedMode }">
           <div class="input-inner-content">

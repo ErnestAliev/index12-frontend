@@ -1245,6 +1245,7 @@ const formatSignedFooter = (amount, sign) => {
 
 const activeWidgetItems = computed(() => {
   const k = activeWidgetKey.value; if (!k) return [];
+  if (k === 'subcategories') return getWidgetItems(k, showFutureBalance.value);
   if (!isListWidget.value) {
       const items = getWidgetItems(k, showFutureBalance.value);
       let filtered = [...items];
@@ -1259,7 +1260,7 @@ const activeWidgetItems = computed(() => {
       return filtered;
   } else {
       let list = []; if (k === 'incomeList') list = showFutureBalance.value ? mainStore.futureIncomes : mainStore.currentIncomes; else if (k === 'expenseList') list = showFutureBalance.value ? mainStore.futureExpenses : mainStore.currentExpenses; else if (k === 'withdrawalList') list = showFutureBalance.value ? mainStore.futureWithdrawals : mainStore.currentWithdrawals; else if (k === 'transfers') list = showFutureBalance.value ? mainStore.futureTransfers : mainStore.currentTransfers;
-      const mappedList = list.map(op => { let name = op.categoryId?.name || 'Без категории'; let subName = ''; if (op.type === 'transfer' || op.isTransfer || isPersonalTransferWithdrawal(op)) { const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId)); const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId)); name = 'Перевод'; subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`; } else if (op.isWithdrawal) { name = 'Вывод средств'; subName = op.destination || op.description || ''; } else { const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name; const project = op.projectId?.name; const desc = op.description; if (contractor) subName = contractor; else if (project) subName = project; else if (desc) subName = desc; } return { _id: op._id, name: name, subName: subName, balance: op.amount, date: op.date, isList: true, isIncome: op.type === 'income', originalOp: op }; });
+      const mappedList = list.map(op => { let name = mainStore.getOperationCategoryLabel(op); let subName = ''; if (op.type === 'transfer' || op.isTransfer || isPersonalTransferWithdrawal(op)) { const fromAcc = mainStore.accounts.find(a => a._id === (op.fromAccountId?._id || op.fromAccountId)); const toAcc = mainStore.accounts.find(a => a._id === (op.toAccountId?._id || op.toAccountId)); name = 'Перевод'; subName = `${fromAcc?.name || '?'} -> ${toAcc?.name || '?'}`; } else if (op.isWithdrawal) { name = 'Вывод средств'; subName = op.destination || op.description || ''; } else { const contractor = op.contractorId?.name || op.counterpartyIndividualId?.name; const project = op.projectId?.name; const desc = op.description; if (contractor) subName = contractor; else if (project) subName = project; else if (desc) subName = desc; } return { _id: op._id, name: name, subName: subName, balance: op.amount, date: op.date, isList: true, isIncome: op.type === 'income', originalOp: op }; });
       mappedList.sort((a, b) => new Date(b.date) - new Date(a.date)); return mappedList;
   }
 });
@@ -1490,7 +1491,15 @@ const handleOperationDelete = async (op) => {
                 <div v-if="!activeWidgetItems.length" class="fs-empty">Пусто</div>
                 <div class="fs-list">
                     <div v-for="item in activeWidgetItems" :key="item._id" class="fs-item" @click="handleItemClick(item)">
-                       <template v-if="item.isList">
+                       <template v-if="activeWidgetKey === 'subcategories'">
+                         <div class="fs-name-col"><span class="fs-name-text">{{ item.name }}</span></div>
+                         <div class="fs-val-block">
+                           <span v-if="item.income" class="green-text">Доход +{{ formatNumber(item.income) }} ₸</span>
+                           <span v-if="item.expense" class="red-text">Расход −{{ formatNumber(item.expense) }} ₸</span>
+                           <span v-if="item.transfers">Переводы {{ formatNumber(item.transfers) }} ₸</span>
+                         </div>
+                       </template>
+                       <template v-else-if="item.isList">
                            <div class="fs-item-left"><div class="fs-date">{{ formatDateShort(item.date) }}</div><div class="fs-info-col"><div class="fs-name-text">{{ item.name }}</div><div class="fs-sub-text" v-if="item.subName">{{ item.subName }}</div></div></div>
                            <div class="fs-val" :class="item.isIncome ? 'green-text' : 'red-text'">{{ item.isIncome ? '+' : '-' }} {{ formatNumber(Math.abs(item.balance)) }} ₸</div>
                        </template>

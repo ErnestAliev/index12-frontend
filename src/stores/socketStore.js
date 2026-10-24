@@ -119,7 +119,7 @@ export const useSocketStore = defineStore('socket', () => {
         });
 
         // --- Обработчики событий Сущностей (Счета, Категории и т.д.) ---
-        const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category'];
+        const entityTypes = ['account', 'company', 'contractor', 'project', 'individual', 'category', 'subcategory'];
 
         entityTypes.forEach(type => {
             socket.value.on(`${type}_added`, (item, meta) => {

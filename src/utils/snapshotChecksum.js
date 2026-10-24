@@ -29,7 +29,9 @@ export const buildSnapshotChecksum = (tooltipSnapshot) => {
   const startDateKey = String(tooltipSnapshot?.range?.startDateKey || '').trim();
   if (!startDateKey) return '';
   const net = Math.round(computeSnapshotNet(tooltipSnapshot));
-  return hashString(`${startDateKey}|${net}`);
+  const details = (tooltipSnapshot.days || []).flatMap(day => Object.values(day?.lists || {}).flat())
+    .map(op => `${op?.id || ''}:${op?.catName || ''}:${op?.subcategoryName || ''}`).sort().join('|');
+  return hashString(`${startDateKey}|${net}|${details}`);
 };
 
 const makeStorageKey = ({ timelineDateKey, source = 'chat' }) => {

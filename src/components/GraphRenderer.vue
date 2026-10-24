@@ -1503,6 +1503,8 @@ const getTooltipOperationList = (ops) => {
         const { fromOwnerName, toOwnerName } = resolveTransferOwnerNames(op, isOutOfSystemTransfer);
         return {
           isTransfer: true,
+          categoryLabel: mainStore.getOperationCategoryLabel(op, 'Перевод'),
+          subcategoryName: mainStore.getOperationSubcategoryName(op),
           isOutOfSystemTransfer,
           fromOwnerName,
           toOwnerName,
@@ -1556,7 +1558,8 @@ const getTooltipOperationList = (ops) => {
         accName: op.accountId?.name || '???',
         contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
         projName: op.projectId?.name || '---',
-        catName: catName,
+        catName: mainStore.getOperationSubcategoryName(op) ? `${catName} → ${mainStore.getOperationSubcategoryName(op)}` : catName,
+        subcategoryName: mainStore.getOperationSubcategoryName(op),
         amount: op.amount,
         isWithdrawal: op.isWithdrawal,
         isTax: isTax,
@@ -1935,7 +1938,7 @@ const chartOptions = computed(() => {
                 if (op?.isTax) {
                   lines.push(`${amountStr} > Налог: ${op?.compName || 'Компания'}`);
                 } else if (op?.isWithdrawal) {
-                  lines.push(`${amountStr} > ${acc} (Вывод средств)`);
+                  lines.push(`${amountStr} > ${acc} (Вывод средств)${op?.subcategoryName ? ` • ${op.catName}` : ''}`);
                 } else {
                   lines.push(`${amountStr} > ${acc} > ${cont} > ${proj} > ${cat}`);
                 }
@@ -1949,7 +1952,7 @@ const chartOptions = computed(() => {
                 const amountStr = `${formatNumber(Math.abs(op?.amount || 0))} т`;
                 const fromOwner = op?.fromOwnerName || op?.fromAccName || '—';
                 const toOwner = op?.toOwnerName || op?.toAccName || '—';
-                lines.push(`${amountStr}: ${fromOwner} → ${toOwner}`);
+                lines.push(`${amountStr}: ${fromOwner} → ${toOwner}${op?.subcategoryName ? ` • ${op.categoryLabel}` : ''}`);
               });
             }
 

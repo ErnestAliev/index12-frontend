@@ -201,6 +201,8 @@ const loadOperations = () => {
         ownerId: ownerId, 
         contractorValue: contrVal, 
         categoryId: op.categoryId?._id || op.categoryId,
+        subcategoryId: op.subcategoryId?._id || op.subcategoryId,
+        subcategoryName: mainStore.getOperationSubcategoryName(op),
         projectId: primaryProjectId,
         projectIds: projectIdsArr.length ? projectIdsArr : (primaryProjectId ? [primaryProjectId] : []),
         isDeleted: false
@@ -301,7 +303,7 @@ const exportToCSV = () => {
     }
 
     // CSV Header
-    const headers = ['Дата', 'Владелец', 'Счет', 'Сумма', 'Контрагент', 'Категория', 'Проект'];
+    const headers = ['Дата', 'Владелец', 'Счет', 'Сумма', 'Контрагент', 'Категория', 'Подкатегория', 'Проект'];
     
     // CSV Rows
     const rows = filteredItems.value.map(item => {
@@ -312,6 +314,7 @@ const exportToCSV = () => {
             item.amountFormatted,
             getContractorName(item.contractorValue),
             getCategoryName(item.categoryId),
+            item.subcategoryName || 'Без подкатегории',
             getProjectName(item.projectIds || item.projectId)
         ];
     });
@@ -540,7 +543,7 @@ const showCopySuccess = ref(false);
 
             <!-- Категория -->
             <div class="col-cat">
-                <span class="text-cell" :title="getCategoryName(item.categoryId)">{{ getCategoryName(item.categoryId) }}</span>
+                <span class="text-cell" :title="getCategoryName(item.categoryId)">{{ getCategoryName(item.categoryId) }}<template v-if="item.subcategoryName"> → {{ item.subcategoryName }}</template></span>
             </div>
 
             <!-- Проект -->

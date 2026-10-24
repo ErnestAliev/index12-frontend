@@ -6,6 +6,7 @@ import { useProjectionStore } from './projectionStore';
 import { useTransferStore } from './transferStore';
 import { useSocketStore } from './socketStore';
 import { useWidgetStore } from './widgetStore';
+import { aggregateSubcategories, getCategoryDetailLabel, getSubcategoryName } from '@/utils/subcategories.js';
 import { createOperationSync } from '@/utils/operationSync';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName, normalizeTaxRegime } from '@/utils/companyTax';
 
@@ -191,6 +192,7 @@ export const useMainStore = defineStore('mainStore', () => {
     const projects = ref([]);
     const individuals = ref([]);
     const categories = ref([]);
+    const subcategories = ref([]);
     const credits = ref([]);
 
 
@@ -1643,6 +1645,7 @@ export const useMainStore = defineStore('mainStore', () => {
         bindEntity('accountId', accounts);
         bindEntity('projectId', projects);
         bindEntity('categoryId', categories);
+        bindEntity('subcategoryId', subcategories);
         bindEntity('companyId', companies);
         bindEntity('contractorId', contractors);
         bindEntity('individualId', individuals);
@@ -1800,7 +1803,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     toIndividualId: incomeOp.individualId,
                     dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
                     cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-                    categoryId: { _id: 'transfer', name: 'Перевод' },
+                    categoryId: incomeOp.categoryId || expenseOp.categoryId || { _id: 'transfer', name: 'Перевод' },
+                    subcategoryId: incomeOp.subcategoryId || expenseOp.subcategoryId || null,
                     date: incomeOp.date || expenseOp.date,
                     dateKey: dk
                 };
@@ -1907,6 +1911,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (type === 'project') return projects;
         if (type === 'individual') return individuals;
         if (type === 'category') return categories;
+        if (type === 'subcategory') return subcategories;
         return null;
     }
 
@@ -1916,6 +1921,7 @@ export const useMainStore = defineStore('mainStore', () => {
             const exists = listRef.value.find(i => _idsMatch(i._id, item._id));
             if (!exists) listRef.value.push(item);
             listRef.value = _sortByOrder(listRef.value);
+            if (type === 'subcategory') _publishOperationState(...Object.keys(displayCache.value));
         }
     };
 
@@ -1923,6 +1929,10 @@ export const useMainStore = defineStore('mainStore', () => {
         const listRef = _getListRefByType(type);
         if (listRef) {
             listRef.value = listRef.value.filter(i => !_idsMatch(i._id, id));
+            if (type === 'subcategory') {
+                for (const key of Object.keys(displayCache.value)) displayCache.value[key] = displayCache.value[key].map(op => _idsMatch(op.subcategoryId?._id || op.subcategoryId, id) ? { ...op, subcategoryId: null } : op);
+                forceRefreshAll();
+            }
         }
     };
 
@@ -1930,6 +1940,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const listRef = _getListRefByType(type);
         if (listRef && Array.isArray(newList)) {
             listRef.value = _sortByOrder(newList);
+            if (type === 'subcategory') _publishOperationState(...Object.keys(displayCache.value));
         }
     };
 
@@ -2320,11 +2331,11 @@ export const useMainStore = defineStore('mainStore', () => {
     async function fetchAllEntities() {
         if (!user.value) return;
         try {
-            const [accRes, compRes, contrRes, projRes, indRes, catRes, dealsRes] = await Promise.all([
+            const [accRes, compRes, contrRes, projRes, indRes, catRes, dealsRes, subRes] = await Promise.all([
                 axios.get(`${API_BASE_URL}/accounts`), axios.get(`${API_BASE_URL}/companies`),
                 axios.get(`${API_BASE_URL}/contractors`), axios.get(`${API_BASE_URL}/projects`),
                 axios.get(`${API_BASE_URL}/individuals`), axios.get(`${API_BASE_URL}/categories`),
-                axios.get(`${API_BASE_URL}/deals/all`)
+                axios.get(`${API_BASE_URL}/deals/all`), axios.get(`${API_BASE_URL}/subcategories`)
             ]);
 
             accounts.value = _sortByOrder(accRes.data);
@@ -2336,6 +2347,7 @@ export const useMainStore = defineStore('mainStore', () => {
             dealOperations.value = dealsRes.data.filter(op => !operationSync.isDeleted(op));
 
             categories.value = _sortByOrder(catRes.data);
+            subcategories.value = _sortByOrder(subRes.data);
 
             await ensureSystemEntities();
             await fetchSnapshot();
@@ -2464,7 +2476,8 @@ export const useMainStore = defineStore('mainStore', () => {
                         fromIndividualId: expenseOp.individualId, toIndividualId: incomeOp.individualId,
                         dayOfYear: incomeOp.dayOfYear || expenseOp.dayOfYear,
                         cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
-                        categoryId: { _id: 'transfer', name: 'Перевод' },
+                        categoryId: incomeOp.categoryId || expenseOp.categoryId || { _id: 'transfer', name: 'Перевод' },
+                        subcategoryId: incomeOp.subcategoryId || expenseOp.subcategoryId || null,
                         date: incomeOp.date || expenseOp.date
                     });
                     continue;
@@ -2474,7 +2487,7 @@ export const useMainStore = defineStore('mainStore', () => {
             mergedTransfers.push({
                 ...firstOp, type: 'transfer', isTransfer: true,
                 transferGroupId: groupId, amount: Math.abs(Number(firstOp.amount)),
-                categoryId: { _id: 'transfer', name: 'Перевод' }
+                categoryId: firstOp.categoryId || { _id: 'transfer', name: 'Перевод' }
             });
         }
         return [...normalOps, ...mergedTransfers];
@@ -2641,6 +2654,8 @@ export const useMainStore = defineStore('mainStore', () => {
             if (transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use') {
                 optimisticOps.push({
                     _id: tempId,
+                    categoryId: transferData.categoryId || transferCategory,
+                    subcategoryId: transferData.subcategoryId || null,
                     type: 'transfer',
                     isTransfer: true,
                     isWithdrawal: true,
@@ -2667,6 +2682,8 @@ export const useMainStore = defineStore('mainStore', () => {
             else {
                 optimisticOps.push({
                     _id: tempId,
+                    categoryId: transferData.categoryId || transferCategory,
+                    subcategoryId: transferData.subcategoryId || null,
                     type: 'transfer',
                     isTransfer: true,
                     amount: Math.abs(Number(transferData.amount)),
@@ -2702,9 +2719,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 ...transferData,
                 dateKey,
                 cellIndex: reservation.cellIndex,
-                categoryId: transferData.transferPurpose === 'inter_company'
-                    ? null
-                    : (transferData.categoryId || transferCategory)
+                categoryId: transferData.categoryId || transferCategory
             };
 
             const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
@@ -2751,7 +2766,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     accountId: transferData.fromAccountId || null,
                     companyId: transferData.fromCompanyId || null,
                     individualId: transferData.fromIndividualId || null,
-                    categoryId: null,
+                    categoryId: transferData.categoryId || oldOp?.categoryId?._id || oldOp?.categoryId || await _getOrCreateTransferCategory(),
                     destination: 'Личные нужды',
                     description: 'Вывод на личные цели'
                 }
@@ -2796,6 +2811,26 @@ export const useMainStore = defineStore('mainStore', () => {
             // 🔥 FIX: Refresh snapshot to update balance calculations after entity deletion
             await fetchSnapshot();
         } catch (error) { throw error; }
+    }
+
+    const getOperationCategoryLabel = (op, fallback) => getCategoryDetailLabel(op, categories.value, subcategories.value, fallback);
+    const getOperationSubcategoryName = op => getSubcategoryName(op, subcategories.value);
+    const currentSubcategoryBreakdowns = computed(() => aggregateSubcategories(currentOps.value.filter(op => !_isRetailWriteOff(op)), categories.value, subcategories.value));
+    const futureSubcategoryBreakdowns = computed(() => aggregateSubcategories(futureOps.value.filter(op => !_isRetailWriteOff(op)), categories.value, subcategories.value));
+    async function renameSubcategory(id, name) {
+        const res = await axios.put(`${API_BASE_URL}/subcategories/${id}`, { name });
+        subcategories.value = subcategories.value.map(item => _idsMatch(item._id, id) ? res.data : item);
+        _publishOperationState(...Object.keys(displayCache.value));
+        return res.data;
+    }
+    async function deleteSubcategory(id) {
+        await axios.delete(`${API_BASE_URL}/subcategories/${id}`);
+        onSocketEntityDeleted('subcategory', id);
+    }
+    async function addSubcategory(name, parentCategoryId) {
+        const res = await axios.post(`${API_BASE_URL}/subcategories`, { name, parentCategoryId });
+        onSocketEntityAdded('subcategory', res.data);
+        return res.data;
     }
 
     async function addCategory(name) { const res = await axios.post(`${API_BASE_URL}/categories`, { name }); categories.value.push(res.data); return res.data; }
@@ -3011,6 +3046,7 @@ export const useMainStore = defineStore('mainStore', () => {
         individuals.value = [];
         contractors.value = [];
         categories.value = [];
+        subcategories.value = [];
         projects.value = [];
         credits.value = [];
         operations.value = [];
@@ -3310,6 +3346,8 @@ export const useMainStore = defineStore('mainStore', () => {
 
     // 🟢 EXPORT ALL
     return {
+        subcategories, addSubcategory, renameSubcategory, deleteSubcategory, getOperationCategoryLabel, getOperationSubcategoryName,
+        currentSubcategoryBreakdowns, futureSubcategoryBreakdowns,
         cacheVersion,
 
         // Period filter
@@ -3524,6 +3562,7 @@ export const useMainStore = defineStore('mainStore', () => {
             projects.value = [];
             individuals.value = [];
             categories.value = [];
+            subcategories.value = [];
             prepayments.value = [];
             credits.value = [];
             deals.value = [];

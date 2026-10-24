@@ -159,7 +159,9 @@ const chipLabel = computed(() => {
   }
   if (isWorkActOp.value) return 'Отработано';
   if (isTechnicalOp.value) return op.description || 'Техническая';
-  return resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
+  const categoryName = resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
+  const childName = mainStore.getOperationSubcategoryName(op);
+  return childName ? `${categoryName} → ${childName}` : categoryName;
 });
 
 const showCheckmark = computed(() => {

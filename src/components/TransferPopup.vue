@@ -1,4 +1,5 @@
 <script setup>
+import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
@@ -39,6 +40,7 @@ const amountInput = ref(null);
 const fromAccountId = ref(null);
 const toAccountId = ref(null);
 const categoryId = ref(null);
+const subcategoryId = ref(null);
 const selectedFromOwner = ref(null); 
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
@@ -492,6 +494,7 @@ onMounted(async () => {
 
   if (props.transferToEdit) {
     const transfer = props.transferToEdit;
+    subcategoryId.value = transfer.subcategoryId?._id || transfer.subcategoryId || null;
     amount.value = formatNumber(Math.abs(transfer.amount));
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId || transfer.accountId?._id || transfer.accountId;
     toAccountId.value = transfer.toAccountId?._id || transfer.toAccountId;
@@ -511,7 +514,8 @@ onMounted(async () => {
       transferPurpose.value = PURPOSE_INTERNAL;
     }
 
-    categoryId.value = defaultCategoryId;
+    const savedCategoryId = props.transferToEdit?.categoryId?._id || props.transferToEdit?.categoryId;
+    categoryId.value = mainStore.categories.some(item => item._id === savedCategoryId) ? savedCategoryId : defaultCategoryId;
     if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
   } else {
     categoryId.value = defaultCategoryId;
@@ -661,8 +665,7 @@ const handleSave = async () => {
       apiTransferReason = 'personal_use';
   }
 
-  let finalCategoryId = categoryId.value;
-  if (apiTransferPurpose === PURPOSE_INTER_COMPANY) { finalCategoryId = null; }
+  const finalCategoryId = categoryId.value;
 
   const updates = [];
   if (fromAccountId.value && selectedFromOwner.value) {
@@ -709,7 +712,7 @@ const handleSave = async () => {
       fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
-      categoryId: finalCategoryId, transferPurpose: apiTransferPurpose,
+      categoryId: finalCategoryId, subcategoryId: subcategoryId.value, transferPurpose: apiTransferPurpose,
       transferReason: apiTransferReason
   };
   
@@ -810,6 +813,8 @@ const closePopup = () => { emit('close'); };
       <div v-if="isTransferRouteReady" class="input-spacing">
           <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
       </div>
+
+      <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
 
       <div class="hint-box" v-if="isTransferRouteReady && smartHint">{{ smartHint }}</div>
       

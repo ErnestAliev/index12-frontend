@@ -221,3 +221,23 @@ test('owner tooltips list only accounts participating in the calculation', () =>
   const { widgets } = fixture();
   assert.equal(widgets.getWidgetItems('companies')[0].linkTooltip, 'Счета: Рабочий');
 });
+
+
+test('subcategory detail uses the same visibility, fact/forecast and period filters as category totals', () => {
+  const { store, today, tomorrow, widgets } = fixture();
+  store.subcategories = [{ _id: 'water', name: 'Вода', parentCategoryId: 'category' }];
+  store.displayCache.test = store.displayCache.test.map(op => ({ ...op, subcategoryId: 'water' }));
+  assert.equal(store.currentSubcategoryBreakdowns[0].expense, 100);
+  assert.equal(store.futureSubcategoryBreakdowns[0].expense, 200);
+  assert.equal(widgets.getWidgetItems('subcategories')[0].name, 'Расходы → Вода');
+  assert.equal(widgets.getWidgetItems('subcategories', true)[0].expense, 200);
+  const categoryBefore = store.currentCategoryBalances[0].balance;
+  store.subcategories[0].name = 'Холодная вода';
+  assert.equal(store.getOperationCategoryLabel(store.displayCache.test[0]), 'Расходы → Холодная вода');
+  assert.equal(store.currentCategoryBalances[0].balance, categoryBefore);
+  store.accountVisibilityMode = 'all';
+  assert.equal(store.currentSubcategoryBreakdowns[0].expense, 1000);
+  assert.equal(store.futureSubcategoryBreakdowns[0].expense, 1000);
+  store.setPeriodFilter({ mode: 'custom', customStart: tomorrow.toISOString(), customEnd: tomorrow.toISOString() });
+  assert.equal(store.currentSubcategoryBreakdowns.length, 0);
+});

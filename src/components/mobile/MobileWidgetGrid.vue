@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useWidgetData } from '@/composables/useWidgetData.js';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
+import HeaderSubcategoryCard from '../HeaderSubcategoryCard.vue';
 import MobileWidgetCard from './MobileWidgetCard.vue';
 
 const emit = defineEmits(['widget-click', 'widget-add', 'widget-edit']);
@@ -119,7 +120,8 @@ const handleWidgetClick = (key) => {
     >
       <template #item="{ element }">
         <div class="grid-item">
-          <MobileWidgetCard
+          <HeaderSubcategoryCard v-if="element === 'subcategories'" :ref="(el) => captureWidgetRef(element, el)" @click="handleWidgetClick(element)" />
+          <MobileWidgetCard v-else
              :ref="(el) => captureWidgetRef(element, el)"
              :widget-key="element"
              @click="handleWidgetClick"

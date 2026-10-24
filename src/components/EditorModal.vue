@@ -1,4 +1,5 @@
 <script setup>
+import SubcategoryManager from './SubcategoryManager.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName } from '@/utils/companyTax';
@@ -6,6 +7,7 @@ import { accountSuggestions } from '@/data/accountSuggestions.js';
 
 const emit = defineEmits(['close']);
 const mainStore = useMainStore();
+const activeSection = ref('accounts');
 
 const isSaving = ref(false);
 const saveMessage = ref('');
@@ -802,14 +804,19 @@ watch(
         <h2>Редактор</h2>
 
         <div class="header-actions">
-          <button class="btn-save" :disabled="isSaving || isDeletingAccount" @click="saveSettings">
+          <button v-if="activeSection === 'accounts'" class="btn-save" :disabled="isSaving || isDeletingAccount" @click="saveSettings">
             {{ isSaving ? 'Сохранение...' : 'Сохранить' }}
           </button>
           <button class="close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
 
-      <div class="modal-body">
+      <div class="editor-sections" role="tablist" aria-label="Справочники">
+        <button role="tab" :aria-selected="activeSection === 'accounts'" @click="activeSection = 'accounts'">Счета</button>
+        <button role="tab" :aria-selected="activeSection === 'subcategories'" @click="activeSection = 'subcategories'">Подкатегории</button>
+      </div>
+      <SubcategoryManager v-if="activeSection === 'subcategories'" class="subcategory-manager-pane" />
+      <div v-else class="modal-body">
         <div v-if="saveMessage || saveError" class="status-row">
           <span v-if="saveMessage" class="status-text success">{{ saveMessage }}</span>
           <span v-if="saveError" class="status-text error">{{ saveError }}</span>
@@ -1111,6 +1118,11 @@ watch(
 </template>
 
 <style scoped>
+.editor-sections { display: flex; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--color-border); }
+.editor-sections button { padding: 8px 14px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font: inherit; }
+.editor-sections button[aria-selected="true"] { color: var(--color-primary); border-color: var(--color-primary); }
+.subcategory-manager-pane { flex: 1; min-height: 0; }
+
 .modal-overlay {
   position: fixed;
   top: 0;

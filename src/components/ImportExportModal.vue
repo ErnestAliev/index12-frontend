@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import SubcategorySelect from '@/components/SubcategorySelect.vue';
 import JournalChartsPanel from '@/components/JournalChartsPanel.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
@@ -49,6 +50,7 @@ const filters = ref({
   dateTo: '',
   type: [],
   category: [],
+  subcategory: [],
   project: [],
   account: [],
   contractor: [],
@@ -59,6 +61,7 @@ const filters = ref({
 const MULTI_FILTER_FIELDS = new Set([
   'type',
   'category',
+  'subcategory',
   'project',
   'account',
   'contractor',
@@ -70,6 +73,7 @@ const TABLE_COLUMNS = Object.freeze([
   'Дата',
   'Тип',
   'Категория',
+  'Подкатегория',
   'Проект',
   'Сумма',
   'Счет',
@@ -801,6 +805,7 @@ const buildOperationRow = (op) => {
       date: toDateInputValue(op?.date),
       type: typeLabel,
       categoryId: extractId(op?.categoryId),
+      subcategoryId: extractId(op?.subcategoryId),
       projectId: extractId(op?.projectId),
       amount: amountForDisplay ? String(Math.abs(amountForDisplay)) : '',
       accountId: extractId(op?.accountId),
@@ -816,6 +821,8 @@ const buildOperationRow = (op) => {
       'Дата': formatDate(op?.date),
       'Тип': typeLabel,
       'Категория': categoryName,
+      'Подкатегория': mainStore.getOperationSubcategoryName(op) || 'Без подкатегории',
+      'Детализация категории': mainStore.getOperationCategoryLabel(op),
       'Проект': projectName,
       'Сумма': formatAmount(amountForDisplay),
       'Счет': accountName,
@@ -866,6 +873,7 @@ const normalizedDraftSnapshot = (draft) => ({
   date: normalizeString(draft?.date),
   type: normalizeString(draft?.type),
   categoryId: normalizeString(draft?.categoryId),
+  subcategoryId: normalizeString(draft?.subcategoryId),
   projectId: normalizeString(draft?.projectId),
   amount: parseAmountInput(draft?.amount),
   accountId: normalizeString(draft?.accountId),
@@ -932,6 +940,7 @@ const filterOptions = computed(() => {
 
   const type = new Set();
   const category = new Set();
+  const subcategory = new Set();
   const project = new Set();
   const account = new Set();
   const contractor = new Set();
@@ -941,6 +950,7 @@ const filterOptions = computed(() => {
   source.forEach((row) => {
     if (row.values['Тип']) type.add(row.values['Тип']);
     if (row.values['Категория']) category.add(row.values['Категория']);
+    subcategory.add(row.values['Подкатегория']);
     if (row.values['Проект']) project.add(row.values['Проект']);
     if (row.values['Счет']) account.add(row.values['Счет']);
     if (row.values['Контрагент']) contractor.add(row.values['Контрагент']);
@@ -951,6 +961,7 @@ const filterOptions = computed(() => {
   return {
     type: toSortedList(type),
     category: toSortedList(category),
+    subcategory: toSortedList(subcategory),
     project: toSortedList(project),
     account: toSortedList(account),
     contractor: toSortedList(contractor),
@@ -1574,6 +1585,7 @@ const buildOperationPayload = (row, draft) => {
     contractorId: counterparty.contractorId || null,
     counterpartyIndividualId: counterparty.counterpartyIndividualId || null,
     categoryId: normalizeString(draft.categoryId) || null,
+    subcategoryId: normalizeString(draft.subcategoryId) || null,
     projectId: normalizeString(draft.projectId) || null,
     isTransfer: false,
     isWithdrawal: typeMeta.isWithdrawal
@@ -1593,6 +1605,8 @@ const buildTransferPayload = (row, draft) => {
   return {
     date: `${finalDate}T00:00:00`,
     amount,
+    categoryId: normalizeString(draft.categoryId) || null,
+    subcategoryId: normalizeString(draft.subcategoryId) || null,
     fromAccountId: normalizeString(draft.fromAccountId) || extractId(row?.source?.fromAccountId) || null,
     toAccountId: isWithdrawal ? null : (normalizeString(draft.toAccountId) || extractId(row?.source?.toAccountId) || null),
     fromCompanyId: fromOwner.companyId || null,
@@ -1686,6 +1700,7 @@ const filteredOperations = computed(() => {
     : null;
   const typeFilter = getFilterFieldValues('type');
   const categoryFilter = getFilterFieldValues('category');
+  const subcategoryFilter = getFilterFieldValues('subcategory');
   const projectFilter = getFilterFieldValues('project');
   const accountFilter = getFilterFieldValues('account');
   const contractorFilter = getFilterFieldValues('contractor');
@@ -1699,6 +1714,7 @@ const filteredOperations = computed(() => {
     if (toTs !== null && (row.dateTs === null || row.dateTs > toTs)) return false;
     if (typeFilter.length > 0 && !typeFilter.includes(row.values['Тип'])) return false;
     if (categoryFilter.length > 0 && !categoryFilter.includes(row.values['Категория'])) return false;
+    if (subcategoryFilter.length && !subcategoryFilter.includes(row.values['Подкатегория'])) return false;
     if (projectFilter.length > 0 && !projectFilter.includes(row.values['Проект'])) return false;
     if (accountFilter.length > 0) {
       const rowAccountTokens = Array.isArray(row.accountFilterTokens) ? row.accountFilterTokens : [];
@@ -1763,6 +1779,7 @@ const buildAiTableContext = (resolvedPeriodFilter = null) => {
     contractor: row.values['Контрагент'] || '',
     owner: row.values['Компания/Физлицо'] || '',
     category: row.values['Категория'] || '',
+    subcategory: row.values['Подкатегория'] || '',
     project: row.values['Проект'] || ''
   }));
 
@@ -1775,6 +1792,7 @@ const buildAiTableContext = (resolvedPeriodFilter = null) => {
       dateTo: filters.value.dateTo || null,
       type: getFilterFieldValues('type'),
       category: getFilterFieldValues('category'),
+      subcategory: getFilterFieldValues('subcategory'),
       project: getFilterFieldValues('project'),
       account: getFilterFieldValues('account'),
       contractor: getFilterFieldValues('contractor'),
@@ -2389,6 +2407,7 @@ onBeforeUnmount(() => {
                 <col class="col-date" />
                 <col class="col-type" />
                 <col class="col-category" />
+                <col class="col-subcategory" />
                 <col class="col-project" />
                 <col class="col-amount" />
                 <col class="col-account" />
@@ -2530,6 +2549,12 @@ onBeforeUnmount(() => {
                         </div>
                       </div>
                     </div>
+                  </th>
+                  <th>
+                    <select class="filter-input" aria-label="Фильтр по подкатегории" :value="getFilterFieldValues('subcategory')[0] || ''" @change="setFilterField('subcategory', $event.target.value ? [$event.target.value] : [])">
+                      <option value="">Подкатегория</option>
+                      <option v-for="label in filterOptions.subcategory" :key="label" :value="label">{{ label }}</option>
+                    </select>
                   </th>
 
                   <th>
@@ -3024,6 +3049,10 @@ onBeforeUnmount(() => {
                             </div>
                           </div>
                         </div>
+                      </template>
+
+                      <template v-else-if="column === 'Подкатегория'">
+                        <SubcategorySelect v-model="editRows[row.rowId].subcategoryId" :category-ids="[editRows[row.rowId].categoryId]" />
                       </template>
 
                       <template v-else-if="column === 'Проект'">
@@ -5265,7 +5294,8 @@ onBeforeUnmount(() => {
 
 .operations-table .col-date { width: 12%; }
 .operations-table .col-type { width: 11%; }
-.operations-table .col-category { width: 12%; }
+.operations-table .col-category { width: 10%; }
+.operations-table .col-subcategory { width: 10%; }
 .operations-table .col-project { width: 11%; }
 .operations-table .col-amount { width: 12%; }
 .operations-table .col-account { width: 13%; }

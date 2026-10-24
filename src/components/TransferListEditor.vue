@@ -110,6 +110,8 @@ const loadTransfers = () => {
       return {
         _id: t._id,
         originalOp: t,
+        categoryDetail: mainStore.getOperationCategoryLabel(t, 'Перевод'),
+        subcategoryName: mainStore.getOperationSubcategoryName(t),
         date: toInputDate(t.date), // YYYY-MM-DD для сортировки и фильтров
         amount: Math.abs(t.amount),
         amountFormatted: formatNumber(Math.abs(t.amount)),
@@ -178,14 +180,15 @@ const exportToCSV = () => {
     return;
   }
 
-  const headers = ['Дата', 'Отправитель', 'Счет От', 'Сумма', 'Счет Куда', 'Получатель'];
+  const headers = ['Дата', 'Отправитель', 'Счет От', 'Сумма', 'Счет Куда', 'Получатель', 'Категория / Подкатегория'];
   const rows = filteredItems.value.map(item => [
     formatDateDisplay(item.date),
     getOwnerName(item.fromOwnerId),
     getAccountName(item.fromAccountId),
     item.amountFormatted,
     getAccountName(item.toAccountId),
-    getOwnerName(item.toOwnerId)
+    getOwnerName(item.toOwnerId),
+    item.categoryDetail
   ]);
 
   const csvContent = [
@@ -435,7 +438,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         <div v-for="item in filteredItems" :key="item._id" class="grid-row">
           <!-- Дата -->
           <div class="col-date">
-              <span class="text-cell">{{ formatDateDisplay(item.date) }}</span>
+              <span class="text-cell">{{ formatDateDisplay(item.date) }}</span><span v-if="item.subcategoryName" class="text-cell" :title="item.categoryDetail">{{ item.subcategoryName }}</span>
           </div>
 
           <!-- Отправитель -->

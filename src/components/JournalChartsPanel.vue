@@ -153,6 +153,12 @@ const chartCards = computed(() => {
       items: buildGroupedItems('Категория', 'Без категории')
     },
     {
+      key: 'subcategories',
+      title: 'По подкатегориям',
+      note: 'Категория → подкатегория. Внешнее кольцо: доход. Внутреннее: расход.',
+      items: buildGroupedItems('Детализация категории', 'Без подкатегории')
+    },
+    {
       key: 'contractors',
       title: 'По контрагентам',
       note: 'Внешнее кольцо: доход. Внутреннее: расход.',
@@ -261,7 +267,19 @@ const chartCards = computed(() => {
     }
   }));
 
-  return [ratioCard, ...restCards].map((card) => ({
+  const transferGroups = new Map();
+  props.rows.filter(row => row.type === 'Перевод').forEach(row => {
+    const label = row.values['Детализация категории'] || row.values['Категория'] || 'Без подкатегории';
+    transferGroups.set(label, (transferGroups.get(label) || 0) + Math.abs(Number(row.amount) || 0));
+  });
+  const transferItems = [...transferGroups].map(([label, total], index) => ({ label, total, color: GREEN_PALETTE[index % GREEN_PALETTE.length] }));
+  const transfersCard = {
+    key: 'transfer-subcategories', title: 'Переводы по подкатегориям', note: 'Оборот переводов учитывается отдельно от доходов и расходов.',
+    hasData: transferItems.length > 0,
+    data: { labels: transferItems.map(item => item.label), datasets: [{ label: 'Переводы', data: transferItems.map(item => item.total), backgroundColor: transferItems.map(item => item.color), borderWidth: 0 }] },
+    legend: transferItems
+  };
+  return [ratioCard, ...restCards, transfersCard].map((card) => ({
     ...card,
     options: buildChartOptions(card)
   }));
@@ -287,12 +305,12 @@ const chartCards = computed(() => {
               <div class="journal-chart-legend-label">
                 <span
                   class="journal-chart-legend-dot"
-                  :style="{ background: card.key === 'ratio' ? item.color : 'linear-gradient(135deg, #10b981 0%, #ef4444 100%)' }"
+                  :style="{ background: (card.key === 'ratio' || card.key === 'transfer-subcategories') ? item.color : 'linear-gradient(135deg, #10b981 0%, #ef4444 100%)' }"
                 ></span>
                 <span class="journal-chart-legend-text">{{ item.label }}</span>
               </div>
 
-              <div v-if="card.key === 'ratio'" class="journal-chart-legend-values ratio">
+              <div v-if="card.key === 'ratio' || card.key === 'transfer-subcategories'" class="journal-chart-legend-values ratio">
                 <span class="legend-total">{{ formatMoney(item.total) }}</span>
               </div>
 

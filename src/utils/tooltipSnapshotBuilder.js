@@ -207,7 +207,7 @@ const buildOffsetMetaByIncomeId = ({ opsByIsoDateKey, mainStore, visibility, acc
       const amount = Math.abs(toNum(op?.amount));
       if (amount <= 0) return;
 
-      const categoryName = op?.categoryId?.name || 'Без категории';
+      const categoryName = mainStore?.getOperationCategoryLabel?.(op) || op?.categoryId?.name || 'Без категории';
       const offsetId = resolveOperationId(op) || null;
       const note = `Взаимозачет: ${String(categoryName || 'Без категории')}`;
 
@@ -251,6 +251,9 @@ const listEntryFromOperation = (mainStore, op, options = {}) => {
         ? (op.destination || 'Вне системы')
         : (op.toAccountId?.name || '???'),
       amount: Math.abs(toNum(op.amount)),
+      subcategoryName: mainStore?.getOperationSubcategoryName?.(op) || op.subcategoryId?.name || '',
+      categoryLabel: mainStore?.getOperationCategoryLabel?.(op, 'Перевод') || 'Перевод',
+      catName: mainStore?.getOperationCategoryLabel?.(op, 'Перевод') || 'Перевод',
       desc: op.description || ''
     };
   }
@@ -284,6 +287,9 @@ const listEntryFromOperation = (mainStore, op, options = {}) => {
       catName = isRetailPrepay ? 'Предоплата (Розница)' : 'Предоплата / Транш';
     }
   }
+
+  const subcategoryName = mainStore?.getOperationSubcategoryName?.(op) || op.subcategoryId?.name || '';
+  if (subcategoryName) catName = `${catName} → ${subcategoryName}`;
 
   let compName = '---';
   if (isTax) {
@@ -319,6 +325,7 @@ const listEntryFromOperation = (mainStore, op, options = {}) => {
     contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
     projName: op.projectId?.name || '---',
     catName,
+    subcategoryName,
     amount: normalizeAmountForType(op),
     nominalAmount: op?.type === 'income' ? nominalAmount : null,
     netAmount,

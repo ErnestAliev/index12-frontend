@@ -29,6 +29,7 @@ export const useWidgetStore = defineStore('widget', () => {
     { key: 'transfers', name: 'Мои переводы' },
     { key: 'individuals', name: 'Физлица' },
     { key: 'categories', name: 'Категории' },
+    { key: 'subcategories', name: 'Подкатегории' },
   ]);
 
   // --- 2. Dashboard Layout (Расположение) ---
@@ -41,6 +42,7 @@ export const useWidgetStore = defineStore('widget', () => {
   // Filter out currentTotal and futureTotal if they exist in saved layout (legacy data)
   initialLayout = initialLayout.filter(k => k !== 'currentTotal' && k !== 'futureTotal');
 
+  if (!initialLayout.includes('subcategories')) initialLayout.push('subcategories');
   const dashboardLayout = ref(initialLayout);
   const originalDashboardLayout = ref([]);
 

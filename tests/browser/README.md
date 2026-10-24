@@ -25,3 +25,9 @@ Run `node tests/browser/responsive.mjs` to check portrait tablet widgets at
 and mobile touch opening for income, expense and transfer. It also checks
 swipes and long-press cancellation. API requests use isolated mock data;
 screenshots are saved under `output/playwright/`.
+
+For subcategories with real persistence, run from the sibling backend checkout:
+`node tests/integration/subcategories.cjs --browser`. This starts an isolated
+local MongoDB and API, opens the real frontend and verifies creation, editing a
+legacy payment, reload, graph hover, journal filters and the mobile transfer
+form. Requires `mongod` and Chrome. It does not use the production database.

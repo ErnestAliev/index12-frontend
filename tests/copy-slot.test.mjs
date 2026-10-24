@@ -20,7 +20,7 @@ function cardPayload(kind, clone, dateChanged = false) {
     props, isCloneMode: ref(clone), isDateChanged: ref(dateChanged),
     isEditMode: { get value() { return !clone; } },
     selectedOwner: ref(null), selectedContractorValue: ref(null),
-    selectedAccountId: ref('account'), selectedCategoryId: ref('category'),
+    selectedAccountId: ref('account'), selectedCategoryId: ref('category'), selectedSubcategoryId: ref('subcategory'),
     selectedProjectIds: ref(['project']), primaryProjectId: ref('project'), defaultProjectId: ref(null),
     amount: ref('100'), editableDate: ref('2026-10-09'), description: ref('Копия'),
     normalizeId: value => value?._id || value,
@@ -41,6 +41,10 @@ for (const kind of ['income', 'expense']) {
   });
   test(`${kind} editing on the same date preserves the existing slot`, () => {
     assert.equal(cardPayload(kind, false).cellIndex, 4);
+  });
+  test(`${kind} copy and edit retain their selected subcategory`, () => {
+    assert.equal(cardPayload(kind, true).subcategoryId, 'subcategory');
+    assert.equal(cardPayload(kind, false).subcategoryId, 'subcategory');
   });
   test(`${kind} copy on another date also requests a free slot`, () => {
     assert.equal(cardPayload(kind, true, true).cellIndex, undefined);

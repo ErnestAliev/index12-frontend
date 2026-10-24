@@ -55,6 +55,7 @@ export const useTransferStore = defineStore('transfer', () => {
               'Дата': _formatDateISO(op.date),
               'Тип': op.type || 'Операция',
               'Категория': _entityToText(catName, 'Без категории'),
+              'Подкатегория': useMainStore().getOperationSubcategoryName(op),
               'Проект': _entityToText(projName, 'Без проекта'),
           };
 
@@ -82,6 +83,7 @@ export const useTransferStore = defineStore('transfer', () => {
           row['TX_ID'] = op._id;
           row['Account_ID'] = typeof op.accountId === 'object' ? op.accountId?._id : op.accountId;
           row['Project_ID'] = typeof op.projectId === 'object' ? op.projectId?._id : op.projectId;
+          row['Subcategory_ID'] = op.subcategoryId?._id || op.subcategoryId || '';
           row['Category_ID'] = typeof op.categoryId === 'object' ? op.categoryId?._id : op.categoryId;
 
           return row;
