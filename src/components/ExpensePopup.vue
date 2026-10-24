@@ -414,7 +414,7 @@ const incomeOffsetOptions = computed(() => {
 
 const projectOptions = computed(() => {
   const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
-  opts.unshift({ value: ALL_PROJECTS, label: 'Все проекты', isExclusive: true, subLabel: 'Единый платёж без распределения' }, { value: null, label: 'Без проекта' });
+  opts.unshift({ value: ALL_PROJECTS, label: 'Все проекты', isExclusive: true }, { value: null, label: 'Без проекта' });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
 });
@@ -1125,8 +1125,6 @@ watch(defaultProjectId, (defId) => {
       <!-- ПРОЕКТ -->
       <div v-if="!isIncomeOffsetMode && !isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
           <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
-          <p v-if="selectedProjectIds.includes(ALL_PROJECTS)" class="project-scope-hint">Один платёж на все проекты. Сумма не делится и учитывается один раз.</p>
-          <p v-else-if="selectedProjectIds.filter(Boolean).length > 1" class="project-scope-hint">Сумма распределится между выбранными проектами поровну.</p>
       </div>
       <div v-else-if="!isIncomeOffsetMode" class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -1204,7 +1202,6 @@ watch(defaultProjectId, (defId) => {
 </template>
 
 <style scoped>
-.project-scope-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--color-text-soft, #888); }
 /* 🟢 CSS ПЕРЕМЕННЫЕ ДЛЯ РАСХОДА */
 .popup-content {
     --color-expense: #F36F3F; /* Оранжевый */

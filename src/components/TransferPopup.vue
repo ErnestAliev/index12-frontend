@@ -45,7 +45,7 @@ const subcategoryId = ref(null);
 const selectedProjectId = ref(null);
 const projectOptions = computed(() => [
   { value: null, label: 'Без проекта' },
-  { value: ALL_PROJECTS, label: 'Все проекты', subLabel: 'Единый перевод без распределения' },
+  { value: ALL_PROJECTS, label: 'Все проекты' },
   ...mainStore.projects.map(p => ({ value: p._id, label: p.name }))
 ]);
 const selectedFromOwner = ref(null); 
@@ -825,7 +825,6 @@ const closePopup = () => { emit('close'); };
 
       <div class="input-spacing" data-testid="transfer-project-field">
           <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" :disabled="isReadOnly" />
-          <p v-if="selectedProjectId === ALL_PROJECTS" class="project-scope-hint">Один перевод на все проекты. Внутренний перевод не меняет прибыль.</p>
       </div>
 
       <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
@@ -873,7 +872,6 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
-.project-scope-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--color-text-soft, #888); }
 /* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     /* 🟢 Цвет ТЕМНО-СИНИЙ */
