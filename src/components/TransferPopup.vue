@@ -1,4 +1,5 @@
 <script setup>
+import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -41,6 +42,12 @@ const fromAccountId = ref(null);
 const toAccountId = ref(null);
 const categoryId = ref(null);
 const subcategoryId = ref(null);
+const selectedProjectId = ref(null);
+const projectOptions = computed(() => [
+  { value: null, label: 'Без проекта' },
+  { value: ALL_PROJECTS, label: 'Все проекты', subLabel: 'Единый перевод без распределения' },
+  ...mainStore.projects.map(p => ({ value: p._id, label: p.name }))
+]);
 const selectedFromOwner = ref(null); 
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
@@ -494,6 +501,7 @@ onMounted(async () => {
 
   if (props.transferToEdit) {
     const transfer = props.transferToEdit;
+    selectedProjectId.value = projectSelection(transfer)[0] || null;
     subcategoryId.value = transfer.subcategoryId?._id || transfer.subcategoryId || null;
     amount.value = formatNumber(Math.abs(transfer.amount));
     fromAccountId.value = transfer.fromAccountId?._id || transfer.fromAccountId || transfer.accountId?._id || transfer.accountId;
@@ -708,7 +716,8 @@ const handleSave = async () => {
   if (updates.length > 0) { await mainStore.batchUpdateEntities('accounts', updates); }
 
   const transferPayload = { 
-      date: finalDate, amount: amountParsed, 
+      date: finalDate, amount: amountParsed,
+      ...projectFields(selectedProjectId.value),
       fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
@@ -814,6 +823,11 @@ const closePopup = () => { emit('close'); };
           <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
       </div>
 
+      <div class="input-spacing" data-testid="transfer-project-field">
+          <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" :disabled="isReadOnly" />
+          <p v-if="selectedProjectId === ALL_PROJECTS" class="project-scope-hint">Один перевод на все проекты. Внутренний перевод не меняет прибыль.</p>
+      </div>
+
       <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
 
       <div class="hint-box" v-if="isTransferRouteReady && smartHint">{{ smartHint }}</div>
@@ -859,6 +873,7 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
+.project-scope-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--color-text-soft, #888); }
 /* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     /* 🟢 Цвет ТЕМНО-СИНИЙ */

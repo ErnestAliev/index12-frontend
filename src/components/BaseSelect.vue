@@ -48,7 +48,9 @@ const toggle = () => {
 const selectOption = (option) => {
   if (option.isHeader || option.isActionRow || option.disabled) return;
   if (props.multiple) {
-    const current = Array.isArray(props.modelValue) ? [...props.modelValue] : [];
+    let current = Array.isArray(props.modelValue) ? [...props.modelValue] : [];
+    if (option.isExclusive && !current.includes(option.value)) current = [];
+    else if (!option.isExclusive) current = current.filter(value => !props.options.some(o => o.value === value && o.isExclusive));
     const idx = current.indexOf(option.value);
     if (idx !== -1) current.splice(idx, 1); else current.push(option.value);
     emit('update:modelValue', current);

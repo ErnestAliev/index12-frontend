@@ -1503,6 +1503,8 @@ const getTooltipOperationList = (ops) => {
         const { fromOwnerName, toOwnerName } = resolveTransferOwnerNames(op, isOutOfSystemTransfer);
         return {
           isTransfer: true,
+          projName: mainStore.getOperationProjectName(op),
+          projectScope: op.projectScope || 'selected',
           categoryLabel: mainStore.getOperationCategoryLabel(op, 'Перевод'),
           subcategoryName: mainStore.getOperationSubcategoryName(op),
           isOutOfSystemTransfer,
@@ -1557,7 +1559,8 @@ const getTooltipOperationList = (ops) => {
         isIncome: op.type === 'income',
         accName: op.accountId?.name || '???',
         contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
-        projName: op.projectId?.name || '---',
+        projName: mainStore.getOperationProjectName(op),
+        projectScope: op.projectScope || 'selected',
         catName: mainStore.getOperationSubcategoryName(op) ? `${catName} → ${mainStore.getOperationSubcategoryName(op)}` : catName,
         subcategoryName: mainStore.getOperationSubcategoryName(op),
         amount: op.amount,
@@ -1952,7 +1955,7 @@ const chartOptions = computed(() => {
                 const amountStr = `${formatNumber(Math.abs(op?.amount || 0))} т`;
                 const fromOwner = op?.fromOwnerName || op?.fromAccName || '—';
                 const toOwner = op?.toOwnerName || op?.toAccName || '—';
-                lines.push(`${amountStr}: ${fromOwner} → ${toOwner}${op?.subcategoryName ? ` • ${op.categoryLabel}` : ''}`);
+                lines.push(`${amountStr}: ${fromOwner} → ${toOwner}${op?.subcategoryName ? ` • ${op.categoryLabel}` : ''}${op?.projName && op.projName !== 'Без проекта' ? ` • ${op.projName}` : ''}`);
               });
             }
 

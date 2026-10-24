@@ -1,4 +1,5 @@
 <script setup>
+import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -365,7 +366,7 @@ const contractorOptions = computed(() => {
 
 const projectOptions = computed(() => {
   const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
-  opts.unshift({ value: null, label: 'Без проекта' });
+  opts.unshift({ value: ALL_PROJECTS, label: 'Все проекты', isExclusive: true, subLabel: 'Единый платёж без распределения' }, { value: null, label: 'Без проекта' });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
 });
@@ -494,7 +495,7 @@ const buildCounterpartyDefaultsPayload = () => {
     const updateData = { _id: entityId };
     let needsUpdate = false;
 
-    if (primaryProjectId.value) {
+    if (primaryProjectId.value && primaryProjectId.value !== ALL_PROJECTS) {
         updateData.defaultProjectId = primaryProjectId.value;
         needsUpdate = true;
     }
@@ -519,10 +520,7 @@ const preparePayload = (options = {}) => {
     let targetCellIndex = undefined;
     if (!isDateChanged.value && !isCloneMode.value) targetCellIndex = props.cellIndex;
 
-    let projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
-    if (!projectIdsClean.length && defaultProjectId.value) {
-        projectIdsClean = [defaultProjectId.value];
-    }
+    const projectData = projectFields(selectedProjectIds.value, defaultProjectId.value);
 
     return {
         type: 'income',
@@ -533,8 +531,7 @@ const preparePayload = (options = {}) => {
         contractorId: contrId, counterpartyIndividualId: contrIndId,
         categoryId: selectedCategoryId.value,
         subcategoryId: selectedSubcategoryId.value,
-        projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
-        projectIds: projectIdsClean.length > 1 ? projectIdsClean : (projectIdsClean.length === 1 ? undefined : (defaultProjectId.value ? [defaultProjectId.value] : undefined)),
+        ...projectData,
         description: description.value, cellIndex: targetCellIndex
     };
 };
@@ -645,6 +642,7 @@ onMounted(async () => {
             const projId = normalizeId(op.projectId?._id || op.projectId);
             selectedProjectIds.value = projId ? [projId] : [];
         }
+        if (op.projectScope === 'all') selectedProjectIds.value = projectSelection(op);
         selectedCategoryId.value = op.categoryId?._id || op.categoryId;
         selectedSubcategoryId.value = op.subcategoryId?._id || op.subcategoryId || null;
         description.value = op.description || '';
@@ -909,6 +907,8 @@ const handleMainAction = async () => {
 
       <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
           <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
+          <p v-if="selectedProjectIds.includes(ALL_PROJECTS)" class="project-scope-hint">Один платёж на все проекты. Сумма не делится и учитывается один раз.</p>
+          <p v-else-if="selectedProjectIds.filter(Boolean).length > 1" class="project-scope-hint">Сумма распределится между выбранными проектами поровну.</p>
       </div>
       <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -982,6 +982,7 @@ const handleMainAction = async () => {
 </template>
 
 <style scoped>
+.project-scope-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--color-text-soft, #888); }
 /* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     /* 🟢 Цвет ЗЕЛЕНЫЙ */

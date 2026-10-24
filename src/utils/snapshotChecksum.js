@@ -30,7 +30,7 @@ export const buildSnapshotChecksum = (tooltipSnapshot) => {
   if (!startDateKey) return '';
   const net = Math.round(computeSnapshotNet(tooltipSnapshot));
   const details = (tooltipSnapshot.days || []).flatMap(day => Object.values(day?.lists || {}).flat())
-    .map(op => `${op?.id || ''}:${op?.catName || ''}:${op?.subcategoryName || ''}`).sort().join('|');
+    .map(op => `${op?.id || ''}:${op?.catName || ''}:${op?.subcategoryName || ''}:${op?.projectScope || ''}:${op?.projName || ''}`).sort().join('|');
   return hashString(`${startDateKey}|${net}|${details}`);
 };
 

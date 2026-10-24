@@ -1,3 +1,4 @@
+import { projectLabel } from './projectScope.js';
 // src/utils/tooltipSnapshotBuilder.js
 // Build deterministic tooltip snapshot (single source of truth for AI numeric answers).
 
@@ -245,6 +246,8 @@ const listEntryFromOperation = (mainStore, op, options = {}) => {
       linkedParentId,
       isOffsetExpense: false,
       isTransfer: true,
+      projName: projectLabel(op, mainStore.projects),
+      projectScope: op.projectScope || 'selected',
       isOutOfSystemTransfer: outOfSystem,
       fromAccName: op.fromAccountId?.name || op.accountId?.name || '???',
       toAccName: outOfSystem
@@ -323,7 +326,8 @@ const listEntryFromOperation = (mainStore, op, options = {}) => {
     isTax,
     accName: op.accountId?.name || '???',
     contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
-    projName: op.projectId?.name || '---',
+    projName: projectLabel(op, mainStore.projects),
+    projectScope: op.projectScope || 'selected',
     catName,
     subcategoryName,
     amount: normalizeAmountForType(op),

@@ -300,6 +300,7 @@ const tooltipContractor = computed(() => {
 const tooltipProject = computed(() => {
   const op = props.operation;
   if (!op) return TOOLTIP_EMPTY;
+  if (op.projectScope === 'all') return 'Все проекты — единый платёж без распределения';
   const projectItems = Array.isArray(op.projectIds) && op.projectIds.length
     ? op.projectIds
     : (op.projectId ? [op.projectId] : []);

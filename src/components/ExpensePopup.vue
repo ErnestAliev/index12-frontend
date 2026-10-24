@@ -1,4 +1,5 @@
 <script setup>
+import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -389,7 +390,7 @@ const incomeOffsetOptions = computed(() => {
     .filter(op => op && op.type === 'income' && op.date && new Date(op.date).getMonth() === month && new Date(op.date).getFullYear() === year)
     .map(op => {
         const contractorName = op.contractorId?.name || op.counterpartyIndividualId?.name || op.description || 'Доход';
-        const projectName = op.projectId?.name || (Array.isArray(op.projectIds) && op.projectIds[0]?.name) || '';
+        const projectName = mainStore.getOperationProjectName(op);
         const categoryName = op.categoryId?.name || '';
         const remaining = getIncomeRemaining(op._id, isEditMode.value ? props.operationToEdit?._id : null);
         if (remaining <= 0) return null;
@@ -413,7 +414,7 @@ const incomeOffsetOptions = computed(() => {
 
 const projectOptions = computed(() => {
   const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
-  opts.unshift({ value: null, label: 'Без проекта' });
+  opts.unshift({ value: ALL_PROJECTS, label: 'Все проекты', isExclusive: true, subLabel: 'Единый платёж без распределения' }, { value: null, label: 'Без проекта' });
   opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
 });
@@ -618,7 +619,7 @@ const buildCounterpartyDefaultsPayload = () => {
     const updateData = { _id: entityId };
     let needsUpdate = false;
 
-    if (primaryProjectId.value) {
+    if (primaryProjectId.value && primaryProjectId.value !== ALL_PROJECTS) {
         updateData.defaultProjectId = primaryProjectId.value;
         needsUpdate = true;
     }
@@ -661,13 +662,12 @@ const processSave = (preparedCategoryIds = []) => {
         }
     }
 
+    if (isIncomeOffsetMode.value && selectedIncomeOp.value?.projectScope === 'all') selectedProjectIds.value = [ALL_PROJECTS];
+
     let targetCellIndex = undefined;
     if (!isDateChanged.value && !isCloneMode.value) targetCellIndex = props.cellIndex;
 
-    let projectIdsClean = (selectedProjectIds.value || []).map(normalizeId).filter(Boolean);
-    if (!projectIdsClean.length && defaultProjectId.value) {
-        projectIdsClean = [defaultProjectId.value];
-    }
+    const projectData = projectFields(selectedProjectIds.value, defaultProjectId.value);
     const payload = {
         type: 'expense', 
         amount: finalAmount, 
@@ -678,8 +678,7 @@ const processSave = (preparedCategoryIds = []) => {
         categoryId: preparedCategoryIds[0] || null,
         subcategoryId: selectedSubcategoryId.value,
         categoryIds: preparedCategoryIds.length ? preparedCategoryIds : undefined,
-        projectId: projectIdsClean.length === 1 ? projectIdsClean[0] : primaryProjectId.value,
-        projectIds: projectIdsClean.length > 1 ? projectIdsClean : (projectIdsClean.length === 1 ? undefined : (defaultProjectId.value ? [defaultProjectId.value] : undefined)),
+        ...projectData,
         description: description.value, cellIndex: targetCellIndex
     };
 
@@ -983,6 +982,7 @@ onMounted(async () => {
             const projId = normalizeId(op.projectId?._id || op.projectId);
             selectedProjectIds.value = projId ? [projId] : [];
         }
+        if (op.projectScope === 'all') selectedProjectIds.value = projectSelection(op);
         if (Array.isArray(op.categoryIds) && op.categoryIds.length) {
             selectedCategoryIds.value = op.categoryIds.map(normalizeId).filter(Boolean);
         } else {
@@ -1125,6 +1125,8 @@ watch(defaultProjectId, (defId) => {
       <!-- ПРОЕКТ -->
       <div v-if="!isIncomeOffsetMode && !isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
           <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
+          <p v-if="selectedProjectIds.includes(ALL_PROJECTS)" class="project-scope-hint">Один платёж на все проекты. Сумма не делится и учитывается один раз.</p>
+          <p v-else-if="selectedProjectIds.filter(Boolean).length > 1" class="project-scope-hint">Сумма распределится между выбранными проектами поровну.</p>
       </div>
       <div v-else-if="!isIncomeOffsetMode" class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -1202,6 +1204,7 @@ watch(defaultProjectId, (defId) => {
 </template>
 
 <style scoped>
+.project-scope-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--color-text-soft, #888); }
 /* 🟢 CSS ПЕРЕМЕННЫЕ ДЛЯ РАСХОДА */
 .popup-content {
     --color-expense: #F36F3F; /* Оранжевый */

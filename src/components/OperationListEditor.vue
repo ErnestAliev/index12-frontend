@@ -1,4 +1,5 @@
 <script setup>
+import { ALL_PROJECTS } from '@/utils/projectScope';
 import { ref, computed, onMounted, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -42,7 +43,7 @@ const filters = ref({
 
 // DATA SOURCES
 const accounts = computed(() => mainStore.accounts);
-const projects = computed(() => mainStore.projects);
+const projects = computed(() => [{ _id: ALL_PROJECTS, name: 'Все проекты' }, ...mainStore.projects]);
 const categories = computed(() => mainStore.categories.filter(c => !['перевод', 'transfer'].includes(c.name.toLowerCase())));
 const companies = computed(() => mainStore.companies);
 const individuals = computed(() => mainStore.individuals);
@@ -194,6 +195,7 @@ const loadOperations = () => {
       return {
         _id: op._id,
         originalOp: op,
+        projectScope: op.projectScope,
         date: toInputDate(op.date),
         amount: amount,
         amountFormatted: formatNumber(amount),
@@ -204,7 +206,7 @@ const loadOperations = () => {
         subcategoryId: op.subcategoryId?._id || op.subcategoryId,
         subcategoryName: mainStore.getOperationSubcategoryName(op),
         projectId: primaryProjectId,
-        projectIds: projectIdsArr.length ? projectIdsArr : (primaryProjectId ? [primaryProjectId] : []),
+        projectIds: op.projectScope === 'all' ? [ALL_PROJECTS] : projectIdsArr.length ? projectIdsArr : (primaryProjectId ? [primaryProjectId] : []),
         isDeleted: false
       };
     });

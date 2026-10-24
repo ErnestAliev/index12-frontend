@@ -1,3 +1,4 @@
+import { ALL_PROJECTS, projectGroupId, projectLabel, equalProjectShares } from '@/utils/projectScope';
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import axios from 'axios';
@@ -525,6 +526,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
     const _resolveSingleProjectId = (op) => {
         if (!op) return null;
+        if (op.projectScope === 'all') return ALL_PROJECTS;
 
         const direct = op.projectId?._id || op.projectId;
         if (direct) return _toStr(direct);
@@ -962,7 +964,7 @@ export const useMainStore = defineStore('mainStore', () => {
             updateMap(s.individualBalances, op.individualId, netChange);
             updateMap(s.individualBalances, op.counterpartyIndividualId, netChange);
             updateMap(s.contractorBalances, op.contractorId, netChange);
-            updateMap(s.projectBalances, op.projectId, netChange);
+            updateMap(s.projectBalances, projectGroupId(op), netChange);
 
             const catId = op.categoryId ? (typeof op.categoryId === 'object' ? op.categoryId._id : op.categoryId).toString() : null;
             if (catId) {
@@ -1205,9 +1207,15 @@ export const useMainStore = defineStore('mainStore', () => {
         return futureContractorChanges.value;
     });
 
+    const projectsForBalances = computed(() => {
+        const shared = [...currentOps.value, ...futureOps.value].some(op => op.projectScope === 'all' && !op.excludeFromTotals && !isTransfer(op) && _isOpVisible(op));
+        return shared ? [...projects.value, { _id: ALL_PROJECTS, name: 'Все проекты', projectScope: 'all', tooltip: 'Общие доходы и расходы: один платёж без распределения между проектами' }] : projects.value;
+    });
+    const getOperationProjectName = op => projectLabel(op, projects.value);
+
     const currentProjectBalances = computed(() => {
         const breakdown = _calculateProjectBreakdown(currentOps.value);
-        return projects.value.map(p => {
+        return projectsForBalances.value.map(p => {
             const rec = breakdown.get(String(p._id)) || { incomeAbs: 0, expenseAbs: 0, delta: 0 };
             return {
                 ...p,
@@ -1279,7 +1287,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const filteredFuture = (futureOps.value || []).filter(op => !_isRetailWriteOff(op));
         const breakdown = _calculateProjectBreakdown(filteredFuture);
 
-        return projects.value.map(p => {
+        return projectsForBalances.value.map(p => {
             const rec = breakdown.get(String(p._id)) || { incomeAbs: 0, expenseAbs: 0, delta: 0 };
             return {
                 ...p,
@@ -1294,7 +1302,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const currentMap = new Map((currentProjectBalances.value || []).map(item => [String(item._id), item]));
         const futureMap = new Map((futureProjectChanges.value || []).map(item => [String(item._id), item]));
 
-        return projects.value.map(p => {
+        return projectsForBalances.value.map(p => {
             const cur = currentMap.get(String(p._id)) || {};
             const fut = futureMap.get(String(p._id)) || {};
 
@@ -1309,6 +1317,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
             return {
                 ...p,
+                tooltip: p.projectScope === 'all' ? p.tooltip : 'Доходы минус прямые расходы проекта. Общие расходы в строке «Все проекты»; их доли пока не распределены.',
                 incomeAbs: factIncomeAbs,
                 expenseAbs: factExpenseAbs,
                 balance: factProfit,
@@ -1667,7 +1676,7 @@ export const useMainStore = defineStore('mainStore', () => {
         }
 
         // Если есть splitMeta, достанем projectIds для редактирования/отображения
-        if (Array.isArray(populated.splitMeta) && populated.splitMeta.length) {
+        if (populated.projectScope !== 'all' && Array.isArray(populated.splitMeta) && populated.splitMeta.length) {
             populated.projectIds = populated.splitMeta
                 .map(s => {
                     if (!s?.projectId) return null;
@@ -1805,6 +1814,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
                     categoryId: incomeOp.categoryId || expenseOp.categoryId || { _id: 'transfer', name: 'Перевод' },
                     subcategoryId: incomeOp.subcategoryId || expenseOp.subcategoryId || null,
+                    projectScope: incomeOp.projectScope === 'all' || expenseOp.projectScope === 'all' ? 'all' : 'selected',
+                    projectId: incomeOp.projectId || expenseOp.projectId || null,
                     date: incomeOp.date || expenseOp.date,
                     dateKey: dk
                 };
@@ -1952,20 +1963,10 @@ export const useMainStore = defineStore('mainStore', () => {
             eventData.cellIndex = reservation.cellIndex;
 
             const projectIds = Array.isArray(eventData.projectIds) ? eventData.projectIds.filter(Boolean) : [];
-            const isSplit = projectIds.length > 1 && (eventData.type === 'income' || eventData.type === 'expense');
+            const isSplit = eventData.projectScope !== 'all' && projectIds.length > 1 && (eventData.type === 'income' || eventData.type === 'expense');
 
             if (isSplit) {
-                const total = Number(eventData.amount || 0);
-                const n = projectIds.length;
-                const absTotal = Math.abs(Math.round(total));
-                const baseShare = Math.floor(absTotal / n);
-                const remainder = absTotal - baseShare * n;
-                const sign = total >= 0 ? 1 : -1;
-
-                const splitMeta = projectIds.map((pid, idx) => ({
-                    projectId: pid,
-                    amount: sign * (baseShare + (idx === 0 ? remainder : 0))
-                }));
+                const splitMeta = equalProjectShares(projectIds, eventData.amount);
 
                 // Родитель: реальный платеж, исключаем из итогов
                 const parentPayload = {
@@ -2117,6 +2118,12 @@ export const useMainStore = defineStore('mainStore', () => {
                 _transitionSnapshot(displayed, operationSync.entries.value[_toStr(opId)]?.op);
                 _bumpDayMutationVersions(oldDateKey, newDateKey, serverOp.dateKey);
                 _publishOperationState(oldDateKey, newDateKey, serverOp.dateKey);
+            }
+            const allocation = response.data.allocationChanges;
+            if (allocation) {
+                for (const id of allocation.deletedIds || []) onSocketOperationDeleted(id);
+                for (const child of allocation.operations || []) onSocketOperationUpdated(child);
+                await fetchSnapshot();
             }
             return response.data;
         } catch (error) {
@@ -2478,6 +2485,8 @@ export const useMainStore = defineStore('mainStore', () => {
                         cellIndex: incomeOp.cellIndex || expenseOp.cellIndex || 0,
                         categoryId: incomeOp.categoryId || expenseOp.categoryId || { _id: 'transfer', name: 'Перевод' },
                         subcategoryId: incomeOp.subcategoryId || expenseOp.subcategoryId || null,
+                        projectScope: incomeOp.projectScope === 'all' || expenseOp.projectScope === 'all' ? 'all' : 'selected',
+                        projectId: incomeOp.projectId || expenseOp.projectId || null,
                         date: incomeOp.date || expenseOp.date
                     });
                     continue;
@@ -2656,6 +2665,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     _id: tempId,
                     categoryId: transferData.categoryId || transferCategory,
                     subcategoryId: transferData.subcategoryId || null,
+                    projectScope: transferData.projectScope || 'selected',
+                    projectId: transferData.projectId || null,
                     type: 'transfer',
                     isTransfer: true,
                     isWithdrawal: true,
@@ -2684,6 +2695,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     _id: tempId,
                     categoryId: transferData.categoryId || transferCategory,
                     subcategoryId: transferData.subcategoryId || null,
+                    projectScope: transferData.projectScope || 'selected',
+                    projectId: transferData.projectId || null,
                     type: 'transfer',
                     isTransfer: true,
                     amount: Math.abs(Number(transferData.amount)),
@@ -3362,6 +3375,7 @@ export const useMainStore = defineStore('mainStore', () => {
         // 🟢 Exporting helper so other stores (projectionStore) can use it
         _idsMatch,
 
+        getOperationProjectName,
         accounts, companies, contractors, projects, categories, individuals,
         prepayments, // 🟢 Computed from categories where isPrepayment: true
         recurringOperations, // 🟢 Recurring operations for future projections

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { projectFields, ALL_PROJECTS } from '../src/utils/projectScope.js';
 
 // Execute the real card payload builders without mounting their unrelated
 // account editors. Clone/date state is supplied as it is at the Copy button.
@@ -17,6 +18,7 @@ function cardPayload(kind, clone, dateChanged = false) {
   let saved;
   const props = { cellIndex: 4, operationToEdit: { _id: 'source' } };
   const context = {
+    projectFields, ALL_PROJECTS,
     props, isCloneMode: ref(clone), isDateChanged: ref(dateChanged),
     isEditMode: { get value() { return !clone; } },
     selectedOwner: ref(null), selectedContractorValue: ref(null),

@@ -241,3 +241,23 @@ test('subcategory detail uses the same visibility, fact/forecast and period filt
   store.setPeriodFilter({ mode: 'custom', customStart: tomorrow.toISOString(), customEnd: tomorrow.toISOString() });
   assert.equal(store.currentSubcategoryBreakdowns.length, 0);
 });
+
+test('shared project payments are one separate fact/plan row and respect account visibility', () => {
+  const { store, op, today, tomorrow } = fixture();
+  store.displayCache = { test: [
+    op('direct', 'open', 2000000, today, { type: 'income' }),
+    op('shared', 'open', -1000000, today, { projectScope: 'all', projectId: null }),
+    op('plan-shared', 'open', -400000, tomorrow, { projectScope: 'all', projectId: null }),
+    op('shared-hidden', 'hidden', -9000000, today, { projectScope: 'all', projectId: null }),
+    op('shared-transfer', 'open', 800, today, { type: 'transfer', isTransfer: true, projectScope: 'all', projectId: null, fromAccountId: 'open', toAccountId: 'hidden' })
+  ] };
+  const direct = store.projectPnlBalances.find(row => row._id === 'project');
+  const shared = store.projectPnlBalances.find(row => row._id === '__all_projects__');
+  assert.equal(direct.balance, 2000000);
+  assert.equal(shared.balance, -1000000);
+  assert.equal(shared.futureExpenseAbs, 400000);
+  assert.equal(shared.forecastBalance, -1400000);
+  assert.equal(store.projectPnlBalances.reduce((sum, row) => sum + row.balance, 0), 1000000);
+  store.accountVisibilityMode = 'all';
+  assert.equal(store.projectPnlBalances.find(row => row._id === '__all_projects__').balance, -10000000);
+});

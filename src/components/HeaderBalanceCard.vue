@@ -623,7 +623,7 @@ defineExpose({ getSnapshot });
             :title="item.linkTooltip"
           ></span>
 
-          <span class="item-name" :title="item.name">{{ item.name }}</span>
+          <span class="item-name" :title="item.tooltip || item.name">{{ item.name }}</span>
           
           <span 
             v-if="item.isLinked" 
@@ -669,7 +669,7 @@ defineExpose({ getSnapshot });
       <div class="summary-grid" :class="{ 'one-line': isFullscreen }">
         <template v-if="props.widgetKey === 'projects'">
           <div class="summary-item">
-            <div class="summary-label">Прибыль по проектам</div>
+            <div class="summary-label">Доходы по проектам</div>
             <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factIncome ?? 0, '+') }}</div>
           </div>
           <div class="summary-item">
@@ -677,7 +677,7 @@ defineExpose({ getSnapshot });
             <div class="summary-value expense"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.factExpense ?? 0, '-') }}</div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">Планируемая прибыль</div>
+            <div class="summary-label">Планируемые доходы</div>
             <div class="summary-value income"><span class="currency">₸</span> {{ formatSignedMoney(summaryTotals?.planIncome ?? 0, '+') }}</div>
           </div>
           <div class="summary-item">

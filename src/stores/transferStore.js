@@ -46,7 +46,7 @@ export const useTransferStore = defineStore('transfer', () => {
           // Здесь мы стараемся достать имена.
           
           const catName = typeof op.categoryId === 'object' ? op.categoryId?.name : op.categoryName;
-          const projName = typeof op.projectId === 'object' ? op.projectId?.name : op.projectName;
+          const projName = op.projectScope === 'all' ? 'Все проекты' : typeof op.projectId === 'object' ? op.projectId?.name : op.projectName;
           const accName = typeof op.accountId === 'object' ? op.accountId?.name : op.accountName;
           const contrName = typeof op.contractorId === 'object' ? op.contractorId?.name : op.contractorName;
 
@@ -82,6 +82,7 @@ export const useTransferStore = defineStore('transfer', () => {
           // Добавим их в конец.
           row['TX_ID'] = op._id;
           row['Account_ID'] = typeof op.accountId === 'object' ? op.accountId?._id : op.accountId;
+          row['Project_Scope'] = op.projectScope || 'selected';
           row['Project_ID'] = typeof op.projectId === 'object' ? op.projectId?._id : op.projectId;
           row['Subcategory_ID'] = op.subcategoryId?._id || op.subcategoryId || '';
           row['Category_ID'] = typeof op.categoryId === 'object' ? op.categoryId?._id : op.categoryId;

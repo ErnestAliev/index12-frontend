@@ -1,3 +1,4 @@
+import { projectGroupId } from '@/utils/projectScope';
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import axios from 'axios';
@@ -150,7 +151,7 @@ export const useRepairStore = defineStore('repairStore', () => {
                     updateBalance(newSnapshot.individualBalances, richOp.individualId, effectiveAmount);
                     updateBalance(newSnapshot.individualBalances, richOp.counterpartyIndividualId, effectiveAmount);
                     updateBalance(newSnapshot.contractorBalances, richOp.contractorId, effectiveAmount);
-                    updateBalance(newSnapshot.projectBalances, richOp.projectId, effectiveAmount);
+                    updateBalance(newSnapshot.projectBalances, projectGroupId(richOp), effectiveAmount);
 
                     // Категории
                     const catId = richOp.categoryId ? (richOp.categoryId._id || richOp.categoryId).toString() : null;

@@ -1,4 +1,5 @@
 <script setup>
+import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
@@ -750,7 +751,7 @@ const buildOperationRow = (op) => {
 
   const categoryFallback = isPersonalTransferWithdrawal(op) ? 'Вывод средств' : 'Без категории';
   const categoryName = resolveEntityName(op?.categoryId, mainStore.categories, categoryFallback);
-  const projectName = resolveEntityName(op?.projectId, mainStore.projects, 'Без проекта');
+  const projectName = mainStore.getOperationProjectName(op);
 
   let accountName = resolveEntityName(op?.accountId, mainStore.accounts, 'Без счета');
   let ownerName =
@@ -806,7 +807,7 @@ const buildOperationRow = (op) => {
       type: typeLabel,
       categoryId: extractId(op?.categoryId),
       subcategoryId: extractId(op?.subcategoryId),
-      projectId: extractId(op?.projectId),
+      projectId: projectSelection(op)[0] || '',
       amount: amountForDisplay ? String(Math.abs(amountForDisplay)) : '',
       accountId: extractId(op?.accountId),
       counterpartyKey: toCounterpartyKey(extractId(op?.contractorId), extractId(op?.counterpartyIndividualId)),
@@ -1005,11 +1006,11 @@ const categoryOptions = computed(() =>
 );
 
 const projectOptions = computed(() =>
-  (mainStore.projects || []).map((item) => ({
+  [{ _id: ALL_PROJECTS, name: 'Все проекты' }, ...(mainStore.projects || [])].map((item) => ({
     value: String(item._id),
     label: item.name || 'Проект',
-    entityPath: 'projects',
-    entityId: String(item._id)
+    entityPath: item._id === ALL_PROJECTS ? null : 'projects',
+    entityId: item._id === ALL_PROJECTS ? null : String(item._id)
   }))
 );
 
@@ -1586,7 +1587,7 @@ const buildOperationPayload = (row, draft) => {
     counterpartyIndividualId: counterparty.counterpartyIndividualId || null,
     categoryId: normalizeString(draft.categoryId) || null,
     subcategoryId: normalizeString(draft.subcategoryId) || null,
-    projectId: normalizeString(draft.projectId) || null,
+    ...projectFields(draft.projectId),
     isTransfer: false,
     isWithdrawal: typeMeta.isWithdrawal
   };
@@ -1605,6 +1606,7 @@ const buildTransferPayload = (row, draft) => {
   return {
     date: `${finalDate}T00:00:00`,
     amount,
+    ...projectFields(draft.projectId),
     categoryId: normalizeString(draft.categoryId) || null,
     subcategoryId: normalizeString(draft.subcategoryId) || null,
     fromAccountId: normalizeString(draft.fromAccountId) || extractId(row?.source?.fromAccountId) || null,
