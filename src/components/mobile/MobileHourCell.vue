@@ -1,4 +1,5 @@
 <script setup>
+import { transferLabels } from '@/utils/transferLabels.js';
 import { computed, ref, onBeforeUnmount } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
@@ -123,13 +124,7 @@ const displayAmount = computed(() => {
     }
     return amt;
 });
-const toOwnerName = computed(() => {
-  const op = props.operation;
-  if (!op) return '';
-  if (op.toCompanyId) return typeof op.toCompanyId === 'object' ? op.toCompanyId.name : 'Компания...';
-  if (op.toIndividualId) return typeof op.toIndividualId === 'object' ? op.toIndividualId.name : 'Физлицо...';
-  return op.toAccountId?.name || 'Счет...';
-});
+const transferRoute = computed(() => transferLabels(props.operation, mainStore).routeLabel);
 
 const resolveCategoryNameForChip = (value) => {
   if (!value) return '';
@@ -377,7 +372,7 @@ const onTouchEnd = (e) => {
       ></span>
       <template v-if="isTransferOp">
         <span class="amt">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
-        <span class="desc">{{ toOwnerName }}</span>
+        <span class="desc">{{ transferRoute }}</span>
       </template>
 
       <template v-else-if="isWithdrawalOp">

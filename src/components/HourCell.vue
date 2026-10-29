@@ -1,4 +1,5 @@
 <script setup>
+import { transferLabels } from '@/utils/transferLabels.js';
 import { computed, ref } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
@@ -122,13 +123,7 @@ const isTechnicalOp = computed(() => {
 const isWithdrawalOp = computed(() => !!props.operation && props.operation.isWithdrawal && !isPersonalTransferWithdrawal(props.operation));
 const isCreditIncomeOp = computed(() => mainStore._isCreditIncome(props.operation));
 
-const toOwnerName = computed(() => {
-  const op = props.operation;
-  if (!op) return '';
-  if (op.toCompanyId) return typeof op.toCompanyId === 'object' ? op.toCompanyId.name : 'Компания...'; 
-  if (op.toIndividualId) return typeof op.toIndividualId === 'object' ? op.toIndividualId.name : 'Физлицо...';
-  return op.toAccountId?.name || 'Счет...';
-});
+const transferRoute = computed(() => transferLabels(props.operation, mainStore).routeLabel);
 
 // 🟢 Хелпер для очистки текста от суммы
 const cleanDescription = (desc) => {
@@ -550,6 +545,7 @@ const onDrop = (event) => {
             selected: isSelected
         }"
         :data-operation-id="operation._id"
+        :title="isTransferOp ? transferRoute : undefined"
         :draggable="canInteract"
         @mouseenter="onOperationMouseEnter"
         @mouseleave="onOperationMouseLeave"
@@ -570,7 +566,7 @@ const onDrop = (event) => {
         ></span>
         <template v-if="isTransferOp">
           <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
-          <span v-if="!isCompactChipMode" class="op-meta">{{ toOwnerName }}</span>
+          <span v-if="!isCompactChipMode" class="op-meta">{{ transferRoute }}</span>
         </template>
         <template v-else-if="isWithdrawalOp">
           <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>

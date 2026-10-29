@@ -1,4 +1,5 @@
 <script setup>
+import { transferLabels } from '@/utils/transferLabels.js';
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -652,8 +653,12 @@ const externalTooltipHandler = (context) => {
         weight = 600;
       }
 
-      const style = `color:${color}; font-weight:${weight}; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
-      innerHtml += `<div style="${style}">${escapeHtml(line)}</div>`;
+      const isTransferRoute = /^\s*[\d\s,.]+\sт:/.test(line) && line.includes(' → ');
+      const textLayout = isTransferRoute
+        ? 'white-space: normal; overflow-wrap: anywhere;'
+        : 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+      const style = `color:${color}; font-weight:${weight}; margin-bottom: 2px; ${textLayout}`;
+      innerHtml += `<div class="${isTransferRoute ? 'tt-transfer-route' : ''}" style="${style}">${escapeHtml(line)}</div>`;
     });
 
     // Add mobile back button
@@ -1410,62 +1415,6 @@ const expenseFloatColors = computed(() => {
   });
 });
 
-const resolveNamedEntity = (entityRef, list) => {
-  if (!entityRef) return '';
-  if (typeof entityRef === 'object') {
-    if (entityRef.name) return entityRef.name;
-    entityRef = entityRef._id || entityRef.id || null;
-  }
-  if (!entityRef || !Array.isArray(list)) return '';
-  const id = String(entityRef);
-  const found = list.find((item) => String(item?._id || item?.id || '') === id);
-  return found?.name || '';
-};
-
-const resolveAccountOwnerName = (accountRef) => {
-  if (!accountRef) return '';
-
-  let accountObj = null;
-  if (typeof accountRef === 'object') {
-    accountObj = accountRef;
-  }
-
-  if (!accountObj || (!accountObj.companyId && !accountObj.individualId)) {
-    const accountId = typeof accountRef === 'object'
-      ? (accountRef._id || accountRef.id || null)
-      : accountRef;
-    if (accountId && Array.isArray(mainStore.accounts)) {
-      accountObj = mainStore.accounts.find((acc) => String(acc?._id || acc?.id || '') === String(accountId)) || accountObj;
-    }
-  }
-
-  const companyName = resolveNamedEntity(accountObj?.companyId, mainStore.companies);
-  if (companyName) return companyName;
-  const individualName = resolveNamedEntity(accountObj?.individualId, mainStore.individuals);
-  return individualName || '';
-};
-
-const resolveTransferOwnerNames = (op, isOutOfSystemTransfer) => {
-  const fromOwnerName =
-    resolveNamedEntity(op?.fromCompanyId, mainStore.companies) ||
-    resolveNamedEntity(op?.fromIndividualId, mainStore.individuals) ||
-    resolveNamedEntity(op?.companyId, mainStore.companies) ||
-    resolveNamedEntity(op?.individualId, mainStore.individuals) ||
-    resolveAccountOwnerName(op?.fromAccountId || op?.accountId) ||
-    '???';
-
-  const toOwnerName = isOutOfSystemTransfer
-    ? (op?.destination || 'Вне системы')
-    : (
-      resolveNamedEntity(op?.toCompanyId, mainStore.companies) ||
-      resolveNamedEntity(op?.toIndividualId, mainStore.individuals) ||
-      resolveAccountOwnerName(op?.toAccountId) ||
-      '???'
-    );
-
-  return { fromOwnerName, toOwnerName };
-};
-
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
   const sortedOps = [...ops].sort((a, b) => Math.abs(Number(b.amount) || 0) - Math.abs(Number(a.amount) || 0));
@@ -1477,7 +1426,7 @@ const getTooltipOperationList = (ops) => {
       // Handle transfers separately
       if (op.isTransfer || op.type === 'transfer') {
         const isOutOfSystemTransfer = isPersonalTransferWithdrawal(op);
-        const { fromOwnerName, toOwnerName } = resolveTransferOwnerNames(op, isOutOfSystemTransfer);
+        const labels = transferLabels(op, mainStore);
         return {
           isTransfer: true,
           projName: mainStore.getOperationProjectName(op),
@@ -1485,12 +1434,7 @@ const getTooltipOperationList = (ops) => {
           categoryLabel: mainStore.getOperationCategoryLabel(op, 'Перевод'),
           subcategoryName: mainStore.getOperationSubcategoryName(op),
           isOutOfSystemTransfer,
-          fromOwnerName,
-          toOwnerName,
-          fromAccName: op.fromAccountId?.name || op.accountId?.name || '???',
-          toAccName: isOutOfSystemTransfer
-            ? (op.destination || 'Вне системы')
-            : (op.toAccountId?.name || '???'),
+          ...labels,
           amount: op.amount,
           desc: op.description
         };
@@ -1903,9 +1847,7 @@ const chartOptions = computed(() => {
               lines.push('ПЕРЕВОДЫ');
               transferDetails.forEach((op) => {
                 const amountStr = `${formatNumber(Math.abs(op?.amount || 0))} т`;
-                const fromOwner = op?.fromOwnerName || op?.fromAccName || '—';
-                const toOwner = op?.toOwnerName || op?.toAccName || '—';
-                lines.push(`${amountStr}: ${fromOwner} → ${toOwner}${op?.subcategoryName ? ` • ${op.categoryLabel}` : ''}${op?.projName && op.projName !== 'Без проекта' ? ` • ${op.projName}` : ''}`);
+                lines.push(`${amountStr}: ${op.routeLabel}${op?.subcategoryName ? ` • ${op.categoryLabel}` : ''}${op?.projName && op.projName !== 'Без проекта' ? ` • ${op.projName}` : ''}`);
               });
             }
 

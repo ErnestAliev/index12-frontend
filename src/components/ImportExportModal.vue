@@ -1,4 +1,5 @@
 <script setup>
+import { transferLabels } from '@/utils/transferLabels.js';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -759,22 +760,9 @@ const buildOperationRow = (op) => {
     resolveEntityName(op?.individualId, mainStore.individuals, 'Без компании/физлица');
 
   if (typeLabel === 'Перевод') {
-    const fromAccount = resolveEntityName(op?.fromAccountId, mainStore.accounts);
-    const toAccount = resolveEntityName(op?.toAccountId, mainStore.accounts);
-
-    if (fromAccount && toAccount) accountName = `${fromAccount} -> ${toAccount}`;
-    else if (fromAccount) accountName = fromAccount;
-    else if (toAccount) accountName = toAccount;
-
-    const fromOwner =
-      resolveEntityName(op?.fromCompanyId, mainStore.companies) ||
-      resolveEntityName(op?.fromIndividualId, mainStore.individuals);
-    const toOwner =
-      resolveEntityName(op?.toCompanyId, mainStore.companies) ||
-      resolveEntityName(op?.toIndividualId, mainStore.individuals);
-
-    if (fromOwner && toOwner) ownerName = `${fromOwner} -> ${toOwner}`;
-    else if (fromOwner || toOwner) ownerName = fromOwner || toOwner;
+    const labels = transferLabels(op, mainStore);
+    accountName = labels.routeLabel;
+    ownerName = `${labels.fromOwnerName || 'Не указан'} → ${labels.toOwnerName || 'Не указан'}`;
   }
 
   const contractorName =

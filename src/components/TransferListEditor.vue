@@ -1,4 +1,5 @@
 <script setup>
+import { transferLabels } from '@/utils/transferLabels.js';
 import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -110,6 +111,7 @@ const loadTransfers = () => {
       return {
         _id: t._id,
         originalOp: t,
+        ...transferLabels(t, mainStore),
         categoryDetail: mainStore.getOperationCategoryLabel(t, 'Перевод'),
         subcategoryName: mainStore.getOperationSubcategoryName(t),
         date: toInputDate(t.date), // YYYY-MM-DD для сортировки и фильтров
@@ -237,14 +239,7 @@ const copyToClipboard = async () => {
     parts.push(`[${formatDateDisplay(item.date)}]`);
     parts.push(`${item.amountFormatted} т`);
 
-    const routeAccounts = `${getAccountName(item.fromAccountId)} → ${getAccountName(item.toAccountId)}`;
-    parts.push(routeAccounts);
-
-    const fromOwner = getOwnerName(item.fromOwnerId);
-    const toOwner = getOwnerName(item.toOwnerId);
-    if (fromOwner !== '-' || toOwner !== '-') {
-      parts.push(`${fromOwner} → ${toOwner}`);
-    }
+    parts.push(transferLabels(item.originalOp, mainStore).routeLabel);
 
     message += `${index + 1}. ${parts.join(' < ')}\n`;
   });
@@ -443,7 +438,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
           <!-- Отправитель -->
           <div class="col-owner">
-             <span class="text-cell" :title="getOwnerName(item.fromOwnerId)">{{ getOwnerName(item.fromOwnerId) }}</span>
+             <span class="text-cell" :title="item.fromOwnerName || 'Владелец не указан'">{{ item.fromOwnerName || '—' }}</span>
           </div>
 
           <!-- Счет От -->
@@ -463,7 +458,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
           <!-- Получатель -->
           <div class="col-owner">
-             <span class="text-cell" :title="getOwnerName(item.toOwnerId)">{{ getOwnerName(item.toOwnerId) }}</span>
+             <span class="text-cell" :title="item.toOwnerName || 'Владелец не указан'">{{ item.toOwnerName || '—' }}</span>
           </div>
 
           <div class="col-trash">

@@ -1,3 +1,4 @@
+import { transferLabels } from './transferLabels.js';
 import { projectLabel } from './projectScope.js';
 // src/utils/tooltipSnapshotBuilder.js
 // Build deterministic tooltip snapshot (single source of truth for AI numeric answers).
@@ -249,10 +250,7 @@ const listEntryFromOperation = (mainStore, op, options = {}) => {
       projName: projectLabel(op, mainStore.projects),
       projectScope: op.projectScope || 'selected',
       isOutOfSystemTransfer: outOfSystem,
-      fromAccName: op.fromAccountId?.name || op.accountId?.name || '???',
-      toAccName: outOfSystem
-        ? (op.destination || 'Вне системы')
-        : (op.toAccountId?.name || '???'),
+      ...transferLabels(op, mainStore),
       amount: Math.abs(toNum(op.amount)),
       subcategoryName: mainStore?.getOperationSubcategoryName?.(op) || op.subcategoryId?.name || '',
       categoryLabel: mainStore?.getOperationCategoryLabel?.(op, 'Перевод') || 'Перевод',
