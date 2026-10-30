@@ -39,6 +39,7 @@ export async function verifyWithdrawalUi({ apiUrl, sourceId, destinationId }) {
       assert.equal(await popup.getByText('Цель перевода', { exact: true }).count(), 0);
       await popup.getByRole('textbox', { name: 'Сумма, ₸', exact: true }).fill('1200');
       await select('Со счета', 'Рабочий счёт');
+      await popup.getByLabel('Получатель средств', { exact: true }).fill('Получатель вывода');
       if (mobile) await popup.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Комментарий с телефона');
       const bounds = await popup.boundingBox();
       assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= (mobile ? 390 : 1440));
@@ -51,7 +52,7 @@ export async function verifyWithdrawalUi({ apiUrl, sourceId, destinationId }) {
       assert.equal(saved.transferPurpose, 'withdrawal'); assert.equal(saved.transferReason, null);
       assert.equal(saved.toAccountId, null); assert.equal(saved.fromAccountId._id, sourceId);
       await popup.waitFor({ state: 'hidden' });
-      const chip = page.locator(mobile ? '.mobile-cell .op-chip.transfer' : '.operation-chip.transfer').filter({ hasText: 'Вне системы' }).last();
+      const chip = page.locator(mobile ? '.mobile-cell .op-chip.transfer' : '.operation-chip.transfer').filter({ hasText: 'Получатель вывода' }).last();
       await chip.waitFor(); await chip.click(); await popup.waitFor();
       assert.equal(await popup.getByRole('button', { name: 'Вывод из системы', exact: true }).getAttribute('aria-pressed'), 'true');
       assert.equal(await popup.locator('.base-select').count(), 1, 'reopening does not request a recipient or owner repair');

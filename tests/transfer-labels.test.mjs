@@ -27,3 +27,8 @@ test('reason-free withdrawals identify the external destination without a fabric
   const labels = transferLabels({ type:'transfer', isWithdrawal:true, transferPurpose:'withdrawal', transferReason:null, fromAccountId:'cash', toAccountId:null }, { accounts:[{_id:'cash',name:'Касса',companyId:'company'}],companies:[{_id:'company',name:'Компания'}] });
   assert.equal(labels.routeLabel, 'Касса (Компания) → Вне системы');
 });
+
+test('withdrawal route shows who received the money without crediting a tracked account', () => {
+  const labels = transferLabels({type:'transfer',transferPurpose:'withdrawal',withdrawalRecipient:'Собственник',fromAccountId:'cash'}, {accounts:[{_id:'cash',name:'Касса',companyId:'company'}],companies:[{_id:'company',name:'Компания'}]});
+  assert.equal(labels.routeLabel,'Касса (Компания) → Собственник · вне системы');
+});

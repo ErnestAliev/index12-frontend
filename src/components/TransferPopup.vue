@@ -59,6 +59,8 @@ const isInlineSaving = ref(false);
 const transferMode = ref('internal');
 const isWithdrawal = computed(() => transferMode.value === 'withdrawal');
 const description = ref('');
+const withdrawalRecipient = ref('');
+const recipientOptions = computed(() => [...new Set([...mainStore.individuals, ...mainStore.companies, ...mainStore.contractors].map(item => item.name).filter(Boolean))]);
 
 // InfoModal
 const showInfoModal = ref(false);
@@ -387,6 +389,7 @@ onMounted(async () => {
 
     transferMode.value = isSystemWithdrawal(transfer) ? 'withdrawal' : 'internal';
     description.value = transfer.description || '';
+    withdrawalRecipient.value = transfer.withdrawalRecipient || '';
 
     const savedCategoryId = props.transferToEdit?.categoryId?._id || props.transferToEdit?.categoryId;
     categoryId.value = mainStore.categories.some(item => item._id === savedCategoryId) ? savedCategoryId : defaultCategoryId;
@@ -498,6 +501,7 @@ const handleSave = async () => {
   if (isNaN(amountParsed) || amountParsed <= 0) { showError('Введите корректную сумму'); return; }
   if (!fromAccountId.value || (!isWithdrawal.value && !toAccountId.value)) { ensureAccountOwnership(); if (!showOwnerRepair.value) showError(isWithdrawal.value ? 'Выберите счёт списания' : 'Выберите счета отправителя и получателя'); return; }
   if (!isWithdrawal.value && fromAccountId.value === toAccountId.value) { showError('Счета не должны совпадать'); return; }
+  if (isWithdrawal.value && !withdrawalRecipient.value.trim()) { showError('Укажите получателя средств'); return; }
   if (!ensureAccountOwnership()) return;
 
   const isEdit = !!props.transferToEdit;
@@ -553,7 +557,8 @@ const handleSave = async () => {
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, subcategoryId: subcategoryId.value, transferPurpose: apiTransferPurpose,
-      transferReason: null, description: description.value.trim()
+      transferReason: null, description: description.value.trim(),
+      withdrawalRecipient: isWithdrawal.value ? withdrawalRecipient.value.trim() : null
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
@@ -664,6 +669,10 @@ const closePopup = () => { emit('close'); };
       <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
       </template>
 
+      <div v-if="isWithdrawal" class="input-spacing">
+        <input v-model="withdrawalRecipient" class="form-input" aria-label="Получатель средств" placeholder="Получатель средств" list="withdrawal-recipients" maxlength="300" :disabled="isReadOnly" />
+        <datalist id="withdrawal-recipients"><option v-for="name in recipientOptions" :key="name" :value="name" /></datalist>
+      </div>
       <input v-model="description" class="form-input input-spacing" aria-label="Комментарий" placeholder="Комментарий (необязательно)" maxlength="10000" :disabled="isReadOnly" />
 
       <div class="custom-input-box input-spacing has-value date-box">

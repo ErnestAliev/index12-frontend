@@ -12,6 +12,12 @@ const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecogn
 const recording = ref(false);
 let controller = new AbortController(), timer, refreshing = false, recognition, voiceBase = '';
 let retry = null;
+const codexBase = () => `${props.apiBaseUrl.replace(/\/$/, '')}/codex`;
+const isImage = file => /^image\/(png|jpeg|webp|gif)$/.test(file.mimeType || '');
+const fileUrl = file => file.url || `${codexBase()}/files/${encodeURIComponent(file.fileId)}`;
+const fileSize = size => size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(1, Math.ceil(size / 1024))} КБ`;
+function clearAttachments() { for (const file of attachments.value) if (file.previewUrl) URL.revokeObjectURL(file.previewUrl); attachments.value = []; }
+function removeAttachment(index) { const file = attachments.value[index]; if (file.previewUrl) URL.revokeObjectURL(file.previewUrl); attachments.value.splice(index, 1); }
 const storageKey = () => `index12-desktop-chat:${scopeKey.value}`;
 const scrollBottom = () => nextTick(() => { if (box.value) box.value.scrollTop = box.value.scrollHeight; });
 const aborted = () => new DOMException('Aborted', 'AbortError');
@@ -85,16 +91,26 @@ async function send(forced) {
   const text = (typeof forced === 'string' ? forced : input.value).trim();
   if ((!text && !attachments.value.length) || busy.value) return;
   const session = controller; busy.value = true; error.value = ''; stopRecording();
-  const media = attachments.value.map(({ name, url }) => ({ name, url }));
+  let media;
   let accepted = false;
   try {
     const status = await api('/status', null, session); connected.value = status.connected;
     if (!status.connected) throw new Error(status.reason || 'Нет связи с Codex на Mac. Запустите связку Index12.');
     if (!selectedId.value) await createChat(session);
+    media = [];
+    for (const file of attachments.value) {
+      if (!file.uploaded || file.chatId !== selectedId.value) {
+        const response = await fetch(`${codexBase()}/chats/${encodeURIComponent(selectedId.value)}/files`, { method: 'POST', credentials: 'include', signal: session.signal, headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name), 'X-File-Type': file.mimeType || 'application/octet-stream' }, body: file.file });
+        const result = await response.json(); current(session);
+        if (!response.ok) throw new Error(result.error || 'Не удалось загрузить файл.');
+        file.uploaded = result.file; file.chatId = selectedId.value;
+      }
+      media.push(file.uploaded);
+    }
     const fingerprint = JSON.stringify([selectedId.value, text, media]);
     if (retry?.fingerprint !== fingerprint) retry = { fingerprint, requestId: crypto.randomUUID() };
     const { job } = await api(`/chats/${selectedId.value}/jobs`, { kind: 'send', message: text, attachments: media, requestId: retry.requestId }, session);
-    accepted = true; retry = null; input.value = ''; attachments.value = [];
+    accepted = true; retry = null; input.value = ''; clearAttachments();
     messages.value.push({ id: crypto.randomUUID(), role: 'user', text, attachments: media }); scrollBottom();
     const result = await waitJob(job, session); threadId.value = result.threadId;
     messages.value.push({ id: crypto.randomUUID(), role: 'assistant', text: result.text }); scrollBottom();
@@ -128,24 +144,32 @@ async function refresh(manual = false) {
   } catch (e) { if (e.name !== 'AbortError') { connected.value = false; error.value = e.message; } }
   finally { if (session === controller) refreshing = false; }
 }
-async function addFiles(event) {
-  const session = controller;
+function addFiles(event) {
   error.value = '';
   try {
     const chosen = [...event.target.files];
-    if (attachments.value.length + chosen.length > 3) throw new Error('Можно прикрепить до трёх изображений.');
-    const rows = [];
-    let total = attachments.value.reduce((sum, file) => sum + Math.floor(file.url.split(',')[1].length * .75), 0);
+    if (attachments.value.length + chosen.length > 5) throw new Error('Можно прикрепить до пяти файлов.');
+    let total = attachments.value.reduce((sum, file) => sum + file.size, 0);
     for (const file of chosen) {
-      if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2 * 1024 * 1024) throw new Error('Выберите PNG, JPEG, WebP или GIF размером до 2 МБ.');
+      if (!file.size) throw new Error(`Файл «${file.name}» пуст.`);
+      if (file.size > 10 * 1024 * 1024) throw new Error('Размер файла должен быть не больше 10 МБ.');
       total += file.size;
-      if (total > 2 * 1024 * 1024) throw new Error('Общий размер изображений должен быть не больше 2 МБ.');
-      const url = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(new Error('Не удалось прочитать файл.')); r.readAsDataURL(file); });
-      current(session); rows.push({ name: file.name, url });
     }
-    attachments.value.push(...rows);
-  } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
+    if (total > 25 * 1024 * 1024) throw new Error('Общий размер файлов должен быть не больше 25 МБ.');
+    attachments.value.push(...chosen.map(file => ({ name: file.name, mimeType: file.type, size: file.size, file, previewUrl: /^image\/(png|jpeg|webp|gif)$/.test(file.type) ? URL.createObjectURL(file) : null })));
+  } catch (e) { error.value = e.message; }
   finally { event.target.value = ''; }
+}
+async function downloadFile(file) {
+  try {
+    const session = controller;
+    const response = await fetch(fileUrl(file), { credentials: 'include', signal: session.signal });
+    if (!response.ok) throw new Error('Не удалось скачать файл.');
+    const blob = await response.blob(); current(session);
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = file.name || 'Файл'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
 }
 function toggleRecording() {
   if (recording.value) { stopRecording(); return; }
@@ -169,11 +193,11 @@ async function copy(message) {
 watch(scopeKey, () => {
   controller.abort(); controller = new AbortController(); stopRecording();
   refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
-  input.value = ''; attachments.value = []; threadId.value = null; cursor.value = null; error.value = ''; retry = null;
+  input.value = ''; clearAttachments(); threadId.value = null; cursor.value = null; error.value = ''; retry = null;
   refresh();
 });
 onMounted(() => { refresh(); timer = setInterval(() => refresh(), 5000); });
-onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(); });
+onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(); clearAttachments(); });
 </script>
 
 <template>
@@ -195,7 +219,10 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
       <article v-for="message in messages" :key="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
           <div class="codex-text">{{ message.text }}</div>
-          <img v-for="(file, i) in message.attachments || []" :key="i" class="desktop-image" :src="file.url" :alt="file.name || 'Изображение'" />
+          <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
+            <img v-if="file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" />
+            <button v-if="file.fileId" type="button" class="desktop-file-link" @click="downloadFile(file)">📎 {{ file.name }} <span v-if="file.size">{{ fileSize(file.size) }}</span></button>
+          </div>
           <div v-if="message.role === 'assistant'" class="codex-actions"><button type="button" class="codex-copy-btn" @click="copy(message)">{{ message.copied ? '✅' : 'Копировать' }}</button></div>
         </div>
       </article>
@@ -203,9 +230,14 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
     </div>
     <div v-if="error" class="desktop-error" role="alert">{{ error }}</div>
     <div v-if="attachments.length" class="desktop-attachments">
-      <div v-for="(file, i) in attachments" :key="i"><img :src="file.url" :alt="file.name" /><button type="button" :disabled="busy" :aria-label="`Убрать ${file.name}`" @click="attachments.splice(i, 1)">×</button></div>
+      <div v-for="(file, i) in attachments" :key="i" class="desktop-file-draft">
+        <img v-if="file.previewUrl" :src="file.previewUrl" :alt="file.name" />
+        <span v-else class="desktop-file-icon" aria-hidden="true">📄</span>
+        <span class="desktop-file-name" :title="file.name">{{ file.name }}<small>{{ fileSize(file.size) }}</small></span>
+        <button type="button" :disabled="busy" :aria-label="`Убрать ${file.name}`" @click="removeAttachment(i)">×</button>
+      </div>
     </div>
-    <input ref="files" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" @change="addFiles" />
+    <input ref="files" type="file" hidden multiple @change="addFiles" />
     <CodexComposer v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
       attachments-enabled :has-attachments="!!attachments.length" @send="send()" @microphone="toggleRecording" @attach="files.click()" />
   </section>
@@ -224,8 +256,13 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
 .desktop-error { padding: 8px 10px; color: var(--color-expense, #e45b52); font-size: 12px; overflow-wrap: anywhere; }
 .codex-text { overflow-wrap: anywhere; }
 .desktop-image { display: block; max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 6px; }
-.desktop-attachments { display: flex; gap: 8px; padding: 8px 10px; }
-.desktop-attachments > div { position: relative; }
+.desktop-attachments { display: flex; flex-wrap: wrap; max-height: 160px; overflow-y: auto; gap: 8px; padding: 8px 10px; flex-shrink: 0; }
+.desktop-file-draft { position: relative; display: flex; align-items: center; gap: 6px; padding: 4px 24px 4px 6px; min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid var(--codex-pane-border); border-radius: 6px; }
+.desktop-file-name { max-width: 180px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.desktop-file-name small { display: block; color: var(--codex-pane-muted); font-size: 10px; }
+.desktop-file-icon { font-size: 24px; }
+.desktop-file-link { display: block; max-width: 100%; margin-top: 6px; padding: 6px 8px; text-align: left; overflow-wrap: anywhere; color: var(--codex-pane-text); background: var(--codex-pane-surface-soft); border: 1px solid var(--codex-pane-border); border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }
+.desktop-file-link span { color: var(--codex-pane-muted); white-space: nowrap; }
 .desktop-attachments img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
 .desktop-attachments button { position: absolute; top: 0; right: 0; color: var(--codex-pane-text); background: var(--codex-pane-surface); border: 1px solid var(--codex-pane-border); border-radius: 50%; cursor: pointer; }
 :global(html[data-theme="dark"]) .codex-bubble { background: #232323; border-color: #2f2f2f; }

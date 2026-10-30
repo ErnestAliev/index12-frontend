@@ -1,6 +1,6 @@
 // Synthetic API data; real Vue app and real Chromium interactions.
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
@@ -13,7 +13,7 @@ try {
   await server.listen();
   browser = await chromium.launch({ executablePath: process.env.SCROLL_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
-  const browserErrors = [], legacyRequests = [], sent = [];
+  const browserErrors = [], legacyRequests = [], sent = [], uploaded = new Map();
   page.on('requestfailed', r=>console.error('request failed',r.url(),r.failure()?.errorText));
   page.on('pageerror', e => { browserErrors.push(e.message); console.error('Browser error:',e.message); });
   await page.addInitScript(() => {
@@ -38,6 +38,15 @@ try {
       else if (subpath === '/chats' && request.method() === 'GET') data = { chats: [{ id: 'chat', title: 'Мой чат', threadId: 'thread' }] };
       else if (subpath === '/chats' && request.method() === 'POST') data = { chat: { id: 'chat', title: 'Новый чат' } };
       else if (subpath === '/chats/chat') data = { chat: { id: 'chat', title: 'Мой чат', threadId: 'thread' }, cachedHistory: { messages: history, nextCursor: null } };
+      else if (subpath === '/chats/chat/files') {
+        const file = { fileId: crypto.randomUUID(), name: decodeURIComponent(request.headers()['x-file-name']), mimeType: request.headers()['x-file-type'], size: request.postDataBuffer().length };
+        uploaded.set(file.fileId, { ...file, data: request.postDataBuffer() });
+        data = { file };
+      }
+      else if (subpath.startsWith('/files/')) {
+        const file = uploaded.get(subpath.split('/').at(-1));
+        return route.fulfill({ contentType: file.mimeType, body: file.data });
+      }
       else if (subpath === '/chats/chat/jobs') {
         const body = request.postDataJSON();
         if (body.kind === 'history') data = { job: { status: 'completed', result: { messages: history, nextCursor: null } } };
@@ -62,13 +71,20 @@ try {
     await dialog.getByText('Codex · подключён',{exact:true}).waitFor();
     await dialog.getByRole('button',{name:'＋ Новый чат'}).click();
     await page.waitForFunction(()=>!document.querySelector('.desktop-toolbar button').disabled);
-    await dialog.getByRole('textbox').fill('Проверка нового окна Codex. Ответь ровно: Проверка успешна. Не используй инструменты.');
+    if (process.env.INDEX12_ASSISTANT_TEST_FILE) await dialog.locator('input[type=file]').setInputFiles(process.env.INDEX12_ASSISTANT_TEST_FILE);
+    await dialog.getByRole('textbox').fill(process.env.INDEX12_ASSISTANT_TEST_PROMPT || 'Проверка нового окна Codex. Ответь ровно: Проверка успешна. Не используй инструменты.');
     await dialog.getByRole('textbox').press('Enter');
-    await dialog.locator('.codex-message.assistant .codex-text').filter({hasText:'Проверка успешна'}).waitFor({timeout:90000});
+    await dialog.locator('.codex-message.assistant .codex-text').filter({hasText:process.env.INDEX12_ASSISTANT_TEST_EXPECTED || 'Проверка успешна'}).waitFor({timeout:90000});
     await page.waitForFunction(()=>!document.querySelector('.codex-typing'));
     await dialog.getByRole('button',{name:'Закрыть чат Codex'}).click();await open.click();
-    await dialog.locator('.codex-message.assistant .codex-text').filter({hasText:'Проверка успешна'}).waitFor({timeout:15000});
+    await dialog.locator('.codex-message.assistant .codex-text').filter({hasText:process.env.INDEX12_ASSISTANT_TEST_EXPECTED || 'Проверка успешна'}).waitFor({timeout:15000});
     await page.waitForFunction(()=>!document.querySelector('.codex-typing'));
+    if (process.env.INDEX12_ASSISTANT_TEST_FILE) {
+      const downloadPromise = page.waitForEvent('download');
+      await dialog.locator('.desktop-file-link').first().click();
+      const download = await downloadPromise;
+      assert.deepEqual(await readFile(await download.path()), await readFile(process.env.INDEX12_ASSISTANT_TEST_FILE));
+    }
     await mkdir('output/playwright',{recursive:true});await page.screenshot({path:'output/playwright/codex-window-live.png'});
     assert.deepEqual(browserErrors,[]);console.log('PASS: standalone Codex window → new /api/codex route → real Mongo queue → shared Codex → answer → reopen history');break checks;
   }
@@ -124,9 +140,16 @@ try {
   assert.equal(await dialog.getByRole('button', { name: 'AI', exact: true }).count(), 0);
   assert.equal(await dialog.locator('.resize-handle').count(), 0);
   const mobileBox = await dialog.boundingBox(); assert.ok(mobileBox.width <= 390 && mobileBox.height <= 844);
+  await dialog.locator('input[type=file]').setInputFiles([{ name: 'ведомость.xlsm', mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12', buffer: Buffer.from('PK\x03\x04Excel fixture') }, { name:'данные.csv', mimeType:'text/csv', buffer:Buffer.from('name,amount\nTest,100') }]);
+  await dialog.locator('.desktop-file-name[title="ведомость.xlsm"]').waitFor();
   await input.fill('Мобильная проверка'); await input.press('Enter');
   await page.waitForFunction(() => document.querySelectorAll('.codex-message.assistant').length === 5);
   assert.equal(sent.at(-1).message, 'Мобильная проверка');
+  assert.equal(sent.at(-1).attachments.length, 2);
+  await dialog.locator('.desktop-file-link').filter({hasText:'ведомость.xlsm'}).waitFor();
+  const downloadPromise = page.waitForEvent('download');
+  await dialog.locator('.desktop-file-link').filter({hasText:'ведомость.xlsm'}).click();
+  assert.equal((await downloadPromise).suggestedFilename(),'ведомость.xlsm');
   await page.screenshot({ path: 'output/playwright/codex-window-mobile.png' });
   await dialog.getByRole('button', { name: 'Закрыть чат Codex' }).click();
   assert.deepEqual(legacyRequests, []); assert.deepEqual(browserErrors, []);

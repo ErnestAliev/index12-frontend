@@ -1172,7 +1172,8 @@ const buildTransferPayload = (row, draft) => {
     toIndividualId: isWithdrawal ? null : (toOwner.individualId || null),
     transferPurpose: isWithdrawal ? 'withdrawal' : (isSystemWithdrawal(row?.source) ? 'internal' : row?.source?.transferPurpose || 'internal'),
     transferReason: isWithdrawal || isSystemWithdrawal(row?.source) ? null : (row?.source?.transferReason || null),
-    description: row?.source?.description || ''
+    description: row?.source?.description || '',
+    ...(row?.source?.withdrawalRecipient ? { withdrawalRecipient: row.source.withdrawalRecipient } : {})
   };
 };
 

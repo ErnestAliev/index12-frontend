@@ -187,7 +187,7 @@ test('repair alert creates an account and an owner, then persists their link', a
   assert.deepEqual(updates, [{ _id: 'new-account', companyId: 'new-owner', individualId: null }]);
 });
 
-test('withdrawal: only a source is required, reason and destination stay empty', async () => {
+test('withdrawal: source and recipient are required, reason and destination account stay empty', async () => {
   fixture();
   const saved = [];
   const state = await mount('TransferPopup', { date: new Date(), cellIndex: 0, onSave: payload => saved.push(payload.data) });
@@ -200,8 +200,13 @@ test('withdrawal: only a source is required, reason and destination stay empty',
   assert.equal(state.isFromOwnerSelectVisible, false);
   assert.equal(state.isToOwnerSelectVisible, false);
   await state.handleSave();
+  assert.equal(saved.length, 0, 'recipient is mandatory');
+  assert.match(state.infoModalMessage, /получателя/);
+  state.withdrawalRecipient = 'Собственник';
+  await state.handleSave();
   assert.equal(saved.length, 1);
   assert.equal(saved[0].transferPurpose, 'withdrawal');
+  assert.equal(saved[0].withdrawalRecipient, 'Собственник');
   assert.equal(saved[0].transferReason, null);
   assert.equal(saved[0].toAccountId, null);
   assert.equal(saved[0].toCompanyId, null);
@@ -212,7 +217,7 @@ test('withdrawal: only a source is required, reason and destination stay empty',
 test('withdrawal: edits, copies and comments work without repairing a nonexistent destination', async () => {
   fixture();
   const saved = [];
-  const state = await mount('TransferPopup', { ...props('transfer', { isWithdrawal: true, transferPurpose: 'withdrawal', toAccountId: null, toIndividualId: null, description: 'Комментарий собственника' }), onSave: payload => saved.push(payload) });
+  const state = await mount('TransferPopup', { ...props('transfer', { isWithdrawal: true, transferPurpose: 'withdrawal', withdrawalRecipient: 'Собственник', toAccountId: null, toIndividualId: null, description: 'Комментарий собственника' }), onSave: payload => saved.push(payload) });
   assert.equal(state.transferMode, 'withdrawal');
   assert.equal(state.showOwnerRepair, false);
   state.amount = '600';

@@ -2655,7 +2655,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     toIndividualId: transferData.toIndividualId,
                     transferPurpose: transferData.transferPurpose,
                     transferReason: transferData.transferReason || null,
-                    destination: 'Вне системы',
+                    withdrawalRecipient: transferData.withdrawalRecipient || null,
+                    destination: transferData.withdrawalRecipient || 'Вне системы',
                     description: transferData.description || 'Вывод средств',
                     dateKey: dateKey,
                     cellIndex: reservation.cellIndex,
@@ -2757,7 +2758,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     companyId: transferData.fromCompanyId || null,
                     individualId: transferData.fromIndividualId || null,
                     categoryId: transferData.categoryId || oldOp?.categoryId?._id || oldOp?.categoryId || await _getOrCreateTransferCategory(),
-                    destination: 'Вне системы',
+                    withdrawalRecipient: transferData.withdrawalRecipient || null,
+                    destination: transferData.withdrawalRecipient || 'Вне системы',
                     description: transferData.description ?? oldOp?.description ?? 'Вывод средств'
                 }
                 : {
