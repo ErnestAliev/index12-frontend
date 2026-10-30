@@ -5,6 +5,7 @@ import CodexComposer from './CodexComposer.vue';
 import CodexGlyph from './CodexGlyph.vue';
 import CodexFileCard from './CodexFileCard.vue';
 import CodexMessageText from './CodexMessageText.vue';
+import CodexRequestCard from './CodexRequestCard.vue';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -14,6 +15,7 @@ const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 const recording = ref(false);
 const downloadingFiles = ref(new Set());
+const pendingRequests = ref([]), activeJobId = ref(null), submittingAnswers = ref(new Set()), answerErrors = ref({});
 let controller = new AbortController(), timer, refreshing = false, recognition, voiceBase = '';
 let retry = null;
 const codexBase = () => `${props.apiBaseUrl.replace(/\/$/, '')}/codex`;
@@ -42,12 +44,17 @@ async function api(path, body, session = controller) {
   return data;
 }
 async function waitJob(job, session) {
-  const deadline = Date.now() + 310000;
+  let deadline = Date.now() + 310000;
+  const showRequests = () => { activeJobId.value = job.id; pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + 310000; };
+  showRequests();
   while (['queued', 'running'].includes(job.status)) {
     if (Date.now() > deadline) throw new Error('Ответ ещё выполняется. Обновите историю перед повторной отправкой.');
     await pause(1000, session);
-    job = (await api(`/jobs/${encodeURIComponent(job.id)}`, null, session)).job;
+    try { job = (await api(`/jobs/${encodeURIComponent(job.id)}`, null, session)).job; }
+    catch (error) { if (session === controller) { pendingRequests.value = []; activeJobId.value = null; } throw error; }
+    showRequests();
   }
+  pendingRequests.value = []; activeJobId.value = null;
   if (job.status !== 'completed') {
     const failure = new Error(job.error || 'Запрос не завершён. Проверьте историю чата.');
     failure.execution = job.result?.execution;
@@ -55,6 +62,17 @@ async function waitJob(job, session) {
   }
   return job.result || {};
 }
+async function answerCodex(request, answer) {
+  const session = controller, jobId = activeJobId.value;
+  if (!jobId || submittingAnswers.value.has(request.id)) return;
+  submittingAnswers.value.add(request.id); answerErrors.value[request.id] = '';
+  try {
+    await api(`/jobs/${encodeURIComponent(jobId)}/requests/${encodeURIComponent(request.id)}/answer`, answer, session);
+    pendingRequests.value = pendingRequests.value.filter(row => row.id !== request.id);
+  } catch (error) { if (error.name !== 'AbortError') answerErrors.value[request.id] = error.message; }
+  finally { submittingAnswers.value.delete(request.id); }
+}
+watch(() => pendingRequests.value.map(request => request.id).join(','), () => { if (pendingRequests.value.length) scrollBottom(); });
 function showHistory(result, older = false) {
   const rows = (result.messages || []).map(m => ({ ...m, text: m.content }));
   const unique = new Map((older ? [...rows, ...messages.value] : rows).map(m => [m.id, m]));
@@ -206,6 +224,7 @@ watch(scopeKey, () => {
   controller.abort(); controller = new AbortController(); stopRecording();
   refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
   input.value = ''; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; retry = null;
+  pendingRequests.value = []; activeJobId.value = null; answerErrors.value = {}; submittingAnswers.value.clear();
   refresh();
 });
 onMounted(() => { refresh(); timer = setInterval(() => refresh(), 5000); });
@@ -238,7 +257,8 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
           <div v-if="message.role === 'assistant'" class="codex-actions"><button type="button" class="codex-copy-btn" @click="copy(message)"><CodexGlyph :name="message.copied ? 'check' : 'copy'" /><span>{{ message.copied ? 'Скопировано' : 'Копировать' }}</span></button></div>
         </div>
       </article>
-      <div v-if="busy" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
+      <CodexRequestCard v-for="request in pendingRequests" :key="request.id" :request="request" :submitting="submittingAnswers.has(request.id)" :error="answerErrors[request.id]" @answer="answerCodex(request, $event)" />
+      <div v-if="busy && !pendingRequests.length" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
     </div>
     <div v-if="error" class="desktop-error" role="alert"><CodexGlyph name="alert" /><span>{{ error }}</span></div>
     <div v-if="attachments.length" class="desktop-attachments" role="region" aria-label="Прикреплённые файлы" tabindex="0">
