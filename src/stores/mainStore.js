@@ -2915,7 +2915,7 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); if (!credits.value.find(i => _idsMatch(i._id, res.data._id))) credits.value.push(res.data); return res.data; }
 
-    async function batchUpdateEntities(path, items) {
+    async function batchUpdateEntities(path, items, { throwOnError = false } = {}) {
         try {
             if (path === 'categories') {
                 const normalCategories = items.filter(i => !i.isPrepayment);
@@ -2957,6 +2957,7 @@ export const useMainStore = defineStore('mainStore', () => {
             await fetchAllEntities();
             // 🔥 FIX: Refresh snapshot even on error to ensure UI consistency
             await fetchSnapshot();
+            if (throwOnError) throw e;
         }
     }
 

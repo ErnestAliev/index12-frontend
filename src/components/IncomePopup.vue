@@ -7,6 +7,8 @@ import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
 import { formatAmountInput } from '@/utils/amountInput.js';
 import BaseSelect from './BaseSelect.vue';
+import AccountOwnerWarning from './AccountOwnerWarning.vue';
+import { getAccountOwnerKey, isValidOwnerKey, needsAccountOwnerRepair } from '@/utils/accountOwnership.js';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
  
@@ -413,22 +415,20 @@ const myCreditsProjectId = computed(() => {
     return p ? p._id : null;
 });
 
-const isOwnerSelectVisible = computed(() => {
-    if (isCreatingAccount.value) return true;
-    if (!selectedAccountId.value) return true;
-    const acc = mainStore.accounts.find(a => a._id === selectedAccountId.value);
-    if (acc && (acc.companyId || acc.individualId)) return false;
-    return true;
+const accountOwnerNeedsRepair = computed(() => {
+    if (!selectedAccountId.value) return !!props.operationToEdit && !isCreatingAccount.value;
+    return needsAccountOwnerRepair(selectedAccountId.value, selectedOwner.value, mainStore.accounts, mainStore.companies, mainStore.individuals);
 });
+
+const isOwnerSelectVisible = computed(() =>
+    isCreatingAccount.value || !selectedAccountId.value || accountOwnerNeedsRepair.value
+);
 
 // --- WATCHERS ---
 watch(selectedAccountId, (newVal) => {
     if (!newVal || isInitialLoad.value) return;
     const acc = mainStore.accounts.find(a => a._id === newVal);
-    if (acc) {
-        if (acc.companyId) selectedOwner.value = `company-${typeof acc.companyId === 'object' ? acc.companyId._id : acc.companyId}`;
-        else if (acc.individualId) selectedOwner.value = `individual-${typeof acc.individualId === 'object' ? acc.individualId._id : acc.individualId}`;
-    }
+    selectedOwner.value = getAccountOwnerKey(acc, mainStore.companies, mainStore.individuals);
 });
 
 watch(selectedContractorValue, (newVal) => {
@@ -560,7 +560,7 @@ const syncSelectedAccountOwner = async () => {
         updateData.individualId = id;
     }
 
-    await mainStore.batchUpdateEntities('accounts', [updateData]);
+    await mainStore.batchUpdateEntities('accounts', [updateData], { throwOnError: true });
 };
 
 
@@ -568,6 +568,8 @@ const handleSave = async (options = {}) => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
     if (!selectedAccountId.value) { showError('Выберите счет'); return; }
+    if (!mainStore.accounts.some(a => a._id === selectedAccountId.value)) { showError('Выберите существующий счёт или создайте новый.'); return; }
+    if (!isValidOwnerKey(selectedOwner.value, mainStore.companies, mainStore.individuals)) { showError('Укажите владельца счёта в предупреждении.'); return; }
     
     const payload = preparePayload(options);
     const counterpartyDefaults = buildCounterpartyDefaultsPayload();
@@ -851,41 +853,44 @@ const handleMainAction = async () => {
         </div>
       </div>
 
-      <!-- СЧЕТ -->
-      <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
-              <template #action-item v-if="canManageAccounts">
-                  <div class="dual-action-row">
-                      <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
-                      <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
-                  </div>
-              </template>
-          </BaseSelect>
-      </div>
-      <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @blur="handleAccountInputBlur" @focus="handleAccountInputFocus" />
-          <button @click="saveNewAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
-          <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
-      </div>
+      <AccountOwnerWarning :active="accountOwnerNeedsRepair">
+        <!-- СЧЕТ -->
+        <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
+            <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
+                <template #action-item v-if="canManageAccounts">
+                    <div class="dual-action-row">
+                        <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
+                        <button @click="openCashChoice" class="btn-dual-action right"> Создать кассу</button>
+                    </div>
+                </template>
+            </BaseSelect>
+        </div>
+        <div v-else class="inline-create-form input-spacing relative">
+            <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @blur="handleAccountInputBlur" @focus="handleAccountInputFocus" />
+            <button @click="saveNewAccount" class="btn-inline-save">✓</button>
+            <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
+            <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
+        </div>
 
-      <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
-      <div v-if="isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing">
-          <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов">
-              <template #action-item>
-                  <div class="dual-action-row">
-                      <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
-                      <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                  </div>
-              </template>
-          </BaseSelect>
-      </div>
-      <div v-else-if="isOwnerSelectVisible" class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" autocomplete="off" />
-          <button @click="saveNewOwner" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateOwner" class="btn-inline-cancel">✕</button>
-          <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li></ul>
-      </div>
+        <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
+        <div v-if="isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing">
+            <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
+                <template #action-item v-if="canEdit">
+                    <div class="dual-action-row">
+                        <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
+                        <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                    </div>
+                </template>
+            </BaseSelect>
+        </div>
+        <div v-else-if="isOwnerSelectVisible" class="inline-create-form input-spacing relative">
+            <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" autocomplete="off" />
+            <button @click="saveNewOwner" class="btn-inline-save">✓</button>
+            <button @click="cancelCreateOwner" class="btn-inline-cancel">✕</button>
+            <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li></ul>
+        </div>
+
+      </AccountOwnerWarning>
 
       <!-- КОНТРАГЕНТ -->
       <div v-if="!showCreateContractorModal" class="input-spacing">
