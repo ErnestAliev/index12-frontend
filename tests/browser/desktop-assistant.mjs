@@ -69,7 +69,7 @@ try {
   const dialog = page.getByRole('dialog', { name: 'Чат Codex' });
   if(liveApi){
     await dialog.getByText('Codex · подключён',{exact:true}).waitFor();
-    await dialog.getByRole('button',{name:'＋ Новый чат'}).click();
+    await dialog.getByRole('button',{name:'Новый чат'}).click();
     await page.waitForFunction(()=>!document.querySelector('.desktop-toolbar button').disabled);
     if (process.env.INDEX12_ASSISTANT_TEST_FILE) await dialog.locator('input[type=file]').setInputFiles(process.env.INDEX12_ASSISTANT_TEST_FILE);
     await dialog.getByRole('textbox').fill(process.env.INDEX12_ASSISTANT_TEST_PROMPT || 'Проверка нового окна Codex. Ответь ровно: Проверка успешна. Не используй инструменты.');
