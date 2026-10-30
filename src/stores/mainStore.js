@@ -10,6 +10,7 @@ import { useWidgetStore } from './widgetStore';
 import { aggregateSubcategories, getCategoryDetailLabel, getSubcategoryName } from '@/utils/subcategories.js';
 import { createOperationSync } from '@/utils/operationSync';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName, normalizeTaxRegime } from '@/utils/companyTax';
+import { accountOwnerUpdates, getAccountOwnerKey } from '@/utils/accountOwnership.js';
 
 axios.defaults.withCredentials = true;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -2915,7 +2916,21 @@ export const useMainStore = defineStore('mainStore', () => {
     }
     async function addCredit(data) { const res = await axios.post(`${API_BASE_URL}/credits`, data); if (!credits.value.find(i => _idsMatch(i._id, res.data._id))) credits.value.push(res.data); return res.data; }
 
-    async function batchUpdateEntities(path, items, { throwOnError = false } = {}) {
+    async function saveAccountOwners(links) {
+        const updates = accountOwnerUpdates(links, accounts.value, companies.value, individuals.value);
+        if (!updates.length) return;
+        const res = await axios.put(`${API_BASE_URL}/accounts/batch-update`, updates);
+        if (!Array.isArray(res.data) || links.some(link => {
+            const account = res.data.find(a => String(a._id) === String(link.accountId));
+            return getAccountOwnerKey(account, companies.value, individuals.value) !== link.ownerKey;
+        })) {
+            throw new Error('Сервер не подтвердил сохранение привязки. Попробуйте ещё раз.');
+        }
+        accounts.value = _sortByOrder(res.data);
+        await fetchSnapshot();
+    }
+
+    async function batchUpdateEntities(path, items) {
         try {
             if (path === 'categories') {
                 const normalCategories = items.filter(i => !i.isPrepayment);
@@ -2957,7 +2972,6 @@ export const useMainStore = defineStore('mainStore', () => {
             await fetchAllEntities();
             // 🔥 FIX: Refresh snapshot even on error to ensure UI consistency
             await fetchSnapshot();
-            if (throwOnError) throw e;
         }
     }
 
@@ -3441,7 +3455,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
         addOperation, deleteOperation, moveOperation, moveOperationsBatch,
         addAccount, addCompany, addContractor, addProject, addCategory,
-        addIndividual, deleteEntity, batchUpdateEntities,
+        addIndividual, deleteEntity, batchUpdateEntities, saveAccountOwners,
         addCredit,
 
         computeTotalDaysForMode: (mode) => useProjectionStore().computeTotalDaysForMode(mode),

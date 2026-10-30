@@ -2,20 +2,24 @@
 defineProps({
   title: { type: String, default: 'Информация' },
   message: { type: String, required: true },
-  buttonText: { type: String, default: 'Понятно' }
+  buttonText: { type: String, default: 'Понятно' },
+  busy: { type: Boolean, default: false }
 });
 const emit = defineEmits(['close']);
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="$emit('close')">
-    <div class="popup-content">
+  <div class="popup-overlay" @click.self="!busy && $emit('close')">
+    <div class="popup-content" role="alertdialog" aria-modal="true" :aria-label="title">
       <h3>{{ title }}</h3>
       <p class="message">{{ message }}</p>
+      <slot />
       <div class="popup-actions">
-        <button @click="$emit('close')" class="btn-submit">
+        <slot name="actions">
+        <button @click="$emit('close')" class="btn-submit" :disabled="busy">
           {{ buttonText }}
         </button>
+        </slot>
       </div>
     </div>
   </div>
@@ -28,6 +32,9 @@ const emit = defineEmits(['close']);
   background-color: rgba(0, 0, 0, 0.7);
   display: flex; justify-content: center; align-items: center;
   z-index: 5000; /* Поверх всего */
+  overflow-y: auto;
+  padding: 24px 0;
+  box-sizing: border-box;
   backdrop-filter: blur(3px);
 }
 
@@ -39,6 +46,9 @@ const emit = defineEmits(['close']);
   color: #fff;
   width: 85%;
   max-width: 320px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  margin: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   animation: fadeIn 0.2s ease-out;
   text-align: center;

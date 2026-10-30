@@ -7,8 +7,9 @@ import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue';
-import AccountOwnerWarning from './AccountOwnerWarning.vue';
-import { getAccountOwnerKey, isValidOwnerKey, needsAccountOwnerRepair } from '@/utils/accountOwnership.js';
+import AccountOwnerRepairModal from './AccountOwnerRepairModal.vue';
+import { useAccountOwnerRepair } from '@/composables/useAccountOwnerRepair';
+import { getAccountOwnerKey } from '@/utils/accountOwnership.js';
 import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 import { getDefaultTaxPercentByName, getTaxRegimeLabel } from '@/utils/companyTax';
@@ -251,7 +252,7 @@ const ownerOptions = computed(() => {
 });
 
 const resolveOwnerKey = (accountId, selectedOwnerKey) => {
-  if (isValidOwnerKey(selectedOwnerKey, mainStore.companies, mainStore.individuals)) return selectedOwnerKey;
+  if (selectedOwnerKey) return selectedOwnerKey;
   const account = mainStore.accounts.find(a => a._id === accountId);
   return getAccountOwnerKey(account, mainStore.companies, mainStore.individuals);
 };
@@ -462,15 +463,18 @@ const onToAccountSelected = (accountId) => {
   selectedToOwner.value = getAccountOwnerKey(account, mainStore.companies, mainStore.individuals);
 };
 
-const fromOwnerNeedsRepair = computed(() => fromAccountId.value
-  ? needsAccountOwnerRepair(fromAccountId.value, selectedFromOwner.value, mainStore.accounts, mainStore.companies, mainStore.individuals)
-  : !!props.transferToEdit && !isCreatingFromAccount.value);
-const toOwnerNeedsRepair = computed(() => toAccountId.value
-  ? needsAccountOwnerRepair(toAccountId.value, selectedToOwner.value, mainStore.accounts, mainStore.companies, mainStore.individuals)
-  : !!props.transferToEdit && !isCreatingToAccount.value);
-
-const isFromOwnerSelectVisible = computed(() => isCreatingFromAccount.value || !fromAccountId.value || fromOwnerNeedsRepair.value);
-const isToOwnerSelectVisible = computed(() => isCreatingToAccount.value || !toAccountId.value || toOwnerNeedsRepair.value);
+const ownershipReady = ref(false);
+const isFromOwnerSelectVisible = computed(() => isCreatingFromAccount.value || !fromAccountId.value);
+const isToOwnerSelectVisible = computed(() => isCreatingToAccount.value || !toAccountId.value);
+const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
+  routes: [
+    { key: 'from', label: 'Отправитель', accountId: fromAccountId, ownerKey: selectedFromOwner, creating: isCreatingFromAccount },
+    { key: 'to', label: 'Получатель', accountId: toAccountId, ownerKey: selectedToOwner, creating: isCreatingToAccount },
+  ],
+  ready: ownershipReady,
+  enabled: canEdit,
+  existing: computed(() => !!props.transferToEdit),
+});
 
 onMounted(async () => {
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
@@ -507,6 +511,8 @@ onMounted(async () => {
     categoryId.value = defaultCategoryId;
     setTimeout(() => { if (amountInput.value) amountInput.value.focus(); }, 100);
   }
+  hydrateAccountOwners();
+  ownershipReady.value = true;
 });
 
 const title = computed(() => { 
@@ -606,10 +612,9 @@ const handleSave = async () => {
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
   const amountParsed = parseFloat(cleanedAmount);
   if (isNaN(amountParsed) || amountParsed <= 0) { showError('Введите корректную сумму'); return; }
-  if (!fromAccountId.value || !toAccountId.value) { showError('Выберите счета отправителя и получателя'); return; }
+  if (!fromAccountId.value || !toAccountId.value) { ensureAccountOwnership(); if (!showOwnerRepair.value) showError('Выберите счета отправителя и получателя'); return; }
   if (fromAccountId.value === toAccountId.value) { showError('Счета не должны совпадать'); return; }
-  if (![fromAccountId.value, toAccountId.value].every(id => mainStore.accounts.some(a => a._id === id))) { showError('Выберите существующие счета или создайте новые.'); return; }
-  if (![selectedFromOwner.value, selectedToOwner.value].every(key => isValidOwnerKey(key, mainStore.companies, mainStore.individuals))) { showError('Укажите владельцев счетов в предупреждении.'); return; }
+  if (!ensureAccountOwnership()) return;
 
   const isEdit = !!props.transferToEdit;
   const transferId = props.transferToEdit?._id;
@@ -655,48 +660,13 @@ const handleSave = async () => {
 
   const finalCategoryId = categoryId.value;
 
-  const updates = [];
-  if (fromAccountId.value && selectedFromOwner.value) {
-      const acc = mainStore.accounts.find(a => a._id === fromAccountId.value);
-      if (acc) {
-          const [type, id] = selectedFromOwner.value.split('-');
-          const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-          const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          let needsUpdate = false;
-          if (type === 'company' && (currentCompId !== id || currentIndId)) needsUpdate = true;
-          if (type === 'individual' && (currentIndId !== id || currentCompId)) needsUpdate = true;
-          if (needsUpdate) {
-              const updateData = { _id: acc._id, name: acc.name, order: acc.order };
-              if (type === 'company') { updateData.companyId = id; updateData.individualId = null; }
-              else { updateData.companyId = null; updateData.individualId = id; }
-              updates.push(updateData);
-          }
-      }
-  }
-  if (toAccountId.value && selectedToOwner.value) {
-      const acc = mainStore.accounts.find(a => a._id === toAccountId.value);
-      if (acc) {
-          const [type, id] = selectedToOwner.value.split('-');
-          const currentCompId = (acc.companyId && typeof acc.companyId === 'object') ? acc.companyId._id : acc.companyId;
-          const currentIndId = (acc.individualId && typeof acc.individualId === 'object') ? acc.individualId._id : acc.individualId;
-          let needsUpdate = false;
-          if (type === 'company' && (currentCompId !== id || currentIndId)) needsUpdate = true;
-          if (type === 'individual' && (currentIndId !== id || currentCompId)) needsUpdate = true;
-          if (needsUpdate) {
-              const existing = updates.find(u => u._id === acc._id);
-              if (!existing) {
-                  const updateData = { _id: acc._id, name: acc.name, order: acc.order };
-                  if (type === 'company') { updateData.companyId = id; updateData.individualId = null; }
-                  else { updateData.companyId = null; updateData.individualId = id; }
-                  updates.push(updateData);
-              }
-          }
-      }
-  }
   try {
-      if (updates.length > 0) await mainStore.batchUpdateEntities('accounts', updates, { throwOnError: true });
+      await mainStore.saveAccountOwners([
+          { accountId: fromAccountId.value, ownerKey: selectedFromOwner.value },
+          { accountId: toAccountId.value, ownerKey: selectedToOwner.value },
+      ]);
   } catch (e) {
-      showError('Ошибка привязки владельца к счёту: ' + (e.message || e));
+      showError('Ошибка привязки владельца к счёту: ' + (e.response?.data?.message || e.message || e));
       return;
   }
 
@@ -735,80 +705,76 @@ const closePopup = () => { emit('close'); };
     </div>
       
       <!-- СЧЕТ ОТПРАВИТЕЛЯ (с динамическим балансом) -->
-      <AccountOwnerWarning :active="fromOwnerNeedsRepair" label="Отправитель">
-        <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
-            <template #action-item v-if="canEdit">
-                <div class="dual-action-row">
-                    <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
-                    <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
-                </div>
-            </template>
-        </BaseSelect>
-        <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" autocomplete="off" />
-          <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
-          <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
-              <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">{{ bank.name }}</li>
-          </ul>
-        </div>
+      <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
+          <template #action-item v-if="canEdit">
+              <div class="dual-action-row">
+                  <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
+                  <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
+              </div>
+          </template>
+      </BaseSelect>
+      <div v-else class="inline-create-form input-spacing relative">
+        <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" autocomplete="off" />
+        <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
+        <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
+        <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
+            <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">{{ bank.name }}</li>
+        </ul>
+      </div>
 
-        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
-        <div v-if="isFromOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'from')" class="input-spacing">
-            <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
-                <template #action-item v-if="canEdit">
-                    <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('from', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
-        <div v-else-if="isFromOwnerSelectVisible && creatingOwnerFor === 'from'" class="inline-create-form input-spacing">
-            <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
-            <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-            <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
-        </div>
+      <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
+      <div v-if="isFromOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'from')" class="input-spacing">
+          <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
+              <template #action-item v-if="canEdit">
+                  <div class="dual-action-row">
+                      <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('from', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else-if="isFromOwnerSelectVisible && creatingOwnerFor === 'from'" class="inline-create-form input-spacing">
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
+          <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+      </div>
 
-      </AccountOwnerWarning>
 
       <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
-      <AccountOwnerWarning :active="toOwnerNeedsRepair" label="Получатель">
-        <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
-            <template #action-item v-if="canEdit">
-                <div class="dual-action-row">
-                    <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
-                    <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
-                </div>
-            </template>
-        </BaseSelect>
-        <div v-else class="inline-create-form input-spacing relative">
-          <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" autocomplete="off" />
-          <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
-          <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
-              <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">{{ bank.name }}</li>
-          </ul>
-        </div>
+      <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
+          <template #action-item v-if="canEdit">
+              <div class="dual-action-row">
+                  <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
+                  <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
+              </div>
+          </template>
+      </BaseSelect>
+      <div v-else class="inline-create-form input-spacing relative">
+        <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" autocomplete="off" />
+        <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
+        <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
+        <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
+            <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">{{ bank.name }}</li>
+        </ul>
+      </div>
 
-        <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
-        <div v-if="isToOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'to')" class="input-spacing">
-            <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
-                <template #action-item v-if="canEdit">
-                    <div class="dual-action-row">
-                        <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
-                        <button @click="openCreateOwnerModal('to', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
-                    </div>
-                </template>
-            </BaseSelect>
-        </div>
-        <div v-else-if="isToOwnerSelectVisible && creatingOwnerFor === 'to'" class="inline-create-form input-spacing">
-            <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
-            <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-            <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
-        </div>
+      <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
+      <div v-if="isToOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'to')" class="input-spacing">
+          <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
+              <template #action-item v-if="canEdit">
+                  <div class="dual-action-row">
+                      <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('to', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                  </div>
+              </template>
+          </BaseSelect>
+      </div>
+      <div v-else-if="isToOwnerSelectVisible && creatingOwnerFor === 'to'" class="inline-create-form input-spacing">
+          <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
+          <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
+          <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+      </div>
 
-      </AccountOwnerWarning>
 
       <div v-if="isTransferRouteReady" class="input-spacing">
           <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
@@ -858,7 +824,9 @@ const closePopup = () => { emit('close'); };
 
   </div>
 
-  <InfoModal v-if="showInfoModal" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
+  <AccountOwnerRepairModal v-if="showOwnerRepair" :items="ownerRepairItems" @close="showOwnerRepair = false" @saved="onOwnerRepairSaved" />
+
+  <InfoModal v-if="showInfoModal && !showOwnerRepair" :title="infoModalTitle" :message="infoModalMessage" @close="showInfoModal = false" />
   <ConfirmationPopup v-if="isDeleteConfirmVisible" title="Подтвердите удаление" message="Вы уверены, что хотите удалить этот перевод?" @close="isDeleteConfirmVisible = false" @confirm="onDeleteConfirmed" />
 </template>
 

@@ -10,7 +10,7 @@ function cardPayload(kind, clone, dateChanged = false) {
   const filename = kind === 'income' ? 'IncomePopup.vue' : 'ExpensePopup.vue';
   const source = readFileSync(new URL(`../src/components/${filename}`, import.meta.url), 'utf8');
   const functionName = kind === 'income' ? 'preparePayload' : 'processSave';
-  const nextFunction = kind === 'income' ? 'const syncSelectedAccountOwner' : 'const handleSave';
+  const nextFunction = 'const handleSave';
   const start = source.indexOf(`const ${functionName} =`);
   const end = source.indexOf(nextFunction, start);
   assert.ok(start >= 0 && end > start);
