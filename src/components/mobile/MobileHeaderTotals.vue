@@ -67,40 +67,8 @@ const parsedFutureSubtitle = computed(() => {
 });
 
 // =========================
-// UI snapshot (screen = truth)
 // =========================
-function getSnapshot() {
-  const cur = Number(currentTotal.value || 0);
-  const fut = Number(futureTotal.value || 0);
-  const cntCur = Number(currentAccountsCount.value || 0);
-  const cntFut = Number(futureAccountsCount.value || 0);
 
-  return {
-    key: 'mobileHeaderTotals',
-    type: 'mobileTotals',
-    title: 'Mobile totals',
-
-    // Meta
-    today: _toYmd(new Date()),
-    future: _toYmd(mainStore.projection?.rangeEndDate ? new Date(mainStore.projection.rangeEndDate) : new Date()),
-    todayStr: todayStr.value,
-    futureUntilStr: futureDateStr.value,
-
-    // Values (raw)
-    currentTotal: cur,
-    futureTotal: fut,
-    currentAccountsCount: cntCur,
-    futureAccountsCount: cntFut,
-
-    // Values (UI-like text)
-    currentText: `₸ ${formatNumber(cur)}`,
-    futureText: `${formatNumber(fut)} ₸`,
-    subtitleCurrent: `Сейчас на ${cntCur} счетах • до ${todayStr.value}`,
-    subtitleFuture: `Будет на ${cntFut} счетах • до ${futureDateStr.value}`,
-  };
-}
-
-defineExpose({ getSnapshot });
 </script>
 
 <template>

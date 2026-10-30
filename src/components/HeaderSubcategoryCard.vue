@@ -5,7 +5,7 @@ import { formatNumber } from '@/utils/formatters.js';
 const store = useMainStore();
 const planned = computed({ get: () => !!store.dashboardForecastState.subcategories, set: value => store.setForecastState('subcategories', value) });
 const rows = computed(() => planned.value ? store.futureSubcategoryBreakdowns : store.currentSubcategoryBreakdowns);
-defineExpose({ getSnapshot: () => ({ key: 'subcategories', title: 'Подкатегории', type: 'subcategories', showFutureBalance: planned.value, rows: rows.value }) });
+
 </script>
 <template>
   <div class="dashboard-card subcategory-card" data-testid="subcategory-widget">

@@ -34,7 +34,8 @@ form. Requires `mongod` and Chrome. It does not use the production database.
 
 Run `node tests/browser/desktop-assistant.mjs` for the Codex chat flow. This uses
 synthetic API responses and checks offline history, draft preservation, reconnect,
-Enter/Shift+Enter, send/quick buttons, speech transcript events, image attachments,
-and identical AI/Codex composer geometry in the journal and mobile layout.
+Enter/Shift+Enter, the send button, speech transcript events, image attachments,
+standalone window resizing, button placement, mobile Codex-only access, and
+absence of legacy AI API requests.
 Screenshots are saved under `output/playwright/`. Physical microphone capture
 still depends on the browser and its microphone permission.

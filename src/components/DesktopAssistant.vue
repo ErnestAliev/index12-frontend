@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import AssistantComposer from './AssistantComposer.vue';
+import CodexComposer from './CodexComposer.vue';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -10,7 +10,6 @@ const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref('')
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 const recording = ref(false);
-const quickPrompts = ['Анализ', 'Прогноз', 'Счета', 'Доходы', 'Расходы', 'Переводы', 'Компании', 'Проекты', 'Контрагенты', 'Категории', 'Физлица'];
 let controller = new AbortController(), timer, refreshing = false, recognition, voiceBase = '';
 let retry = null;
 const storageKey = () => `index12-desktop-chat:${scopeKey.value}`;
@@ -25,7 +24,7 @@ const pause = (ms, session) => new Promise((resolve, reject) => {
 });
 async function api(path, body, session = controller) {
   current(session);
-  const response = await fetch(`${props.apiBaseUrl.replace(/\/$/, '')}/ai/desktop${path}`, {
+  const response = await fetch(`${props.apiBaseUrl.replace(/\/$/, '')}/codex${path}`, {
     credentials: 'include', signal: session.signal,
     ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
   });
@@ -181,8 +180,8 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
   <section class="desktop-assistant" :class="{ mobile }" aria-label="Помощник Codex">
     <div class="desktop-toolbar">
       <span class="desktop-status" :class="{ online: connected }" :title="connected ? 'Общий сервер Codex доступен' : 'Запустите npm run desktop:bridge на Mac'">Codex · {{ connected ? 'подключён' : 'нет связи' }}</span>
-      <button type="button" class="ai-quick-btn" :disabled="busy" title="Обновить связь и историю" aria-label="Обновить связь и историю" @click="refresh(true)">↻</button>
-      <button type="button" class="ai-quick-btn" :disabled="busy" @click="newChat">＋ Новый чат</button>
+      <button type="button" class="codex-action-btn" :disabled="busy" title="Обновить связь и историю" aria-label="Обновить связь и историю" @click="refresh(true)">↻</button>
+      <button type="button" class="codex-action-btn" :disabled="busy" @click="newChat">＋ Новый чат</button>
     </div>
     <div class="desktop-chat-picker">
       <select :value="selectedId" :disabled="busy" aria-label="Чаты Index12" @change="selectChat($event.target.value)">
@@ -191,46 +190,43 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
       </select>
       <a v-if="threadId" :href="`codex://threads/${threadId}`" title="Открыть в desktop-приложении" aria-label="Открыть чат в desktop-приложении">↗</a>
     </div>
-    <div class="journal-ai-quick-row">
-      <button v-for="prompt in quickPrompts" :key="prompt" type="button" class="ai-quick-btn" :disabled="busy" @click="send(prompt)">{{ prompt }}</button>
-    </div>
-    <div ref="box" class="journal-ai-messages" aria-live="polite">
-      <button v-if="cursor" type="button" class="ai-quick-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
-      <article v-for="message in messages" :key="message.id" class="journal-ai-message" :class="message.role">
-        <div class="journal-ai-bubble">
-          <div class="journal-ai-text">{{ message.text }}</div>
+    <div ref="box" class="codex-messages" aria-live="polite">
+      <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
+      <article v-for="message in messages" :key="message.id" class="codex-message" :class="message.role">
+        <div class="codex-bubble">
+          <div class="codex-text">{{ message.text }}</div>
           <img v-for="(file, i) in message.attachments || []" :key="i" class="desktop-image" :src="file.url" :alt="file.name || 'Изображение'" />
-          <div v-if="message.role === 'assistant'" class="journal-ai-actions"><button type="button" class="journal-ai-copy-btn" @click="copy(message)">{{ message.copied ? '✅' : 'Копировать' }}</button></div>
+          <div v-if="message.role === 'assistant'" class="codex-actions"><button type="button" class="codex-copy-btn" @click="copy(message)">{{ message.copied ? '✅' : 'Копировать' }}</button></div>
         </div>
       </article>
-      <div v-if="busy" class="journal-ai-typing" aria-label="Codex готовит ответ"><span class="journal-ai-typing-word">Думаю</span><span class="journal-ai-typing-dots" /></div>
+      <div v-if="busy" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
     </div>
     <div v-if="error" class="desktop-error" role="alert">{{ error }}</div>
     <div v-if="attachments.length" class="desktop-attachments">
       <div v-for="(file, i) in attachments" :key="i"><img :src="file.url" :alt="file.name" /><button type="button" :disabled="busy" :aria-label="`Убрать ${file.name}`" @click="attachments.splice(i, 1)">×</button></div>
     </div>
     <input ref="files" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" @change="addFiles" />
-    <AssistantComposer v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
+    <CodexComposer v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
       attachments-enabled :has-attachments="!!attachments.length" @send="send()" @microphone="toggleRecording" @attach="files.click()" />
   </section>
 </template>
 
 <style scoped>
-@import './assistantMessages.css';
-.desktop-assistant { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; color: var(--ai-pane-text); background: var(--ai-pane-bg); }
-.desktop-assistant.mobile { --ai-pane-bg: var(--widget-background); --ai-pane-surface: var(--color-background); --ai-pane-surface-soft: var(--widget-background); --ai-pane-border: var(--widget-border); --ai-pane-text: var(--color-text); --ai-pane-muted: var(--text-mute); --ai-pane-hover: var(--color-background-soft); }
+@import './codexMessages.css';
+.desktop-assistant { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; color: var(--codex-pane-text); background: var(--codex-pane-bg); }
+.desktop-assistant.mobile { --codex-pane-bg: var(--widget-background); --codex-pane-surface: var(--color-background); --codex-pane-surface-soft: var(--widget-background); --codex-pane-border: var(--widget-border); --codex-pane-text: var(--color-text); --codex-pane-muted: var(--text-mute); --codex-pane-hover: var(--color-background-soft); }
 .desktop-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex-shrink: 0; }
-.desktop-status { margin-right: auto; color: var(--ai-pane-muted); font-size: 11px; }
+.desktop-status { margin-right: auto; color: var(--codex-pane-muted); font-size: 11px; }
 .desktop-status.online { color: var(--color-primary); }
 .desktop-chat-picker { display: flex; gap: 8px; align-items: center; padding: 0 10px 8px; }
-.desktop-chat-picker select { flex: 1; width: 0; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--ai-pane-border); border-radius: 6px; background: var(--ai-pane-surface-soft); color: var(--ai-pane-text); font: inherit; font-size: 12px; }
+.desktop-chat-picker select { flex: 1; width: 0; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--codex-pane-border); border-radius: 6px; background: var(--codex-pane-surface-soft); color: var(--codex-pane-text); font: inherit; font-size: 12px; }
 .desktop-chat-picker a { color: var(--color-primary); text-decoration: none; }
 .desktop-error { padding: 8px 10px; color: var(--color-expense, #e45b52); font-size: 12px; overflow-wrap: anywhere; }
-.journal-ai-text { overflow-wrap: anywhere; }
+.codex-text { overflow-wrap: anywhere; }
 .desktop-image { display: block; max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 6px; }
 .desktop-attachments { display: flex; gap: 8px; padding: 8px 10px; }
 .desktop-attachments > div { position: relative; }
 .desktop-attachments img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
-.desktop-attachments button { position: absolute; top: 0; right: 0; color: var(--ai-pane-text); background: var(--ai-pane-surface); border: 1px solid var(--ai-pane-border); border-radius: 50%; cursor: pointer; }
-:global(html[data-theme="dark"]) .journal-ai-bubble { background: #232323; border-color: #2f2f2f; }
+.desktop-attachments button { position: absolute; top: 0; right: 0; color: var(--codex-pane-text); background: var(--codex-pane-surface); border: 1px solid var(--codex-pane-border); border-radius: 50%; cursor: pointer; }
+:global(html[data-theme="dark"]) .codex-bubble { background: #232323; border-color: #2f2f2f; }
 </style>

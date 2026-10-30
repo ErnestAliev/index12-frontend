@@ -9,11 +9,7 @@ import { getHeaderWidgetColumns } from '@/utils/homeLayout.js';
 import { getWorkspaceWindow } from '@/utils/workspaceScroll.js';
 import { createGraphGestureGuard } from '@/utils/graphGestureGuard.js';
 import { bindGraphGestureGuard } from '@/utils/graphGestureListeners.js';
-import {
-  scheduleBackgroundAnalyticsPrefetch,
-  signalBackgroundAnalyticsMutation,
-  stopBackgroundAnalyticsPrefetchTimer
-} from '@/utils/backgroundAnalyticsBuffer.js';
+
 import { usePermissions } from '@/composables/usePermissions';
 
 
@@ -39,6 +35,8 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
 import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 import PaymentReceiptModal from '@/components/PaymentReceiptModal.vue';
+import CodexChatWindow from '@/components/CodexChatWindow.vue';
+import CodexIcon from '@/components/CodexIcon.vue';
 import EditorModal from '@/components/EditorModal.vue';
 import ContractorEditorModal from '@/components/ContractorEditorModal.vue';
 
@@ -66,6 +64,7 @@ const showGraphModal = ref(false);
 const showAboutModal = ref(false);
 
 const showWorkspaceModal = ref(false); // 🟢 NEW: Unified workspace/project modal
+const showCodex = ref(false);
 const showReceiptModal = ref(false);   // 🟢 NEW: Payment receipt generator
 const showEditorModal = ref(false);    // Editor modal opens from header button
 const showContractorEditorModal = ref(false);
@@ -208,8 +207,6 @@ const isRetailPopupVisible = ref(false);
 const isRefundPopupVisible = ref(false);
 // 🟢 2. Состояние для попапа деталей налога
 
-
-
 // --- Меню пользователя ---
 const showUserMenu = ref(false);
 const userButtonRef = ref(null);
@@ -298,10 +295,6 @@ const handlePrepaymentSave = async (finalData) => {
         alert('Не удалось сохранить предоплату: ' + e.message);
     }
 };
-
-
-
-
 
 const handleOperationSave = async ({ mode, id, data, originalOperation, counterpartyDefaults = null }) => {
     if (data.type === 'income') isIncomePopupVisible.value = false;
@@ -1227,8 +1220,6 @@ const checkDayChange = async () => {
   }
 };
 let dayChangeCheckerInterval = null;
-let stopBufferCacheWatcher = null;
-let stopBufferPeriodWatcher = null;
 
 const handleGlobalKeyDown = (event) => {
   if (event.key === 'Shift') {
@@ -1407,41 +1398,6 @@ onMounted(async () => {
     
     updateScrollbarMetrics(); 
 
-    scheduleBackgroundAnalyticsPrefetch({
-      mainStore,
-      periodFilter: mainStore?.periodFilter || null,
-      reason: 'desktop_bootstrap_lazy_prefetch'
-    });
-
-    stopBufferCacheWatcher = watch(
-      () => mainStore.cacheVersion,
-      () => {
-        signalBackgroundAnalyticsMutation({
-          mainStore,
-          periodFilter: mainStore?.periodFilter || null,
-          reason: 'desktop_cache_version'
-        });
-      }
-    );
-
-    stopBufferPeriodWatcher = watch(
-      () => [
-        String(mainStore?.periodFilter?.mode || ''),
-        String(mainStore?.periodFilter?.customStart || ''),
-        String(mainStore?.periodFilter?.customEnd || '')
-      ],
-      () => {
-        scheduleBackgroundAnalyticsPrefetch({
-          mainStore,
-          periodFilter: mainStore?.periodFilter || null,
-          reason: 'desktop_period_filter_change',
-          delayMs: 900,
-          jitterMs: 220,
-          force: true
-        });
-      }
-    );
-    
     // Timeline is now initialized by setMonthRange in onMounted (line 1458)
     // No need to call setProjectionToEndOfMonth - it would overwrite timeline range
 
@@ -1456,16 +1412,6 @@ onBeforeUnmount(() => {
     clearInterval(dayChangeCheckerInterval);
     dayChangeCheckerInterval = null;
   }
-
-  if (typeof stopBufferCacheWatcher === 'function') {
-    stopBufferCacheWatcher();
-    stopBufferCacheWatcher = null;
-  }
-  if (typeof stopBufferPeriodWatcher === 'function') {
-    stopBufferPeriodWatcher();
-    stopBufferPeriodWatcher = null;
-  }
-  stopBackgroundAnalyticsPrefetchTimer();
 
   mainStore.stopAutoRefresh();
 
@@ -1720,10 +1666,9 @@ const handleRefundDelete = async (op) => {
           </button>
 
           <!-- 🟢 NEW: Hide import/export for timeline-only -->
-          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" data-tooltip="Журнал операций">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
-              <path d="M5 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"></path>
+          <button v-if="!mainStore.isTimelineOnly" class="icon-btn import-export-btn" @click="showImportModal = true" data-tooltip="Журнал операций" aria-label="Журнал операций">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="3" width="15" height="18" rx="2" /><path d="M3 7h4M3 12h4M3 17h4M10 7h6M10 12h6M10 17h4" />
             </svg>
           </button>
 
@@ -1803,6 +1748,10 @@ const handleRefundDelete = async (op) => {
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
+          <button class="icon-btn codex-btn" :class="{ active: showCodex }" type="button"
+            data-tooltip="Codex" aria-label="Открыть чат Codex" :aria-expanded="showCodex" aria-controls="codex-chat-window" @click="showCodex = !showCodex">
+            <CodexIcon />
+          </button>
         </div>
 
         <!-- Bottom buttons group -->
@@ -1824,8 +1773,6 @@ const handleRefundDelete = async (op) => {
           </div>
         </div>
       </aside>
-      
-      
 
     </div>
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
@@ -1858,10 +1805,6 @@ const handleRefundDelete = async (op) => {
         @operation-deleted="handleOperationDelete($event)"
     />
 
-
-
-
-
     <TransferPopup v-if="isTransferPopupVisible" :date="selectedDay ? selectedDay.date : new Date()" :cellIndex="selectedDay ? selectedCellIndex : 0" :transferToEdit="operationToEdit" :min-allowed-date="minDateFromProjection" :max-allowed-date="maxDateFromProjection" @close="handleCloseTransferPopup" @save="handleTransferSave" @operation-deleted="handleOperationDelete" />
 
     <RetailClosurePopup v-if="isRetailPopupVisible" :operation-to-edit="operationToEdit" @close="isRetailPopupVisible = false" @confirm="handleRetailClosure" @save="handleRetailSave" @delete="handleRetailDelete" />
@@ -1877,6 +1820,7 @@ const handleRefundDelete = async (op) => {
     
     <!-- 🆕 NEW: Payment Receipt Generator -->
     <PaymentReceiptModal v-if="showReceiptModal" @close="showReceiptModal = false" />
+    <CodexChatWindow :open="showCodex" :api-base-url="API_BASE_URL" @close="showCodex = false" />
 
   </div>
 </template>

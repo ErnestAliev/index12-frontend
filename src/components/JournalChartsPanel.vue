@@ -336,7 +336,7 @@ const chartCards = computed(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 12px;
-  background: var(--ai-pane-bg);
+  background: var(--charts-pane-bg);
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-track-bg);
 }
@@ -368,9 +368,9 @@ const chartCards = computed(() => {
 }
 
 .journal-chart-card {
-  border: 1px solid var(--ai-pane-border);
+  border: 1px solid var(--charts-pane-border);
   border-radius: 14px;
-  background: var(--ai-pane-surface);
+  background: var(--charts-pane-surface);
   padding: 12px;
 }
 
@@ -380,14 +380,14 @@ const chartCards = computed(() => {
 
 .journal-chart-card-title {
   margin: 0;
-  color: var(--ai-pane-text);
+  color: var(--charts-pane-text);
   font-size: 13px;
   font-weight: var(--fw-semi, 600);
 }
 
 .journal-chart-card-note {
   margin: 4px 0 0;
-  color: var(--ai-pane-muted);
+  color: var(--charts-pane-muted);
   font-size: 11px;
   line-height: 1.35;
 }
@@ -428,7 +428,7 @@ const chartCards = computed(() => {
 }
 
 .journal-chart-legend-text {
-  color: var(--ai-pane-text);
+  color: var(--charts-pane-text);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
@@ -462,14 +462,14 @@ const chartCards = computed(() => {
 }
 
 .legend-total {
-  color: var(--ai-pane-text);
+  color: var(--charts-pane-text);
 }
 
 .journal-chart-empty {
   min-height: 180px;
   display: grid;
   place-items: center;
-  color: var(--ai-pane-muted);
+  color: var(--charts-pane-muted);
   font-size: 12px;
   text-align: center;
 }

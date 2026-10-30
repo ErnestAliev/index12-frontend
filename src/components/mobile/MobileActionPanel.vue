@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import CodexIcon from '@/components/CodexIcon.vue';
 
-const emit = defineEmits(['action', 'open-ai', 'open-projects', 'open-user-menu', 'prev-month', 'next-month']);
+const emit = defineEmits(['action', 'open-codex', 'open-projects', 'open-user-menu', 'prev-month', 'next-month']);
 const props = defineProps({
   currentMonthLabel: { type: String, default: '' },
   prevMonthLabel: { type: String, default: '' },
@@ -11,7 +12,7 @@ const props = defineProps({
 
 const mainStore = useMainStore();
 
-const openAi = () => emit('open-ai');
+const openCodex = () => emit('open-codex');
 const openProjects = () => emit('open-projects');
 const openUserMenu = () => emit('open-user-menu');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
@@ -22,18 +23,14 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
 <template>
   <div class="mobile-action-panel-wrapper">
     <div class="chart-controls-row">
-      <!-- 1. AI ассистент (disabled for manager) -->
+      <!-- 1. Codex (disabled for manager) -->
       <button 
         class="icon-circle" 
         :disabled="mainStore.workspaceRole === 'manager'"
-        @click="openAi" 
-        title="AI ассистент"
+        @click="openCodex"
+        title="Codex" aria-label="Открыть чат Codex"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2l1.2 4.2L17.4 8 13.2 9.2 12 13.4 10.8 9.2 6.6 8l4.2-1.8L12 2z" />
-          <path d="M19 10l.9 3.1L23 14l-3.1.9L19 18l-.9-3.1L15 14l3.1-.9L19 10z" />
-          <path d="M5 12l.8 2.6L8.4 15l-2.6.8L5 18.4l-.8-2.6L1.6 15l2.6-.8L5 12z" />
-        </svg>
+        <CodexIcon />
       </button>
       
       <!-- 2. Проекты -->
@@ -141,7 +138,7 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
   white-space: nowrap;
 }
 
-/* Кнопки (AI, Projects, Avatar, Widgets) */
+/* Кнопки (Codex, Projects, Avatar, Widgets) */
 .icon-circle, .header-expand-btn {
   width: 36px; 
   height: 36px;

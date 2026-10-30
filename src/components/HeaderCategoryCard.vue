@@ -68,49 +68,7 @@ const showFutureBalance = computed({
 });
 
 // =========================
-// UI snapshot (screen = truth)
 // =========================
-const _snapCurrentPrefix = computed(() => {
-  if (isExpenseListWidget.value || isWithdrawalListWidget.value) return '- ';
-  return '';
-});
-
-const _snapFuturePrefix = computed(() => {
-  if (isExpenseListWidget.value || isWithdrawalListWidget.value) return '- ';
-  if (isIncomeListWidget.value) return '+';
-  return '';
-});
-
-const _snapCurrentText = computed(() => {
-  const v = Number(currentSum.value || 0);
-  return `${_snapCurrentPrefix.value}${formatNumber(v)} ₸`.trim();
-});
-
-const _snapFutureText = computed(() => {
-  const v = Number(projectedSum.value || 0);
-  return `${_snapFuturePrefix.value}${formatNumber(v)} ₸`.trim();
-});
-
-function getSnapshot() {
-  // incomeList / expenseList / transfers / withdrawalList / cat_* breakdown
-  return {
-    key: props.widgetKey,
-    title: props.title,
-    showFutureBalance: Boolean(showFutureBalance.value),
-    rows: [
-      {
-        current: Number(currentSum.value || 0),
-        currentText: _snapCurrentText.value,
-        future: Number(projectedSum.value || 0),
-        futureText: _snapFutureText.value,
-      }
-    ],
-    categoryBreakdown: categoryBreakdown?.value || null,
-  };
-}
-
-defineExpose({ getSnapshot });
-
 /* ======================= FILTER TELEPORT ======================= */
 const isFilterOpen = ref(false);
 const filterBtnRef = ref(null);

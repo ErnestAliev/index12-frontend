@@ -1,6 +1,5 @@
 <script setup>
 import { computed } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
 
 const props = defineProps({
@@ -34,31 +33,8 @@ const parsedSubtitle = computed(() => {
 });
 
 // =========================
-// UI snapshot (screen = truth)
 // =========================
-function getSnapshot() {
-  // Keep both raw number and UI-like text
-  const valueAbs = Number(Math.abs(props.totalBalance || 0));
-  const signStr = (props.totalBalance || 0) < 0 ? '-' : '';
 
-  // Match how this card shows money (with currency symbol)
-  const totalText = isFuture.value
-    ? `${signStr}${formatNumber(valueAbs)} ₸`
-    : `₸ ${signStr}${formatNumber(valueAbs)}`;
-
-  return {
-    key: props.widgetKey,
-    title: props.title,
-    type: 'total',
-    isFuture: Boolean(isFuture.value),
-    totalBalance: Number(props.totalBalance || 0),
-    totalText,
-    subtitlePrefix: props.subtitlePrefix,
-    subtitleDate: props.subtitleDate,
-  };
-}
-
-defineExpose({ getSnapshot });
 </script>
 
 <template>

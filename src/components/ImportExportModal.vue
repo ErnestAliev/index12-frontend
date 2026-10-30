@@ -1,27 +1,15 @@
 <script setup>
 import { transferLabels } from '@/utils/transferLabels.js';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import SubcategorySelect from '@/components/SubcategorySelect.vue';
 import JournalChartsPanel from '@/components/JournalChartsPanel.vue';
-import DesktopAssistant from '@/components/DesktopAssistant.vue';
-import AssistantComposer from '@/components/AssistantComposer.vue';
-import { sendAiRequest } from '@/utils/aiClient.js';
-import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
-import {
-  getHistoricalContextForRequest,
-  scheduleBackgroundAnalyticsPrefetch,
-  signalBackgroundAnalyticsMutation
-} from '@/utils/backgroundAnalyticsBuffer.js';
 
 const emit = defineEmits(['close', 'import-complete']);
 const mainStore = useMainStore();
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-  || (isLocalhost ? 'http://localhost:3000/api' : `${window.location.origin}/api`);
 
 const isLoading = ref(false);
 const loadError = ref('');
@@ -32,23 +20,12 @@ const isEditMode = ref(false);
 const isSavingEdits = ref(false);
 const editRows = ref({});
 const baseEditRows = ref({});
-const aiInput = ref('');
-const aiMessages = ref([]);
-const aiLoading = ref(false);
-const aiMessagesRef = ref(null);
-const aiInputRef = ref(null);
-const showAiLogModal = ref(false);
-const aiLogText = ref('');
-const activeSidebarTab = ref('charts');
-const isAiPaneCollapsed = ref(false);
-const aiPaneWidth = ref(25);
-const isResizingAiPane = ref(false);
+
+const isChartsPaneCollapsed = ref(false);
+const chartsPaneWidth = ref(25);
+const isResizingChartsPane = ref(false);
 const modalBodyRef = ref(null);
-const aiSpeechSupported = ref(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
-const isAiRecording = ref(false);
-let aiRecognition = null;
-let aiVoiceConfirmedText = '';
-let aiDayBoundaryInterval = null;
+
 const filters = ref({
   dateFrom: '',
   dateTo: '',
@@ -85,431 +62,21 @@ const TABLE_COLUMNS = Object.freeze([
   'Компания/Физлицо',
   'Статус'
 ]);
-const QUICK_PROMPTS = Object.freeze([
-  { label: 'Анализ', prompt: 'анализ', action: 'analysis' },
-  { label: 'Прогноз', prompt: 'прогноз', action: 'forecast' },
-  { label: 'Счета', prompt: 'покажи счета', action: 'accounts' },
-  { label: 'Доходы', prompt: 'покажи доходы', action: 'income' },
-  { label: 'Расходы', prompt: 'покажи расходы', action: 'expense' },
-  { label: 'Переводы', prompt: 'покажи переводы', action: 'transfers' },
-  { label: 'Компании', prompt: 'покажи компании', action: 'companies' },
-  { label: 'Проекты', prompt: 'покажи проекты', action: 'projects' },
-  { label: 'Контрагенты', prompt: 'покажи контрагентов', action: 'contractors' },
-  { label: 'Категории', prompt: 'покажи категории', action: 'categories' },
-  { label: 'Физлица', prompt: 'покажи физлица', action: 'individuals' }
-]);
+
 
 const closeModal = () => {
   emit('close');
 };
-const createAiMessage = (role, text, extra = {}) => ({
-  id: `${role}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-  role,
-  text: String(text || ''),
-  copied: false,
-  ...extra
-});
 
-const scrollAiToBottom = () => {
-  nextTick(() => {
-    const el = aiMessagesRef.value;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  });
-};
 
-const AI_DAY_KEY_STORAGE = 'aiModalLastDayKey';
-
-const getAiTimelineDateKey = () => {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const offset = now.getTimezoneOffset() * 60000;
-  return new Date(now - offset).toISOString().slice(0, 10);
-};
-
-// 🟢 NEW: localStorage helpers for chat history persistence
-const getStorageKey = () => {
-  const timelineDateKey = getAiTimelineDateKey();
-  return `aiHistory_${timelineDateKey}`;
-};
-
-const saveAiHistoryToLocalStorage = () => {
-  try {
-    const key = getStorageKey();
-    localStorage.setItem(key, JSON.stringify(aiMessages.value));
-  } catch (error) {
-    console.warn('[AI History] Failed to save to localStorage:', error);
-  }
-};
-
-const cleanupOldHistory = () => {
-  try {
-    const today = getAiTimelineDateKey();
-    const keys = Object.keys(localStorage);
-    keys.forEach(key => {
-      if (key.startsWith('aiHistory_') && !key.includes(today)) {
-        localStorage.removeItem(key);
-        console.log('[AI History] Cleaned up old history:', key);
-      }
-    });
-  } catch (error) {
-    console.warn('[AI History] Cleanup failed:', error);
-  }
-};
-
-const syncAiHistoryDayBoundary = async () => {
-  try {
-    const todayKey = getAiTimelineDateKey();
-    const prevKey = localStorage.getItem(AI_DAY_KEY_STORAGE);
-
-    if (prevKey && prevKey !== todayKey) {
-      try {
-        await fetch(`${API_BASE_URL}/ai/history?keepDate=${encodeURIComponent(todayKey)}`, {
-          method: 'DELETE',
-          credentials: 'include'
-        });
-      } catch (error) {
-        console.warn('[AI History] Day-boundary cleanup failed:', error);
-      }
-      aiMessages.value = [];
-      try { localStorage.removeItem(`aiHistory_${prevKey}`); } catch (_) {}
-    }
-
-    localStorage.setItem(AI_DAY_KEY_STORAGE, todayKey);
-  } catch (error) {
-    console.warn('[AI History] Day-boundary sync failed:', error);
-  }
-};
-
-// 🟢 NEW: Load chat history from backend
-const loadAiHistory = async () => {
-  try {
-    const timelineDateKey = getAiTimelineDateKey();
-    const historyUrl = `${API_BASE_URL}/ai/history?timelineDate=${encodeURIComponent(timelineDateKey)}`;
-
-    // Backend is the source of truth for chat history.
-    const response = await fetch(historyUrl, {
-      credentials: 'include'
-    });
-    
-    if (!response.ok) {
-      aiMessages.value = [];
-      try { localStorage.removeItem(getStorageKey()); } catch (_) {}
-      console.log('[AI History] Backend history unavailable, showing empty chat');
-      return;
-    }
-    
-    const data = await response.json();
-   
-    // Convert backend format to frontend format
-    aiMessages.value = data.messages.map((msg, idx) => ({
-      id: `history-${idx}-${msg.timestamp}`,
-      role: msg.role,
-      text: msg.content,
-      timestamp: msg.timestamp,
-      log: msg.metadata
-    }));
-    
-    // Keep local cache synced with backend state.
-    if (aiMessages.value.length > 0) {
-      saveAiHistoryToLocalStorage();
-    } else {
-      try { localStorage.removeItem(getStorageKey()); } catch (_) {}
-    }
-    
-    if (aiMessages.value.length > 0) {
-      console.log(`[AI History] Loaded ${aiMessages.value.length} messages from backend`);
-      scrollAiToBottom();
-    }
-  } catch (error) {
-    console.error('[AI History] Load failed:', error);
-    aiMessages.value = [];
-    try { localStorage.removeItem(getStorageKey()); } catch (_) {}
-  }
-};
-
-const resizeAiInput = () => {
-  nextTick(() => {
-    const input = aiInputRef.value;
-    if (!input) return;
-
-    const paneEl = input.closest('.journal-ai-pane');
-    const paneHeight = paneEl?.clientHeight || window.innerHeight || 0;
-    const maxHeight = Math.max(96, Math.floor(paneHeight * 0.3));
-
-    input.style.height = 'auto';
-    const contentHeight = input.scrollHeight;
-    const nextHeight = Math.min(contentHeight, maxHeight);
-    input.style.height = `${nextHeight}px`;
-    input.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
-  });
-};
 
 const normalizeString = (value) => String(value || '').trim();
 const normalizeNameKey = (value) => normalizeString(value).toLowerCase();
 
-const toUtcIsoStart = (dateIso) => {
-  const safe = normalizeString(dateIso);
-  if (!safe) return null;
-  const date = new Date(`${safe}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-};
-
-const toUtcIsoEnd = (dateIso) => {
-  const safe = normalizeString(dateIso);
-  if (!safe) return null;
-  const date = new Date(`${safe}T23:59:59.999`);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-};
-
 const getTodayIso = () => {
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const offset = now.getTimezoneOffset() * 60000;
-  return new Date(now - offset).toISOString().slice(0, 10);
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
-
-const AI_MONTH_PATTERNS = Object.freeze([
-  { month: 1, re: /январ/i },
-  { month: 2, re: /феврал/i },
-  { month: 3, re: /март/i },
-  { month: 4, re: /апрел/i },
-  { month: 5, re: /ма[йя]/i },
-  { month: 6, re: /июн/i },
-  { month: 7, re: /июл/i },
-  { month: 8, re: /август/i },
-  { month: 9, re: /сентябр/i },
-  { month: 10, re: /октябр/i },
-  { month: 11, re: /ноябр/i },
-  { month: 12, re: /декабр/i }
-]);
-
-const AI_MONTH_YEAR_RE_FRAGMENT = 'январ[а-я]*|феврал[а-я]*|март[а-я]*|апрел[а-я]*|ма[йя][а-я]*|июн[а-я]*|июл[а-я]*|август[а-я]*|сентябр[а-я]*|октябр[а-я]*|ноябр[а-я]*|декабр[а-я]*';
-
-const normalizeQuestionText = (value) => normalizeString(value).toLowerCase().replace(/ё/g, 'е');
-
-const getYearMonthFromIsoLike = (isoLike) => {
-  if (!isoLike) return null;
-  const d = new Date(isoLike);
-  if (Number.isNaN(d.getTime())) return null;
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
-};
-
-const resolveMonthFromQuestion = (questionText) => {
-  const norm = normalizeQuestionText(questionText);
-  for (const item of AI_MONTH_PATTERNS) {
-    if (item.re.test(norm)) return item.month;
-  }
-  return null;
-};
-
-const parseShortOrFullYear = (value) => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return null;
-  if (raw.length === 2) return n >= 70 ? (1900 + n) : (2000 + n);
-  if (raw.length === 4) return n;
-  return null;
-};
-
-const parseExplicitYearFromQuestion = (normText) => {
-  const text = String(normText || '');
-  const monthYearRe = new RegExp(`(?:${AI_MONTH_YEAR_RE_FRAGMENT})\\s*(\\d{2}|(?:19|20)\\d{2})\\b`, 'i');
-  const monthYearMatch = text.match(monthYearRe);
-  if (monthYearMatch?.[1]) {
-    const yearFromMonth = parseShortOrFullYear(monthYearMatch[1]);
-    if (Number.isFinite(yearFromMonth)) return yearFromMonth;
-  }
-
-  const fullYearMatch = text.match(/\b((?:19|20)\d{2})\b/);
-  if (fullYearMatch?.[1]) {
-    const fullYear = Number(fullYearMatch[1]);
-    if (Number.isFinite(fullYear)) return fullYear;
-  }
-
-  return null;
-};
-
-const monthRange = (year, month) => {
-  const start = new Date(Number(year), Number(month) - 1, 1, 0, 0, 0, 0);
-  const end = new Date(Number(year), Number(month), 0, 23, 59, 59, 999);
-  return { start, end };
-};
-
-const getStoreCalculationCache = () => {
-  const raw = mainStore?.calculationCache;
-  if (!raw) return {};
-  if (typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'value')) {
-    return raw.value || {};
-  }
-  return typeof raw === 'object' ? raw : {};
-};
-
-const monthHasOperationsInCache = ({ year, month }) => {
-  const cache = getStoreCalculationCache();
-  const parseDateKey = typeof mainStore?._parseDateKey === 'function'
-    ? mainStore._parseDateKey
-    : null;
-  const { start, end } = monthRange(year, month);
-  const startTs = start.getTime();
-  const endTs = end.getTime();
-
-  for (const [dateKey, ops] of Object.entries(cache || {})) {
-    const parsed = parseDateKey ? parseDateKey(String(dateKey)) : new Date(String(dateKey));
-    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) continue;
-    const ts = parsed.getTime();
-    if (ts < startTs || ts > endTs) continue;
-    if (Array.isArray(ops) && ops.some((op) => op && !op.isDeleted)) return true;
-  }
-  return false;
-};
-
-const probeMonthHasOperations = async ({ year, month }) => {
-  if (!Number.isFinite(Number(year)) || !Number.isFinite(Number(month))) return false;
-  const { start, end } = monthRange(year, month);
-
-  if (typeof mainStore?.fetchOperationsRange === 'function') {
-    await mainStore.fetchOperationsRange(start, end, {
-      sparse: true,
-      chunkDays: 62
-    });
-  }
-
-  return monthHasOperationsInCache({ year, month });
-};
-
-const determineRangeFromQuery = async (questionText, baseFilter = null) => {
-  const norm = normalizeQuestionText(questionText);
-  if (!norm) return null;
-
-  const asksEndOfPeriod = /(конец\s+месяц|к\s+концу\s+месяц|на\s+конец\s+месяц|конец\s+[а-я]+|остатк[аи]\s+на\s+конец|на\s+конец)/i.test(norm);
-  const asksWeekScope = /недел/i.test(norm);
-  const explicitMonth = resolveMonthFromQuestion(norm);
-  const hasExplicitMonth = Number.isInteger(explicitMonth) && explicitMonth >= 1 && explicitMonth <= 12;
-  const asksMonthScope = (
-    (
-      hasExplicitMonth
-      && /((^|\\s)(за|в|по)(\\s|$)|месяц|итог)/i.test(norm)
-    )
-    || /итог[аи]?\s+месяц/i.test(norm)
-    || /итоги\s+за\s+месяц/i.test(norm)
-    || /за\s+месяц/i.test(norm)
-    || /весь\s+месяц/i.test(norm)
-    || /по\s+месяц/i.test(norm)
-    || /текущ(ий|его)\s+месяц/i.test(norm)
-    || /эт(от|ого)\s+месяц/i.test(norm)
-  );
-  if (asksWeekScope || (!asksEndOfPeriod && !asksMonthScope)) return null;
-
-  const explicitYear = parseExplicitYearFromQuestion(norm);
-  const fromBase = getYearMonthFromIsoLike(baseFilter?.customEnd || baseFilter?.customStart || null);
-  const fromToday = getYearMonthFromIsoLike(`${getTodayIso()}T00:00:00`);
-  const fallback = fromToday || fromBase || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
-
-  const currentYear = Number(fallback.year);
-  const currentMonth = Number(fallback.month); // 1..12
-  const month = Number.isFinite(Number(explicitMonth)) ? Number(explicitMonth) : currentMonth;
-  if (!Number.isFinite(currentYear) || !Number.isFinite(currentMonth) || !Number.isFinite(month) || month < 1 || month > 12) return null;
-
-  let year = Number.isFinite(explicitYear) ? Number(explicitYear) : currentYear;
-  let calendarResolution = 'explicit_or_current_month';
-
-  if (!Number.isFinite(explicitYear)) {
-    if (month < currentMonth) {
-      year = currentYear;
-      calendarResolution = 'past_same_year';
-    } else if (month > currentMonth) {
-      const hasCurrentYearData = await probeMonthHasOperations({
-        year: currentYear,
-        month
-      });
-      if (hasCurrentYearData) {
-        year = currentYear;
-        calendarResolution = 'future_month_plan_current_year';
-      } else {
-        const previousYear = currentYear - 1;
-        const hasPreviousYearData = await probeMonthHasOperations({
-          year: previousYear,
-          month
-        });
-        year = previousYear;
-        calendarResolution = hasPreviousYearData
-          ? 'history_previous_year'
-          : 'history_previous_year_default_no_data';
-      }
-    } else {
-      year = currentYear;
-      calendarResolution = 'current_month';
-    }
-  } else {
-    calendarResolution = 'explicit_year';
-  }
-
-  if (!Number.isFinite(year)) return null;
-
-  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const end = new Date(year, month, 0, 23, 59, 59, 999);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-
-  return {
-    mode: 'custom',
-    customStart: start.toISOString(),
-    customEnd: end.toISOString(),
-    _aiDateOverride: asksEndOfPeriod ? 'end_of_month' : 'month_scope',
-    _aiCalendarResolution: calendarResolution
-  };
-};
-
-const getLocalIsoNow = () => {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  const tz = -d.getTimezoneOffset();
-  const sign = tz >= 0 ? '+' : '-';
-  const hh = pad(Math.floor(Math.abs(tz) / 60));
-  const mm = pad(Math.abs(tz) % 60);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${ms}${sign}${hh}:${mm}`;
-};
-
-const buildPeriodFilterForAi = async (questionText = '') => {
-  const from = normalizeString(filters.value.dateFrom);
-  const to = normalizeString(filters.value.dateTo);
-  let baseFilter = null;
-
-  if (from || to) {
-    const startIso = toUtcIsoStart(from || to || getTodayIso());
-    const endIso = toUtcIsoEnd(to || from || getTodayIso());
-    if (startIso && endIso) {
-      baseFilter = {
-        mode: 'custom',
-        customStart: startIso,
-        customEnd: endIso
-      };
-    }
-  }
-
-  if (!baseFilter) {
-    const storeFilter = mainStore?.periodFilter;
-    if (storeFilter && storeFilter.mode === 'custom' && (storeFilter.customStart || storeFilter.customEnd)) {
-      baseFilter = storeFilter;
-    }
-  }
-
-  const endMonthOverride = await determineRangeFromQuery(questionText, baseFilter);
-  if (endMonthOverride) return endMonthOverride;
-
-  return baseFilter || null;
-};
-
-const buildAiSnapshot = () => ({
-  accounts: Array.isArray(mainStore.aiAccountBalances) && mainStore.aiAccountBalances.length
-    ? mainStore.aiAccountBalances
-    : (Array.isArray(mainStore.accounts) ? mainStore.accounts : []),
-  companies: Array.isArray(mainStore.companies) ? mainStore.companies : []
-});
 
 const shiftIsoDate = (isoDate, diffDays) => {
   if (!isoDate) return '';
@@ -1749,69 +1316,6 @@ const summaryTotals = computed(() => {
   return totals;
 });
 
-const uniqueSorted = (list) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ru'));
-
-const buildAiTableContext = (resolvedPeriodFilter = null) => {
-  const rows = filteredOperations.value.map((row) => ({
-    id: row.operationId || row.rowId,
-    date: row.editable?.date || '',
-    dateLabel: row.values['Дата'] || '',
-    type: row.values['Тип'] || '',
-    isTransfer: !!row.isTransfer,
-    isWithdrawal: !!row.isWithdrawal,
-    transferPurpose: row?.source?.transferPurpose || null,
-    transferReason: row?.source?.transferReason || null,
-    status: row.values['Статус'] || '',
-    statusCode: row.statusCode || (row.values['Статус'] === 'План' ? 'plan' : 'fact'),
-    amount: Number(row.amount) || 0,
-    account: row.values['Счет'] || '',
-    accountId: extractId(row?.source?.accountId) || null,
-    fromAccountId: extractId(row?.source?.fromAccountId) || null,
-    toAccountId: extractId(row?.source?.toAccountId) || null,
-    contractor: row.values['Контрагент'] || '',
-    owner: row.values['Компания/Физлицо'] || '',
-    category: row.values['Категория'] || '',
-    subcategory: row.values['Подкатегория'] || '',
-    project: row.values['Проект'] || ''
-  }));
-
-  return {
-    source: 'operations_table',
-    generatedAt: new Date().toISOString(),
-    periodFilter: resolvedPeriodFilter || null,
-    filters: {
-      dateFrom: filters.value.dateFrom || null,
-      dateTo: filters.value.dateTo || null,
-      type: getFilterFieldValues('type'),
-      category: getFilterFieldValues('category'),
-      subcategory: getFilterFieldValues('subcategory'),
-      project: getFilterFieldValues('project'),
-      account: getFilterFieldValues('account'),
-      contractor: getFilterFieldValues('contractor'),
-      owner: getFilterFieldValues('owner'),
-      status: getFilterFieldValues('status')
-    },
-    counters: {
-      filtered: rows.length,
-      total: totalCount.value
-    },
-    summary: {
-      income: Number(summaryTotals.value.income) || 0,
-      expense: Number(summaryTotals.value.expense) || 0,
-      transfer: Number(summaryTotals.value.transfer) || 0,
-      net: (Number(summaryTotals.value.income) || 0) - (Number(summaryTotals.value.expense) || 0)
-    },
-    dictionary: {
-      accounts: uniqueSorted(rows.map((row) => row.account || '')),
-      categories: uniqueSorted(rows.map((row) => row.category || '')),
-      projects: uniqueSorted(rows.map((row) => row.project || '')),
-      contractors: uniqueSorted(rows.map((row) => row.contractor || '')),
-      owners: uniqueSorted(rows.map((row) => row.owner || ''))
-    },
-    rows
-  };
-};
-
 const getAmountClass = (row) => {
   if (row.type === 'Доход') return 'amount-income';
   if (row.type === 'Расход') return 'amount-expense';
@@ -1907,84 +1411,27 @@ const handleToggleEditMode = () => {
   toggleEditMode();
 };
 
-const copyAiText = async (message) => {
-  if (!message?.text) return;
-  try {
-    await navigator.clipboard.writeText(message.text);
-    message.copied = true;
-    setTimeout(() => { message.copied = false; }, 1200);
-  } catch (error) {
-    console.error('Failed to copy AI text:', error);
-  }
+const toggleChartsPane = () => {
+  isChartsPaneCollapsed.value = !isChartsPaneCollapsed.value;
 };
 
-const openAiLog = (message) => {
-  aiLogText.value = String(message?.log || '');
-  showAiLogModal.value = true;
-};
+const MIN_CHARTS_PANE_WIDTH = 18;
+const MAX_CHARTS_PANE_WIDTH = 60;
 
-const downloadAiJson = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/ai/llm-input/latest`, {
-      credentials: 'include'
-    });
+const clampChartsPaneWidth = (value) => Math.min(MAX_CHARTS_PANE_WIDTH, Math.max(MIN_CHARTS_PANE_WIDTH, value));
 
-    if (!response.ok) {
-      let detail = '';
-      try {
-        const payload = await response.json();
-        detail = String(payload?.error || payload?.message || '').trim();
-      } catch (_) {
-        // ignore json parse errors
-      }
-      throw new Error(detail || `HTTP ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const disposition = String(response.headers.get('content-disposition') || '');
-    const match = disposition.match(/filename\\*?=(?:UTF-8''|")?([^\";]+)/i);
-    const fileName = match?.[1] ? decodeURIComponent(match[1]) : 'llm-input-latest.json';
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error('Failed to download AI JSON:', error);
-    alert('Не удалось скачать JSON. Сначала отправьте запрос в AI.');
-  }
-};
-
-const closeAiLog = () => {
-  showAiLogModal.value = false;
-  aiLogText.value = '';
-};
-
-const toggleAiPane = () => {
-  isAiPaneCollapsed.value = !isAiPaneCollapsed.value;
-};
-
-const MIN_AI_PANE_WIDTH = 18;
-const MAX_AI_PANE_WIDTH = 60;
-
-const clampAiPaneWidth = (value) => Math.min(MAX_AI_PANE_WIDTH, Math.max(MIN_AI_PANE_WIDTH, value));
-
-const stopAiPaneResize = () => {
-  if (!isResizingAiPane.value) return;
-  isResizingAiPane.value = false;
+const stopChartsPaneResize = () => {
+  if (!isResizingChartsPane.value) return;
+  isResizingChartsPane.value = false;
   document.body.style.cursor = '';
   document.body.style.userSelect = '';
-  window.removeEventListener('pointermove', onAiPaneResizeMove);
-  window.removeEventListener('pointerup', stopAiPaneResize);
-  window.removeEventListener('pointercancel', stopAiPaneResize);
+  window.removeEventListener('pointermove', onChartsPaneResizeMove);
+  window.removeEventListener('pointerup', stopChartsPaneResize);
+  window.removeEventListener('pointercancel', stopChartsPaneResize);
 };
 
-const onAiPaneResizeMove = (event) => {
-  if (!isResizingAiPane.value || isAiPaneCollapsed.value) return;
+const onChartsPaneResizeMove = (event) => {
+  if (!isResizingChartsPane.value || isChartsPaneCollapsed.value) return;
   const container = modalBodyRef.value;
   if (!container) return;
 
@@ -1992,237 +1439,32 @@ const onAiPaneResizeMove = (event) => {
   if (!rect.width) return;
 
   const widthPercent = ((rect.right - event.clientX) / rect.width) * 100;
-  aiPaneWidth.value = clampAiPaneWidth(widthPercent);
+  chartsPaneWidth.value = clampChartsPaneWidth(widthPercent);
 };
 
-const startAiPaneResize = (event) => {
-  if (isAiPaneCollapsed.value) return;
+const startChartsPaneResize = (event) => {
+  if (isChartsPaneCollapsed.value) return;
   event.preventDefault();
-  isResizingAiPane.value = true;
+  isResizingChartsPane.value = true;
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
-  window.addEventListener('pointermove', onAiPaneResizeMove);
-  window.addEventListener('pointerup', stopAiPaneResize);
-  window.addEventListener('pointercancel', stopAiPaneResize);
+  window.addEventListener('pointermove', onChartsPaneResizeMove);
+  window.addEventListener('pointerup', stopChartsPaneResize);
+  window.addEventListener('pointercancel', stopChartsPaneResize);
 };
-
-const stopAiRecording = () => {
-  if (!isAiRecording.value) return;
-  // Turn off mic UI immediately, then stop recognition engine.
-  isAiRecording.value = false;
-  aiVoiceConfirmedText = '';
-  try { aiRecognition?.stop(); } catch (_) {}
-};
-
-const sendAiMessage = async (forcedMessage = null, options = {}) => {
-  const source = String(options?.source || 'chat');
-  const isDomEvent = (x) => {
-    if (!x || typeof x !== 'object') return false;
-    return Boolean(x?.type && x?.target);
-  };
-  const hasExplicitMessage = forcedMessage !== null && forcedMessage !== undefined && !isDomEvent(forcedMessage);
-  const text = String(hasExplicitMessage ? forcedMessage : (aiInput.value || '')).trim();
-  if (!text || aiLoading.value) return;
-  stopAiRecording();
-
-  aiMessages.value.push(createAiMessage('user', text));
-  saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
-  if (!hasExplicitMessage) aiInput.value = '';
-  aiLoading.value = true;
-  scrollAiToBottom();
-
-  try {
-    const periodFilter = await buildPeriodFilterForAi(text);
-    const isQuickButton = source === 'quick_button';
-    const asOfNow = getLocalIsoNow();
-    const timelineDateKey = getAiTimelineDateKey();
-    const historicalContext = isQuickButton
-      ? null
-      : await getHistoricalContextForRequest({
-        mainStore,
-        periodFilter,
-        asOf: asOfNow,
-        reason: 'journal_ai_chat_request'
-      });
-    const tableContext = buildAiTableContext(periodFilter);
-    const tooltipSnapshot = isQuickButton
-      ? null
-      : await buildTooltipSnapshotForRange({
-        mainStore,
-        periodFilter,
-        asOf: asOfNow,
-        visibilityMode: 'all'
-      });
-
-    const { text: answerText, backendResponse, debug, request } = await sendAiRequest({
-      apiBaseUrl: API_BASE_URL,
-      message: text,
-      source,
-      mode: isQuickButton ? 'quick' : 'chat',
-      asOf: asOfNow,
-      timelineDate: timelineDateKey,
-      includeHidden: isQuickButton,
-      visibleAccountIds: null,
-      action: options?.action || null,
-      snapshot: isQuickButton ? buildAiSnapshot() : null,
-      accounts: mainStore.aiAccountBalances || mainStore.accounts || null,
-      tableContext,
-      tooltipSnapshot,
-      historicalContext,
-      debugAi: false,
-      periodFilter,
-      timeline: null
-    });
-
-    const responseText = String(answerText || backendResponse?.text || '').trim() || 'Нет ответа от AI.';
-    const qualityGateSummary = backendResponse?.qualityGate || debug?.qualityGate || null;
-    const discriminatorLog = backendResponse?.discriminatorLog || debug?.discriminatorLog || null;
-    aiMessages.value.push(createAiMessage('assistant', responseText, {
-      log: (debug || backendResponse || request)
-        ? JSON.stringify({ backendResponse, qualityGateSummary, discriminatorLog, debug, request }, null, 2)
-        : null
-    }));
-    saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
-  } catch (error) {
-    const serverText = String(error?.response?.data?.error || '').trim();
-    const clientText = String(error?.message || '').trim();
-    const isTimeout = error?.code === 'ECONNABORTED' || /timeout/i.test(clientText);
-    const fallbackText = isTimeout
-      ? 'AI отвечает дольше обычного (идет проверка качества). Повторите запрос через 5-10 секунд.'
-      : (serverText || clientText || 'Ошибка AI. Проверьте backend и доступ к AI.');
-    aiMessages.value.push(createAiMessage('assistant', fallbackText));
-    saveAiHistoryToLocalStorage(); // 🟢 Persist to localStorage
-  } finally {
-    aiLoading.value = false;
-    scrollAiToBottom();
-  }
-};
-
-const useQuickPrompt = (item) => {
-  if (aiLoading.value) return;
-  const promptText = String(item?.prompt || '').trim();
-  const action = item?.action ? String(item.action) : null;
-  if (!promptText) return;
-  aiInput.value = '';
-  nextTick(() => {
-    sendAiMessage(promptText, { source: 'quick_button', action });
-  });
-};
-
-const ensureAiRecognition = () => {
-  if (aiRecognition) return aiRecognition;
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) return null;
-
-  const rec = new SpeechRec();
-  rec.lang = 'ru-RU';
-  rec.interimResults = true;
-  rec.continuous = true;
-
-  rec.onresult = (event) => {
-    if (!isAiRecording.value) return;
-
-    let interimText = '';
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const res = event.results[i];
-      const transcript = String(res?.[0]?.transcript || '').trim();
-      if (!transcript) continue;
-
-      if (res.isFinal) aiVoiceConfirmedText = `${aiVoiceConfirmedText} ${transcript}`.trim();
-      else interimText = transcript;
-    }
-
-    aiInput.value = `${aiVoiceConfirmedText}${interimText ? ` ${interimText}` : ''}`.trim();
-  };
-
-  rec.onend = () => {
-    isAiRecording.value = false;
-    aiVoiceConfirmedText = '';
-  };
-
-  rec.onerror = () => {
-    isAiRecording.value = false;
-    aiVoiceConfirmedText = '';
-  };
-
-  aiRecognition = rec;
-  return rec;
-};
-
-const toggleAiRecording = async () => {
-  if (aiLoading.value || !aiSpeechSupported.value) return;
-  const rec = ensureAiRecognition();
-  if (!rec) return;
-
-  if (isAiRecording.value) {
-    stopAiRecording();
-    return;
-  }
-
-  aiVoiceConfirmedText = '';
-  isAiRecording.value = true;
-  try {
-    rec.start();
-    await nextTick();
-    aiInputRef.value?.focus?.();
-  } catch (_) {
-    isAiRecording.value = false;
-    aiVoiceConfirmedText = '';
-  }
-};
-
-watch(activeSidebarTab, () => stopAiRecording());
-
-watch(() => aiMessages.value.length, () => {
-  scrollAiToBottom();
-});
-
-watch(() => aiInput.value, () => {
-  resizeAiInput();
-});
-
-watch(() => mainStore.cacheVersion, () => {
-  signalBackgroundAnalyticsMutation({
-    mainStore,
-    periodFilter: mainStore?.periodFilter || null,
-    reason: 'journal_modal_cache_version'
-  });
-});
 
 onMounted(() => {
   document.body.style.overflow = 'hidden';
   document.addEventListener('pointerdown', handleInlineDropdownGlobalPointerDown);
   loadOperations();
-  (async () => {
-    await syncAiHistoryDayBoundary();
-    cleanupOldHistory(); // 🟢 Clean up old dates' history
-    await loadAiHistory(); // 🟢 NEW: Load chat history from backend
-  })();
-  aiDayBoundaryInterval = window.setInterval(() => {
-    syncAiHistoryDayBoundary();
-  }, 60 * 1000);
-  scheduleBackgroundAnalyticsPrefetch({
-    mainStore,
-    periodFilter: mainStore?.periodFilter || null,
-    reason: 'journal_modal_lazy_prefetch'
-  });
-  resizeAiInput();
-  window.addEventListener('resize', resizeAiInput);
+
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleInlineDropdownGlobalPointerDown);
   closeInlineDropdown();
-  stopAiPaneResize();
-  if (aiRecognition) {
-    try { aiRecognition.stop(); } catch (_) {}
-    aiRecognition = null;
-  }
-  if (aiDayBoundaryInterval) {
-    window.clearInterval(aiDayBoundaryInterval);
-    aiDayBoundaryInterval = null;
-  }
-  window.removeEventListener('resize', resizeAiInput);
+  stopChartsPaneResize();
+
   document.body.style.overflow = '';
 });
 </script>
@@ -2232,8 +1474,8 @@ onBeforeUnmount(() => {
     <div class="editor-modal operations-editor-modal">
       <div
         class="modal-header"
-        :class="{ 'ai-collapsed': isAiPaneCollapsed }"
-        :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
+        :class="{ 'charts-collapsed': isChartsPaneCollapsed }"
+        :style="{ '--charts-pane-width': `${chartsPaneWidth}%` }"
       >
         <div class="modal-header-main">
           <h3 class="modal-header-title">Журнал</h3>
@@ -2341,43 +1583,14 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <div class="modal-header-ai">
-          <div class="sidebar-tabs" role="tablist" aria-label="Правая панель">
-            <button
-              class="sidebar-tab-btn"
-              :class="{ active: activeSidebarTab === 'charts' }"
-              type="button"
-              role="tab"
-              :aria-selected="activeSidebarTab === 'charts' ? 'true' : 'false'"
-              @click="activeSidebarTab = 'charts'"
-            >
-              Графики
-            </button>
-            <button
-              class="sidebar-tab-btn"
-              :class="{ active: activeSidebarTab === 'ai' }"
-              type="button"
-              role="tab"
-              :aria-selected="activeSidebarTab === 'ai' ? 'true' : 'false'"
-              @click="activeSidebarTab = 'ai'"
-            >
-              AI
-            </button>
-            <button
-              class="sidebar-tab-btn"
-              :class="{ active: activeSidebarTab === 'codex' }"
-              type="button"
-              role="tab"
-              :aria-selected="activeSidebarTab === 'codex' ? 'true' : 'false'"
-              @click="activeSidebarTab = 'codex'"
-            >Codex</button>
-          </div>
+        <div class="modal-header-charts">
+          <span class="sidebar-panel-title">Графики</span>
           <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
       </div>
 
       <button
-        v-if="isAiPaneCollapsed"
+        v-if="isChartsPaneCollapsed"
         class="close-btn modal-close-floating"
         @click="closeModal"
         aria-label="Закрыть"
@@ -2388,8 +1601,8 @@ onBeforeUnmount(() => {
       <div
         class="modal-body"
         ref="modalBodyRef"
-        :class="{ 'ai-collapsed': isAiPaneCollapsed, 'ai-resizing': isResizingAiPane }"
-        :style="{ '--ai-pane-width': `${aiPaneWidth}%` }"
+        :class="{ 'charts-collapsed': isChartsPaneCollapsed, 'charts-resizing': isResizingChartsPane }"
+        :style="{ '--charts-pane-width': `${chartsPaneWidth}%` }"
       >
         <section class="operations-pane">
           <div v-if="loadError" class="status-row">
@@ -3750,83 +2963,29 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <aside class="journal-ai-pane">
-          <JournalChartsPanel
-            v-if="activeSidebarTab === 'charts'"
-            :rows="filteredOperations"
-          />
-
-          <DesktopAssistant v-else-if="activeSidebarTab === 'codex'" :api-base-url="API_BASE_URL" />
-          <template v-else>
-            <div class="journal-ai-quick-row">
-              <button
-                v-for="item in QUICK_PROMPTS"
-                :key="item.prompt"
-                class="ai-quick-btn"
-                :disabled="aiLoading"
-                @click="useQuickPrompt(item)"
-              >
-                {{ item.label }}
-              </button>
-            </div>
-
-            <div class="journal-ai-messages" ref="aiMessagesRef">
-              <div v-if="aiMessages.length === 0" class="journal-ai-empty"></div>
-
-              <div v-for="message in aiMessages" :key="message.id" class="journal-ai-message" :class="message.role">
-                <div class="journal-ai-bubble">
-                  <div class="journal-ai-text">{{ message.text }}</div>
-                  <div class="journal-ai-actions" v-if="message.role === 'assistant'">
-                    <button class="journal-ai-copy-btn" @click="copyAiText(message)">
-                      {{ message.copied ? '✅' : 'Копировать' }}
-                    </button>
-                    <button v-if="message.log" class="journal-ai-log-btn" @click="openAiLog(message)">Log</button>
-                    <button class="journal-ai-json-btn" @click="downloadAiJson">Json</button>
-                  </div>
-                </div>
-              </div>
-
-              <div v-if="aiLoading" class="journal-ai-typing" aria-live="polite" aria-label="AI готовит ответ">
-                <span class="journal-ai-typing-word">Думаю</span>
-                <span class="journal-ai-typing-dots" aria-hidden="true"></span>
-              </div>
-            </div>
-
-            <AssistantComposer v-model="aiInput" :busy="aiLoading" :recording="isAiRecording"
-              :speech-supported="aiSpeechSupported" placeholder="Спросите AI Как дела?"
-              @send="sendAiMessage()" @microphone="toggleAiRecording" @input-ready="aiInputRef = $event" />
-          </template>
+        <aside class="journal-charts-pane">
+          <JournalChartsPanel :rows="filteredOperations" />
         </aside>
 
         <div
-          v-if="!isAiPaneCollapsed"
-          class="ai-pane-resizer"
+          v-if="!isChartsPaneCollapsed"
+          class="charts-pane-resizer"
           role="separator"
           aria-orientation="vertical"
           aria-label="Изменить ширину правой панели"
-          @pointerdown="startAiPaneResize"
+          @pointerdown="startChartsPaneResize"
         ></div>
 
         <button
-          class="ai-pane-toggle-btn"
+          class="charts-pane-toggle-btn"
           type="button"
-          @click="toggleAiPane"
-          :title="isAiPaneCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'"
-          :aria-label="isAiPaneCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'"
-          :aria-expanded="String(!isAiPaneCollapsed)"
+          @click="toggleChartsPane"
+          :title="isChartsPaneCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'"
+          :aria-label="isChartsPaneCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'"
+          :aria-expanded="String(!isChartsPaneCollapsed)"
         >
-          {{ isAiPaneCollapsed ? '<' : '>' }}
+          {{ isChartsPaneCollapsed ? '<' : '>' }}
         </button>
-      </div>
-
-      <div v-if="showAiLogModal" class="journal-ai-log-modal" @click.self="closeAiLog">
-        <div class="journal-ai-log-content">
-          <div class="journal-ai-log-header">
-            <span>AI лог</span>
-            <button class="journal-ai-log-close" @click="closeAiLog">×</button>
-          </div>
-          <pre class="journal-ai-log-body">{{ aiLogText }}</pre>
-        </div>
       </div>
 
       <ConfirmDialog
@@ -3866,13 +3025,13 @@ onBeforeUnmount(() => {
   --editor-row-alt-bg: var(--ui-panel-bg, var(--color-background-soft));
   --editor-cell-text: var(--text-main, var(--color-text));
   --editor-muted-text: var(--text-soft, var(--color-heading));
-  --ai-pane-bg: var(--color-background-soft);
-  --ai-pane-surface: var(--color-background);
-  --ai-pane-surface-soft: var(--color-background-soft);
-  --ai-pane-hover: var(--color-background-mute, var(--color-background-soft));
-  --ai-pane-border: var(--editor-border);
-  --ai-pane-text: var(--color-text);
-  --ai-pane-muted: var(--editor-muted-text);
+  --charts-pane-bg: var(--color-background-soft);
+  --charts-pane-surface: var(--color-background);
+  --charts-pane-surface-soft: var(--color-background-soft);
+  --charts-pane-hover: var(--color-background-mute, var(--color-background-soft));
+  --charts-pane-border: var(--editor-border);
+  --charts-pane-text: var(--color-text);
+  --charts-pane-muted: var(--editor-muted-text);
 
   width: 95vw;
   height: 90vh;
@@ -3887,53 +3046,32 @@ onBeforeUnmount(() => {
 }
 
 :global([data-theme="dark"]) .editor-modal {
-  --ai-pane-bg: #181818;
-  --ai-pane-surface: #181818;
-  --ai-pane-surface-soft: #181818;
-  --ai-pane-hover: #1d2632;
-  --ai-pane-border: #2a3442;
-  --ai-pane-text: #d5dfeb;
-  --ai-pane-muted: #99a8bb;
+  --charts-pane-bg: #181818;
+  --charts-pane-surface: #181818;
+  --charts-pane-surface-soft: #181818;
+  --charts-pane-hover: #1d2632;
+  --charts-pane-border: #2a3442;
+  --charts-pane-text: #d5dfeb;
+  --charts-pane-muted: #99a8bb;
 }
 
-:global(html[data-theme="dark"]) .journal-ai-pane {
+:global(html[data-theme="dark"]) .journal-charts-pane {
   background: #181818 !important;
   border-left-color: #1e2a39 !important;
 }
 
-:global(html[data-theme="dark"]) .editor-modal .journal-ai-messages {
-  background: #181818 !important;
-}
-
-:global([data-theme="dark"]) .ai-input-container {
-  background: #181818;
-  border-top-color: #253140;
-}
-
-:global([data-theme="dark"]) .journal-ai-bubble {
-  background: #232323;
-  border-color: #2c394b;
-}
-
-:global([data-theme="dark"]) .journal-ai-copy-btn,
-:global([data-theme="dark"]) .journal-ai-log-btn,
-:global([data-theme="dark"]) .journal-ai-json-btn {
-  background: #17212d;
-  border-color: #2c394b;
-  color: #c8d3e2;
-}
 
 .modal-header {
-  --ai-pane-width: 25%;
+  --charts-pane-width: 25%;
   display: grid;
-  grid-template-columns: calc(100% - var(--ai-pane-width)) var(--ai-pane-width);
+  grid-template-columns: calc(100% - var(--charts-pane-width)) var(--charts-pane-width);
   align-items: stretch;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-background-soft);
   min-width: 0;
 }
 
-.modal-header.ai-collapsed {
+.modal-header.charts-collapsed {
   grid-template-columns: 1fr 0;
 }
 
@@ -3946,7 +3084,7 @@ onBeforeUnmount(() => {
   padding: 12px 18px;
 }
 
-.modal-header-ai {
+.modal-header-charts {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3958,7 +3096,7 @@ onBeforeUnmount(() => {
 }
 
 .modal-header-title,
-.modal-header-ai-title {
+.modal-header-charts-title {
   margin: 0;
   font-size: 13px;
   font-weight: var(--fw-semi, 600);
@@ -3971,8 +3109,8 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.modal-header-ai-title {
-  color: var(--ai-pane-text);
+.modal-header-charts-title {
+  color: var(--charts-pane-text);
 }
 
 .sidebar-tabs {
@@ -4010,7 +3148,7 @@ onBeforeUnmount(() => {
   color: var(--color-primary);
 }
 
-.modal-header.ai-collapsed .modal-header-ai {
+.modal-header.charts-collapsed .modal-header-charts {
   opacity: 0;
   pointer-events: none;
   padding: 0;
@@ -4368,16 +3506,16 @@ onBeforeUnmount(() => {
 }
 
 .modal-body {
-  --ai-pane-width: 25%;
+  --charts-pane-width: 25%;
   flex: 1;
   display: grid;
-  grid-template-columns: calc(100% - var(--ai-pane-width)) var(--ai-pane-width);
+  grid-template-columns: calc(100% - var(--charts-pane-width)) var(--charts-pane-width);
   background: var(--color-background);
   min-height: 0;
   position: relative;
 }
 
-.modal-body.ai-collapsed {
+.modal-body.charts-collapsed {
   grid-template-columns: 1fr 0;
 }
 
@@ -4414,64 +3552,28 @@ onBeforeUnmount(() => {
 }
 
 .table-wrap,
-.journal-ai-messages {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-track-bg);
-}
-
-.table-wrap::-webkit-scrollbar,
-.journal-ai-messages::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.table-wrap::-webkit-scrollbar-track,
-.journal-ai-messages::-webkit-scrollbar-track {
-  background: var(--scrollbar-track-bg);
-  border-radius: 999px;
-}
-
-.table-wrap::-webkit-scrollbar-thumb,
-.journal-ai-messages::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb-bg);
-  border-radius: 999px;
-  border: 2px solid var(--scrollbar-track-bg);
-}
-
-.table-wrap::-webkit-scrollbar-thumb:hover,
-.journal-ai-messages::-webkit-scrollbar-thumb:hover,
-.table-wrap::-webkit-scrollbar-thumb:active,
-.journal-ai-messages::-webkit-scrollbar-thumb:active {
-  background: var(--scrollbar-thumb-bg-active);
-}
-
-.table-wrap::-webkit-scrollbar-corner,
-.journal-ai-messages::-webkit-scrollbar-corner {
-  background: var(--scrollbar-track-bg);
-}
-
-.journal-ai-pane {
+.journal-charts-pane {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-bg);
+  border-left: 1px solid var(--charts-pane-border);
+  background: var(--charts-pane-bg);
   overflow: hidden;
   transition: opacity 0.22s ease, border-color 0.22s ease;
 }
 
-.modal-body.ai-collapsed .journal-ai-pane {
+.modal-body.charts-collapsed .journal-charts-pane {
   opacity: 0;
   pointer-events: none;
   border-left-color: transparent;
 }
 
-.ai-pane-resizer {
+.charts-pane-resizer {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(100% - var(--ai-pane-width));
+  left: calc(100% - var(--charts-pane-width));
   width: 10px;
   transform: translateX(-50%);
   cursor: col-resize;
@@ -4479,7 +3581,7 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 
-.ai-pane-resizer::before {
+.charts-pane-resizer::before {
   content: '';
   position: absolute;
   top: 0;
@@ -4487,26 +3589,26 @@ onBeforeUnmount(() => {
   left: 50%;
   width: 1px;
   transform: translateX(-50%);
-  background: var(--ai-pane-border);
+  background: var(--charts-pane-border);
   transition: background-color 0.15s, width 0.15s;
 }
 
-.ai-pane-resizer:hover::before,
-.modal-body.ai-resizing .ai-pane-resizer::before {
+.charts-pane-resizer:hover::before,
+.modal-body.charts-resizing .charts-pane-resizer::before {
   width: 2px;
   background: var(--color-primary);
 }
 
-.ai-pane-toggle-btn {
+.charts-pane-toggle-btn {
   position: absolute;
   top: 10px;
-  right: calc(var(--ai-pane-width) - 14px);
+  right: calc(var(--charts-pane-width) - 14px);
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-surface);
-  color: var(--ai-pane-text);
+  border: 1px solid var(--charts-pane-border);
+  background: var(--charts-pane-surface);
+  color: var(--charts-pane-text);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
@@ -4519,366 +3621,15 @@ onBeforeUnmount(() => {
   transition: right 0.22s ease, background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.ai-pane-toggle-btn:hover {
-  background: var(--ai-pane-hover);
+.charts-pane-toggle-btn:hover {
+  background: var(--charts-pane-hover);
   border-color: var(--color-primary);
 }
 
-.modal-body.ai-collapsed .ai-pane-toggle-btn {
+.modal-body.charts-collapsed .charts-pane-toggle-btn {
   right: 8px;
 }
 
-.journal-ai-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--ai-pane-bg);
-}
-
-.journal-ai-empty {
-  color: var(--ai-pane-muted);
-  font-size: 13px;
-  text-align: center;
-  padding: 24px 8px;
-}
-
-.journal-ai-message {
-  display: flex;
-}
-
-.journal-ai-message.user {
-  justify-content: flex-end;
-}
-
-.journal-ai-message.assistant {
-  justify-content: flex-start;
-}
-
-.journal-ai-bubble {
-  max-width: 92%;
-  border-radius: 12px;
-  border: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-surface);
-  padding: 10px 12px;
-}
-
-.journal-ai-message.user .journal-ai-bubble {
-  background: rgba(16, 185, 129, 0.18);
-  border-color: rgba(16, 185, 129, 0.45);
-}
-
-.journal-ai-text {
-  white-space: pre-wrap;
-  color: var(--ai-pane-text);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.journal-ai-actions {
-  margin-top: 8px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.journal-ai-copy-btn,
-.journal-ai-log-btn,
-.journal-ai-json-btn {
-  height: 24px;
-  border-radius: 6px;
-  border: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-surface-soft);
-  color: var(--ai-pane-text);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 0 8px;
-}
-
-.journal-ai-copy-btn:hover,
-.journal-ai-log-btn:hover,
-.journal-ai-json-btn:hover {
-  background: var(--ai-pane-hover);
-}
-
-.journal-ai-typing {
-  color: var(--ai-pane-muted);
-  font-size: 12px;
-  padding: 0 2px 4px;
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 1px;
-}
-
-.journal-ai-typing-word {
-  display: inline-block;
-  animation: aiThinkingPulse 1.4s ease-in-out infinite;
-}
-
-.journal-ai-typing-dots {
-  display: inline-block;
-  min-width: 3ch;
-}
-
-.journal-ai-typing-dots::after {
-  content: '...';
-  display: inline-block;
-  width: 0ch;
-  overflow: hidden;
-  animation: aiThinkingDots 1.2s steps(4, end) infinite;
-}
-
-@keyframes aiThinkingPulse {
-  0%, 100% {
-    opacity: 0.55;
-    transform: translateY(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-1px);
-  }
-}
-
-@keyframes aiThinkingDots {
-  0% {
-    width: 0ch;
-  }
-  33% {
-    width: 1ch;
-  }
-  66% {
-    width: 2ch;
-  }
-  100% {
-    width: 3ch;
-  }
-}
-
-.journal-ai-quick-row {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-surface-soft);
-  flex-shrink: 0;
-}
-
-.ai-quick-btn {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-surface-soft);
-  color: var(--ai-pane-text);
-  font-size: 12px;
-  font-weight: var(--fw-semi, 600);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.ai-quick-btn:hover:not(:disabled) {
-  background: var(--ai-pane-hover);
-  border-color: var(--color-primary);
-}
-
-.ai-quick-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ai-input-container {
-  padding: 8px 10px;
-  border-top: 1px solid var(--ai-pane-border);
-  background: var(--ai-pane-surface-soft);
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 32px 1fr auto;
-  align-items: end;
-  gap: 8px;
-}
-
-.ai-attach-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: var(--ai-pane-muted);
-  cursor: not-allowed;
-  display: grid;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  opacity: 0.5;
-}
-
-.ai-input {
-  flex: 1;
-  min-height: 32px;
-  max-height: none;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--ai-pane-text);
-  padding: 6px 2px;
-  outline: none;
-  resize: none;
-  overflow-y: hidden;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.ai-input::placeholder {
-  color: var(--ai-pane-muted);
-}
-
-.ai-input-buttons {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-  align-items: end;
-  margin-bottom: 1px;
-}
-
-.ai-send-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  background: var(--color-primary);
-  color: #ffffff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s, transform 0.08s;
-}
-
-.ai-send-btn:hover {
-  background: #28a745;
-}
-
-.ai-send-btn:active {
-  transform: scale(0.96);
-}
-
-.ai-send-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  background: var(--ai-pane-hover);
-  color: var(--ai-pane-muted);
-  transform: none;
-}
-
-.ai-mic-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: var(--ai-pane-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s, transform 0.08s;
-}
-
-.ai-mic-btn:hover {
-  background: var(--ai-pane-hover);
-}
-
-.ai-mic-btn:active {
-  transform: scale(0.96);
-}
-
-.ai-mic-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.ai-mic-btn.recording {
-  color: #fff;
-  background: var(--color-primary);
-  animation: aiPulse 1.5s ease-in-out infinite, aiWave 2s ease-in-out infinite;
-}
-
-@keyframes aiPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.08); }
-}
-
-@keyframes aiWave {
-  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.6); }
-  50% { box-shadow: 0 0 0 12px rgba(52, 199, 89, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
-}
-
-.ai-send-btn svg,
-.ai-mic-btn svg {
-  width: 20px;
-  height: 20px;
-  display: block;
-  flex: none;
-}
-
-.journal-ai-log-modal {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 3100;
-}
-
-.journal-ai-log-content {
-  width: min(760px, 92vw);
-  max-height: 78vh;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.journal-ai-log-header {
-  height: 42px;
-  border-bottom: 1px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 14px;
-  color: var(--color-heading);
-  font-weight: var(--fw-semi, 600);
-}
-
-.journal-ai-log-close {
-  border: 0;
-  background: transparent;
-  color: var(--color-text);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.journal-ai-log-body {
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--color-text);
-  background: var(--color-background-soft);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 
 .settings-table {
   width: 100%;
@@ -5376,24 +4127,7 @@ onBeforeUnmount(() => {
   z-index: 3200;
 }
 
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-pane,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-messages,
-:global(html[data-theme="dark"]) .operations-editor-modal .ai-input-container,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-bubble,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-copy-btn,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-btn,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-json-btn,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-content,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-header,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-log-body {
-  background: #181818 !important;
-}
-
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-message.user .journal-ai-bubble,
-:global(html[data-theme="dark"]) .operations-editor-modal .journal-ai-message.assistant .journal-ai-bubble {
-  background: #232323 !important;
-  border-color: #2f2f2f !important;
-}
+:global(html[data-theme="dark"]) .operations-editor-modal .journal-charts-pane { background: #181818 !important; }
 
 @media (max-width: 1024px) {
   .editor-modal {
@@ -5406,7 +4140,7 @@ onBeforeUnmount(() => {
     padding: 12px 14px;
   }
 
-  .modal-header-ai {
+  .modal-header-charts {
     padding: 14px 8px;
   }
 
