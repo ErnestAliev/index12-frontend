@@ -26,6 +26,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
+import DesktopAssistant from '@/components/DesktopAssistant.vue';
 import { fetchAiHistory, resetAiHistory } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 import {
@@ -226,6 +227,7 @@ const isPersonalTransferWithdrawal = (op) => !!op &&
 // 🟣 AI ассистент (Mobile MVP, read-only)
 // =================================================================
 const showAiModal = ref(false);
+const mobileAssistantMode = ref('ai');
 const aiInput = ref('');
 const aiMessages = ref([]); // { id, role: 'user'|'assistant', text, copied? }
 const aiLoading = ref(false);
@@ -354,7 +356,7 @@ const toggleAiRecording = () => {
 const openAiModal = async () => {
   showAiModal.value = true;
   try { document.body.style.overflow = 'hidden'; } catch (_) {}
-  await loadAiHistory();
+  if (mobileAssistantMode.value === 'ai') await loadAiHistory();
   await nextTick();
   // Don't auto-focus on mobile to prevent keyboard from opening
 };
@@ -1642,7 +1644,10 @@ const handleOperationDelete = async (op) => {
       <div v-if="showAiModal" class="ai-modal-overlay" @click.self="closeAiModal">
         <div class="ai-modal">
           <div class="ai-modal-header">
-            <div class="ai-modal-title">AI ассистент</div>
+            <div class="ai-modal-title">
+              <button type="button" :aria-pressed="mobileAssistantMode === 'codex'" @click="mobileAssistantMode = 'codex'">Codex</button>
+              <button type="button" :aria-pressed="mobileAssistantMode === 'ai'" @click="mobileAssistantMode = 'ai'; loadAiHistory()">AI</button>
+            </div>
             <button class="ai-modal-close" @click="closeAiModal" title="Закрыть">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1651,6 +1656,8 @@ const handleOperationDelete = async (op) => {
             </button>
           </div>
 
+          <DesktopAssistant v-if="mobileAssistantMode === 'codex'" :api-base-url="API_BASE_URL" />
+          <template v-else>
           <div class="ai-modal-chips">
             <div class="ai-chip-left">
               <button class="ai-chip" @click="runAiQuick('analysis')">Анализ</button>
@@ -1738,6 +1745,7 @@ const handleOperationDelete = async (op) => {
               </div>
             </div>
           </div>
+          </template>
         </div>
       </div>
     </Teleport>

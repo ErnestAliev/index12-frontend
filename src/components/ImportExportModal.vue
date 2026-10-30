@@ -7,6 +7,7 @@ import DateRangePicker from '@/components/DateRangePicker.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import SubcategorySelect from '@/components/SubcategorySelect.vue';
 import JournalChartsPanel from '@/components/JournalChartsPanel.vue';
+import DesktopAssistant from '@/components/DesktopAssistant.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 import {
@@ -2366,6 +2367,14 @@ onBeforeUnmount(() => {
             >
               AI
             </button>
+            <button
+              class="sidebar-tab-btn"
+              :class="{ active: activeSidebarTab === 'codex' }"
+              type="button"
+              role="tab"
+              :aria-selected="activeSidebarTab === 'codex' ? 'true' : 'false'"
+              @click="activeSidebarTab = 'codex'"
+            >Codex</button>
           </div>
           <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
         </div>
@@ -3751,6 +3760,7 @@ onBeforeUnmount(() => {
             :rows="filteredOperations"
           />
 
+          <DesktopAssistant v-else-if="activeSidebarTab === 'codex'" :api-base-url="API_BASE_URL" />
           <template v-else>
             <div class="journal-ai-quick-row">
               <button
