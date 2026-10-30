@@ -13,7 +13,7 @@ import { useAccountOwnerRepair } from '@/composables/useAccountOwnerRepair';
 import { getAccountOwnerKey } from '@/utils/accountOwnership.js';
 import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
-import { getDefaultTaxPercentByName, getTaxRegimeLabel } from '@/utils/companyTax';
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 
 /**
  * * --- МЕТКА ВЕРСИИ: v30.2 - FUTURE TRANSFER VALIDATION ---
@@ -56,12 +56,9 @@ const selectedFromOwner = ref(null);
 const selectedToOwner = ref(null); 
 const isInlineSaving = ref(false);
 
-const PURPOSE_INTERNAL = 'internal';
-const PURPOSE_INTER_COMPANY = 'inter_company';
-const PURPOSE_PERSONAL_BUSINESS = 'personal_business';
-const PURPOSE_PERSONAL_WITHDRAWAL = 'personal_withdrawal';
-
-const transferPurpose = ref(PURPOSE_INTERNAL); 
+const transferMode = ref('internal');
+const isWithdrawal = computed(() => transferMode.value === 'withdrawal');
+const description = ref('');
 
 // InfoModal
 const showInfoModal = ref(false);
@@ -261,112 +258,6 @@ const resolveOwnerKey = (accountId, selectedOwnerKey) => {
 const resolvedFromOwnerKey = computed(() => resolveOwnerKey(fromAccountId.value, selectedFromOwner.value));
 const resolvedToOwnerKey = computed(() => resolveOwnerKey(toAccountId.value, selectedToOwner.value));
 
-const isTransferRouteReady = computed(() => (
-  !!fromAccountId.value &&
-  !!toAccountId.value &&
-  !!resolvedFromOwnerKey.value &&
-  !!resolvedToOwnerKey.value
-));
-
-const purposeOptions = computed(() => {
-  if (!isTransferRouteReady.value) return [];
-
-  const [fromType, fromId] = resolvedFromOwnerKey.value.split('-');
-  const [toType, toId] = resolvedToOwnerKey.value.split('-');
-
-  if (fromType === toType && fromId === toId) {
-    return [
-      { value: PURPOSE_INTERNAL, label: 'Между счетами одной компании' }
-    ];
-  }
-
-  if (toType === 'individual') {
-    return [
-      { value: PURPOSE_PERSONAL_BUSINESS, label: 'Перевод на личную карту' },
-      { value: PURPOSE_PERSONAL_WITHDRAWAL, label: 'Вывод средств' }
-    ];
-  }
-
-  return [
-    { value: PURPOSE_INTER_COMPANY, label: 'Между моими компаниями' },
-    { value: PURPOSE_INTERNAL, label: 'Между счетами одной компании' }
-  ];
-});
-
-const findCompanyByOwnerKey = (ownerKey) => {
-  if (!ownerKey || !ownerKey.startsWith('company-')) return null;
-  const companyId = ownerKey.slice('company-'.length);
-  return mainStore.companies.find(c => String(c._id) === String(companyId)) || null;
-};
-
-const formatCompanyTax = (company) => {
-  if (!company) return null;
-  const regime = company.taxRegime || 'simplified';
-  const percent = company.taxPercent != null
-      ? Number(company.taxPercent)
-      : getDefaultTaxPercentByName(company.name, regime);
-  return `${getTaxRegimeLabel(regime)} ${percent}%`;
-};
-
-const smartHint = computed(() => {
-  if (!isTransferRouteReady.value) return '';
-
-  if (transferPurpose.value === PURPOSE_INTERNAL) {
-    return 'Вы перекладываете деньги с одного счета на другой внутри одной компании.';
-  }
-
-  if (transferPurpose.value === PURPOSE_INTER_COMPANY) {
-    if (resolvedFromOwnerKey.value && resolvedFromOwnerKey.value.startsWith('individual-')) {
-        return 'Перевод с личного счета на нужды компании (вложение средств).';
-    }
-
-    const fromCompany = findCompanyByOwnerKey(resolvedFromOwnerKey.value);
-    const toCompany = findCompanyByOwnerKey(resolvedToOwnerKey.value);
-    if (fromCompany && toCompany) {
-      return `Межкомпанийский перевод. Налоговый режим: ${fromCompany.name} (${formatCompanyTax(fromCompany)}) -> ${toCompany.name} (${formatCompanyTax(toCompany)}).`;
-    }
-
-    return 'Межкомпанийский перевод. Проверьте налоговый режим и ставку компании в настройках.';
-  }
-
-  if (transferPurpose.value === PURPOSE_PERSONAL_BUSINESS) {
-      return 'Перевод на личную карту на развитие бизнеса.';
-  }
-
-  if (transferPurpose.value === PURPOSE_PERSONAL_WITHDRAWAL) {
-      return 'Вывод средств: деньги выводятся из системы.';
-  }
-
-  return '';
-});
-
-// --- WATCHERS ---
-watch([resolvedFromOwnerKey, resolvedToOwnerKey], ([newFrom, newTo]) => {
-  if (!newFrom || !newTo) return;
-  const [fromType, fromId] = newFrom.split('-');
-  const [toType, toId] = newTo.split('-');
-  if (fromId === toId && fromType === toType) {
-    transferPurpose.value = PURPOSE_INTERNAL;
-    return;
-  }
-
-  if (toType === 'individual') {
-    if (![PURPOSE_PERSONAL_BUSINESS, PURPOSE_PERSONAL_WITHDRAWAL].includes(transferPurpose.value)) {
-      transferPurpose.value = PURPOSE_PERSONAL_BUSINESS;
-    }
-    return;
-  }
-
-  transferPurpose.value = PURPOSE_INTER_COMPANY;
-});
-
-watch(purposeOptions, (options) => {
-  if (!Array.isArray(options) || options.length === 0) return;
-  if (!options.some((opt) => opt.value === transferPurpose.value)) {
-    transferPurpose.value = options[0].value;
-  }
-});
-
 // Autocomplete Logic
 const showFromAccountSuggestions = ref(false);
 const fromAccountSuggestionsList = computed(() => {
@@ -465,12 +356,12 @@ const onToAccountSelected = (accountId) => {
 };
 
 const ownershipReady = ref(false);
-const isFromOwnerSelectVisible = computed(() => isCreatingFromAccount.value || !fromAccountId.value);
-const isToOwnerSelectVisible = computed(() => isCreatingToAccount.value || !toAccountId.value);
+const isFromOwnerSelectVisible = computed(() => isCreatingFromAccount.value);
+const isToOwnerSelectVisible = computed(() => !isWithdrawal.value && isCreatingToAccount.value);
 const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
   routes: [
     { key: 'from', label: 'Отправитель', accountId: fromAccountId, ownerKey: selectedFromOwner, creating: isCreatingFromAccount },
-    { key: 'to', label: 'Получатель', accountId: toAccountId, ownerKey: selectedToOwner, creating: isCreatingToAccount },
+    { key: 'to', label: 'Получатель', accountId: toAccountId, ownerKey: selectedToOwner, creating: isCreatingToAccount, active: () => !isWithdrawal.value, repairMissing: () => !isSystemWithdrawal(props.transferToEdit) },
   ],
   ready: ownershipReady,
   enabled: canEdit,
@@ -494,16 +385,8 @@ onMounted(async () => {
     if (transfer.toCompanyId) { const cId = transfer.toCompanyId?._id || transfer.toCompanyId; selectedToOwner.value = `company-${cId}`; } 
     else if (transfer.toIndividualId) { const iId = transfer.toIndividualId?._id || transfer.toIndividualId; selectedToOwner.value = `individual-${iId}`; }
 
-    const isPersonalWithdrawalTransfer = transfer.transferReason === 'personal_use' || (transfer.isWithdrawal && transfer.transferPurpose === 'personal');
-    if (transfer.transferPurpose === 'personal' || isPersonalWithdrawalTransfer) {
-      transferPurpose.value = transfer.transferReason === 'personal_use'
-        ? PURPOSE_PERSONAL_WITHDRAWAL
-        : PURPOSE_PERSONAL_BUSINESS;
-    } else if (transfer.transferPurpose === 'inter_company') {
-      transferPurpose.value = PURPOSE_INTER_COMPANY;
-    } else {
-      transferPurpose.value = PURPOSE_INTERNAL;
-    }
+    transferMode.value = isSystemWithdrawal(transfer) ? 'withdrawal' : 'internal';
+    description.value = transfer.description || '';
 
     const savedCategoryId = props.transferToEdit?.categoryId?._id || props.transferToEdit?.categoryId;
     categoryId.value = mainStore.categories.some(item => item._id === savedCategoryId) ? savedCategoryId : defaultCategoryId;
@@ -516,17 +399,17 @@ onMounted(async () => {
   ownershipReady.value = true;
 });
 
-const title = computed(() => { 
-    if (props.transferToEdit && !isCloneMode.value) return 'Редактировать перевод';
-    if (isFutureDate.value) return 'Запланировать перевод';
-    return 'Новый перевод'; 
+const title = computed(() => {
+    const noun = isWithdrawal.value ? 'вывод средств' : 'перевод';
+    if (props.transferToEdit && !isCloneMode.value) return `Редактировать ${noun}`;
+    if (isFutureDate.value) return `Запланировать ${noun}`;
+    return isWithdrawal.value ? 'Вывод средств' : 'Новый перевод';
 });
-
-const buttonText = computed(() => { 
-    if (isCloneMode.value) return 'Создать копию перевода'; 
-    if (props.transferToEdit) return 'Сохранить'; 
-    if (isFutureDate.value) return 'Запланировать';
-    return 'Добавить перевод'; 
+const buttonText = computed(() => {
+    if (isCloneMode.value) return isWithdrawal.value ? 'Создать копию вывода' : 'Создать копию перевода';
+    if (isWithdrawal.value) return isFutureDate.value ? 'Запланировать вывод' : 'Сохранить вывод';
+    if (props.transferToEdit) return 'Сохранить';
+    return isFutureDate.value ? 'Запланировать' : 'Сохранить перевод';
 });
 
 const handleDeleteClick = () => { isDeleteConfirmVisible.value = true; };
@@ -613,8 +496,8 @@ const handleSave = async () => {
   const cleanedAmount = (amountInput.value?.value || amount.value).replace(/ /g, '');
   const amountParsed = parseFloat(cleanedAmount);
   if (isNaN(amountParsed) || amountParsed <= 0) { showError('Введите корректную сумму'); return; }
-  if (!fromAccountId.value || !toAccountId.value) { ensureAccountOwnership(); if (!showOwnerRepair.value) showError('Выберите счета отправителя и получателя'); return; }
-  if (fromAccountId.value === toAccountId.value) { showError('Счета не должны совпадать'); return; }
+  if (!fromAccountId.value || (!isWithdrawal.value && !toAccountId.value)) { ensureAccountOwnership(); if (!showOwnerRepair.value) showError(isWithdrawal.value ? 'Выберите счёт списания' : 'Выберите счета отправителя и получателя'); return; }
+  if (!isWithdrawal.value && fromAccountId.value === toAccountId.value) { showError('Счета не должны совпадать'); return; }
   if (!ensureAccountOwnership()) return;
 
   const isEdit = !!props.transferToEdit;
@@ -641,30 +524,22 @@ const handleSave = async () => {
   };
 
   const fromOwnerData = resolveOwner(fromAccountId.value, selectedFromOwner.value);
-  const toOwnerData = resolveOwner(toAccountId.value, selectedToOwner.value);
+  const toOwnerData = isWithdrawal.value ? { companyId: null, individualId: null } : resolveOwner(toAccountId.value, selectedToOwner.value);
 
   const fromCompanyId = fromOwnerData.companyId;
   const fromIndividualId = fromOwnerData.individualId;
   const toCompanyId = toOwnerData.companyId;
   const toIndividualId = toOwnerData.individualId;
   
-  let apiTransferPurpose = transferPurpose.value;
-  let apiTransferReason = null;
-
-  if (transferPurpose.value === PURPOSE_PERSONAL_BUSINESS) {
-      apiTransferPurpose = 'personal';
-      apiTransferReason = 'business_growth';
-  } else if (transferPurpose.value === PURPOSE_PERSONAL_WITHDRAWAL) {
-      apiTransferPurpose = 'personal';
-      apiTransferReason = 'personal_use';
-  }
+  const apiTransferPurpose = isWithdrawal.value ? 'withdrawal'
+      : resolvedFromOwnerKey.value === resolvedToOwnerKey.value ? 'internal' : 'inter_company';
 
   const finalCategoryId = categoryId.value;
 
   try {
       await mainStore.saveAccountOwners([
           { accountId: fromAccountId.value, ownerKey: selectedFromOwner.value },
-          { accountId: toAccountId.value, ownerKey: selectedToOwner.value },
+          ...(!isWithdrawal.value ? [{ accountId: toAccountId.value, ownerKey: selectedToOwner.value }] : []),
       ]);
   } catch (e) {
       showError('Ошибка привязки владельца к счёту: ' + (e.response?.data?.message || e.message || e));
@@ -674,11 +549,11 @@ const handleSave = async () => {
   const transferPayload = { 
       date: finalDate, amount: amountParsed,
       ...projectFields(selectedProjectId.value),
-      fromAccountId: fromAccountId.value, toAccountId: toAccountId.value, 
+      fromAccountId: fromAccountId.value, toAccountId: isWithdrawal.value ? null : toAccountId.value,
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, subcategoryId: subcategoryId.value, transferPurpose: apiTransferPurpose,
-      transferReason: apiTransferReason
+      transferReason: null, description: description.value.trim()
   };
   
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
@@ -692,11 +567,16 @@ const closePopup = () => { emit('close'); };
     <div class="popup-content theme-transfer">
       <h3>{{ title }}</h3>
 
+      <div class="transfer-modes input-spacing" role="group" aria-label="Вид операции">
+        <button type="button" :aria-pressed="!isWithdrawal" :class="{ active: !isWithdrawal }" @click="transferMode = 'internal'" :disabled="isReadOnly">Между счетами</button>
+        <button type="button" :aria-pressed="isWithdrawal" :class="{ active: isWithdrawal }" @click="transferMode = 'withdrawal'" :disabled="isReadOnly">Вывод из системы</button>
+      </div>
+
       <!-- СУММА + ВАЛИДАЦИЯ -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
         <div class="input-inner-content">
            <span v-if="amount" class="floating-label">Сумма, ₸</span>
-           <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Перевожу деньги ₸'" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" :disabled="isReadOnly" />
+           <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Сумма, ₸'" aria-label="Сумма, ₸" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" :disabled="isReadOnly" />
         </div>
     </div>
     
@@ -741,6 +621,7 @@ const closePopup = () => { emit('close'); };
       </div>
 
 
+      <template v-if="!isWithdrawal">
       <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
       <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
           <template #action-item v-if="canEdit">
@@ -777,21 +658,17 @@ const closePopup = () => { emit('close'); };
       </div>
 
 
-      <div v-if="isTransferRouteReady" class="input-spacing">
-          <BaseSelect v-model="transferPurpose" :options="purposeOptions" placeholder="Цель перевода" label="Цель перевода" :disabled="isReadOnly" />
-      </div>
-
       <div class="input-spacing" data-testid="transfer-project-field">
           <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" :disabled="isReadOnly" />
       </div>
-
       <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
+      </template>
 
-      <div class="hint-box" v-if="isTransferRouteReady && smartHint">{{ smartHint }}</div>
-      
+      <input v-model="description" class="form-input input-spacing" aria-label="Комментарий" placeholder="Комментарий (необязательно)" maxlength="10000" :disabled="isReadOnly" />
+
       <div class="custom-input-box input-spacing has-value date-box">
          <div class="input-inner-content">
-            <span class="floating-label">Дата перевода</span>
+            <span class="floating-label">Дата</span>
             <div class="date-display-row">
                <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
                
@@ -832,6 +709,10 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
+.transfer-modes { display: flex; gap: 4px; padding: 4px; background: #e6e6e6; border-radius: 9px; }
+.transfer-modes button { flex: 1; border: 0; border-radius: 7px; padding: 11px 6px; font-size: 13px; font-weight: 600; color: #666; background: transparent; cursor: pointer; }
+.transfer-modes button.active { background: #2f3340; color: #fff; }
+.transfer-modes button:focus-visible { outline: 2px solid #007aff; outline-offset: 2px; }
 /* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     /* 🟢 Цвет ТЕМНО-СИНИЙ */
@@ -851,7 +732,6 @@ const closePopup = () => { emit('close'); };
 .theme-transfer { border-top: 4px solid var(--color-transfer); }
 
 h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-size: 22px; font-weight: 700; }
-    .hint-box { background-color: #E3F2FD; border: 1px solid #90CAF9; color: #0D47A1; padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; margin-bottom: 12px; }
 
 .custom-input-box { width: 100%; height: 54px; background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 0 14px; display: flex; align-items: center; position: relative; transition: all 0.2s ease; box-sizing: border-box; }
 /* 🟢 2. ФОКУС СУММЫ - ТЕМНО-СИНИЙ */
@@ -993,12 +873,6 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
   }
   .popup-actions-row {
     margin-top: 1.5rem;
-  }
-  /* Specific to Transfer Popup */
-  .hint-box {
-    font-size: 12px;
-    padding: 8px;
-    margin-bottom: 8px;
   }
 }
 

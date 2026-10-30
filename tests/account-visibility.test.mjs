@@ -261,3 +261,21 @@ test('shared project payments are one separate fact/plan row and respect account
   store.accountVisibilityMode = 'all';
   assert.equal(store.projectPnlBalances.find(row => row._id === '__all_projects__').balance, -10000000);
 });
+
+test('reason-free withdrawals debit the source once, including future balances and owner widgets', () => {
+  const { store, op, today } = fixture();
+  store.displayCache.test = [
+    op('draw-now', 'open', 50, today, { type: 'transfer', isTransfer: true, isWithdrawal: true, transferPurpose: 'withdrawal', transferReason: null, fromAccountId: 'open', fromCompanyId: 'company', toAccountId: null }),
+    op('draw-future', 'open', 70, undefined, { type: 'transfer', isTransfer: true, isWithdrawal: true, transferPurpose: 'withdrawal', transferReason: null, fromAccountId: 'open', fromCompanyId: 'company', toAccountId: null }),
+  ];
+  assert.equal(store.currentAccountBalances[0].balance, 950);
+  assert.equal(store.futureAccountBalances[0].balance, 880);
+  assert.equal(store.currentTotalBalance, 950);
+  assert.equal(store.futureTotalBalance, 880);
+  assert.equal(store.currentCompanyBalances[0].balance, 950);
+  assert.equal(store.futureCompanyBalances[0].balance, 880);
+  assert.equal(store.currentExpenses.length, 0);
+  assert.equal(store.futureExpenses.length, 0);
+  assert.equal(store.currentTransfers[0]._id, 'draw-now');
+  assert.equal(store.futureTransfers[0]._id, 'draw-future');
+});

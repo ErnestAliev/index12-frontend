@@ -1,3 +1,4 @@
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { projectGroupId } from '@/utils/projectScope';
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
@@ -115,10 +116,7 @@ export const useRepairStore = defineStore('repairStore', () => {
 
                 // Перевод
                 if (richOp.isTransfer || type === 'transfer') {
-                    const isPersonalTransferWithdrawal =
-                        richOp.transferPurpose === 'personal' &&
-                        richOp.transferReason === 'personal_use' &&
-                        (richOp.isWithdrawal === true || richOp.isTransfer === true || type === 'transfer');
+                    const isPersonalTransferWithdrawal = isSystemWithdrawal(richOp);
 
                     // Списали
                     updateBalance(newSnapshot.accountBalances, richOp.fromAccountId, -absAmt);

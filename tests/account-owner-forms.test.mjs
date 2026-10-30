@@ -186,3 +186,65 @@ test('repair alert creates an account and an owner, then persists their link', a
   assert.equal(modal.error, '');
   assert.deepEqual(updates, [{ _id: 'new-account', companyId: 'new-owner', individualId: null }]);
 });
+
+test('withdrawal: only a source is required, reason and destination stay empty', async () => {
+  fixture();
+  const saved = [];
+  const state = await mount('TransferPopup', { date: new Date(), cellIndex: 0, onSave: payload => saved.push(payload.data) });
+  state.transferMode = 'withdrawal';
+  state.fromAccountId = 'account';
+  state.onFromAccountSelected('account');
+  state.amount = '500';
+  await settle();
+  assert.equal(state.ensureAccountOwnership(), true);
+  assert.equal(state.isFromOwnerSelectVisible, false);
+  assert.equal(state.isToOwnerSelectVisible, false);
+  await state.handleSave();
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].transferPurpose, 'withdrawal');
+  assert.equal(saved[0].transferReason, null);
+  assert.equal(saved[0].toAccountId, null);
+  assert.equal(saved[0].toCompanyId, null);
+  assert.equal(saved[0].toIndividualId, null);
+  assert.equal(saved[0].description, '');
+});
+
+test('withdrawal: edits, copies and comments work without repairing a nonexistent destination', async () => {
+  fixture();
+  const saved = [];
+  const state = await mount('TransferPopup', { ...props('transfer', { isWithdrawal: true, transferPurpose: 'withdrawal', toAccountId: null, toIndividualId: null, description: 'Комментарий собственника' }), onSave: payload => saved.push(payload) });
+  assert.equal(state.transferMode, 'withdrawal');
+  assert.equal(state.showOwnerRepair, false);
+  state.amount = '600';
+  await state.handleSave();
+  assert.equal(saved[0].mode, 'edit');
+  assert.equal(saved[0].data.description, 'Комментарий собственника');
+  state.handleCopyClick();
+  await state.handleSave();
+  assert.equal(saved[1].mode, 'create');
+  assert.equal(saved[1].data.transferPurpose, 'withdrawal');
+  assert.equal(saved[1].data.toAccountId, null);
+});
+
+test('transfer: a tracked personal card is a transfer without an inferred business purpose', async () => {
+  fixture();
+  const saved = [];
+  const state = await mount('TransferPopup', { ...props('transfer'), onSave: payload => saved.push(payload.data) });
+  assert.equal(state.transferMode, 'internal');
+  await state.handleSave();
+  assert.equal(saved[0].transferReason, null);
+  assert.equal(saved[0].toAccountId, 'personal');
+  assert.equal(saved[0].transferPurpose, 'inter_company');
+  state.toAccountId = null;
+  await state.handleSave();
+  assert.equal(saved.length, 1, 'a transfer still requires a destination');
+});
+
+test('legacy personal withdrawals open as withdrawals while business-growth transfers keep two legs', async () => {
+  fixture();
+  let state = await mount('TransferPopup', props('transfer', { transferPurpose: 'personal', transferReason: 'personal_use', isWithdrawal: true }));
+  assert.equal(state.transferMode, 'withdrawal');
+  state = await mount('TransferPopup', props('transfer', { transferPurpose: 'personal', transferReason: 'business_growth' }));
+  assert.equal(state.transferMode, 'internal');
+  assert.equal(state.toAccountId, 'personal');
+});

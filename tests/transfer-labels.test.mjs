@@ -22,3 +22,8 @@ test('accounts of the same owner remain distinct and missing information is neve
   assert.match(transferLabels({ ...transfer, transferPurpose:'personal', transferReason:'personal_use' }, directories).toLabel, /Kaspi Gold Шерхан \(Шерхан\) · вне системы/);
   assert.equal(transferLabels({ transferPurpose:'personal', transferReason:'personal_use' }).toLabel, 'Вне системы');
 });
+
+test('reason-free withdrawals identify the external destination without a fabricated owner or purpose', () => {
+  const labels = transferLabels({ type:'transfer', isWithdrawal:true, transferPurpose:'withdrawal', transferReason:null, fromAccountId:'cash', toAccountId:null }, { accounts:[{_id:'cash',name:'Касса',companyId:'company'}],companies:[{_id:'company',name:'Компания'}] });
+  assert.equal(labels.routeLabel, 'Касса (Компания) → Вне системы');
+});

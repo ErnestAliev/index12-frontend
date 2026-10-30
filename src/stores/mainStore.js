@@ -1,3 +1,4 @@
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { ALL_PROJECTS, projectGroupId, projectLabel, equalProjectShares } from '@/utils/projectScope';
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
@@ -818,10 +819,7 @@ export const useMainStore = defineStore('mainStore', () => {
     });
 
     const isTransfer = (op) => !!op && (op.type === 'transfer' || op.isTransfer === true);
-    const isPersonalTransferWithdrawal = (op) => !!op &&
-        op.transferPurpose === 'personal' &&
-        op.transferReason === 'personal_use' &&
-        (op.isWithdrawal === true || isTransfer(op));
+    const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
     // Helper function to calculate period date range
     function _getPeriodRange(period) {
@@ -2635,7 +2633,7 @@ export const useMainStore = defineStore('mainStore', () => {
 
             let optimisticOps = [];
 
-            if (transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use') {
+            if (isSystemWithdrawal(transferData)) {
                 optimisticOps.push({
                     _id: tempId,
                     categoryId: transferData.categoryId || transferCategory,
@@ -2655,10 +2653,10 @@ export const useMainStore = defineStore('mainStore', () => {
                     toCompanyId: transferData.toCompanyId,
                     fromIndividualId: transferData.fromIndividualId,
                     toIndividualId: transferData.toIndividualId,
-                    transferPurpose: 'personal',
-                    transferReason: 'personal_use',
-                    destination: 'Личные нужды',
-                    description: 'Вывод на личные цели',
+                    transferPurpose: transferData.transferPurpose,
+                    transferReason: transferData.transferReason || null,
+                    destination: 'Вне системы',
+                    description: transferData.description || 'Вывод средств',
                     dateKey: dateKey,
                     cellIndex: reservation.cellIndex,
                     date: finalDate,
@@ -2674,6 +2672,10 @@ export const useMainStore = defineStore('mainStore', () => {
                     projectId: transferData.projectId || null,
                     type: 'transfer',
                     isTransfer: true,
+                    isWithdrawal: false,
+                    transferPurpose: transferData.transferPurpose,
+                    transferReason: transferData.transferReason || null,
+                    description: transferData.description || '',
                     amount: Math.abs(Number(transferData.amount)),
                     fromAccountId: transferData.fromAccountId,
                     toAccountId: transferData.toAccountId,
@@ -2740,7 +2742,7 @@ export const useMainStore = defineStore('mainStore', () => {
             if (oldOp && oldOp.dateKey === newDateKey) newCellIndex = oldOp.cellIndex || 0;
             else newCellIndex = _findFreeCachedCell(newDateKey);
 
-            const isPersonalWithdrawal = transferData.transferPurpose === 'personal' && transferData.transferReason === 'personal_use';
+            const isPersonalWithdrawal = isSystemWithdrawal(transferData);
 
             const payload = isPersonalWithdrawal
                 ? {
@@ -2755,8 +2757,8 @@ export const useMainStore = defineStore('mainStore', () => {
                     companyId: transferData.fromCompanyId || null,
                     individualId: transferData.fromIndividualId || null,
                     categoryId: transferData.categoryId || oldOp?.categoryId?._id || oldOp?.categoryId || await _getOrCreateTransferCategory(),
-                    destination: 'Личные нужды',
-                    description: 'Вывод на личные цели'
+                    destination: 'Вне системы',
+                    description: transferData.description ?? oldOp?.description ?? 'Вывод средств'
                 }
                 : {
                     ...transferData,
@@ -2769,7 +2771,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     companyId: null,
                     individualId: null,
                     destination: null,
-                    description: null
+                    description: transferData.description ?? oldOp?.description ?? ''
                 };
 
             return await updateOperation(transferId, payload);

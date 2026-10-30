@@ -1,4 +1,5 @@
 <script setup>
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
@@ -188,10 +189,7 @@ const toggleTheme = () => {
 
 const theHeaderRef = ref(null);
 
-const _isPersonalTransferWithdrawal = (op) => !!op &&
-  op.isWithdrawal === true &&
-  op.transferPurpose === 'personal' &&
-  op.transferReason === 'personal_use';
+const _isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
 // Состояние для Prepayment Modal (Сценарий 1)
 const isPrepaymentModalVisible = ref(false);

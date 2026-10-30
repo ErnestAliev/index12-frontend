@@ -1,5 +1,5 @@
 <script setup>
-import { transferLabels } from '@/utils/transferLabels.js';
+import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -150,7 +150,7 @@ const parseCounterpartyKey = (counterpartyKey) => {
 };
 
 const isTransferOperation = (op) => !!(op?.isTransfer || op?.type === 'transfer');
-const isWithdrawalTransfer = (op) => !!(op?.isWithdrawal || (op?.transferPurpose === 'personal' && op?.transferReason === 'personal_use'));
+const isWithdrawalTransfer = (op) => !!op?.isWithdrawal || isSystemWithdrawal(op);
 const shouldIncludeInOperationsEditor = (op) => {
   if (!op) return false;
   if (op.isSplitParent) return false;
@@ -212,9 +212,7 @@ const formatSummaryAmount = (value) => {
   return `₸${formatted}`;
 };
 
-const isPersonalTransferWithdrawal = (op) => !!op &&
-  op.transferPurpose === 'personal' &&
-  op.transferReason === 'personal_use';
+const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
 const normalizeTypeLabel = (op) => {
   if (op?.isWorkAct) return 'Акт выполненных работ';
@@ -1172,8 +1170,9 @@ const buildTransferPayload = (row, draft) => {
     fromIndividualId: fromOwner.individualId || null,
     toCompanyId: isWithdrawal ? null : (toOwner.companyId || null),
     toIndividualId: isWithdrawal ? null : (toOwner.individualId || null),
-    transferPurpose: isWithdrawal ? 'personal' : (row?.source?.transferPurpose || 'inter_company'),
-    transferReason: isWithdrawal ? 'personal_use' : (row?.source?.transferReason || null)
+    transferPurpose: isWithdrawal ? 'withdrawal' : (isSystemWithdrawal(row?.source) ? 'internal' : row?.source?.transferPurpose || 'internal'),
+    transferReason: isWithdrawal || isSystemWithdrawal(row?.source) ? null : (row?.source?.transferReason || null),
+    description: row?.source?.description || ''
   };
 };
 

@@ -1,4 +1,5 @@
 <script setup>
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { onMounted, onUnmounted, onBeforeUnmount, ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { useUiStore } from '@/stores/uiStore';
@@ -203,10 +204,7 @@ const infoModalMessage = ref('');
 const isContextMenuVisible = ref(false);
 const contextMenuPosition = ref({ top: '0px', left: '0px' });
 
-const isPersonalTransferWithdrawal = (op) => !!op &&
-  op.isWithdrawal === true &&
-  op.transferPurpose === 'personal' &&
-  op.transferReason === 'personal_use';
+const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
 // =================================================================
 // =================================================================

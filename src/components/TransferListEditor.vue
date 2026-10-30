@@ -1,5 +1,5 @@
 <script setup>
-import { transferLabels } from '@/utils/transferLabels.js';
+import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { ref, computed, onMounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -98,7 +98,7 @@ const loadTransfers = () => {
   const onlyTransfers = allOps.filter(op => 
     op.type === 'transfer' || 
     op.isTransfer === true || 
-    (op.isWithdrawal === true && op.transferPurpose === 'personal' && op.transferReason === 'personal_use') ||
+    isSystemWithdrawal(op) ||
     (op.categoryId && (op.categoryId.name === 'Перевод' || op.categoryId.name === 'Transfer'))
   );
 

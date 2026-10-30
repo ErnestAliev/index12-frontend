@@ -1,4 +1,5 @@
 <script setup>
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -35,10 +36,7 @@ const formatCurrency = (val) => {
   return `${currency} ${formatted}`;
 };
 
-const isPersonalTransferWithdrawal = (op) => !!op &&
-  op.transferPurpose === 'personal' &&
-  op.transferReason === 'personal_use' &&
-  (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
+const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
 // Текущий баланс (на сегодня, не зависит от диапазона)
 const currentBalanceString = computed(() => formatCurrency(mainStore.currentTotalBalance || 0));

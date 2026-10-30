@@ -1,5 +1,5 @@
 <script setup>
-import { transferLabels } from '@/utils/transferLabels.js';
+import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { computed, ref, onBeforeUnmount } from 'vue';
 import { formatNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
@@ -32,10 +32,7 @@ const canInteract = computed(() => {
     return permissions.canEditOperation(op);
 });
 
-const isPersonalTransferWithdrawal = (op) => !!op &&
-  op.isWithdrawal === true &&
-  op.transferPurpose === 'personal' &&
-  op.transferReason === 'personal_use';
+const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
 /* --- ЛОГИКА ТИПОВ ОПЕРАЦИЙ (Без изменений) --- */
 const isTransferOp = computed(() => {

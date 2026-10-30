@@ -1,5 +1,5 @@
 <script setup>
-import { transferLabels } from '@/utils/transferLabels.js';
+import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -80,10 +80,7 @@ const mainStore = useMainStore();
 const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 const historyLoadTick = ref(0);
 
-const isPersonalTransferWithdrawal = (op) => !!op &&
-  op.transferPurpose === 'personal' &&
-  op.transferReason === 'personal_use' &&
-  (op.isWithdrawal === true || op.isTransfer === true || op.type === 'transfer');
+const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 
 const isTransferLike = (op) => !!op && (op.isTransfer === true || op.type === 'transfer');
 

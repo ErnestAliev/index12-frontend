@@ -7,8 +7,9 @@ export function useAccountOwnerRepair({ routes, ready, enabled, existing }) {
   const showOwnerRepair = ref(false);
   const ownerRepairItems = ref([]);
   const brokenRoutes = () => routes.filter(route => {
+    if (route.active && !route.active()) return false;
     if (route.creating.value) return false;
-    if (!route.accountId.value) return existing.value;
+    if (!route.accountId.value) return existing.value && route.repairMissing?.() !== false;
     return needsAccountOwnerRepair(route.accountId.value, route.ownerKey.value, store.accounts, store.companies, store.individuals);
   });
 
@@ -43,7 +44,7 @@ export function useAccountOwnerRepair({ routes, ready, enabled, existing }) {
   }
 
   watch(() => [ready.value, enabled.value, existing.value,
-    ...routes.flatMap(route => [route.accountId.value, route.ownerKey.value, route.creating.value]),
+    ...routes.flatMap(route => [route.accountId.value, route.ownerKey.value, route.creating.value, route.active?.()]),
     store.accounts, store.companies, store.individuals,
   ], () => {
     if (ready.value && enabled.value && !showOwnerRepair.value) ensureAccountOwnership();

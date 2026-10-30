@@ -1,3 +1,4 @@
+import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import { useMainStore } from './mainStore';
@@ -433,10 +434,7 @@ export const useProjectionStore = defineStore('projection', () => {
       const amt = Number(op.amount) || 0;
       const absAmt = Math.abs(amt);
 
-      const isPersonalTransferWithdrawal =
-        isTransfer &&
-        op.transferPurpose === 'personal' &&
-        op.transferReason === 'personal_use';
+      const isPersonalTransferWithdrawal = isSystemWithdrawal(op);
 
       if (isTransfer && !isPersonalTransferWithdrawal) continue;
 
