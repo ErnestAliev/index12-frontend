@@ -48,7 +48,11 @@ async function waitJob(job, session) {
     await pause(1000, session);
     job = (await api(`/jobs/${encodeURIComponent(job.id)}`, null, session)).job;
   }
-  if (job.status !== 'completed') throw new Error(job.error || 'Запрос не завершён. Проверьте историю чата.');
+  if (job.status !== 'completed') {
+    const failure = new Error(job.error || 'Запрос не завершён. Проверьте историю чата.');
+    failure.execution = job.result?.execution;
+    throw failure;
+  }
   return job.result || {};
 }
 function showHistory(result, older = false) {
@@ -124,6 +128,7 @@ async function send(forced) {
   } catch (e) {
     if (e.name !== 'AbortError') {
       error.value = e.message;
+      if (e.execution) { messages.value.push({ id: `${crypto.randomUUID()}-execution`, role: 'assistant', text: e.execution.text, execution: e.execution }); scrollBottom(); }
       if (e.status === 503) connected.value = false;
       if (accepted) retry = null;
     }

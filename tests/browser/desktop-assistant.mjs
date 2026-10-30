@@ -53,6 +53,12 @@ try {
         else {
           sent.push(body);
           history.push({ id: `user-${sent.length}`, role: 'user', content: body.message, attachments: body.attachments });
+          if (body.message === 'Проверка ошибки MCP') {
+            const execution = { error: { code: 'VERSION_CONFLICT', message: 'Версия операции изменилась.' }, completed: [], text: 'Версия операции изменилась. Цепочка изменений остановлена. Подтверждено выполненных действий: **0**.' };
+            history.push({ id: `failed-${sent.length}`, role: 'assistant', content: execution.text, execution });
+            data = { job: { status: 'failed', error: execution.error.message, result: { text: 'Все операции успешно исправлены', execution } } };
+            return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
+          }
           history.push({ id: `answer-${sent.length}`, role: 'assistant', content: 'Проверка успешна' });
           data = { job: { status: 'completed', result: { text: 'Проверка успешна', threadId: 'thread' } } };
         }
@@ -151,6 +157,13 @@ try {
   await dialog.locator('.desktop-file-link').filter({hasText:'ведомость.xlsm'}).click();
   assert.equal((await downloadPromise).suggestedFilename(),'ведомость.xlsm');
   await page.screenshot({ path: 'output/playwright/codex-window-mobile.png' });
+  await page.waitForFunction(() => !document.querySelector('.codex-typing'));
+  await input.fill('Проверка ошибки MCP'); await input.press('Enter');
+  await dialog.getByRole('alert').filter({ hasText: 'Версия операции изменилась.' }).waitFor();
+  await dialog.locator('.codex-message.assistant').filter({ hasText: 'Подтверждено выполненных действий: 0' }).waitFor();
+  assert.equal(await dialog.getByText('Все операции успешно исправлены', { exact: true }).count(), 0);
+  await dialog.getByRole('button', { name: 'Обновить связь и историю' }).click();
+  await dialog.locator('.codex-message.assistant').filter({ hasText: 'Подтверждено выполненных действий: 0' }).waitFor();
   await dialog.getByRole('button', { name: 'Закрыть чат Codex' }).click();
   assert.deepEqual(legacyRequests, []); assert.deepEqual(browserErrors, []);
   console.log('PASS: Codex button placement; desktop width/height/keyboard resize; saved size; service interaction; journal has no chat; mobile Codex only; no legacy API requests; history, Enter, voice transcript and images');
