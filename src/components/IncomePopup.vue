@@ -5,7 +5,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
-import { formatAmountInput } from '@/utils/amountInput.js';
+import { formatAmountInput, formatAmountInputEvent } from '@/utils/amountInput.js';
 import BaseSelect from './BaseSelect.vue';
 import AccountOwnerRepairModal from './AccountOwnerRepairModal.vue';
 import { useAccountOwnerRepair } from '@/composables/useAccountOwnerRepair';
@@ -464,7 +464,7 @@ watch(editableDate, (newVal, oldVal) => {
 });
 
 const onAmountInput = (e) => {
-    amount.value = formatAmountInput(e.target.value);
+    amount.value = formatAmountInputEvent(e);
 };
 
 const isSelectedContractorBank = computed(() => {

@@ -5,6 +5,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
+import { formatAmountInputEvent } from '@/utils/amountInput.js';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue';
 import AccountOwnerRepairModal from './AccountOwnerRepairModal.vue';
@@ -101,7 +102,7 @@ const isCloneMode = ref(false);
 
 // --- HELPERS ---
 const formatNumber = (numStr) => { const clean = `${numStr}`.replace(/[^0-9]/g, ''); return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ' '); };
-const onAmountInput = (event) => { amount.value = formatNumber(event.target.value.replace(/[^0-9]/g, '')); };
+const onAmountInput = (event) => { amount.value = formatAmountInputEvent(event, formatNumber); };
 
 const toInputDate = (date) => {
   const d = new Date(date);
