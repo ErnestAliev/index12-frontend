@@ -27,6 +27,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import DesktopAssistant from '@/components/DesktopAssistant.vue';
+import AssistantComposer from '@/components/AssistantComposer.vue';
 import { fetchAiHistory, resetAiHistory } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 import {
@@ -443,16 +444,7 @@ const copyAiText = async (msg) => {
   }
 };
 
-const handleAiInputKeydown = (event) => {
-  // Shift+Enter: allow new line (default behavior)
-  if (event.shiftKey) {
-    return; // Let the default behavior add a new line
-  }
-  
-  // Enter without Shift: send message
-  event.preventDefault();
-  sendAiMessage();
-};
+watch(mobileAssistantMode, () => stopAiRecordingIfNeeded());
 
 const AI_MONTH_PATTERNS = Object.freeze([
   { month: 1, re: /январ/i },
@@ -1656,7 +1648,7 @@ const handleOperationDelete = async (op) => {
             </button>
           </div>
 
-          <DesktopAssistant v-if="mobileAssistantMode === 'codex'" :api-base-url="API_BASE_URL" />
+          <DesktopAssistant mobile v-if="mobileAssistantMode === 'codex'" :api-base-url="API_BASE_URL" />
           <template v-else>
           <div class="ai-modal-chips">
             <div class="ai-chip-left">
@@ -1694,57 +1686,9 @@ const handleOperationDelete = async (op) => {
             </div>
           </div>
 
-          <!-- GPT-style input area -->
-          <div class="ai-input-container">
-            <div class="ai-input-wrapper">
-              <!-- File attachment placeholder (left) -->
-              <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-                </svg>
-              </button>
-
-              <!-- Textarea (center, expands) -->
-              <textarea
-                ref="aiInputRef"
-                v-model="aiInput"
-                class="ai-input"
-                placeholder="Спросите AI..."
-                @keydown.enter="handleAiInputKeydown"
-                rows="1"
-              ></textarea>
-
-              <!-- Buttons (right) -->
-              <div class="ai-input-buttons">
-                <button
-                  class="ai-mic-btn"
-                  :class="{ recording: isAiRecording }"
-                  :disabled="aiLoading || !aiSpeechSupported"
-                  @click="toggleAiRecording"
-                  :title="aiSpeechSupported ? (isAiRecording ? 'Стоп' : 'Голос') : 'Голос не поддерживается'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-                    <path d="M19 11a7 7 0 0 1-14 0" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                </button>
-
-                <button
-                  class="ai-send-btn"
-                  :disabled="aiLoading || !(aiInput || '').trim()"
-                  @click="sendAiMessage()"
-                  title="Отправить"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
+          <AssistantComposer v-model="aiInput" mobile :busy="aiLoading" :recording="isAiRecording"
+            :speech-supported="aiSpeechSupported" placeholder="Спросите AI..."
+            @send="sendAiMessage()" @microphone="toggleAiRecording" @input-ready="aiInputRef = $event" />
           </template>
         </div>
       </div>

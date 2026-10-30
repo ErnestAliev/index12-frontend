@@ -8,6 +8,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import SubcategorySelect from '@/components/SubcategorySelect.vue';
 import JournalChartsPanel from '@/components/JournalChartsPanel.vue';
 import DesktopAssistant from '@/components/DesktopAssistant.vue';
+import AssistantComposer from '@/components/AssistantComposer.vue';
 import { sendAiRequest } from '@/utils/aiClient.js';
 import { buildTooltipSnapshotForRange } from '@/utils/tooltipSnapshotBuilder.js';
 import {
@@ -2097,13 +2098,6 @@ const sendAiMessage = async (forcedMessage = null, options = {}) => {
   }
 };
 
-const onAiInputKeydown = (event) => {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    sendAiMessage();
-  }
-};
-
 const useQuickPrompt = (item) => {
   if (aiLoading.value) return;
   const promptText = String(item?.prompt || '').trim();
@@ -2176,6 +2170,8 @@ const toggleAiRecording = async () => {
     aiVoiceConfirmedText = '';
   }
 };
+
+watch(activeSidebarTab, () => stopAiRecording());
 
 watch(() => aiMessages.value.length, () => {
   scrollAiToBottom();
@@ -3796,52 +3792,9 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="ai-input-container">
-              <button class="ai-attach-btn" disabled title="Прикрепить файл (скоро)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-                </svg>
-              </button>
-
-              <textarea
-                ref="aiInputRef"
-                v-model="aiInput"
-                class="ai-input"
-                placeholder="Спросите AI Как дела?"
-                rows="1"
-                @input="resizeAiInput"
-                @keydown="onAiInputKeydown"
-              ></textarea>
-
-              <div class="ai-input-buttons">
-                <button
-                  class="ai-mic-btn"
-                  :class="{ recording: isAiRecording }"
-                  :disabled="aiLoading || !aiSpeechSupported"
-                  @click="toggleAiRecording"
-                  :title="aiSpeechSupported ? (isAiRecording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-                    <path d="M19 11a7 7 0 0 1-14 0" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                </button>
-
-                <button
-                  class="ai-send-btn"
-                  :disabled="aiLoading || !(aiInput || '').trim()"
-                  @click="sendAiMessage()"
-                  title="Отправить"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                  </svg>
-                </button>
-              </div>
-            </div>
+            <AssistantComposer v-model="aiInput" :busy="aiLoading" :recording="isAiRecording"
+              :speech-supported="aiSpeechSupported" placeholder="Спросите AI Как дела?"
+              @send="sendAiMessage()" @microphone="toggleAiRecording" @input-ready="aiInputRef = $event" />
           </template>
         </aside>
 

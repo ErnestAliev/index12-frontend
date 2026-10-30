@@ -31,3 +31,10 @@ For subcategories with real persistence, run from the sibling backend checkout:
 local MongoDB and API, opens the real frontend and verifies creation, editing a
 legacy payment, reload, graph hover, journal filters and the mobile transfer
 form. Requires `mongod` and Chrome. It does not use the production database.
+
+Run `node tests/browser/desktop-assistant.mjs` for the Codex chat flow. This uses
+synthetic API responses and checks offline history, draft preservation, reconnect,
+Enter/Shift+Enter, send/quick buttons, speech transcript events, image attachments,
+and identical AI/Codex composer geometry in the journal and mobile layout.
+Screenshots are saved under `output/playwright/`. Physical microphone capture
+still depends on the browser and its microphone permission.
