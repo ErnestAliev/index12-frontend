@@ -23,7 +23,7 @@ onMounted(() => nextTick(() => form.value?.querySelector('input, select, textare
 
 <template>
   <form ref="form" class="codex-request-card" :aria-label="prompt.kind === 'questions' ? 'Вопрос Codex' : 'Запрос разрешения Codex'" :aria-busy="submitting" @submit.prevent="submit('accept')">
-    <div class="request-heading"><CodexGlyph name="alert" /><strong>{{ prompt.kind === 'questions' ? 'Вопрос Codex' : 'Требуется ваш ответ' }}</strong><span v-if="prompt.source">{{ prompt.source }}</span></div>
+    <div class="request-heading"><CodexGlyph name="alert" /><strong>{{ prompt.kind === 'questions' ? 'Вопрос Codex' : prompt.kind === 'approval' ? 'Требуется разрешение' : 'Требуется ваш ответ' }}</strong><span v-if="prompt.source">{{ prompt.source }}</span></div>
     <p class="request-message">{{ prompt.message }}</p>
     <pre v-if="prompt.details" class="request-details">{{ prompt.details }}</pre>
     <fieldset v-for="(field, index) in prompt.fields || []" :key="field.key" :disabled="submitting" class="request-field">

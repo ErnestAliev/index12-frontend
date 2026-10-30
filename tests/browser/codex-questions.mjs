@@ -73,8 +73,12 @@ try {
     await dialog.getByText('Тестовый ответ 2 принят.', { exact: true }).waitFor();
     assert.deepEqual(answers[1], { action: 'accept', values: { period: 'Октябрь' } });
     await page.waitForFunction(() => !document.querySelector('.codex-typing'));
-    prompt = { kind: 'approval', message: 'Разрешить тестовое действие?', details: 'Только синтетические данные' };
+    prompt = { kind: 'approval', message: 'Разрешить Codex управлять приложением «Google Chrome»?', source: 'Управление компьютером', fields: [] };
     await dialog.getByRole('textbox', { name: 'Спросите Codex' }).fill('Проверка отказа'); await dialog.getByRole('textbox', { name: 'Спросите Codex' }).press('Enter');
+    await dialog.getByText('Требуется разрешение', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Разрешить', exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('button', { name: 'Ответить', exact: true }).count(), 0);
+    await page.screenshot({ path: `${root}/output/playwright/codex-permission-${fixture.name}.png`, animations: 'disabled' });
     await dialog.getByRole('button', { name: 'Отклонить', exact: true }).click();
     await dialog.getByRole('alert').filter({ hasText: 'Пользователь отклонил' }).waitFor();
     assert.equal(answers[2].action, 'decline'); assert.equal(sendCount, 3); assert.deepEqual(errors, []);
