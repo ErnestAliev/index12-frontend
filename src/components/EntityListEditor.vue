@@ -700,7 +700,7 @@ onBeforeUnmount(() => {
 
 // --- WIDGET TOGGLE LOGIC ---
 const isWidgetOnDashboard = computed(() => {
-  if (!props.widgetKey) return null; // No widget key provided
+  if (!props.widgetKey || !mainStore.allWidgets.some(widget => widget.key === props.widgetKey)) return null; // No widget key provided
   return mainStore.dashboardLayout.includes(props.widgetKey);
 });
 

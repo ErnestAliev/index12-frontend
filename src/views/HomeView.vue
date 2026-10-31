@@ -447,7 +447,7 @@ const workspaceDays = computed(() => {
   });
 });
 const workspaceColumnWidth = computed(() => workspaceWidth.value / Math.max(1, VISIBLE_COLS.value));
-const compactAmounts = computed(() => currentTheme.value === 'light' && workspaceColumnWidth.value < 120);
+const compactAmounts = true;
 const workspacePaneStyle = computed(() => ({
   width: `${renderedColumnCount.value * workspaceColumnWidth.value}px`,
   marginLeft: `${isScrollActive.value ? renderedStartIndex.value * workspaceColumnWidth.value : 0}px`,

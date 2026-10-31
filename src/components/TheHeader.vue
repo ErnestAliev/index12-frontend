@@ -4,7 +4,6 @@ import { useMainStore } from '@/stores/mainStore';
 import { getHeaderWidgetColumns } from '@/utils/homeLayout.js';
 
 // Карточки
-import HeaderSubcategoryCard from './HeaderSubcategoryCard.vue';
 import HeaderTotalCard from './HeaderTotalCard.vue';
 import HeaderBalanceCard from './HeaderBalanceCard.vue';
 import HeaderCategoryCard from './HeaderCategoryCard.vue';
@@ -578,9 +577,8 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
           <div class="fullscreen-card-container">
              <!-- Рендерим нужный виджет на основе fullscreenWidgetKey -->
              
-             <HeaderSubcategoryCard v-if="fullscreenWidgetKey === 'subcategories'" />
              <HeaderTotalCard
-                v-else-if="fullscreenWidgetKey === 'currentTotal'"
+                v-if="fullscreenWidgetKey === 'currentTotal'"
                 :title="'Всего на счетах\nна текущий момент'"
                 :totalBalance="loggedCurrentTotal" 
                 :subtitlePrefix="`Сейчас на ${mainStore.currentAccountBalances.length} счетах`"
@@ -695,7 +693,6 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
     >
         <div v-if="widgetKey && typeof widgetKey === 'string' && widgetKey.startsWith('placeholder_')" class="dashboard-card placeholder-card"></div>
 
-        <HeaderSubcategoryCard v-else-if="widgetKey === 'subcategories'" />
         <HeaderTotalCard
           v-else-if="widgetKey === 'currentTotal'"
           :title="'Всего на счетах\nна текущий момент'"

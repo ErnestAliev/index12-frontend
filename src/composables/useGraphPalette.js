@@ -22,7 +22,7 @@ export const useGraphPalette = () => {
         balanceActive: color('--graph-balance-active', `${balance}38`),
         balanceIdle: color('--graph-balance-idle', `${balance}1f`),
         balanceEdge: color('--graph-balance-edge', 'transparent'),
-        balanceBorderWidth: color('--graph-balance-edge', '') ? 1 : 0,
+        balanceBorderWidth: root.hasAttribute('data-appearance-custom') ? Number.parseFloat(color('--appearance-charts-lineWidth','1')) : (color('--graph-balance-edge','') ? 1 : 0),
         income: color('--graph-bar-income', '#34c759'),
         expense: color('--graph-bar-expense', '#ff3b30'),
       };

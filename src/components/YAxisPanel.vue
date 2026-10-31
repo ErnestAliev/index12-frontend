@@ -46,7 +46,7 @@ const formattedLabels = computed(() => (props.yLabels || []).map(formatCompact))
 <template>
   <div class="y-axis-panel">
     <!-- 🟢 v1.2: Динамический bottom -->
-    <div class="y-axis-content" :style="{ bottom: props.bottomPadding === 90 ? 'var(--appearance-charts-summaryHeight, 90px)' : props.bottomPadding + 'px' }">
+    <div class="y-axis-content" :style="{ bottom: props.bottomPadding === 90 ? 'var(--appearance-summaries-height, 90px)' : props.bottomPadding + 'px' }">
       <div v-for="(label, index) in formattedLabels" :key="index" class="y-label">
         {{ label }}
       </div>

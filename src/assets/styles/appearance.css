@@ -11,7 +11,7 @@
   font-size: var(--appearance-widgets-fontSize);
   font-weight: var(--appearance-widgets-textWeight);
   border-radius: var(--appearance-widgets-radius);
-  box-shadow: 0 2px 10px rgb(28 48 38 / calc(var(--appearance-widgets-shadow) / 100));
+  box-shadow: var(--appearance-widgets-shadowValue);
 }
 :root[data-appearance-custom] .dashboard-card :is(.card-item, .summary-value-block),
 :root[data-appearance-custom] .mobile-widget-card .widget-body {
@@ -31,8 +31,8 @@
 :root[data-appearance-custom] :is(.dashboard-card .income, .dashboard-card .green-text) { color: var(--widget-income-color); }
 :root[data-appearance-custom] :is(.dashboard-card .expense, .dashboard-card .red-text) { color: var(--widget-expense-color); }
 :root[data-appearance-custom] .header-dashboard {
-  --widget-grid-gap: var(--appearance-widgets-lineWidth);
-  --widget-grid-padding: var(--appearance-widgets-lineWidth);
+  --widget-grid-gap: var(--appearance-widgets-borderWidth);
+  --widget-grid-padding: var(--appearance-widgets-borderWidth);
   --widget-grid-border-radius: var(--appearance-widgets-radius);
 }
 :root[data-appearance-custom] .header-dashboard .dashboard-card-wrapper {
@@ -44,21 +44,34 @@
   background: var(--widget-background);
   border-radius: var(--appearance-widgets-radius);
 }
-:root[data-appearance-custom] :is(.operation-chip, .op-chip) {
-  font-size: var(--appearance-table-fontSize);
-  font-weight: var(--appearance-table-textWeight);
-  border-radius: var(--appearance-table-radius);
-  box-shadow: 0 1px 6px rgb(28 48 38 / calc(var(--appearance-table-shadow) / 100));
+:root[data-appearance-custom] :is(.operation-chip, .op-chip)[class] {
+  font-family:var(--appearance-operations-fontFamily);
+  font-size:var(--appearance-operations-fontSize);
+  font-weight:var(--appearance-operations-textWeight);
+  border-width:var(--appearance-operations-borderWidth);
+  border-radius:var(--appearance-operations-radius);
+  box-shadow:var(--appearance-operations-shadowValue);
+  padding:min(3px,var(--appearance-operations-padding)) var(--appearance-operations-padding);
 }
-:root[data-appearance-custom] :is(.operation-chip .op-amount, .op-chip .amt) { font-weight: var(--appearance-table-textWeight); }
-:root[data-appearance-custom] .hour-cell { height: var(--appearance-table-rowHeight); min-height:calc(var(--appearance-table-fontSize) * 1.3 + 10px); border-bottom-width: var(--appearance-table-lineWidth); }
+:root[data-appearance-custom] :is(.operation-chip .op-amount,.op-chip .amt) { font-weight:var(--appearance-operations-textWeight); }
+:root[data-appearance-custom] :is(.operation-chip .op-meta,.op-chip .desc) {
+  font-family:var(--appearance-operations-secondaryFontFamily);
+  font-size:var(--appearance-operations-secondarySize);
+  font-weight:var(--appearance-operations-secondaryWeight);
+}
+:root[data-appearance-custom] .hour-cell {
+  height:var(--appearance-table-rowHeight);
+  min-height:calc(max(var(--appearance-operations-fontSize),var(--appearance-operations-secondarySize)) * 1.4 + 18px);
+  border-bottom-width:var(--appearance-table-borderWidth);
+}
 :root[data-appearance-custom] :is(.day-column, .mobile-day-col) {
-  border-inline-width: var(--appearance-table-lineWidth);
+  border-inline-width: var(--appearance-table-borderWidth);
   background: var(--day-column-bg);
 }
 :root[data-appearance-custom] :is(.column-header, .mobile-day-col .day-header) {
-  font-size: var(--appearance-table-labelSize);
-  font-weight: var(--appearance-table-labelWeight);
+  font-family:var(--appearance-table-fontFamily);
+  font-size: var(--appearance-table-fontSize);
+  font-weight: var(--appearance-table-textWeight);
 }
 :root[data-appearance-custom] .day-column.today .hour-cell:not(.drag-over),
 :root[data-appearance-custom] .mobile-day-col.today .mobile-cell {
@@ -69,8 +82,6 @@
 :root[data-appearance-custom] :is(.operation-chip, .op-chip).writeoff { border-left-color:var(--op-expense-border); }
 :root[data-appearance-custom] :is(.operation-chip, .op-chip).transfer { border-left-color:var(--op-transfer-border); }
 :root[data-appearance-custom] :is(.operation-chip, .op-chip).withdrawal { border-left-color:var(--op-withdrawal-border); }
-:root[data-appearance-custom] :is(.operation-chip, .op-chip).work-act { border-left-color:var(--op-workact-border); }
-:root[data-appearance-custom] :is(.operation-chip, .op-chip).technical { border-left-color:var(--op-technical-border); }
 :root[data-appearance-custom] :is(.operation-chip, .op-chip).closed-deal { border-left-color:var(--op-closed-border); }
 :root[data-appearance-custom] :is(.operation-chip, .op-chip).prepayment { border-left-color:var(--op-prepay-border); }
 :root[data-appearance-custom] :is(.operation-chip, .op-chip).credit-income { border-left-color:var(--op-credit-border); }
@@ -80,12 +91,12 @@
   font-weight: var(--appearance-charts-textWeight);
 }
 :root[data-appearance-custom] .day-summary {
-  font-size: var(--appearance-charts-summarySize);
-  font-weight: var(--appearance-charts-summaryWeight);
+  font-size: var(--appearance-summaries-summarySize);
+  font-weight: var(--appearance-summaries-summaryWeight);
   border-color: var(--day-summary-border);
-  border-width: var(--appearance-charts-lineWidth);
+  border-width: var(--appearance-summaries-borderWidth);
 }
-:root[data-appearance-custom] .summaries-wrapper { flex-basis:var(--appearance-charts-summaryHeight); height:var(--appearance-charts-summaryHeight); }
+:root[data-appearance-custom] .summaries-wrapper { flex-basis:var(--appearance-summaries-height); height:var(--appearance-summaries-height); }
 :root[data-appearance-custom] .day-summary :is(.day-date, .day-income, .day-expense, .day-balance) {
   font-size: inherit;
   font-weight: inherit;
@@ -102,8 +113,73 @@
   --charts-pane-text: var(--appearance-charts-text);
   --charts-pane-muted: var(--graph-axis-color);
 }
-:root[data-appearance-custom] .journal-chart-card-title { font-size:var(--appearance-charts-labelSize); font-weight:var(--appearance-charts-labelWeight); }
+:root[data-appearance-custom] .journal-chart-card-title { color:var(--appearance-charts-heading); font-size:var(--appearance-charts-labelSize); font-weight:var(--appearance-charts-labelWeight); }
 :root[data-appearance-custom] :is(.journal-chart-legend-text, .journal-chart-legend-values) { font-size:var(--appearance-charts-fontSize); font-weight:var(--appearance-charts-textWeight); }
 :root[data-appearance-custom] .journal-chart-legend-values .legend-income { color:var(--graph-bar-income); }
 :root[data-appearance-custom] .journal-chart-legend-values .legend-expense { color:var(--graph-bar-expense); }
 :root[data-appearance-custom] .icon-btn.theme-settings-btn.active { background: var(--btn-panel-bg-active); color: var(--btn-panel-color-active); border-color: var(--btn-panel-border-active); }
+
+/* Independent section typography, boundaries and surfaces. */
+:root[data-appearance-custom] :is(.dashboard-card,.mobile-widget-card,.mobile-totals-wrapper) { font-family:var(--appearance-widgets-fontFamily); }
+:root[data-appearance-custom] :is(.dashboard-card,.mobile-widget-card,.mobile-totals-wrapper .total-card) {
+  border:var(--appearance-widgets-borderWidth) solid var(--widget-border) !important;
+  padding:var(--appearance-widgets-padding) !important;
+}
+:root[data-appearance-custom] .mobile-widget-card .list-item-grid { font-size:inherit; }
+:root[data-appearance-custom] :is(.card-sub-balance,.mobile-totals-wrapper .card-sub,.card-item-empty) {
+  font-family:var(--appearance-widgets-secondaryFontFamily);
+  font-size:var(--appearance-widgets-secondarySize);
+  font-weight:var(--appearance-widgets-secondaryWeight);
+  color:var(--widget-text-soft);
+}
+:root[data-appearance-custom] :is(.header-resizer,.divider-wrapper,.timeline-resizer) {
+  background:var(--header-resizer-bg);
+  color:var(--appearance-separators-text);
+  border-color:var(--appearance-separators-border);
+  border-width:var(--appearance-separators-borderWidth);
+  border-style:solid;
+  border-radius:var(--appearance-separators-radius);
+  box-shadow:var(--appearance-separators-shadowValue);
+  font-family:var(--appearance-separators-fontFamily);
+  font-size:var(--appearance-separators-fontSize);
+  font-weight:var(--appearance-separators-textWeight);
+}
+:root[data-appearance-custom] .divider-wrapper .month-label {
+  color:var(--appearance-separators-text);
+  font:inherit;
+}
+:root[data-appearance-custom] :is(.header-resizer::before,.vertical-resizer::before) { filter:none; }
+:root[data-appearance-custom] .timeline-resizer .resizer-handle { background:var(--appearance-separators-accent); }
+:root[data-appearance-custom] :is(.timeline-grid-wrapper,.section-timeline) {
+  border:var(--appearance-table-borderWidth) solid var(--appearance-table-border);
+  border-radius:var(--appearance-table-radius);
+  box-shadow:var(--appearance-table-shadowValue);
+}
+:root[data-appearance-custom] :is(.chart-wrapper,.journal-chart-card) {
+  background:var(--chart-wrapper-bg);
+  border:var(--appearance-charts-borderWidth) solid var(--appearance-charts-border);
+  border-radius:var(--appearance-charts-radius);
+  box-shadow:var(--appearance-charts-shadowValue);
+  box-sizing:border-box;
+}
+:root[data-appearance-custom] :is(.graph-area,.mobile-chart-section,.journal-charts-panel) { font-family:var(--appearance-charts-fontFamily); }
+:root[data-appearance-custom] .y-label { font-family:var(--appearance-charts-secondaryFontFamily); }
+:root[data-appearance-custom] .summaries-wrapper {
+  background:var(--day-summary-bg);
+  border-color:var(--day-summary-border);
+  border-top-width:var(--appearance-summaries-borderWidth);
+}
+:root[data-appearance-custom] .day-summary {
+  background:var(--day-summary-bg);
+  font-family:var(--appearance-summaries-fontFamily);
+  border-radius:var(--appearance-summaries-radius);
+  box-shadow:var(--appearance-summaries-shadowValue);
+  padding:var(--appearance-summaries-padding);
+  opacity:1;
+}
+:root[data-appearance-custom] .day-summary .day-date {
+  color:var(--appearance-summaries-heading);
+  font-family:var(--appearance-summaries-secondaryFontFamily);
+  font-size:var(--appearance-summaries-secondarySize);
+  font-weight:var(--appearance-summaries-secondaryWeight);
+}

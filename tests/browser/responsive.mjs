@@ -40,6 +40,7 @@ try {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() !== 'GET') writes.push(path);
     let data = [];
+    if (path.endsWith('/user/appearance-themes')) data = {themes:[]};
     if (path.endsWith('/auth/me')) data = { _id: 'responsive-user', workspaceRole: 'admin', role: 'admin', createdAt: '2026-01-01' };
     if (path.endsWith('/accounts')) data = accounts;
     if (path.endsWith('/companies')) data = [{ _id: 'company', name: 'Владелец с длинным названием' }];
@@ -51,7 +52,7 @@ try {
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForSelector('.header-dashboard');
   await page.waitForFunction(() => !document.querySelector('.section-loading-overlay'));
-  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('dashboardLayout'))), ['accounts', 'companies', 'contractors', 'projects', 'incomeList', 'expenseList', 'transfers', 'individuals', 'categories', 'subcategories']);
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('dashboardLayout'))), ['accounts', 'companies', 'contractors', 'projects', 'individuals', 'categories']);
   for (const [width, height, expected] of [[768, 1024, 4], [834, 1194, 4], [1024, 1366, 4], [1024, 768, 5], [1366, 1024, 5], [1512, 982, 6]]) {
     await page.setViewportSize({ width, height });
     await page.waitForFunction(expected => getComputedStyle(document.querySelector('.header-dashboard')).gridTemplateColumns.split(' ').length === expected, expected);

@@ -259,7 +259,7 @@ defineExpose({
 
 // --- WIDGET TOGGLE LOGIC ---
 const isWidgetOnDashboard = computed(() => {
-  if (!props.widgetKey) return null;
+  if (!props.widgetKey || !mainStore.allWidgets.some(widget => widget.key === props.widgetKey)) return null;
   return mainStore.dashboardLayout.includes(props.widgetKey);
 });
 

@@ -24,12 +24,8 @@ export const useWidgetStore = defineStore('widget', () => {
     { key: 'contractors', name: 'Мои контрагенты' },
     { key: 'projects', name: 'Мои проекты' },
     { key: 'futureTotal', name: 'Всего на счетах\nс учетом будущих' },
-    { key: 'incomeList', name: 'Мои доходы' },
-    { key: 'expenseList', name: 'Мои расходы' },
-    { key: 'transfers', name: 'Мои переводы' },
     { key: 'individuals', name: 'Физлица' },
     { key: 'categories', name: 'Категории' },
-    { key: 'subcategories', name: 'Подкатегории' },
   ]);
 
   // --- 2. Dashboard Layout (Расположение) ---
@@ -54,17 +50,13 @@ export const useWidgetStore = defineStore('widget', () => {
     }
     localStorage.setItem('dashboardLayout:rollback-v2', '1');
   }
-  const savedLayout = localStorage.getItem('dashboardLayout');
-  let initialLayout = savedLayout ? JSON.parse(savedLayout) : [
-    'accounts', 'companies', 'contractors', 'projects',
-    'incomeList', 'expenseList', 'transfers', 'individuals', 'categories'
-  ];
-
-  // Filter out currentTotal and futureTotal if they exist in saved layout (legacy data)
-  initialLayout = initialLayout.filter(k => k !== 'currentTotal' && k !== 'futureTotal');
-
-  if (!initialLayout.includes('subcategories')) initialLayout.push('subcategories');
-  const dashboardLayout = ref(initialLayout);
+  const removedKeys = new Set(['incomeList', 'expenseList', 'transfers', 'subcategories', 'currentTotal', 'futureTotal']);
+  const defaultLayout = ['accounts', 'companies', 'contractors', 'projects', 'individuals', 'categories'];
+  const cleanLayout = value => [...new Set((Array.isArray(value) ? value : defaultLayout).filter(key => typeof key === 'string' && !removedKeys.has(key)))];
+  let savedLayout;
+  try { savedLayout = JSON.parse(localStorage.getItem('dashboardLayout')); } catch { /* Use the default layout. */ }
+  const dashboardLayout = ref(cleanLayout(savedLayout));
+  localStorage.setItem('dashboardLayout', JSON.stringify(dashboardLayout.value));
   const originalDashboardLayout = ref([]);
 
   // Сохранение на сервер
@@ -80,13 +72,15 @@ export const useWidgetStore = defineStore('widget', () => {
   }, 1000);
 
   watch(dashboardLayout, (n) => {
+    const clean = cleanLayout(n);
+    if (JSON.stringify(clean) !== JSON.stringify(n)) { dashboardLayout.value = clean; return; }
     localStorage.setItem('dashboardLayout', JSON.stringify(n));
     saveLayoutToServer(n);
   }, { deep: true });
 
   function replaceWidget(i, key) {
     // Check if widget already exists
-    if (dashboardLayout.value.includes(key)) return;
+    if (removedKeys.has(key) || dashboardLayout.value.includes(key)) return;
 
     // Replace at index or push to end if index equals length
     if (i >= 0 && i <= dashboardLayout.value.length) {
@@ -99,7 +93,7 @@ export const useWidgetStore = defineStore('widget', () => {
   }
 
   function updateDashboardLayout(newLayout) {
-    dashboardLayout.value = newLayout;
+    dashboardLayout.value = cleanLayout(newLayout);
   }
 
   // --- 3. Настройки внутри виджетов (Сортировка/Фильтрация) ---

@@ -6,6 +6,11 @@ import { CHIP_COLOR_FIELDS, appearanceStorageKey, appearanceTokens, cloneAppeara
 export const useAppearanceStore = defineStore('appearance', () => {
   const preferences = ref(defaultPreferences());
   const storageError = ref('');
+  const syncError = ref('');
+  const syncing = ref(false);
+  const libraryBusy = ref(false);
+  const apiBase = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api').replace(/\/$/, '');
+  let generation = 0, refreshPromise = null;
   let userId = null;
   const mode = computed(() => preferences.value.mode);
   const theme = computed(() => preferences.value.themes[mode.value]);
@@ -39,6 +44,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
   function loadUser(id) {
     const next = id ? String(id) : null;
     if (next === userId && userId !== null) return;
+    generation++; refreshPromise = null; syncing.value = false; libraryBusy.value = false; syncError.value = '';
     userId = next;
     storageError.value = '';
     let raw = null, legacyMode = 'dark';
@@ -46,6 +52,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
     preferences.value = parsePreferences(raw);
     if (!raw) preferences.value.mode = legacyMode === 'light' ? 'light' : 'dark';
     apply();
+    if (userId) void refreshLibrary();
   }
   function setMode(value) { preferences.value.mode = value === 'light' ? 'light' : 'dark'; commit(); }
   function setField(scope, group, key, value) {
@@ -74,16 +81,75 @@ export const useAppearanceStore = defineStore('appearance', () => {
     for (const m of ['light', 'dark']) preferences.value.themes[m] = sanitizeTheme(snapshot.themes[m], m);
     preferences.value.mode = snapshot.mode; commit();
   }
-  function saveTheme(name, updateId = null) {
+  async function requestLibrary(path = '', method = 'GET', body) {
+    const response = await fetch(`${apiBase}/user/appearance-themes${path}`, {
+      method, credentials:'include', headers:body ? {'Content-Type':'application/json'} : {},
+      ...(body ? {body:JSON.stringify(body)} : {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Не удалось загрузить темы аккаунта.');
+    return data;
+  }
+  function checkedItem(item) {
+    if (!item?.id || !Number.isSafeInteger(item.revision) || item.revision<1) throw new Error('Не удалось загрузить темы аккаунта.');
+    const parsed = parsePreferences({version:1,saved:[item]}).saved[0];
+    if (!parsed) throw new Error('Не удалось загрузить темы аккаунта.');
+    return parsed;
+  }
+  async function refreshLibrary() {
+    if (!userId || libraryBusy.value) return;
+    if (refreshPromise) return refreshPromise;
+    const ticket = generation;
+    syncing.value = true;
+    refreshPromise = (async () => {
+      try {
+        const data = await requestLibrary();
+        if (!Array.isArray(data.themes)) throw new Error('Не удалось загрузить темы аккаунта.');
+        const remote = data.themes.map(checkedItem);
+        if (ticket!==generation) return;
+        // Only unsynchronized legacy entries are imported. Cached shared themes are never resurrected.
+        const legacy = savedThemes.value.filter(t=>!t.revision);
+        for (const item of legacy) {
+          const imported = checkedItem((await requestLibrary('', 'POST', item)).theme);
+          if (ticket!==generation) return;
+          const index = remote.findIndex(t=>t.id===imported.id);
+          if (index<0) remote.push(imported); else remote[index] = imported;
+          preferences.value.saved = [...remote,...legacy.filter(t=>!remote.some(r=>r.id===t.id))];
+          persist();
+        }
+        if (ticket!==generation) return;
+        preferences.value.saved = remote;
+        syncError.value = ''; persist();
+      } catch (error) {
+        if (ticket===generation) syncError.value = error.message || 'Нет связи с библиотекой тем.';
+      } finally {
+        if (ticket===generation) { syncing.value = false; refreshPromise = null; }
+      }
+    })();
+    return refreshPromise;
+  }
+  async function saveTheme(name, updateId = null, revision = null) {
     const clean = name.trim().slice(0, 48);
-    if (!clean) return { error: 'Укажите название темы.' };
-    if (savedThemes.value.some(t => t.id !== updateId && t.name.toLocaleLowerCase() === clean.toLocaleLowerCase())) return { error: 'Тема с таким названием уже есть.' };
-    if (!updateId && savedThemes.value.length >= 40) return { error: 'Сохранено 40 тем. Удалите ненужную тему.' };
-    const item = { id: updateId || crypto.randomUUID(), name: clean, mode: mode.value, theme: cloneAppearance(theme.value) };
-    const previous = cloneAppearance(savedThemes.value);
-    preferences.value.saved = updateId ? previous.map(t => t.id === updateId ? item : t) : [...previous, item];
-    if (!persist()) { preferences.value.saved = previous; return { error: storageError.value }; }
-    return { id: item.id };
+    if (!clean) return { error:'Укажите название темы.' };
+    if (!userId) return { error:'Войдите в аккаунт для сохранения темы.' };
+    if (libraryBusy.value) return {error:'Дождитесь сохранения темы.'};
+    const ticket = generation;
+    // Capture local edits before awaiting network; refreshing only changes the library.
+    const item = {id:updateId || crypto.randomUUID(),name:clean,mode:mode.value,theme:cloneAppearance(theme.value)};
+    await refreshPromise;
+    if (ticket!==generation) return {};
+    if (libraryBusy.value) return {error:'Дождитесь сохранения темы.'};
+    if (savedThemes.value.some(t=>t.id!==updateId && t.name.toLocaleLowerCase()===clean.toLocaleLowerCase())) return {error:'Тема с таким названием уже есть.'};
+    libraryBusy.value = true;
+    try {
+      const data = await requestLibrary(updateId ? `/${encodeURIComponent(updateId)}` : '', updateId ? 'PUT':'POST', {...item,...(updateId ? {revision} : {})});
+      if (ticket!==generation) return {};
+      const saved = checkedItem(data.theme);
+      preferences.value.saved = [...savedThemes.value.filter(t=>t.id!==saved.id),saved];
+      syncError.value = ''; persist();
+      return {id:saved.id,revision:saved.revision};
+    } catch (error) { return {error:error.message || 'Не удалось сохранить тему в аккаунте.'}; }
+    finally { if (ticket===generation) libraryBusy.value = false; }
   }
   function selectSaved(id) {
     const item = savedThemes.value.find(t => t.id === id);
@@ -91,11 +157,19 @@ export const useAppearanceStore = defineStore('appearance', () => {
     preferences.value.mode = item.mode;
     preferences.value.themes[item.mode] = cloneAppearance(item.theme); commit();
   }
-  function deleteSaved(id) {
-    const previous = cloneAppearance(savedThemes.value);
-    preferences.value.saved = previous.filter(t => t.id !== id);
-    if (!persist()) { preferences.value.saved = previous; return false; }
-    return true;
+  async function deleteSaved(id, revision) {
+    if (libraryBusy.value) return false;
+    const ticket = generation;
+    await refreshPromise;
+    if (ticket!==generation || libraryBusy.value) return false;
+    libraryBusy.value = true;
+    try {
+      await requestLibrary(`/${encodeURIComponent(id)}`, 'DELETE', {revision});
+      if (ticket!==generation) return false;
+      preferences.value.saved = savedThemes.value.filter(t=>t.id!==id);
+      syncError.value = ''; persist(); return true;
+    } catch (error) { if (ticket===generation) syncError.value = error.message || 'Не удалось удалить тему.'; return false; }
+    finally { if (ticket===generation) libraryBusy.value = false; }
   }
   function connect() {
     const observer = new MutationObserver(() => {
@@ -106,9 +180,12 @@ export const useAppearanceStore = defineStore('appearance', () => {
     const sync = event => {
       if (userId && event.key === appearanceStorageKey(userId)) { preferences.value = parsePreferences(event.newValue); apply(); }
     };
+    const refresh = () => { if (document.visibilityState !== 'hidden') void refreshLibrary(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
     window.addEventListener('storage', sync);
-    return () => { observer.disconnect(); window.removeEventListener('storage', sync); };
+    return () => { observer.disconnect(); window.removeEventListener('storage', sync); window.removeEventListener('focus',refresh); window.removeEventListener('online',refresh); };
   }
-  return { preferences, mode, theme, savedThemes, storageError, resolved, loadUser, setMode, setField,
+  return { preferences, mode, theme, savedThemes, storageError, syncError, syncing, libraryBusy, refreshLibrary, resolved, loadUser, setMode, setField,
     inheritField, resetScope, choosePreset, restore, saveTheme, selectSaved, deleteSaved, connect };
 });

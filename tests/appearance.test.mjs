@@ -16,12 +16,12 @@ test('a local colour survives global edits while untouched blocks keep inheritin
 });
 test('chart footer typography is independent from widgets, operations and graph axes', () => {
   const theme = defaultTheme('light');
-  theme.overrides.charts.metrics.summarySize = 9;
-  theme.overrides.charts.metrics.summaryWeight = 300;
-  assert.equal(resolveAppearance(theme, 'charts').metrics.summarySize, 9);
+  theme.overrides.summaries.metrics.summarySize = 9;
+  theme.overrides.summaries.metrics.summaryWeight = 300;
+  assert.equal(resolveAppearance(theme, 'summaries').metrics.summarySize, 9);
   const vars = appearanceTokens(theme);
-  assert.equal(vars['--appearance-charts-summarySize'], '9px');
-  assert.equal(vars['--appearance-charts-summaryWeight'], '300');
+  assert.equal(vars['--appearance-summaries-summarySize'], '9px');
+  assert.equal(vars['--appearance-summaries-summaryWeight'], '300');
   assert.equal(vars['--appearance-widgets-fontSize'], '13px');
   assert.equal(vars['--appearance-table-fontSize'], '13px');
   assert.equal(vars['--appearance-charts-axisSize'], '11px');
@@ -49,26 +49,26 @@ test('corrupt or future storage falls back safely and user keys never share a wo
 test('chip background, text and border are independent, inherited and persisted separately', () => {
   const t = presetTheme('calm', 'light');
   t.global.colors[chipColorKey('income', 'bg')] = '#ffeedd';
-  t.overrides.table.colors[chipColorKey('income', 'text')] = '#123456';
-  t.overrides.table.colors[chipColorKey('income', 'border')] = '#654321';
-  const originalExpense = resolveChipAppearance(t, 'table', 'expense');
+  t.overrides.operations.colors[chipColorKey('income', 'text')] = '#123456';
+  t.overrides.operations.colors[chipColorKey('income', 'border')] = '#654321';
+  const originalExpense = resolveChipAppearance(t, 'operations', 'expense');
   const reloaded = sanitizeTheme(JSON.parse(JSON.stringify(t)), 'light');
-  assert.deepEqual(resolveChipAppearance(reloaded, 'table', 'income'), {bg:'#ffeedd',text:'#123456',border:'#654321'});
-  assert.deepEqual(resolveChipAppearance(reloaded, 'table', 'expense'), originalExpense);
+  assert.deepEqual(resolveChipAppearance(reloaded, 'operations', 'income'), {bg:'#ffeedd',text:'#123456',meta:t.global.colors.income,border:'#654321'});
+  assert.deepEqual(resolveChipAppearance(reloaded, 'operations', 'expense'), originalExpense);
   const vars = appearanceTokens(reloaded);
   assert.equal(vars['--op-income-bg'], '#ffeedd');
   assert.equal(vars['--op-income-color'], '#123456');
   assert.equal(vars['--op-income-border'], '#654321');
   assert.equal(vars['--widget-income-color'], t.global.colors.income);
   assert.equal(vars['--graph-bar-income'], t.global.colors.income);
-  delete reloaded.overrides.table.colors[chipColorKey('income', 'text')];
-  assert.equal(resolveChipAppearance(reloaded, 'table', 'income').text, t.global.colors.income);
+  delete reloaded.overrides.operations.colors[chipColorKey('income', 'text')];
+  assert.equal(resolveChipAppearance(reloaded, 'operations', 'income').text, t.global.colors.income);
 });
 test('chip and active-day opacity do not reduce the opacity of text, grid or unrelated chips', () => {
   const t = presetTheme('calm', 'light');
   t.overrides.table.colors.activeDay = '#ff0000';
-  t.overrides.table.colors[chipColorKey('income', 'bg')] = '#ffffff';
-  t.overrides.table.metrics.chipOpacity = 25;
+  t.overrides.operations.colors[chipColorKey('income', 'bg')] = '#ffffff';
+  t.overrides.operations.metrics.opacity = 25;
   t.overrides.table.metrics.activeFill = 12;
   const vars = appearanceTokens(t);
   assert.equal(vars['--op-income-bg'], 'rgba(255, 255, 255, 0.25)');
@@ -81,12 +81,35 @@ test('chip and active-day opacity do not reduce the opacity of text, grid or unr
 test('older saved themes keep working without retired settings and new input remains bounded', () => {
   const old = {enabled:true,global:{colors:{warning:'#abcdef',info:'#112233'},metrics:{eventFill:15}},overrides:{table:{colors:{chip_income_bg:'red;display:none'},metrics:{chipOpacity:999}}}};
   const theme = sanitizeTheme(old, 'light');
-  assert.equal(theme.global.colors.technical, '#abcdef');
+  assert.equal(COLOR_FIELDS.technical, undefined);
   assert.equal(theme.overrides.table.metrics.chipOpacity, 100);
   assert.equal(theme.global.metrics.chipOpacity, 100);
   assert.equal(theme.global.metrics.activeFill, 6);
   assert.deepEqual(theme.overrides.table.colors, {});
-  assert.ok(!Object.values(COLOR_FIELDS).some(label=>/Предоплата|Кредит/.test(label)));
-  assert.ok(!Object.keys(CHIP_TYPES).some(type=>/prepay|credit/.test(type)));
+  assert.ok(!Object.values(COLOR_FIELDS).some(label=>/Предоплата|Кредит|Техническ|Акт выполн/.test(label)));
+  assert.ok(!Object.keys(CHIP_TYPES).some(type=>/prepay|credit|workact|technical/.test(type)));
   assert.ok(Object.values(appearanceTokens(theme)).every(value=>!value.includes('NaN')&&!value.includes('undefined')));
+});
+
+test('legacy themes migrate chip settings and day totals into their independent sections', () => {
+  const old = {enabled:true,global:{metrics:{summarySize:12}},overrides:{table:{colors:{chip_income_bg:'#abcdef'},metrics:{chipOpacity:25,radius:7}},charts:{colors:{income:'#aabbcc'},metrics:{summarySize:15}}}};
+  const migrated = sanitizeTheme(old,'light');
+  assert.equal(migrated.schema,2);
+  assert.equal(migrated.overrides.operations.colors.chip_income_bg,'#abcdef');
+  assert.equal(migrated.overrides.operations.metrics.opacity,25);
+  assert.equal(migrated.overrides.summaries.metrics.summarySize,15);
+  const before = appearanceTokens(migrated);
+  migrated.overrides.table.colors.surface='#112233';
+  migrated.overrides.charts.colors.income='#445566';
+  const after = appearanceTokens(migrated);
+  assert.equal(before['--op-income-bg'],after['--op-income-bg']);
+  assert.equal(before['--day-summary-income'],after['--day-summary-income']);
+  assert.notEqual(before['--day-column-bg'],after['--day-column-bg']);
+});
+test('font families are allowlisted and shared revisions survive the local cache', () => {
+  const theme=sanitizeTheme({schema:2,global:{metrics:{fontFamily:'mono',secondaryFontFamily:'bad;display:none'}}},'light');
+  assert.equal(theme.global.metrics.fontFamily,'mono');
+  assert.equal(theme.global.metrics.secondaryFontFamily,'system');
+  const stored=parsePreferences({version:1,saved:[{id:'pc',name:'ПК',mode:'light',revision:3,theme}]});
+  assert.equal(stored.saved[0].revision,3);
 });

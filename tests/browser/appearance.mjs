@@ -15,11 +15,18 @@ try {
   page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   let actor = 'theme-user';
+  const libraries=new Map();
   const date = new Date();
   const dateKey = `${date.getFullYear()}-${Math.floor((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - new Date(date.getFullYear(), 0, 0)) / 86400000)}`;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     let data = [];
+    if(path.includes('/user/appearance-themes')) {
+      const items=libraries.get(actor)||[]; const req=route.request();
+      if(req.method()==='POST') { const item={...req.postDataJSON(),revision:1}; items.push(item);libraries.set(actor,items);data={theme:item}; }
+      else if(req.method()==='DELETE') {libraries.set(actor,items.filter(t=>!path.endsWith('/'+t.id)));data={ok:true};}
+      else data={themes:items};
+    }
     if (path.endsWith('/auth/me')) data = { _id: actor, name: 'Тест темы', role: 'admin', workspaceRole: 'admin', createdAt:'2026-01-01' };
     if (path.endsWith('/accounts')) data = [{ _id:'cash', name:'Тестовый счёт', companyId:'owner', initialBalance:13545757 }];
     if (path.endsWith('/companies')) data = [{ _id:'owner', name:'Владелец' }];
@@ -33,6 +40,8 @@ try {
   await page.goto('http://127.0.0.1:5192/');
   await page.locator('.operation-chip.income').first().waitFor();
   await page.waitForFunction(() => !document.querySelector('.section-loading-overlay'));
+  assert.equal(await page.locator('.operation-chip.income .amount-short').first().evaluate(el=>getComputedStyle(el).display),'inline');
+  assert.equal(await page.locator('.operation-chip.income .amount-short').first().innerText(),'600 K');
   const open = page.getByRole('button', { name:'Настройки оформления', exact:true });
   assert.equal(await open.evaluate(el=>el.previousElementSibling.classList.contains('codex-btn')), true);
   await open.click();
@@ -56,15 +65,21 @@ try {
   await scope('Таблица'); await color('Таблица: Фон таблицы', '#eef2ff');
   assert.equal(await token('--widget-background'), '#fff4dd');
   assert.equal(await token('--chart-wrapper-bg'), '#ffffff');
+  await scope('Разделители'); await color('Разделители: Фон разделителей','#e5e9f1');
+  assert.equal(await page.locator('.divider-wrapper').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 233, 241)');
+  assert.equal(await token('--widget-background'),'#fff4dd');
   const fontBefore = await widgetFont();
-  await scope('Графики');
-  await panel.getByRole('slider', { name:'Графики: Размер подписей под графиком', exact:true }).press('Home');
-  await panel.getByRole('slider', { name:'Графики: Жирность подписей под графиком', exact:true }).press('Home');
+  await scope('Итоги дня');
+  await color('Итоги дня: Фон итогов дня','#f5f0e8');
+  assert.equal(await page.locator('.day-summary').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(245, 240, 232)');
+  await panel.getByRole('slider', { name:'Итоги дня: Размер основного текста', exact:true }).press('Home');
+  await panel.getByRole('slider', { name:'Итоги дня: Жирность основного текста', exact:true }).press('Home');
   assert.equal(await page.locator('.day-summary .day-income').first().evaluate(el=>getComputedStyle(el).fontSize), '9px');
   assert.equal(await page.locator('.day-summary .day-income').first().evaluate(el=>getComputedStyle(el).fontWeight), '300');
   assert.equal(await widgetFont(), fontBefore);
   const canvas = page.locator('.graph-area canvas').first();
   const beforeChart = await canvas.evaluate(el => el.toDataURL());
+  await scope('Графики');
   await color('Графики: Поступления', '#a023ab');
   await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--graph-bar-income').trim()==='#a023ab');
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -96,15 +111,15 @@ try {
   await page.setViewportSize({ width:1512,height:982 });
   await list.selectOption(savedId);
   await panel.getByRole('button', { name:'Удалить сохранённую тему', exact:true }).click();
-  assert.equal(await list.locator('option').count(), 1);
+  await page.waitForFunction(()=>document.querySelector('#personal-theme-list').options.length===1);
   actor = 'another-user'; await page.reload();
   assert.equal(await page.locator('html').getAttribute('data-appearance-custom'), null, 'another account does not inherit personal styles');
   await open.click(); assert.equal(await list.locator('option').count(), 1);
   actor = 'theme-user'; await page.reload();
   assert.equal(await token('--graph-bar-income'), '#a023ab');
   await open.click();
-  await panel.getByRole('button', { name:'Графики', exact:true }).click();
-  await panel.getByRole('slider', { name:'Графики: Размер подписей под графиком', exact:true }).press('End');
+  await panel.getByRole('button', { name:'Итоги дня', exact:true }).click();
+  await panel.getByRole('slider', { name:'Итоги дня: Размер основного текста', exact:true }).press('End');
   const summary = await page.locator('.day-summary').first().evaluate(el=>({height:el.clientHeight,content:el.scrollHeight}));
   assert.ok(summary.content<=summary.height+1, 'larger graph footer fonts remain visible');
   await page.getByRole('button', { name:'Открыть чат Codex', exact:true }).click();

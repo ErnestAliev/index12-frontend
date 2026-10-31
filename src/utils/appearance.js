@@ -1,27 +1,38 @@
 // The global palette is inherited; section overrides only contain edited fields.
 export const APPEARANCE_VERSION = 1;
-export const APPEARANCE_SCOPES = ['global', 'widgets', 'table', 'charts'];
+export const APPEARANCE_SCOPE_LABELS = { global:'Вся тема', widgets:'Виджеты', separators:'Разделители', table:'Таблица', operations:'Операции', charts:'Графики', summaries:'Итоги дня' };
+export const APPEARANCE_SCOPES = Object.keys(APPEARANCE_SCOPE_LABELS);
+export const FONT_OPTIONS = {
+  system: { label:'Системный', css:'-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
+  inter: { label:'Inter', css:'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
+  arial: { label:'Arial', css:'Arial, Helvetica, sans-serif' },
+  georgia: { label:'Georgia', css:'Georgia, "Times New Roman", serif' },
+  mono: { label:'Моноширинный', css:'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+};
 export const CHIP_TYPES = {
   income: { label: 'Поступление', role: 'income' },
   expense: { label: 'Расход', role: 'expense' },
   transfer: { label: 'Перевод', role: 'transfer' },
   withdrawal: { label: 'Вывод средств', role: 'purple' },
-  workact: { label: 'Акт выполненных работ', role: 'income' },
-  technical: { label: 'Техническая операция', role: 'technical' },
 };
-export const CHIP_PARTS = { bg: 'Фон', text: 'Текст', border: 'Обводка' };
+export const CHIP_PARTS = { bg: 'Фон', text: 'Текст', meta:'Вспомогательный текст', border: 'Обводка' };
 export const chipColorKey = (type, part) => `chip_${type}_${part}`;
 export const CHIP_COLOR_FIELDS = Object.fromEntries(Object.entries(CHIP_TYPES).flatMap(([type, { label }]) =>
   Object.entries(CHIP_PARTS).map(([part, name]) => [chipColorKey(type, part), `${label}: ${name}`])));
 export const COLOR_FIELDS = {
   accent: 'Активные элементы', income: 'Поступления', expense: 'Расходы',
   transfer: 'Переводы', bg: 'Фон области', surface: 'Поверхности', text: 'Основной текст',
-  balance: 'Остаток на графике', purple: 'Вывод средств', technical: 'Технические операции',
+  balance: 'Остаток на графике', purple: 'Вывод средств',
   activeDay: 'Цвет активного дня', ...CHIP_COLOR_FIELDS,
+  muted:'Вспомогательный текст', heading:'Заголовки', border:'Обводка', shadow:'Цвет тени',
 };
 export const METRIC_FIELDS = {
+  fontFamily: { label:'Основной шрифт', options:FONT_OPTIONS, group:'type' },
+  secondaryFontFamily: { label:'Вспомогательный шрифт', options:FONT_OPTIONS, group:'type' },
   fontSize: { label: 'Размер основного текста', min: 9, max: 20, step: .5, unit: 'px', group: 'type' },
   textWeight: { label: 'Жирность основного текста', min: 300, max: 800, step: 50, group: 'type' },
+  secondarySize: { label:'Размер вспомогательного текста', min:9, max:20, step:.5, unit:'px', group:'type' },
+  secondaryWeight: { label:'Жирность вспомогательного текста', min:300, max:800, step:50, group:'type' },
   labelSize: { label: 'Размер заголовков', min: 9, max: 22, step: .5, unit: 'px', group: 'type' },
   labelWeight: { label: 'Жирность заголовков', min: 300, max: 800, step: 50, group: 'type' },
   balanceSize: { label: 'Размер главных сумм', min: 18, max: 44, step: 1, unit: 'px', group: 'type' },
@@ -32,7 +43,10 @@ export const METRIC_FIELDS = {
   axisWeight: { label: 'Жирность подписей шкалы', min: 300, max: 800, step: 50, group: 'type' },
   mutedContrast: { label: 'Контраст вторичного текста', min: 25, max: 100, step: 1, unit: '%', group: 'detail' },
   gridContrast: { label: 'Заметность разделителей', min: 0, max: 60, step: 1, unit: '%', group: 'detail' },
-  lineWidth: { label: 'Толщина разделителей', min: .5, max: 2, step: .25, unit: 'px', group: 'detail' },
+  lineWidth: { label: 'Толщина линий', min: 0, max: 4, step: .25, unit: 'px', group: 'detail' },
+  borderWidth: { label:'Толщина обводки', min:0, max:4, step:.5, unit:'px', group:'shape' },
+  opacity: { label:'Непрозрачность фона', min:0, max:100, step:1, unit:'%', group:'detail' },
+  padding: { label:'Внутренние отступы', min:0, max:20, step:1, unit:'px', group:'shape' },
   stripeStrength: { label: 'Контраст полос таблицы', min: 0, max: 100, step: 1, unit: '%', group: 'detail' },
   eventFill: { label: 'Насыщенность заливки операций', min: 0, max: 45, step: 1, unit: '%', group: 'detail' },
   chipOpacity: { label: 'Непрозрачность фона чипов', min: 0, max: 100, step: 1, unit: '%', group: 'chips' },
@@ -40,21 +54,45 @@ export const METRIC_FIELDS = {
   chartFill: { label: 'Насыщенность столбцов остатка', min: 5, max: 100, step: 1, unit: '%', group: 'detail' },
   rowHeight: { label: 'Высота строки таблицы', min: 28, max: 52, step: 1, unit: 'px', group: 'detail' },
   radius: { label: 'Скругление', min: 0, max: 24, step: 1, unit: 'px', group: 'shape' },
-  shadow: { label: 'Тень блоков', min: 0, max: 20, step: 1, unit: '%', group: 'shape' },
+  shadow: { label: 'Непрозрачность тени', min: 0, max: 40, step: 1, unit: '%', group: 'shadow' },
+  shadowBlur: { label:'Размытие тени', min:0, max:32, step:1, unit:'px', group:'shadow' },
+  shadowX: { label:'Смещение тени по горизонтали', min:-16, max:16, step:1, unit:'px', group:'shadow' },
+  shadowY: { label:'Смещение тени по вертикали', min:-16, max:16, step:1, unit:'px', group:'shadow' },
 };
-const metrics = { fontSize: 13, textWeight: 400, labelSize: 13, labelWeight: 600,
+const metrics = { fontFamily:'system', secondaryFontFamily:'system', secondarySize:11, secondaryWeight:400,
+  fontSize: 13, textWeight: 400, labelSize: 13, labelWeight: 600,
   balanceSize: 32, balanceWeight: 700, summarySize: 11, summaryWeight: 400,
   axisSize: 11, axisWeight: 400, mutedContrast: 75, gridContrast: 15, lineWidth: 1,
-  stripeStrength: 55, eventFill: 10, chipOpacity: 100, activeFill: 6, chartFill: 25, rowHeight: 36, radius: 4, shadow: 0 };
+  stripeStrength: 55, eventFill: 10, chipOpacity: 100, opacity:100, borderWidth:1, padding:8,
+  activeFill: 6, chartFill: 25, rowHeight: 36, radius: 4, shadow: 0, shadowBlur:10, shadowX:0, shadowY:2 };
 const light = { accent: '#3b6763', income: '#25734f', expense: '#a74439', transfer: '#4b6077',
-  bg: '#f4f6f5', surface: '#ffffff', text: '#263631', balance: '#718a7f', technical: '#805717', purple: '#715181' };
+  bg: '#f4f6f5', surface: '#ffffff', text: '#263631', balance: '#718a7f', purple: '#715181' };
 const dark = { accent: '#34c759', income: '#34c759', expense: '#ff6b61', transfer: '#a7b8d5',
-  bg: '#1a1a1a', surface: '#282828', text: '#eeeeee', balance: '#9caebe', technical: '#ffb547', purple: '#de8fff' };
+  bg: '#1a1a1a', surface: '#282828', text: '#eeeeee', balance: '#9caebe', purple: '#de8fff' };
 export const cloneAppearance = value => JSON.parse(JSON.stringify(value));
 export function defaultTheme(mode = 'light') {
-  return { enabled: false, preset: '', global: { colors: { ...(mode === 'dark' ? dark : light) }, metrics: { ...metrics } },
-    overrides: { widgets: { colors: {}, metrics: {} }, table: { colors: {}, metrics: {} }, charts: { colors: {}, metrics: {} } } };
+  return { schema:2, enabled: false, preset: '', global: { colors: { ...(mode === 'dark' ? dark : light) }, metrics: { ...metrics } },
+    overrides: Object.fromEntries(APPEARANCE_SCOPES.slice(1).map(scope=>[scope,{colors:{},metrics:{}}])) };
 }
+const fonts = ['fontFamily','fontSize','textWeight','secondaryFontFamily','secondarySize','secondaryWeight'];
+const shape = ['borderWidth','radius','opacity'];
+const shadows = ['shadow','shadowBlur','shadowX','shadowY'];
+export const SCOPE_COLOR_FIELDS = {
+  widgets:['surface','text','muted','heading','border','income','expense','accent','shadow'],
+  separators:['surface','text','border','accent','shadow'],
+  table:['surface','bg','text','border','activeDay','accent','shadow'],
+  operations:['surface','income','expense','transfer','purple','border','shadow'],
+  charts:['surface','bg','text','muted','heading','border','income','expense','balance','accent','shadow'],
+  summaries:['surface','text','muted','heading','border','income','expense','shadow'],
+};
+export const SCOPE_METRIC_FIELDS = {
+  widgets:[...shape,'padding',...fonts,'labelSize','labelWeight','balanceSize','balanceWeight',...shadows],
+  separators:[...shape,'fontFamily','fontSize','textWeight',...shadows],
+  table:[...shape,'fontFamily','fontSize','textWeight','rowHeight','stripeStrength','activeFill',...shadows],
+  operations:[...shape,'padding',...fonts,...shadows],
+  charts:[...shape,'fontFamily','fontSize','textWeight','secondaryFontFamily','labelSize','labelWeight','axisSize','axisWeight','chartFill','lineWidth',...shadows],
+  summaries:[...shape,'padding','fontFamily','summarySize','summaryWeight','secondaryFontFamily','secondarySize','secondaryWeight',...shadows],
+};
 export const QUICK_THEMES = [
   { id: 'calm', name: 'Спокойная', colors: ['#3b6763', '#25734f', '#f4f6f5'] },
   { id: 'crisp', name: 'Чёткая', colors: ['#315d9c', '#18794e', '#f0f3f7'] },
@@ -82,15 +120,21 @@ export function resolveAppearance(theme, scope = 'global') {
   const base = theme.global;
   const override = theme.overrides[scope];
   const colors = { ...base.colors, ...override?.colors };
+  const resolvedMetrics = { ...base.metrics, ...override?.metrics };
   colors.activeDay ??= colors.accent;
-  return { colors, metrics: { ...base.metrics, ...override?.metrics } };
+  colors.muted ??= mixColor(colors.surface, colors.text, resolvedMetrics.mutedContrast);
+  colors.border ??= mixColor(colors.surface, colors.text, resolvedMetrics.gridContrast);
+  colors.heading ??= colors.muted;
+  colors.shadow ??= '#000000';
+  return { colors, metrics:resolvedMetrics };
 }
 export function resolveChipAppearance(theme, scope, type) {
   const { colors, metrics } = resolveAppearance(theme, scope);
   const role = CHIP_TYPES[type]?.role || 'income';
   const tone = colors[role];
-  const defaults = { bg: mixColor(colors.surface, tone, metrics.eventFill), text: tone,
-    border: mixColor(colors.surface, tone, Math.min(100, metrics.eventFill + 20)) };
+  const explicitBorder = theme.overrides[scope]?.colors?.border || theme.global.colors.border;
+  const defaults = { bg: mixColor(colors.surface, tone, metrics.eventFill), text: tone, meta:tone,
+    border: explicitBorder || mixColor(colors.surface, tone, Math.min(100, metrics.eventFill + 20)) };
   return Object.fromEntries(Object.entries(defaults).map(([part, fallback]) => [part, colors[chipColorKey(type, part)] || fallback]));
 }
 export function alphaColor(hex, opacity) {
@@ -103,10 +147,9 @@ function cleanFields(input, sparse, mode) {
   for (const key of Object.keys(COLOR_FIELDS)) {
     if (/^#[\da-f]{6}$/i.test(input?.colors?.[key] || '')) out.colors[key] = input.colors[key].toLowerCase();
   }
-  // Preserve the old technical-operation colour without exposing retired operation types.
-  if (!input?.colors?.technical && /^#[\da-f]{6}$/i.test(input?.colors?.warning || '')) out.colors.technical = input.colors.warning.toLowerCase();
   for (const [key, spec] of Object.entries(METRIC_FIELDS)) {
     const value = input?.metrics?.[key];
+    if (spec.options) { if (Object.hasOwn(spec.options, value || '')) out.metrics[key] = value; continue; }
     if (typeof value === 'number' && Number.isFinite(value)) out.metrics[key] = Math.min(spec.max, Math.max(spec.min, value));
   }
   return out;
@@ -118,6 +161,18 @@ export function sanitizeTheme(input, mode) {
   t.preset = QUICK_THEMES.some(p => p.id === input.preset) ? input.preset : '';
   t.global = cleanFields(input.global, false, mode);
   for (const scope of APPEARANCE_SCOPES.slice(1)) t.overrides[scope] = cleanFields(input.overrides?.[scope], true, mode);
+  if (input.schema !== 2) {
+    if (!input.overrides?.operations) {
+      t.overrides.operations = cleanFields(input.overrides?.table, true, mode);
+      if (typeof t.overrides.operations.metrics.chipOpacity === 'number') t.overrides.operations.metrics.opacity = t.overrides.operations.metrics.chipOpacity;
+    }
+    if (!input.overrides?.summaries) {
+      t.overrides.summaries = cleanFields(input.overrides?.charts, true, mode);
+      const previous = resolveAppearance(t,'charts');
+      t.overrides.summaries.colors.surface = mixColor(previous.colors.surface,previous.colors.bg,65);
+    }
+    if (typeof t.global.metrics.chipOpacity === 'number' && input.global?.metrics?.chipOpacity != null && !input.overrides?.operations?.metrics?.opacity) t.overrides.operations.metrics.opacity ??= t.global.metrics.chipOpacity;
+  }
   return t;
 }
 export function defaultPreferences() {
@@ -134,7 +189,7 @@ export function parsePreferences(raw) {
     defaults.saved = (Array.isArray(data.saved) ? data.saved : []).filter(t => {
       if (!t || typeof t.id !== 'string' || !t.id || ids.has(t.id) || typeof t.name !== 'string' || !t.name.trim()) return false;
       ids.add(t.id); return true;
-    }).slice(0, 40).map(t => ({ id: t.id.slice(0, 100), name: t.name.trim().slice(0, 48), mode: t.mode === 'dark' ? 'dark' : 'light', theme: sanitizeTheme(t.theme, t.mode) }));
+    }).slice(0, 40).map(t => ({ id: t.id.slice(0, 100), name: t.name.trim().slice(0, 48), mode: t.mode === 'dark' ? 'dark' : 'light', theme: sanitizeTheme(t.theme, t.mode), ...(Number.isSafeInteger(t.revision) && t.revision>0 ? {revision:t.revision} : {}) }));
   } catch { /* A damaged preference must never prevent login. */ }
   return defaults;
 }
@@ -158,7 +213,7 @@ export function appearanceTokens(theme) {
   const put = (names, value) => names.split(' ').forEach(name => vars['--' + name] = String(value));
   function palette(scope) {
     const { colors: c, metrics: m } = resolveAppearance(theme, scope);
-    return { c, m, muted: mixColor(c.surface, c.text, m.mutedContrast), border: mixColor(c.surface, c.text, m.gridContrast),
+    return { c, m, muted:c.muted, border:c.border, surface:m.opacity===100?c.surface:alphaColor(c.surface,m.opacity),
       soft: mixColor(c.surface, c.accent, 10), panel: mixColor(c.surface, c.bg, 65) };
   }
   const g = palette('global');
@@ -172,7 +227,7 @@ export function appearanceTokens(theme) {
   put('light-hover bg-hover', mixColor(g.c.surface, g.c.accent, 12));
   put('light-accent color-primary', g.c.accent); put('light-accent-soft', g.soft);
   put('light-accent-hover', mixColor(g.c.accent, g.c.text, 15));
-  for (const [key, role, aliases] of [['income', 'income', 'color-success color-income'], ['expense', 'expense', 'color-danger color-expense'], ['warning', 'technical', 'color-warning'], ['info', 'transfer', 'color-info'], ['purple', 'purple', '']]) {
+  for (const [key, role, aliases] of [['income', 'income', 'color-success color-income'], ['expense', 'expense', 'color-danger color-expense'], ['warning', 'accent', 'color-warning'], ['info', 'transfer', 'color-info'], ['purple', 'purple', '']]) {
     put('light-' + key + (aliases ? ' ' + aliases : ''), g.c[role]);
     put('light-' + key + '-soft', mixColor(g.c.surface, g.c[role], g.m.eventFill));
   }
@@ -188,45 +243,56 @@ export function appearanceTokens(theme) {
   put('tooltip-text-label filter-dropdown-title-color filter-dropdown-symbol-color', g.muted);
   put('tooltip-text-value', g.c.income);
   const w = palette('widgets');
-  put('widget-background', w.c.surface); put('widget-border widget-border-right widget-grid-color', w.border);
-  put('widget-text-main', w.c.text); put('widget-title-color widget-text-soft widget-text-mute widget-neutral-color', w.muted);
+  put('widget-background', w.surface); put('widget-border widget-border-right widget-grid-color', w.border);
+  put('widget-text-main', w.c.text); put('widget-title-color',w.c.heading); put('widget-text-soft widget-text-mute widget-neutral-color', w.muted);
   put('widget-income-color', w.c.income); put('widget-expense-color', w.c.expense);
   put('btn-widget-bg', w.panel); put('btn-widget-border', w.border); put('btn-widget-color', w.muted);
   put('btn-widget-bg-active', w.c.accent); put('btn-widget-border-active', w.c.accent);
   put('btn-widget-color-active', contrastRatio(w.c.accent, '#ffffff') > contrastRatio(w.c.accent, '#111111') ? '#ffffff' : '#111111');
   put('widget-bg-hover btn-widget-bg-hover', mixColor(w.c.surface, w.c.accent, 10));
+  const sep = palette('separators');
+  put('header-resizer-bg divider-wrapper-bg',sep.surface);
+  put('header-resizer-border divider-wrapper-border header-resizer-border-hover',sep.border);
+  put('header-resizer-dot-bg vertical-resizer-dot-bg',sep.c.accent);
   const t = palette('table');
-  put('day-column-bg', t.c.surface); put('day-column-border cell-border', t.border);
-  put('cell-bg-odd', mixColor(t.c.surface, t.c.bg, t.m.stripeStrength));
-  put('day-header-bg', t.panel); put('day-header-text', t.muted);
+  put('day-column-bg', t.surface); put('day-column-border cell-border', t.border);
+  const stripe = mixColor(t.c.surface,t.c.bg,t.m.stripeStrength);
+  put('cell-bg-odd',t.m.opacity===100?stripe:alphaColor(stripe,t.m.opacity));
+  put('day-header-bg', t.panel); put('day-header-text', t.c.text);
   put('day-header-today-text day-today-border-color day-tomorrow-border-color cell-dragover-outline', t.c.accent);
   put('cell-bg-hover cell-bg-dragover', t.soft);
-  put('op-default-bg', t.panel); put('op-border op-default-border', t.border); put('op-default-color op-default-text', t.c.text);
   put('appearance-table-active-overlay', alphaColor(t.c.activeDay, t.m.activeFill));
+  const o = palette('operations');
+  put('op-default-bg',o.surface);put('op-border op-default-border',o.border);put('op-default-color op-default-text',o.c.text);
   const types = { ...Object.fromEntries(Object.keys(CHIP_TYPES).map(type => [type, type])), prepay: 'income', closed: 'income', credit: 'income' };
   for (const [type, source] of Object.entries(types)) {
-    const chip = resolveChipAppearance(theme, 'table', source);
-    put(`op-${type}-color op-${type}-meta`, chip.text);
-    put(`op-${type}-bg`, t.m.chipOpacity === 100 ? chip.bg : alphaColor(chip.bg, t.m.chipOpacity));
+    const chip = resolveChipAppearance(theme, 'operations', source);
+    put(`op-${type}-color`, chip.text);put(`op-${type}-meta`,chip.meta);
+    put(`op-${type}-bg`, o.m.opacity === 100 ? chip.bg : alphaColor(chip.bg, o.m.opacity));
     put(`op-${type}-border`, chip.border);
   }
   const ch = palette('charts');
-  put('graph-bg-main chart-wrapper-bg', ch.c.surface); put('graph-bg-soft day-summary-bg y-axis-panel-bg', ch.panel);
-  put('graph-grid-color day-summary-border y-axis-panel-border', ch.border);
-  put('graph-axis-color y-axis-label-color day-summary-date day-summary-text', ch.muted);
+  put('graph-bg-main chart-wrapper-bg', ch.surface); put('graph-bg-soft y-axis-panel-bg', ch.panel);
+  put('graph-grid-color y-axis-panel-border', ch.border);
+  put('graph-axis-color y-axis-label-color', ch.muted);
   put('graph-balance-active', mixColor(ch.c.surface, ch.c.balance, Math.min(100, ch.m.chartFill + 8)));
   put('graph-balance-idle', mixColor(ch.c.surface, ch.c.balance, ch.m.chartFill));
   put('graph-line-balance graph-balance-edge', ch.c.balance);
-  put('graph-line-income graph-bar-income day-summary-income', ch.c.income);
-  put('graph-line-expense graph-bar-expense day-summary-expense', ch.c.expense);
-  put('day-summary-balance day-summary-balance-value', ch.c.text);
+  put('graph-line-income graph-bar-income', ch.c.income);
+  put('graph-line-expense graph-bar-expense', ch.c.expense);
+  const summary = palette('summaries');
+  put('day-summary-bg',summary.surface);put('day-summary-border',summary.border);
+  put('day-summary-date',summary.c.heading);put('day-summary-text',summary.muted);
+  put('day-summary-income',summary.c.income);put('day-summary-expense',summary.c.expense);
+  put('day-summary-balance day-summary-balance-value',summary.c.text);
   put('graph-line-projection', ch.c.balance);
   put('graph-point-stroke', ch.c.accent); put('graph-point-fill', ch.c.surface);
-  put('appearance-charts-summaryHeight', Math.max(64, Math.ceil(ch.m.summarySize * 1.4 * 4 + 26)) + 'px');
+  put('appearance-summaries-height appearance-charts-summaryHeight',Math.max(64,Math.ceil(summary.m.summarySize*1.4*3+summary.m.secondarySize*1.4+summary.m.padding*2+10))+'px');
   for (const scope of APPEARANCE_SCOPES) {
     const { colors, metrics } = resolveAppearance(theme, scope);
     for (const [key, value] of Object.entries(colors)) put(`appearance-${scope}-${key}`, value);
-    for (const [key, value] of Object.entries(metrics)) put(`appearance-${scope}-${key}`, value + (METRIC_FIELDS[key].unit === 'px' ? 'px' : ''));
+    for (const [key, value] of Object.entries(metrics)) put(`appearance-${scope}-${key}`, METRIC_FIELDS[key].options?FONT_OPTIONS[value].css:value + (METRIC_FIELDS[key].unit === 'px' ? 'px' : ''));
+    put(`appearance-${scope}-shadowValue`,`${metrics.shadowX}px ${metrics.shadowY}px ${metrics.shadowBlur}px ${alphaColor(colors.shadow,metrics.shadow)}`);
   }
   return vars;
 }

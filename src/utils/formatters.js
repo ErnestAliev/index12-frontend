@@ -5,27 +5,12 @@ export const formatNumber = (num) => {
   return String(numAsInt).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
-// Короткий формат для узких колонок (21д режим)
-// 200 000 -> "200K", 1 500 000 -> "1.5M"
+// Compact display only; source amounts and form values retain their full precision.
 export const formatShortNumber = (num) => {
-  const absNum = Math.abs(num);
-
-  if (absNum >= 1000000) {
-    // Миллионы
-    const millions = absNum / 1000000;
-    return millions >= 10
-      ? `${Math.floor(millions)}M`
-      : `${millions.toFixed(1)}M`;
-  } else if (absNum >= 1000) {
-    // Тысячи
-    const thousands = absNum / 1000;
-    return thousands >= 10
-      ? `${Math.floor(thousands)}K`
-      : `${thousands.toFixed(1)}K`;
-  }
-
-  // Меньше 1000 - показываем как есть
-  return Math.floor(absNum).toString();
+  const value = Math.abs(Number(num));
+  if (!Number.isFinite(value)) return '0';
+  const compact = n => String(Math.round(n * 10) / 10);
+  if (value >= 999950) return `${compact(value / 1000000)} M`;
+  if (value >= 1000) return `${compact(value / 1000)} K`;
+  return String(Math.floor(value));
 };
-
-// (Позже мы можем добавить сюда formatCurrency, formatDate и т.д.)

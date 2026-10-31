@@ -13,10 +13,8 @@ const operations = [
   {_id:'expense',type:'expense',accountId:'cash'},
   {_id:'transfer',type:'transfer',isTransfer:true,fromAccountId:'cash',toAccountId:'bank'},
   {_id:'withdrawal',type:'expense',accountId:'cash',isWithdrawal:true,destination:'Личная карта'},
-  {_id:'workact',type:'expense',isWorkAct:true},
-  {_id:'technical',type:'expense'},
 ].map((op,index)=>({...op,amount:1000+index,companyId:'owner',categoryId:'rent',date:date.toISOString(),dateKey,cellIndex:index}));
-const types = {income:['Поступление','.income:not(.work-act)'],expense:['Расход','.expense'],transfer:['Перевод','.transfer'],withdrawal:['Вывод средств','.withdrawal'],workact:['Акт выполненных работ','.work-act'],technical:['Техническая операция','.technical']};
+const types = {income:['Поступление','.income:not(.work-act)'],expense:['Расход','.expense'],transfer:['Перевод','.transfer'],withdrawal:['Вывод средств','.withdrawal']};
 let browser;
 try {
   await server.listen();
@@ -31,6 +29,7 @@ try {
     await page.route('**/api/**',async route=>{
       const req=route.request(),path=new URL(req.url()).pathname;let data=[];
       if(req.method()!=='GET')writes.push(path);
+      if(path.endsWith('/user/appearance-themes'))data={themes:[]};
       if(path.endsWith('/auth/me'))data={_id:'controls-user',role:'admin',workspaceRole:'admin',createdAt:'2026-01-01'};
       if(path.endsWith('/accounts'))data=[{_id:'cash',name:'Тестовый счёт',companyId:'owner',initialBalance:100000},{_id:'bank',name:'Банк',companyId:'owner',initialBalance:0}];
       if(path.endsWith('/companies'))data=[{_id:'owner',name:'Владелец'}];
@@ -60,23 +59,25 @@ try {
       assert.deepEqual(await geometry(),lightGeometry,`${fixture.name}: theme cannot resize controls or icons`);
       await panel.getByRole('button',{name:'Спокойная',exact:true}).click();
       assert.ok(!(await panel.innerText()).includes('Предоплата')&&!(await panel.innerText()).includes('Кредит'));
-      await scope('Таблица');
+      await scope('Операции');
+      assert.equal(await panel.getByLabel('Тип чипа операции',{exact:true}).locator('option').count(),4);
       const bg=mode==='light'?'#efcfad':'#42362a',text=mode==='light'?'#17395b':'#dfeeff',border='#9d4573';
       for(const [type,[label,selector]] of Object.entries(types)){
         await panel.getByLabel('Тип чипа операции',{exact:true}).selectOption(type);
-        for(const [part,value]of[['Фон',bg],['Текст',text],['Обводка',border]])await color(`Таблица: ${label}: ${part}`,value);
+        for(const [part,value]of[['Фон',bg],['Текст',text],['Вспомогательный текст',text],['Обводка',border]])await color(`Операции: ${label}: ${part}`,value);
         const rgb=hex=>'rgb('+[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)).join(', ')+')';
         await page.waitForFunction(({selector,bg,border})=>{const el=document.querySelector(selector);if(!el)return false;const s=getComputedStyle(el);return s.backgroundColor===bg&&s.borderTopColor===border&&s.borderLeftColor===border;},{selector:prefix+selector,bg:rgb(bg),border:rgb(border)});
         const style=await page.locator(prefix+selector).first().evaluate(el=>{const s=getComputedStyle(el),amount=el.querySelector('.op-amount,.amt'),meta=el.querySelector('.op-meta,.desc');return {bg:s.backgroundColor,text:getComputedStyle(amount).color,meta:getComputedStyle(meta).color,border:s.borderTopColor,left:s.borderLeftColor};});
         assert.deepEqual(style,{bg:rgb(bg),text:rgb(text),meta:rgb(text),border:rgb(border),left:rgb(border)},`${fixture.name} ${mode} ${type}`);
       }
-      await slider('Таблица: Непрозрачность фона чипов',25);
+      await slider('Операции: Непрозрачность фона',25);
       await page.waitForFunction(selector=>getComputedStyle(document.querySelector(selector)).backgroundColor.endsWith(', 0.25)'),`${prefix}.income`);
       const translucent=await page.locator(`${prefix}.income`).first().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,opacity:getComputedStyle(el).opacity}));
       assert.ok(translucent.bg.endsWith(', 0.25)'));
       assert.equal(translucent.opacity,'1');
+      await scope('Таблица');
       await color('Таблица: Цвет активного дня','#ff0000');
-      const details=panel.locator('details').filter({has:page.locator('summary').filter({hasText:'Заливки и разделители'})});
+      const details=panel.locator('details').filter({has:page.locator('summary').filter({hasText:'Заливки и размеры'})});
       if(await details.evaluate(el=>!el.open))await details.locator('summary').click();
       await slider('Таблица: Непрозрачность активного дня',20);
       const cells=page.locator(fixture.mobile?'.mobile-day-col.today .mobile-cell':'.day-column.today .hour-cell');
@@ -99,12 +100,12 @@ try {
       await page.screenshot({path:`${root}/output/playwright/appearance-controls-${fixture.name}-${mode}.png`});
     }
     await panel.getByRole('button',{name:'Светлая',exact:true}).click();
-    await page.reload();await page.locator(`${prefix}.income`).first().waitFor();await open();await scope('Таблица');
+    await page.reload();await page.locator(`${prefix}.income`).first().waitFor();await open();await scope('Операции');
     await panel.getByLabel('Тип чипа операции',{exact:true}).selectOption('income');
-    assert.equal(await panel.getByLabel('Таблица: Поступление: Фон HEX',{exact:true}).inputValue(),'#efcfad');
-    assert.equal(await panel.getByRole('slider',{name:'Таблица: Непрозрачность фона чипов',exact:true}).inputValue(),'25');
+    assert.equal(await panel.getByLabel('Операции: Поступление: Фон HEX',{exact:true}).inputValue(),'#efcfad');
+    assert.equal(await panel.getByRole('slider',{name:'Операции: Непрозрачность фона',exact:true}).inputValue(),'25');
     assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
-    console.log(`PASS ${fixture.name}: six chip types with independent parts, opacity, visible today grid, widget radius, equal light/dark icon geometry, persistence; no data writes`);
+    console.log(`PASS ${fixture.name}: four chip types with independent parts, opacity, visible today grid, widget radius, equal light/dark icon geometry, persistence; no data writes`);
     await context.close();
   }
 } finally {await browser?.close();await server.close();}

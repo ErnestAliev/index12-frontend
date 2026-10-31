@@ -1,4 +1,6 @@
 /* Control geometry belongs to the device layout, independently of the palette. */
+:root .compact-amounts .amount-full { display:none; }
+:root .compact-amounts .amount-short { display:inline; }
 :root .dashboard-card .action-square-btn { width:24px; height:24px; flex-shrink:0; }
 :root .dashboard-card .icon-svg { width:13px; height:13px; }
 :root .dashboard-card .card-actions { gap:4px; }
