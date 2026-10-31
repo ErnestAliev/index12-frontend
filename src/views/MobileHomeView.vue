@@ -8,8 +8,6 @@ import { useWidgetData } from '@/composables/useWidgetData.js';
 
 // Компоненты UI (Мобильные)
 import MobileHeaderTotals from '@/components/mobile/MobileHeaderTotals.vue';
-import OverviewWidget from '@/components/OverviewWidget.vue';
-import { OVERVIEW_WIDGET_KEYS } from '@/utils/dashboardWidgets.js';
 import MobileWidgetGrid from '@/components/mobile/MobileWidgetGrid.vue';
 import MobileTimeline from '@/components/mobile/MobileTimeline.vue';
 import MobileChartSection from '@/components/mobile/MobileChartSection.vue';
@@ -546,8 +544,6 @@ onUnmounted(() => {
 
 const activeWidgetKey = ref(null);
 const isWidgetFullscreen = computed(() => !!activeWidgetKey.value);
-const isOverviewWidget = computed(() => OVERVIEW_WIDGET_KEYS.includes(activeWidgetKey.value));
-const openWidgetOperation = operation => { activeWidgetKey.value = null; handleEditOperation(operation); };
 
 watch(isWidgetFullscreen, (isOpen) => {
     if (isOpen) { document.body.style.overflow = 'hidden'; }
@@ -860,11 +856,7 @@ const showCodex = ref(false);
 
     <template v-else>
         <!-- Fullscreen Widget (Без изменений) -->
-        <div v-if="isWidgetFullscreen && isOverviewWidget" class="fullscreen-widget-overlay" role="dialog" aria-modal="true" :aria-label="activeWidgetTitle" @keydown.esc="handleWidgetBack">
-          <div class="fs-header"><span class="fs-title">{{ activeWidgetTitle }}</span><button type="button" class="action-square-btn" aria-label="Закрыть виджет" @click="handleWidgetBack">×</button></div>
-          <OverviewWidget :widget-key="activeWidgetKey" expanded mobile @edit-operation="openWidgetOperation" />
-        </div>
-        <div v-if="isWidgetFullscreen && !isOverviewWidget" class="fullscreen-widget-overlay">
+        <div v-if="isWidgetFullscreen" class="fullscreen-widget-overlay">
              <div class="fs-header">
                 <div class="fs-title">{{ activeWidgetTitle }}</div>
                 <div class="fs-controls">
@@ -956,10 +948,10 @@ const showCodex = ref(false);
 
         <div class="main-content-view">
             <!-- Hide balance card for manager -->
-            <MobileHeaderTotals v-if="mainStore.workspaceRole !== 'manager'" ref="headerTotalsRef" class="fixed-header" @manage="widgetGridRef?.openSettings()" />
+            <MobileHeaderTotals v-if="mainStore.workspaceRole !== 'manager'" ref="headerTotalsRef" class="fixed-header" />
 
             <div class="layout-body" ref="layoutBodyRef">
-              <MobileWidgetGrid ref="widgetGridRef" class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" @edit-operation="openWidgetOperation" />
+              <MobileWidgetGrid ref="widgetGridRef" class="section-widgets" :class="{ 'expanded-widgets': mainStore.isHeaderExpanded }" @widget-click="onWidgetClick" />
 
               <!-- Timeline with role-based readonly for analyst, fullscreen for manager -->
               <div 

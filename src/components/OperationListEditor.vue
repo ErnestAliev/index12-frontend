@@ -2,7 +2,6 @@
 import { ALL_PROJECTS } from '@/utils/projectScope';
 import { ref, computed, onMounted, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import { migrateWidgetKey } from '@/utils/dashboardWidgets.js';
 import { formatNumber } from '@/utils/formatters.js';
 // 🟢 1. ЗАМЕНА ИМПОРТОВ: Удален OperationPopup, добавлены Income/Expense
 import IncomePopup from './IncomePopup.vue';
@@ -258,21 +257,20 @@ defineExpose({
   openCreatePopup
 });
 
-const dashboardWidgetKey = computed(() => migrateWidgetKey(props.widgetKey));
 // --- WIDGET TOGGLE LOGIC ---
 const isWidgetOnDashboard = computed(() => {
-  if (!dashboardWidgetKey.value) return null;
-  return mainStore.dashboardLayout.includes(dashboardWidgetKey.value);
+  if (!props.widgetKey) return null;
+  return mainStore.dashboardLayout.includes(props.widgetKey);
 });
 
 const toggleWidgetOnDashboard = () => {
-  if (!dashboardWidgetKey.value) return;
+  if (!props.widgetKey) return;
   
   if (isWidgetOnDashboard.value) {
-    const newLayout = mainStore.dashboardLayout.filter(k => k !== dashboardWidgetKey.value);
+    const newLayout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey);
     mainStore.dashboardLayout = newLayout;
   } else {
-    mainStore.dashboardLayout = [...mainStore.dashboardLayout, dashboardWidgetKey.value];
+    mainStore.dashboardLayout = [...mainStore.dashboardLayout, props.widgetKey];
   }
 };
 

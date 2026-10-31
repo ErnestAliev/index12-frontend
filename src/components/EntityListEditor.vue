@@ -2,7 +2,6 @@
 import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
-import { migrateWidgetKey } from '@/utils/dashboardWidgets.js';
 import { usePermissions } from '@/composables/usePermissions';
 import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
@@ -699,24 +698,23 @@ onBeforeUnmount(() => {
   }
 });
 
-const dashboardWidgetKey = computed(() => migrateWidgetKey(props.widgetKey));
 // --- WIDGET TOGGLE LOGIC ---
 const isWidgetOnDashboard = computed(() => {
-  if (!dashboardWidgetKey.value) return null; // No widget key provided
-  return mainStore.dashboardLayout.includes(dashboardWidgetKey.value);
+  if (!props.widgetKey) return null; // No widget key provided
+  return mainStore.dashboardLayout.includes(props.widgetKey);
 });
 
 const toggleWidgetOnDashboard = () => {
-  if (!dashboardWidgetKey.value) return;
+  if (!props.widgetKey) return;
   
   if (isWidgetOnDashboard.value) {
     // Remove widget completely - don't replace with placeholder
-    const layout = mainStore.dashboardLayout.filter(k => k !== dashboardWidgetKey.value && !k?.startsWith('placeholder_'));
+    const layout = mainStore.dashboardLayout.filter(k => k !== props.widgetKey && !k?.startsWith('placeholder_'));
     mainStore.dashboardLayout = layout;
   } else {
     // Add widget to end - placeholders are generated in localWidgets, not stored
     const layout = mainStore.dashboardLayout.filter(k => !k?.startsWith('placeholder_'));
-    layout.push(dashboardWidgetKey.value);
+    layout.push(props.widgetKey);
     
     mainStore.dashboardLayout = layout;
   }

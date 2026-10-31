@@ -3,21 +3,40 @@ import { computed, ref } from 'vue';
 
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
-import OverviewWidget from '../OverviewWidget.vue';
-import WidgetPicker from '../WidgetPicker.vue';
-import { OVERVIEW_WIDGET_KEYS } from '@/utils/dashboardWidgets.js';
+import HeaderSubcategoryCard from '../HeaderSubcategoryCard.vue';
 import MobileWidgetCard from './MobileWidgetCard.vue';
 
-const emit = defineEmits(['widget-click', 'widget-add', 'widget-edit', 'edit-operation']);
+const emit = defineEmits(['widget-click', 'widget-add', 'widget-edit']);
 const mainStore = useMainStore();
 
 
 
-const showSettings = ref(false);
-defineExpose({ openSettings: () => { showSettings.value = true; } });
+// Mobile should match desktop behavior: use all available widget keys
+
 const gridWidgets = computed({
-  get: () => mainStore.isHeaderExpanded ? mainStore.dashboardLayout : [],
-  set: order => { mainStore.dashboardLayout = order; }
+  get: () => {
+    let layout = [...mainStore.dashboardLayout];
+    const allKeys = mainStore.allWidgets.map(w => w.key);
+    
+    allKeys.forEach(key => {
+        if (!layout.includes(key)) {
+            layout.push(key);
+        }
+    });
+
+    layout = layout.filter(key => key !== 'currentTotal' && key !== 'futureTotal' && !key.startsWith('placeholder_'));
+    
+    if (!mainStore.isHeaderExpanded) {
+      return []; 
+    }
+    
+    return layout;
+  },
+  set: (newOrder) => {
+    const currentLayout = mainStore.dashboardLayout;
+    const hidden = currentLayout.filter(key => key === 'currentTotal' || key === 'futureTotal' || key.startsWith('placeholder_'));
+    mainStore.dashboardLayout = [...newOrder, ...hidden];
+  }
 });
 
 const handleWidgetClick = (key) => {
@@ -27,8 +46,6 @@ const handleWidgetClick = (key) => {
 
 <template>
   <div class="mobile-widgets-wrapper scroll-touch" :class="{ expanded: mainStore.isHeaderExpanded }">
-    <div v-if="mainStore.isHeaderExpanded" class="mobile-overview-heading"><span>Обзор</span><button type="button" @click="showSettings = true">Настроить виджеты</button></div>
-    <WidgetPicker v-if="showSettings" @close="showSettings = false" />
     <draggable 
       v-model="gridWidgets" 
       item-key="toString"
@@ -43,8 +60,8 @@ const handleWidgetClick = (key) => {
       :force-fallback="false"
     >
       <template #item="{ element }">
-        <div class="grid-item" :data-widget-key="element">
-          <OverviewWidget v-if="OVERVIEW_WIDGET_KEYS.includes(element)" :widget-key="element" mobile @open="handleWidgetClick(element)" @manage="showSettings = true" @edit-operation="emit('edit-operation', $event)" />
+        <div class="grid-item">
+          <HeaderSubcategoryCard v-if="element === 'subcategories'" @click="handleWidgetClick(element)" />
           <MobileWidgetCard v-else
              :widget-key="element"
              @click="handleWidgetClick"
@@ -58,9 +75,6 @@ const handleWidgetClick = (key) => {
 </template>
 
 <style scoped>
-.mobile-overview-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px; color: var(--color-text); font-size: 14px; font-weight: 600; }
-.mobile-overview-heading button { padding: 7px 10px; font-size: 12px; background: var(--btn-widget-bg); color: var(--btn-widget-color); border: 1px solid var(--color-border); border-radius: 6px; }
-.grid-item { padding: 6px 12px; }
 .mobile-widgets-wrapper {
   background-color: var(--color-background, #1a1a1a);
   border-bottom: 1px solid var(--color-border, #444);

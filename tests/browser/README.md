@@ -39,10 +39,3 @@ standalone window resizing, button placement, mobile Codex-only access, and
 absence of legacy AI API requests.
 Screenshots are saved under `output/playwright/`. Physical microphone capture
 still depends on the browser and its microphone permission.
-
-Run `node tests/browser/dashboard-widgets.mjs` for the shared desktop/mobile
-widget overview: migration of old layouts, exact money totals, upcoming payment
-opening, merged cash flow (including financing and visible transfer legs), shared
-forecast preferences, article/subcategory drill-down and narrow-screen geometry.
-Every API response is isolated; financial writes are forbidden. Widget preference
-writes are captured locally. Screenshots are saved under `output/playwright/`.
