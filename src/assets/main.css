@@ -4,6 +4,7 @@
 @import './styles/theme-light.css';
 /* Светлая тема */
 @import './base.css';
+@import './styles/light-ui.css';
 
 #app {
   height: 100vh;

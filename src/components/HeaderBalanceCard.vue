@@ -192,13 +192,13 @@ const financialStats = computed(() => {
 const getStatusColor = (currentBalance, totalSystemBalance) => {
     const safeBalance = Number(currentBalance) || 0;
     
-    if (safeBalance <= 0) return '#FF3B30'; 
+    if (safeBalance <= 0) return 'var(--color-danger, #FF3B30)';
 
     const ratio = safeBalance / totalSystemBalance;
     
-    if (ratio >= 0.5) return '#34C759'; 
-    if (ratio > 0.1) return '#FFCC00';  
-    return '#FF3B30';                   
+    if (ratio >= 0.5) return 'var(--widget-income-color, #34C759)';
+    if (ratio > 0.1) return 'var(--color-warning, #FFCC00)';
+    return 'var(--color-danger, #FF3B30)';
 };
 
 const getFutureColor = (item) => {
@@ -765,7 +765,7 @@ const formatSignedMoney = (amount, sign) => {
 .card-item-empty { font-size: var(--font-xs); color: #666; grid-column: 1 / -1; margin-top: 10px; font-style: italic; }
 
 .expense { color: var(--color-danger) !important; }
-.income { color: var(--color-primary) !important; }
+.income { color: var(--color-income, var(--color-primary)) !important; }
 .single-balance { color: var(--text-main); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .single-balance.expense { color: var(--color-danger) !important; font-weight: var(--fw-medium); }
 

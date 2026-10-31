@@ -92,13 +92,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 
 const mainStore = useMainStore();
 const emit = defineEmits(['close', 'open-about']);
 
-const currentTheme = computed(() => document.documentElement.getAttribute('data-theme') || 'dark');
+const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 'dark');
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -114,6 +114,7 @@ function openAbout() {
 
 function handleToggleTheme() {
   const newTheme = currentTheme.value === 'dark' ? 'light' : 'dark';
+  currentTheme.value = newTheme;
   document.documentElement.setAttribute('data-theme', newTheme);
   localStorage.setItem('theme', newTheme);
 }

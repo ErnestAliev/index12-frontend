@@ -1,7 +1,7 @@
 <script setup>
 import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { computed, ref } from 'vue';
-import { formatNumber } from '@/utils/formatters.js';
+import { formatNumber, formatShortNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
 
@@ -542,7 +542,7 @@ const onDrop = (event) => {
             selected: isSelected
         }"
         :data-operation-id="operation._id"
-        :title="isTransferOp ? transferRoute : undefined"
+        :title="`${formatNumber(Math.abs(displayAmount ?? operation.amount))} ₸ · ${isTransferOp ? transferRoute : chipLabel}`"
         :draggable="canInteract"
         @mouseenter="onOperationMouseEnter"
         @mouseleave="onOperationMouseLeave"
@@ -562,30 +562,30 @@ const onDrop = (event) => {
           aria-hidden="true"
         ></span>
         <template v-if="isTransferOp">
-          <span class="op-amount">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
+          <span class="op-amount"><span class="amount-full">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(displayAmount ?? operation.amount)) }}</span></span>
           <span v-if="!isCompactChipMode" class="op-meta">{{ transferRoute }}</span>
         </template>
         <template v-else-if="isWithdrawalOp">
-          <span class="op-amount">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-amount">- <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
           <span v-if="!isCompactChipMode" class="op-meta">{{ operation.destination || 'Вывод' }}</span>
         </template>
         <template v-else-if="isWorkActOp">
-          <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-amount">✓ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
           <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
         </template>
         <template v-else-if="isTechnicalOp">
-          <span class="op-amount">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-amount">✓ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
           <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
         </template>
         <template v-else-if="isCreditIncomeOp">
-          <span class="op-amount">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+          <span class="op-amount">+ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
           <span v-if="!isCompactChipMode" class="op-meta">Кредит</span>
         </template>
 
         <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
         <template v-else>
           <span class="op-amount">
-              {{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
+              {{ operation.type === 'income' ? '+' : '-' }} <span class="amount-full">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
           </span>
           <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
         </template>
@@ -610,6 +610,7 @@ const onDrop = (event) => {
 </template>
 
 <style scoped>
+.amount-short { display: none; }
 /* Используем переменные из theme.css */
 .hour-cell { 
   width: 100%; 

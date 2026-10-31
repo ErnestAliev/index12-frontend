@@ -1,510 +1,237 @@
-/* =====================================================
-   СВЕТЛАЯ ТЕМА INDEX12
-   
-   Все цвета для светлой темы приложения.
-   Организовано по категориям с русскими подписями.
-===================================================== */
-
+/* Светлая тема «Спокойный календарь».
+   Непрозрачные поверхности sRGB сохраняют предсказуемый контраст.
+   Управление, поступления и расходы имеют отдельные смысловые цвета. */
+:root[data-theme="light"],
 [data-theme="light"] {
-    /* ===================================================
-     🎨 МАСТЕР-ПЕРЕМЕННЫЕ (UI Controllers)
-     Измените эти переменные для единого стиля всех панелей
-     ================================================= */
+    color-scheme: light;
 
-    /* UI Панели: Единый фон для всех боковых панелей и разделителей */
-    --ui-panel-bg: #f0f6fb;
-    /* Фон: левая панель, правая панель, ресайзеры, итоги дня */
+    /* Общая палитра — единственный источник цветов светлой темы. */
+    --light-canvas: #f4f6f5;
+    --light-surface: #ffffff;
+    --light-panel: #eef2ef;
+    --light-hover: #e6eeea;
+    --light-text: #263631;
+    --light-secondary: #52615a;
+    --light-muted: #5c6863;
+    --light-border: #d5ded8;
+    --light-border-strong: #8a9e92;
+    --light-accent: #3b6763;
+    --light-accent-hover: #2e5551;
+    --light-accent-soft: #e3edea;
+    --light-income: #25734f;
+    --light-income-soft: #e5f0e9;
+    --light-income-border: #bfd5c7;
+    --light-expense: #a74439;
+    --light-expense-soft: #faeae6;
+    --light-expense-border: #e3c6bf;
+    --light-warning: #805717;
+    --light-warning-soft: #f7efdd;
+    --light-info: #386580;
+    --light-info-soft: #e8eff5;
+    --light-purple: #715181;
+    --light-purple-soft: #f0eaf4;
+    --light-focus-shadow: 0 0 0 3px rgba(59, 103, 99, 0.18);
+    --light-shadow: 0 8px 28px rgba(38, 54, 49, 0.12);
 
-    --ui-panel-border: #ffffff;
-    /* Граница: все панели и ресайзеры */
+    --color-primary: var(--light-accent);
+    --color-success: var(--light-income);
+    --color-income: var(--light-income);
+    --color-expense: var(--light-expense);
+    --color-danger: var(--light-expense);
+    --color-warning: var(--light-warning);
+    --color-info: var(--light-info);
+    --color-background: var(--light-canvas);
+    --color-background-soft: var(--light-surface);
+    --color-background-mute: var(--light-panel);
+    --color-border: var(--light-border);
+    --color-border-hover: var(--light-border-strong);
+    --color-text: var(--light-text);
+    --color-heading: var(--light-text);
+    --color-text-soft: var(--light-secondary);
+    --color-text-mute: var(--light-muted);
+    --text-main: var(--light-text);
+    --text-soft: var(--light-secondary);
+    --text-mute: var(--light-muted);
+    --text-dark: var(--light-text);
+    --bg-main: var(--light-canvas);
+    --bg-soft: var(--light-surface);
+    --bg-hover: var(--light-hover);
 
-    --ui-resizer-dot: #87bde9;
-    /* Цвет точек ресайзера (верхней и нижней) */
-
-    /* ===================================================
-     1. ВИДЖЕТЫ (Header Cards) - Карточки в верхней панели
-     ================================================= */
-
-    /* Виджет: Фон и границы */
-    --widget-background: #f0f6fb;
-    /* Основной фон виджета - чистый белый */
-
-    /* Виджет: Сетка хедера */
-    --widget-grid-color: #d4dce4;
-    /* Цвет сетки между виджетами */
-    --widget-grid-gap: 1px;
-    /* Толщина линий сетки (gap между виджетами) */
-    --widget-grid-padding: 1px;
-    /* Внутренний отступ сетки */
-    --widget-grid-border-width: 1px;
-    /* Толщина внешней границы сетки */
-    --widget-grid-border-radius: 8px;
-    /* Скругление углов сетки */
-
-    /* Виджет: Текст */
-    --widget-title-color: #666666;
-    /* Заголовок виджета */
-    --widget-text-main: #1a1a1a;
-    /* Основной текст (суммы) */
-    --widget-text-soft: #666666;
-    /* Мягкий текст (названия счетов) */
-    --widget-text-mute: #999999;
-    /* Приглушенный текст (метки) */
-
-    /* Виджет: Цвета сумм */
-    --widget-income-color: #34c759;
-    /* Зеленый для доходов */
-    --widget-expense-color: #ff3b30;
-    /* Красный для расходов */
-    --widget-neutral-color: #666666;
-    /* Нейтральный цвет */
-
-    /* Виджет: Состояния (Hover) */
-    --widget-bg-hover: #f4f8fb;
-    /* Фон виджета при наведении */
-
-
-
-    /* ===================================================
-     2. КНОПКИ УПРАВЛЕНИЯ В ВИДЖЕТАХ
-     ================================================= */
-
-    /* Кнопка: Normal (обычное состояние) */
-    --btn-widget-bg: #e3eaf5;
-    /* Фон кнопки - больше контраста */
-    --btn-widget-border: #c7d7f0;
-    /* Граница кнопки */
-    --btn-widget-color: #666666;
-    /* Цвет иконки */
-
-    /* Кнопка: Hover (при наведении) */
-    --btn-widget-bg-hover: #d0d0d0;
-    /* Фон при наведении - заметный */
-    --btn-widget-color-hover: #333333;
-    /* Цвет иконки при наведении */
-
-    /* Кнопка: Active (активная) */
-    --btn-widget-bg-active: #34c759;
-    /* Фон активной кнопки */
-    --btn-widget-color-active: #fff;
-    /* Цвет иконки активной кнопки */
-    --btn-widget-border-active: transparent;
-    /* Граница активной кнопки */
-
-    /* ===================================================
-     3. КНОПКИ ПРАВОЙ ПАНЕЛИ (Right Panel)
-     ================================================= */
-
-    /* Кнопка: Normal */
-    --btn-panel-bg: #f5f5f5;
-    /* Фон кнопки */
-    --btn-panel-border: #d0d0d0;
-    /* Граница кнопки - более четкая */
-    --btn-panel-color: #666666;
-    /* Цвет иконки */
-
-    /* Кнопка: Hover */
-    --btn-panel-bg-hover: #e0e0e0;
-    /* Фон при наведении */
-    --btn-panel-border-hover: #cccccc;
-    /* Граница при наведении */
-
-    /* Кнопка: Active */
-    --btn-panel-bg-active: rgba(52, 199, 89, 0.1);
-    /* Фон активной */
-    --btn-panel-border-active: #34c759;
-    /* Граница активной */
-    --btn-panel-color-active: #34c759;
-    /* Цвет иконки активной */
-
-    /* Специальная кнопка "О сервисе" */
-    --btn-about-bg: #34c759;
-    /* Фон зеленой кнопки */
-    --btn-about-bg-hover: #28a745;
-    /* Фон при наведении */
-    --btn-about-shadow: 0 4px 10px rgba(52, 199, 89, 0.3);
-    /* Тень */
-
-    /* ===================================================
-     4. ТИПЫ ОПЕРАЦИЙ (Operation Types) - Цвета чипов
-     ================================================= */
-
-    /* Операция: Базовая (по умолчанию) */
-    --op-default-bg: #828282;
-    /* Фон операции */
-    --op-default-border: rgba(52, 199, 89, 1);
-    /* Граница */
-    --op-default-bg-hover: rgb(192, 192, 192);
-    /* Фон при наведении */
-    --op-default-color: #ffffff;
-    /* Цвет суммы - белый текст */
-    --op-default-meta: #e0e0e0;
-    /* Цвет подписи - светлый текст */
-
-    /* Операция: Доход (Income) - Зеленый */
-    --op-income-color: #ffffff;
-    /* Цвет суммы - белый текст */
-    --op-income-bg: rgba(52, 199, 89, 1);
-    /* Фон - ЯРКИЙ зеленый */
-    --op-income-border: rgba(52, 199, 89, 1);
-    /* Граница - насыщенная */
-    --op-income-meta: #ffffff;
-    /* Цвет подписи - белый текст */
-
-    /* Операция: Расход (Expense) - Красный */
-    --op-expense-color: #ffffff;
-    /* Цвет суммы - белый текст */
-    --op-expense-bg: rgba(255, 59, 48, 1);
-    /* Фон - ЯРКИЙ красный */
-    --op-expense-border: rgba(255, 59, 48, 1);
-    /* Граница - насыщенная */
-    --op-expense-meta: #ffffff;
-    /* Цвет подписи - белый текст */
-
-    /* Операция: Предоплата (Prepayment) - Оранжевый */
-    --op-prepay-bg: rgba(255, 157, 0, 1);
-    /* Фон предоплаты - ЯРКИЙ */
-    --op-prepay-border: rgba(255, 157, 0, 1);
-    /* Граница - насыщенная */
-    --op-prepay-color: #ffffff;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-prepay-meta: #ffffff;
-    /* Цвет метки - нейтральная */
-
-    /* Операция: Закрытая сделка (Closed Deal) - Зеленый */
-    --op-closed-bg: rgba(52, 199, 89, 0.20);
-    /* Фон закрытой сделки - ЯРКИЙ */
-    --op-closed-border: rgba(52, 199, 89, 0.5);
-    /* Граница - насыщенная */
-    --op-closed-color: #1a1a1a;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-closed-meta: #666666;
-    /* Цвет метки - нейтральная */
-
-    /* Операция: Перевод (Transfer) - Серо-синий */
-    --op-transfer-bg: #7f8599;
-    /* Фон перевода - нейтральный серо-синий */
-    --op-transfer-border: rgba(107, 114, 128, 0.3);
-    /* Граница */
-    --op-transfer-color: #f5f5f5;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-transfer-meta: #ffffff;
-    /* Цвет метки - нейтральная */
-
-    /* Операция: Вывод (Withdrawal) - Фиолетовый */
-    --op-withdrawal-bg: rgba(147, 51, 234, 0.15);
-    /* Фон вывода - ЯРКИЙ фиолетовый */
-    --op-withdrawal-border: rgba(147, 51, 234, 0.35);
-    /* Граница */
-    --op-withdrawal-color: #1a1a1a;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-withdrawal-meta: #ffffff;
-    /* Цвет метки - нейтральная */
-
-    /* Операция: Кредит (Credit Income) - Голубой */
-    --op-credit-bg: rgba(2, 132, 199, 0.15);
-    /* Фон кредита - ЯРКИЙ голубой */
-    --op-credit-border: rgba(2, 132, 199, 0.35);
-    /* Граница */
-    --op-credit-color: #1a1a1a;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-credit-meta: #666666;
-    /* Цвет метки - нейтральная */
-
-    /* Операция: Акт выполненных работ (Work Act) - Серо-зеленый */
-    --op-workact-bg: rgba(34, 197, 94, 0.12);
-    /* Фон акта - слабый зеленый */
-    --op-workact-border: rgba(34, 197, 94, 0.3);
-    /* Граница */
-    --op-workact-color: #1a1a1a;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-workact-meta: #666666;
-    /* Цвет метки - нейтральная */
-
-    /* Операция: Техническая (Technical) - Желтый */
-    --op-technical-bg: rgba(234, 179, 8, 0.20);
-    /* Фон технической - ЯРКИЙ желтый */
-    --op-technical-border: rgba(234, 179, 8, 0.4);
-    /* Граница */
-    --op-technical-color: #1a1a1a;
-    /* Цвет суммы - ТЕМНЫЙ текст */
-    --op-technical-meta: #ffffff;
-    /* Цвет метки - нейтральная */
-
-    /* ===================================================
-     5. ОБЛАСТЬ ГРАФИКОВ (Graph Area)
-     ================================================= */
-
-    /* График: Линии и сетка */
-    --graph-grid-color: #e5e5e5;
-    /* Цвет сетки */
-    --graph-axis-color: #999999;
-    /* Цвет осей */
-
-    /* График: Линии данных */
-    --graph-line-balance: #a3c0e0;
-    /* ✅ Цвет столбцов баланса на графике (зеленый по умолчанию) */
-    --graph-line-income: #4CAF50;
-    /* Линия дохода */
-    --graph-line-expense: #ff3b30;
-    /* Линия расхода (красная) */
-    --graph-line-projection: #FFA726;
-    /* Линия прогноза (оранжевая) */
-
-    /* График: Точки */
-    --graph-point-fill: #fff;
-    /* Заливка точки */
-    --graph-point-stroke: #34c759;
-    /* Обводка точки */
-
-    /* График: Области (Area fills) */
-    --graph-area-income: rgba(76, 175, 80, 0.05);
-    /* Область дохода */
-    --graph-area-expense: rgba(255, 59, 48, 0.05);
-    /* Область расхода */
-
-    /* График: Фон области графика */
-    --chart-wrapper-bg: #fbfdff;
-    /* ✅ ОСНОВНОЙ ФОН ГРАФИКА (canvas) - это то, что вы видите! */
-
-    /* ===================================================
-     6. ТУЛТИПЫ (Tooltips)
-     ================================================= */
-
-    /* Тултип: Фон и границы */
-    --tooltip-bg: #ffffff;
-    /* Фон тултипа */
-    --tooltip-border: #e0e0e0;
-    /* Граница тултипа */
-    --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    /* Тень */
-
-    /* Тултип: Текст */
-    --tooltip-text-main: #1a1a1a;
-    /* Основной текст */
-    --tooltip-text-label: #666666;
-    /* Метки */
-    --tooltip-text-value: #34c759;
-    /* Значения (цифры) */
-
-    /* ===================================================
-     7. DAY SUMMARY (Подытог дня)
-     ================================================= */
-
-    /* Day Summary: Фон */
-    --day-summary-bg: var(--ui-panel-bg);
-    /* Фон подытога - управляется мастер-переменной */
-    --day-summary-border: #e0e0e0;
-    /* Граница */
-
-    /* Day Summary: Текст */
-    --day-summary-text: #666666;
-    /* Основной текст */
-    --day-summary-date: #999999;
-    /* Цвет даты в summary */
-    --day-summary-income: #34c759;
-    /* Цвет дохода */
-    --day-summary-expense: #ff3b30;
-    /* Цвет расхода */
-    --day-summary-balance: #1a1a1a;
-    /* Цвет баланса */
-    --day-summary-balance-value: #1a1a1a;
-    /* Цвет значения баланса в графике */
-
-    /* ===================================================
-     8. ЯЧЕЙКИ TIMELINE (Hour Cells)
-     ================================================= */
-
-    /* Ячейка: Фон и границы */
-    --cell-border: #e0e0e0;
-    /* Граница ячейки */
-    --cell-bg-hover: rgba(0, 0, 0, 0.02);
-    /* Фон при наведении */
-    --cell-bg-dragover: rgba(0, 0, 0, 0.03);
-    /* Фон при drag over */
-    --cell-dragover-outline: #cccccc;
-    /* Обводка при drag over */
-
-    /* ===================================================
-     9. КОЛОНКА ДНЯ (Day Column)
-     ================================================= */
-
-    /* Day Column: Фон и границы */
-    --day-column-bg: #ffffff;
-    /* Фон колонки дня */
-    --day-column-border: #d4dce4;
-    /* Граница колонки дня */
-
-    /* Day Column: Заголовок */
-    --day-header-bg: #ffffff;
-    /* Фон заголовка дня */
-    --day-header-text: #666666;
-    /* Текст даты */
-    --day-header-today-text: #34c759;
-
-    /* 🟢 Граница колонки "Сегодня" (разделяет прошлое и будущее) */
-    --day-today-border-width: 1px;
-    /* Толщина правой границы колонки "сегодня" */
-    --day-today-border-color: #617e69;
-    /* Цвет границы (по умолчанию = цвет заголовка "сегодня") */
-
-    /* 🟢 Граница колонки "Завтра" (симметрия с today) */
-    --day-tomorrow-border-width: 1px;
-    /* Толщина левой границы колонки "завтра" */
-    --day-tomorrow-border-color: #617e69;
-    /* Цвет границы - симметрия с today */
-    /* Текст для сегодняшнего дня */
-
-    /* Day Column: Индикаторы */
-    --day-indicator-income: #34c759;
-    /* Индикатор дохода */
-    --day-indicator-expense: #ff3b30;
-    /* Индикатор расхода */
-
-    /* Cell: Border for timeline cells */
-    --cell-border: rgba(0, 0, 0, 0.08);
-    /* Border between cells in timeline */
-
-    /* Widget: Border for mobile widgets */
-    --widget-border: rgba(135, 189, 233, 0.3);
-    /* Blue-tinted border for mobile widgets in light theme */
-
-    /* ===================================================
-     3. HEADER GRID & WIDGZER (Разделитель хедера)
-     ================================================= */
-
-    /* Header Resizer: Основные цвета */
+    /* Панели и разделители. */
+    --ui-panel-bg: var(--light-panel);
+    --ui-panel-border: var(--light-border);
+    --ui-resizer-dot: #718a7f;
     --header-resizer-bg: var(--ui-panel-bg);
-    /* Фон разделителя - управляется мастер-переменной */
     --header-resizer-border: var(--ui-panel-border);
-    /* Граница разделителя */
-    --header-resizer-border-hover: #999999;
-    /* Граница при наведении */
+    --header-resizer-border-hover: var(--light-border-strong);
     --header-resizer-dot-bg: var(--ui-resizer-dot);
-    /* Фон точки (драггер) - управляется мастер-переменной */
     --header-resizer-dot-border: var(--ui-resizer-dot);
-    /* Граница точки */
-
-    /* ===================================================
-     11. DIVIDER WRAPPER (Разделитель timeline/графиков)
-     ================================================= */
-
-    /* Divider Wrapper: Основные цвета */
     --divider-wrapper-bg: var(--ui-panel-bg);
-    /* Фон разделителя - управляется мастер-переменной */
     --divider-wrapper-border: var(--ui-panel-border);
-    /* Граница разделителя */
-
-    /* Scrollbar: Горизонтальный скроллбар */
     --scrollbar-track-bg: var(--ui-panel-bg);
-    /* Фон трека скроллбара - управляется мастер-переменной */
-    --scrollbar-thumb-bg: #adc0d0;
-    /* Фон ползунка */
-    --scrollbar-thumb-bg-active: #adc0d0;
-
-    /* Фон ползунка при перетаскивании */
-
-    /* Vertical Resizer: Точка вертикального ресайзера */
+    --scrollbar-thumb-bg: #91a599;
+    --scrollbar-thumb-bg-active: var(--light-accent);
     --vertical-resizer-dot-bg: var(--ui-resizer-dot);
-    /* Фон точки - управляется мастер-переменной */
     --vertical-resizer-dot-border: var(--ui-resizer-dot);
-    /* Граница точки */
-
-    /* ===================================================
-     12. БОКОВЫЕ ПАНЕЛИ (Side Panels)
-     ================================================= */
-
-    /* Y-Axis Panel: Панель оси Y (слева от графика) */
     --y-axis-panel-bg: var(--ui-panel-bg);
-    /* Фон панели оси Y - управляется мастер-переменной */
     --y-axis-panel-border: var(--ui-panel-border);
-    /* Граница панели */
-    --y-axis-label-color: #777777;
-    /* Цвет меток оси */
-
-    /* Navigation Panel: Панель навигации (переключение периодов) */
+    --y-axis-label-color: var(--light-muted);
     --nav-panel-bg: var(--ui-panel-bg);
-    /* Фон навигационной панели - управляется мастер-переменной */
     --nav-panel-border: var(--ui-panel-border);
-    /* Граница панели */
-    --nav-arrow-color: #888888;
-    /* Цвет стрелок */
-    --nav-arrow-hover: #1a1a1a;
-    /* Цвет стрелок при наведении */
-    --nav-num-color: #1a1a1a;
-    /* Цвет цифры периода */
-    --nav-unit-color: #888888;
-    /* Цвет единицы периода (ДНЕЙ/МЕС) */
-
-    /* Home Right Panel: Правая панель (кнопки действий) */
+    --nav-arrow-color: var(--light-secondary);
+    --nav-arrow-hover: var(--light-accent);
+    --nav-num-color: var(--light-text);
+    --nav-unit-color: var(--light-secondary);
     --right-panel-bg: var(--ui-panel-bg);
-    /* Фон правой панели - управляется мастер-переменной */
     --right-panel-border: var(--ui-panel-border);
-    /* Граница панели */
 
-    /* ===================================================
-     12. ГЛОБАЛЬНЫЕ ЦВЕТА (используются везде)
-     ================================================= */
+    /* Верхние и мобильные виджеты. */
+    --widget-background: var(--light-surface);
+    --widget-border: var(--light-border);
+    --widget-border-right: var(--light-border);
+    --widget-border-hover: var(--light-border-strong);
+    --widget-grid-color: var(--light-border);
+    --widget-grid-gap: 1px;
+    --widget-grid-padding: 1px;
+    --widget-grid-border-width: 1px;
+    --widget-grid-border-radius: 8px;
+    --widget-title-color: var(--light-secondary);
+    --widget-text-main: var(--light-text);
+    --widget-text-soft: var(--light-secondary);
+    --widget-text-mute: var(--light-muted);
+    --widget-income-color: var(--light-income);
+    --widget-expense-color: var(--light-expense);
+    --widget-neutral-color: var(--light-secondary);
+    --widget-bg-hover: #f6f8f6;
+    --btn-widget-bg: var(--light-panel);
+    --btn-widget-border: var(--light-border);
+    --btn-widget-color: var(--light-secondary);
+    --btn-widget-bg-hover: var(--light-hover);
+    --btn-widget-color-hover: var(--light-text);
+    --btn-widget-bg-active: var(--light-accent);
+    --btn-widget-color-active: #ffffff;
+    --btn-widget-border-active: var(--light-accent);
+    --btn-panel-bg: var(--light-surface);
+    --btn-panel-border: var(--light-border);
+    --btn-panel-color: var(--light-secondary);
+    --btn-panel-bg-hover: var(--light-hover);
+    --btn-panel-border-hover: var(--light-border-strong);
+    --btn-panel-bg-active: var(--light-accent-soft);
+    --btn-panel-border-active: var(--light-accent);
+    --btn-panel-color-active: var(--light-accent);
+    --btn-about-bg: var(--light-accent);
+    --btn-about-bg-hover: var(--light-accent-hover);
+    --btn-about-shadow: 0 2px 6px rgba(38, 54, 49, 0.12);
 
-    /* Основные цвета приложения */
-    --color-primary: #34c759;
-    /* Основной зеленый */
-    --color-danger: #ff3b30;
-    /* Красный (опасность) */
-    --color-warning: #ffcc00;
-    /* Желтый (предупреждение) */
-    --color-info: #007AFF;
-    /* Синий (информация) */
+    /* Операции: светлая заливка, контрастная сумма и цветной край. */
+    --op-default-bg: #edf1ee;
+    --op-default-border: var(--light-border);
+    --op-border: var(--op-default-border);
+    --op-default-bg-hover: var(--light-hover);
+    --op-default-text: var(--light-text);
+    --op-default-color: var(--light-text);
+    --op-default-meta: var(--light-secondary);
+    --op-income-bg: var(--light-income-soft);
+    --op-income-border: var(--light-income-border);
+    --op-income-color: var(--light-income);
+    --op-income-meta: var(--light-income);
+    --op-expense-bg: var(--light-expense-soft);
+    --op-expense-border: var(--light-expense-border);
+    --op-expense-color: var(--light-expense);
+    --op-expense-meta: var(--light-expense);
+    --op-prepay-bg: var(--light-warning-soft);
+    --op-prepay-border: #dfcda6;
+    --op-prepay-color: var(--light-warning);
+    --op-prepay-meta: var(--light-warning);
+    --op-closed-bg: #edf3ef;
+    --op-closed-border: #c7d8cd;
+    --op-closed-color: var(--light-income);
+    --op-closed-meta: var(--light-secondary);
+    --op-transfer-bg: #e9edf2;
+    --op-transfer-border: #c8d2de;
+    --op-transfer-color: #4b6077;
+    --op-transfer-meta: #4b6077;
+    --op-withdrawal-bg: var(--light-purple-soft);
+    --op-withdrawal-border: #d4c7de;
+    --op-withdrawal-color: var(--light-purple);
+    --op-withdrawal-meta: var(--light-purple);
+    --op-credit-bg: var(--light-info-soft);
+    --op-credit-border: #c4d5e1;
+    --op-credit-color: var(--light-info);
+    --op-credit-meta: var(--light-info);
+    --op-workact-bg: #edf2e9;
+    --op-workact-border: #cbd7c2;
+    --op-workact-color: #506747;
+    --op-workact-meta: #506747;
+    --op-technical-bg: #f3f0e4;
+    --op-technical-border: #dcd4b5;
+    --op-technical-color: #716024;
+    --op-technical-meta: #716024;
 
-    /* Фоны */
-    --color-background: #ffffff;
-    /* Основной фон */
-    --color-background-soft: #f5f5f5;
-    /* Мягкий фон */
-    --color-background-mute: #e8e8e8;
-    /* Приглушенный фон */
+    /* График: плотность цвета задаётся здесь, без прозрачности в JS. */
+    --graph-bg-main: #fbfcfb;
+    --graph-bg-soft: var(--light-panel);
+    --chart-wrapper-bg: var(--graph-bg-main);
+    --graph-grid-color: #e0e7e2;
+    --graph-axis-color: var(--light-muted);
+    --graph-line-balance: #718a7f;
+    --graph-balance-active: #c5d3cb;
+    --graph-balance-idle: #d0dcd4;
+    --graph-balance-edge: #718a7f;
+    --graph-bar-income: var(--light-income);
+    --graph-bar-expense: var(--light-expense);
+    --graph-line-income: var(--light-income);
+    --graph-line-expense: var(--light-expense);
+    --graph-line-projection: var(--light-warning);
+    --graph-point-fill: var(--light-surface);
+    --graph-point-stroke: var(--light-accent);
+    --graph-area-income: var(--light-income-soft);
+    --graph-area-expense: var(--light-expense-soft);
 
-    /* Границы */
-    --color-border: #e0e0e0;
-    /* Основная граница */
-    --color-border-hover: #cccccc;
-    /* Граница при наведении */
+    /* Календарь и итоги. */
+    --cell-border: #e4eae5;
+    --cell-bg-odd: #f5f7f5;
+    --cell-bg-hover: var(--light-hover);
+    --cell-bg-dragover: var(--light-accent-soft);
+    --cell-dragover-outline: var(--light-accent);
+    --day-column-bg: var(--light-surface);
+    --day-column-border: #dce3dd;
+    --day-header-bg: #f6f8f6;
+    --day-header-text: var(--light-secondary);
+    --day-header-today-text: var(--light-accent);
+    --day-today-border-width: 1px;
+    --day-today-border-color: var(--light-accent);
+    --day-tomorrow-border-width: 1px;
+    --day-tomorrow-border-color: var(--light-accent);
+    --day-indicator-income: var(--light-income);
+    --day-indicator-expense: var(--light-expense);
+    --day-summary-bg: var(--light-panel);
+    --day-summary-border: var(--light-border);
+    --day-summary-text: var(--light-secondary);
+    --day-summary-date: var(--light-secondary);
+    --day-summary-income: var(--light-income);
+    --day-summary-expense: var(--light-expense);
+    --day-summary-balance: var(--light-text);
+    --day-summary-balance-value: var(--light-text);
 
-    /* Текст */
-    --color-text: #666666;
-    /* Основной текст */
-    --color-heading: #1a1a1a;
-    /* Заголовки */
-    --text-main: #1a1a1a;
-    /* Темный текст */
-    --text-soft: #666666;
-    /* Мягкий текст */
-    --color-text-soft: #666666;
-    /* Alias for consistency */
-    --text-mute: #999999;
-    /* Приглушенный текст */
-
-
-    /* Filter Dropdown */
-    --filter-dropdown-bg: #ffffff;
-    --filter-dropdown-border: #e0e0e0;
-    --filter-dropdown-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
-    --filter-dropdown-title-color: #999999;
-    --filter-dropdown-text-color: #1a1a1a;
-    --filter-dropdown-symbol-color: #cccccc;
-    --filter-dropdown-item-hover: rgba(0, 0, 0, 0.05);
-    --filter-dropdown-item-active-color: #34c759;
-    --filter-dropdown-item-active-bg: rgba(52, 199, 89, 0.1);
-
-    /* Modal range-total */
-    --range-total-color: #1a1a1a;
-
-    /* Period Selector Wrapper */
-    --period-selector-bg: #ffffff;
-    --period-selector-border: #e0e0e0;
-    --period-selector-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
-
-    --cell-bg-odd: #F5F7F8;
-    /* Фон нечетных строк (zebra striping) */
-
+    /* Всплывающие поверхности. */
+    --tooltip-bg: var(--light-surface);
+    --tooltip-border: var(--light-border);
+    --tooltip-shadow: var(--light-shadow);
+    --tooltip-text-main: var(--light-text);
+    --tooltip-text-label: var(--light-secondary);
+    --tooltip-text-value: var(--light-income);
+    --filter-dropdown-bg: var(--light-surface);
+    --filter-dropdown-border: var(--light-border);
+    --filter-dropdown-shadow: var(--light-shadow);
+    --filter-dropdown-title-color: var(--light-muted);
+    --filter-dropdown-text-color: var(--light-text);
+    --filter-dropdown-symbol-color: var(--light-muted);
+    --filter-dropdown-item-hover: var(--light-hover);
+    --filter-dropdown-item-active-color: var(--light-accent);
+    --filter-dropdown-item-active-bg: var(--light-accent-soft);
+    --range-total-color: var(--light-text);
+    --period-selector-bg: var(--light-surface);
+    --period-selector-border: var(--light-border);
+    --period-selector-shadow: var(--light-shadow);
 }

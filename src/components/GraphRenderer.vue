@@ -7,6 +7,7 @@ import { formatNumber, formatShortNumber } from '@/utils/formatters.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS } from 'chart.js/auto';
 import { useGraphGestureGuard } from '@/composables/useGraphGestureGuard.js';
+import { useGraphPalette } from '@/composables/useGraphPalette.js';
 import { 
   downloadTextFile, 
   copyToClipboard, 
@@ -49,6 +50,7 @@ const _clearTooltipHideTimer = () => {
 let tooltipCopyFeedbackTimer = null;
 
 const chartRef = ref(null);
+const graphPalette = useGraphPalette();
 const gestureGuard = useGraphGestureGuard(chartRef, () => {
   tooltipPinned = false;
   tooltipPinnedKey = '';
@@ -68,6 +70,7 @@ const props = defineProps({
   showSummaries: { type: Boolean, default: true },
   visibleDays: { type: Array, default: () => [] },
   columnCount: { type: Number, default: 12 }, // Number of visible columns
+  compactAmounts: { type: Boolean, default: false },
   columnTemplate: { type: String, default: '' },
   enableColumnExpand: { type: Boolean, default: false },
   expandedColumnIndex: { type: Number, default: -1 }
@@ -553,7 +556,7 @@ const externalTooltipHandler = (context) => {
       // 1) Date line (top)
       if (i === 0) {
         const style =
-          'color: #888; margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+          'color: var(--tooltip-text-label); margin-bottom: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
         innerHtml += `<div style="${style}">${escapeHtml(line)}</div>`;
         return;
       }
@@ -579,33 +582,33 @@ const externalTooltipHandler = (context) => {
 
       // Summary lines
       if (/^\s*Доход:/i.test(line)) {
-        color = '#34c759';
+        color = 'var(--day-summary-income)';
         weight = 600;
       } else if (/^\s*Расход:/i.test(line)) {
-        color = '#ff3b30';
+        color = 'var(--day-summary-expense)';
         weight = 600;
       }
 
       // Operation lines (we print with + / -)
       if (/^\s*\+/.test(line)) {
-        color = '#34c759';
+        color = 'var(--day-summary-income)';
         weight = 500;
       } else if (/^\s*-/.test(line)) {
-        color = '#ff3b30';
+        color = 'var(--day-summary-expense)';
         weight = 500;
       }
 
       // Overrides by category keywords
       if (line.includes('Предоплата')) {
-        color = '#FF9D00';
+        color = 'var(--op-prepay-color)';
         weight = 600;
       }
       if (line.includes('Кредит')) {
-        color = '#8FD4FF';
+        color = 'var(--op-credit-color)';
         weight = 600;
       }
       if (line.includes('Вывод средств')) {
-        color = '#DE8FFF';
+        color = 'var(--op-withdrawal-color)';
         weight = 600;
       }
 
@@ -1292,16 +1295,14 @@ const balanceColors = computed(() => {
   const _v = mainStore.cacheVersion;
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   
-  // Получаем цвет из CSS переменной
-  const balanceColor = getComputedStyle(document.documentElement)
-    .getPropertyValue('--graph-line-balance').trim() || '#34c759';
+  const colors = graphPalette.value;
   
   return arr.map((s) => {
     const inc = Math.abs(Number(s?.income) || 0);
     const exp = Math.abs(Number(s?.expense) || 0);
     const hasOps = inc + exp > 0;
-    // Используем CSS переменную с разной прозрачностью
-    return hasOps ? `${balanceColor}38` : `${balanceColor}1F`; // 38=0.22, 1F=0.12 в hex
+    // Плотность цвета задаёт тема, а не прозрачность поверх фона.
+    return hasOps ? colors.balanceActive : colors.balanceIdle;
   });
 });
 
@@ -1422,7 +1423,7 @@ const incomeFloatColors = computed(() => {
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   return arr.map((s) => {
     const inc = Math.abs(Number(s?.income) || 0);
-    return inc ? 'rgba(52,199,89,1)' : 'rgba(0,0,0,0)';
+    return inc ? graphPalette.value.income : 'rgba(0,0,0,0)';
   });
 });
 
@@ -1431,7 +1432,7 @@ const expenseFloatColors = computed(() => {
   const arr = Array.isArray(summaries.value) ? summaries.value : [];
   return arr.map((s) => {
     const exp = Math.abs(Number(s?.expense) || 0);
-    return exp ? 'rgba(255,59,48,1)' : 'rgba(0,0,0,0)';
+    return exp ? graphPalette.value.expense : 'rgba(0,0,0,0)';
   });
 });
 
@@ -1642,6 +1643,8 @@ const chartData = computed(() => {
         label: 'Баланс',
         data: renderBalanceBars,
         backgroundColor: balanceColsByDay,
+        borderColor: graphPalette.value.balanceEdge,
+        borderWidth: { top: graphPalette.value.balanceBorderWidth, right: 0, bottom: 0, left: 0 },
         yAxisID: 'yBalance',
         order: 0,
         grouped: false,
@@ -1953,7 +1956,7 @@ watch(
 </script>
 
 <template>
-  <div class="graph-area" :class="{ 'no-anim': !animate }">
+  <div class="graph-area" :class="{ 'no-anim': !animate, 'compact-amounts': compactAmounts }">
     <div class="chart-wrapper">
       <Bar ref="chartRef" :data="chartData" :options="chartOptions" :plugins="chartPlugins" />
     </div>
@@ -1980,9 +1983,9 @@ watch(
         </template>
         <template v-else>
           <!-- Full format for 7-12 columns -->
-          <div class="day-income">₸ {{ formatNumber(day.income) }}</div>
-          <div class="day-expense">₸ {{ formatNumber(day.expense) }}</div>
-          <div class="day-balance" :class="{ negative: Number(day.balance) < 0 }">{{ formatSummaryBalance(day.balance) }}</div>
+          <div class="day-income"><span class="amount-full">₸ {{ formatNumber(day.income) }}</span><span class="amount-short">₸ {{ formatShortNumber(day.income) }}</span></div>
+          <div class="day-expense"><span class="amount-full">₸ {{ formatNumber(day.expense) }}</span><span class="amount-short">₸ {{ formatShortNumber(day.expense) }}</span></div>
+          <div class="day-balance" :class="{ negative: Number(day.balance) < 0 }"><span class="amount-full">{{ formatSummaryBalance(day.balance) }}</span><span class="amount-short">{{ formatSummaryBalance(day.balance, true) }}</span></div>
         </template>
       </div>
     </div>
@@ -1990,6 +1993,7 @@ watch(
 </template>
 
 <style scoped>
+.amount-short { display: none; }
 .graph-area {
   width: 100%;
   height: 100%;
@@ -2054,7 +2058,7 @@ watch(
   text-overflow: ellipsis;
 }
 .day-income {
-  color: var(--color-primary);
+  color: var(--day-summary-income);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;

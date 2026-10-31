@@ -1,0 +1,223 @@
+/* Светлая тема: общие состояния компонентов, включая формы через Teleport.
+   Все правила ограничены светлой темой; геометрия рабочего пространства сохранена. */
+:root[data-theme="light"] a,
+:root[data-theme="light"] .green {
+  color: var(--light-accent);
+}
+
+:root[data-theme="light"] :is(button, a, input, select, textarea, [role="button"]):focus-visible {
+  outline: 2px solid var(--light-accent);
+  outline-offset: 2px;
+}
+
+:root[data-theme="light"] :is(input, textarea)::placeholder {
+  color: var(--light-muted);
+  opacity: 1;
+}
+
+/* Размер текста не зависит от высоты экрана. */
+:root[data-theme="light"] :is(.operation-chip, .op-chip) {
+  font-size: 12px;
+  line-height: 1.3;
+  border-left-width: 3px;
+  transition: box-shadow 120ms ease, filter 120ms ease;
+}
+
+:root[data-theme="light"] :is(.operation-chip, .op-chip):hover {
+  box-shadow: 0 1px 4px rgba(38, 54, 49, 0.12);
+  filter: brightness(0.98);
+}
+
+:root[data-theme="light"] .operation-chip.selected {
+  box-shadow: 0 0 0 2px var(--light-accent);
+  transform: none;
+}
+
+:root[data-theme="light"] :is(.operation-chip, .op-chip).income { border-left-color: var(--op-income-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).expense,
+:root[data-theme="light"] :is(.operation-chip, .op-chip).writeoff { border-left-color: var(--op-expense-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).prepayment { border-left-color: var(--op-prepay-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).closed-deal { border-left-color: var(--op-closed-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).transfer { border-left-color: var(--op-transfer-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).withdrawal { border-left-color: var(--op-withdrawal-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).credit-income { border-left-color: var(--op-credit-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).work-act { border-left-color: var(--op-workact-color); }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).technical { border-left-color: var(--op-technical-color); }
+
+:root[data-theme="light"] :is(.operation-chip .op-meta, .op-chip .desc) { opacity: 1; }
+:root[data-theme="light"] .operation-chip.compact .amount-full { display: none; }
+:root[data-theme="light"] .operation-chip.compact .amount-short { display: inline; }
+:root[data-theme="light"] .compact-amounts .amount-full { display: none; }
+:root[data-theme="light"] .compact-amounts .amount-short { display: inline; }
+:root[data-theme="light"] .compact-amounts .operation-chip .op-meta { display: none; }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).no-permission { opacity: 1; }
+:root[data-theme="light"] :is(.operation-chip, .op-chip).phantom {
+  background: var(--op-default-bg);
+  border: 1px dashed var(--light-border-strong);
+  color: var(--light-secondary);
+  opacity: 1;
+}
+:root[data-theme="light"] .op-chip.phantom :is(.amt, .desc) { color: var(--light-secondary); }
+:root[data-theme="light"] :is(.operation-chip-marker, .op-chip-marker) { border-top-color: var(--light-warning); filter: none; }
+:root[data-theme="light"] :is(.operation-chip-marker--owner-edit, .op-chip-marker--owner-edit) { border-top-color: var(--light-info); }
+
+/* Карточки и навигация: один акцент для управления. */
+:root[data-theme="light"] .dashboard-card :is(.card-title, .card-item, .summary-value-block) { font-size: var(--font-sm); }
+:root[data-theme="light"] .dashboard-card .card-title { letter-spacing: 0; }
+:root[data-theme="light"] .column-header { font-size: 12px; }
+:root[data-theme="light"] .dashboard-card .action-square-btn { width: 24px; height: 24px; flex-shrink: 0; }
+:root[data-theme="light"] .dashboard-card .icon-svg { width: 13px; height: 13px; }
+:root[data-theme="light"] .dashboard-card .card-actions { gap: 4px; }
+:root[data-theme="light"] :is(.link-icon, .excluded-icon.included-now) { opacity: 1; text-shadow: none; }
+:root[data-theme="light"] :is(.dashboard-card .income, .green-text) { color: var(--light-income); }
+:root[data-theme="light"] :is(.red-text, .dashboard-card .expense) { color: var(--light-expense); }
+:root[data-theme="light"] .dashboard-card .withdrawal { color: var(--light-purple); }
+:root[data-theme="light"] :is(.card-item-empty, .empty-text, .more-text, .excluded-icon) { color: var(--light-muted); }
+
+:root[data-theme="light"] .column-switcher-btn { opacity: 1; color: var(--light-secondary); }
+:root[data-theme="light"] .column-switcher-btn:hover { background: var(--light-hover); }
+:root[data-theme="light"] .column-switcher-btn.active {
+  color: var(--light-accent);
+  background: var(--light-accent-soft);
+  border-color: var(--light-accent);
+  font-weight: 600;
+}
+:root[data-theme="light"] .icon-btn { color: var(--light-secondary); }
+:root[data-theme="light"] :is(.icon-btn.filter-active, .header-expand-btn.active, .badge-plan.active, .action-square-btn.active) {
+  color: var(--light-accent);
+  background: var(--light-accent-soft);
+  border-color: var(--light-accent);
+}
+:root[data-theme="light"] :is(.icon-btn.filter-active, .header-expand-btn.active):hover { background: var(--light-hover); }
+:root[data-theme="light"] .about-btn { color: #ffffff; background: var(--btn-about-bg); border-color: var(--btn-about-bg); box-shadow: var(--btn-about-shadow); }
+:root[data-theme="light"] .about-btn:hover { background: var(--btn-about-bg-hover); border-color: var(--btn-about-bg-hover); }
+:root[data-theme="light"] .month-nav-btn { width: 24px; height: 24px; }
+:root[data-theme="light"] :is(.header-resizer, .vertical-resizer)::before { filter: none; opacity: 1; }
+
+/* Мобильные виджеты и подписи. */
+:root[data-theme="light"] .mobile-widget-card { border-top-width: 1px; border-top-color: var(--light-border); border-radius: 8px; }
+:root[data-theme="light"] .mobile-widget-card:active { background: var(--light-hover); transform: none; }
+:root[data-theme="light"] .widget-header { border-bottom-color: var(--light-border); }
+:root[data-theme="light"] :is(.badge-fact, .badge-upr) { background: var(--light-accent-soft); color: var(--light-accent); border-color: var(--light-border); }
+:root[data-theme="light"] :is(.badge-our, .orange-text) { background: var(--light-warning-soft); color: var(--light-warning); }
+:root[data-theme="light"] .mobile-totals-wrapper :is(.card-label, .card-sub) { font-size: 11px; }
+:root[data-theme="light"] .mobile-totals-wrapper .total-card { min-width: 0; }
+:root[data-theme="light"] .mobile-totals-wrapper :is(.currency, .subtitle-keyword, .subtitle-count) { color: var(--light-secondary); font-weight: 500; }
+:root[data-theme="light"] .loading-screen { color: var(--light-text); }
+:root[data-theme="light"] .login-screen { background: var(--light-canvas); }
+:root[data-theme="light"] .login-box h1 { color: var(--light-text); }
+
+/* Всплывающие списки виджетов также используют общие поверхности. */
+:root[data-theme="light"] .global-widget-dropdown { background: var(--light-surface); color: var(--light-text); box-shadow: var(--light-shadow); }
+:root[data-theme="light"] .widget-search-input { background: var(--light-surface); color: var(--light-text); border-color: var(--light-border-strong); }
+:root[data-theme="light"] .global-widget-dropdown li { color: var(--light-text); }
+:root[data-theme="light"] .global-widget-dropdown li:hover { background: var(--light-hover); }
+:root[data-theme="light"] .global-widget-dropdown li.active { color: var(--light-accent); background: var(--light-accent-soft); }
+:root[data-theme="light"] .global-widget-dropdown li.disabled { color: var(--light-muted); }
+
+/* Формы операций: цвет категории остаётся на краю формы, действия единообразны. */
+:root[data-theme="light"] .popup-content {
+  --color-income: var(--light-income);
+  --color-expense: var(--light-expense);
+  --color-transfer: var(--op-transfer-color);
+  --color-danger: var(--light-expense);
+  --focus-color: var(--light-accent);
+  --focus-shadow: rgba(59, 103, 99, 0.18);
+  background: var(--light-canvas);
+  color: var(--light-text);
+  border-color: var(--light-border);
+  box-shadow: var(--light-shadow);
+}
+:root[data-theme="light"] .popup-content.theme-income { border-top-color: var(--light-income); }
+:root[data-theme="light"] .popup-content.theme-expense { border-top-color: var(--light-expense); }
+:root[data-theme="light"] .popup-content.theme-transfer { border-top-color: var(--op-transfer-color); }
+:root[data-theme="light"] .popup-content.theme-credit { border-top-color: var(--light-info); }
+:root[data-theme="light"] .popup-content :is(h3, h4, .real-input, .date-value-text, .smart-create-title, .opt-title) { color: var(--light-text); }
+:root[data-theme="light"] .popup-content :is(.floating-label, .read-only-info, .choice-desc, .btn-cancel-link, .message) { color: var(--light-secondary); }
+:root[data-theme="light"] .popup-content :is(.custom-input-box, .form-input, .inline-create-form input, .smart-create-tabs button, .icon-btn, .btn-dual-action) {
+  background: var(--light-surface);
+  border-color: var(--light-border-strong);
+  color: var(--light-text);
+}
+:root[data-theme="light"] .popup-content .custom-input-box:focus-within {
+  border-color: var(--light-accent) !important;
+  box-shadow: var(--light-focus-shadow) !important;
+}
+:root[data-theme="light"] .popup-content .custom-input-box.is-invalid {
+  border-color: var(--light-expense) !important;
+  box-shadow: 0 0 0 2px rgba(167, 68, 57, 0.18) !important;
+}
+:root[data-theme="light"] .popup-content :is(.form-input, .inline-create-form input):focus { border-color: var(--light-accent); }
+:root[data-theme="light"] .popup-content :is(.custom-input-box, .form-input).is-disabled { background: var(--light-panel); }
+:root[data-theme="light"] .popup-content .calendar-icon-svg { stroke: var(--light-secondary); }
+:root[data-theme="light"] .popup-content .icon-stroke { stroke: var(--light-secondary); }
+:root[data-theme="light"] .popup-content .fact-badge { background: var(--light-income-soft); color: var(--light-income); }
+:root[data-theme="light"] .popup-content .plan-badge { background: var(--light-info-soft); color: var(--light-info); }
+:root[data-theme="light"] .popup-content :is(.btn-submit, .btn-modal-create, .smart-create-tabs button.active) {
+  background: var(--light-accent);
+  color: #ffffff;
+  border-color: var(--light-accent);
+}
+:root[data-theme="light"] .popup-content :is(.btn-submit, .btn-modal-create):hover:not(:disabled) { background: var(--light-accent-hover); }
+:root[data-theme="light"] .popup-content .btn-submit:disabled { background: var(--light-panel); color: var(--light-muted); opacity: 1; }
+:root[data-theme="light"] .popup-content .btn-submit-delete { background: var(--light-expense); color: #ffffff; }
+:root[data-theme="light"] .popup-content .btn-submit-delete:hover:not(:disabled) { background: #8f382f; }
+:root[data-theme="light"] .popup-content .btn-submit-secondary { background: var(--light-panel); color: var(--light-secondary); }
+:root[data-theme="light"] .popup-content .btn-submit-secondary:hover:not(:disabled) { background: var(--light-hover); }
+:root[data-theme="light"] .popup-content :is(.copy-btn, .btn-dual-action):hover { background: var(--light-hover); color: var(--light-accent); border-color: var(--light-accent); }
+:root[data-theme="light"] .popup-content .delete-btn:hover { background: var(--light-expense-soft); border-color: var(--light-expense); }
+:root[data-theme="light"] .popup-content .delete-btn:hover .icon-stroke { stroke: var(--light-expense); }
+:root[data-theme="light"] .popup-content :is(.btn-modal-cancel, .offset-toggle-btn) { background: var(--light-panel); border-color: var(--light-border); color: var(--light-secondary); }
+:root[data-theme="light"] .popup-content .offset-toggle-btn.active { background: var(--light-expense-soft); color: var(--light-expense); border-color: var(--light-expense); }
+:root[data-theme="light"] .popup-content :is(.choice-box, .bank-suggestions-list) { background: var(--light-surface); border-color: var(--light-border); }
+:root[data-theme="light"] .popup-content .bank-suggestions-list li { color: var(--light-text); border-color: var(--light-border); }
+:root[data-theme="light"] .popup-content .bank-suggestions-list li:hover { background: var(--light-hover); }
+:root[data-theme="light"] .popup-content .error-message { color: var(--light-expense); }
+
+/* Общий селект используется во всех трёх формах. */
+:root[data-theme="light"] .base-select :is(.select-trigger, .options-list) { background: var(--light-surface); border-color: var(--light-border-strong); }
+:root[data-theme="light"] .base-select :is(.selected-text, .option-label, .list-item-wrapper) { color: var(--light-text); }
+:root[data-theme="light"] .base-select :is(.small-label, .sub-text, .right-text, .placeholder, .option-sub, .option-right) { color: var(--light-muted); }
+:root[data-theme="light"] .base-select :is(.right-text, .option-right).is-negative { color: var(--light-expense); }
+:root[data-theme="light"] .base-select .list-item-wrapper { border-bottom-color: var(--light-border); }
+:root[data-theme="light"] .base-select .list-item-wrapper.is-header { background: var(--light-panel); color: var(--light-secondary); }
+:root[data-theme="light"] .base-select .list-item-wrapper:not(.is-header):not(.is-action-row):hover { background: var(--light-hover); }
+:root[data-theme="light"] .base-select .list-item-wrapper.is-selected { background: var(--light-accent-soft); color: var(--light-accent); }
+:root[data-theme="light"] .base-select.is-open .select-trigger { border-color: var(--light-accent); box-shadow: var(--light-focus-shadow); }
+:root[data-theme="light"] .day-summary.is-collapsed { opacity: 1; }
+
+/* Чат остаётся частью той же композиции. */
+:root[data-theme="light"] .codex-chat-window {
+  --codex-pane-text: var(--light-text);
+  --codex-pane-muted: var(--light-muted);
+  --codex-pane-accent: var(--light-accent);
+  --codex-pane-accent-soft: var(--light-accent-soft);
+  --codex-pane-send-text: #ffffff;
+  --codex-pane-focus: var(--light-accent);
+  --codex-pane-focus-soft: rgba(59, 103, 99, 0.12);
+  --codex-pane-link: var(--light-info);
+  --codex-pane-danger: var(--light-expense);
+  --codex-pane-danger-soft: var(--light-expense-soft);
+  --codex-pane-user: var(--light-accent-soft);
+  --codex-pane-user-border: var(--light-border);
+}
+
+@media (hover: hover) {
+  :root[data-theme="light"] a:hover { background-color: var(--light-accent-soft); }
+}
+@media (max-width: 480px) {
+  :root[data-theme="light"] :is(.op-chip, .mobile-layout .day-summary) .amount-full { display: none; }
+  :root[data-theme="light"] :is(.op-chip, .mobile-layout .day-summary) .amount-short { display: inline; }
+}
+@media (max-width: 360px) {
+  :root[data-theme="light"] .mobile-totals-wrapper { flex-direction: column; height: auto; }
+  :root[data-theme="light"] .mobile-totals-wrapper .total-card { flex: none; padding: 10px 12px; }
+  :root[data-theme="light"] .mobile-totals-wrapper .divider { width: 100%; height: 1px; }
+}
+@media (pointer: coarse) {
+  :root[data-theme="light"] .fullscreen-widget-overlay .action-square-btn { min-width: 44px; height: 44px; }
+  :root[data-theme="light"] .home-right-panel .icon-btn { min-width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="light"] :is(.operation-chip, .op-chip, .mobile-widget-card, .icon-btn, .action-square-btn) { transition: none; }
+}

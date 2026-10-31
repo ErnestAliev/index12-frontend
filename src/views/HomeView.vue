@@ -444,6 +444,7 @@ const workspaceDays = computed(() => {
   });
 });
 const workspaceColumnWidth = computed(() => workspaceWidth.value / Math.max(1, VISIBLE_COLS.value));
+const compactAmounts = computed(() => currentTheme.value === 'light' && workspaceColumnWidth.value < 120);
 const workspacePaneStyle = computed(() => ({
   width: `${renderedColumnCount.value * workspaceColumnWidth.value}px`,
   marginLeft: `${isScrollActive.value ? renderedStartIndex.value * workspaceColumnWidth.value : 0}px`,
@@ -1601,7 +1602,7 @@ const handleRefundDelete = async (op) => {
               height: `${timelineSelectionBox.height}px`
             }"
           ></div>
-        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ ...workspacePaneStyle, gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in workspaceDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" :selected-operation-ids="selectedOperationIds" :selection-mode-active="isTimelineSelecting" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
+        <div class="timeline-grid-content" ref="timelineGridContentRef" :class="{ 'month-transition': monthTransitioning }" :style="{ ...workspacePaneStyle, gridTemplateColumns: timelineGridTemplateColumns }"><DayColumn v-for="day in workspaceDays" :key="day.id" :date="day.date" :isToday="day.isToday" :isTomorrow="day.isTomorrow" :dayOfYear="day.dayOfYear" :dateKey="day.dateKey" :columnCount="VISIBLE_COLS" :compact-amounts="compactAmounts" :selected-operation-ids="selectedOperationIds" :selection-mode-active="isTimelineSelecting" @add-operation="(event, cellIndex) => openContextMenu(day, event, cellIndex)" @edit-operation="handleEditOperation" @drop-operation="handleOperationDrop" /></div>
         </div>
         <!-- 🟢 UPDATED: vertical-resizer now contains TimelineSwitcher -->
         <div class="divider-wrapper" ref="dividerWrapperRef" :style="{ width: workspaceWidth ? `${workspaceWidth}px` : '100%' }">
@@ -1632,7 +1633,7 @@ const handleRefundDelete = async (op) => {
             :visibleDays="workspaceDays"
             :style="workspacePaneStyle"
             :animate="false"
-            :columnCount="VISIBLE_COLS"
+            :columnCount="VISIBLE_COLS" :compact-amounts="compactAmounts"
             :columnTemplate="timelineGridTemplateColumns"
             :enableColumnExpand="false"
             :expandedColumnIndex="-1"

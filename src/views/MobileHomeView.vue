@@ -1106,8 +1106,8 @@ const showCodex = ref(false);
 .excluded-icon { display: inline-flex; align-items: center; opacity: 0.8; color: var(--text-mute, #888); transition: all 0.2s; }
 .excluded-icon.included-now { color: #34c759; opacity: 1; text-shadow: 0 0 5px rgba(52, 199, 89, 0.4); }
 
-.red-text { color: #ff3b30 !important; }
-.green-text { color: #34c759 !important; }
+.red-text { color: var(--color-danger, #ff3b30) !important; }
+.green-text { color: var(--color-income, #34c759) !important; }
 .white-text { color: var(--color-text, #fff) !important; }
 .fs-empty { text-align: center; color: var(--text-mute, #666); margin-top: 50px; }
 .fullscreen-body { flex-grow: 1; overflow-y: auto; padding: 12px; background-color: var(--color-background, #ffffff); }

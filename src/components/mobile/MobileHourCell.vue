@@ -1,7 +1,7 @@
 <script setup>
 import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { computed, ref, onBeforeUnmount } from 'vue';
-import { formatNumber } from '@/utils/formatters.js';
+import { formatNumber, formatShortNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
 
@@ -332,6 +332,7 @@ const onTouchEnd = (e) => {
     <div
       v-else-if="operation && isOpVisible"
       class="op-chip"
+      :title="`${formatNumber(Math.abs(displayAmount ?? operation.amount))} ₸ · ${isTransferOp ? transferRoute : chipLabel}`"
       :class="{ 
          transfer: isTransferOp, 
          income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
@@ -368,33 +369,33 @@ const onTouchEnd = (e) => {
         aria-hidden="true"
       ></span>
       <template v-if="isTransferOp">
-        <span class="amt">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
+        <span class="amt"><span class="amount-full">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(displayAmount ?? operation.amount)) }}</span></span>
         <span class="desc">{{ transferRoute }}</span>
       </template>
 
       <template v-else-if="isWithdrawalOp">
-        <span class="amt">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="amt">- <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
         <span class="desc">{{ operation.destination || 'Вывод' }}</span>
       </template>
 
       <template v-else-if="isRetailWriteOffOp">
-        <span class="amt">- {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="amt">- <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
         <span class="desc">Списание</span>
       </template>
 
       <template v-else-if="isWorkActOp">
-        <span class="amt">✓ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="amt">✓ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
         <span class="desc">Отработано</span>
       </template>
 
       <template v-else-if="isCreditIncomeOp">
-        <span class="amt">+ {{ formatNumber(Math.abs(operation.amount)) }}</span>
+        <span class="amt">+ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
         <span class="desc">Кредит</span>
       </template>
 
       <template v-else>
         <span class="amt">
-          {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} {{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}
+          {{ showCheckmark ? '✓ ' : '' }}{{ operation.type === 'income' ? '+' : '-' }} <span class="amount-full">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
         </span>
         <span class="desc">
           {{ chipLabel }}
@@ -408,6 +409,7 @@ const onTouchEnd = (e) => {
 </template>
 
 <style scoped>
+.amount-short { display: none; }
 /* Добавлен класс .hour-cell для поиска через closest */
 .mobile-cell {
   width: 100%;

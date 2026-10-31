@@ -85,8 +85,8 @@ const normalizeTooltipMarkers = (markers) => {
 };
 
 const getTooltipMarkerMeta = (marker) => {
-    if (marker === 'income') return { color: '#34c759', label: 'Доход' };
-    if (marker === 'expense') return { color: '#ff3b30', label: 'Расход' };
+    if (marker === 'income') return { color: 'var(--day-summary-income)', label: 'Доход' };
+    if (marker === 'expense') return { color: 'var(--day-summary-expense)', label: 'Расход' };
     return null;
 };
 

@@ -63,13 +63,13 @@ export function useWidgetData() {
     // 2. Color Definition
     const getStatusColor = (currentBalance, totalSystemBalance) => {
         const safeBalance = toNum(currentBalance);
-        if (safeBalance <= 0) return '#FF3B30'; // Red
+        if (safeBalance <= 0) return 'var(--color-danger, #FF3B30)'; // Red
 
         const ratio = safeBalance / totalSystemBalance;
 
-        if (ratio >= 0.5) return '#34C759'; // Green
-        if (ratio > 0.1) return '#FFCC00';  // Yellow
-        return '#FF3B30';                   // Red
+        if (ratio >= 0.5) return 'var(--widget-income-color, #34C759)'; // Green
+        if (ratio > 0.1) return 'var(--color-warning, #FFCC00)';  // Yellow
+        return 'var(--color-danger, #FF3B30)';                   // Red
     };
 
     // 3. Main Data Retrieval Function

@@ -20,6 +20,7 @@ const props = defineProps({
   isTomorrow: { type: Boolean, default: false },
   dateKey: { type: String, required: true },
   columnCount: { type: Number, default: 12 }, // Number of visible columns
+  compactAmounts: { type: Boolean, default: false },
   selectedOperationIds: { type: Array, default: () => [] },
   selectionModeActive: { type: Boolean, default: false }
 });
@@ -109,7 +110,7 @@ const onDrop = (dropDataFromHourCell) => {
 </script>
 
 <template>
-  <div class="day-column" :class="{ 'today': isToday, 'tomorrow': isTomorrow }" :data-date-key="props.dateKey">
+  <div class="day-column" :class="{ 'today': isToday, 'tomorrow': isTomorrow, 'compact-amounts': compactAmounts }" :data-date-key="props.dateKey">
     <div class="column-header">
       {{ formattedDate }}
     </div>
