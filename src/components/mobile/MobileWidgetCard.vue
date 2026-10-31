@@ -36,8 +36,7 @@ const toNum = (v) => {
 };
 
 const widgetInfo = computed(() => {
-  const w = mainStore.allWidgets.find(x => x.key === props.widgetKey);
-  return w ? w.name : 'Виджет';
+  return mainStore.allWidgets.find(x => x.key === props.widgetKey);
 });
 
 const isForecastActive = computed(() => {
@@ -53,15 +52,12 @@ const isBalanceWidget = computed(() => {
     return ['accounts', 'companies'].includes(props.widgetKey);
 });
 
-const isLiabilitiesWidget = computed(() => props.widgetKey === 'liabilities');
-
 const isSingleLineWidget = computed(() => {
     return [
         'incomeList', 
         'expenseList', 
         'withdrawalList', 
-        'transfers',
-        'liabilities'
+        'transfers'
     ].includes(props.widgetKey);
 });
 
@@ -77,18 +73,8 @@ const sortMode = computed(() => mainStore.widgetSortMode);
 const filterMode = computed(() => mainStore.widgetFilterMode);
 
 const items = computed(() => {
-  if (isLiabilitiesWidget.value) return [];
   const rawList = getWidgetItems(props.widgetKey, isForecastActive.value);
   return filterAndSort(rawList);
-});
-
-const liabilitiesData = computed(() => {
-    return {
-        weOwe: mainStore.liabilitiesWeOwe || 0,
-        theyOwe: mainStore.liabilitiesTheyOwe || 0,
-        weOweFuture: mainStore.liabilitiesWeOweFuture || 0,
-        theyOweFuture: mainStore.liabilitiesTheyOweFuture || 0
-    };
 });
 
 function filterAndSort(originalList) {
@@ -113,7 +99,6 @@ function filterAndSort(originalList) {
 }
 
 const isEmpty = computed(() => { 
-    if (isLiabilitiesWidget.value) return false; 
     if (isListWidget.value) return false; 
     return items.value.length === 0; 
 });
@@ -199,19 +184,6 @@ const getRightValueClass = (item) => {
     return num >= 0 ? 'green-text' : 'red-text';
   };
 
-const formatLiabilitiesPlan = (val) => {
-    const num = toNum(val);
-    const formatted = formatNumber(Math.abs(num));
-    if (num === 0) return `${formatted} ₸`;
-    return num >= 0 ? `+ ${formatted} ₸` : `- ${formatted} ₸`;
-};
-
-const getLiabilitiesPlanClass = (val, defaultClass) => {
-    const num = toNum(val);
-    if (num === 0) return 'white-text';
-    return defaultClass;
-};
-
 const handleClick = () => { emit('click', props.widgetKey); };
 
 const cardStyleClass = computed(() => {
@@ -224,7 +196,6 @@ const cardStyleClass = computed(() => {
   if (k === 'projects') return 'style-pink'; 
   if (k === 'incomeList') return 'style-green'; 
   if (k === 'expenseList' || k === 'contractors') return 'style-red'; 
-  if (k === 'liabilities') return 'style-orange'; 
   if (k === 'credits') return 'style-light-blue'; 
   return 'style-gray';
 });
@@ -236,38 +207,20 @@ const cardStyleClass = computed(() => {
 
 <template>
   <div 
+    v-if="widgetInfo"
     class="mobile-widget-card auto-height" 
     :class="[cardStyleClass, { 'limit-height': !isSingleLineWidget }]" 
     @click="handleClick"
   >
     <div class="widget-header">
       <div class="header-badge badge-fact">Факт</div>
-      <div class="widget-title">{{ widgetInfo }}</div>
+      <div class="widget-title">{{ widgetInfo.name }}</div>
       <div class="header-badge badge-plan" :class="{ active: isForecastActive }">План</div>
     </div>
 
     <div class="widget-body scrollable-list">
       
-      <!-- LIABILITIES WIDGET -->
-      <div v-if="isLiabilitiesWidget" class="items-list three-col-grid">
-          <div class="list-item-grid">
-              <div class="col-left white-text">{{ formatVal(liabilitiesData.weOwe) }}</div>
-              <div class="col-center">Должны отработать</div>
-              <div class="col-right" :class="getLiabilitiesPlanClass(liabilitiesData.weOweFuture, 'red-text')">
-                  {{ isForecastActive ? formatLiabilitiesPlan(liabilitiesData.weOweFuture) : '' }}
-              </div>
-          </div>
-
-          <div class="list-item-grid">
-              <div class="col-left white-text">{{ formatVal(liabilitiesData.theyOwe) }}</div>
-              <div class="col-center">Должны получить</div>
-              <div class="col-right" :class="getLiabilitiesPlanClass(liabilitiesData.theyOweFuture, 'orange-text')">
-                  {{ isForecastActive ? formatLiabilitiesPlan(liabilitiesData.theyOweFuture) : '' }}
-              </div>
-          </div>
-      </div>
-
-      <div v-else-if="isEmpty" class="empty-text">Нет данных</div>
+      <div v-if="isEmpty" class="empty-text">Нет данных</div>
       
       <!-- STANDARD LIST -->
       <div v-else class="items-list three-col-grid">

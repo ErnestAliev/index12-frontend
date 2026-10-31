@@ -1,40 +1,28 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
+import { useWidgetData } from '@/composables/useWidgetData.js';
 import HeaderSubcategoryCard from '../HeaderSubcategoryCard.vue';
 import MobileWidgetCard from './MobileWidgetCard.vue';
 
 const emit = defineEmits(['widget-click', 'widget-add', 'widget-edit']);
 const mainStore = useMainStore();
-
-
-
-// Mobile should match desktop behavior: use all available widget keys
+const { getWidgetItems } = useWidgetData();
+const supportedKeys = computed(() => new Set(mainStore.allWidgets.map(widget => widget.key).filter(key => key !== 'currentTotal' && key !== 'futureTotal')));
 
 const gridWidgets = computed({
   get: () => {
-    let layout = [...mainStore.dashboardLayout];
-    const allKeys = mainStore.allWidgets.map(w => w.key);
-    
-    allKeys.forEach(key => {
-        if (!layout.includes(key)) {
-            layout.push(key);
-        }
-    });
-
-    layout = layout.filter(key => key !== 'currentTotal' && key !== 'futureTotal' && !key.startsWith('placeholder_'));
-    
-    if (!mainStore.isHeaderExpanded) {
-      return []; 
-    }
-    
-    return layout;
+    if (!mainStore.isHeaderExpanded) return [];
+    const layout = [...new Set([...mainStore.dashboardLayout, ...supportedKeys.value])];
+    return layout.filter(key => supportedKeys.value.has(key)
+      && (getWidgetItems(key, false)?.length || getWidgetItems(key, true)?.length));
   },
   set: (newOrder) => {
     const currentLayout = mainStore.dashboardLayout;
-    const hidden = currentLayout.filter(key => key === 'currentTotal' || key === 'futureTotal' || key.startsWith('placeholder_'));
+    const visible = new Set(gridWidgets.value);
+    const hidden = currentLayout.filter(key => !visible.has(key));
     mainStore.dashboardLayout = [...newOrder, ...hidden];
   }
 });
@@ -60,7 +48,7 @@ const handleWidgetClick = (key) => {
       :force-fallback="false"
     >
       <template #item="{ element }">
-        <div class="grid-item">
+        <div class="grid-item" :data-widget-key="element">
           <HeaderSubcategoryCard v-if="element === 'subcategories'" @click="handleWidgetClick(element)" />
           <MobileWidgetCard v-else
              :widget-key="element"
