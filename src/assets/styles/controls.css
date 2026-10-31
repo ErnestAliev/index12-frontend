@@ -1,0 +1,9 @@
+/* Control geometry belongs to the device layout, independently of the palette. */
+:root .dashboard-card .action-square-btn { width:24px; height:24px; flex-shrink:0; }
+:root .dashboard-card .icon-svg { width:13px; height:13px; }
+:root .dashboard-card .card-actions { gap:4px; }
+:root .divider-wrapper .month-nav-btn { width:24px; height:24px; }
+@media (pointer: coarse) {
+  :root .fullscreen-widget-overlay .action-square-btn { min-width:44px; height:44px; }
+  :root .home-right-panel .icon-btn { min-width:44px; height:44px; }
+}

@@ -65,9 +65,6 @@
 :root[data-theme="light"] .dashboard-card :is(.card-title, .card-item, .summary-value-block) { font-size: var(--font-sm); }
 :root[data-theme="light"] .dashboard-card .card-title { letter-spacing: 0; }
 :root[data-theme="light"] .column-header { font-size: 12px; }
-:root[data-theme="light"] .dashboard-card .action-square-btn { width: 24px; height: 24px; flex-shrink: 0; }
-:root[data-theme="light"] .dashboard-card .icon-svg { width: 13px; height: 13px; }
-:root[data-theme="light"] .dashboard-card .card-actions { gap: 4px; }
 :root[data-theme="light"] :is(.link-icon, .excluded-icon.included-now) { opacity: 1; text-shadow: none; }
 :root[data-theme="light"] :is(.dashboard-card .income, .green-text) { color: var(--light-income); }
 :root[data-theme="light"] :is(.red-text, .dashboard-card .expense) { color: var(--light-expense); }
@@ -91,7 +88,6 @@
 :root[data-theme="light"] :is(.icon-btn.filter-active, .header-expand-btn.active):hover { background: var(--light-hover); }
 :root[data-theme="light"] .about-btn { color: #ffffff; background: var(--btn-about-bg); border-color: var(--btn-about-bg); box-shadow: var(--btn-about-shadow); }
 :root[data-theme="light"] .about-btn:hover { background: var(--btn-about-bg-hover); border-color: var(--btn-about-bg-hover); }
-:root[data-theme="light"] .month-nav-btn { width: 24px; height: 24px; }
 :root[data-theme="light"] :is(.header-resizer, .vertical-resizer)::before { filter: none; opacity: 1; }
 
 /* Мобильные виджеты и подписи. */
@@ -213,10 +209,6 @@
   :root[data-theme="light"] .mobile-totals-wrapper { flex-direction: column; height: auto; }
   :root[data-theme="light"] .mobile-totals-wrapper .total-card { flex: none; padding: 10px 12px; }
   :root[data-theme="light"] .mobile-totals-wrapper .divider { width: 100%; height: 1px; }
-}
-@media (pointer: coarse) {
-  :root[data-theme="light"] .fullscreen-widget-overlay .action-square-btn { min-width: 44px; height: 44px; }
-  :root[data-theme="light"] .home-right-panel .icon-btn { min-width: 44px; height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme="light"] :is(.operation-chip, .op-chip, .mobile-widget-card, .icon-btn, .action-square-btn) { transition: none; }

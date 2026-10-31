@@ -44,3 +44,7 @@ Run `node tests/browser/appearance.mjs` for personal theme settings. It verifies
 section inheritance, independent palettes, graph footer typography, live canvas
 updates, named theme persistence, light/dark and account isolation, and the dock
 on desktop/tablet and compact phone sheet. API data and browser storage are isolated.
+
+Run `node tests/browser/appearance-controls.mjs` to check independent chip backgrounds,
+text and outlines, chip/day opacity, preserved cell striping, widget rounding and
+equal light/dark control geometry on desktop, touch tablet and phone.

@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { appearanceStorageKey, appearanceTokens, cloneAppearance, defaultPreferences,
+import { CHIP_COLOR_FIELDS, appearanceStorageKey, appearanceTokens, cloneAppearance, defaultPreferences,
   defaultTheme, parsePreferences, presetTheme, resolveAppearance, sanitizeTheme } from '@/utils/appearance.js';
 
 export const useAppearanceStore = defineStore('appearance', () => {
@@ -58,7 +58,10 @@ export const useAppearanceStore = defineStore('appearance', () => {
     commit();
   }
   function inheritField(scope, group, key) {
-    if (scope === 'global') return;
+    if (scope === 'global') {
+      if (group === 'colors' && Object.hasOwn(CHIP_COLOR_FIELDS, key)) { delete theme.value.global.colors[key]; commit(); }
+      return;
+    }
     delete theme.value.overrides[scope]?.[group]?.[key]; commit();
   }
   function resetScope(scope) {

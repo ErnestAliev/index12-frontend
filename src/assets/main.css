@@ -4,6 +4,7 @@
 @import './styles/theme-light.css';
 /* Светлая тема */
 @import './base.css';
+@import './styles/controls.css';
 @import './styles/light-ui.css';
 @import './styles/appearance.css';
 

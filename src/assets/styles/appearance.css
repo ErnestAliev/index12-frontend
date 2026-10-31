@@ -35,6 +35,15 @@
   --widget-grid-padding: var(--appearance-widgets-lineWidth);
   --widget-grid-border-radius: var(--appearance-widgets-radius);
 }
+:root[data-appearance-custom] .header-dashboard .dashboard-card-wrapper {
+  background: transparent;
+  border-radius: var(--appearance-widgets-radius);
+  overflow: hidden;
+}
+:root[data-appearance-custom] .mobile-totals-wrapper .total-card {
+  background: var(--widget-background);
+  border-radius: var(--appearance-widgets-radius);
+}
 :root[data-appearance-custom] :is(.operation-chip, .op-chip) {
   font-size: var(--appearance-table-fontSize);
   font-weight: var(--appearance-table-textWeight);
@@ -43,18 +52,28 @@
 }
 :root[data-appearance-custom] :is(.operation-chip .op-amount, .op-chip .amt) { font-weight: var(--appearance-table-textWeight); }
 :root[data-appearance-custom] .hour-cell { height: var(--appearance-table-rowHeight); min-height:calc(var(--appearance-table-fontSize) * 1.3 + 10px); border-bottom-width: var(--appearance-table-lineWidth); }
-:root[data-appearance-custom] :is(.day-column, .mobile-day-column) {
+:root[data-appearance-custom] :is(.day-column, .mobile-day-col) {
   border-inline-width: var(--appearance-table-lineWidth);
   background: var(--day-column-bg);
 }
-:root[data-appearance-custom] :is(.column-header, .mobile-day-header) {
+:root[data-appearance-custom] :is(.column-header, .mobile-day-col .day-header) {
   font-size: var(--appearance-table-labelSize);
   font-weight: var(--appearance-table-labelWeight);
 }
-:root[data-appearance-custom] .day-column.today,
-:root[data-appearance-custom] .day-column.today .hour-cell {
-  background-color: color-mix(in srgb, var(--day-column-bg), var(--appearance-table-accent) calc(var(--appearance-table-activeFill) * 1%));
+:root[data-appearance-custom] .day-column.today .hour-cell:not(.drag-over),
+:root[data-appearance-custom] .mobile-day-col.today .mobile-cell {
+  background-image: linear-gradient(var(--appearance-table-active-overlay), var(--appearance-table-active-overlay));
 }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).income { border-left-color:var(--op-income-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).expense,
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).writeoff { border-left-color:var(--op-expense-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).transfer { border-left-color:var(--op-transfer-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).withdrawal { border-left-color:var(--op-withdrawal-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).work-act { border-left-color:var(--op-workact-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).technical { border-left-color:var(--op-technical-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).closed-deal { border-left-color:var(--op-closed-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).prepayment { border-left-color:var(--op-prepay-border); }
+:root[data-appearance-custom] :is(.operation-chip, .op-chip).credit-income { border-left-color:var(--op-credit-border); }
 :root[data-appearance-custom] :is(.graph-area, .mobile-chart-section, .journal-charts-panel) {
   color: var(--appearance-charts-text);
   font-size: var(--appearance-charts-fontSize);

@@ -339,6 +339,7 @@ const onTouchEnd = (e) => {
          expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
          'closed-deal': isClosedDealOp,
          'work-act': isWorkActOp,
+         technical: isTechnicalOp,
          withdrawal: isWithdrawalOp,
          writeoff: isRetailWriteOffOp,
          'credit-income': isCreditIncomeOp,
@@ -499,6 +500,9 @@ const onTouchEnd = (e) => {
 }
 .expense .amt { color: var(--op-expense-color); }
 .expense .desc { color: var(--op-expense-meta); }
+.technical { background:var(--op-technical-bg); border:1px solid var(--op-technical-border); }
+.technical .amt { color:var(--op-technical-color); }
+.technical .desc { color:var(--op-technical-meta); }
 
 /* Prepayment - using desktop variables */
 .prepayment {

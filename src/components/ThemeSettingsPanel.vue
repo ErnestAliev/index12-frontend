@@ -1,13 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useAppearanceStore } from '@/stores/appearanceStore';
-import { COLOR_FIELDS, METRIC_FIELDS, QUICK_THEMES, cloneAppearance, contrastRatio } from '@/utils/appearance.js';
+import { CHIP_TYPES, CHIP_PARTS, CHIP_COLOR_FIELDS, chipColorKey, resolveChipAppearance, COLOR_FIELDS, METRIC_FIELDS, QUICK_THEMES, cloneAppearance, contrastRatio } from '@/utils/appearance.js';
 
 const props = defineProps({ open: Boolean });
 const emit = defineEmits(['close']);
 const store = useAppearanceStore();
 const panel = ref(null);
 const scope = ref('global');
+const chipType = ref('income');
 const selectedSaved = ref('');
 const saveName = ref('');
 const feedback = ref('');
@@ -15,13 +16,21 @@ const error = ref('');
 let openingSnapshot, returnFocus;
 const scopes = { global: 'Вся тема', widgets: 'Виджеты', table: 'Таблица', charts: 'Графики' };
 const current = computed(() => store.resolved(scope.value));
+const chip = computed(() => resolveChipAppearance(store.theme, scope.value, chipType.value));
+const chipInherited = part => {
+  const key = chipColorKey(chipType.value, part);
+  return !Object.hasOwn(scope.value === 'global' ? store.theme.global.colors : store.theme.overrides.table.colors, key);
+};
 const inherited = (group, key) => scope.value !== 'global' && !Object.hasOwn(store.theme.overrides[scope.value][group], key);
 const colorFields = computed(() => Object.entries(COLOR_FIELDS)
+  .filter(([key]) => !Object.hasOwn(CHIP_COLOR_FIELDS, key) && (key !== 'activeDay' || ['global', 'table'].includes(scope.value)))
   .filter(([key]) => (key !== 'balance' || ['global', 'charts'].includes(scope.value)) && (key !== 'bg' || scope.value !== 'widgets'))
-  .filter(([key]) => scope.value !== 'charts' || !['accent', 'warning', 'purple', 'info'].includes(key))
+  .filter(([key]) => scope.value !== 'charts' || !['accent', 'technical', 'purple'].includes(key))
   .map(([key, label]) => [key, key === 'surface' ? ({ widgets: 'Фон виджетов', table: 'Фон таблицы', charts: 'Фон графика' }[scope.value] || label)
     : key === 'bg' ? ({ global: 'Фон приложения', table: 'Полосы таблицы', charts: 'Фон подписей' }[scope.value] || label) : label]));
 const metricFields = computed(() => Object.entries(METRIC_FIELDS).filter(([key]) => {
+  if (['eventFill', 'chipOpacity'].includes(key)) return false;
+  if (key === 'radius' && scope.value === 'widgets') return false;
   if (scope.value === 'global') return true;
   if (['balanceSize', 'balanceWeight'].includes(key)) return scope.value === 'widgets';
   if (['summarySize', 'summaryWeight', 'axisSize', 'axisWeight', 'chartFill'].includes(key)) return scope.value === 'charts';
@@ -29,6 +38,9 @@ const metricFields = computed(() => Object.entries(METRIC_FIELDS).filter(([key])
   if (['shadow', 'radius'].includes(key)) return scope.value !== 'charts';
   return true;
 }));
+const metricLabel = (key, spec) => key === 'radius'
+  ? ({ widgets: 'Скругление виджетов', table: 'Скругление чипов', global: 'Скругление блоков' }[scope.value] || spec.label)
+  : spec.label;
 const ratio = computed(() => contrastRatio(current.value.colors.text, current.value.colors.surface).toFixed(1));
 function change(group, key, value) {
   error.value = ''; feedback.value = '';
@@ -83,6 +95,12 @@ onBeforeUnmount(() => returnFocus?.focus?.({ preventScroll: true }));
         <button v-for="(label, value) in scopes" :key="value" type="button" :aria-pressed="scope === value" @click="scope = value">{{ label }}</button>
       </div>
       <div class="theme-scope-heading"><strong>{{ scopes[scope] }}</strong><button type="button" class="theme-link-button" :title="scope === 'global' ? 'Вернуть стандартную тему' : 'Наследовать все параметры общей темы'" @click="store.resetScope(scope)">{{ scope === 'global' ? 'Стандартная' : 'Наследовать всё' }}</button></div>
+      <label v-if="scope === 'widgets'" class="theme-range-field">
+        <span class="theme-range-caption"><span>Скругление виджетов</span><output>{{ current.metrics.radius }} px</output>
+          <button type="button" class="theme-inherit" :disabled="inherited('metrics', 'radius')" aria-label="Наследовать: Скругление виджетов" title="Наследовать значение общей темы" @click.prevent="store.inheritField(scope, 'metrics', 'radius')">↶</button>
+        </span>
+        <input type="range" :min="METRIC_FIELDS.radius.min" :max="METRIC_FIELDS.radius.max" step="1" :value="current.metrics.radius" aria-label="Виджеты: Скругление виджетов" @input="change('metrics', 'radius', Number($event.target.value))">
+      </label>
       <details class="theme-section" open>
         <summary>Цвета</summary>
         <div v-for="[key, label] in colorFields" :key="key" class="theme-color-field">
@@ -95,13 +113,35 @@ onBeforeUnmount(() => returnFocus?.focus?.({ preventScroll: true }));
         </div>
         <div class="theme-contrast">Контраст текста <output>{{ ratio }}:1</output></div>
       </details>
-      <details v-for="group in ['type', 'detail']" :key="group" class="theme-section" :open="group === 'type'">
-        <summary>{{ group === 'type' ? 'Шрифты' : 'Заливки и разделители' }}</summary>
+      <details v-if="scope === 'global' || scope === 'table'" class="theme-section" open>
+        <summary>Чипы операций</summary>
+        <label class="theme-chip-type">Тип операции
+          <select v-model="chipType" aria-label="Тип чипа операции"><option v-for="(item, type) in CHIP_TYPES" :key="type" :value="type">{{ item.label }}</option></select>
+        </label>
+        <div v-for="(label, part) in CHIP_PARTS" :key="part" class="theme-color-field">
+          <label :for="`appearance-chip-${part}`">{{ label }}</label>
+          <div class="theme-color-inputs">
+            <input :id="`appearance-chip-${part}`" type="color" :value="chip[part]" :aria-label="`${scopes[scope]}: ${CHIP_TYPES[chipType].label}: ${label}`" @input="change('colors', chipColorKey(chipType, part), $event.target.value)">
+            <input type="text" class="theme-hex" :value="chip[part]" maxlength="7" spellcheck="false" :aria-label="`${scopes[scope]}: ${CHIP_TYPES[chipType].label}: ${label} HEX`" @change="change('colors', chipColorKey(chipType, part), $event.target.value)">
+            <button type="button" class="theme-inherit" :class="{ inherited: chipInherited(part) }" :disabled="chipInherited(part)"
+              :aria-label="`Сбросить цвет чипа: ${label}`" :title="scope === 'global' ? 'Вернуть автоматический цвет' : 'Наследовать цвет общей темы'"
+              @click="store.inheritField(scope, 'colors', chipColorKey(chipType, part))">↶</button>
+          </div>
+        </div>
+        <label class="theme-range-field">
+          <span class="theme-range-caption"><span>Непрозрачность фона чипов</span><output>{{ current.metrics.chipOpacity }} %</output>
+            <button v-if="scope !== 'global'" type="button" class="theme-inherit" :disabled="inherited('metrics', 'chipOpacity')" aria-label="Наследовать непрозрачность чипов" title="Наследовать значение общей темы" @click.prevent="store.inheritField(scope, 'metrics', 'chipOpacity')">↶</button>
+          </span>
+          <input type="range" min="0" max="100" step="1" :value="current.metrics.chipOpacity" :aria-label="`${scopes[scope]}: Непрозрачность фона чипов`" @input="change('metrics', 'chipOpacity', Number($event.target.value))">
+        </label>
+      </details>
+      <details v-for="group in ['shape', 'type', 'detail'].filter(group => metricFields.some(([, spec]) => spec.group === group))" :key="group" class="theme-section" :open="group !== 'detail'">
+        <summary>{{ { type: 'Шрифты', shape: 'Скругления и тени', detail: 'Заливки и разделители' }[group] }}</summary>
         <label v-for="[key, spec] in metricFields.filter(([, spec]) => spec.group === group)" :key="key" class="theme-range-field">
-          <span class="theme-range-caption"><span>{{ spec.label }}</span><output>{{ current.metrics[key] }}{{ spec.unit ? ` ${spec.unit}` : '' }}</output>
+          <span class="theme-range-caption"><span>{{ metricLabel(key, spec) }}</span><output>{{ current.metrics[key] }}{{ spec.unit ? ` ${spec.unit}` : '' }}</output>
             <button v-if="scope !== 'global'" type="button" class="theme-inherit" :class="{ inherited: inherited('metrics', key) }" :disabled="inherited('metrics', key)" :aria-label="`Наследовать: ${spec.label}`" :title="inherited('metrics', key) ? 'Из общей темы' : 'Вернуть значение общей темы'" @click.prevent="store.inheritField(scope, 'metrics', key)">↶</button>
           </span>
-          <input type="range" :min="spec.min" :max="spec.max" :step="spec.step" :value="current.metrics[key]" :aria-label="`${scopes[scope]}: ${spec.label}`" @input="change('metrics', key, Number($event.target.value))">
+          <input type="range" :min="spec.min" :max="spec.max" :step="spec.step" :value="current.metrics[key]" :aria-label="`${scopes[scope]}: ${metricLabel(key, spec)}`" @input="change('metrics', key, Number($event.target.value))">
         </label>
       </details>
     </div>
@@ -142,7 +182,9 @@ h3,.theme-saved-label { display:block; margin:16px 0 8px; font-size:12px; font-w
 .theme-section { border-top:1px solid var(--settings-border); padding:10px 0; }.theme-section summary { font-size:12px; font-weight:600; cursor:pointer; margin-bottom:10px; }
 .theme-color-field { display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:8px; font-size:12px; }.theme-color-field>label { min-width:0; }
 .theme-color-inputs { display:flex; align-items:center; gap:5px; flex:none; }.theme-color-inputs input[type=color] { width:29px; height:27px; padding:2px; background:var(--settings-bg); border:1px solid var(--settings-border); border-radius:4px; }
-.theme-color-inputs .theme-hex { width:67px; padding:3px 2px; border:0; background:var(--settings-soft); border-radius:4px; font-size:11px; }
+.theme-color-inputs .theme-hex { width:80px; padding:3px 2px; border:0; background:var(--settings-soft); border-radius:4px; font-size:11px; }
+.theme-chip-type { display:block; margin-bottom:12px; font-size:12px; }
+.theme-chip-type select { display:block; width:100%; height:34px; margin:6px 0 0; padding:4px 8px; background:var(--settings-bg); border:1px solid var(--settings-border); border-radius:6px; }
 .theme-settings-panel .theme-inherit { flex:none; width:24px; min-height:24px; padding:0; border:0; color:var(--settings-accent); }.theme-inherit.inherited { opacity:.25; cursor:default; }
 .theme-contrast { display:flex; justify-content:space-between; color:var(--settings-muted); font-size:11px; margin-top:10px; }
 .theme-range-field { display:block; margin:12px 0 15px; }.theme-range-caption { display:flex; align-items:center; gap:5px; font-size:12px; }.theme-range-caption>span { margin-right:auto; }.theme-range-caption output { white-space:nowrap; color:var(--settings-muted); font-size:11px; font-variant-numeric:tabular-nums; }
