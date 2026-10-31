@@ -29,7 +29,7 @@ export const useGraphPalette = () => {
     };
     refresh();
     observer = new MutationObserver(refresh);
-    observer.observe(root, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme', 'class', 'data-appearance-revision'] });
   });
 
   onUnmounted(() => observer?.disconnect());

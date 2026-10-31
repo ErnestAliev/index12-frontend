@@ -40,12 +40,17 @@ import CodexChatWindow from '@/components/CodexChatWindow.vue';
 import CodexIcon from '@/components/CodexIcon.vue';
 import EditorModal from '@/components/EditorModal.vue';
 import ContractorEditorModal from '@/components/ContractorEditorModal.vue';
+import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
+import { useAppearanceStore } from '@/stores/appearanceStore';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
 const mainStore = useMainStore();
 const projectionStore = useProjectionStore();
 const permissions = usePermissions();
+const appearance = useAppearanceStore();
+const showThemeSettings = ref(false);
+const toggleThemeSettings = () => { showThemeSettings.value = !showThemeSettings.value; if (showThemeSettings.value) showCodex.value = false; };
 
 // --- CONSTANTS ---
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -179,12 +184,10 @@ const isDataLoading = computed(() => {
   return mainStore.isAuthLoading || isWorkspaceInitializing.value ||
     !workspaceWidth.value || !workspaceDays.value.length;
 });
-const currentTheme = ref(localStorage.getItem('theme') || 'dark');
+const currentTheme = computed(() => appearance.mode);
 
 const toggleTheme = () => {
-  currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', currentTheme.value);
-  localStorage.setItem('theme', currentTheme.value);
+  appearance.setMode(currentTheme.value === 'dark' ? 'light' : 'dark');
 };
 
 const theHeaderRef = ref(null);
@@ -1528,7 +1531,7 @@ const handleRefundDelete = async (op) => {
 <template>
   <div v-if="mainStore.isAuthLoading" class="loading-screen"><div class="spinner"></div><p>Проверка сессии...</p></div>
   <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко INDEX12.COM</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
-  <div v-else class="home-layout" @click="closeAllMenus">
+  <div v-else class="home-layout" :class="{ 'theme-settings-open': showThemeSettings }" @click="closeAllMenus">
     <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
     <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
     <div class="header-resizer" :class="{ 'expanded': isHeaderTall }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
@@ -1748,8 +1751,12 @@ const handleRefundDelete = async (op) => {
             </svg>
           </button>
           <button class="icon-btn codex-btn" :class="{ active: showCodex }" type="button"
-            data-tooltip="Codex" aria-label="Открыть чат Codex" :aria-expanded="showCodex" aria-controls="codex-chat-window" @click="showCodex = !showCodex">
+            data-tooltip="Codex" aria-label="Открыть чат Codex" :aria-expanded="showCodex" aria-controls="codex-chat-window" @click="showCodex = !showCodex; if (showCodex) showThemeSettings = false">
             <CodexIcon />
+          </button>
+          <button class="icon-btn theme-settings-btn" :class="{ active: showThemeSettings }" type="button" data-tooltip="Оформление"
+            aria-label="Настройки оформления" :aria-expanded="showThemeSettings" aria-controls="theme-settings-panel" @click="toggleThemeSettings">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--right-panel-bg)"/><circle cx="15" cy="17" r="3" fill="var(--right-panel-bg)"/></svg>
           </button>
         </div>
 
@@ -1820,6 +1827,7 @@ const handleRefundDelete = async (op) => {
     <!-- 🆕 NEW: Payment Receipt Generator -->
     <PaymentReceiptModal v-if="showReceiptModal" @close="showReceiptModal = false" />
     <CodexChatWindow :open="showCodex" :api-base-url="API_BASE_URL" @close="showCodex = false" />
+    <ThemeSettingsPanel :open="showThemeSettings" @close="showThemeSettings = false" />
 
   </div>
 </template>
@@ -1904,6 +1912,8 @@ const handleRefundDelete = async (op) => {
 .user-menu-item:hover { background-color: var(--color-background-mute); }
 .user-menu-item:disabled { color: var(--color-text-mute); cursor: not-allowed; background: none; }
 .home-layout { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; overflow: hidden; background-color: var(--color-background); }
+.home-layout.theme-settings-open { width:calc(100% - clamp(280px,30vw,350px)); }
+@media(max-width:699px) { .home-layout.theme-settings-open { width:100%; height:52dvh; } }
 .home-header { flex-shrink: 0; z-index: 100; background-color: var(--color-background); display: flex; height: 130px; transition: height 0.3s ease; }
 .header-resizer { 
   flex-shrink: 0; 

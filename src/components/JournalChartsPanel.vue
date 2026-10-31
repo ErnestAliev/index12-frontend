@@ -2,6 +2,13 @@
 import { computed } from 'vue';
 import { Doughnut } from 'vue-chartjs';
 import 'chart.js/auto';
+import { useAppearanceStore } from '@/stores/appearanceStore';
+import { mixColor } from '@/utils/appearance.js';
+const appearance = useAppearanceStore();
+const chartAppearance = computed(() => appearance.resolved('charts'));
+const palette = (role, fallback) => computed(() => appearance.theme.enabled
+  ? Array.from({ length: 8 }, (_, i) => mixColor(chartAppearance.value.colors[role], chartAppearance.value.colors.surface, i * 7))
+  : fallback);
 
 const props = defineProps({
   rows: {
@@ -11,8 +18,9 @@ const props = defineProps({
 });
 
 const MAX_GROUP_ITEMS = 8;
-const GREEN_PALETTE = ['#10b981', '#34d399', '#6ee7b7', '#059669', '#22c55e', '#4ade80', '#86efac', '#bbf7d0'];
-const RED_PALETTE = ['#ef4444', '#f87171', '#fca5a5', '#dc2626', '#fb7185', '#f97316', '#fdba74', '#fecaca'];
+const GREEN_PALETTE = palette('income', ['#10b981', '#34d399', '#6ee7b7', '#059669', '#22c55e', '#4ade80', '#86efac', '#bbf7d0']);
+const RED_PALETTE = palette('expense', ['#ef4444', '#f87171', '#fca5a5', '#dc2626', '#fb7185', '#f97316', '#fdba74', '#fecaca']);
+const TRANSFER_PALETTE = palette('transfer', ['#10b981', '#34d399', '#6ee7b7', '#059669', '#22c55e', '#4ade80', '#86efac', '#bbf7d0']);
 
 const formatMoney = (value) => {
   const amount = Number(value) || 0;
@@ -54,8 +62,8 @@ const buildRatioItems = () => {
   });
 
   return [
-    { label: 'Доход', total: income, color: GREEN_PALETTE[0] },
-    { label: 'Расход', total: expense, color: RED_PALETTE[0] }
+    { label: 'Доход', total: income, color: GREEN_PALETTE.value[0] },
+    { label: 'Расход', total: expense, color: RED_PALETTE.value[0] }
   ].filter((item) => item.total > 0);
 };
 
@@ -220,8 +228,8 @@ const chartCards = computed(() => {
       datasets: [
         {
           label: 'Доход',
-          data: card.items.map((item, index) => item.income),
-          backgroundColor: card.items.map((_, index) => GREEN_PALETTE[index % GREEN_PALETTE.length]),
+          data: card.items.map((item) => item.income),
+          backgroundColor: card.items.map((_, index) => GREEN_PALETTE.value[index % GREEN_PALETTE.value.length]),
           borderWidth: 0,
           weight: 1.1,
           hoverOffset: 5
@@ -229,7 +237,7 @@ const chartCards = computed(() => {
         {
           label: 'Расход',
           data: card.items.map((item) => item.expense),
-          backgroundColor: card.items.map((_, index) => RED_PALETTE[index % RED_PALETTE.length]),
+          backgroundColor: card.items.map((_, index) => RED_PALETTE.value[index % RED_PALETTE.value.length]),
           borderWidth: 0,
           weight: 0.86,
           hoverOffset: 5
@@ -272,7 +280,7 @@ const chartCards = computed(() => {
     const label = row.values['Детализация категории'] || row.values['Категория'] || 'Без подкатегории';
     transferGroups.set(label, (transferGroups.get(label) || 0) + Math.abs(Number(row.amount) || 0));
   });
-  const transferItems = [...transferGroups].map(([label, total], index) => ({ label, total, color: GREEN_PALETTE[index % GREEN_PALETTE.length] }));
+  const transferItems = [...transferGroups].map(([label, total], index) => ({ label, total, color: TRANSFER_PALETTE.value[index % TRANSFER_PALETTE.value.length] }));
   const transfersCard = {
     key: 'transfer-subcategories', title: 'Переводы по подкатегориям', note: 'Оборот переводов учитывается отдельно от доходов и расходов.',
     hasData: transferItems.length > 0,
@@ -305,7 +313,7 @@ const chartCards = computed(() => {
               <div class="journal-chart-legend-label">
                 <span
                   class="journal-chart-legend-dot"
-                  :style="{ background: (card.key === 'ratio' || card.key === 'transfer-subcategories') ? item.color : 'linear-gradient(135deg, #10b981 0%, #ef4444 100%)' }"
+                  :style="{ background: (card.key === 'ratio' || card.key === 'transfer-subcategories') ? item.color : `linear-gradient(135deg, ${GREEN_PALETTE[0]} 0%, ${RED_PALETTE[0]} 100%)` }"
                 ></span>
                 <span class="journal-chart-legend-text">{{ item.label }}</span>
               </div>

@@ -39,3 +39,8 @@ standalone window resizing, button placement, mobile Codex-only access, and
 absence of legacy AI API requests.
 Screenshots are saved under `output/playwright/`. Physical microphone capture
 still depends on the browser and its microphone permission.
+
+Run `node tests/browser/appearance.mjs` for personal theme settings. It verifies
+section inheritance, independent palettes, graph footer typography, live canvas
+updates, named theme persistence, light/dark and account isolation, and the dock
+on desktop/tablet and compact phone sheet. API data and browser storage are isolated.

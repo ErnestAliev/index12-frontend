@@ -26,6 +26,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import CodexChatWindow from '@/components/CodexChatWindow.vue';
+import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -220,6 +221,7 @@ const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 // Mobile modals
 const showProjectsModal = ref(false);
 const showUserMenuModal = ref(false);
+const showThemeSettings = ref(false);
 const showAboutModal = ref(false);
 
 const openProjectsModal = () => {
@@ -840,7 +842,7 @@ const showCodex = ref(false);
 </script>
 
 <template>
-  <div class="mobile-layout" data-graph-workspace @click="(e) => { if (isContextMenuVisible && !e.target.closest('.context-menu')) isContextMenuVisible = false; }">
+  <div class="mobile-layout" :class="{ 'theme-settings-open': showThemeSettings }" data-graph-workspace @click="(e) => { if (isContextMenuVisible && !e.target.closest('.context-menu')) isContextMenuVisible = false; }">
 
     <div v-if="mainStore.isAuthLoading" class="loading-screen">
       <div class="spinner"></div>
@@ -990,7 +992,7 @@ const showCodex = ref(false);
             <div class="fixed-footer">
               <MobileActionPanel 
                 @action="handleAction" 
-                @open-codex="showCodex = true"
+                @open-codex="showCodex = true; showThemeSettings = false"
                 @open-projects="openProjectsModal"
                 @open-user-menu="openUserMenuModal"
                 @prev-month="goPrevMonth"
@@ -1019,10 +1021,11 @@ const showCodex = ref(false);
 
     <!-- Mobile Modals -->
     <MobileProjectSwitcher v-if="showProjectsModal && mainStore.workspaceRole !== 'manager'" @close="closeProjectsModal" />
-    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" />
+    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" />
     <AboutModal v-if="showAboutModal" @close="closeAboutModal" />
 
     <CodexChatWindow :open="showCodex" :api-base-url="API_BASE_URL" mobile @close="showCodex = false" />
+    <ThemeSettingsPanel :open="showThemeSettings" @close="showThemeSettings = false" />
 
   </div>
 </template>
@@ -1062,6 +1065,8 @@ const showCodex = ref(false);
   /* 🟢 FIX: Запрещаем стандартные жесты браузера (зум, свайп назад) */
   touch-action: manipulation;
 }
+.mobile-layout.theme-settings-open { height:52dvh; }
+@media(min-width:700px) { .mobile-layout.theme-settings-open { height:100dvh; width:calc(100vw - clamp(280px,30vw,350px)); } }
 .loading-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
 .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
 .section-loading { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }

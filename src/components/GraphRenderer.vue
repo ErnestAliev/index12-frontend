@@ -355,7 +355,7 @@ onMounted(() => {
   
   themeObserver.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['class', 'data-theme']
+    attributeFilter: ['class', 'data-theme', 'data-appearance-revision']
   });
   
   // Cleanup observer and listener on unmount

@@ -92,20 +92,21 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { useAppearanceStore } from '@/stores/appearanceStore';
 
 const mainStore = useMainStore();
-const emit = defineEmits(['close', 'open-about']);
+const emit = defineEmits(['close', 'open-about', 'open-appearance']);
+const appearance = useAppearanceStore();
 
-const currentTheme = ref(document.documentElement.getAttribute('data-theme') || 'dark');
+const currentTheme = computed(() => appearance.mode);
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 function openSettings() {
   emit('close');
-  // TODO: Navigate to settings or open settings modal
-  console.log('Settings not implemented yet');
+  emit('open-appearance');
 }
 
 function openAbout() {
@@ -114,9 +115,7 @@ function openAbout() {
 
 function handleToggleTheme() {
   const newTheme = currentTheme.value === 'dark' ? 'light' : 'dark';
-  currentTheme.value = newTheme;
-  document.documentElement.setAttribute('data-theme', newTheme);
-  localStorage.setItem('theme', newTheme);
+  appearance.setMode(newTheme);
 }
 
 async function logout() {
@@ -128,7 +127,7 @@ async function logout() {
       credentials: 'include' 
     });
     sessionStorage.clear();
-    localStorage.clear();
+    Object.keys(localStorage).filter(key => !key.startsWith('index12-appearance-v1:')).forEach(key => localStorage.removeItem(key));
     window.location.href = '/';
   } catch (err) {
     console.error('Logout failed:', err);
