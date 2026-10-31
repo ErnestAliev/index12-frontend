@@ -40,7 +40,7 @@ try {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() !== 'GET') writes.push(path);
     let data = [];
-    if (path.endsWith('/user/appearance-themes')) data = {themes:[]};
+    if (path.endsWith('/user/appearance-templates')) data = {themes:[],activeThemeId:null,legacyThemes:[]};
     if (path.endsWith('/auth/me')) data = { _id: 'responsive-user', workspaceRole: 'admin', role: 'admin', createdAt: '2026-01-01' };
     if (path.endsWith('/accounts')) data = accounts;
     if (path.endsWith('/companies')) data = [{ _id: 'company', name: 'Владелец с длинным названием' }];

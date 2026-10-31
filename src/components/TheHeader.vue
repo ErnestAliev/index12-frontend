@@ -883,15 +883,15 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 
 /* Принудительно растягиваем карточку внутри модалки */
 .fullscreen-card-container :deep(.dashboard-card) {
-    padding: 24px !important;
+    padding: var(--appearance-widgets-padding, 24px) !important;
     height: 100% !important;
 }
 
 /* Увеличиваем шрифт в полноэкранном режиме */
-.fullscreen-card-container :deep(.card-title) { font-size: 18px !important; }
+.fullscreen-card-container :deep(.card-title) { font-size: var(--appearance-widgets-labelSize, 18px) !important; }
 .fullscreen-card-container :deep(.card-items-list),
 .fullscreen-card-container :deep(.card-item) { font-size: 16px !important; line-height: 1.6 !important; }
-.fullscreen-card-container :deep(.card-total-balance) { font-size: 48px !important; }
+.fullscreen-card-container :deep(.card-total-balance) { font-size: var(--appearance-widgets-balanceSize, 48px) !important; }
 
 
 /* 🟢 DEFAULT 6x1 LOGIC (Desktop > 1400px) */
@@ -911,7 +911,9 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
       font-size: var(--font-sm, 13px) !important;
   }
   
-  :deep(.current-cell), :deep(.future-cell), :deep(.forecast-display) { font-size: inherit !important; }
+  :deep(.current-cell) { font-size: var(--appearance-widgets-rowValueSize, inherit) !important; }
+  :deep(.future-cell) { font-size: var(--appearance-widgets-rowForecastSize, inherit) !important; }
+  :deep(.forecast-display) { font-size: inherit !important; }
   
   .dashboard-card-wrapper:nth-child(6n) { border-right: 1px solid var(--color-border) !important; }
   .dashboard-card-wrapper:nth-child(5n) { border-right: none !important; }
@@ -922,7 +924,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 /* Portrait tablets need room for complete totals and usable widget controls. */
 .header-dashboard.portrait-tablet:not(.expanded) .dashboard-card-wrapper:nth-child(n+5) { display: none; }
 .header-dashboard.portrait-tablet.expanded .dashboard-card-wrapper { display: flex; }
-.header-dashboard.portrait-tablet :deep(.dashboard-card) { padding: 8px 10px !important; overflow: hidden; }
+.header-dashboard.portrait-tablet :deep(.dashboard-card) { padding: var(--appearance-widgets-padding, 8px) var(--appearance-widgets-padding, 10px) !important; overflow: hidden; }
 .header-dashboard.portrait-tablet :deep(.card-title-container) {
   flex-direction: column;
   align-items: flex-start;
@@ -933,7 +935,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
   margin-bottom: 6px;
 }
 .header-dashboard.portrait-tablet :deep(.is-mirrored .card-title-container) { align-items: flex-end; }
-.header-dashboard.portrait-tablet :deep(.card-title) { font-size: 12px; line-height: 1.25; }
+.header-dashboard.portrait-tablet :deep(.card-title) { font-size: var(--appearance-widgets-labelSize, 12px); line-height: 1.25; }
 .header-dashboard.portrait-tablet :deep(.card-actions) { gap: 4px; flex-shrink: 0; }
 .header-dashboard.portrait-tablet :deep(.action-square-btn) { width: 22px; height: 22px; flex-shrink: 0; }
 .header-dashboard.portrait-tablet :deep(.card-item) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
@@ -942,11 +944,11 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard.portrait-tablet :deep(.forecast-mode .card-item) { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .header-dashboard.portrait-tablet :deep(.forecast-display) { display: flex; justify-content: flex-end; gap: 4px; }
 .header-dashboard.portrait-tablet :deep(.card-item),
-.header-dashboard.portrait-tablet :deep(.card-items-list.forecast-mode) { font-size: 12px !important; }
+.header-dashboard.portrait-tablet :deep(.card-items-list.forecast-mode) { font-size: var(--appearance-widgets-fontSize, 12px) !important; }
 .header-dashboard.portrait-tablet :deep(.summary-row) { flex-direction: column; align-items: stretch; gap: 4px; }
 .header-dashboard.portrait-tablet :deep(.summary-value-block) { display: flex; justify-content: flex-end; flex-wrap: wrap; }
 .header-dashboard.portrait-tablet :deep(.category-item span:first-child) { min-width: 0; }
-.header-dashboard.portrait-tablet :deep(.card-sub-balance) { font-size: 12px; line-height: 1.4; }
+.header-dashboard.portrait-tablet :deep(.card-sub-balance) { font-size: var(--appearance-widgets-secondarySize, 12px); line-height: 1.4; }
 
 /* 🟢 EXPANDED LOGIC */
 .header-dashboard.expanded { grid-template-rows: none; grid-auto-rows: minmax(130px, 1fr); overflow-x: hidden; overflow-y: auto; }
@@ -961,7 +963,7 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard.expanded :deep(.card-title) { cursor: default; pointer-events: none; }
 
 /* Mobile fallback */
-@media (max-height: 900px) { :deep(.dashboard-card) { padding: 8px 10px !important; } }
+@media (max-height: 900px) { :deep(.dashboard-card) { padding: var(--appearance-widgets-padding, 8px) var(--appearance-widgets-padding, 10px) !important; } }
 
 .global-menu-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 5000; background: transparent; }
 .global-widget-dropdown { position: fixed; background-color: #f4f4f4; border-radius: 8px; box-shadow: 0 5px 25px rgba(0,0,0,0.3); padding: 8px; box-sizing: border-box; max-height: 400px; display: flex; flex-direction: column; color: #333; }

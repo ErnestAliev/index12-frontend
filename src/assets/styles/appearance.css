@@ -1,5 +1,7 @@
 /* Optional personal layer. Stock light/dark themes remain intact until edited. */
 :root[data-appearance-custom] :is(.dashboard-card, .mobile-widget-card, .mobile-totals-wrapper) {
+  --font-sm: var(--appearance-widgets-fontSize);
+  --font-xs: var(--appearance-widgets-secondarySize);
   --color-text: var(--widget-text-main);
   --color-border: var(--widget-border);
   --fw-regular: var(--appearance-widgets-textWeight);
@@ -14,7 +16,8 @@
   box-shadow: var(--appearance-widgets-shadowValue);
 }
 :root[data-appearance-custom] .dashboard-card :is(.card-item, .summary-value-block),
-:root[data-appearance-custom] .mobile-widget-card .widget-body {
+:root[data-appearance-custom] .mobile-widget-card .widget-body,
+:root[data-appearance-custom] .dashboard-card .card-items-list.forecast-mode {
   font-size: var(--appearance-widgets-fontSize);
   font-weight: var(--appearance-widgets-textWeight);
 }
@@ -183,3 +186,34 @@
   font-size:var(--appearance-summaries-secondarySize);
   font-weight:var(--appearance-summaries-secondaryWeight);
 }
+
+/* Widget parts have individual controls; forecast rows use display:contents. */
+:root[data-appearance-custom] :is(.dashboard-card .card-title,.mobile-widget-card .widget-title,.mobile-totals-wrapper .card-label) { font-family:var(--appearance-widgets-headingFontFamily); }
+:root[data-appearance-custom] .dashboard-card .card-item { min-height:var(--appearance-widgets-widgetRowHeight); margin-bottom:var(--appearance-widgets-widgetRowGap); }
+:root[data-appearance-custom] .dashboard-card .card-items-list.forecast-mode { grid-auto-rows:minmax(var(--appearance-widgets-widgetRowHeight),auto); row-gap:var(--appearance-widgets-widgetRowGap); }
+:root[data-appearance-custom] .mobile-widget-card .list-item-grid { min-height:var(--appearance-widgets-widgetRowHeight); }
+:root[data-appearance-custom] .mobile-widget-card .items-list { gap:var(--appearance-widgets-widgetRowGap); }
+:root[data-appearance-custom] :is(.dashboard-card .name-cell,.dashboard-card .category-item>span:first-child,.mobile-widget-card .col-center) {
+  color:var(--appearance-widgets-rowLabel); font-family:var(--appearance-widgets-rowLabelFontFamily); font-size:var(--appearance-widgets-rowLabelSize); font-weight:var(--appearance-widgets-rowLabelWeight);
+}
+:root[data-appearance-custom] :is(.dashboard-card .single-balance,.dashboard-card .current-cell,.dashboard-card .category-item>span:last-child,.mobile-widget-card .col-left) {
+  color:var(--appearance-widgets-rowValue); font-family:var(--appearance-widgets-rowValueFontFamily); font-size:var(--appearance-widgets-rowValueSize); font-weight:var(--appearance-widgets-rowValueWeight);
+}
+:root[data-appearance-custom] :is(.dashboard-card .future-cell,.mobile-widget-card .col-right) {
+  color:var(--appearance-widgets-rowForecast); font-family:var(--appearance-widgets-rowForecastFontFamily); font-size:var(--appearance-widgets-rowForecastSize); font-weight:var(--appearance-widgets-rowForecastWeight);
+}
+:root[data-appearance-custom] :is(.dashboard-card .currency,.dashboard-card .arrow-cell) {
+  color:var(--appearance-widgets-rowAux); font-family:var(--appearance-widgets-rowAuxFontFamily); font-size:var(--appearance-widgets-rowAuxSize); font-weight:var(--appearance-widgets-rowAuxWeight);
+}
+:root[data-appearance-custom] :is(.dashboard-card .single-balance,.dashboard-card .current-cell,.dashboard-card .future-cell,.dashboard-card .category-item>span:last-child,.mobile-widget-card .col-left,.mobile-widget-card .col-right).income { color:var(--widget-income-color); }
+:root[data-appearance-custom] :is(.dashboard-card .single-balance,.dashboard-card .current-cell,.dashboard-card .future-cell,.dashboard-card .category-item>span:last-child,.mobile-widget-card .col-left,.mobile-widget-card .col-right).expense { color:var(--widget-expense-color); }
+:root[data-appearance-custom] :is(.dashboard-card .card-total-balance,.mobile-totals-wrapper .card-value) { font-family:var(--appearance-widgets-balanceFontFamily); color:var(--appearance-widgets-totalText); }
+:root[data-appearance-custom] :is(.dashboard-card .card-sub-balance,.mobile-totals-wrapper .card-sub) { color:var(--appearance-widgets-subtitle); }
+:root[data-appearance-custom] :is(.dashboard-card,.mobile-widget-card,.mobile-totals-wrapper) { --color-primary:var(--appearance-widgets-accent); }
+:root[data-appearance-custom] .mobile-totals-wrapper .card-label { color:var(--widget-title-color); font-size:var(--appearance-widgets-labelSize); font-weight:var(--appearance-widgets-labelWeight); }
+:root[data-appearance-custom] :is(.dashboard-card .currency-symbol,.mobile-totals-wrapper .currency) { color:var(--appearance-widgets-rowAux); font-family:var(--appearance-widgets-rowAuxFontFamily); font-size:var(--appearance-widgets-rowAuxSize); font-weight:var(--appearance-widgets-rowAuxWeight); }
+:root[data-appearance-custom] :is(.dashboard-card .card-total-balance,.mobile-totals-wrapper .card-value).expense { color:var(--widget-expense-color); }
+:root[data-appearance-custom] .mobile-widget-card .red-text { color:var(--widget-expense-color); }
+:root[data-appearance-custom] .mobile-widget-card .green-text { color:var(--widget-income-color); }
+:root[data-appearance-custom] .mobile-widget-card .col-right .white-text { color:inherit; opacity:1; }
+:root[data-appearance-custom] :is(.dashboard-card .card-sub-balance,.mobile-totals-wrapper .card-sub) :is(.subtitle-keyword,.subtitle-count,.subtitle-date,.green-text) { color:var(--appearance-widgets-accent); font-weight:inherit; }

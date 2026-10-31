@@ -1,6 +1,7 @@
 // The global palette is inherited; section overrides only contain edited fields.
 export const APPEARANCE_VERSION = 1;
 export const APPEARANCE_SCOPE_LABELS = { global:'Вся тема', widgets:'Виджеты', separators:'Разделители', table:'Таблица', operations:'Операции', charts:'Графики', summaries:'Итоги дня' };
+export const FINANCIAL_COLORS={income:'Доходы',expense:'Расходы',transfer:'Переводы',purple:'Вывод средств'};
 export const APPEARANCE_SCOPES = Object.keys(APPEARANCE_SCOPE_LABELS);
 export const FONT_OPTIONS = {
   system: { label:'Системный', css:'-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
@@ -24,6 +25,7 @@ export const COLOR_FIELDS = {
   transfer: 'Переводы', bg: 'Фон области', surface: 'Поверхности', text: 'Основной текст',
   balance: 'Остаток на графике', purple: 'Вывод средств',
   activeDay: 'Цвет активного дня', ...CHIP_COLOR_FIELDS,
+  rowLabel:'Название в строке', rowValue:'Текущая сумма', rowForecast:'Прогноз', rowAux:'Валюта и разделитель', totalText:'Главная сумма', subtitle:'Подпись главной суммы',
   muted:'Вспомогательный текст', heading:'Заголовки', border:'Обводка', shadow:'Цвет тени',
 };
 export const METRIC_FIELDS = {
@@ -59,6 +61,26 @@ export const METRIC_FIELDS = {
   shadowX: { label:'Смещение тени по горизонтали', min:-16, max:16, step:1, unit:'px', group:'shadow' },
   shadowY: { label:'Смещение тени по вертикали', min:-16, max:16, step:1, unit:'px', group:'shadow' },
 };
+for (const part of ['rowLabel','rowValue','rowForecast','rowAux']) {
+  METRIC_FIELDS[part+'FontFamily']={label:'Шрифт',options:FONT_OPTIONS,group:'type'};
+  METRIC_FIELDS[part+'Size']={label:'Размер',min:8,max:24,step:.5,unit:'px',group:'type'};
+  METRIC_FIELDS[part+'Weight']={label:'Жирность',min:300,max:800,step:50,group:'type'};
+}
+METRIC_FIELDS.headingFontFamily={label:'Шрифт названия',options:FONT_OPTIONS,group:'type'};
+METRIC_FIELDS.balanceFontFamily={label:'Шрифт главной суммы',options:FONT_OPTIONS,group:'type'};
+METRIC_FIELDS.widgetRowHeight={label:'Высота строки',min:16,max:52,step:1,unit:'px',group:'shape'};
+METRIC_FIELDS.widgetRowGap={label:'Между строками',min:0,max:12,step:1,unit:'px',group:'shape'};
+export const WIDGET_PARTS={
+  card:{label:'Карточка',colors:['surface','border','shadow'],metrics:['radius','borderWidth','padding','opacity','shadow','shadowBlur','shadowX','shadowY']},
+  title:{label:'Название виджета',colors:['heading'],metrics:['headingFontFamily','labelSize','labelWeight']},
+  rows:{label:'Строки',colors:[],metrics:['widgetRowHeight','widgetRowGap']},
+  rowLabel:{label:'Название в строке',colors:['rowLabel'],metrics:['rowLabelFontFamily','rowLabelSize','rowLabelWeight']},
+  rowValue:{label:'Текущая сумма',colors:['rowValue','expense'],metrics:['rowValueFontFamily','rowValueSize','rowValueWeight']},
+  rowForecast:{label:'Прогноз',colors:['rowForecast','income','expense'],metrics:['rowForecastFontFamily','rowForecastSize','rowForecastWeight']},
+  rowAux:{label:'Валюта и разделитель',colors:['rowAux'],metrics:['rowAuxFontFamily','rowAuxSize','rowAuxWeight']},
+  total:{label:'Главная сумма',colors:['totalText','expense'],metrics:['balanceFontFamily','balanceSize','balanceWeight']},
+  subtitle:{label:'Подпись главной суммы',colors:['subtitle','accent'],metrics:['secondaryFontFamily','secondarySize','secondaryWeight']},
+};
 const metrics = { fontFamily:'system', secondaryFontFamily:'system', secondarySize:11, secondaryWeight:400,
   fontSize: 13, textWeight: 400, labelSize: 13, labelWeight: 600,
   balanceSize: 32, balanceWeight: 700, summarySize: 11, summaryWeight: 400,
@@ -89,7 +111,7 @@ export const SCOPE_METRIC_FIELDS = {
   widgets:[...shape,'padding',...fonts,'labelSize','labelWeight','balanceSize','balanceWeight',...shadows],
   separators:[...shape,'fontFamily','fontSize','textWeight',...shadows],
   table:[...shape,'fontFamily','fontSize','textWeight','rowHeight','stripeStrength','activeFill',...shadows],
-  operations:[...shape,'padding',...fonts,...shadows],
+  operations:[...shape,'padding','eventFill',...fonts,...shadows],
   charts:[...shape,'fontFamily','fontSize','textWeight','secondaryFontFamily','labelSize','labelWeight','axisSize','axisWeight','chartFill','lineWidth',...shadows],
   summaries:[...shape,'padding','fontFamily','summarySize','summaryWeight','secondaryFontFamily','secondarySize','secondaryWeight',...shadows],
 };
@@ -120,22 +142,29 @@ export function resolveAppearance(theme, scope = 'global') {
   const base = theme.global;
   const override = theme.overrides[scope];
   const colors = { ...base.colors, ...override?.colors };
+  for (const key of Object.keys(FINANCIAL_COLORS)) colors[key]=base.colors[key];
   const resolvedMetrics = { ...base.metrics, ...override?.metrics };
   colors.activeDay ??= colors.accent;
   colors.muted ??= mixColor(colors.surface, colors.text, resolvedMetrics.mutedContrast);
   colors.border ??= mixColor(colors.surface, colors.text, resolvedMetrics.gridContrast);
   colors.heading ??= colors.muted;
   colors.shadow ??= '#000000';
+  for (const [key,fallback] of Object.entries({rowLabel:colors.muted,rowValue:colors.text,rowForecast:colors.muted,rowAux:colors.muted,totalText:colors.text,subtitle:colors.muted})) colors[key] ??= fallback;
+  for (const part of ['rowLabel','rowValue','rowForecast','rowAux']) {
+    resolvedMetrics[part+'FontFamily'] ??= resolvedMetrics.fontFamily;
+    resolvedMetrics[part+'Size'] ??= part==='rowAux'?Math.round(resolvedMetrics.fontSize*.85*2)/2:resolvedMetrics.fontSize;
+    resolvedMetrics[part+'Weight'] ??= resolvedMetrics.textWeight;
+  }
+  resolvedMetrics.headingFontFamily ??= resolvedMetrics.fontFamily;
+  resolvedMetrics.balanceFontFamily ??= resolvedMetrics.fontFamily;
+  resolvedMetrics.widgetRowHeight ??= 18; resolvedMetrics.widgetRowGap ??= 2;
   return { colors, metrics:resolvedMetrics };
 }
 export function resolveChipAppearance(theme, scope, type) {
   const { colors, metrics } = resolveAppearance(theme, scope);
   const role = CHIP_TYPES[type]?.role || 'income';
   const tone = colors[role];
-  const explicitBorder = theme.overrides[scope]?.colors?.border || theme.global.colors.border;
-  const defaults = { bg: mixColor(colors.surface, tone, metrics.eventFill), text: tone, meta:tone,
-    border: explicitBorder || mixColor(colors.surface, tone, Math.min(100, metrics.eventFill + 20)) };
-  return Object.fromEntries(Object.entries(defaults).map(([part, fallback]) => [part, colors[chipColorKey(type, part)] || fallback]));
+  return {bg:mixColor(colors.surface,tone,metrics.eventFill),text:tone,meta:tone,border:mixColor(colors.surface,tone,Math.min(100,metrics.eventFill+20))};
 }
 export function alphaColor(hex, opacity) {
   const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));

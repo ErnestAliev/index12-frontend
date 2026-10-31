@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
+import {createAppearanceAPI} from './appearance-api.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const server = await createServer({ root, server: { host: '127.0.0.1', port: 5192, strictPort: true } });
 let browser, page;
@@ -15,18 +16,13 @@ try {
   page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   let actor = 'theme-user';
-  const libraries=new Map();
+  const api=createAppearanceAPI();
   const date = new Date();
   const dateKey = `${date.getFullYear()}-${Math.floor((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - new Date(date.getFullYear(), 0, 0)) / 86400000)}`;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     let data = [];
-    if(path.includes('/user/appearance-themes')) {
-      const items=libraries.get(actor)||[]; const req=route.request();
-      if(req.method()==='POST') { const item={...req.postDataJSON(),revision:1}; items.push(item);libraries.set(actor,items);data={theme:item}; }
-      else if(req.method()==='DELETE') {libraries.set(actor,items.filter(t=>!path.endsWith('/'+t.id)));data={ok:true};}
-      else data={themes:items};
-    }
+    if(await api.handle(route,actor))return;
     if (path.endsWith('/auth/me')) data = { _id: actor, name: 'Тест темы', role: 'admin', workspaceRole: 'admin', createdAt:'2026-01-01' };
     if (path.endsWith('/accounts')) data = [{ _id:'cash', name:'Тестовый счёт', companyId:'owner', initialBalance:13545757 }];
     if (path.endsWith('/companies')) data = [{ _id:'owner', name:'Владелец' }];
@@ -46,22 +42,21 @@ try {
   assert.equal(await open.evaluate(el=>el.previousElementSibling.classList.contains('codex-btn')), true);
   await open.click();
   const panel = page.getByRole('dialog', { name:'Настройки оформления', exact:true });
-  const scope = name => panel.getByRole('button', { name, exact:true }).click();
+  const scope = async name => {
+    if(['Операции','Разделители','Таблица'].includes(name)){await panel.getByRole('button',{name:'Таблица',exact:true}).click();await panel.getByLabel('Часть таблицы',{exact:true}).selectOption({'Таблица':'table','Операции':'operations','Разделители':'separators'}[name]);}
+    else if(['Графики','Итоги дня'].includes(name)){await panel.getByRole('button',{name:'Графики',exact:true}).click();await panel.getByLabel('Часть графиков',{exact:true}).selectOption(name==='Графики'?'charts':'summaries');}
+    else await panel.getByRole('button',{name,exact:true}).click();
+  };
   const color = async (label, value) => panel.getByLabel(label, { exact:true }).evaluate((el,v)=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}, value);
   const token = key => page.evaluate(key=>getComputedStyle(document.documentElement).getPropertyValue(key).trim(), key);
   const widgetFont = () => page.locator('.dashboard-card .card-item').first().evaluate(el=>getComputedStyle(el).fontSize);
   await panel.getByRole('button', { name:'Спокойная', exact:true }).click();
   await scope('Виджеты');
-  await color('Виджеты: Фон виджетов', '#fff4dd');
+  await color('Виджеты: Карточка: Фон виджетов', '#fff4dd');
   assert.equal(await page.locator('.dashboard-card').first().evaluate(el=>getComputedStyle(el).backgroundColor), 'rgb(255, 244, 221)');
   assert.equal(await token('--day-column-bg'), '#ffffff');
-  await scope('Вся тема'); await color('Вся тема: Поступления', '#125a40');
-  await scope('Виджеты'); await color('Виджеты: Поступления', '#2042aa');
-  assert.equal(await token('--widget-income-color'), '#2042aa');
-  assert.equal(await token('--op-income-color'), '#125a40');
-  assert.equal(await token('--graph-bar-income'), '#125a40');
-  await panel.getByRole('button', { name:'Наследовать цвет: Поступления', exact:true }).click();
-  assert.equal(await token('--widget-income-color'), '#125a40');
+  await color('Цвета операций: Доходы','#125a40');
+  for(const key of ['--widget-income-color','--op-income-color','--graph-bar-income','--day-summary-income'])assert.equal(await token(key),'#125a40');
   await scope('Таблица'); await color('Таблица: Фон таблицы', '#eef2ff');
   assert.equal(await token('--widget-background'), '#fff4dd');
   assert.equal(await token('--chart-wrapper-bg'), '#ffffff');
@@ -80,13 +75,13 @@ try {
   const canvas = page.locator('.graph-area canvas').first();
   const beforeChart = await canvas.evaluate(el => el.toDataURL());
   await scope('Графики');
-  await color('Графики: Поступления', '#a023ab');
+  await color('Цвета операций: Доходы', '#a023ab');
   await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--graph-bar-income').trim()==='#a023ab');
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await page.waitForFunction(before => document.querySelector('.graph-area canvas').toDataURL() !== before, beforeChart, { timeout:3000 });
   await panel.getByRole('textbox', { name:'Название темы', exact:true }).fill('Моя компактная тема');
-  await panel.getByRole('button', { name:'Сохранить как новую', exact:true }).click();
-  await panel.getByRole('status').filter({ hasText:'Тема сохранена' }).waitFor();
+  await panel.getByRole('button', { name:'Сохранить тему', exact:true }).click();
+  await panel.getByRole('status').filter({ hasText:'Сохранено: Десктоп' }).waitFor();
   await page.reload();
   await open.click();
   assert.equal(await token('--graph-bar-income'), '#a023ab');
@@ -95,6 +90,7 @@ try {
   const savedId = await list.locator('option').nth(1).getAttribute('value');
   await panel.getByRole('button', { name:'Тёплая', exact:true }).click();
   await list.selectOption(savedId);
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Обновить список тем"]').disabled);
   assert.equal(await token('--widget-background'), '#fff4dd');
   await panel.getByRole('button', { name:'Тёмная', exact:true }).click();
   assert.equal(await page.locator('html').getAttribute('data-appearance-custom'), null, 'light customizations do not replace the stock dark theme');
@@ -110,15 +106,17 @@ try {
   }
   await page.setViewportSize({ width:1512,height:982 });
   await list.selectOption(savedId);
-  await panel.getByRole('button', { name:'Удалить сохранённую тему', exact:true }).click();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Обновить список тем"]').disabled);
+  await panel.getByRole('button', { name:'Удалить тему', exact:true }).click();
   await page.waitForFunction(()=>document.querySelector('#personal-theme-list').options.length===1);
   actor = 'another-user'; await page.reload();
   assert.equal(await page.locator('html').getAttribute('data-appearance-custom'), null, 'another account does not inherit personal styles');
   await open.click(); assert.equal(await list.locator('option').count(), 1);
   actor = 'theme-user'; await page.reload();
-  assert.equal(await token('--graph-bar-income'), '#a023ab');
+  assert.equal(await page.locator('html').getAttribute('data-appearance-custom'),null,'deleting the active template restores the stock pair');
   await open.click();
-  await panel.getByRole('button', { name:'Итоги дня', exact:true }).click();
+  await panel.getByRole('button',{name:'Спокойная',exact:true}).click();
+  await scope('Итоги дня');
   await panel.getByRole('slider', { name:'Итоги дня: Размер основного текста', exact:true }).press('End');
   const summary = await page.locator('.day-summary').first().evaluate(el=>({height:el.clientHeight,content:el.scrollHeight}));
   assert.ok(summary.content<=summary.height+1, 'larger graph footer fonts remain visible');
@@ -138,8 +136,9 @@ try {
   assert.ok(mobileBounds.y>=400 && mobileBounds.height<430);
   assert.equal(await phonePanel.evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await phonePanel.getByRole('button',{name:'Виджеты',exact:true}).click();
-  await phonePanel.getByRole('slider',{name:'Виджеты: Размер главных сумм',exact:true}).press('End');
-  await phonePanel.getByRole('slider',{name:'Виджеты: Жирность главных сумм',exact:true}).press('End');
+  await phonePanel.getByLabel('Часть виджета',{exact:true}).selectOption('total');
+  await phonePanel.getByRole('slider',{name:'Виджеты: Главная сумма: Размер',exact:true}).press('End');
+  await phonePanel.getByRole('slider',{name:'Виджеты: Главная сумма: Жирность',exact:true}).press('End');
   for (const width of [320,390]) {
     await page.setViewportSize({width,height:844});
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

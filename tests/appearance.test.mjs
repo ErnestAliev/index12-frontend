@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CHIP_TYPES, COLOR_FIELDS, chipColorKey, resolveChipAppearance, appearanceStorageKey, appearanceTokens, defaultTheme, parsePreferences,
+import { CHIP_TYPES, COLOR_FIELDS, resolveChipAppearance, appearanceStorageKey, appearanceTokens, defaultTheme, parsePreferences,
   presetTheme, resolveAppearance, sanitizeTheme } from '../src/utils/appearance.js';
 
-test('a local colour survives global edits while untouched blocks keep inheriting', () => {
+test('financial colours remain synchronized even when an old section override exists', () => {
   const theme = presetTheme('calm', 'light');
   theme.overrides.widgets.colors.income = '#123456';
   theme.global.colors.income = '#654321';
   const vars = appearanceTokens(theme);
-  assert.equal(vars['--widget-income-color'], '#123456');
+  assert.equal(vars['--widget-income-color'], '#654321');
   assert.equal(vars['--op-income-color'], '#654321');
   assert.equal(vars['--graph-bar-income'], '#654321');
   delete theme.overrides.widgets.colors.income;
@@ -46,37 +46,24 @@ test('corrupt or future storage falls back safely and user keys never share a wo
   assert.equal(stored.themes.dark.enabled, false);
   assert.equal(stored.themes.light.global.colors.bg, '#f5f3ed');
 });
-test('chip background, text and border are independent, inherited and persisted separately', () => {
-  const t = presetTheme('calm', 'light');
-  t.global.colors[chipColorKey('income', 'bg')] = '#ffeedd';
-  t.overrides.operations.colors[chipColorKey('income', 'text')] = '#123456';
-  t.overrides.operations.colors[chipColorKey('income', 'border')] = '#654321';
-  const originalExpense = resolveChipAppearance(t, 'operations', 'expense');
-  const reloaded = sanitizeTheme(JSON.parse(JSON.stringify(t)), 'light');
-  assert.deepEqual(resolveChipAppearance(reloaded, 'operations', 'income'), {bg:'#ffeedd',text:'#123456',meta:t.global.colors.income,border:'#654321'});
-  assert.deepEqual(resolveChipAppearance(reloaded, 'operations', 'expense'), originalExpense);
-  const vars = appearanceTokens(reloaded);
-  assert.equal(vars['--op-income-bg'], '#ffeedd');
-  assert.equal(vars['--op-income-color'], '#123456');
-  assert.equal(vars['--op-income-border'], '#654321');
-  assert.equal(vars['--widget-income-color'], t.global.colors.income);
-  assert.equal(vars['--graph-bar-income'], t.global.colors.income);
-  delete reloaded.overrides.operations.colors[chipColorKey('income', 'text')];
-  assert.equal(resolveChipAppearance(reloaded, 'operations', 'income').text, t.global.colors.income);
+test('chip parts share the operation colour and legacy independent hue overrides cannot diverge', () => {
+  const theme=presetTheme('calm','light');
+  theme.global.colors.income='#123456';
+  theme.overrides.operations.colors.chip_income_text='#abcdef';
+  theme.overrides.widgets.colors.income='#fedcba';
+  theme.overrides.charts.colors.income='#654321';
+  const vars=appearanceTokens(sanitizeTheme(theme,'light'));
+  for(const key of ['--op-income-color','--op-income-meta','--widget-income-color','--graph-bar-income','--day-summary-income','--color-income'])assert.equal(vars[key],'#123456');
+  assert.notEqual(vars['--op-income-bg'],'#123456');
+  assert.equal(resolveChipAppearance(theme,'operations','income').text,'#123456');
 });
-test('chip and active-day opacity do not reduce the opacity of text, grid or unrelated chips', () => {
-  const t = presetTheme('calm', 'light');
-  t.overrides.table.colors.activeDay = '#ff0000';
-  t.overrides.operations.colors[chipColorKey('income', 'bg')] = '#ffffff';
-  t.overrides.operations.metrics.opacity = 25;
-  t.overrides.table.metrics.activeFill = 12;
-  const vars = appearanceTokens(t);
-  assert.equal(vars['--op-income-bg'], 'rgba(255, 255, 255, 0.25)');
-  assert.equal(vars['--appearance-table-active-overlay'], 'rgba(255, 0, 0, 0.12)');
-  assert.equal(vars['--op-income-color'], t.global.colors.income);
-  assert.notEqual(vars['--cell-bg-odd'], vars['--day-column-bg']);
-  t.overrides.table.metrics.activeFill = 0;
-  assert.equal(appearanceTokens(t)['--appearance-table-active-overlay'], 'rgba(255, 0, 0, 0)');
+test('chip and active-day opacity do not reduce text opacity or erase grid stripes',()=>{
+  const t=presetTheme('calm','light');t.overrides.table.colors.activeDay='#ff0000';t.overrides.operations.metrics.opacity=25;t.overrides.table.metrics.activeFill=12;
+  const vars=appearanceTokens(t);
+  assert.ok(vars['--op-income-bg'].endsWith(', 0.25)'));
+  assert.equal(vars['--appearance-table-active-overlay'],'rgba(255, 0, 0, 0.12)');
+  assert.equal(vars['--op-income-color'],t.global.colors.income);
+  assert.notEqual(vars['--cell-bg-odd'],vars['--day-column-bg']);
 });
 test('older saved themes keep working without retired settings and new input remains bounded', () => {
   const old = {enabled:true,global:{colors:{warning:'#abcdef',info:'#112233'},metrics:{eventFill:15}},overrides:{table:{colors:{chip_income_bg:'red;display:none'},metrics:{chipOpacity:999}}}};

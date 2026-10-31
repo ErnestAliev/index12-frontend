@@ -613,6 +613,7 @@ const externalTooltipHandler = (context) => {
       }
 
       const isTransferRoute = /^\s*[\d\s,.]+\sт:/.test(line) && line.includes(' → ');
+      if (isTransferRoute || /^\s*Переводы?:/i.test(line)) color='var(--op-transfer-color)';
       const textLayout = isTransferRoute
         ? 'white-space: normal; overflow-wrap: anywhere;'
         : 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';

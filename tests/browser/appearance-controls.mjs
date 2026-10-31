@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
+import {createAppearanceAPI} from './appearance-api.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const server = await createServer({ root, server: { host:'127.0.0.1', port:5193, strictPort:true } });
 const date = new Date();
@@ -24,10 +25,11 @@ try {
     const context=await browser.newContext({viewport:{width:fixture.width,height:fixture.height},isMobile:!!fixture.mobile,hasTouch:!!fixture.touch,
       userAgent:fixture.mobile?'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1':fixture.touch?'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Safari/604.1':undefined});
     await context.addInitScript(()=>{localStorage.setItem('app_data_version','1');localStorage.setItem('theme','light');localStorage.setItem('accountVisibilityMode','all');});
-    const page=await context.newPage(), errors=[],writes=[];
+    const page=await context.newPage(), errors=[],writes=[],api=createAppearanceAPI();
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('**/api/**',async route=>{
       const req=route.request(),path=new URL(req.url()).pathname;let data=[];
+      if(await api.handle(route,'controls-user'))return;
       if(req.method()!=='GET')writes.push(path);
       if(path.endsWith('/user/appearance-themes'))data={themes:[]};
       if(path.endsWith('/auth/me'))data={_id:'controls-user',role:'admin',workspaceRole:'admin',createdAt:'2026-01-01'};
@@ -47,7 +49,7 @@ try {
     };
     await open();
     const panel=page.getByRole('dialog',{name:'Настройки оформления',exact:true});
-    const scope=label=>panel.getByRole('button',{name:label,exact:true}).click();
+    const scope=async label=>{if(['Таблица','Операции'].includes(label)){await panel.getByRole('button',{name:'Таблица',exact:true}).click();await panel.getByLabel('Часть таблицы',{exact:true}).selectOption(label==='Операции'?'operations':'table');}else await panel.getByRole('button',{name:label,exact:true}).click();};
     const color=(label,value)=>panel.getByLabel(label,{exact:true}).evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},value);
     const slider=(label,value)=>panel.getByRole('slider',{name:label,exact:true}).evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},value);
     const geometry=()=>page.locator('.home-right-panel .icon-btn, .header-dashboard .action-square-btn, .mobile-layout .fixed-footer button').evaluateAll(nodes=>nodes.filter(el=>el.getBoundingClientRect().width).map(el=>{
@@ -59,17 +61,15 @@ try {
       assert.deepEqual(await geometry(),lightGeometry,`${fixture.name}: theme cannot resize controls or icons`);
       await panel.getByRole('button',{name:'Спокойная',exact:true}).click();
       assert.ok(!(await panel.innerText()).includes('Предоплата')&&!(await panel.innerText()).includes('Кредит'));
-      await scope('Операции');
-      assert.equal(await panel.getByLabel('Тип чипа операции',{exact:true}).locator('option').count(),4);
-      const bg=mode==='light'?'#efcfad':'#42362a',text=mode==='light'?'#17395b':'#dfeeff',border='#9d4573';
+      const text=mode==='light'?'#17395b':'#dfeeff';
       for(const [type,[label,selector]] of Object.entries(types)){
-        await panel.getByLabel('Тип чипа операции',{exact:true}).selectOption(type);
-        for(const [part,value]of[['Фон',bg],['Текст',text],['Вспомогательный текст',text],['Обводка',border]])await color(`Операции: ${label}: ${part}`,value);
+        await color(`Цвета операций: ${{income:'Доходы',expense:'Расходы',transfer:'Переводы',withdrawal:'Вывод средств'}[type]}`,text);
         const rgb=hex=>'rgb('+[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)).join(', ')+')';
-        await page.waitForFunction(({selector,bg,border})=>{const el=document.querySelector(selector);if(!el)return false;const s=getComputedStyle(el);return s.backgroundColor===bg&&s.borderTopColor===border&&s.borderLeftColor===border;},{selector:prefix+selector,bg:rgb(bg),border:rgb(border)});
-        const style=await page.locator(prefix+selector).first().evaluate(el=>{const s=getComputedStyle(el),amount=el.querySelector('.op-amount,.amt'),meta=el.querySelector('.op-meta,.desc');return {bg:s.backgroundColor,text:getComputedStyle(amount).color,meta:getComputedStyle(meta).color,border:s.borderTopColor,left:s.borderLeftColor};});
-        assert.deepEqual(style,{bg:rgb(bg),text:rgb(text),meta:rgb(text),border:rgb(border),left:rgb(border)},`${fixture.name} ${mode} ${type}`);
+        await page.waitForFunction(({selector,text})=>getComputedStyle(document.querySelector(selector+' .op-amount,'+selector+' .amt')).color===text,{selector:prefix+selector,text:rgb(text)});
+        const style=await page.locator(prefix+selector).first().evaluate(el=>{const s=getComputedStyle(el),amount=el.querySelector('.op-amount,.amt'),meta=el.querySelector('.op-meta,.desc');return {text:getComputedStyle(amount).color,meta:getComputedStyle(meta).color,border:s.borderTopColor,left:s.borderLeftColor};});
+        assert.equal(style.text,rgb(text));assert.equal(style.meta,rgb(text));assert.equal(style.border,style.left);
       }
+      await scope('Операции');
       await slider('Операции: Непрозрачность фона',25);
       await page.waitForFunction(selector=>getComputedStyle(document.querySelector(selector)).backgroundColor.endsWith(', 0.25)'),`${prefix}.income`);
       const translucent=await page.locator(`${prefix}.income`).first().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,opacity:getComputedStyle(el).opacity}));
@@ -89,7 +89,8 @@ try {
       await slider('Таблица: Непрозрачность активного дня',20);
       await scope('Виджеты');
       const radius=mode==='light'?12:18;
-      await slider('Виджеты: Скругление виджетов',radius);
+      await panel.getByLabel('Часть виджета',{exact:true}).selectOption('card');
+      await slider('Виджеты: Карточка: Скругление виджетов',radius);
       const cards=page.locator(fixture.mobile?'.mobile-totals-wrapper .total-card':'.header-dashboard .dashboard-card-wrapper');
       assert.ok((await cards.evaluateAll(nodes=>nodes.map(el=>getComputedStyle(el).borderRadius))).every(value=>value===`${radius}px`));
       if(fixture.mobile){
@@ -101,11 +102,10 @@ try {
     }
     await panel.getByRole('button',{name:'Светлая',exact:true}).click();
     await page.reload();await page.locator(`${prefix}.income`).first().waitFor();await open();await scope('Операции');
-    await panel.getByLabel('Тип чипа операции',{exact:true}).selectOption('income');
-    assert.equal(await panel.getByLabel('Операции: Поступление: Фон HEX',{exact:true}).inputValue(),'#efcfad');
+    assert.equal(await panel.getByLabel('Цвета операций: Доходы HEX',{exact:true}).inputValue(),'#17395b');
     assert.equal(await panel.getByRole('slider',{name:'Операции: Непрозрачность фона',exact:true}).inputValue(),'25');
     assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
-    console.log(`PASS ${fixture.name}: four chip types with independent parts, opacity, visible today grid, widget radius, equal light/dark icon geometry, persistence; no data writes`);
+    console.log(`PASS ${fixture.name}: four chip types with synchronized colours, opacity, visible today grid, widget radius, equal light/dark icon geometry, persistence; no data writes`);
     await context.close();
   }
 } finally {await browser?.close();await server.close();}

@@ -337,7 +337,8 @@ const tooltipAmountTone = computed(() => {
   const op = props.operation;
   if (!op) return '';
   if (isTransferOp.value) return 'transfer';
-  if (op.type === 'income' && !isWithdrawalOp.value) return 'income';
+  if (isWithdrawalOp.value) return 'withdrawal';
+  if (op.type === 'income') return 'income';
   if (op.type === 'expense' || isWithdrawalOp.value) return 'expense';
   return '';
 });
@@ -751,6 +752,7 @@ const onDrop = (event) => {
   color: var(--op-expense-color, #ff5b5b);
   font-weight: 700;
 }
+.op-tooltip-value--withdrawal { color:var(--op-withdrawal-color); font-weight:700; }
 .op-tooltip-value--transfer {
   color: var(--op-transfer-color, #4f7dff);
   font-weight: 700;
