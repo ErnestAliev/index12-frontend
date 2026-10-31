@@ -2,6 +2,7 @@
 .codex-input-wrapper { box-sizing: border-box; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: end; gap: 6px; min-width: 0; padding: 6px; border: 1px solid var(--codex-pane-border); border-radius: 14px; background: var(--codex-pane-surface); transition: border-color .15s, box-shadow .15s; }
 .codex-input-wrapper:focus-within { border-color: var(--codex-pane-focus); box-shadow: 0 0 0 2px var(--codex-pane-focus-soft); }
 .codex-input { box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 36px; height: 36px; margin: 0; padding: 7px 2px; border: 0; border-radius: 0; outline: 0; resize: none; background: transparent; color: var(--codex-pane-text); font: inherit; font-size: 14px; line-height: 22px; overflow-y: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+.codex-input:focus, .codex-input:focus-visible { outline: none !important; box-shadow: none; }
 .codex-input::placeholder { color: var(--codex-pane-muted); opacity: 1; }
 .codex-input-buttons { display: flex; align-items: center; gap: 4px; margin: 0; }
 .codex-attach-btn, .codex-mic-btn, .codex-send-btn { box-sizing: border-box; display: grid; place-items: center; width: 36px; height: 36px; min-width: 36px; margin: 0; padding: 0; border: 0; border-radius: 9px; color: var(--codex-pane-muted); background: transparent; cursor: pointer; transition: background-color .15s, color .15s; }
