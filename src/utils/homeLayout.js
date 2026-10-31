@@ -19,5 +19,5 @@ export function getHomeRouteRedirect(routeName, device) {
 // The same column count drives ordering, visible cards and expanded height.
 export function getHeaderWidgetColumns({ width, height }) {
   if (width < 768 || width > 1400) return 6;
-  return height > width ? 4 : 5;
+  return height > width ? 2 : 5;
 }

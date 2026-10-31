@@ -4,6 +4,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
 import DateRangePicker from './DateRangePicker.vue';
+import { factPeriodLabel } from '@/utils/dashboardFinance.js';
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -189,17 +190,7 @@ const financialStats = computed(() => {
     return { balances, maxBalance };
 });
 
-const getStatusColor = (currentBalance, totalSystemBalance) => {
-    const safeBalance = Number(currentBalance) || 0;
-    
-    if (safeBalance <= 0) return 'var(--color-danger, #FF3B30)';
-
-    const ratio = safeBalance / totalSystemBalance;
-    
-    if (ratio >= 0.5) return 'var(--widget-income-color, #34C759)';
-    if (ratio > 0.1) return 'var(--color-warning, #FFCC00)';
-    return 'var(--color-danger, #FF3B30)';
-};
+const getStatusColor = currentBalance => Number(currentBalance) < 0 ? 'var(--color-danger, #FF3B30)' : null;
 
 const getFutureColor = (item) => {
     if (props.isDeltaMode) {
@@ -544,6 +535,7 @@ const formatSignedMoney = (amount, sign) => {
       placeholder="Выберите период"
     />
     
+    <div class="balance-caption"><span>{{ ['accounts', 'companies'].includes(widgetKey) ? 'Сейчас' : factPeriodLabel(mainStore.periodFilter) }}</span><span v-if="showFutureBalance">{{ isDeltaMode ? 'Изменение до' : 'Остаток на' }} {{ new Date(mainStore.projection.rangeEndDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) }}</span></div>
     <div class="card-items-list" :class="{ 'forecast-mode': showFutureBalance }">
       <div v-for="item in processedItems" :key="item._id" class="card-item">
         <span class="name-cell">
@@ -643,6 +635,7 @@ const formatSignedMoney = (amount, sign) => {
 </template>
 
 <style scoped>
+.balance-caption { display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; color: var(--text-mute); font-size: 11px; margin-bottom: 4px; flex-shrink: 0; }
 .dashboard-card { 
   display: flex; flex-direction: column; 
   height: 100%; 

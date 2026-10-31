@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { useUiStore } from '@/stores/uiStore';
 import { formatNumber } from '@/utils/formatters.js';
 import { useWidgetData } from '@/composables/useWidgetData.js';
 
@@ -11,6 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['click', 'add', 'edit']);
 
 const mainStore = useMainStore();
+const uiStore = useUiStore();
 const { getWidgetItems } = useWidgetData();
 
 // Robust number parser for values that may be formatted as strings like "2 400 000 ₸".
@@ -37,12 +39,12 @@ const toNum = (v) => {
 
 const widgetInfo = computed(() => {
   const w = mainStore.allWidgets.find(x => x.key === props.widgetKey);
-  return w ? w.name : 'Виджет';
+  return w?.name || '';
 });
 
 const isForecastActive = computed(() => {
   const val = mainStore.dashboardForecastState[props.widgetKey];
-  return val !== undefined ? val : true; 
+  return val === true;
 });
 
 const isListWidget = computed(() => {
@@ -73,8 +75,8 @@ const isTransferWidget = computed(() => {
     return props.widgetKey === 'transfers';
 });
 
-const sortMode = computed(() => mainStore.widgetSortMode);
-const filterMode = computed(() => mainStore.widgetFilterMode);
+const sortMode = computed(() => uiStore.getWidgetSortMode(props.widgetKey));
+const filterMode = computed(() => uiStore.getWidgetFilterMode(props.widgetKey));
 
 const items = computed(() => {
   if (isLiabilitiesWidget.value) return [];
@@ -243,7 +245,7 @@ const cardStyleClass = computed(() => {
     <div class="widget-header">
       <div class="header-badge badge-fact">Факт</div>
       <div class="widget-title">{{ widgetInfo }}</div>
-      <div class="header-badge badge-plan" :class="{ active: isForecastActive }">План</div>
+      <div v-if="isForecastActive" class="header-badge badge-plan active">{{ isBalanceWidget ? 'Остаток на ' : 'Изменение до ' }}{{ new Date(mainStore.projection.rangeEndDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) }}</div>
     </div>
 
     <div class="widget-body scrollable-list">
@@ -295,7 +297,7 @@ const cardStyleClass = computed(() => {
           </div>
           
           <!-- КОЛОНКА 3: ПЛАН (Дельта) -->
-          <div class="col-right">
+          <div v-if="isForecastActive" class="col-right">
               <template v-if="isForecastActive">
                   <span :class="getRightValueClass(item)">
                       {{ getRightValueFormatted(item) }}
@@ -346,21 +348,22 @@ const cardStyleClass = computed(() => {
 .style-light-blue { border-top-color: rgba(135,189,233,0.4); }
 .style-gray { border-top-color: rgba(135,189,233,0.4); }
 
-.widget-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; min-height: 30px; }
+.widget-header { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; padding: 10px 12px 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; min-height: 30px; }
 .widget-title { font-size: 15px; color: var(--color-text, #fff); font-weight: 600; text-align: center; flex-grow: 1; }
 .header-badge { font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600; text-transform: capitalize; min-width: 40px; text-align: center; }
 .badge-fact { background-color: rgba(135,189,233,0.15); color: var(--color-text, #1a1a1a); }
 .badge-plan { background-color: transparent; color: var(--text-mute, #888); border: 1px solid var(--widget-border, #e0e0e0); }
-.badge-plan.active { background-color: rgba(52, 199, 89, 0.15); color: var(--color-primary, #34c759); border: 1px solid var(--color-primary, #34c759); }
+.badge-plan.active { margin-left: auto; background-color: rgba(52, 199, 89, 0.15); color: var(--color-primary, #34c759); border: 1px solid var(--color-primary, #34c759); }
 
 .widget-body { flex-grow: 1; overflow: hidden; padding: 10px 12px 14px 12px; }
 .items-list.three-col-grid { display: flex; flex-direction: column; gap: 8px; }
-.list-item-grid { display: grid; grid-template-columns: 1fr 1.2fr 1fr; align-items: center; font-size: 13px; line-height: 1.3; }
+.list-item-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; font-size: 13px; line-height: 1.3; }
 
-.col-left { text-align: left; white-space: nowrap; font-weight: 500; }
+.col-left { grid-column: 2; grid-row: 1; text-align: right; white-space: nowrap; font-weight: 500; }
 
 .col-center {
-    text-align: center;
+    grid-column: 1; grid-row: 1;
+    text-align: left;
     color: var(--color-text, #ccc);
     white-space: nowrap;
     overflow: hidden;
@@ -368,10 +371,10 @@ const cardStyleClass = computed(() => {
     padding: 0 4px;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
 }
 
-.col-right { text-align: right; white-space: nowrap; font-weight: 600; }
+.col-right { grid-column: 2; grid-row: 2; text-align: right; white-space: nowrap; font-weight: 600; }
 
 .white-text { color: var(--color-text, #fff); opacity: 0.9; }
 .green-text { color: var(--color-primary, #34c759); }

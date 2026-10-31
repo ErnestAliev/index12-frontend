@@ -609,8 +609,8 @@ const isChartsExpanded = ref(true);
 
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
-        // Calculate rows needed: dashboardLayout + 2 fixed widgets (currentTotal, futureTotal)
-        const totalWidgets = mainStore.dashboardLayout.length + 2;
+        // Include the fixed money overview when calculating expanded rows.
+        const totalWidgets = mainStore.dashboardLayout.length + 1;
         const rowSize = getHeaderWidgetColumns({ width: window.innerWidth, height: window.innerHeight });
         const rows = Math.min(3, Math.ceil(totalWidgets / rowSize));
         // Each row: 130px + padding between rows
@@ -1194,7 +1194,7 @@ let previousHeaderColumns = getHeaderWidgetColumns({ width: window.innerWidth, h
 const onWindowResize = () => {
   const columns = getHeaderWidgetColumns({ width: window.innerWidth, height: window.innerHeight });
   if (mainStore.isHeaderExpanded && columns !== previousHeaderColumns) {
-    headerHeightPx.value = Math.min(3, Math.ceil((mainStore.dashboardLayout.length + 2) / columns)) * 130 + 20;
+    headerHeightPx.value = Math.min(3, Math.ceil((mainStore.dashboardLayout.length + 1) / columns)) * 130 + 20;
   }
   previousHeaderColumns = columns;
   measureWorkspaceWidth();
@@ -1530,7 +1530,7 @@ const handleRefundDelete = async (op) => {
   <div v-else-if="!mainStore.user" class="login-screen"><div class="login-box"><h1>Управляйте финансами легко INDEX12.COM</h1><a :href="googleAuthUrl" class="google-login-button">Войти через Google</a><a v-if="isLocalhost" :href="devAuthUrl" class="dev-login-button">Тестовый вход (Localhost)</a></div></div>
   <div v-else class="home-layout" @click="closeAllMenus">
     <!-- 🟢 NEW: Hide header (widgets) for timeline-only users -->
-    <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader ref="theHeaderRef" /></header>
+    <header v-if="!mainStore.isTimelineOnly" class="home-header" ref="homeHeaderRef"><TheHeader @edit-operation="handleEditOperation" ref="theHeaderRef" /></header>
     <div class="header-resizer" :class="{ 'expanded': isHeaderTall }" v-if="!mainStore.isTimelineOnly" ref="headerResizerRef"></div>
     <div class="home-body" :style="{ '--timeline-height': timelineHeightPx + 'px', '--divider-height': DIVIDER_H + 'px' }">
       <aside class="home-left-panel">

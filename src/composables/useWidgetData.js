@@ -61,16 +61,7 @@ export function useWidgetData() {
     });
 
     // 2. Color Definition
-    const getStatusColor = (currentBalance, totalSystemBalance) => {
-        const safeBalance = toNum(currentBalance);
-        if (safeBalance <= 0) return 'var(--color-danger, #FF3B30)'; // Red
-
-        const ratio = safeBalance / totalSystemBalance;
-
-        if (ratio >= 0.5) return 'var(--widget-income-color, #34C759)'; // Green
-        if (ratio > 0.1) return 'var(--color-warning, #FFCC00)';  // Yellow
-        return 'var(--color-danger, #FF3B30)';                   // Red
-    };
+    const getStatusColor = currentBalance => Number(currentBalance) < 0 ? 'var(--color-danger, #FF3B30)' : null;
 
     // 3. Main Data Retrieval Function
     const getWidgetItems = (widgetKey, isForecastActive = false) => {

@@ -192,3 +192,12 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
   border-radius: 50%;
 }
 </style>
+
+<style scoped>
+@media (max-width: 400px) {
+  .chart-controls-row { display: grid; grid-template-columns: repeat(4, 1fr); height: auto; min-height: 96px; gap: 2px 6px; padding: 4px 8px 16px; justify-items: center; }
+  .month-nav { grid-column: 1 / -1; grid-row: 1; min-width: 0; justify-content: center; }
+  .month-nav .arrow-btn { width: 36px; height: 32px; }
+  .chart-controls-row > .icon-circle { width: 40px; height: 40px; }
+}
+</style>

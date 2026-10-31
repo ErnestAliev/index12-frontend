@@ -49,12 +49,12 @@ try {
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForSelector('.header-dashboard');
   await page.waitForFunction(() => !document.querySelector('.section-loading-overlay'));
-  for (const [width, height, expected] of [[768, 1024, 4], [834, 1194, 4], [1024, 1366, 4], [1024, 768, 5], [1366, 1024, 5], [1512, 982, 6]]) {
+  for (const [width, height, expected] of [[768, 1024, 2], [834, 1194, 2], [1024, 1366, 2], [1024, 768, 4], [1366, 1024, 4], [1512, 982, 4]]) {
     await page.setViewportSize({ width, height });
     await page.waitForFunction(expected => getComputedStyle(document.querySelector('.header-dashboard')).gridTemplateColumns.split(' ').length === expected, expected);
     const geometry = await page.locator('.header-dashboard').evaluate(el => {
       const cards = [...el.querySelectorAll(':scope > .dashboard-card-wrapper')].filter(card => getComputedStyle(card).display !== 'none');
-      return { count: cards.length, totals: [...el.querySelectorAll('.card-total-balance')].filter(total => total.getBoundingClientRect().width).map(total => {
+      return { count: cards.length, totals: [...el.querySelectorAll('.money-current')].filter(total => total.getBoundingClientRect().width).map(total => {
         const range = document.createRange(); range.selectNodeContents(total);
         const text = range.getBoundingClientRect();
         const card = total.closest('.dashboard-card').getBoundingClientRect();
@@ -62,7 +62,7 @@ try {
       }) };
     });
     assert.equal(geometry.count, expected, `visible card count at ${width}x${height}`);
-    assert.equal(geometry.totals.length, 2);
+    assert.equal(geometry.totals.length, 1);
     for (const total of geometry.totals) assert.ok(total.fits && total.bottom <= total.cardBottom, JSON.stringify({ width, total }));
     console.log(`PASS ${width}x${height}: ${expected} cards, complete totals`);
   }
