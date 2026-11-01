@@ -128,6 +128,24 @@ export function createOperationSync() {
     return next;
   }
 
+  // Only a committed history restoration may remove a deletion marker.
+  function allowHistoryRestore(op) {
+    const ids = [op?._id, op?._id2].filter(Boolean).map(idOf);
+    for (const id of ids) {
+      const entry = entries.value[id];
+      if (entry?.kind === 'delete' && versionOf(op) <= versionOf(entry.op)) return false;
+    }
+    const next = { ...entries.value };
+    let changed = false;
+    for (const id of ids)
+      if (next[id]?.kind === 'delete') {
+        delete next[id];
+        changed = true;
+      }
+    if (changed) entries.value = next;
+    return !isDeleted(op);
+  }
+
   function clear() {
     generation++;
     clearedThrough = sequence;
@@ -137,5 +155,5 @@ export function createOperationSync() {
     queues.clear();
   }
 
-  return { entries, begin, preview, acknowledge, reject, receive, reconcileDay, apply, enqueue, isCurrent, isDeleted, clear };
+  return { entries, begin, preview, acknowledge, reject, receive, reconcileDay, apply, enqueue, isCurrent, isDeleted, allowHistoryRestore, clear };
 }

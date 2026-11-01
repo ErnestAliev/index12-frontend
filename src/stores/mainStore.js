@@ -2076,8 +2076,8 @@ export const useMainStore = defineStore('mainStore', () => {
                 operationSync.preview(opId, token, preview);
                 _publishOperationState(newDateKey);
                 const payload = { ...opData, dateKey: newDateKey, cellIndex: preview.cellIndex };
-                const result = await axios.put(`${API_BASE_URL}/events/${opId}`, payload);
-                if (options.syncLegacyPair && oldOp._id2) {
+                const result = options.write ? await options.write(payload) : await axios.put(`${API_BASE_URL}/events/${opId}`, payload);
+                if (options.syncLegacyPair && oldOp._id2 && !options.write) {
                     await axios.put(`${API_BASE_URL}/events/${oldOp._id2}`, payload);
                 }
                 return result;
@@ -2110,7 +2110,7 @@ export const useMainStore = defineStore('mainStore', () => {
         }
     }
 
-    const deleteOperation = async (operation) => {
+    const deleteOperation = async (operation, options = {}) => {
         if (!canDelete.value) throw new Error('У вас нет прав на удаление операций');
         const opId = _toStr(operation?._id || operation?.id);
         if (!opId) return;
@@ -2135,7 +2135,7 @@ export const useMainStore = defineStore('mainStore', () => {
         try {
             const requestIds = [opId];
             await Promise.all(requestIds.map(id => operationSync.enqueue(id, async () => {
-                try { return await axios.delete(`${API_BASE_URL}/events/${id}`, { params: { cascadeTransfer: true } }); }
+                try { return options.write ? await options.write() : await axios.delete(`${API_BASE_URL}/events/${id}`, { params: { cascadeTransfer: true } }); }
                 catch (error) { if (error.response?.status !== 404) throw error; }
             })));
             tokens.forEach((token, id) => operationSync.acknowledge(id, token));
@@ -2152,6 +2152,152 @@ export const useMainStore = defineStore('mainStore', () => {
             throw error;
         }
     };
+
+    // History receipts use the same preview, revision and cache machinery as edits.
+    // No entity reload, snapshot fetch, projection reset or cache clearing is needed.
+    function _historyChanges(changes) {
+        const canonical = (field) => {
+            const rows = (changes || []).map((change) => change[field]).filter(Boolean);
+            const originals = new Map(rows.map((op) => [_toStr(op._id), op]));
+            return new Map(
+                _mergeTransfers(rows).map((op) => [
+                    _toStr(op._id),
+                    {
+                        ...op,
+                        dateKey: op.dateKey || originals.get(_toStr(op._id))?.dateKey || _getDateKey(new Date(op.date)),
+                    },
+                ]),
+            );
+        };
+        const before = canonical('before'),
+            after = canonical('after');
+        return [...new Set([...before.keys(), ...after.keys()])].map((id) => ({
+            before: before.get(id) || null,
+            after: after.get(id) || null,
+        }));
+    }
+    function applyHistoryOperationChanges(changes, workspaceId = null) {
+        if (workspaceId && String(user.value?.currentWorkspaceId) !== String(workspaceId)) return;
+        const canonical = _historyChanges(changes);
+        const known = new Map(allKnownOperations.value.map((op) => [_toStr(op._id), op]));
+        const deletedBefore = new Set(
+            canonical
+                .filter((change) => operationSync.isDeleted(change.after || change.before))
+                .map((change) => _toStr((change.after || change.before)._id)),
+        );
+        const days = new Set();
+        for (const change of canonical) {
+            const op = change.after || change.before,
+                id = _toStr(op._id),
+                old = known.get(id);
+            const entry = operationSync.entries.value[id];
+            if (change.after) {
+                if (old && Number(old.syncVersion || 0) >= Number(op.syncVersion || 0)) continue;
+                if (!change.before && !operationSync.allowHistoryRestore(op)) continue;
+                if (!operationSync.receive(op)) continue;
+                const rich = _populateOp(op);
+                const previous = old || (change.before && !deletedBefore.has(id) ? _populateOp(change.before) : null);
+                _transitionSnapshot(previous, rich);
+                const token = operationSync.begin(rich, 'upsert', previous);
+                operationSync.acknowledge(id, token, rich);
+            } else {
+                if (old && Number(old.syncVersion || 0) > Number(op.syncVersion || 0)) continue;
+                if (
+                    entry?.kind === 'delete' &&
+                    !entry.pending &&
+                    Number(entry.op?.syncVersion || 0) >= Number(op.syncVersion || 0)
+                )
+                    continue;
+                const previous = old || (!deletedBefore.has(id) ? _populateOp(op) : null);
+                if (previous) _transitionSnapshot(previous, null);
+                for (const deletedId of [id, _toStr(op._id2)].filter(Boolean)) {
+                    const deletedOp = deletedId === id ? op : { ...op, _id: deletedId, _id2: null };
+                    const token = operationSync.begin(deletedOp, 'delete', old || op);
+                    operationSync.acknowledge(deletedId, token);
+                }
+            }
+            if (old?.dateKey) days.add(old.dateKey);
+            if (change.before?.dateKey) days.add(change.before.dateKey);
+            if (change.after?.dateKey) days.add(change.after.dateKey);
+        }
+        if (days.size) {
+            _bumpDayMutationVersions(...days);
+            _publishOperationState(...days);
+        }
+    }
+    async function undoOperationChange(row, execute) {
+        let receiptPromise;
+        const generation = cacheGeneration.value;
+        const receipt = () =>
+            (receiptPromise ||= Promise.resolve()
+                .then(execute)
+                .then((result) => {
+                    if (
+                        generation !== cacheGeneration.value ||
+                        (result.workspaceId && String(user.value?.currentWorkspaceId) !== String(result.workspaceId))
+                    )
+                        throw new Error('Рабочее пространство изменилось во время отмены.');
+                    return result;
+                }));
+        let operation = allKnownOperations.value.find(
+            (op) => _idsMatch(op._id, row.operationId) || _idsMatch(op._id2, row.operationId),
+        );
+        if (row.action === 'deleted') {
+            const result = await receipt();
+            applyHistoryOperationChanges(result.changes, result.workspaceId);
+            return;
+        }
+        if (!operation) {
+            const response = await axios.get(`${API_BASE_URL}/events/${row.operationId}`);
+            operation = _populateOp(response.data);
+        }
+        if (row.action === 'created') {
+            await deleteOperation(operation, { write: async () => ({ data: await receipt() }) });
+        } else {
+            const patch = JSON.parse(JSON.stringify(row.change.before));
+            if (row.change.field === 'project' && patch.splitMeta?.length)
+                patch.projectIds = patch.splitMeta.map((s) => s.projectId);
+            if (row.change.field === 'date') {
+                if (_getDateKey(new Date(patch.date)) !== patch.dateKey) patch.date = _parseDateKey(patch.dateKey);
+                patch.cellIndex = _findFreeCachedCell(patch.dateKey, patch.cellIndex || 0, [operation._id]);
+            }
+            const primary = operation;
+            const sourceSaving = updateOperation(primary._id, patch, {
+                originalOperation: primary,
+                write: async () => {
+                    const result = await receipt();
+                    const after = _historyChanges(result.changes).find(
+                        (c) => _idsMatch(c.after?._id, primary._id) || _idsMatch(c.after?._id2, row.operationId),
+                    )?.after;
+                    if (!after) throw new Error('Сервер не вернул изменённую операцию.');
+                    return { data: after };
+                },
+            });
+            const saving = [sourceSaving];
+            if (row.change.field === 'date' && primary.isSplitParent) {
+                for (const child of allKnownOperations.value.filter((op) => _idsMatch(op.parentOpId, primary._id))) {
+                    saving.push(
+                        updateOperation(child._id, patch, {
+                            originalOperation: child,
+                            keepCellIndex: true,
+                            beforeWrite: sourceSaving.then((result) => ({ cellIndex: result.cellIndex })),
+                            write: async () => {
+                                const result = await receipt(),
+                                    after = result.changes.find((c) => _idsMatch(c.after?._id, child._id))?.after;
+                                if (!after) throw new Error('Сервер не вернул связанную долю операции.');
+                                return { data: after };
+                            },
+                        }),
+                    );
+                }
+            }
+            const completed = await Promise.allSettled(saving);
+            const failed = completed.find((result) => result.status === 'rejected');
+            if (failed) throw failed.reason;
+        }
+        const result = await receipt();
+        applyHistoryOperationChanges(result.changes, result.workspaceId);
+    }
 
     async function fetchOperationsRange(startDate, endDate, options = {}) {
         try {
@@ -3443,6 +3589,7 @@ export const useMainStore = defineStore('mainStore', () => {
         loadCalculationData,
 
         createTransfer, updateTransfer, updateOperation, createEvent,
+        undoOperationChange, applyHistoryOperationChanges,
 
         fetchOperationsRange, updateFutureProjectionWithData,
 

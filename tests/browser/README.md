@@ -55,3 +55,8 @@ selective undo and local preference restoration. It also wheels over the
 centre of the operation journal with 180 rows to verify native list scrolling.
 All API data is synthetic. Transaction rollback, permissions and field conflicts
 are covered by `tests/change-history.test.cjs` in the backend checkout.
+The history checks compare totals, the selected period and unrelated chips before
+and after undoing a date or amount, then restore a deleted transfer. A DOM observer
+checks that unrelated chips never disappear. `tests/history-operation-sync.test.mjs`
+compares all widget figures and chart data through full move/undo and delete/restore
+cycles, including split shares, duplicate receipts and lost HTTP responses.

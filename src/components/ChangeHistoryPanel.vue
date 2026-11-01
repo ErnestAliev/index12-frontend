@@ -101,10 +101,15 @@ async function undo() {
   try {
     const body = { confirm: true, deviceId: historyDeviceId };
     if (row.target === "preference") body.current = preferenceValue(row.key);
-    const result = await historyRequest(`/${row.id}/undo`, "POST", body);
-    if (result.preference) await applyPreferenceUndo(result.preference);
-    else if (row.kind === "operation") await store.forceRefreshAll();
-    else await appearance.refreshLibrary();
+    if (row.kind === "operation") {
+      await store.undoOperationChange(row, () =>
+        historyRequest(`/${row.id}/undo`, "POST", body),
+      );
+    } else {
+      const result = await historyRequest(`/${row.id}/undo`, "POST", body);
+      if (result.preference) await applyPreferenceUndo(result.preference);
+      else await appearance.refreshLibrary();
+    }
     confirmation.value = null;
     await load();
   } catch (e) {

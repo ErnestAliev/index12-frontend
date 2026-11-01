@@ -47,6 +47,7 @@ export const useSocketStore = defineStore('socket', () => {
 
     const shouldIgnoreSocketEvent = (meta) => {
         if (!meta) return false;
+        if (meta.historyReceipt) return true;
 
         if (meta.sourceSocketId && socket.value?.id && meta.sourceSocketId === socket.value.id) {
             return true;
@@ -110,6 +111,10 @@ export const useSocketStore = defineStore('socket', () => {
         socket.value.on('operation_deleted', (id, meta) => {
             if (shouldIgnoreSocketEvent(meta)) return;
             if (mainStore.onSocketOperationDeleted) mainStore.onSocketOperationDeleted(id, meta);
+        });
+
+        socket.value.on('operations_reverted', (receipt) => {
+            mainStore.applyHistoryOperationChanges(receipt?.changes || [], receipt?.workspaceId);
         });
 
         socket.value.on('operations_imported', (count, meta) => {
