@@ -4,9 +4,10 @@ import CodexGlyph from './CodexGlyph.vue';
 const props = defineProps({
   modelValue: { type: String, default: '' }, busy: Boolean, recording: Boolean,
   speechSupported: Boolean, mobile: Boolean, attachmentsEnabled: Boolean, hasAttachments: Boolean,
+  liveVoice: Boolean, voiceAvailable: Boolean, voiceSupported: Boolean,
   placeholder: { type: String, default: 'Спросите Codex' },
 });
-const emit = defineEmits(['update:modelValue', 'send', 'microphone', 'attach']);
+const emit = defineEmits(['update:modelValue', 'send', 'microphone', 'attach', 'voice']);
 const input = ref(null);
 let observer;
 const resize = () => nextTick(() => {
@@ -50,6 +51,9 @@ onBeforeUnmount(() => observer?.disconnect());
           aria-label="Голосовой ввод" :aria-pressed="recording" @click="emit('microphone')">
           <CodexGlyph name="microphone" />
         </button>
+        <button v-if="liveVoice" type="button" class="codex-mic-btn codex-live-voice-btn" :disabled="busy || !voiceAvailable || !voiceSupported"
+          :title="!voiceSupported ? 'Голосовой диалог не поддерживается в этом браузере' : !voiceAvailable ? 'Голосовой диалог пока недоступен' : 'Начать голосовой диалог'"
+          aria-label="Начать голосовой диалог" @click="emit('voice')"><CodexGlyph name="waveform" /></button>
         <button type="submit" class="codex-send-btn" :disabled="busy || !(modelValue.trim() || hasAttachments)" title="Отправить (Enter)" aria-label="Отправить">
           <CodexGlyph name="send" />
         </button>

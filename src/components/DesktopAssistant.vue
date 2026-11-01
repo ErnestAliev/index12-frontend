@@ -6,6 +6,8 @@ import CodexGlyph from './CodexGlyph.vue';
 import CodexFileCard from './CodexFileCard.vue';
 import CodexMessageText from './CodexMessageText.vue';
 import CodexRequestCard from './CodexRequestCard.vue';
+import CodexVoicePanel from './CodexVoicePanel.vue';
+import { useCodexVoice } from '@/composables/useCodexVoice';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -14,6 +16,7 @@ const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref('')
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 const recording = ref(false);
+const voiceAvailable = ref(false);
 const downloadingFiles = ref(new Set());
 const pendingRequests = ref([]), activeJobId = ref(null), submittingAnswers = ref(new Set()), answerErrors = ref({});
 let controller = new AbortController(), timer, refreshing = false, recognition, voiceBase = '';
@@ -42,6 +45,34 @@ async function api(path, body, session = controller) {
   const data = await response.json(); current(session);
   if (!response.ok) { const e = new Error(typeof data.error === 'string' ? data.error : data.message || 'Не удалось связаться с Codex.'); e.status = response.status; throw e; }
   return data;
+}
+const voice = useCodexVoice({ api, scopeKey: () => scopeKey.value,
+  stopRemote: id => fetch(`${codexBase()}/voice/${encodeURIComponent(id)}/stop`, { method: 'POST', credentials: 'include', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+  onStatus: state => { pendingRequests.value = state.pendingRequests || []; activeJobId.value = state.jobId || null; },
+  onError: message => { error.value = message; },
+  onEvent: event => {
+    if (event.type === 'transcript') { messages.value.push({ id: `voice-user-${event.itemId}`, role: 'user', text: event.text }); scrollBottom(); }
+    if (event.type === 'result') {
+      messages.value.push({ id: `voice-answer-${event.itemId}`, role: 'assistant', text: event.text });
+      if (event.threadId) threadId.value = event.threadId;
+      scrollBottom();
+    }
+  },
+});
+const { active: voiceActive, phase: voicePhase, muted: voiceMuted, status: voiceStatus, playbackBlocked: voicePlaybackBlocked, userCaption, assistantCaption } = voice;
+async function startVoice() {
+  if (busy.value || voiceActive.value || !voiceAvailable.value) return;
+  error.value = ''; stopRecording();
+  if (!selectedId.value) {
+    busy.value = true;
+    try { await createChat(controller); } catch (e) { error.value = e.message; return; }
+    finally { busy.value = false; }
+  }
+  await voice.start(selectedId.value);
+}
+async function stopVoice() {
+  await voice.stop();
+  if (selectedId.value && connected.value) await selectChat(selectedId.value);
 }
 async function waitJob(job, session) {
   let deadline = Date.now() + 310000;
@@ -84,7 +115,7 @@ async function history(session, older = false) {
   showHistory(await waitJob(job, session), older);
 }
 async function selectChat(id) {
-  if (busy.value || !id) return;
+  if (busy.value || voiceActive.value || !id) return;
   const session = controller;
   selectedId.value = id; localStorage.setItem(storageKey(), id); retry = null;
   busy.value = true; error.value = ''; messages.value = []; cursor.value = null; threadId.value = null;
@@ -106,7 +137,7 @@ async function createChat(session) {
   localStorage.setItem(storageKey(), selectedId.value);
 }
 async function newChat() {
-  if (busy.value) return;
+  if (busy.value || voiceActive.value) return;
   const session = controller; busy.value = true; error.value = '';
   try { await createChat(session); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
@@ -114,7 +145,7 @@ async function newChat() {
 function stopRecording() { recording.value = false; try { recognition?.stop(); } catch { /* Already stopped. */ } }
 async function send(forced) {
   const text = (typeof forced === 'string' ? forced : input.value).trim();
-  if ((!text && !attachments.value.length) || busy.value) return;
+  if ((!text && !attachments.value.length) || busy.value || voiceActive.value) return;
   const session = controller; busy.value = true; error.value = ''; stopRecording();
   let media;
   let accepted = false;
@@ -153,17 +184,18 @@ async function send(forced) {
   } finally { if (session === controller) { busy.value = false; attachments.value.forEach(file => { file.uploading = false; }); } }
 }
 async function loadOlder() {
-  if (busy.value) return;
+  if (busy.value || voiceActive.value) return;
   const session = controller; busy.value = true; error.value = '';
   try { await history(session, true); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
 }
 async function refresh(manual = false) {
-  if (refreshing || busy.value) return;
+  if (refreshing || busy.value || voiceActive.value) return;
   const session = controller; refreshing = true;
   try {
     const status = await api('/status', null, session);
     const wasConnected = connected.value; connected.value = status.connected;
+    voiceAvailable.value = status.voiceAvailable === true;
     chats.value = (await api('/chats', null, session)).chats;
     const saved = localStorage.getItem(storageKey());
     const id = chats.value.find(c => c.id === (selectedId.value || saved))?.id || chats.value[0]?.id;
@@ -221,6 +253,7 @@ async function copy(message) {
   try { await navigator.clipboard.writeText(message.text); message.copied = true; } catch { error.value = 'Не удалось скопировать сообщение.'; }
 }
 watch(scopeKey, () => {
+  voice.stop(); voiceAvailable.value = false;
   controller.abort(); controller = new AbortController(); stopRecording();
   refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
   input.value = ''; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; retry = null;
@@ -228,18 +261,18 @@ watch(scopeKey, () => {
   refresh();
 });
 onMounted(() => { refresh(); timer = setInterval(() => refresh(), 5000); });
-onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(); clearAttachments(); });
+onBeforeUnmount(() => { voice.stop(); clearInterval(timer); controller.abort(); stopRecording(); clearAttachments(); });
 </script>
 
 <template>
   <section class="desktop-assistant" :class="{ mobile }" aria-label="Помощник Codex">
     <div class="desktop-toolbar">
       <span class="desktop-status" :class="{ online: connected }" :title="connected ? 'Общий сервер Codex доступен' : 'Запустите npm run desktop:bridge на Mac'">Codex · {{ connected ? 'подключён' : 'нет связи' }}</span>
-      <button type="button" class="codex-action-btn" :disabled="busy" title="Обновить связь и историю" aria-label="Обновить связь и историю" @click="refresh(true)"><CodexGlyph name="refresh" /></button>
-      <button type="button" class="codex-action-btn" :disabled="busy" @click="newChat"><CodexGlyph name="plus" /><span>Новый чат</span></button>
+      <button type="button" class="codex-action-btn" :disabled="busy || voiceActive" title="Обновить связь и историю" aria-label="Обновить связь и историю" @click="refresh(true)"><CodexGlyph name="refresh" /></button>
+      <button type="button" class="codex-action-btn" :disabled="busy || voiceActive" @click="newChat"><CodexGlyph name="plus" /><span>Новый чат</span></button>
     </div>
     <div class="desktop-chat-picker">
-      <div class="desktop-chat-select"><select :value="selectedId" :disabled="busy" aria-label="Чаты Index12" @change="selectChat($event.target.value)">
+      <div class="desktop-chat-select"><select :value="selectedId" :disabled="busy || voiceActive" aria-label="Чаты Index12" @change="selectChat($event.target.value)">
         <option v-if="!chats.length" value="">Новый чат</option>
         <option v-for="chat in chats" :key="chat.id" :value="chat.id">{{ chat.title || 'Новый чат' }}</option>
       </select><CodexGlyph name="chevron" /></div>
@@ -265,8 +298,11 @@ onBeforeUnmount(() => { clearInterval(timer); controller.abort(); stopRecording(
       <CodexFileCard v-for="(file, i) in attachments" :key="i" :file="file" removable :disabled="busy" :loading="file.uploading" @remove="removeAttachment(i)" />
     </div>
     <input ref="files" type="file" hidden multiple @change="addFiles" />
-    <CodexComposer v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
-      attachments-enabled :has-attachments="!!attachments.length" @send="send()" @microphone="toggleRecording" @attach="files.click()" />
+    <CodexVoicePanel v-if="voiceActive" :status="voiceStatus" :phase="voicePhase" :muted="voiceMuted" :caption="assistantCaption || userCaption" :playback-blocked="voicePlaybackBlocked"
+      @stop="stopVoice" @mute="voice.toggleMute" @play="voice.play" />
+    <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
+      live-voice :voice-available="voiceAvailable" :voice-supported="voice.supported" attachments-enabled :has-attachments="!!attachments.length"
+      @voice="startVoice" @send="send()" @microphone="toggleRecording" @attach="files.click()" />
   </section>
 </template>
 
