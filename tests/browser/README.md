@@ -48,3 +48,10 @@ on desktop/tablet and compact phone sheet. API data and browser storage are isol
 Run `node tests/browser/appearance-controls.mjs` to check independent chip backgrounds,
 text and outlines, chip/day opacity, preserved cell striping, widget rounding and
 equal light/dark control geometry on desktop, touch tablet and phone.
+
+Run `node tests/browser/change-history.mjs` for desktop, tablet and phone
+history filters, deleted-operation tooltips, required undo confirmation,
+selective undo and local preference restoration. It also wheels over the
+centre of the operation journal with 180 rows to verify native list scrolling.
+All API data is synthetic. Transaction rollback, permissions and field conflicts
+are covered by `tests/change-history.test.cjs` in the backend checkout.

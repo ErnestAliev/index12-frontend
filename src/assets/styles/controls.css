@@ -1,3 +1,4 @@
+:root:not([data-appearance-custom]) .hour-cell.compact-column { height:42px; min-height:42px; }
 /* Control geometry belongs to the device layout, independently of the palette. */
 :root .compact-amounts .amount-full { display:none; }
 :root .compact-amounts .amount-short { display:inline; }

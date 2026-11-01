@@ -49,7 +49,6 @@
 :root[data-theme="light"] .operation-chip.compact .amount-short { display: inline; }
 :root[data-theme="light"] .compact-amounts .amount-full { display: none; }
 :root[data-theme="light"] .compact-amounts .amount-short { display: inline; }
-:root[data-theme="light"] .compact-amounts .operation-chip .op-meta { display: none; }
 :root[data-theme="light"] :is(.operation-chip, .op-chip).no-permission { opacity: 1; }
 :root[data-theme="light"] :is(.operation-chip, .op-chip).phantom {
   background: var(--op-default-bg);

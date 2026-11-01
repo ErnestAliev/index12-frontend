@@ -505,7 +505,7 @@ const onDrop = (event) => {
 <template>
   <div
     class="hour-cell"
-    :class="{ 'drag-over': isDragOver }"
+    :class="{ 'drag-over': isDragOver, 'compact-column': isCompactChipMode }"
     :data-date-key="props.dateKey"
     :data-cell-index="props.cellIndex"
     @dragover="onDragOver"
@@ -564,23 +564,23 @@ const onDrop = (event) => {
         ></span>
         <template v-if="isTransferOp">
           <span class="op-amount"><span class="amount-full">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(displayAmount ?? operation.amount)) }}</span></span>
-          <span v-if="!isCompactChipMode" class="op-meta">{{ transferRoute }}</span>
+          <span class="op-meta">{{ transferRoute }}</span>
         </template>
         <template v-else-if="isWithdrawalOp">
           <span class="op-amount">- <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
-          <span v-if="!isCompactChipMode" class="op-meta">{{ operation.destination || 'Вывод' }}</span>
+          <span class="op-meta">{{ operation.destination || 'Вывод' }}</span>
         </template>
         <template v-else-if="isWorkActOp">
           <span class="op-amount">✓ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
-          <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
+          <span class="op-meta">{{ chipLabel }}</span>
         </template>
         <template v-else-if="isTechnicalOp">
           <span class="op-amount">✓ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
-          <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
+          <span class="op-meta">{{ chipLabel }}</span>
         </template>
         <template v-else-if="isCreditIncomeOp">
           <span class="op-amount">+ <span class="amount-full">{{ formatNumber(Math.abs(operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(operation.amount)) }}</span></span>
-          <span v-if="!isCompactChipMode" class="op-meta">Кредит</span>
+          <span class="op-meta">Кредит</span>
         </template>
 
         <!-- ОБЫЧНЫЕ / ПРЕДОПЛАТА / ЗАКРЫТЫЕ -->
@@ -588,7 +588,7 @@ const onDrop = (event) => {
           <span class="op-amount">
               {{ operation.type === 'income' ? '+' : '-' }} <span class="amount-full">{{ formatNumber(Math.abs(displayAmount ?? operation.amount)) }}</span><span class="amount-short">{{ formatShortNumber(Math.abs(displayAmount ?? operation.amount)) }}</span>
           </span>
-          <span v-if="!isCompactChipMode" class="op-meta">{{ chipLabel }}</span>
+          <span class="op-meta">{{ chipLabel }}</span>
         </template>
       </div>
     </template>
@@ -661,7 +661,7 @@ const onDrop = (event) => {
   overflow: hidden; 
   cursor: pointer; 
   position: relative;
-  transition: all .15s ease-in-out; 
+  transition: box-shadow .15s ease-in-out, filter .15s ease-in-out;
 }
 .operation-chip.selected {
   box-shadow: 0 0 0 2px rgba(80, 160, 255, 0.9), 0 8px 18px rgba(0, 0, 0, 0.18);
@@ -686,9 +686,13 @@ const onDrop = (event) => {
   border-top-color: #1ca7ff;
 }
 .operation-chip.compact {
+  flex-direction: column;
+  align-items: stretch;
+  line-height: 1.1;
   padding: 2px 4px;
   gap: 0;
 }
+.operation-chip.compact .op-meta { display:block; flex:0 1 auto; text-align:center; width:100%; }
 .operation-chip.compact .op-amount {
   margin-right: 0;
   width: 100%;

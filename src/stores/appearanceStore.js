@@ -1,3 +1,4 @@
+import {recordPreference,registerPreference} from '@/utils/preferenceHistory.js';
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import {
@@ -39,6 +40,7 @@ export const useAppearanceStore = defineStore("appearance", () => {
   const apiBase = (
     import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api"
   ).replace(/\/$/, "");
+  let recordedAppearance=null;
   let userId = null,
     generation = 0,
     refreshPromise = null;
@@ -99,7 +101,10 @@ export const useAppearanceStore = defineStore("appearance", () => {
       return false;
     }
   }
-  function commit() {
+  function commit(record=true) {
+    const next={mode:mode.value,config:cloneAppearance(preferences.value.config)};
+    if(record&&recordedAppearance){recordPreference('appearance',recordedAppearance.config,next.config);recordPreference('theme',recordedAppearance.mode,next.mode);}
+    recordedAppearance=next;
     apply();
     return persist();
   }
@@ -107,7 +112,7 @@ export const useAppearanceStore = defineStore("appearance", () => {
     preferences.value.selectedId = item?.id || null;
     preferences.value.base = item ? cloneAppearance(item) : null;
     preferences.value.config = cloneAppearance(config);
-    commit();
+    commit(false);
   }
   function loadUser(id) {
     const next = id ? String(id) : null;
@@ -137,6 +142,7 @@ export const useAppearanceStore = defineStore("appearance", () => {
     preferences.value = parseTemplatePreferences(raw, legacy);
     if (!raw && !legacy)
       preferences.value.mode = legacyMode === "light" ? "light" : "dark";
+    recordedAppearance={mode:mode.value,config:cloneAppearance(preferences.value.config)};
     apply();
     if (userId) void refreshLibrary();
   }
@@ -495,6 +501,8 @@ export const useAppearanceStore = defineStore("appearance", () => {
       window.removeEventListener("storage", sync);
     };
   }
+  registerPreference('appearance',()=>preferences.value.config,config=>{preferences.value.config=sanitizeTemplate(config);commit();});
+  registerPreference('theme',()=>mode.value,value=>setMode(value));
   return {
     preferences,
     mode,

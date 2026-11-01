@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import {registerPreference,recordPreference} from '@/utils/preferenceHistory.js';
 import { useMainStore } from '@/stores/mainStore';
 import EntityListEditor from './EntityListEditor.vue';
 import OperationListEditor from './OperationListEditor.vue';
@@ -75,9 +76,16 @@ onMounted(() => {
 // Save tab order to localStorage
 const saveTabOrder = () => {
   const order = tabs.value.map(t => t.id);
+  const before=JSON.parse(localStorage.getItem('universalEditModalTabOrder')||'null')||defaultTabs.map(t=>t.id);
   localStorage.setItem('universalEditModalTabOrder', JSON.stringify(order));
+  recordPreference('universalEditModalTabOrder',before,order);
 };
 
+const stopHistory=registerPreference('universalEditModalTabOrder',()=>tabs.value.map(t=>t.id),order=>{
+  const ids=Array.isArray(order)?order:defaultTabs.map(t=>t.id);
+  tabs.value=[...ids.map(id=>defaultTabs.find(t=>t.id===id)).filter(Boolean),...defaultTabs.filter(t=>!ids.includes(t.id))];saveTabOrder();
+});
+onBeforeUnmount(stopHistory);
 // Drag & Drop handlers
 const onDragStart = (e, tabId) => {
   draggedTabId.value = tabId;

@@ -6,6 +6,7 @@ import { useMainStore } from '@/stores/mainStore';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import SubcategorySelect from '@/components/SubcategorySelect.vue';
+import {useWindowPreferences} from '@/composables/useWindowPreferences.js';
 import JournalChartsPanel from '@/components/JournalChartsPanel.vue';
 
 const emit = defineEmits(['close', 'import-complete']);
@@ -21,8 +22,9 @@ const isSavingEdits = ref(false);
 const editRows = ref({});
 const baseEditRows = ref({});
 
-const isChartsPaneCollapsed = ref(false);
-const chartsPaneWidth = ref(25);
+const journalWindow=useWindowPreferences('journalWindow',{collapsed:false,width:25});
+const isChartsPaneCollapsed = computed({get:()=>journalWindow.value.collapsed,set:v=>journalWindow.value.collapsed=v});
+const chartsPaneWidth = computed({get:()=>journalWindow.value.width,set:v=>journalWindow.value.width=v});
 const isResizingChartsPane = ref(false);
 const modalBodyRef = ref(null);
 
@@ -3551,7 +3553,7 @@ onBeforeUnmount(() => {
   background: var(--editor-row-bg);
 }
 
-.table-wrap,
+.table-wrap { min-width:0; min-height:0; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .journal-charts-pane {
   min-width: 0;
   min-height: 0;

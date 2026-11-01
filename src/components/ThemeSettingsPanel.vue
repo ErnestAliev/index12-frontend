@@ -24,13 +24,13 @@ const current = computed(() => store.resolved(scope.value));
 const inherited = (group, key) => store.isFieldInherited(scope.value,group,key);
 const colorFields = computed(() => (scope.value==='widgets'?WIDGET_PARTS[widgetPart.value].colors:SCOPE_COLOR_FIELDS[scope.value])
   .filter(key=>!Object.hasOwn(FINANCIAL_COLORS,key) && !(scope.value==='operations'&&key==='border'))
-  .map(key=>[key,scope.value==='widgets'&&!['surface','border','shadow','accent'].includes(key)?'Цвет':key==='surface'?({widgets:'Фон виджетов',separators:'Фон разделителей',table:'Фон таблицы',operations:'Базовый фон чипов',charts:'Фон под графиками',summaries:'Фон итогов дня'}[scope.value]):key==='bg'?({table:'Полосы таблицы',charts:'Фон шкалы'}[scope.value]||'Дополнительный фон'):COLOR_FIELDS[key]]));
+  .map(key=>[key,scope.value==='operations'&&key==='text'?'Цвет суммы':scope.value==='operations'&&key==='muted'?'Цвет категории':scope.value==='widgets'&&!['surface','border','shadow','accent'].includes(key)?'Цвет':key==='surface'?({widgets:'Фон виджетов',separators:'Фон разделителей',table:'Фон таблицы',operations:'Базовый фон чипов',charts:'Фон под графиками',summaries:'Фон итогов дня'}[scope.value]):key==='bg'?({table:'Полосы таблицы',charts:'Фон шкалы'}[scope.value]||'Дополнительный фон'):COLOR_FIELDS[key]]));
 const metricFields = computed(() => (scope.value==='widgets'?WIDGET_PARTS[widgetPart.value].metrics:SCOPE_METRIC_FIELDS[scope.value])
   .filter(key=>key!=='chipOpacity')
   .map(key=>[key,METRIC_FIELDS[key]]));
 const financial = computed(() => store.resolved('global').colors);
 function changeFinancial(key,value) { if(/^#[\da-f]{6}$/i.test(value)) {store.setField('global','colors',key,value);error.value='';feedback.value='';}else error.value='Введите цвет в формате #112233.'; }
-const metricLabel = (key,spec) => scope.value==='widgets' && /FontFamily$/.test(key) ? 'Шрифт' : scope.value==='widgets' && /Size$/.test(key)?'Размер':scope.value==='widgets' && /Weight$/.test(key)?'Жирность':({
+const metricLabel = (key,spec) => scope.value==='operations' && ['fontSize','textWeight','secondarySize','secondaryWeight'].includes(key) ? ({fontSize:'Размер суммы',textWeight:'Жирность суммы',secondarySize:'Размер категории',secondaryWeight:'Жирность категории'}[key]) : scope.value==='widgets' && /FontFamily$/.test(key) ? 'Шрифт' : scope.value==='widgets' && /Size$/.test(key)?'Размер':scope.value==='widgets' && /Weight$/.test(key)?'Жирность':({
   radius:({widgets:'Скругление виджетов',operations:'Скругление чипов'}[scope.value] || 'Скругление'),
   summarySize:'Размер основного текста', summaryWeight:'Жирность основного текста',
 }[key] || spec.label);

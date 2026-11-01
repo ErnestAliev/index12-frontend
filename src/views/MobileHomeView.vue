@@ -1,4 +1,5 @@
 <script setup>
+import {useWindowPreferences} from '@/composables/useWindowPreferences.js';
 import { isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { onMounted, onUnmounted, onBeforeUnmount, ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -26,6 +27,7 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import CellContextMenu from '@/components/CellContextMenu.vue';
 import AboutModal from '@/components/AboutModal.vue';
 import CodexChatWindow from '@/components/CodexChatWindow.vue';
+import ChangeHistoryPanel from '@/components/ChangeHistoryPanel.vue';
 import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -222,6 +224,7 @@ const isPersonalTransferWithdrawal = (op) => isSystemWithdrawal(op);
 const showProjectsModal = ref(false);
 const showUserMenuModal = ref(false);
 const showThemeSettings = ref(false);
+const showChangeHistory=ref(false);
 const showAboutModal = ref(false);
 
 const openProjectsModal = () => {
@@ -315,7 +318,8 @@ const initScrollSync = () => {
 // =================================================================
 // 🟢 ЛОГИКА РЕСАЙЗА (ВЫСОТА ТАЙМЛАЙНА)
 // =================================================================
-const timelineHeight = ref(240); // Начальная высота таймлайна
+const mobileWindow=useWindowPreferences('mobileWindow',{timelineHeight:240});
+const timelineHeight = computed({get:()=>mobileWindow.value.timelineHeight,set:v=>mobileWindow.value.timelineHeight=v}); // Начальная высота таймлайна
 const isResizing = ref(false);
 const startY = ref(0);
 const startHeight = ref(0);
@@ -1021,10 +1025,11 @@ const showCodex = ref(false);
 
     <!-- Mobile Modals -->
     <MobileProjectSwitcher v-if="showProjectsModal && mainStore.workspaceRole !== 'manager'" @close="closeProjectsModal" />
-    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" />
+    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" @open-history="showChangeHistory=true" />
     <AboutModal v-if="showAboutModal" @close="closeAboutModal" />
 
     <CodexChatWindow :open="showCodex" :api-base-url="API_BASE_URL" mobile @close="showCodex = false" />
+    <ChangeHistoryPanel v-if="showChangeHistory" @close="showChangeHistory=false" />
     <ThemeSettingsPanel :open="showThemeSettings" @close="showThemeSettings = false" />
 
   </div>

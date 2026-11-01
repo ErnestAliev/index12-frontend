@@ -30,7 +30,7 @@ try {
     await page.route('**/api/**',async route=>{
       const req=route.request(),path=new URL(req.url()).pathname;let data=[];
       if(await api.handle(route,'controls-user'))return;
-      if(req.method()!=='GET')writes.push(path);
+      if(req.method()!=='GET'&&!path.includes('/change-history/'))writes.push(path);
       if(path.endsWith('/user/appearance-themes'))data={themes:[]};
       if(path.endsWith('/auth/me'))data={_id:'controls-user',role:'admin',workspaceRole:'admin',createdAt:'2026-01-01'};
       if(path.endsWith('/accounts'))data=[{_id:'cash',name:'Тестовый счёт',companyId:'owner',initialBalance:100000},{_id:'bank',name:'Банк',companyId:'owner',initialBalance:0}];
@@ -70,6 +70,18 @@ try {
         assert.equal(style.text,rgb(text));assert.equal(style.meta,rgb(text));assert.equal(style.border,style.left);
       }
       await scope('Операции');
+      await color('Операции: Цвет суммы',text);
+      await color('Операции: Цвет категории',text);
+      await slider('Операции: Размер суммы',15);
+      await slider('Операции: Жирность суммы',750);
+      await slider('Операции: Размер категории',12);
+      await slider('Операции: Жирность категории',550);
+      await slider('Операции: Толщина обводки',2);
+      await page.waitForFunction(selector=>getComputedStyle(document.querySelector(selector)).borderTopWidth==='2px',`${prefix}.income`);
+      for(const [,selector] of Object.values(types)){
+        const style=await page.locator(prefix+selector).first().evaluate(el=>{const a=getComputedStyle(el.querySelector('.op-amount,.amt')),m=getComputedStyle(el.querySelector('.op-meta,.desc'));return {amount:[a.fontSize,a.fontWeight],meta:[m.fontSize,m.fontWeight,m.display],border:getComputedStyle(el).borderTopWidth,variable:getComputedStyle(el).getPropertyValue('--appearance-operations-borderWidth')};});
+        assert.deepEqual(style.amount,['15px','750']);assert.deepEqual(style.meta,['12px','550','block']);assert.equal(style.border,'2px',JSON.stringify({fixture:fixture.name,mode,selector,style}));
+      }
       await slider('Операции: Непрозрачность фона',25);
       await page.waitForFunction(selector=>getComputedStyle(document.querySelector(selector)).backgroundColor.endsWith(', 0.25)'),`${prefix}.income`);
       const translucent=await page.locator(`${prefix}.income`).first().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,opacity:getComputedStyle(el).opacity}));
@@ -97,6 +109,13 @@ try {
         await page.evaluate(async()=>{const {useMainStore}=await import('/src/stores/mainStore.js');useMainStore().isHeaderExpanded=true;});
         assert.equal(await page.locator('.mobile-widget-card').first().evaluate(el=>getComputedStyle(el).borderRadius),`${radius}px`);
         await page.evaluate(async()=>{const {useMainStore}=await import('/src/stores/mainStore.js');useMainStore().isHeaderExpanded=false;});
+      }
+      if(!fixture.mobile){
+        await page.getByTitle('21 день',{exact:true}).click();
+        await page.locator('.operation-chip.compact.income').first().waitFor();
+        const fits=await page.locator('.operation-chip.compact').evaluateAll(nodes=>nodes.map(el=>{const c=el.closest('.hour-cell').getBoundingClientRect(),r=el.getBoundingClientRect(),m=el.querySelector('.op-meta').getBoundingClientRect();return {fits:r.top>=c.top-1&&r.bottom<=c.bottom+1,meta:m.height>0,rect:[r.top,r.bottom,r.height,m.height,c.top,c.bottom,c.height],cls:el.className};}));
+        assert.ok(fits.length&&fits.every(x=>x.fits&&x.meta),JSON.stringify({fixture:fixture.name,mode,fits}));
+        await page.getByTitle('11 дней',{exact:true}).click();
       }
       await page.screenshot({path:`${root}/output/playwright/appearance-controls-${fixture.name}-${mode}.png`});
     }

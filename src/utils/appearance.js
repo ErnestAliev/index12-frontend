@@ -103,7 +103,7 @@ export const SCOPE_COLOR_FIELDS = {
   widgets:['surface','text','muted','heading','border','income','expense','accent','shadow'],
   separators:['surface','text','border','accent','shadow'],
   table:['surface','bg','text','border','activeDay','accent','shadow'],
-  operations:['surface','income','expense','transfer','purple','border','shadow'],
+  operations:['surface','text','muted','income','expense','transfer','purple','border','shadow'],
   charts:['surface','bg','text','muted','heading','border','income','expense','balance','accent','shadow'],
   summaries:['surface','text','muted','heading','border','income','expense','shadow'],
 };
@@ -164,7 +164,8 @@ export function resolveChipAppearance(theme, scope, type) {
   const { colors, metrics } = resolveAppearance(theme, scope);
   const role = CHIP_TYPES[type]?.role || 'income';
   const tone = colors[role];
-  return {bg:mixColor(colors.surface,tone,metrics.eventFill),text:tone,meta:tone,border:mixColor(colors.surface,tone,Math.min(100,metrics.eventFill+20))};
+  const explicit=theme.overrides[scope]?.colors||{};
+  return {bg:mixColor(colors.surface,tone,metrics.eventFill),text:explicit.text||tone,meta:explicit.muted||explicit.text||tone,border:mixColor(colors.surface,tone,Math.min(100,metrics.eventFill+20))};
 }
 export function alphaColor(hex, opacity) {
   const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));

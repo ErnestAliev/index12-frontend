@@ -43,6 +43,10 @@
             </svg>
           </button>
 
+          <button class="menu-item" @click="emit('close'); emit('open-history')">
+            <div class="menu-item-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg></div>
+            <span>История изменений</span>
+          </button>
           <button class="menu-item" @click="openAbout">
             <div class="menu-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -97,7 +101,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 
 const mainStore = useMainStore();
-const emit = defineEmits(['close', 'open-about', 'open-appearance']);
+const emit = defineEmits(['close', 'open-about', 'open-appearance', 'open-history']);
 const appearance = useAppearanceStore();
 
 const currentTheme = computed(() => appearance.mode);
@@ -127,7 +131,8 @@ async function logout() {
       credentials: 'include' 
     });
     sessionStorage.clear();
-    Object.keys(localStorage).filter(key => !key.startsWith('index12-appearance-v1:')).forEach(key => localStorage.removeItem(key));
+    const preferenceKeys=new Set(['theme','dashboardLayout','dashboardForecastState','accountVisibilityMode','includeExcludedInTotal','universalEditModalTabOrder']);
+    Object.keys(localStorage).filter(key=>!key.startsWith('index12-appearance-')&&!key.startsWith('index12-history-')&&!/^index12-(homeWindow|mobileWindow|journalWindow|codex-window-size)$/.test(key)&&!preferenceKeys.has(key)).forEach(key=>localStorage.removeItem(key));
     window.location.href = '/';
   } catch (err) {
     console.error('Logout failed:', err);

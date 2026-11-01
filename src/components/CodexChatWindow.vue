@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {registerPreference,recordPreference} from '@/utils/preferenceHistory.js';
 import DesktopAssistant from './DesktopAssistant.vue';
 import CodexIcon from './CodexIcon.vue';
 import CodexGlyph from './CodexGlyph.vue';
@@ -20,7 +21,8 @@ const dimensions = computed(() => isCompact.value ? {
   height: `${Math.min(size.value.height, limits.value.height)}px`,
 });
 let resize = null, returnFocus = null;
-function saveSize() { try { localStorage.setItem('index12-codex-window-size', JSON.stringify(size.value)); } catch { /* Storage unavailable. */ } }
+const stopHistory=registerPreference('codexWindow',()=>size.value,value=>{size.value=value;saveSize();});
+function saveSize() { try { const before=JSON.parse(localStorage.getItem('index12-codex-window-size')||'{\"width\":440,\"height\":650}');localStorage.setItem('index12-codex-window-size', JSON.stringify(size.value));recordPreference('codexWindow',before,size.value); } catch { /* Storage unavailable. */ } }
 function endResize() {
   if (!resize) return;
   resize = null;
@@ -65,7 +67,7 @@ onMounted(() => {
   window.visualViewport?.addEventListener('resize', updateViewport);
   window.visualViewport?.addEventListener('scroll', updateViewport);
 });
-onBeforeUnmount(() => { endResize(); window.removeEventListener('resize', updateViewport); window.visualViewport?.removeEventListener('resize', updateViewport); window.visualViewport?.removeEventListener('scroll', updateViewport); });
+onBeforeUnmount(() => { endResize(); stopHistory(); window.removeEventListener('resize', updateViewport); window.visualViewport?.removeEventListener('resize', updateViewport); window.visualViewport?.removeEventListener('scroll', updateViewport); });
 </script>
 
 <template>

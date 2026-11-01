@@ -3,14 +3,16 @@ import { onMounted, onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import { useMainStore } from '@/stores/mainStore'
 import { useRepairStore } from '@/stores/repairStore' // 🟢 Импортируем repairStore
+import {setHistoryIdentity,connectPreferenceHistory} from '@/utils/preferenceHistory.js'
 import { useAppearanceStore } from '@/stores/appearanceStore'
 
 const mainStore = useMainStore()
 const repairStore = useRepairStore() // 🟢 Инициализируем
 const appearance = useAppearanceStore()
-watch(() => mainStore.user?.id || mainStore.user?._id || null, id => appearance.loadUser(id), { immediate: true })
+watch(() => mainStore.user?.id || mainStore.user?._id || null, id => { setHistoryIdentity(id); appearance.loadUser(id) }, { immediate: true })
 const disconnectAppearance = appearance.connect()
 onUnmounted(disconnectAppearance)
+onUnmounted(connectPreferenceHistory())
 
 // Функция для инициализации приложения
 const initializeApp = async () => {

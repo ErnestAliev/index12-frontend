@@ -40,6 +40,8 @@ import CodexChatWindow from '@/components/CodexChatWindow.vue';
 import CodexIcon from '@/components/CodexIcon.vue';
 import EditorModal from '@/components/EditorModal.vue';
 import ContractorEditorModal from '@/components/ContractorEditorModal.vue';
+import {useWindowPreferences} from '@/composables/useWindowPreferences.js';
+import ChangeHistoryPanel from '@/components/ChangeHistoryPanel.vue';
 import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 
@@ -50,6 +52,7 @@ const projectionStore = useProjectionStore();
 const permissions = usePermissions();
 const appearance = useAppearanceStore();
 const showThemeSettings = ref(false);
+const showChangeHistory=ref(false);
 const toggleThemeSettings = () => { showThemeSettings.value = !showThemeSettings.value; if (showThemeSettings.value) showCodex.value = false; };
 
 // --- CONSTANTS ---
@@ -477,8 +480,9 @@ const GRAPH_MIN    = 115;
 const DIVIDER_H    = 28;
 const HEADER_MIN_H = 132; 
 const HEADER_MAX_H_RATIO = 0.8; 
-const headerHeightPx = ref(HEADER_MIN_H); 
-const timelineHeightPx = ref(318);
+const homeWindow=useWindowPreferences('homeWindow',{headerHeight:HEADER_MIN_H,timelineHeight:318,chartsExpanded:true});
+const headerHeightPx = computed({get:()=>homeWindow.value.headerHeight,set:v=>homeWindow.value.headerHeight=v});
+const timelineHeightPx = computed({get:()=>homeWindow.value.timelineHeight,set:v=>homeWindow.value.timelineHeight=v});
 
 const clearTimelineSelection = () => {
   selectedOperationIds.value = [];
@@ -608,7 +612,7 @@ const handleTimelineMouseDownCapture = (event) => {
 };
 
 // Charts expansion state
-const isChartsExpanded = ref(true);
+const isChartsExpanded = computed({get:()=>homeWindow.value.chartsExpanded,set:v=>homeWindow.value.chartsExpanded=v});
 
 watch(() => mainStore.isHeaderExpanded, (isExpanded) => {
     if (isExpanded) {
@@ -925,6 +929,8 @@ const generateVisibleDays = () => { rebuildVisibleDays(); };
 const clampHeaderHeight = (rawPx) => { const maxHeight = window.innerHeight * HEADER_MAX_H_RATIO; return Math.min(Math.max(rawPx, HEADER_MIN_H), maxHeight); };
 const applyHeaderHeight = (newPx) => { headerHeightPx.value = Math.round(newPx); if (homeHeaderRef.value) { homeHeaderRef.value.style.height = `${headerHeightPx.value}px`; } };
 const headerExpandedTarget = () => clampHeaderHeight(window.innerHeight * 0.5);
+watch(headerHeightPx,value=>{if(homeHeaderRef.value)homeHeaderRef.value.style.height=`${value}px`;});
+watch(timelineHeightPx,value=>{if(timelineGridRef.value)timelineGridRef.value.style.height=`${value}px`;});
 const isHeaderTall = computed(() => headerHeightPx.value > HEADER_MIN_H + 10);
 // Header resizer: track mouse/touch movement to distinguish click from drag
 let headerResizeStartY = 0;
@@ -1758,6 +1764,7 @@ const handleRefundDelete = async (op) => {
             aria-label="Настройки оформления" :aria-expanded="showThemeSettings" aria-controls="theme-settings-panel" @click="toggleThemeSettings">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--right-panel-bg)"/><circle cx="15" cy="17" r="3" fill="var(--right-panel-bg)"/></svg>
           </button>
+          <button class="icon-btn change-history-btn" :class="{active:showChangeHistory}" type="button" data-tooltip="История изменений" aria-label="История изменений" :aria-expanded="showChangeHistory" @click="showChangeHistory=!showChangeHistory"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg></button>
         </div>
 
         <!-- Bottom buttons group -->
@@ -1827,6 +1834,7 @@ const handleRefundDelete = async (op) => {
     <!-- 🆕 NEW: Payment Receipt Generator -->
     <PaymentReceiptModal v-if="showReceiptModal" @close="showReceiptModal = false" />
     <CodexChatWindow :open="showCodex" :api-base-url="API_BASE_URL" @close="showCodex = false" />
+    <ChangeHistoryPanel v-if="showChangeHistory" @close="showChangeHistory=false" />
     <ThemeSettingsPanel :open="showThemeSettings" @close="showThemeSettings = false" />
 
   </div>

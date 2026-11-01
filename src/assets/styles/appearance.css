@@ -50,13 +50,15 @@
 :root[data-appearance-custom] :is(.operation-chip, .op-chip)[class] {
   font-family:var(--appearance-operations-fontFamily);
   font-size:var(--appearance-operations-fontSize);
+  line-height:1.3;
   font-weight:var(--appearance-operations-textWeight);
   border-width:var(--appearance-operations-borderWidth);
   border-radius:var(--appearance-operations-radius);
   box-shadow:var(--appearance-operations-shadowValue);
   padding:min(3px,var(--appearance-operations-padding)) var(--appearance-operations-padding);
 }
-:root[data-appearance-custom] :is(.operation-chip .op-amount,.op-chip .amt) { font-weight:var(--appearance-operations-textWeight); }
+:root[data-appearance-custom] :is(.operation-chip .op-amount,.op-chip .amt) { font-family:var(--appearance-operations-fontFamily); font-size:var(--appearance-operations-fontSize); font-weight:var(--appearance-operations-textWeight); }
+:root[data-appearance-custom] :is(.operation-chip .op-amount,.op-chip .amt) :is(.amount-full,.amount-short) { font:inherit; }
 :root[data-appearance-custom] :is(.operation-chip .op-meta,.op-chip .desc) {
   font-family:var(--appearance-operations-secondaryFontFamily);
   font-size:var(--appearance-operations-secondarySize);
@@ -64,8 +66,12 @@
 }
 :root[data-appearance-custom] .hour-cell {
   height:var(--appearance-table-rowHeight);
-  min-height:calc(max(var(--appearance-operations-fontSize),var(--appearance-operations-secondarySize)) * 1.4 + 18px);
+  min-height:calc(max(var(--appearance-operations-fontSize),var(--appearance-operations-secondarySize)) * 1.3 + min(3px,var(--appearance-operations-padding)) * 2 + var(--appearance-operations-borderWidth) * 2 + 9px);
   border-bottom-width:var(--appearance-table-borderWidth);
+}
+:root[data-appearance-custom] .operation-chip.compact { line-height:1.1; }
+:root[data-appearance-custom] .hour-cell.compact-column {
+  min-height:calc((var(--appearance-operations-fontSize) + var(--appearance-operations-secondarySize)) * 1.1 + min(3px,var(--appearance-operations-padding)) * 2 + var(--appearance-operations-borderWidth) * 2 + 9px);
 }
 :root[data-appearance-custom] :is(.day-column, .mobile-day-col) {
   border-inline-width: var(--appearance-table-borderWidth);

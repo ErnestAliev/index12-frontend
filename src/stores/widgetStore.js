@@ -1,3 +1,4 @@
+import {recordPreference,registerPreference} from '@/utils/preferenceHistory.js';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import axios from 'axios';
@@ -74,7 +75,9 @@ export const useWidgetStore = defineStore('widget', () => {
   watch(dashboardLayout, (n) => {
     const clean = cleanLayout(n);
     if (JSON.stringify(clean) !== JSON.stringify(n)) { dashboardLayout.value = clean; return; }
+    const before=JSON.parse(localStorage.getItem('dashboardLayout')||'null');
     localStorage.setItem('dashboardLayout', JSON.stringify(n));
+    recordPreference('dashboardLayout',before,n);
     saveLayoutToServer(n);
   }, { deep: true });
 
@@ -108,7 +111,9 @@ export const useWidgetStore = defineStore('widget', () => {
   const dashboardForecastState = ref(savedForecastState ? JSON.parse(savedForecastState) : {});
 
   watch(dashboardForecastState, (n) => {
+    const before=JSON.parse(localStorage.getItem('dashboardForecastState')||'null');
     localStorage.setItem('dashboardForecastState', JSON.stringify(n));
+    recordPreference('dashboardForecastState',before,n);
   }, { deep: true });
 
   function setForecastState(widgetKey, value) {
@@ -121,6 +126,8 @@ export const useWidgetStore = defineStore('widget', () => {
     }
   }
 
+  registerPreference('dashboardLayout',()=>dashboardLayout.value,value=>{localStorage.setItem('dashboardLayout',JSON.stringify(cleanLayout(value)));updateDashboardLayout(value);});
+  registerPreference('dashboardForecastState',()=>dashboardForecastState.value,value=>{localStorage.setItem('dashboardForecastState',JSON.stringify(value||{}));dashboardForecastState.value=value||{};});
   return {
     staticWidgets,
     dashboardLayout,

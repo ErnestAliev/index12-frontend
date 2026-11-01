@@ -775,7 +775,7 @@ h3 { margin: 0; font-size: 24px; color: var(--color-heading); font-weight: 700; 
 .col-trash { display: flex; justify-content: left; align-items: center; }
 .col-date { display: flex; align-items: center; }
 
-.list-scroll { flex-grow: 1; overflow-y: auto; padding-bottom: 1rem; max-height: 55vh; scrollbar-width: none; -ms-overflow-style: none; }
+.list-scroll { flex: 1 1 0; min-height:0; overscroll-behavior:contain; overflow-y: auto; padding-bottom: 1rem; max-height: 55vh; scrollbar-width: none; -ms-overflow-style: none; }
 .list-scroll::-webkit-scrollbar { display: none; }
 
 /* Text Display Styles */

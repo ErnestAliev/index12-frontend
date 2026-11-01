@@ -1,3 +1,4 @@
+import {recordPreference,registerPreference} from '@/utils/preferenceHistory.js';
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
@@ -36,7 +37,9 @@ export const useUiStore = defineStore('ui', () => {
   function setAccountVisibilityMode(mode) {
     const allowed = ['open', 'hidden', 'all', 'none'];
     const next = allowed.includes(mode) ? mode : 'open';
+    const before=accountVisibilityMode.value;
     accountVisibilityMode.value = next;
+    recordPreference('accountVisibilityMode',before,next);
     localStorage.setItem('accountVisibilityMode', next);
     localStorage.setItem('includeExcludedInTotal', String(next === 'all' || next === 'hidden'));
   }
@@ -81,6 +84,8 @@ export const useUiStore = defineStore('ui', () => {
   function toggleExcludedInclusion() {
     setAccountVisibilityMode(accountVisibilityMode.value === 'open' ? 'all' : 'open');
   }
+
+  registerPreference('accountVisibilityMode',()=>accountVisibilityMode.value,value=>setAccountVisibilityMode(value));
 
   // Widget filters state (per widget key)
   const widgetFilters = ref({});
