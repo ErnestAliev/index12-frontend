@@ -19,7 +19,8 @@ import {
   parseTooltipAccountBalanceLine,
   formatTooltipAccountBalanceExportLine,
   renderTooltipAccountBalanceHtml,
-  shouldDismissGraphTooltip
+  shouldDismissGraphTooltip,
+  sortTooltipOperationsByCell
 } from '@/composables/useGraphTooltip.js';
 
 // Unique tooltip element ids per component instance (GraphModal + main chart must not collide)
@@ -1439,9 +1440,7 @@ const expenseFloatColors = computed(() => {
 
 const getTooltipOperationList = (ops) => {
   if (!ops || !Array.isArray(ops) || ops.length === 0) return [];
-  const sortedOps = [...ops].sort((a, b) => Math.abs(Number(b.amount) || 0) - Math.abs(Number(a.amount) || 0));
-
-  return sortedOps
+  return ops
     .map((op) => {
       if (!op) return null;
       
@@ -1450,6 +1449,7 @@ const getTooltipOperationList = (ops) => {
         const isOutOfSystemTransfer = isPersonalTransferWithdrawal(op);
         const labels = transferLabels(op, mainStore);
         return {
+          cellIndex: op.cellIndex,
           isTransfer: true,
           projName: mainStore.getOperationProjectName(op),
           projectScope: op.projectScope || 'selected',
@@ -1499,6 +1499,7 @@ const getTooltipOperationList = (ops) => {
       }
 
       return {
+        cellIndex: op.cellIndex,
         isIncome: op.type === 'income',
         accName: op.accountId?.name || '???',
         contName: op.contractorId?.name || op.counterpartyIndividualId?.name || '---',
@@ -1846,10 +1847,9 @@ const chartOptions = computed(() => {
             let expenseDetails = [...safeGet('expense'), ...safeGet('withdrawal')];
             let transferDetails = safeGet('transfer');
 
-            const sortByAbs = (a, b) => Math.abs(Number(b?.amount) || 0) - Math.abs(Number(a?.amount) || 0);
-            incomeDetails = [...incomeDetails].sort(sortByAbs);
-            expenseDetails = [...expenseDetails].sort(sortByAbs);
-            transferDetails = [...transferDetails].sort(sortByAbs);
+            incomeDetails = sortTooltipOperationsByCell(incomeDetails);
+            expenseDetails = sortTooltipOperationsByCell(expenseDetails);
+            transferDetails = sortTooltipOperationsByCell(transferDetails);
 
             // ✅ FIX: Show tooltip even if only transfers exist (no income/expense)
             if (!incomeDetails.length && !expenseDetails.length && !transferDetails.length) return lines;

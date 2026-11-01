@@ -60,3 +60,8 @@ and after undoing a date or amount, then restore a deleted transfer. A DOM obser
 checks that unrelated chips never disappear. `tests/history-operation-sync.test.mjs`
 compares all widget figures and chart data through full move/undo and delete/restore
 cycles, including split shares, duplicate receipts and lost HTTP responses.
+
+Run `node tests/browser/graph-tooltip-order.mjs` for tooltip ordering after swapping
+income, expense/withdrawal and transfer chips on desktop, tablet and phone. It
+compares all chart datasets, bar geometry and canvas pixels before/after the swaps,
+then checks light/dark amount-input focus in all three operation forms.

@@ -7,6 +7,12 @@
 export const shouldDismissGraphTooltip = (target, canvas, tooltip) =>
     !!tooltip && !tooltip.contains(target) && !canvas?.contains(target);
 
+// Only tooltip rows are reordered; chart datasets retain their calculation order.
+export const sortTooltipOperationsByCell = (operations) => {
+    const position = (op) => Number.isInteger(op?.cellIndex) && op.cellIndex >= 0 ? op.cellIndex : Infinity;
+    return [...operations].sort((a, b) => position(a) - position(b));
+};
+
 export const formatNumber = (num) => {
     if (num == null || isNaN(num)) return '0';
     const abs = Math.abs(Number(num));

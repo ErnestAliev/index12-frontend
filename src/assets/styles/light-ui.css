@@ -138,6 +138,10 @@
   border-color: var(--light-accent) !important;
   box-shadow: var(--light-focus-shadow) !important;
 }
+:root[data-theme="light"] .custom-input-box .real-input:is(:focus, :focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
 :root[data-theme="light"] .popup-content .custom-input-box.is-invalid {
   border-color: var(--light-expense) !important;
   box-shadow: 0 0 0 2px rgba(167, 68, 57, 0.18) !important;
