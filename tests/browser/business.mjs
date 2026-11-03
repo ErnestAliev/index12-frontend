@@ -14,13 +14,13 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     browser = await chromium.launch({ executablePath: process.env.SCROLL_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       if (path.startsWith('/api/business')) {
         const response = await route.fetch({ url: apiUrl + path.slice(4), headers: { ...request.headers(), 'x-test-actor': actor, 'x-test-workspace': workspaceId, origin: 'http://127.0.0.1:5192' } });
         return route.fulfill({ response });
       }
-      if (/^\/api\/(companies|contractors)(\/|$)/.test(path)) {
+      if (/^\/api\/(companies|contractors|accounts)(\/|$)/.test(path)) {
         const response = await route.fetch({ url: entitiesApiUrl + path.slice(4) }); return route.fulfill({ response });
       }
       let data = [];
@@ -71,16 +71,45 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await legal.getByRole('button', { name: 'Закрыть реквизиты', exact: true }).click();
     await page.locator('.contractor-popup .modal-close-btn').click();
     await page.locator('.edit-btn').click();
-    await page.getByRole('tab', { name: 'Компании и КГД', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Название компании', exact: true }).waitFor();
-    await page.getByRole('textbox', { name: 'Название компании', exact: true }).fill('ТОО Тест · сохранено');
-    await page.getByRole('button', { name: 'Сохранить реквизиты', exact: true }).click();
-    await page.getByText('Реквизиты сохранены', { exact: true }).waitFor();
-    await page.screenshot({ path: `${output}/business-company-desktop.png` });
+    assert.equal(await page.getByRole('tab', { name: 'Компании и КГД', exact: true }).count(), 0);
+    const ownerInput = page.getByRole('textbox', { name: 'Название владельца счета', exact: true }).first();
+    const inputBox = await ownerInput.boundingBox();
+    await ownerInput.click({ position: { x: inputBox.width - 34, y: inputBox.height / 2 } });
+    await ownerInput.fill('ТОО Тест · сохранено');
+    await page.locator('.editor-modal').getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await page.getByText('Изменения сохранены', { exact: true }).waitFor();
+    const [companyPage] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.getByRole('link', { name: 'ТОО Тест · сохранено', exact: true }).first().click()
+    ]);
+    companyPage.on('pageerror', error => errors.push(error.message));
+    await companyPage.getByRole('heading', { name: 'ТОО Тест · сохранено', exact: true }).waitFor();
+    assert.ok(companyPage.url().includes(`/companies/${company._id}`));
+    const update = companyPage.getByRole('button', { name: 'Обновить компанию', exact: true });
+    assert.equal(await update.isDisabled(), true);
+    await companyPage.getByRole('textbox', { name: 'Путь к файлу ЭЦП', exact: true }).fill('/Users/test/company.p12');
+    await companyPage.getByLabel('Пароль ЭЦП', { exact: true }).fill('local-test-password');
+    await companyPage.getByRole('button', { name: 'Подключить ЭЦП', exact: true }).click();
+    await companyPage.getByText('Настройки ЭЦП сохранены', { exact: true }).waitFor();
+    assert.equal(await update.isDisabled(), false);
+    assert.equal(await companyPage.getByLabel('Пароль ЭЦП', { exact: true }).inputValue(), '');
+    await companyPage.reload();
+    await companyPage.getByRole('heading', { name: 'ТОО Тест · сохранено', exact: true }).waitFor();
+    assert.equal(await companyPage.getByRole('textbox', { name: 'Путь к файлу ЭЦП', exact: true }).inputValue(), '/Users/test/company.p12');
+    assert.equal(await companyPage.getByLabel('Пароль ЭЦП', { exact: true }).getAttribute('placeholder'), 'Сохранён');
+    await update.click();
+    await companyPage.getByText('Данные компании обновлены', { exact: true }).waitFor();
+    await companyPage.screenshot({ path: `${output}/business-company-desktop.png` });
+    await companyPage.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await companyPage.locator('.company-page').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
+    await companyPage.screenshot({ path: `${output}/business-company-mobile.png` });
+    await companyPage.getByRole('button', { name: 'Отключить', exact: true }).click();
+    await companyPage.getByText('ЭЦП отключена', { exact: true }).waitFor();
+    assert.equal(await update.isDisabled(), true);
+    await companyPage.close();
     await page.reload();
     await page.locator('.edit-btn').click();
-    await page.getByRole('tab', { name: 'Компании и КГД', exact: true }).click();
-    assert.equal(await page.getByRole('textbox', { name: 'Название компании', exact: true }).inputValue(), 'ТОО Тест · сохранено');
+    await page.getByRole('link', { name: 'ТОО Тест · сохранено', exact: true }).first().waitFor();
     await page.locator('.editor-modal .close-btn').click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('http://127.0.0.1:5192/mobile');
@@ -93,6 +122,6 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     assert.ok(await page.getByRole('dialog', { name: 'Календарь задач' }).evaluate(node => node.scrollWidth <= node.clientWidth + 1));
     await page.screenshot({ path: `${output}/business-calendar-mobile.png` });
     assert.deepEqual(errors, []);
-    console.log('PASS: real Vue → HTTP → MongoDB, task persistence/completion, BIN lookup and contractor creation, saved company profile, desktop/mobile calendar');
+    console.log('PASS: real Vue → HTTP → MongoDB, editor rename/link distinction, separate company tab, persisted local EDS path/encrypted password, update gating, no duplicate company list, desktop/mobile views');
   } finally { await browser?.close(); await server.close(); }
 }

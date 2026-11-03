@@ -1,10 +1,10 @@
 <script setup>
 import SubcategoryManager from './SubcategoryManager.vue';
-import CompanyTaxPanel from './CompanyTaxPanel.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName } from '@/utils/companyTax';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
+import { RouterLink } from 'vue-router';
 
 const emit = defineEmits(['close']);
 const mainStore = useMainStore();
@@ -20,6 +20,11 @@ const isDeletingAccount = ref(false);
 const isCreatingOwner = ref(false);
 const activeAccountSuggestionRowId = ref(null);
 const accountSuggestionQuery = ref('');
+const editingOwnerRowId = ref(null);
+const onOwnerNameInput = row => {
+  for (const other of rows.value) if (other.ownerKey === row.ownerKey) other.ownerName = row.ownerName;
+};
+const companyLocation = row => ({ name: 'company', params: { id: ownerIdFromKey(row.ownerKey) }, query: { workspace: mainStore.user?.currentWorkspaceId || '' } });
 let accountSuggestionBlurTimer = null;
 
 const CREATE_OWNER_COMPANY_VALUE = '__create_company__';
@@ -371,6 +376,8 @@ const buildRows = () => {
       currency: 'KZT',
       currentBalance: currentBalanceMap.value.get(String(account._id)) ?? Number(account.initialBalance || 0),
       ownerKey,
+      ownerName: getOwnerDisplayName(ownerKey),
+      sourceOwnerName: getOwnerDisplayName(ownerKey),
       iinBin: formatIinBin(ownerMeta.identificationNumber),
       legalForm: ownerMeta.legalForm,
       taxRegime: effectiveTaxRegime,
@@ -391,6 +398,9 @@ const buildRows = () => {
       initialBalanceInput: previous.initialBalanceInput ?? baseRow.initialBalanceInput,
       currency: previous.currency || baseRow.currency,
       ownerKey: previous.ownerKey ?? baseRow.ownerKey,
+      ownerName: previous.ownerName === previous.sourceOwnerName && previous.ownerKey === baseRow.ownerKey
+        ? baseRow.ownerName
+        : previous.ownerName ?? getOwnerDisplayName(previous.ownerKey ?? baseRow.ownerKey),
       iinBin: previous.iinBin ?? baseRow.iinBin,
       legalForm: previous.legalForm ?? baseRow.legalForm,
       taxRegime: previous.taxRegime ?? baseRow.taxRegime,
@@ -502,6 +512,7 @@ const onOwnerChange = (row) => {
   }
 
   row.lastOwnerKey = row.ownerKey || '';
+  row.ownerName = getOwnerDisplayName(row.ownerKey);
   row.ownerCreationType = null;
   row.ownerCreationName = '';
 
@@ -739,6 +750,7 @@ const saveSettings = async () => {
 
         companyUpdates.set(String(ownerId), {
           ...source,
+          name: String(row.ownerName || source.name).trim(),
           identificationNumber: iinBinDigits,
           legalForm: normalizeLegalForm(row.legalForm, normalizeLegalForm(detectCompanyLegalForm(source.name || ''), 'other')),
           taxRegime,
@@ -760,6 +772,7 @@ const saveSettings = async () => {
 
       individualUpdates.set(String(ownerId), {
         ...source,
+        name: String(row.ownerName || source.name).trim(),
         identificationNumber: iinBinDigits,
         legalForm: normalizeLegalForm(row.legalForm, 'individual'),
         taxRegime,
@@ -814,11 +827,9 @@ watch(
 
       <div class="editor-sections" role="tablist" aria-label="Справочники">
         <button role="tab" :aria-selected="activeSection === 'accounts'" @click="activeSection = 'accounts'">Счета</button>
-        <button role="tab" :aria-selected="activeSection === 'companies'" @click="activeSection = 'companies'">Компании и КГД</button>
         <button role="tab" :aria-selected="activeSection === 'subcategories'" @click="activeSection = 'subcategories'">Подкатегории</button>
       </div>
       <SubcategoryManager v-if="activeSection === 'subcategories'" class="subcategory-manager-pane" />
-      <CompanyTaxPanel v-else-if="activeSection === 'companies'" />
       <div v-else class="modal-body">
         <div v-if="saveMessage || saveError" class="status-row">
           <span v-if="saveMessage" class="status-text success">{{ saveMessage }}</span>
@@ -946,7 +957,10 @@ watch(
 
                 <td class="owner-cell">
                   <template v-if="!row.ownerCreationType">
-                    <select v-model="row.ownerKey" class="cell-select" @change="onOwnerChange(row)">
+                    <div class="owner-name-control">
+                      <RouterLink v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" :to="companyLocation(row)" target="_blank" rel="noopener" class="owner-company-link" :title="`Открыть компанию ${row.ownerName}`">{{ row.ownerName }}</RouterLink>
+                      <input v-if="row.ownerKey" v-model="row.ownerName" type="text" class="cell-input owner-name-input" :class="{ 'has-company-link': ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id }" aria-label="Название владельца счета" @input="onOwnerNameInput(row)" @focus="editingOwnerRowId = row._id" @blur="editingOwnerRowId = null" />
+                    <select v-model="row.ownerKey" class="cell-select owner-picker" :class="{ 'has-owner': !!row.ownerKey }" aria-label="Выбрать владельца счета" @change="onOwnerChange(row); row.ownerName = getOwnerDisplayName(row.ownerKey)">
                       <option value="">Не выбран</option>
                       <optgroup label="Компании">
                         <option
@@ -969,6 +983,7 @@ watch(
                         <option :value="CREATE_OWNER_INDIVIDUAL_VALUE">+ Создать физлицо</option>
                       </optgroup>
                     </select>
+                    </div>
                   </template>
                   <template v-else>
                     <div class="owner-create-inline">
@@ -1121,6 +1136,13 @@ watch(
 </template>
 
 <style scoped>
+.owner-name-control { position: relative; display: flex; min-width: 0; align-items: stretch; }
+.owner-name-control .owner-name-input { padding-right: 30px; width: 100%; min-width: 0; }
+.owner-name-input.has-company-link { color: transparent; }
+.owner-company-link { position: absolute; z-index: 1; top: 50%; left: 10px; transform: translateY(-50%); max-width: calc(100% - 52px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-primary, #38b86d); text-decoration: none; line-height: 1.5; }
+.owner-company-link:hover, .owner-company-link:focus-visible { text-decoration: underline; }
+.owner-name-control .owner-picker.has-owner { position: absolute; right: 0; top: 0; bottom: 0; width: 27px; padding-left: 0; padding-right: 0; color: transparent; cursor: pointer; }
+.owner-picker option, .owner-picker optgroup { color: var(--color-text); }
 .editor-sections { display: flex; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--color-border); }
 .editor-sections button { padding: 8px 14px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font: inherit; }
 .editor-sections button[aria-selected="true"] { color: var(--color-primary); border-color: var(--color-primary); }
