@@ -9,13 +9,13 @@ const props = defineProps({ open: Boolean, mobile: Boolean, apiBaseUrl: { type: 
 const emit = defineEmits(['close']);
 const panel = ref(null);
 const size = ref({ width: 440, height: 650 });
-const readViewport = () => ({ width: window.innerWidth, height: window.visualViewport?.height || window.innerHeight, top: window.visualViewport?.offsetTop || 0 });
+const readViewport = () => ({ width: window.visualViewport?.width || window.innerWidth, height: window.visualViewport?.height || window.innerHeight, top: window.visualViewport?.offsetTop || 0, left: window.visualViewport?.offsetLeft || 0 });
 const viewport = ref(readViewport());
 const isCompact = computed(() => props.mobile || viewport.value.width < 600);
 const limits = computed(() => ({ width: Math.max(280, viewport.value.width - 88), height: Math.max(280, viewport.value.height - 32) }));
 const dimensions = computed(() => isCompact.value ? {
-  top: `calc(${viewport.value.top}px + max(8px, env(safe-area-inset-top)))`,
-  height: `calc(${viewport.value.height}px - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))`,
+  left: `${viewport.value.left}px`, top: `${viewport.value.top}px`,
+  width: `${viewport.value.width}px`, height: `${viewport.value.height}px`,
 } : {
   width: `${Math.min(size.value.width, limits.value.width)}px`,
   height: `${Math.min(size.value.height, limits.value.height)}px`,
@@ -116,7 +116,10 @@ onBeforeUnmount(() => { endResize(); stopHistory(); window.removeEventListener('
 .resize-height { top: -5px; left: 12px; right: 0; height: 10px; cursor: ns-resize; }
 .resize-corner { top: -5px; left: -5px; width: 17px; height: 17px; cursor: nwse-resize; }
 .resize-corner::after { content: ''; position: absolute; left: 7px; top: 7px; width: 5px; height: 5px; border-left: 1px solid var(--codex-pane-muted); border-top: 1px solid var(--codex-pane-muted); }
-.compact { left: 8px; right: 8px; bottom: auto; width: auto; z-index: 6000; }
+.compact { right: auto; bottom: auto; margin: 0; border: 0; border-radius: 0; box-shadow: none; z-index: 6000; }
+.compact .codex-window-header { box-sizing: border-box; min-height: calc(44px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px); padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+.compact :deep(.desktop-assistant) { box-sizing: border-box; border-radius: 0; padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.compact :deep(.codex-input-container) { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
 :global(html[data-theme="light"] .codex-chat-window) { --codex-pane-text: #242424; --codex-pane-muted: #666; --codex-pane-accent: #168447; --codex-pane-send-text: #fff; --codex-pane-focus: #3474ad; --codex-pane-focus-soft: #3474ad14; --codex-pane-link: #2168a6; --codex-pane-danger: #b7433b; --codex-pane-user: #eaf7ee; --codex-pane-user-border: #c0ddca; color-scheme: light; }
 :global(html[data-theme="dark"] .codex-chat-window) { color-scheme: dark; }
 @media (pointer: coarse) { .codex-close { width: 36px; height: 36px; } }

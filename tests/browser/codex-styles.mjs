@@ -15,6 +15,7 @@ const fixtures = [
  { name:'mobile-dark', viewport:{width:390,height:844}, mobile:true },
  { name:'mobile-light', viewport:{width:320,height:640}, mobile:true, light:true },
  { name:'mobile-landscape', viewport:{width:844,height:390}, mobile:true },
+ { name:'mobile-offset', viewport:{width:390,height:844}, mobile:true, keyboard:true, offset:true },
  { name:'mobile-keyboard', viewport:{width:390,height:844}, mobile:true, keyboard:true },
 ];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5l8AAAAASUVORK5CYII=','base64');
@@ -48,6 +49,7 @@ try {
    if(path.includes('/codex/files/'))return route.fulfill({contentType:'application/octet-stream',body:Buffer.from('file')});
    await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   });
+  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
   await page.goto(`http://127.0.0.1:5190/${fixture.mobile?'mobile':''}`);
   await page.evaluate(light => document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark'), !!fixture.light);
   await page.getByRole('button',{name:'Открыть чат Codex'}).click();
@@ -58,19 +60,19 @@ try {
   const textarea=dialog.getByRole('textbox');await textarea.fill('Проверь эти файлы.\nСравни суммы и получателей.\nПокажи результат таблицей.');
   await page.waitForFunction(() => !document.querySelector('.codex-send-btn').disabled);
   if (fixture.keyboard) {
-   await page.evaluate(() => { Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: 360 }); window.visualViewport.dispatchEvent(new Event('resize')); });
-   await page.waitForFunction(() => document.querySelector('.codex-chat-window').clientHeight < 360);
+   await page.evaluate(offset => { Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: 360 }); if(offset) for(const [key,value] of Object.entries({width:350,offsetLeft:20,offsetTop:12})) Object.defineProperty(window.visualViewport,key,{configurable:true,value}); window.visualViewport.dispatchEvent(new Event('resize')); }, !!fixture.offset);
+   await page.waitForFunction(() => Math.abs(document.querySelector('.codex-chat-window').getBoundingClientRect().height - window.visualViewport.height) < 1);
   }
   await dialog.locator('.codex-messages').evaluate(el=>{el.scrollTop=0;});
   const geometry=await dialog.evaluate(el=>{
    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
    const wrapper=el.querySelector('.codex-input-wrapper');const input=el.querySelector('textarea');
-   return {panel:rect(el),composer:rect(wrapper),textarea:rect(input),attach:rect(el.querySelector('.codex-attach-btn')),mic:rect(el.querySelector('.codex-mic-btn')),send:rect(el.querySelector('.codex-send-btn')),overflow:el.scrollWidth>el.clientWidth+1,
+   return {viewport:{x:window.visualViewport.offsetLeft,y:window.visualViewport.offsetTop,width:window.visualViewport.width,height:window.visualViewport.height},radius:getComputedStyle(el).borderRadius,panel:rect(el),composer:rect(wrapper),textarea:rect(input),attach:rect(el.querySelector('.codex-attach-btn')),mic:rect(el.querySelector('.codex-mic-btn')),send:rect(el.querySelector('.codex-send-btn')),overflow:el.scrollWidth>el.clientWidth+1,
     cards:[...el.querySelectorAll('.desktop-attachments .codex-file-card')].map(card=>({card:rect(card),name:rect(card.querySelector('.desktop-file-name')),remove:rect(card.querySelector('.codex-file-remove')),padding:getComputedStyle(card.querySelector('.codex-file-remove')).padding})),
     tables:[...el.querySelectorAll('.codex-table-scroll')].map(table=>({rect:rect(table),client:table.clientWidth,scroll:table.scrollWidth})),
     textColor:getComputedStyle(el.querySelector('.codex-markdown')).color,background:getComputedStyle(el.querySelector('.codex-bubble')).backgroundColor};
   });
-  assert.equal(geometry.textColor, fixture.light ? 'rgb(36, 36, 36)' : 'rgb(231, 231, 231)', 'theme text color');
+  assert.equal(geometry.textColor, fixture.light ? 'rgb(38, 54, 49)' : 'rgb(231, 231, 231)', 'theme text color');
   assert.equal(geometry.overflow,false,fixture.name+' panel horizontal overflow');
   assert.ok(geometry.composer.bottom<=geometry.panel.bottom+1,fixture.name+' composer remains inside window');
   if(fixture.mobile && geometry.panel.height > 420) {
@@ -80,7 +82,11 @@ try {
    assert.ok(geometry.attach.right<=geometry.textarea.x+1,fixture.name+' paperclip does not overlap input');
    assert.ok(geometry.textarea.right<=geometry.mic.x+1,fixture.name+' input does not overlap microphone');
   }
-  if(fixture.keyboard) assert.ok(geometry.panel.bottom<=360, 'composer remains above mobile keyboard');
+  if(fixture.mobile) {
+   for(const dimension of ['x','y','width','height']) assert.ok(Math.abs(geometry.panel[dimension]-geometry.viewport[dimension])<1, fixture.name+' fills the visible viewport: '+dimension+JSON.stringify(geometry.panel));
+   assert.equal(geometry.radius,'0px');
+  }
+  if(fixture.keyboard) assert.ok(geometry.panel.bottom<=geometry.viewport.y+geometry.viewport.height+1, 'composer remains above mobile keyboard');
   assert.ok(geometry.send.right<=geometry.composer.right-3,fixture.name+' send fits');
   for(const c of geometry.cards){assert.ok(c.name.right<=c.remove.x-3,fixture.name+' filename does not overlap remove');assert.equal(c.padding,'0px');assert.ok(c.remove.width<=36&&c.remove.height<=36);}
   assert.ok(geometry.tables.every(t=>t.rect.width<=geometry.panel.width-20),fixture.name+' tables scroll inside message');
@@ -107,5 +113,5 @@ try {
   }
   assert.deepEqual(errors,[]);console.log('PASS '+fixture.name+': '+JSON.stringify({width:geometry.panel.width,height:geometry.panel.height,textColor:geometry.textColor}));await context.close();
  }
-} catch(error){if(page){await page.screenshot({path:`${root}/output/playwright/codex-style-failure.png`});console.error((await page.locator('.desktop-error').allTextContents()).join(' '));}throw error;}
+} catch(error){if(page){await page.screenshot({path:`${root}/output/playwright/codex-style-failure.png`,timeout:5000}).catch(()=>{});console.error((await page.locator('.desktop-error').allTextContents()).join(' '));}throw error;}
 finally{await browser?.close();await server.close();}
