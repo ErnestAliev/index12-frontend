@@ -36,7 +36,7 @@ function applyCompany(value) {
   const previous = company.value;
   company.value = value; draft.value = profileDraft(value);
   const item = main[props.kind].find(item => String(item._id) === String(value._id));
-  if (item) Object.assign(item, value);
+  if (item) { Object.assign(item, value); if (!value.onecSync) delete item.onecSync; }
   emit('saved', value, previous);
 }
 async function action(fn) {

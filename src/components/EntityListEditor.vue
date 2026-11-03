@@ -47,12 +47,20 @@ const registryItem = ref(null);
 const syncProfileOnOpen = ref(false);
 let savingProfile = false;
 function openProfile(item, sync = false) { registryItem.value = item; syncProfileOnOpen.value = sync; }
+const isProfileSynced = item => Boolean(item.onecSync?.ref && Number.isFinite(Date.parse(item.onecSync.checkedAt)))
+  && (!item.onecSync.identificationNumber || item.onecSync.identificationNumber === item.identificationNumber);
+function profileSyncTitle(item) {
+  if (!isProfileSynced(item)) return 'Синхронизировать с 1С';
+  const date = new Date(item.onecSync.checkedAt).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
+  return `Обновить из 1С · Последняя синхронизация: ${date}${item.onecSync.name ? ` · ${item.onecSync.name}` : ''}`;
+}
 function profileSaved(value, previous) {
   savingProfile = true;
   const current = localItems.value.find(item => item._id === value._id);
   if (current) {
     const preserved = { name: current.name === previous?.name ? value.name : current.name, contractNumber: current.contractNumber, contractDate: current.contractDate };
     Object.assign(current, value, preserved);
+    if (!value.onecSync) delete current.onecSync;
   }
   nextTick(() => { savingProfile = false; });
 }
@@ -839,6 +847,7 @@ defineExpose({
                 <div class="contractor-col-bin">
                     <input type="text" v-model="contractorFilters.identificationNumber" class="contractor-filter-input" placeholder="ИИН/БИН" />
                 </div>
+                <div class="contractor-col-sync">1С</div>
                 <div class="contractor-col-contract-num">
                     <input type="text" v-model="contractorFilters.contractNumber" class="contractor-filter-input" placeholder="Номер договора" />
                 </div>
@@ -856,7 +865,11 @@ defineExpose({
                 <input type="text" v-model="item.name" class="edit-input edit-name contractor-name-cell" @blur="debouncedSave" />
                 <button type="button" class="edit-input edit-picker-btn contractor-project-cell" @click="openMultiSelect(item, 'projects')">{{ normalizeIdArray(item.selectedProjectIds).length ? `Проекты (${normalizeIdArray(item.selectedProjectIds).length})` : 'Проект' }}</button>
                 <button type="button" class="edit-input edit-picker-btn contractor-category-cell" @click="openMultiSelect(item, 'categories')">{{ normalizeIdArray(item.selectedCategoryIds).length ? `Категории (${normalizeIdArray(item.selectedCategoryIds).length})` : 'Категория' }}</button>
-                <div class="contractor-bin-cell contractor-profile-actions"><button type="button" class="edit-input" @click="openProfile(item)" :title="item.identificationNumber || 'Карточка контрагента'">{{ item.identificationNumber || 'Реквизиты' }}</button><button type="button" class="edit-input" @click="openProfile(item, true)">Синхронизировать с 1С</button></div>
+                <button type="button" class="edit-input contractor-bin-cell" @click="openProfile(item)" :title="item.identificationNumber || 'Карточка контрагента'">{{ item.identificationNumber || 'Реквизиты' }}</button>
+                <button type="button" class="edit-input contractor-sync-button" :class="{ 'is-synced': isProfileSynced(item) }" :title="profileSyncTitle(item)" :aria-label="`${isProfileSynced(item) ? 'Обновить из 1С' : 'Синхронизировать с 1С'}: ${item.name}`" @click="openProfile(item, true)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><template v-if="isProfileSynced(item)"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></template><template v-else><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></template></svg>
+                  <span>{{ isProfileSynced(item) ? 'Синхронизирован' : 'Не синхронизирован' }}</span>
+                </button>
                 <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num contractor-contract-num-cell" placeholder="Номер договора" @blur="debouncedSave" />
                 <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date contractor-contract-date-cell" @input="debouncedSave" />
                 <button class="delete-btn contractor-trash-cell" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
@@ -1060,7 +1073,13 @@ defineExpose({
 </template>
 
 <style scoped>
-.contractor-profile-actions { display: grid; grid-template-rows: repeat(2, 28px); gap: 4px; }.contractor-profile-actions button { width: 100%; font-size: 11px; padding: 0 4px; cursor: pointer; }
+.contractor-sync-button { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 8px; font-size: 12px; text-align: left; white-space: nowrap; cursor: pointer; color: var(--color-text-soft); transition: border-color .15s, background-color .15s; }
+.contractor-sync-button svg { flex: 0 0 16px; }
+.contractor-sync-button.is-synced { color: #7bd6ac; border-color: #7bd6ac55; background: #7bd6ac0d; }
+:global([data-theme="light"]) .contractor-sync-button.is-synced { color: #23754e; border-color: #23754e55; background: #23754e0d; }
+.contractor-sync-button:hover { border-color: var(--color-primary); }
+.contractor-bin-cell { cursor: pointer; font-variant-numeric: tabular-nums; }
+.contractor-col-sync { font-size: 12px; color: var(--color-text-soft); padding-left: 8px; }
 .registry-overlay { position: fixed; inset: 0; background: #0008; display: flex; align-items: center; justify-content: center; z-index: 5000; }
 .registry-card { width: min(560px, 90vw); max-height: 80vh; overflow-y: auto; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 12px; padding: 24px; }
 .registry-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1213,14 +1232,19 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
   display: flex;
   flex-direction: column;
   gap: 0;
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
 }
+.contractor-list-editor::-webkit-scrollbar { display: block; width: 6px; height: 6px; }
+.contractor-list-editor::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
 .contractor-filters-row,
 .contractor-grid-row {
   flex-shrink: 0;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(240px, 1.45fr) minmax(180px, 1fr) minmax(180px, 1fr) 150px 160px 190px 40px;
-  gap: 12px;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1fr) minmax(150px, 1fr) 132px 174px 140px 160px 28px;
+  min-width: 1220px;
+  gap: 8px;
   align-items: center;
   padding: 0 1.5rem;
 }
@@ -1232,9 +1256,9 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
-  min-height: 78px;
+  min-height: 48px;
 }
 .contractor-grid-row:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);

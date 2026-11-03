@@ -34,10 +34,14 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
       if (path.endsWith('/codex/status')) data = { connected: false, configured: false };
       return route.fulfill({ json: data });
     });
+    let syncedContractor;
     for (let index = 1; index <= 22; index++) {
       const seeded = await fetch(`${entitiesApiUrl}/contractors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `Контрагент для проверки ${index}`, identificationNumber: index % 2 ? `1234567890${String(index).padStart(2, '0')}` : '', contractNumber: `Договор ${index}`, contractDate: '2026-01-15' }) });
       assert.equal(seeded.status, 201);
+      if (index === 1) syncedContractor = await seeded.json();
     }
+    const seedSync = await fetch(`${apiUrl}/business/contractors/${syncedContractor._id}/sync-onec`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-test-actor': actor, 'x-test-workspace': workspaceId }, body: JSON.stringify({ expectedVersion: 0, ref: '22222222-2222-4222-8222-222222222222' }) });
+    assert.equal(seedSync.status, 200);
     await page.goto('http://127.0.0.1:5192/');
     await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
     const calendar = page.getByRole('dialog', { name: 'Календарь задач', exact: true });
@@ -61,30 +65,45 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await calendar.getByRole('button', { name: 'Закрыть календарь', exact: true }).click();
     await page.locator('.contractor-editor-btn').click();
     await page.locator('.contractor-grid-row').nth(21).waitFor({ state: 'attached' });
+    assert.equal(await page.locator('.contractor-sync-button.is-synced').count(), 1);
+    assert.equal(await page.locator('.contractor-sync-button:not(.is-synced)').count(), 21);
+    assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Синхронизирован');
+    assert.equal(await page.locator('.contractor-sync-button:not(.is-synced)').first().innerText(), 'Не синхронизирован');
+    assert.ok((await page.locator('.contractor-sync-button.is-synced').getAttribute('title')).includes('Последняя синхронизация'));
     for (const viewport of [{ width: 1488, height: 825 }, { width: 1024, height: 768 }]) {
       await page.setViewportSize(viewport);
       const geometry = await page.locator('.contractor-grid-row').evaluateAll(rows => rows.map(row => {
         const bounds = row.getBoundingClientRect();
         const controls = [...row.querySelectorAll('input, button')].map(node => node.getBoundingClientRect());
-        return { top: bounds.top, bottom: bounds.bottom, height: bounds.height, controlsInside: controls.every(control => control.top >= bounds.top && control.bottom <= bounds.bottom) };
+        const bin = row.querySelector('.contractor-bin-cell').getBoundingClientRect();
+        const sync = row.querySelector('.contractor-sync-button').getBoundingClientRect();
+        return { top: bounds.top, bottom: bounds.bottom, height: bounds.height, controlsInside: controls.every(control => control.top >= bounds.top && control.bottom <= bounds.bottom), syncBesideBin: sync.left >= bin.right && Math.abs(sync.top - bin.top) < 1 };
       }));
       assert.ok(geometry.every(row => row.controlsInside), `contractor inputs/buttons must fit within their rows at ${viewport.width}px`);
+      assert.ok(geometry.every(row => row.syncBesideBin), '1C action must be immediately beside BIN, in the same row');
+      assert.ok(geometry.every(row => row.height <= 50), 'contractor rows must remain compact');
       assert.ok(geometry.every((row, index) => index === 0 || row.top >= geometry[index - 1].bottom), 'contractor rows must never overlap');
       await page.locator('.contractor-grid-row').last().scrollIntoViewIfNeeded();
       const lastRow = await page.locator('.contractor-grid-row').last().boundingBox();
       const footer = await page.locator('.contractor-popup .popup-footer').boundingBox();
       assert.ok(lastRow.y + lastRow.height <= footer.y + 1, 'last contractor must remain accessible above the footer');
-      await page.locator('.contractor-list-editor').evaluate(node => { node.scrollTop = 0; });
+      await page.locator('.contractor-list-editor').evaluate(node => { node.scrollTop = 0; node.scrollLeft = 0; });
       await page.screenshot({ path: `${output}/business-contractors-${viewport.width}.png` });
     }
     await page.setViewportSize({ width: 1440, height: 960 });
+    await page.locator('button.contractor-bin-cell').first().click();
+    const boundCard = page.getByRole('dialog', { name: 'Карточка контрагента', exact: true });
+    await boundCard.getByRole('button', { name: 'Отвязать', exact: true }).click();
+    await boundCard.getByText('Связь с 1С удалена', { exact: true }).waitFor();
+    await boundCard.getByRole('button', { name: 'Закрыть карточку контрагента', exact: true }).click();
+    assert.equal(await page.locator('.contractor-sync-button.is-synced').count(), 0, 'unlink must clear the status immediately without reloading');
     await page.getByRole('button', { name: '+ Создать контрагента', exact: true }).click();
     const create = page.locator('.create-modal');
     await create.locator('.name-input').fill('Поставщик без номера');
     await create.getByRole('button', { name: 'Создать', exact: true }).click();
     await create.waitFor({ state: 'hidden' });
     await page.locator('.contractor-filters-row input[placeholder="Название"]').fill('Поставщик без номера');
-    await page.locator('.contractor-bin-cell button').first().click();
+    await page.locator('button.contractor-bin-cell').first().click();
     const legal = page.getByRole('dialog', { name: 'Карточка контрагента', exact: true });
     await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).waitFor();
     assert.equal(await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).inputValue(), '');
@@ -95,6 +114,8 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     assert.equal(await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).inputValue(), profile.identificationNumber);
     assert.equal(await legal.getByRole('textbox', { name: 'Название в INDEX12', exact: true }).inputValue(), 'Поставщик без номера');
     await legal.getByRole('button', { name: 'Закрыть карточку контрагента', exact: true }).click();
+    await page.locator('.contractor-sync-button.is-synced').waitFor();
+    assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Синхронизирован', 'successful synchronization must update its row status without reloading');
     await page.locator('.contractor-popup .modal-close-btn').click();
     await page.locator('.edit-btn').click();
     assert.equal(await page.locator('.editor-modal').getByRole('button', { name: 'Синхронизировать с 1С', exact: true }).count(), 0, 'account rows must not duplicate company synchronization');
