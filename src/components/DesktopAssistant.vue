@@ -14,6 +14,7 @@ const store = useMainStore();
 const scopeKey = computed(() => `${store.user?._id || store.user?.id || ''}:${store.user?.currentWorkspaceId || ''}`);
 const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref(''), attachments = ref([]);
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
+const provider = ref('desktop');
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 const recording = ref(false);
 const voiceAvailable = ref(false);
@@ -150,7 +151,7 @@ async function send(forced) {
   let media;
   let accepted = false;
   try {
-    const status = await api('/status', null, session); connected.value = status.connected;
+    const status = await api('/status', null, session); connected.value = status.connected; provider.value = status.provider || 'desktop';
     if (!status.connected) throw new Error(status.reason || 'Нет связи с Codex на Mac. Запустите связку Index12.');
     if (!selectedId.value) await createChat(session);
     media = [];
@@ -195,6 +196,7 @@ async function refresh(manual = false) {
   try {
     const status = await api('/status', null, session);
     const wasConnected = connected.value; connected.value = status.connected;
+    provider.value = status.provider || 'desktop';
     voiceAvailable.value = status.voiceAvailable === true;
     chats.value = (await api('/chats', null, session)).chats;
     const saved = localStorage.getItem(storageKey());
@@ -267,7 +269,7 @@ onBeforeUnmount(() => { voice.stop(); clearInterval(timer); controller.abort(); 
 <template>
   <section class="desktop-assistant" :class="{ mobile }" aria-label="Помощник Codex">
     <div class="desktop-toolbar">
-      <span class="desktop-status" :class="{ online: connected }" :title="connected ? 'Общий сервер Codex доступен' : 'Запустите npm run desktop:bridge на Mac'">Codex · {{ connected ? 'подключён' : 'нет связи' }}</span>
+      <span class="desktop-status" :class="{ online: connected }" :title="connected ? (provider === 'cloud' ? 'Работает на сервере INDEX12 независимо от Mac' : 'Подключён Codex на Mac') : 'Помощник недоступен'">Codex · {{ connected ? (provider === 'cloud' ? 'сервер' : 'подключён') : 'нет связи' }}</span>
       <button type="button" class="codex-action-btn" :disabled="busy || voiceActive" title="Обновить связь и историю" aria-label="Обновить связь и историю" @click="refresh(true)"><CodexGlyph name="refresh" /></button>
       <button type="button" class="codex-action-btn" :disabled="busy || voiceActive" @click="newChat"><CodexGlyph name="plus" /><span>Новый чат</span></button>
     </div>

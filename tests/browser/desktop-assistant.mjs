@@ -70,11 +70,11 @@ try {
   checks: {
   const open = page.getByRole('button', { name: 'Открыть чат Codex' });
   try { await open.waitFor({timeout:10000}); } catch(e) { console.log((await page.locator('body').innerText()).slice(0,1800));await mkdir('output/playwright',{recursive:true});await page.screenshot({path:'output/playwright/codex-window-failed.png'});throw e; }
-  assert.equal(await open.evaluate(el => el.previousElementSibling.classList.contains('receipt-btn')), true, 'Codex button is directly below receipt generator');
+  assert.equal(await open.evaluate(el => el.previousElementSibling.getAttribute('aria-label')), 'Открыть календарь задач', 'Codex remains beside the daily calendar shortcut');
   await open.click();
   const dialog = page.getByRole('dialog', { name: 'Чат Codex' });
   if(liveApi){
-    await dialog.getByText('Codex · подключён',{exact:true}).waitFor();
+    await dialog.getByText(/^Codex · (подключён|сервер)$/).waitFor();
     await dialog.getByRole('button',{name:'Новый чат'}).click();
     await page.waitForFunction(()=>!document.querySelector('.desktop-toolbar button').disabled);
     if (process.env.INDEX12_ASSISTANT_TEST_FILE) await dialog.locator('input[type=file]').setInputFiles(process.env.INDEX12_ASSISTANT_TEST_FILE);

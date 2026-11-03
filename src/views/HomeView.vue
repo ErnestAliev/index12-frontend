@@ -1796,7 +1796,7 @@ const handleRefundDelete = async (op) => {
 
     </div>
     <CellContextMenu v-if="isContextMenuVisible" :style="contextMenuPosition" @select="handleContextMenuSelect" />
-    <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
+    <div v-if="showUserMenu" class="user-menu" :style="userMenuPosition" @click.stop ><button class="user-menu-item" disabled title="В разработке">Настройки</button><a class="user-menu-item" :href="`${baseUrlCalculated}/mcp/setup`" target="_blank" rel="noopener">Подключить ChatGPT</a><button class="user-menu-item" @click="handleLogout">Выйти</button></div>
     
     <!-- 🟢 FIX: Передаем $event (объект операции) в обработчик удаления, так как переменная operationToEdit может быть уже очищена событием close -->
     <IncomePopup 
@@ -1923,7 +1923,7 @@ const handleRefundDelete = async (op) => {
 }
 .user-name { display: none; /* Скрыт в узкой панели */ }
 .user-menu { position: fixed; width: 180px; background: var(--color-background-soft); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); z-index: 2000; overflow: hidden; }
-.user-menu-item { display: block; width: 100%; padding: 10px 12px; background: none; border: none; border-bottom: 1px solid var(--color-border); color: var(--color-text); cursor: pointer; text-align: left; font-size: 14px; }
+.user-menu-item { display: block; width: 100%; padding: 10px 12px; background: none; border: none; border-bottom: 1px solid var(--color-border); color: var(--color-text); cursor: pointer; text-align: left; font-size: 14px; text-decoration: none; box-sizing: border-box; }
 .user-menu-item:last-child { border-bottom: none; }
 .user-menu-item:hover { background-color: var(--color-background-mute); }
 .user-menu-item:disabled { color: var(--color-text-mute); cursor: not-allowed; background: none; }

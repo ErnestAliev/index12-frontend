@@ -51,6 +51,10 @@
             <div class="menu-item-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg></div>
             <span>История изменений</span>
           </button>
+          <a class="menu-item" :href="connectorSetupUrl" target="_blank" rel="noopener" @click="emit('close')">
+            <div class="menu-item-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg></div>
+            <span>Подключить ChatGPT</span>
+          </a>
           <button class="menu-item" @click="openAbout">
             <div class="menu-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -105,6 +109,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 
 const mainStore = useMainStore();
+const connectorSetupUrl = `${(import.meta.env.VITE_API_BASE_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '')}/mcp/setup`;
 const emit = defineEmits(['close', 'open-about', 'open-appearance', 'open-history', 'open-workspaces']);
 const appearance = useAppearanceStore();
 
@@ -301,6 +306,7 @@ async function logout() {
 }
 
 .menu-item {
+  text-decoration: none;
   width: 100%;
   display: flex;
   align-items: center;
