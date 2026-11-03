@@ -8,11 +8,12 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
   const taskDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).format(new Date());
   const output = fileURLToPath(new URL('../../output/playwright/', import.meta.url));
   const server = await createServer({ root: fileURLToPath(new URL('../../', import.meta.url)), server: { host: '127.0.0.1', port: 5192, strictPort: true } });
-  let browser;
+  let browser, page;
   try {
     await server.listen();
+    await mkdir(output, { recursive: true });
     browser = await chromium.launch({ executablePath: process.env.SCROLL_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     let syncRequests = 0;
     const candidatePages = [];
@@ -24,7 +25,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
         const response = await route.fetch({ url: apiUrl + path.slice(4) + new URL(request.url()).search, headers: { ...request.headers(), 'x-test-actor': actor, 'x-test-workspace': workspaceId, origin: 'http://127.0.0.1:5192' } });
         return route.fulfill({ response });
       }
-      if (/^\/api\/(companies|contractors|accounts)(\/|$)/.test(path)) {
+      if (/^\/api\/(companies|contractors|accounts|individuals)(\/|$)/.test(path)) {
         const response = await route.fetch({ url: entitiesApiUrl + path.slice(4) }); return route.fulfill({ response });
       }
       let data = [];
@@ -47,23 +48,52 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await page.goto('http://127.0.0.1:5192/');
     await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
     const calendar = page.getByRole('dialog', { name: 'Календарь задач', exact: true });
-    await calendar.getByRole('button', { name: '+ Задача', exact: true }).click();
-    await calendar.getByRole('textbox', { name: 'Название задачи', exact: true }).fill('Сверить налоговые уведомления');
-    await calendar.getByRole('combobox', { name: 'Компания задачи', exact: true }).selectOption(company._id);
-    await calendar.getByLabel('Дата задачи', { exact: true }).fill(taskDate);
-    await calendar.getByRole('button', { name: 'Сохранить задачу', exact: true }).click();
-    await page.reload();
-    await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
-    const day = calendar.getByRole('button', { name: new RegExp(`^${taskDate},`) });
-    await day.click();
-    await calendar.getByRole('button', { name: 'Сверить налоговые уведомления', exact: true }).waitFor();
-    await calendar.getByRole('combobox', { name: 'Фильтр по компании', exact: true }).selectOption(company._id);
-    await calendar.getByRole('checkbox', { name: 'Выполнить: Сверить налоговые уведомления', exact: true }).check();
-    await calendar.getByRole('button', { name: 'Сверить налоговые уведомления', exact: true }).waitFor({ state: 'hidden' });
-    await calendar.getByRole('checkbox', { name: 'Выполненные', exact: true }).check();
-    await calendar.getByRole('button', { name: 'Сверить налоговые уведомления', exact: true }).waitFor();
-    await mkdir(output, { recursive: true });
-    await page.screenshot({ path: `${output}/business-calendar-desktop.png` });
+    await calendar.getByRole('button', { name: 'Создать задачу', exact: true }).first().click();
+    const card = page.getByRole('dialog', { name: 'Карточка задачи', exact: true });
+    await card.getByLabel('Название задачи', { exact: true }).fill('Подготовить договор');
+    await card.getByLabel('Контрагент задачи', { exact: true }).click();
+    await card.locator('.party-options section').first().getByRole('option').first().click();
+    await card.getByLabel('Дата задачи', { exact: true }).fill(taskDate);
+    await card.getByLabel('Время начала', { exact: true }).fill('11:00');
+    await card.getByLabel('Время окончания', { exact: true }).fill('12:00');
+    await card.getByLabel('Дата окончания', { exact: true }).fill(taskDate);
+    await card.getByRole('button', { name: 'Добавить напоминание', exact: true }).click();
+    await card.getByLabel('Напоминание 2, минут', { exact: true }).fill('20');
+    await card.getByRole('button', { name: 'Добавить ссылку', exact: true }).click();
+    await card.getByLabel('Название ссылки 1', { exact: true }).fill('Договор на Диске');
+    await card.getByLabel('Ссылка 1', { exact: true }).fill('https://drive.google.com/file/d/calendar-test');
+    await card.getByLabel('Файлы задачи', { exact: true }).setInputFiles({ name: 'Договор.txt', mimeType: 'text/plain', buffer: Buffer.from('Тестовый договор') });
+    await card.getByRole('status').filter({ hasText: 'Загрузка' }).waitFor({ state: 'hidden' });
+    await card.getByRole('button', { name: 'Сохранить задачу', exact: true }).click();
+    await card.getByText('Сохранено', { exact: true }).waitFor();
+    await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
+    await page.reload(); await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
+    const event = calendar.getByRole('button', { name: 'Подготовить договор', exact: true });
+    await event.hover(); await card.waitFor(); assert.equal(await card.getByLabel('Время начала', { exact: true }).inputValue(), '11:00');
+    assert.equal(await card.getByLabel('Ссылка 1', { exact: true }).inputValue(), 'https://drive.google.com/file/d/calendar-test');
+    await card.getByRole('button', { name: 'Договор.txt', exact: true }).waitFor();
+    await event.click();
+    await card.getByLabel('Описание задачи', { exact: true }).fill('Согласовать редакцию договора');
+    await card.getByLabel('Контрагент задачи', { exact: true }).click();
+    await card.getByLabel('Поиск контрагента задачи', { exact: true }).fill('Участник календаря');
+    await card.getByLabel('Тип нового контрагента', { exact: true }).selectOption('individuals');
+    await card.getByRole('button', { name: '+ Создать', exact: true }).click();
+    await card.getByLabel('Контрагент задачи', { exact: true }).filter({ hasText: 'Участник календаря' }).waitFor();
+    await card.getByText('Сохранено', { exact: true }).waitFor();
+    await page.screenshot({ path: `${output}/business-calendar-popover.png` });
+    await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
+    const tomorrow = new Date(Date.parse(`${taskDate}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    await event.dragTo(calendar.locator(`[data-date="${tomorrow}"]`));
+    await calendar.locator(`[data-date="${tomorrow}"]`).getByRole('button', { name: 'Подготовить договор', exact: true }).waitFor();
+    await event.click(); assert.equal(await card.getByLabel('Дата задачи', { exact: true }).inputValue(), tomorrow);
+    assert.equal(await card.getByLabel('Время начала', { exact: true }).inputValue(), '11:00');
+    await card.getByLabel('Задача исполнена', { exact: true }).check(); await card.getByText('Сохранено', { exact: true }).waitFor();
+    await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
+    assert.equal(await event.getAttribute('data-status'), 'done');
+    await page.reload(); await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
+    await calendar.locator(`[data-date="${tomorrow}"]`).getByRole('button', { name: 'Подготовить договор', exact: true }).waitFor();
+    assert.equal(await event.getAttribute('data-status'), 'done');
+    await mkdir(output, { recursive: true }); await page.screenshot({ path: `${output}/business-calendar-desktop.png` });
     await calendar.getByRole('button', { name: 'Закрыть календарь', exact: true }).click();
     await page.locator('.contractor-editor-btn').click();
     await page.locator('.contractor-grid-row').nth(21).waitFor({ state: 'attached' });
@@ -201,13 +231,17 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await page.goto('http://127.0.0.1:5192/mobile');
     // Routing may redirect /mobile to the responsive main view.
     const menu = page.locator('.user-avatar, .user-menu-btn, .mobile-user-btn').first();
-    if (await menu.count()) await menu.click();
-    else await page.getByRole('button', { name: /меню/i }).first().click();
+    await menu.waitFor(); await menu.click();
     await page.getByRole('button', { name: 'Календарь задач', exact: true }).click();
     await page.getByRole('dialog', { name: 'Календарь задач', exact: true }).waitFor();
     assert.ok(await page.getByRole('dialog', { name: 'Календарь задач' }).evaluate(node => node.scrollWidth <= node.clientWidth + 1));
     await page.screenshot({ path: `${output}/business-calendar-mobile.png` });
+    await page.locator('.mobile-agenda-task').first().click();
+    await card.waitFor(); assert.ok(await card.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
+    await card.locator('footer').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${output}/business-calendar-mobile-popover.png` });
+    await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
     assert.deepEqual(errors, []);
     console.log('PASS: real Vue → HTTP → MongoDB, stacked company modal, preserved account drafts, no browser tab/navigation, explicit per-company 1C selection, no-BIN contractor import, persisted edits and Drive links, export, desktop/mobile views');
-  } finally { await browser?.close(); await server.close(); }
+  } catch (error) { await page?.screenshot({ path: `${output}/business-calendar-failure.png` }); console.error((await page?.locator('.task-popover').innerText().catch(() => ''))); throw error; } finally { await browser?.close(); await server.close(); }
 }

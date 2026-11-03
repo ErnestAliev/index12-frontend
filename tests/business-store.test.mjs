@@ -13,7 +13,7 @@ before(async () => {
   ({ useBusinessStore } = await server.ssrLoadModule('/src/stores/businessStore.js'));
   ({ businessApi } = await server.ssrLoadModule('/src/services/businessApi.js'));
 });
-after(async () => { if (pinia) disposePinia(pinia); await server?.close(); for (const key of ['window', 'document', 'localStorage', 'Notification']) delete globalThis[key]; });
+after(async () => { if (pinia) disposePinia(pinia); await server?.close(); for (const key of ['window', 'document', 'localStorage', 'Notification', 'navigator']) delete globalThis[key]; });
 function fixture() {
   if (pinia) disposePinia(pinia); pinia = createPinia(); setActivePinia(pinia);
   const store = useBusinessStore(), requests = [];
@@ -27,19 +27,23 @@ test('a workspace switch discards late calendar and company responses', async ()
   requests.find(item => item.config.url === '/tasks').resolve({ tasks: [{ _id: 'private-task' }], truncated: false });
   await old; assert.deepEqual(store.tasks, []); assert.equal(store.status, null); store.stop();
 });
-test('notifications require user opt-in, are deduplicated and keep different workspaces separate', async () => {
-  const sent = [];
-  globalThis.Notification = class {
-    static permission = 'granted';
-    static requestPermission = async () => 'granted';
-    constructor(title, options) { sent.push({ title, ...options }); }
-  };
+test('push requires explicit opt-in and keeps subscription preferences separate by workspace', async () => {
+  const sent = [], subscription = { endpoint: 'https://fcm.googleapis.com/test', toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/test', keys: {} }) };
+  globalThis.Notification = class { static requestPermission = async () => 'granted'; };
+  window.PushManager = class {};
+  const registration = { pushManager: { getSubscription: async () => subscription } };
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { serviceWorker: { addEventListener() {}, register: async () => registration, ready: Promise.resolve(registration) } } });
   const { store } = fixture();
-  businessApi.defaults.adapter = async config => ({ status: 200, data: config.url === '/status' ? { connections: [] } : { tasks: [{ _id: 'task', title: 'Задолженность', status: 'open', source: 'kgd', evidence: { hasDebt: true, totalArrear: '100' } }] } });
-  store.start('workspace-one'); await store.refresh(); assert.equal(sent.length, 0);
-  await store.toggleNotifications(); assert.equal(sent.length, 1);
-  await store.refresh(); assert.equal(sent.length, 1);
-  store.start('workspace-two'); await store.refresh(); assert.equal(store.notificationsEnabled, false); assert.equal(sent.length, 1);
-  store.start('workspace-one'); await store.refresh(); assert.equal(store.notificationsEnabled, true); assert.equal(sent.length, 1);
-  store.stop();
+  businessApi.defaults.adapter = async config => { sent.push(config); return { status: 200, data: config.url === '/reminders/key' ? { configured: true, publicKey: 'YQ' } : config.url === '/status' ? { connections: [] } : { tasks: [] } }; };
+  store.start('actor:workspace-one'); await store.refresh(); assert.equal(sent.some(row => row.url === '/reminders/subscriptions'), false);
+  await store.toggleNotifications(); assert.equal(store.notificationsEnabled, true); assert.equal(sent.filter(row => row.method === 'post' && row.url === '/reminders/subscriptions').length, 1);
+  store.start('actor:workspace-two'); assert.equal(store.notificationsEnabled, false);
+  store.start('actor:workspace-one'); assert.equal(store.notificationsEnabled, true);
+  await store.toggleNotifications(); assert.equal(store.notificationsEnabled, false); assert.equal(sent.filter(row => row.method === 'delete').length, 1); store.stop();
+});
+test('calendar updates send the displayed version and never retry a conflict with a newer version', async () => {
+  const { store } = fixture(), sent = [];
+  businessApi.defaults.adapter = async config => { sent.push(config); throw Object.assign(new Error('conflict'), { response: { status: 409 } }); };
+  await assert.rejects(store.saveTask({ title: 'Правка' }, 'task', 4));
+  assert.equal(sent.length, 1); assert.equal(JSON.parse(sent[0].data).expectedVersion, 4); store.stop();
 });
