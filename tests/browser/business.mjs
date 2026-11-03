@@ -107,6 +107,11 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await page.waitForFunction(() => !document.querySelector('.eds-file-button').disabled);
     assert.equal(await companyCard.getByRole('textbox', { name: 'Путь к файлу ЭЦП', exact: true }).inputValue(), '/Users/test/company.p12');
     await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).fill('local-test-password');
+    await companyCard.getByRole('button', { name: 'Показать пароль', exact: true }).click();
+    assert.equal(await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).getAttribute('type'), 'text');
+    assert.equal(await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).inputValue(), 'local-test-password');
+    await companyCard.getByRole('button', { name: 'Скрыть пароль', exact: true }).click();
+    assert.equal(await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).getAttribute('type'), 'password');
     await companyCard.getByRole('button', { name: 'Подключить ЭЦП', exact: true }).click();
     await companyCard.getByText('Настройки ЭЦП сохранены', { exact: true }).waitFor();
     assert.equal(await update.isDisabled(), false);

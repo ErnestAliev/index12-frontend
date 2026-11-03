@@ -11,6 +11,7 @@ const company = ref(null);
 const eds = ref(null);
 const storagePath = ref('');
 const password = ref('');
+const passwordVisible = ref(false);
 const loading = ref(true);
 const busy = ref(false);
 const error = ref('');
@@ -52,6 +53,7 @@ watch(() => [main.user?.id || main.user?._id, main.user?.currentWorkspaceId, pro
   pickerController?.abort(); choosingFile.value = false;
   company.value = null; eds.value = null; storagePath.value = ''; password.value = ''; error.value = ''; message.value = ''; loading.value = true;
   busy.value = false;
+  passwordVisible.value = false;
   checkedAt.value = null;
   if (!userId) return;
   try {
@@ -73,12 +75,12 @@ async function action(fn) {
 const connect = () => action(async current => {
   const { data } = await businessApi.put(`${endpoint()}/eds`, { storagePath: storagePath.value, password: password.value || undefined }, requestOptions());
   if (current !== generation) return;
-  eds.value = data.eds; storagePath.value = data.eds.storagePath; password.value = ''; message.value = 'Настройки ЭЦП сохранены';
+  eds.value = data.eds; storagePath.value = data.eds.storagePath; password.value = ''; passwordVisible.value = false; message.value = 'Настройки ЭЦП сохранены';
 });
 const disconnect = () => action(async current => {
   await businessApi.delete(`${endpoint()}/eds`, requestOptions());
   if (current !== generation) return;
-  eds.value = null; storagePath.value = ''; password.value = ''; message.value = 'ЭЦП отключена';
+  eds.value = null; storagePath.value = ''; password.value = ''; passwordVisible.value = false; message.value = 'ЭЦП отключена';
 });
 const updateCompany = () => action(async current => {
   const { data } = await businessApi.post(`${endpoint()}/refresh`, {}, requestOptions());
@@ -107,7 +109,7 @@ const updateCompany = () => action(async current => {
           <div class="eds-heading"><h2>ЭЦП</h2><span v-if="eds?.passwordStored" class="eds-state">{{ eds.enabled ? 'Сохранена' : 'Требует обновления' }}</span></div>
           <form @submit.prevent="connect" class="eds-form">
             <label>Файл ЭЦП<div class="eds-file-control"><input :value="storagePath" type="text" readonly aria-label="Путь к файлу ЭЦП" placeholder="Выберите файл" @click="chooseFile" /><button type="button" class="eds-file-button" aria-label="Выбрать файл ЭЦП" title="Выбрать локальный файл ЭЦП через NCALayer" :disabled="busy || choosingFile" @click="chooseFile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2"/><path d="M3 7h7l2 3h9l-3 10H3z"/></svg></button></div></label>
-            <label>Пароль<input v-model="password" type="password" autocomplete="new-password" :placeholder="eds?.passwordStored ? 'Сохранён' : ''" aria-label="Пароль ЭЦП" :disabled="busy" maxlength="1024" /></label>
+            <label>Пароль<div class="eds-password-control"><input v-model="password" :type="passwordVisible ? 'text' : 'password'" autocomplete="new-password" :placeholder="eds?.passwordStored ? 'Сохранён' : ''" aria-label="Пароль ЭЦП" :disabled="busy" maxlength="1024" /><button type="button" class="eds-password-eye" :aria-label="passwordVisible ? 'Скрыть пароль' : 'Показать пароль'" :title="passwordVisible ? 'Скрыть пароль' : 'Показать пароль'" :aria-pressed="passwordVisible" :disabled="busy" @click="passwordVisible = !passwordVisible"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path v-if="passwordVisible" d="m3 3 18 18"/></svg></button></div></label>
             <div class="eds-actions"><button type="submit" :disabled="busy || !storagePath.trim() || (!password && needsPassword)">{{ eds?.passwordStored ? 'Сохранить' : 'Подключить ЭЦП' }}</button><button v-if="eds" type="button" :disabled="busy" @click="disconnect">Отключить</button></div>
           </form>
         </section>
@@ -135,6 +137,9 @@ dt { color: var(--color-text-soft, var(--color-text)); opacity: .7; } dd { margi
 .eds-file-control { display: flex; align-items: stretch; gap: 8px; }
 .eds-file-control input { flex: 1; cursor: pointer; }
 .eds-file-control .eds-file-button { display: flex; align-items: center; justify-content: center; flex: 0 0 42px; padding: 8px; }
+.eds-password-control { position: relative; }
+.eds-password-control input { padding-right: 46px; }
+.eds-password-control .eds-password-eye { position: absolute; right: 2px; top: 2px; bottom: 2px; width: 40px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; }
 label { display: grid; gap: 8px; font-size: 13px; }
 input, button { font: inherit; color: var(--color-text); border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); padding: 10px 12px; min-width: 0; box-sizing: border-box; }
 input { width: 100%; } button { cursor: pointer; font-size: 13px; white-space: nowrap; } button:disabled { opacity: .4; cursor: default; }
