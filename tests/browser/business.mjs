@@ -34,6 +34,10 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
       if (path.endsWith('/codex/status')) data = { connected: false, configured: false };
       return route.fulfill({ json: data });
     });
+    for (let index = 1; index <= 22; index++) {
+      const seeded = await fetch(`${entitiesApiUrl}/contractors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `Контрагент для проверки ${index}`, identificationNumber: index % 2 ? `1234567890${String(index).padStart(2, '0')}` : '', contractNumber: `Договор ${index}`, contractDate: '2026-01-15' }) });
+      assert.equal(seeded.status, 201);
+    }
     await page.goto('http://127.0.0.1:5192/');
     await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
     const calendar = page.getByRole('dialog', { name: 'Календарь задач', exact: true });
@@ -56,11 +60,30 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await page.screenshot({ path: `${output}/business-calendar-desktop.png` });
     await calendar.getByRole('button', { name: 'Закрыть календарь', exact: true }).click();
     await page.locator('.contractor-editor-btn').click();
+    await page.locator('.contractor-grid-row').nth(21).waitFor({ state: 'attached' });
+    for (const viewport of [{ width: 1488, height: 825 }, { width: 1024, height: 768 }]) {
+      await page.setViewportSize(viewport);
+      const geometry = await page.locator('.contractor-grid-row').evaluateAll(rows => rows.map(row => {
+        const bounds = row.getBoundingClientRect();
+        const controls = [...row.querySelectorAll('input, button')].map(node => node.getBoundingClientRect());
+        return { top: bounds.top, bottom: bounds.bottom, height: bounds.height, controlsInside: controls.every(control => control.top >= bounds.top && control.bottom <= bounds.bottom) };
+      }));
+      assert.ok(geometry.every(row => row.controlsInside), `contractor inputs/buttons must fit within their rows at ${viewport.width}px`);
+      assert.ok(geometry.every((row, index) => index === 0 || row.top >= geometry[index - 1].bottom), 'contractor rows must never overlap');
+      await page.locator('.contractor-grid-row').last().scrollIntoViewIfNeeded();
+      const lastRow = await page.locator('.contractor-grid-row').last().boundingBox();
+      const footer = await page.locator('.contractor-popup .popup-footer').boundingBox();
+      assert.ok(lastRow.y + lastRow.height <= footer.y + 1, 'last contractor must remain accessible above the footer');
+      await page.locator('.contractor-list-editor').evaluate(node => { node.scrollTop = 0; });
+      await page.screenshot({ path: `${output}/business-contractors-${viewport.width}.png` });
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
     await page.getByRole('button', { name: '+ Создать контрагента', exact: true }).click();
     const create = page.locator('.create-modal');
     await create.locator('.name-input').fill('Поставщик без номера');
     await create.getByRole('button', { name: 'Создать', exact: true }).click();
     await create.waitFor({ state: 'hidden' });
+    await page.locator('.contractor-filters-row input[placeholder="Название"]').fill('Поставщик без номера');
     await page.locator('.contractor-bin-cell button').first().click();
     const legal = page.getByRole('dialog', { name: 'Карточка контрагента', exact: true });
     await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).waitFor();
@@ -74,6 +97,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await legal.getByRole('button', { name: 'Закрыть карточку контрагента', exact: true }).click();
     await page.locator('.contractor-popup .modal-close-btn').click();
     await page.locator('.edit-btn').click();
+    assert.equal(await page.locator('.editor-modal').getByRole('button', { name: 'Синхронизировать с 1С', exact: true }).count(), 0, 'account rows must not duplicate company synchronization');
     assert.equal(await page.getByRole('tab', { name: 'Компании и КГД', exact: true }).count(), 0);
     const ownerInput = page.getByRole('textbox', { name: 'Название владельца счета', exact: true }).first();
     const inputBox = await ownerInput.boundingBox();

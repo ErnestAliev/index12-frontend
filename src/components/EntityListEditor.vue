@@ -1060,7 +1060,7 @@ defineExpose({
 </template>
 
 <style scoped>
-.contractor-profile-actions { display: grid; gap: 4px; }.contractor-profile-actions button { width: 100%; font-size: 11px; padding: 0 4px; cursor: pointer; }
+.contractor-profile-actions { display: grid; grid-template-rows: repeat(2, 28px); gap: 4px; }.contractor-profile-actions button { width: 100%; font-size: 11px; padding: 0 4px; cursor: pointer; }
 .registry-overlay { position: fixed; inset: 0; background: #0008; display: flex; align-items: center; justify-content: center; z-index: 5000; }
 .registry-card { width: min(560px, 90vw); max-height: 80vh; overflow-y: auto; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 12px; padding: 24px; }
 .registry-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1216,6 +1216,8 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
 }
 .contractor-filters-row,
 .contractor-grid-row {
+  flex-shrink: 0;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(240px, 1.45fr) minmax(180px, 1fr) minmax(180px, 1fr) 150px 160px 190px 40px;
   gap: 12px;
@@ -1232,7 +1234,7 @@ h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-ali
   border-radius: 8px;
   margin-bottom: 6px;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
-  min-height: 44px;
+  min-height: 78px;
 }
 .contractor-grid-row:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);

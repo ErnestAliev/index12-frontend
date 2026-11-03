@@ -25,8 +25,7 @@ const onOwnerNameInput = row => {
   for (const other of rows.value) if (other.ownerKey === row.ownerKey) other.ownerName = row.ownerName;
 };
 const selectedCompanyId = ref(null);
-const selectedCompanySync = ref(false);
-function openCompany(id, sync = false) { selectedCompanySync.value = sync; selectedCompanyId.value = id; }
+function openCompany(id) { selectedCompanyId.value = id; }
 function companySaved(company) {
   for (const row of rows.value) if (row.ownerKey === `company-${company._id}`) {
     if (row.iinBin === row.sourceIinBin) row.iinBin = formatIinBin(company.identificationNumber || '');
@@ -859,7 +858,6 @@ watch(
               <col class="col-legal-form" :style="{ width: columnWidths.legalForm }" />
               <col class="col-tax-regime" :style="{ width: columnWidths.taxRegime }" />
               <col class="col-tax-percent" :style="{ width: columnWidths.taxPercent }" />
-              <col style="width: 180px" />
               <col class="col-delete" :style="{ width: columnWidths.delete }" />
             </colgroup>
             <thead>
@@ -874,7 +872,6 @@ watch(
                 <th>Форма лица</th>
                 <th>Режим налог</th>
                 <th>Ставка</th>
-                <th>1С</th>
                 <th class="delete-header-cell">Удалить</th>
               </tr>
             </thead>
@@ -1075,9 +1072,6 @@ watch(
                 </td>
 
                 <td class="delete-cell">
-                  <button v-if="ownerTypeFromKey(row.ownerKey) === 'company'" type="button" class="row-onec-button" :disabled="isSaving" @click="openCompany(ownerIdFromKey(row.ownerKey), true)">Синхронизировать с 1С</button>
-                </td>
-                <td class="delete-cell">
                   <button
                     type="button"
                     class="row-delete-btn"
@@ -1108,7 +1102,7 @@ watch(
                     <button class="add-btn" :disabled="isSaving" @click="addAccountRow('cash')">+ Касса</button>
                   </div>
                 </td>
-                <td class="add-row-empty" colspan="11"></td>
+                <td class="add-row-empty" colspan="10"></td>
               </tr>
             </tbody>
           </table>
@@ -1148,11 +1142,10 @@ watch(
       </div>
     </div>
   </div>
-    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :sync-on-open="selectedCompanySync" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @saved="companySaved" @close="selectedCompanyId = null" />
+    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @saved="companySaved" @close="selectedCompanyId = null" />
 </template>
 
 <style scoped>
-.row-onec-button { border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font: inherit; font-size: 11px; padding: 7px 8px; white-space: nowrap; }
 .owner-name-control { position: relative; display: flex; min-width: 0; align-items: stretch; }
 .owner-name-control .owner-name-input { padding-right: 30px; width: 100%; min-width: 0; }
 .owner-name-input.has-company-link { color: transparent; }
