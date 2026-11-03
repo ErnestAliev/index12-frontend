@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { computed, ref } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { businessError } from '@/services/businessApi';
@@ -22,13 +23,13 @@ async function create() {
 </script>
 <template>
   <div class="party-picker" @keydown.esc.stop="open = false">
-    <div class="party-chip-line"><button type="button" class="party-trigger" aria-label="Контрагент задачи" :aria-expanded="open" @click="open = !open"><span>{{ selected?.name || (modelValue && fallbackName) || 'Выбрать контрагента' }}</span><span aria-hidden="true">⌄</span></button><button v-if="modelValue" type="button" class="party-clear" aria-label="Убрать контрагента" @click="choose(null)">×</button></div>
+    <div class="party-chip-line"><button type="button" class="party-trigger" aria-label="Контрагент задачи" :aria-expanded="open" @click="open = !open"><span>{{ selected?.name || (modelValue && fallbackName) || 'Выбрать контрагента' }}</span><UiIcon class="party-chevron" name="chevron-down" /></button><button v-if="modelValue" type="button" class="party-clear ui-icon-button" aria-label="Убрать контрагента" @click="choose(null)"><UiIcon name="close" /></button></div>
     <div v-if="open" class="party-menu">
       <input v-model="query" type="search" aria-label="Поиск контрагента задачи" placeholder="Название или часть названия" @keydown.enter.prevent="create" />
       <div class="party-options" role="listbox" aria-label="Контрагенты задачи">
         <section v-for="group in options" :key="group.kind"><h4>{{ group.label }}</h4><button v-for="row in group.rows" :key="row._id" type="button" role="option" :aria-selected="modelValue?.id === row._id && modelValue?.kind === group.kind" @click="choose({ kind: group.kind, id: row._id })">{{ row.name }}</button></section>
       </div>
-      <div v-if="query.trim()" class="party-create"><select v-model="kind" aria-label="Тип нового контрагента"><option value="contractors">Контрагент</option><option value="companies">Моя компания</option><option value="individuals">Физическое лицо</option></select><button type="button" :disabled="busy" @click="create">+ Создать</button></div>
+      <div v-if="query.trim()" class="party-create"><select v-model="kind" aria-label="Тип нового контрагента" class="ui-select"><option value="contractors">Контрагент</option><option value="companies">Моя компания</option><option value="individuals">Физическое лицо</option></select><button type="button" :disabled="busy" @click="create">+ Создать</button></div>
       <p v-if="error" role="alert">{{ error }}</p>
     </div>
   </div>

@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, nextTick, computed, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
@@ -156,7 +157,7 @@ const createAccount = async () => {
              @focus="handleFocus"
            />
            <button class="btn-icon-save" @click="createAccount" :disabled="isSavingNew">✓</button>
-           <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
+           <button type="button" class="btn-icon-cancel ui-icon-button" @click="cancelCreation" :disabled="isSavingNew" aria-label="Отменить"><UiIcon name="close" /></button>
 
            <!-- 🟢 Список подсказок -->
            <ul v-if="showSuggestions && suggestionsList.length > 0" class="suggestions-list">

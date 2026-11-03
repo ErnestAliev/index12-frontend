@@ -1,7 +1,7 @@
 <template>
   <div class="modal-overlay" @click.self="close">
     <div class="modal-content">
-      <button class="close-btn" @click="close">&times;</button>
+      <button type="button" class="close-btn ui-icon-button" @click="close" aria-label="Закрыть"><UiIcon name="close" /></button>
       
       <div class="modal-header">
         <h2>О сервисе</h2>
@@ -98,6 +98,7 @@
 </template>
 
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 const emit = defineEmits(['close']);
 
 function close() {

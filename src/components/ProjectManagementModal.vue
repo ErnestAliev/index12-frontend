@@ -27,7 +27,7 @@
           </svg>
           Создать проект
         </button>
-        <select v-model="sortMode" class="sort-select">
+        <select v-model="sortMode" class="sort-select ui-select">
           <option value="order">По порядку</option>
           <option value="name">По названию</option>
           <option value="date">По дате создания</option>

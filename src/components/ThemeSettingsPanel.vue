@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 import { DEVICE_LABELS } from '@/utils/appearanceTemplates.js';
@@ -74,7 +75,7 @@ onBeforeUnmount(() => returnFocus?.focus?.({ preventScroll: true }));
 <template>
   <section v-if="open" id="theme-settings-panel" ref="panel" class="theme-settings-panel" :class="{ dark: store.mode === 'dark' }"
     role="dialog" aria-modal="false" aria-label="Настройки оформления" tabindex="-1" @keydown.esc.stop="emit('close')" @click.stop>
-    <header class="theme-panel-header"><strong>Оформление</strong><button type="button" class="theme-small-button" aria-label="Закрыть настройки оформления" title="Закрыть" @click="emit('close')">×</button></header>
+    <header class="theme-panel-header"><strong>Оформление</strong><button type="button" class="theme-small-button ui-icon-button" aria-label="Закрыть настройки оформления" title="Закрыть" @click="emit('close')"><UiIcon name="close" /></button></header>
     <div class="theme-panel-scroll">
       <div class="theme-devices" role="group" aria-label="Вариант устройства"><button v-for="(label,key) in DEVICE_LABELS" :key="key" type="button" :aria-pressed="store.editingDevice===key" @click="store.setEditingDevice(key)">{{ label }}</button></div>
       <button v-if="store.editingDevice!=='desktop'" type="button" class="theme-link-button" :disabled="!store.deviceCustomized" title="Убрать корректировки этого устройства в светлом и тёмном вариантах" @click="store.inheritDesktop()">Наследовать десктоп</button>
@@ -88,14 +89,14 @@ onBeforeUnmount(() => returnFocus?.focus?.({ preventScroll: true }));
         </button>
       </div>
       <div class="theme-library-heading"><label class="theme-saved-label" for="personal-theme-list">Мои темы</label><button type="button" class="theme-link-button" :disabled="store.syncing || store.libraryBusy" aria-label="Обновить список тем" title="Загрузить темы аккаунта с других устройств" @click="store.refreshLibrary()">{{ store.syncing ? '…' : '↻' }}</button></div>
-      <div class="theme-saved-row"><select id="personal-theme-list" :value="selectedSaved" :disabled="store.libraryBusy" @change="chooseSaved"><option value="">По умолчанию</option><option v-for="item in store.savedThemes" :key="item.id" :value="item.id">{{ item.name }}</option></select></div>
+      <div class="theme-saved-row"><select id="personal-theme-list" :value="selectedSaved" :disabled="store.libraryBusy" @change="chooseSaved" class="ui-select"><option value="">По умолчанию</option><option v-for="item in store.savedThemes" :key="item.id" :value="item.id">{{ item.name }}</option></select></div>
       <div class="theme-library-actions"><button type="button" class="theme-link-button" :disabled="store.libraryBusy || store.syncing" @click="resetDefault">По умолчанию</button><button v-if="selectedSaved" type="button" class="theme-link-button" :disabled="store.libraryBusy || store.syncing" title="Удалить шаблон вместе с вариантами всех устройств" @click="remove">Удалить тему</button></div>
       <details class="theme-section theme-financial" open><summary>Цвета операций</summary><div v-for="(label,key) in FINANCIAL_COLORS" :key="key" class="theme-color-field"><label :for="`financial-color-${key}`">{{ label }}</label><div class="theme-color-inputs"><input :id="`financial-color-${key}`" type="color" :value="financial[key]" :aria-label="`Цвета операций: ${label}`" @input="changeFinancial(key,$event.target.value)"><input type="text" class="theme-hex" :value="financial[key]" maxlength="7" :aria-label="`Цвета операций: ${label} HEX`" @change="changeFinancial(key,$event.target.value)"></div></div></details>
       <div class="theme-scope-tabs" role="group" aria-label="Настраиваемый блок"><button v-for="(label,key) in {widgets:'Виджеты',table:'Таблица',charts:'Графики'}" :key="key" type="button" :aria-pressed="block===key" @click="block=key">{{ label }}</button></div>
-      <label v-if="block==='table'" class="theme-widget-part">Часть таблицы<select v-model="tablePart" aria-label="Часть таблицы"><option value="table">Ячейки и дни</option><option value="operations">Чипы операций</option><option value="separators">Разделители блоков</option></select></label>
-      <label v-if="block==='charts'" class="theme-widget-part">Часть графиков<select v-model="chartPart" aria-label="Часть графиков"><option value="charts">Область графиков</option><option value="summaries">Итоги дня</option></select></label>
+      <label v-if="block==='table'" class="theme-widget-part">Часть таблицы<select v-model="tablePart" aria-label="Часть таблицы" class="ui-select"><option value="table">Ячейки и дни</option><option value="operations">Чипы операций</option><option value="separators">Разделители блоков</option></select></label>
+      <label v-if="block==='charts'" class="theme-widget-part">Часть графиков<select v-model="chartPart" aria-label="Часть графиков" class="ui-select"><option value="charts">Область графиков</option><option value="summaries">Итоги дня</option></select></label>
       <div class="theme-scope-heading"><strong>{{ scopes[scope] }}</strong><button type="button" class="theme-link-button" :title="store.editingDevice==='desktop'?'Вернуть параметры общей основы':'Наследовать параметры десктопа'" @click="store.resetScope(scope)">Наследовать всё</button></div>
-      <label v-if="scope==='widgets'" class="theme-widget-part">Часть виджета<select v-model="widgetPart" aria-label="Часть виджета"><option v-for="(part,key) in WIDGET_PARTS" :key="key" :value="key">{{ part.label }}</option></select></label>
+      <label v-if="scope==='widgets'" class="theme-widget-part">Часть виджета<select v-model="widgetPart" aria-label="Часть виджета" class="ui-select"><option v-for="(part,key) in WIDGET_PARTS" :key="key" :value="key">{{ part.label }}</option></select></label>
       <details v-if="colorFields.length" class="theme-section" open>
         <summary>Цвета</summary>
         <div v-for="[key, label] in colorFields" :key="key" class="theme-color-field">
@@ -114,7 +115,7 @@ onBeforeUnmount(() => returnFocus?.focus?.({ preventScroll: true }));
           <span class="theme-range-caption"><span>{{ metricLabel(key, spec) }}</span><output>{{ spec.options ? spec.options[current.metrics[key]].label : current.metrics[key] }}{{ spec.unit ? ` ${spec.unit}` : '' }}</output>
             <button v-if="scope !== 'global'" type="button" class="theme-inherit" :class="{ inherited: inherited('metrics', key) }" :disabled="inherited('metrics', key)" :aria-label="`Наследовать: ${spec.label}`" :title="store.editingDevice!=='desktop'?'Наследовать параметр десктопа':inherited('metrics', key)?'Из общей темы':'Вернуть значение общей темы'" @click.prevent="store.inheritField(scope, 'metrics', key)">↶</button>
           </span>
-          <select v-if="spec.options" :value="current.metrics[key]" :aria-label="`${controlPrefix}: ${metricLabel(key,spec)}`" @change="change('metrics',key,$event.target.value)"><option v-for="(option,value) in spec.options" :key="value" :value="value">{{ option.label }}</option></select>
+          <select v-if="spec.options" :value="current.metrics[key]" :aria-label="`${controlPrefix}: ${metricLabel(key,spec)}`" @change="change('metrics',key,$event.target.value)" class="ui-select"><option v-for="(option,value) in spec.options" :key="value" :value="value">{{ option.label }}</option></select>
           <input v-else type="range" :min="spec.min" :max="spec.max" :step="spec.step" :value="current.metrics[key]" :aria-label="`${controlPrefix}: ${metricLabel(key, spec)}`" @input="change('metrics', key, Number($event.target.value))">
         </label>
       </details>

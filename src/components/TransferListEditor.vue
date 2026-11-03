@@ -385,7 +385,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
         
         <!-- Отправитель -->
         <div class="filter-col col-owner">
-           <select v-model="filters.fromOwner" class="filter-input filter-select">
+           <select v-model="filters.fromOwner" class="filter-input filter-select ui-select">
               <option value="">Отправитель (Все)</option>
               <optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
               <optgroup label="Физлица"><option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
@@ -394,7 +394,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
         <!-- Счет От -->
         <div class="filter-col col-acc">
-           <select v-model="filters.fromAccount" class="filter-input filter-select">
+           <select v-model="filters.fromAccount" class="filter-input filter-select ui-select">
               <option value="">Счет От (Все)</option>
               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
            </select>
@@ -407,7 +407,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
         <!-- Счет Куда -->
         <div class="filter-col col-acc">
-           <select v-model="filters.toAccount" class="filter-input filter-select">
+           <select v-model="filters.toAccount" class="filter-input filter-select ui-select">
               <option value="">Счет Куда (Все)</option>
               <option v-for="a in accounts" :key="a._id" :value="a._id">{{ a.name }}</option>
            </select>
@@ -415,7 +415,7 @@ const cancelDelete = () => { if (isDeleting.value) return; showDeleteConfirm.val
 
         <!-- Получатель -->
         <div class="filter-col col-owner">
-           <select v-model="filters.toOwner" class="filter-input filter-select">
+           <select v-model="filters.toOwner" class="filter-input filter-select ui-select">
               <option value="">Получатель (Все)</option>
               <optgroup label="Компании"><option v-for="c in companies" :key="c._id" :value="`company-${c._id}`">{{ c.name }}</option></optgroup>
               <optgroup label="Физлица"><option v-for="i in individuals" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>

@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 
 const props = defineProps({
@@ -159,7 +160,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
          <span v-if="!displayValue" class="placeholder">{{ placeholder }}</span>
          <span v-else class="value-text">{{ displayValue }}</span>
       </div>
-      <button v-if="displayValue" class="btn-clear" @click="clear" title="Очистить">✕</button>
+      <button type="button" v-if="displayValue" class="btn-clear ui-icon-button" @click="clear" title="Очистить" aria-label="Очистить"><UiIcon name="close" /></button>
       
       <!-- 🟢 Унифицированная иконка (серый SVG) -->
       <span v-else class="calendar-icon">

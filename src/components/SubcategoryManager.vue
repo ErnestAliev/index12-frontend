@@ -16,7 +16,7 @@ const create = () => run(async () => { await store.addSubcategory(newName.value.
 <template>
   <div class="subcategory-manager" data-testid="subcategory-manager">
     <h3>Подкатегории</h3>
-    <select v-model="parent" aria-label="Категория подкатегорий"><option value="">Все категории</option><option v-for="category in store.categories" :key="category._id" :value="category._id">{{ category.name }}</option></select>
+    <select v-model="parent" aria-label="Категория подкатегорий" class="ui-select"><option value="">Все категории</option><option v-for="category in store.categories" :key="category._id" :value="category._id">{{ category.name }}</option></select>
     <form v-if="store.canEdit" class="create-row" @submit.prevent="create">
       <input v-model="newName" placeholder="Новая подкатегория" aria-label="Новая подкатегория" maxlength="120" />
       <button :disabled="saving || !parent || !newName.trim()">Добавить</button>

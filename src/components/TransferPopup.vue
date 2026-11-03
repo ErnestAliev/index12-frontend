@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
@@ -602,7 +603,7 @@ const closePopup = () => { emit('close'); };
       <div v-else class="inline-create-form input-spacing relative">
         <input type="text" v-model="newFromAccountName" :placeholder="accountCreationPlaceholder" ref="newFromAccountInput" @keyup.enter="saveNewFromAccount" @keyup.esc="cancelCreateFromAccount" @blur="handleFromAccountBlur" @focus="handleFromAccountFocus" autocomplete="off" />
         <button @click="saveNewFromAccount" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateFromAccount" class="btn-inline-cancel">✕</button>
+        <button type="button" @click="cancelCreateFromAccount" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
         <ul v-if="showFromAccountSuggestions && fromAccountSuggestionsList.length > 0" class="bank-suggestions-list">
             <li v-for="(bank, idx) in fromAccountSuggestionsList" :key="idx" @mousedown.prevent="selectFromAccountSuggestion(bank)">{{ bank.name }}</li>
         </ul>
@@ -622,7 +623,7 @@ const closePopup = () => { emit('close'); };
       <div v-else-if="isFromOwnerSelectVisible && creatingOwnerFor === 'from'" class="inline-create-form input-spacing">
           <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
           <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+          <button type="button" @click="cancelCreateOwner" class="btn-inline-cancel ui-icon-button" :disabled="isInlineSaving" aria-label="Отменить"><UiIcon name="close" /></button>
       </div>
 
 
@@ -639,7 +640,7 @@ const closePopup = () => { emit('close'); };
       <div v-else class="inline-create-form input-spacing relative">
         <input type="text" v-model="newToAccountName" :placeholder="accountCreationPlaceholder" ref="newToAccountInput" @keyup.enter="saveNewToAccount" @keyup.esc="cancelCreateToAccount" @blur="handleToAccountBlur" @focus="handleToAccountFocus" autocomplete="off" />
         <button @click="saveNewToAccount" class="btn-inline-save">✓</button>
-        <button @click="cancelCreateToAccount" class="btn-inline-cancel">✕</button>
+        <button type="button" @click="cancelCreateToAccount" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
         <ul v-if="showToAccountSuggestions && toAccountSuggestionsList.length > 0" class="bank-suggestions-list">
             <li v-for="(bank, idx) in toAccountSuggestionsList" :key="idx" @mousedown.prevent="selectToAccountSuggestion(bank)">{{ bank.name }}</li>
         </ul>
@@ -659,7 +660,7 @@ const closePopup = () => { emit('close'); };
       <div v-else-if="isToOwnerSelectVisible && creatingOwnerFor === 'to'" class="inline-create-form input-spacing">
           <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" autocomplete="off" />
           <button @click="saveNewOwner" class="btn-inline-save" :disabled="isInlineSaving">✓</button>
-          <button @click="cancelCreateOwner" class="btn-inline-cancel" :disabled="isInlineSaving">✕</button>
+          <button type="button" @click="cancelCreateOwner" class="btn-inline-cancel ui-icon-button" :disabled="isInlineSaving" aria-label="Отменить"><UiIcon name="close" /></button>
       </div>
 
 

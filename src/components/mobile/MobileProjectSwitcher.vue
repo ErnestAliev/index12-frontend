@@ -118,7 +118,7 @@
                     <div class="participant-info">
                       <span class="participant-email">{{ share.email }}</span>
                       <select 
-                        class="role-select" 
+                        class="role-select ui-select"
                         :value="share.role" 
                         @change="updateUserRole(p._id, share.userId, $event.target.value)"
                       >
@@ -163,7 +163,7 @@
     <div class="share-dialog" @click.stop>
       <div class="share-header">
         <h3>Пригласить в дашбоард</h3>
-        <button class="btn-close" @click="closeShareDialog">✕</button>
+        <button type="button" class="btn-close ui-icon-button" @click="closeShareDialog" aria-label="Закрыть"><UiIcon name="close" /></button>
       </div>
 
       <div class="share-body">
@@ -232,6 +232,7 @@
 </template>
 
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import ConfirmDialog from '../ConfirmDialog.vue';

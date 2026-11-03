@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 /**
@@ -95,7 +96,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
         <span v-else class="placeholder">{{ placeholder }}</span>
         
       </div>
-      <span class="arrow">▼</span>
+      <UiIcon class="arrow" name="chevron-down" />
     </div>
 
     <!-- Список -->
@@ -249,6 +250,7 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 }
 
 .arrow { 
+  width: 16px; height: 16px; flex: none; align-self: center;
   font-size: 10px; 
   color: #666; 
   margin-left: 10px; 

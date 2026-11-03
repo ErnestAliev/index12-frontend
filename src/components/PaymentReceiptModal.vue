@@ -3,7 +3,7 @@
     <div class="modal-container">
       <div class="header">
         <h2>Создание документа оплаты</h2>
-        <div class="close-btn" @click="$emit('close')">✕</div>
+        <button type="button" class="close-btn ui-icon-button" @click="$emit('close')" aria-label="Закрыть"><UiIcon name="close" /></button>
       </div>
 
       <div class="content">
@@ -13,7 +13,7 @@
           <!-- Шаг 1: Выбор компании -->
           <div class="step-block">
             <div class="step-title">1. Мои компании</div>
-            <select v-model="selectedCompanyId">
+            <select v-model="selectedCompanyId" class="ui-select">
               <option v-for="c in myCompanies" :key="c._id" :value="c._id">{{ c.name }}</option>
             </select>
           </div>
@@ -21,7 +21,7 @@
           <!-- Шаг 2: Выбор контрагента -->
           <div class="step-block">
             <div class="step-title">2. Мои контрагенты</div>
-            <select v-model="selectedClientId" @change="selectedTxId = null">
+            <select v-model="selectedClientId" @change="selectedTxId = null" class="ui-select">
               <option :value="null" disabled>Выберите клиента</option>
               <option v-for="c in clients" :key="c._id" :value="c._id">{{ c.name }}</option>
             </select>
@@ -120,6 +120,7 @@
 </template>
 
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import html2pdf from 'html2pdf.js';
@@ -299,6 +300,7 @@ if (myCompanies.value.length > 0 && !selectedCompanyId.value) {
 }
 
 .close-btn {
+  background: transparent; border: 0;
   cursor: pointer;
   opacity: 0.5;
   transition: opacity 0.2s;

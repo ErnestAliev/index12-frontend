@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref } from 'vue';
 
 defineProps({
@@ -26,7 +27,7 @@ const options = ref({
       
       <div class="popup-header">
         <h3>{{ title }}</h3>
-        <button @click="$emit('close')" class="close-btn">×</button>
+        <button type="button" @click="$emit('close')" class="close-btn ui-icon-button" aria-label="Закрыть"><UiIcon name="close" /></button>
       </div>
 
       <div class="popup-body">

@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { formatNumber } from '@/utils/formatters.js';
@@ -151,7 +152,7 @@ onMounted(() => {
             <span class="nav-current">{{ displayModeText }}</span>
             <button class="nav-arrow" @click="switchViewMode(1)">›</button>
         </div>
-        <button class="close-btn" @click="$emit('close')">&times;</button>
+        <button type="button" class="close-btn ui-icon-button" @click="$emit('close')" aria-label="Закрыть"><UiIcon name="close" /></button>
       </div>
       
       <!-- Summary Info -->

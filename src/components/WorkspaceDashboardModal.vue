@@ -119,7 +119,7 @@
                 <div class="share-info">
                   <span class="share-email">{{ share.email }}</span>
                   <select 
-                    class="share-role-select" 
+                    class="share-role-select ui-select"
                     :value="share.role" 
                     @change="updateUserRole(workspace._id, share.userId, $event.target.value)"
                   >
@@ -198,7 +198,7 @@
         
         <div class="form-group">
           <label>Роль доступа</label>
-          <select v-model="shareRole" class="share-role-select">
+          <select v-model="shareRole" class="share-role-select ui-select">
             <option value="analyst">Аналитик (просмотр)</option>
             <option value="manager">Менеджер (таймлайн)</option>
             <option value="admin">Администратор (полный)</option>

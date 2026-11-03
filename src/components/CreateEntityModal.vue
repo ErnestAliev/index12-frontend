@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import RegistryFields from './RegistryFields.vue';
@@ -102,7 +103,7 @@ const handleClose = () => {
     <div class="create-modal">
       <div class="modal-header">
         <h3>{{ entityTitleName }}</h3>
-        <button class="close-btn" @click="handleClose" :disabled="isSaving">&times;</button>
+        <button type="button" class="close-btn ui-icon-button" @click="handleClose" :disabled="isSaving" aria-label="Закрыть"><UiIcon name="close" /></button>
       </div>
       
       <div class="modal-body">

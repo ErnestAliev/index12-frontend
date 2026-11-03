@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import BaseSelect from './BaseSelect.vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -58,7 +59,7 @@ const save = async () => {
       <div class="subcategory-create">
         <input ref="input" v-model="name" aria-label="Название подкатегории" placeholder="Название подкатегории" maxlength="120" :disabled="saving" @keydown.enter.prevent="save" @keydown.esc.prevent="creating = false" />
         <button type="button" aria-label="Сохранить подкатегорию" :disabled="saving || !name.trim()" @click="save">✓</button>
-        <button type="button" aria-label="Отменить добавление подкатегории" :disabled="saving" @click="creating = false">✕</button>
+        <button type="button" aria-label="Отменить добавление подкатегории" :disabled="saving" @click="creating = false" class="ui-icon-button"><UiIcon name="close" /></button>
       </div>
     </template>
     <p v-if="error" class="subcategory-error" role="alert">{{ error }}</p>

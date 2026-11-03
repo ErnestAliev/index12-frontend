@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import {registerPreference,recordPreference} from '@/utils/preferenceHistory.js';
 import { useMainStore } from '@/stores/mainStore';
@@ -189,7 +190,7 @@ const closeModal = () => {
       <!-- Header with close button -->
       <div class="modal-header">
         <h2>Редактирование данных</h2>
-        <button class="close-btn" @click="closeModal">&times;</button>
+        <button type="button" class="close-btn ui-icon-button" @click="closeModal" aria-label="Закрыть"><UiIcon name="close" /></button>
       </div>
 
       <!-- Draggable Tab Bar -->

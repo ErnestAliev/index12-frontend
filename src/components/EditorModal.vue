@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import SubcategoryManager from './SubcategoryManager.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
@@ -830,7 +831,7 @@ watch(
           <button v-if="activeSection === 'accounts'" class="btn-save" :disabled="isSaving || isDeletingAccount" @click="saveSettings">
             {{ isSaving ? 'Сохранение...' : 'Сохранить' }}
           </button>
-          <button class="close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
+          <button type="button" class="close-btn ui-icon-button" @click="closeModal" aria-label="Закрыть"><UiIcon name="close" /></button>
         </div>
       </div>
 
@@ -955,7 +956,7 @@ watch(
                 </td>
 
                 <td class="currency-cell">
-                  <select v-model="row.currency" class="cell-select currency-select">
+                  <select v-model="row.currency" class="cell-select currency-select ui-select">
                     <option value="KZT">KZT</option>
                   </select>
                 </td>
@@ -969,7 +970,7 @@ watch(
                     <div class="owner-name-control">
                       <button v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" type="button" class="owner-company-link" aria-haspopup="dialog" :title="`Открыть компанию ${row.ownerName}`" @click="openCompany(ownerIdFromKey(row.ownerKey))">{{ row.ownerName }}</button>
                       <input v-if="row.ownerKey" v-model="row.ownerName" type="text" class="cell-input owner-name-input" :class="{ 'has-company-link': ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id }" aria-label="Название владельца счета" @input="onOwnerNameInput(row)" @focus="editingOwnerRowId = row._id" @blur="editingOwnerRowId = null" />
-                    <select v-model="row.ownerKey" class="cell-select owner-picker" :class="{ 'has-owner': !!row.ownerKey }" aria-label="Выбрать владельца счета" @change="onOwnerChange(row); row.ownerName = getOwnerDisplayName(row.ownerKey)">
+                    <select v-model="row.ownerKey" class="cell-select owner-picker ui-select" :class="{ 'has-owner': !!row.ownerKey }" aria-label="Выбрать владельца счета" @change="onOwnerChange(row); row.ownerName = getOwnerDisplayName(row.ownerKey)">
                       <option value="">Не выбран</option>
                       <optgroup label="Компании">
                         <option
@@ -1016,13 +1017,11 @@ watch(
                       </button>
                       <button
                         type="button"
-                        class="owner-inline-btn owner-inline-cancel"
+                        class="owner-inline-btn owner-inline-cancel ui-icon-button"
                         :disabled="isCreatingOwner"
                         title="Отмена"
                         @click="cancelOwnerInlineCreate(row)"
-                      >
-                        ✕
-                      </button>
+                       aria-label="Отмена"><UiIcon name="close" /></button>
                     </div>
                   </template>
                 </td>
@@ -1040,7 +1039,7 @@ watch(
                 </td>
 
                 <td>
-                  <select v-model="row.legalForm" class="cell-select">
+                  <select v-model="row.legalForm" class="cell-select ui-select">
                     <option
                       v-for="option in LEGAL_FORM_OPTIONS"
                       :key="option.value"
@@ -1054,7 +1053,7 @@ watch(
                 <td>
                   <select
                     v-model="row.taxRegime"
-                    class="cell-select"
+                    class="cell-select ui-select"
                     @change="onTaxRegimeChange(row)"
                   >
                     <option

@@ -48,6 +48,31 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await page.goto('http://127.0.0.1:5192/');
     await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
     const calendar = page.getByRole('dialog', { name: 'Календарь задач', exact: true });
+    const assertCenteredIcons = async root => {
+      const offsets = await root.locator('.ui-icon-button:visible, button.close-btn:visible').evaluateAll(buttons => buttons.map(button => {
+        const icon = button.querySelector('svg'); if (!icon) return null;
+        const b = button.getBoundingClientRect(), i = icon.getBoundingClientRect();
+        return { label: button.getAttribute('aria-label') || button.className, x: Math.abs((b.left + b.right - i.left - i.right) / 2), y: Math.abs((b.top + b.bottom - i.top - i.bottom) / 2) };
+      }).filter(Boolean));
+      assert.ok(offsets.length); assert.ok(offsets.every(offset => offset.x <= 1 && offset.y <= 1), JSON.stringify(offsets));
+    };
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
+      await assertCenteredIcons(calendar);
+      const geometry = await calendar.locator('.calendar-header').evaluate(header => {
+        const center = element => { const b = element.getBoundingClientRect(); return b.top + b.height / 2; };
+        const controls = [...header.querySelectorAll('h2, .today-button, .calendar-navigation, .calendar-month-label, .calendar-search, .notification-button, .calendar-close')];
+        const positions = controls.map(center);
+        return { spread: Math.max(...positions) - Math.min(...positions) };
+      });
+      assert.ok(geometry.spread <= 1, `${theme} calendar header centers: ${geometry.spread}`);
+      const gridColor = await calendar.locator('.calendar-main').evaluate(node => getComputedStyle(node).backgroundColor);
+      if (theme === 'light') assert.equal(gridColor, 'rgb(255, 255, 255)');
+      else assert.notEqual(gridColor, 'rgb(255, 255, 255)');
+      const select = await calendar.getByLabel('Фильтр по контрагенту').evaluate(node => { const css = getComputedStyle(node); return { appearance: css.appearance, background: css.backgroundImage, position: css.backgroundPosition, end: parseFloat(css.paddingRight) }; });
+      assert.equal(select.appearance, 'none'); assert.ok(select.background.includes('svg')); assert.ok(select.position.endsWith('50%')); assert.ok(select.end >= 32);
+      await page.screenshot({ path: `${output}/calendar-alignment-${theme}.png`, animations: 'disabled' });
+    }
     await calendar.getByRole('button', { name: 'Создать задачу', exact: true }).first().click();
     const card = page.getByRole('dialog', { name: 'Карточка задачи', exact: true });
     await card.getByLabel('Название задачи', { exact: true }).fill('Подготовить договор');
@@ -64,6 +89,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await card.getByLabel('Ссылка 1', { exact: true }).fill('https://drive.google.com/file/d/calendar-test');
     await card.getByLabel('Файлы задачи', { exact: true }).setInputFiles({ name: 'Договор.txt', mimeType: 'text/plain', buffer: Buffer.from('Тестовый договор') });
     await card.getByRole('status').filter({ hasText: 'Загрузка' }).waitFor({ state: 'hidden' });
+    await assertCenteredIcons(card);
     await card.getByRole('button', { name: 'Сохранить задачу', exact: true }).click();
     await card.getByText('Сохранено', { exact: true }).waitFor();
     await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
@@ -97,6 +123,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await calendar.getByRole('button', { name: 'Закрыть календарь', exact: true }).click();
     await page.locator('.contractor-editor-btn').click();
     await page.locator('.contractor-grid-row').nth(21).waitFor({ state: 'attached' });
+    await assertCenteredIcons(page.locator('.contractor-popup'));
     assert.equal(await page.locator('.contractor-sync-button.is-synced').count(), 1);
     assert.equal(await page.locator('.contractor-sync-button:not(.is-synced)').count(), 21);
     assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Синхронизирован');
@@ -170,6 +197,9 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await page.locator('.edit-btn').click();
     assert.equal(await page.locator('.editor-modal').getByRole('button', { name: 'Синхронизировать с 1С', exact: true }).count(), 0, 'account rows must not duplicate company synchronization');
     assert.equal(await page.getByRole('tab', { name: 'Компании и КГД', exact: true }).count(), 0);
+    await assertCenteredIcons(page.locator('.editor-modal'));
+    const ownerPicker = await page.locator('.owner-picker.has-owner').first().evaluate(node => { const css = getComputedStyle(node); return { width: node.getBoundingClientRect().width, padding: css.paddingRight, position: css.backgroundPosition }; });
+    assert.equal(ownerPicker.width, 27); assert.equal(ownerPicker.padding, '0px'); assert.equal(ownerPicker.position, '50% 50%');
     const ownerInput = page.getByRole('textbox', { name: 'Название владельца счета', exact: true }).first();
     const inputBox = await ownerInput.boundingBox();
     await ownerInput.click({ position: { x: inputBox.width - 34, y: inputBox.height / 2 } });
@@ -188,6 +218,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     assert.ok((await companyCard.boundingBox()).width >= 1360, 'company card uses the available viewport');
     const beforeSync = syncRequests;
     await companyCard.getByRole('button', { name: 'Синхронизировать с 1С', exact: true }).click();
+    await assertCenteredIcons(companyCard);
     const selection = companyCard.getByRole('combobox', { name: 'Запись из справочника 1С', exact: true });
     await selection.locator('option').filter({ hasText: 'ТОО Тест из 1С' }).waitFor({ state: 'attached' });
     assert.equal(await selection.inputValue(), '', 'even a sole organization requires explicit selection');

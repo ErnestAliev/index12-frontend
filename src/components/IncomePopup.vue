@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
@@ -839,7 +840,7 @@ const handleMainAction = async () => {
       <div v-else class="inline-create-form input-spacing relative">
           <input type="text" v-model="newAccountName" :placeholder="accountCreationPlaceholder" ref="newAccountInput" @keyup.enter="saveNewAccount" @keyup.esc="cancelCreateAccount" @blur="handleAccountInputBlur" @focus="handleAccountInputFocus" />
           <button @click="saveNewAccount" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateAccount" class="btn-inline-cancel">✕</button>
+          <button type="button" @click="cancelCreateAccount" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
       </div>
 
@@ -857,7 +858,7 @@ const handleMainAction = async () => {
       <div v-else-if="isOwnerSelectVisible" class="inline-create-form input-spacing relative">
           <input type="text" v-model="newOwnerName" :placeholder="ownerTypeToCreate === 'company' ? 'Название компании' : 'Имя Физлица'" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner" @blur="handleOwnerInputBlur" @focus="handleOwnerInputFocus" autocomplete="off" />
           <button @click="saveNewOwner" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateOwner" class="btn-inline-cancel">✕</button>
+          <button type="button" @click="cancelCreateOwner" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showOwnerBankSuggestions && ownerBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in ownerBankSuggestionsList" :key="idx" @mousedown.prevent="selectOwnerBankSuggestion(bank)">{{ bank.name }}</li></ul>
       </div>
 
@@ -875,7 +876,7 @@ const handleMainAction = async () => {
       <div v-else class="inline-create-form input-spacing relative">
           <input type="text" v-model="newContractorNameInput" :placeholder="contractorTypeToCreate === 'contractor' ? 'Название организации' : 'Имя Физлица'" ref="newContractorInputRef" @keyup.enter="saveNewContractorModal" @keyup.esc="cancelCreateContractorModal" @blur="handleContractorInputBlur" @focus="handleContractorInputFocus" autocomplete="off" />
           <button @click="saveNewContractorModal" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateContractorModal" class="btn-inline-cancel">✕</button>
+          <button type="button" @click="cancelCreateContractorModal" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li></ul>
       </div>
 
@@ -885,7 +886,7 @@ const handleMainAction = async () => {
       <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
           <button @click="saveNewProject" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateProject" class="btn-inline-cancel">✕</button>
+          <button type="button" @click="cancelCreateProject" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
       </div>
 
       <!-- КАТЕГОРИЯ -->
@@ -895,7 +896,7 @@ const handleMainAction = async () => {
       <div v-else class="inline-create-form input-spacing relative">
           <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
           <button @click="saveNewCategory" class="btn-inline-save">✓</button>
-          <button @click="cancelCreateCategory" class="btn-inline-cancel">✕</button>
+          <button type="button" @click="cancelCreateCategory" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
       <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="[selectedCategoryId]" :disabled="isReadOnly || isProtectedMode" />

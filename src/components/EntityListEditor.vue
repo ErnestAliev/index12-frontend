@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { useMainStore } from '@/stores/mainStore';
@@ -833,13 +834,13 @@ defineExpose({
                     <input type="text" v-model="contractorFilters.name" class="contractor-filter-input" placeholder="Название" />
                 </div>
                 <div class="contractor-col-project">
-                    <select v-model="contractorFilters.projectId" class="contractor-filter-input contractor-filter-select">
+                    <select v-model="contractorFilters.projectId" class="contractor-filter-input contractor-filter-select ui-select">
                         <option value="">Проект</option>
                         <option v-for="project in availableProjects" :key="project._id" :value="project._id">{{ project.name }}</option>
                     </select>
                 </div>
                 <div class="contractor-col-category">
-                    <select v-model="contractorFilters.categoryId" class="contractor-filter-input contractor-filter-select">
+                    <select v-model="contractorFilters.categoryId" class="contractor-filter-input contractor-filter-select ui-select">
                         <option value="">Категория</option>
                         <option v-for="category in availableCategories" :key="category._id" :value="category._id">{{ category.name }}</option>
                     </select>
@@ -898,7 +899,7 @@ defineExpose({
                         <div class="edit-item">
                           <span class="drag-handle">⠿</span>
                           <input type="text" v-model="item.name" class="edit-input edit-name" @blur="debouncedSave" />
-                          <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item); debouncedSave()" class="edit-input edit-owner">
+                          <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item); debouncedSave()" class="edit-input edit-owner ui-select">
                               <option :value="null">Нет владельца</option>
                               <option value="create-company" class="create-option">+ Создать Компанию</option>
                               <option value="create-individual" class="create-option">+ Создать Физлицо</option>
@@ -932,7 +933,7 @@ defineExpose({
                         <div class="edit-item">
                           <span class="drag-handle">⠿</span>
                           <input type="text" v-model="item.name" class="edit-input edit-name" @blur="debouncedSave" />
-                          <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item); debouncedSave()" class="edit-input edit-owner">
+                          <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item); debouncedSave()" class="edit-input edit-owner ui-select">
                               <option :value="null">Нет владельца</option>
                               <option value="create-company" class="create-option">+ Создать Компанию</option>
                               <option value="create-individual" class="create-option">+ Создать Физлицо</option>
@@ -967,7 +968,7 @@ defineExpose({
                             <div class="edit-item excluded-item">
                                 <span class="drag-handle">⠿</span>
                                 <input type="text" v-model="item.name" class="edit-input edit-name faded" />
-                                <select v-model="item.ownerValue" class="edit-input edit-owner faded" disabled>
+                                <select v-model="item.ownerValue" class="edit-input edit-owner faded ui-select" disabled>
                                     <option :value="item.ownerValue">{{ item.ownerValue ? 'Владелец скрыт' : 'Нет владельца' }}</option>
                                 </select>
                                 <input type="text" v-model="item.initialBalanceFormatted" class="edit-input edit-balance faded" disabled />
@@ -1009,7 +1010,7 @@ defineExpose({
                       <template v-if="isCompanyEditor">
                         <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">Выбрано ({{ item.selectedAccountIds.length }})</button>
                         <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" @blur="debouncedSave" />
-                        <select v-model="item.taxRegime" @change="handleTaxRegimeChange(item)" class="edit-input edit-tax-regime">
+                        <select v-model="item.taxRegime" @change="handleTaxRegimeChange(item)" class="edit-input edit-tax-regime ui-select">
                           <option value="simplified">Упрощенка</option>
                           <option value="our">ОУР</option>
                         </select>
@@ -1046,7 +1047,7 @@ defineExpose({
                @focus="handleFocus"
              />
              <button class="btn-icon-save" @click="handleCreateNew" :disabled="isSavingNew">✓</button>
-             <button class="btn-icon-cancel" @click="cancelCreation" :disabled="isSavingNew">✕</button>
+             <button type="button" class="btn-icon-cancel ui-icon-button" @click="cancelCreation" :disabled="isSavingNew" aria-label="Отменить"><UiIcon name="close" /></button>
 
              <ul v-if="showSuggestions && suggestionsList.length > 0" class="suggestions-list">
                 <li v-for="(item, idx) in suggestionsList" :key="idx" @mousedown.prevent="selectSuggestion(item)">

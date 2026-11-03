@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useMainStore } from "@/stores/mainStore";
 import { useAppearanceStore } from "@/stores/appearanceStore";
@@ -218,20 +219,18 @@ onBeforeUnmount(() => {
             :disabled="busy"
             aria-label="Закрыть историю"
             @click="emit('close')"
-          >
-            ×
-          </button>
+           class="ui-icon-button"><UiIcon name="close" /></button>
         </header>
         <div class="history-filters">
           <label
-            >Раздел<select v-model="kind" aria-label="Раздел">
+            >Раздел<select v-model="kind" aria-label="Раздел" class="ui-select">
               <option value="">Все изменения</option>
               <option value="operation">Операции</option>
               <option value="setting">Настройки системы и окон</option>
             </select></label
           >
           <label v-if="kind !== 'setting'"
-            >Тип<select v-model="type" aria-label="Тип операции">
+            >Тип<select v-model="type" aria-label="Тип операции" class="ui-select">
               <option value="">Все операции</option>
               <option
                 v-for="(name, key) in operationNames"
@@ -251,7 +250,7 @@ onBeforeUnmount(() => {
             >По дату<input v-model="to" aria-label="По дату" type="date"
           /></label>
           <label
-            >Порядок<select v-model="order" aria-label="Порядок">
+            >Порядок<select v-model="order" aria-label="Порядок" class="ui-select">
               <option value="desc">Сначала новые</option>
               <option value="asc">Сначала старые</option>
             </select></label

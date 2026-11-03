@@ -10,3 +10,48 @@
   :root .fullscreen-widget-overlay .action-square-btn { min-width:44px; height:44px; }
   :root .home-right-panel .icon-btn { min-width:44px; height:44px; }
 }
+
+/* Icon controls use geometric centers, independently of font metrics and line height. */
+:root .ui-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+:root :is(.close-btn, .dialog-close-btn, .company-close) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+:root :is(.ui-icon-button, .close-btn, .dialog-close-btn, .company-close) > svg {
+  display: block;
+  flex-shrink: 0;
+}
+:root {
+  --ui-chevron-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] {
+  --ui-chevron-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2352615a' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+:root select.ui-select:not([multiple]):not([size]),
+:root .edit-input:is(.edit-picker-btn, .edit-account-picker) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: var(--ui-chevron-image);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+  padding-inline-end: 32px;
+}
+/* The account owner's picker is a dedicated arrow area beside its editable name. */
+:root select.ui-select.owner-picker.has-owner:not([multiple]):not([size]) {
+  padding-inline: 0;
+  background-position: center;
+}

@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -1587,18 +1588,16 @@ onBeforeUnmount(() => {
         </div>
         <div class="modal-header-charts">
           <span class="sidebar-panel-title">Графики</span>
-          <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
+          <button type="button" class="close-btn modal-close-btn ui-icon-button" @click="closeModal" aria-label="Закрыть"><UiIcon name="close" /></button>
         </div>
       </div>
 
-      <button
+      <button type="button"
         v-if="isChartsPaneCollapsed"
-        class="close-btn modal-close-floating"
+        class="close-btn modal-close-floating ui-icon-button"
         @click="closeModal"
         aria-label="Закрыть"
-      >
-        &times;
-      </button>
+      ><UiIcon name="close" /></button>
 
       <div
         class="modal-body"
@@ -1645,7 +1644,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('type', typeFilterOptions, 'Тип') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-type')"
@@ -1690,7 +1689,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('category', categoryFilterOptions, 'Категория') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-category')"
@@ -1761,7 +1760,7 @@ onBeforeUnmount(() => {
                     </div>
                   </th>
                   <th>
-                    <select class="filter-input" aria-label="Фильтр по подкатегории" :value="getFilterFieldValues('subcategory')[0] || ''" @change="setFilterField('subcategory', $event.target.value ? [$event.target.value] : [])">
+                    <select class="filter-input ui-select" aria-label="Фильтр по подкатегории" :value="getFilterFieldValues('subcategory')[0] || ''" @change="setFilterField('subcategory', $event.target.value ? [$event.target.value] : [])">
                       <option value="">Подкатегория</option>
                       <option v-for="label in filterOptions.subcategory" :key="label" :value="label">{{ label }}</option>
                     </select>
@@ -1777,7 +1776,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('project', projectFilterOptions, 'Проект') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-project')"
@@ -1862,7 +1861,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('account', accountFilterOptions, 'Счет') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-account')"
@@ -1943,7 +1942,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('contractor', contractorFilterOptions, 'Контрагент') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-contractor')"
@@ -2024,7 +2023,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('owner', ownerFilterOptions, 'Компания/Физлицо') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-owner')"
@@ -2105,7 +2104,7 @@ onBeforeUnmount(() => {
                         <span class="inline-select-trigger-text">
                           {{ getFilterTriggerLabel('status', statusFilterOptions, 'Статус') }}
                         </span>
-                        <span class="inline-select-trigger-arrow">▾</span>
+                        <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                       </button>
                       <div
                         v-if="isInlineDropdownOpen('filter-status')"
@@ -2170,7 +2169,7 @@ onBeforeUnmount(() => {
                       </template>
 
                       <template v-else-if="column === 'Тип'">
-                        <select v-model="editRows[row.rowId].type" class="cell-edit-control has-arrow">
+                        <select v-model="editRows[row.rowId].type" class="cell-edit-control has-arrow ui-select">
                           <option v-for="typeOption in typeOptionsForRow(row)" :key="`${row.rowId}-${typeOption}`" :value="typeOption">
                             {{ typeOption }}
                           </option>
@@ -2187,7 +2186,7 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-text">
                               {{ getInlineSelectedLabel(editRows[row.rowId].categoryId, categoryOptions, 'Без категории') }}
                             </span>
-                            <span class="inline-select-trigger-arrow">▾</span>
+                            <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-category`)" class="inline-select-menu" @click.stop>
                             <div class="inline-select-search-row">
@@ -2275,7 +2274,7 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-text">
                               {{ getInlineSelectedLabel(editRows[row.rowId].projectId, projectOptions, 'Без проекта') }}
                             </span>
-                            <span class="inline-select-trigger-arrow">▾</span>
+                            <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-project`)" class="inline-select-menu" @click.stop>
                             <div class="inline-select-search-row">
@@ -2370,7 +2369,7 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-text">
                                 {{ getInlineSelectedLabel(editRows[row.rowId].fromAccountId, accountOptions, 'Откуда') }}
                               </span>
-                              <span class="inline-select-trigger-arrow">▾</span>
+                              <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-from-account`)" class="inline-select-menu" @click.stop>
                               <div class="inline-select-search-row">
@@ -2453,7 +2452,7 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-text">
                                 {{ getInlineSelectedLabel(editRows[row.rowId].toAccountId, accountOptions, editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Куда') }}
                               </span>
-                              <span class="inline-select-trigger-arrow">▾</span>
+                              <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-to-account`) && editRows[row.rowId].type !== 'Вывод средств'" class="inline-select-menu" @click.stop>
                               <div class="inline-select-search-row">
@@ -2535,7 +2534,7 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-text">
                               {{ getInlineSelectedLabel(editRows[row.rowId].accountId, accountOptions, 'Без счета') }}
                             </span>
-                            <span class="inline-select-trigger-arrow">▾</span>
+                            <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-account`)" class="inline-select-menu" @click.stop>
                             <div class="inline-select-search-row">
@@ -2619,7 +2618,7 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-text">
                               {{ getInlineSelectedLabel(editRows[row.rowId].counterpartyKey, counterpartyOptions, 'Без контрагента') }}
                             </span>
-                            <span class="inline-select-trigger-arrow">▾</span>
+                            <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-counterparty`)" class="inline-select-menu" @click.stop>
                             <div class="inline-select-search-row">
@@ -2704,7 +2703,7 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-text">
                                 {{ getInlineSelectedLabel(editRows[row.rowId].fromOwnerKey, ownerOptions, 'От кого') }}
                               </span>
-                              <span class="inline-select-trigger-arrow">▾</span>
+                              <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-from-owner`)" class="inline-select-menu" @click.stop>
                               <div class="inline-select-search-row">
@@ -2787,7 +2786,7 @@ onBeforeUnmount(() => {
                               <span class="inline-select-trigger-text">
                                 {{ getInlineSelectedLabel(editRows[row.rowId].toOwnerKey, ownerOptions, editRows[row.rowId].type === 'Вывод средств' ? 'Вне системы' : 'Кому') }}
                               </span>
-                              <span class="inline-select-trigger-arrow">▾</span>
+                              <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                             </button>
                             <div v-if="isInlineDropdownOpen(`row-${row.rowId}-to-owner`) && editRows[row.rowId].type !== 'Вывод средств'" class="inline-select-menu" @click.stop>
                               <div class="inline-select-search-row">
@@ -2869,7 +2868,7 @@ onBeforeUnmount(() => {
                             <span class="inline-select-trigger-text">
                               {{ getInlineSelectedLabel(editRows[row.rowId].ownerKey, ownerOptions, 'Без владельца') }}
                             </span>
-                            <span class="inline-select-trigger-arrow">▾</span>
+                            <UiIcon class="inline-select-trigger-arrow" name="chevron-down" />
                           </button>
                           <div v-if="isInlineDropdownOpen(`row-${row.rowId}-owner`)" class="inline-select-menu" @click.stop>
                             <div class="inline-select-search-row">
@@ -2944,7 +2943,7 @@ onBeforeUnmount(() => {
                       </template>
 
                       <template v-else-if="column === 'Статус'">
-                        <select v-model="editRows[row.rowId].status" class="cell-edit-control has-arrow">
+                        <select v-model="editRows[row.rowId].status" class="cell-edit-control has-arrow ui-select">
                           <option v-for="statusOption in statusOptions" :key="`${row.rowId}-${statusOption}`" :value="statusOption">
                             {{ statusOption }}
                           </option>
@@ -3739,6 +3738,7 @@ onBeforeUnmount(() => {
 }
 
 .inline-select-trigger-arrow {
+  width: 16px; height: 16px; align-self: center;
   flex-shrink: 0;
   color: var(--editor-muted-text);
   font-size: 10px;

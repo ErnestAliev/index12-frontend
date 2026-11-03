@@ -35,7 +35,7 @@ onMounted(() => nextTick(() => form.value?.querySelector('input, select, textare
         </label>
         <input v-if="field.other" v-model="values[field.key]" class="request-input" :aria-label="`${field.label}: свой ответ`" placeholder="Свой ответ" maxlength="8000" />
       </template>
-      <select v-else-if="field.type === 'select' || field.type === 'boolean'" v-model="values[field.key]" class="request-input" :aria-label="field.label" :required="field.required">
+      <select v-else-if="field.type === 'select' || field.type === 'boolean'" v-model="values[field.key]" class="request-input ui-select" :aria-label="field.label" :required="field.required">
         <option :value="undefined" disabled>Выберите ответ</option>
         <template v-if="field.type === 'boolean'"><option :value="true">Да</option><option :value="false">Нет</option></template>
         <template v-else><option v-for="(option, optionIndex) in field.options || []" :key="optionIndex" :value="option.value">{{ option.label }}</option></template>

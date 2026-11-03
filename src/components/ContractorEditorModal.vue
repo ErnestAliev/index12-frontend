@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { computed, ref } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import EntityListEditor from './EntityListEditor.vue';
@@ -55,7 +56,7 @@ const handleStatsChange = (stats) => {
             </div>
           </div>
 
-          <button class="close-btn modal-close-btn" @click="closeModal" aria-label="Закрыть">&times;</button>
+          <button type="button" class="close-btn modal-close-btn ui-icon-button" @click="closeModal" aria-label="Закрыть"><UiIcon name="close" /></button>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 <template>
   <div class="modal-overlay" @click.self="close">
     <div class="modal-content">
-      <button class="close-btn" @click="close">&times;</button>
+      <button type="button" class="close-btn ui-icon-button" @click="close" aria-label="Закрыть"><UiIcon name="close" /></button>
       
       <div class="modal-header">
         <div class="tabs">
@@ -118,7 +118,7 @@
                 <select 
                   :value="member.role" 
                   @change="updateRole(member._id, $event.target.value)"
-                  class="role-select"
+                  class="role-select ui-select"
                 >
                   <option value="full_access">Полный доступ</option>
                   <option value="timeline_only">Только таймлайн</option>
@@ -141,6 +141,7 @@
 </template>
 
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { ref, watch } from 'vue';
 import axios from 'axios';
 

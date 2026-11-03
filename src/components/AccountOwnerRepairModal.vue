@@ -1,4 +1,5 @@
 <script setup>
+import UiIcon from '@/components/UiIcon.vue';
 import { computed, ref } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { usePermissions } from '@/composables/usePermissions';
@@ -98,7 +99,7 @@ async function save() {
         <form v-if="row.creating" class="inline-create" @submit.prevent="createItem(row)">
           <input v-model="row.name" :aria-label="row.creating === 'company' ? 'Название компании' : row.creating === 'individual' ? 'Имя физлица' : 'Название счёта'" :placeholder="row.creating === 'company' ? 'Название компании' : row.creating === 'individual' ? 'Имя физлица' : 'Название счёта'" :disabled="busy" autofocus />
           <button type="submit" :disabled="busy" aria-label="Создать">✓</button>
-          <button type="button" :disabled="busy" aria-label="Отмена создания" @click="row.creating = null">✕</button>
+          <button type="button" :disabled="busy" aria-label="Отмена создания" @click="row.creating = null" class="ui-icon-button"><UiIcon name="close" /></button>
         </form>
       </section>
       <p v-if="error" class="repair-error" role="alert">{{ error }}</p>
