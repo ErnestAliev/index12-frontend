@@ -4,7 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName } from '@/utils/companyTax';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
-import { RouterLink } from 'vue-router';
+import CompanyDetailsModal from './CompanyDetailsModal.vue';
 
 const emit = defineEmits(['close']);
 const mainStore = useMainStore();
@@ -24,7 +24,8 @@ const editingOwnerRowId = ref(null);
 const onOwnerNameInput = row => {
   for (const other of rows.value) if (other.ownerKey === row.ownerKey) other.ownerName = row.ownerName;
 };
-const companyLocation = row => ({ name: 'company', params: { id: ownerIdFromKey(row.ownerKey) }, query: { workspace: mainStore.user?.currentWorkspaceId || '' } });
+const selectedCompanyId = ref(null);
+watch(() => mainStore.user?.currentWorkspaceId, () => { selectedCompanyId.value = null; });
 let accountSuggestionBlurTimer = null;
 
 const CREATE_OWNER_COMPANY_VALUE = '__create_company__';
@@ -813,7 +814,7 @@ watch(
 
 <template>
   <div class="modal-overlay" @click.self="closeModal">
-    <div class="editor-modal">
+    <div class="editor-modal" :inert="selectedCompanyId ? true : undefined">
       <div class="modal-header">
         <h2>Редактор</h2>
 
@@ -958,7 +959,7 @@ watch(
                 <td class="owner-cell">
                   <template v-if="!row.ownerCreationType">
                     <div class="owner-name-control">
-                      <RouterLink v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" :to="companyLocation(row)" target="_blank" rel="noopener" class="owner-company-link" :title="`Открыть компанию ${row.ownerName}`">{{ row.ownerName }}</RouterLink>
+                      <button v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" type="button" class="owner-company-link" aria-haspopup="dialog" :title="`Открыть компанию ${row.ownerName}`" @click="selectedCompanyId = ownerIdFromKey(row.ownerKey)">{{ row.ownerName }}</button>
                       <input v-if="row.ownerKey" v-model="row.ownerName" type="text" class="cell-input owner-name-input" :class="{ 'has-company-link': ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id }" aria-label="Название владельца счета" @input="onOwnerNameInput(row)" @focus="editingOwnerRowId = row._id" @blur="editingOwnerRowId = null" />
                     <select v-model="row.ownerKey" class="cell-select owner-picker" :class="{ 'has-owner': !!row.ownerKey }" aria-label="Выбрать владельца счета" @change="onOwnerChange(row); row.ownerName = getOwnerDisplayName(row.ownerKey)">
                       <option value="">Не выбран</option>
@@ -1133,13 +1134,14 @@ watch(
       </div>
     </div>
   </div>
+    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @close="selectedCompanyId = null" />
 </template>
 
 <style scoped>
 .owner-name-control { position: relative; display: flex; min-width: 0; align-items: stretch; }
 .owner-name-control .owner-name-input { padding-right: 30px; width: 100%; min-width: 0; }
 .owner-name-input.has-company-link { color: transparent; }
-.owner-company-link { position: absolute; z-index: 1; top: 50%; left: 10px; transform: translateY(-50%); max-width: calc(100% - 52px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-primary, #38b86d); text-decoration: none; line-height: 1.5; }
+.owner-company-link { position: absolute; z-index: 1; top: 50%; left: 10px; transform: translateY(-50%); max-width: calc(100% - 52px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-primary, #38b86d); text-decoration: none; line-height: 1.5; background: transparent; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
 .owner-company-link:hover, .owner-company-link:focus-visible { text-decoration: underline; }
 .owner-name-control .owner-picker.has-owner { position: absolute; right: 0; top: 0; bottom: 0; width: 27px; padding-left: 0; padding-right: 0; color: transparent; cursor: pointer; }
 .owner-picker option, .owner-picker optgroup { color: var(--color-text); }
