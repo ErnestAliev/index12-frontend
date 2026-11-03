@@ -14,9 +14,14 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     browser = await chromium.launch({ executablePath: process.env.SCROLL_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
+    let registryUnavailable = true, refreshRequests = 0;
     await page.context().route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       if (path.startsWith('/api/business')) {
+        if (path.endsWith('/refresh') && request.method() === 'POST') {
+          refreshRequests++;
+          if (registryUnavailable) return route.fulfill({ status: 503, json: { message: 'Не подключён API eGov. Нужен ключ кабинета разработчика data.egov.kz' } });
+        }
         const response = await route.fetch({ url: apiUrl + path.slice(4), headers: { ...request.headers(), 'x-test-actor': actor, 'x-test-workspace': workspaceId, origin: 'http://127.0.0.1:5192' } });
         return route.fulfill({ response });
       }
@@ -113,16 +118,21 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await companyCard.getByRole('button', { name: 'Скрыть пароль', exact: true }).click();
     assert.equal(await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).getAttribute('type'), 'password');
     await companyCard.getByRole('button', { name: 'Подключить ЭЦП', exact: true }).click();
-    await companyCard.getByText('Настройки ЭЦП сохранены', { exact: true }).waitFor();
+    await companyCard.getByRole('alert').filter({ hasText: 'Настройки ЭЦП сохранены. Реквизиты не загружены: Не подключён API eGov' }).waitFor();
+    assert.equal(refreshRequests, 1, 'saving EDS automatically starts the first registry request');
     assert.equal(await update.isDisabled(), false);
     assert.equal(await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).inputValue(), '');
     await companyCard.getByRole('button', { name: 'Закрыть карточку компании', exact: true }).click();
     await companyCard.waitFor({ state: 'hidden' });
     assert.equal(await editorDraft.inputValue(), 'Черновик названия счёта');
     assert.equal(await page.locator('.editor-modal').getAttribute('inert'), null);
+    registryUnavailable = false;
     await page.getByRole('button', { name: 'ТОО Тест · сохранено', exact: true }).first().click();
     companyCard = page.getByRole('dialog', { name: 'Карточка компании', exact: true });
     await companyCard.getByRole('heading', { name: 'ТОО Тест · сохранено', exact: true }).waitFor();
+    await companyCard.getByText('Данные компании обновлены', { exact: true }).waitFor();
+    assert.equal(refreshRequests, 2, 'reopening a saved EDS card with empty profile retries the registry automatically');
+    await companyCard.getByText(profile.legalAddress, { exact: true }).waitFor();
     assert.equal(await companyCard.getByRole('textbox', { name: 'Путь к файлу ЭЦП', exact: true }).inputValue(), '/Users/test/company.p12');
     assert.equal(await companyCard.getByLabel('Пароль ЭЦП', { exact: true }).getAttribute('placeholder'), 'Сохранён');
     update = companyCard.getByRole('button', { name: 'Обновить компанию', exact: true });

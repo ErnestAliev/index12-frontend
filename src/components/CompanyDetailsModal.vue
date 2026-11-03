@@ -47,6 +47,22 @@ const endpoint = () => `/companies/${props.companyId}`;
 const canUpdate = computed(() => !!eds.value?.enabled && !busy.value && !loading.value);
 const needsPassword = computed(() => !eds.value?.passwordStored || !eds.value.enabled || storagePath.value.trim() !== eds.value.storagePath);
 const dataFields = [['identificationNumber', 'БИН/ИИН'], ['legalAddress', 'Юридический адрес'], ['director', 'Руководитель'], ['registrationDate', 'Дата регистрации'], ['activity', 'Вид деятельности'], ['registrationStatus', 'Статус регистрации']];
+const hasRegistryData = value => dataFields.some(([field]) => field !== 'identificationNumber' && !!value?.[field]);
+function applyCompany(value) {
+  company.value = value;
+  const item = main.companies.find(item => String(item._id) === String(value._id));
+  if (item) Object.assign(item, value);
+}
+async function refreshCompany(current) {
+  const { data } = await businessApi.post(`${endpoint()}/refresh`, {}, requestOptions());
+  if (current !== generation) return;
+  applyCompany(data.company); checkedAt.value = data.checkedAt;
+  message.value = 'Данные компании обновлены';
+}
+async function refreshAfterSaving(current) {
+  try { await refreshCompany(current); }
+  catch (e) { if (current === generation) error.value = `Настройки ЭЦП сохранены. Реквизиты не загружены: ${businessError(e)}`; }
+}
 watch(() => [main.user?.id || main.user?._id, main.user?.currentWorkspaceId, props.companyId, props.workspaceId], async ([userId]) => {
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
@@ -60,6 +76,11 @@ watch(() => [main.user?.id || main.user?._id, main.user?.currentWorkspaceId, pro
     const { data } = await businessApi.get(endpoint(), { ...requestOptions(), signal: controller.signal });
     if (current !== generation) return;
     company.value = data.company; eds.value = data.eds; storagePath.value = data.eds?.storagePath || '';
+    if (data.eds?.enabled && !hasRegistryData(data.company)) {
+      busy.value = true;
+      await refreshAfterSaving(current);
+      if (current === generation) busy.value = false;
+    }
   } catch (e) { if (current === generation && e.code !== 'ERR_CANCELED') error.value = businessError(e); }
   finally { if (current === generation) loading.value = false; }
 }, { immediate: true });
@@ -76,19 +97,14 @@ const connect = () => action(async current => {
   const { data } = await businessApi.put(`${endpoint()}/eds`, { storagePath: storagePath.value, password: password.value || undefined }, requestOptions());
   if (current !== generation) return;
   eds.value = data.eds; storagePath.value = data.eds.storagePath; password.value = ''; passwordVisible.value = false; message.value = 'Настройки ЭЦП сохранены';
+  await refreshAfterSaving(current);
 });
 const disconnect = () => action(async current => {
   await businessApi.delete(`${endpoint()}/eds`, requestOptions());
   if (current !== generation) return;
   eds.value = null; storagePath.value = ''; password.value = ''; passwordVisible.value = false; message.value = 'ЭЦП отключена';
 });
-const updateCompany = () => action(async current => {
-  const { data } = await businessApi.post(`${endpoint()}/refresh`, {}, requestOptions());
-  if (current !== generation) return;
-  company.value = data.company; checkedAt.value = data.checkedAt; message.value = 'Данные компании обновлены';
-  const item = main.companies.find(item => String(item._id) === String(data.company._id));
-  if (item) Object.assign(item, data.company);
-});
+const updateCompany = () => action(refreshCompany);
 </script>
 
 <template>
