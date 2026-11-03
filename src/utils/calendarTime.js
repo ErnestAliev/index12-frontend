@@ -33,3 +33,7 @@ export function shiftTask(task, date) {
   const delta = Date.parse(date) - Date.parse(dayAt(task.startsAt));
   return { dueDate: date, startsAt: new Date(Date.parse(task.startsAt) + delta).toISOString(), endsAt: new Date(Date.parse(task.endsAt) + delta).toISOString(), allDay: false };
 }
+export function oneHourEnd(date, time) {
+  const end = new Date(Date.parse(localInstant(date, time)) + 3600000).toISOString();
+  return { date: dayAt(end), time: timeAt(end) };
+}

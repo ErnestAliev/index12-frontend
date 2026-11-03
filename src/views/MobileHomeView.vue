@@ -1001,7 +1001,7 @@ const showCodex = ref(false);
               <MobileActionPanel 
                 @action="handleAction" 
                 @open-codex="showCodex = true; showThemeSettings = false"
-                @open-projects="openProjectsModal"
+                @open-calendar="showBusinessCalendar = true"
                 @open-user-menu="openUserMenuModal"
                 @prev-month="goPrevMonth"
                 @next-month="goNextMonth"
@@ -1029,7 +1029,7 @@ const showCodex = ref(false);
 
     <!-- Mobile Modals -->
     <MobileProjectSwitcher v-if="showProjectsModal && mainStore.workspaceRole !== 'manager'" @close="closeProjectsModal" />
-    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" @open-history="showChangeHistory=true" @open-calendar="showBusinessCalendar = true" />
+    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" @open-history="showChangeHistory=true" @open-workspaces="openProjectsModal" />
     <BusinessCalendar v-if="showBusinessCalendar && mainStore.isAdmin" @close="showBusinessCalendar = false" />
     <AboutModal v-if="showAboutModal" @close="closeAboutModal" />
 

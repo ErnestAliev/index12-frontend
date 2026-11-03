@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import CodexIcon from '@/components/CodexIcon.vue';
 
-const emit = defineEmits(['action', 'open-codex', 'open-projects', 'open-user-menu', 'prev-month', 'next-month']);
+const emit = defineEmits(['action', 'open-codex', 'open-calendar', 'open-user-menu', 'prev-month', 'next-month']);
 const props = defineProps({
   currentMonthLabel: { type: String, default: '' },
   prevMonthLabel: { type: String, default: '' },
@@ -13,7 +13,7 @@ const props = defineProps({
 const mainStore = useMainStore();
 
 const openCodex = () => emit('open-codex');
-const openProjects = () => emit('open-projects');
+const openCalendar = () => emit('open-calendar');
 const openUserMenu = () => emit('open-user-menu');
 const toggleWidgets = () => mainStore.toggleHeaderExpansion();
 
@@ -33,10 +33,10 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
         <CodexIcon />
       </button>
       
-      <!-- 2. Проекты -->
-      <button v-if="mainStore.workspaceRole !== 'manager'" class="icon-circle" @click="openProjects" title="Рабочие области">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+      <!-- Календарь задач -->
+      <button v-if="mainStore.isAdmin" class="icon-circle" @click="openCalendar" title="Календарь задач" aria-label="Открыть календарь задач">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>
         </svg>
       </button>
 
@@ -66,7 +66,7 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
       </div>
 
       <!-- 4. Аватар пользователя (always active) -->
-      <button class="icon-circle user-avatar" @click="openUserMenu" title="Профиль">
+      <button class="icon-circle user-avatar" @click="openUserMenu" title="Меню" aria-label="Открыть меню">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>

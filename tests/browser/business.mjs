@@ -14,6 +14,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await mkdir(output, { recursive: true });
     browser = await chromium.launch({ executablePath: process.env.SCROLL_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
     page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    await page.context().route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     let syncRequests = 0;
     const candidatePages = [];
@@ -73,6 +74,28 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
       assert.equal(select.appearance, 'none'); assert.ok(select.background.includes('svg')); assert.ok(select.position.endsWith('50%')); assert.ok(select.end >= 32);
       await page.screenshot({ path: `${output}/calendar-alignment-${theme}.png`, animations: 'disabled' });
     }
+    const assertCenteredTask = async () => {
+      const result = await page.getByRole('dialog', { name: 'Карточка задачи', exact: true }).evaluate(node => {
+        const box = node.getBoundingClientRect(), footer = node.querySelector('footer').getBoundingClientRect(), viewport = window.visualViewport;
+        return { x: Math.abs(box.x + box.width / 2 - (viewport.offsetLeft + viewport.width / 2)), y: Math.abs(box.y + box.height / 2 - (viewport.offsetTop + viewport.height / 2)), top: box.top, bottom: box.bottom, footer: footer.bottom, height: viewport.height };
+      });
+      assert.ok(result.x <= 1 && result.y <= 1 && result.top >= 11 && result.bottom <= result.height - 11 && result.footer <= result.height - 11, JSON.stringify(result));
+    };
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+    await calendar.locator('.calendar-cell').last().click();
+    const lowerCard = page.getByRole('dialog', { name: 'Карточка задачи', exact: true });
+    await assertCenteredTask();
+    const titleStyle = await lowerCard.getByLabel('Название задачи', { exact: true }).evaluate(node => { const css = getComputedStyle(node); return { background: css.backgroundColor, outline: css.outlineStyle, border: css.borderTopWidth, required: node.required }; });
+    assert.deepEqual(titleStyle, { background: 'rgb(255, 255, 255)', outline: 'none', border: '0px', required: false });
+    await page.setViewportSize({ width: 1440, height: 480 }); await assertCenteredTask();
+    await lowerCard.getByRole('button', { name: 'Добавить ссылку', exact: true }).click();
+    await lowerCard.getByLabel('Ссылка 1', { exact: true }).fill('https://drive.google.com/file/d/lower-day');
+    assert.ok(await lowerCard.locator('.task-form-body').evaluate(node => node.scrollHeight > node.clientHeight));
+    await lowerCard.locator('.task-form-body').evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await lowerCard.getByLabel('Ссылка 1', { exact: true }).waitFor(); await assertCenteredTask();
+    await page.screenshot({ path: `${output}/calendar-centered-short-screen.png`, animations: 'disabled' });
+    await lowerCard.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
+    await page.setViewportSize({ width: 1440, height: 960 });
     await calendar.getByRole('button', { name: 'Создать задачу', exact: true }).first().click();
     const card = page.getByRole('dialog', { name: 'Карточка задачи', exact: true });
     await card.getByLabel('Название задачи', { exact: true }).fill('Подготовить договор');
@@ -80,12 +103,24 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await card.locator('.party-options section').first().getByRole('option').first().click();
     await card.getByLabel('Дата задачи', { exact: true }).fill(taskDate);
     await card.getByLabel('Время начала', { exact: true }).fill('11:00');
-    await card.getByLabel('Время окончания', { exact: true }).fill('12:00');
+    assert.equal(await card.getByLabel('Время окончания', { exact: true }).inputValue(), '12:00');
+    await card.getByLabel('Время окончания', { exact: true }).fill('14:30');
+    assert.equal(await card.getByLabel('Время окончания', { exact: true }).inputValue(), '14:30');
+    await card.getByLabel('Время начала', { exact: true }).fill('23:30');
+    assert.equal(await card.getByLabel('Время окончания', { exact: true }).inputValue(), '00:30');
+    assert.equal(await card.getByLabel('Дата окончания', { exact: true }).inputValue(), new Date(Date.parse(`${taskDate}T12:00:00Z`) + 86400000).toISOString().slice(0, 10));
+    await card.getByLabel('Время начала', { exact: true }).fill('11:00');
     await card.getByLabel('Дата окончания', { exact: true }).fill(taskDate);
-    await card.getByRole('button', { name: 'Добавить напоминание', exact: true }).click();
-    await card.getByLabel('Напоминание 2, минут', { exact: true }).fill('20');
+    for (const label of ['10 мин', '30 мин', '1 ч']) assert.equal(await card.getByRole('button', { name: label, exact: true }).getAttribute('aria-pressed'), 'true');
+    await card.getByRole('button', { name: '10 мин', exact: true }).click(); assert.equal(await card.getByRole('button', { name: '10 мин', exact: true }).getAttribute('aria-pressed'), 'false');
+    await card.getByRole('button', { name: '10 мин', exact: true }).click();
+    for (const label of ['1 день', '3 дня', '1 неделя']) await card.getByRole('button', { name: label, exact: true }).click();
+    await card.getByRole('button', { name: 'Дата и время', exact: true }).click();
+    await card.getByLabel('Дата и время напоминания', { exact: true }).fill(`${taskDate}T09:20`);
+    await card.getByRole('button', { name: 'Добавить', exact: true }).click();
+    await card.locator('.custom-reminder-chip').waitFor();
     await card.getByRole('button', { name: 'Добавить ссылку', exact: true }).click();
-    await card.getByLabel('Название ссылки 1', { exact: true }).fill('Договор на Диске');
+    assert.equal(await card.getByLabel('Название ссылки 1', { exact: true }).count(), 0);
     await card.getByLabel('Ссылка 1', { exact: true }).fill('https://drive.google.com/file/d/calendar-test');
     await card.getByLabel('Файлы задачи', { exact: true }).setInputFiles({ name: 'Договор.txt', mimeType: 'text/plain', buffer: Buffer.from('Тестовый договор') });
     await card.getByRole('status').filter({ hasText: 'Загрузка' }).waitFor({ state: 'hidden' });
@@ -95,10 +130,14 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
     await page.reload(); await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
     const event = calendar.getByRole('button', { name: 'Подготовить договор', exact: true });
-    await event.hover(); await card.waitFor(); assert.equal(await card.getByLabel('Время начала', { exact: true }).inputValue(), '11:00');
+    await event.hover(); await page.waitForTimeout(500); assert.equal(await card.count(), 0, 'hover must not open a task');
+    await event.click(); await card.waitFor(); await assertCenteredTask();
+    assert.equal(await card.locator('.custom-reminder-chip').count(), 1);
+    for (const label of ['10 мин', '30 мин', '1 ч', '1 день', '3 дня', '1 неделя']) assert.equal(await card.getByRole('button', { name: label, exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await card.getByLabel('Время начала', { exact: true }).inputValue(), '11:00');
     assert.equal(await card.getByLabel('Ссылка 1', { exact: true }).inputValue(), 'https://drive.google.com/file/d/calendar-test');
     await card.getByRole('button', { name: 'Договор.txt', exact: true }).waitFor();
-    await event.click();
+    await assertCenteredIcons(card);
     await card.getByLabel('Описание задачи', { exact: true }).fill('Согласовать редакцию договора');
     await card.getByLabel('Контрагент задачи', { exact: true }).click();
     await card.getByLabel('Поиск контрагента задачи', { exact: true }).fill('Участник календаря');
@@ -263,7 +302,12 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     // Routing may redirect /mobile to the responsive main view.
     const menu = page.locator('.user-avatar, .user-menu-btn, .mobile-user-btn').first();
     await menu.waitFor(); await menu.click();
-    await page.getByRole('button', { name: 'Календарь задач', exact: true }).click();
+    const workspaceMenuItem = page.getByRole('button', { name: 'Рабочая область', exact: true });
+    await workspaceMenuItem.click(); await page.getByRole('heading', { name: 'Рабочая область', exact: true }).waitFor();
+    await page.locator('.modal-sheet').filter({ has: page.getByRole('heading', { name: 'Рабочая область', exact: true }) }).locator('.close-btn').click();
+    assert.equal(await page.locator('.mobile-action-panel-wrapper').getByRole('button', { name: 'Рабочая область', exact: true }).count(), 0);
+    await page.screenshot({ path: `${output}/mobile-calendar-shortcut.png` });
+    await page.getByRole('button', { name: 'Открыть календарь задач', exact: true }).click();
     await page.getByRole('dialog', { name: 'Календарь задач', exact: true }).waitFor();
     assert.ok(await page.getByRole('dialog', { name: 'Календарь задач' }).evaluate(node => node.scrollWidth <= node.clientWidth + 1));
     await page.screenshot({ path: `${output}/business-calendar-mobile.png` });
@@ -274,5 +318,5 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
     assert.deepEqual(errors, []);
     console.log('PASS: real Vue → HTTP → MongoDB, stacked company modal, preserved account drafts, no browser tab/navigation, explicit per-company 1C selection, no-BIN contractor import, persisted edits and Drive links, export, desktop/mobile views');
-  } catch (error) { await page?.screenshot({ path: `${output}/business-calendar-failure.png` }); console.error((await page?.locator('.task-popover').innerText().catch(() => ''))); throw error; } finally { await browser?.close(); await server.close(); }
+  } catch (error) { console.error(error); await page?.screenshot({ path: `${output}/business-calendar-failure.png`, timeout: 5000 }).catch(() => {}); throw error; } finally { await browser?.close(); await server.close(); }
 }

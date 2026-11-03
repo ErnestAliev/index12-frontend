@@ -22,41 +22,32 @@ const byDay = computed(() => Object.fromEntries(days.value.map(date => [date, vi
 const selectedTasks = computed(() => visible.value.filter(task => taskOnDay(task, selected.value)));
 const selectedLabel = computed(() => new Date(`${selected.value}T12:00:00Z`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' }));
 const unscheduled = computed(() => visible.value.filter(task => !task.dueDate && !task.startsAt));
-let hoverTimer, leaveTimer, clock, dragging = false;
-function clickDay(date, event) { selected.value = date; if (!window.matchMedia('(max-width: 700px)').matches) void show(null, date, event, true); }
+let clock;
+function clickDay(date) { selected.value = date; if (!window.matchMedia('(max-width: 700px)').matches) void show(null, date); }
 function moveMonth(delta) { const [year, m] = month.value.split('-').map(Number); month.value = new Date(Date.UTC(year, m - 1 + delta, 1)).toISOString().slice(0, 7); }
 function goToday() { month.value = today.value.slice(0, 7); selected.value = today.value; }
-function anchorFor(event) { const b = event?.currentTarget?.getBoundingClientRect(); return b ? { left: b.left, right: b.right, top: b.top } : { left: window.innerWidth / 2, right: window.innerWidth / 2, top: 100 }; }
-async function show(task, date, event, pinned = false) {
-  clearTimeout(hoverTimer); clearTimeout(leaveTimer);
-  if (popover.value?.pinned && !pinned) return;
-  if (popover.value?.task?._id === task?._id && task && popover.value) { if (pinned) popover.value.pinned = true; return; }
-  const anchor = anchorFor(event);
-  if (popover.value?.pinned) { await editor.value?.close(); if (popover.value) return; }
-  popover.value = { task, date, anchor, pinned, key: task?._id || crypto.randomUUID() };
+async function show(task, date) {
+  if (popover.value?.task?._id === task?._id && task) return;
+  if (popover.value) { await editor.value?.close(); if (popover.value) return; }
+  popover.value = { task, date, key: task?._id || crypto.randomUUID() };
 }
-function hover(task, date, event) { const anchor = anchorFor(event); clearTimeout(leaveTimer); clearTimeout(hoverTimer); if (popover.value?.pinned || dragging) return; hoverTimer = setTimeout(() => { popover.value = { task, date, anchor, pinned: false, key: task._id }; }, 280); }
-function leave() { clearTimeout(hoverTimer); clearTimeout(leaveTimer); leaveTimer = setTimeout(() => { if (!popover.value?.pinned) popover.value = null; }, 220); }
-function enter() { clearTimeout(leaveTimer); }
-function pin() { if (popover.value) popover.value.pinned = true; }
-async function closeCalendar() { clearTimeout(hoverTimer); clearTimeout(leaveTimer); if (popover.value?.pinned) { await editor.value?.close(); if (popover.value) return; } emit('close'); }
-function prepareDrag() { clearTimeout(hoverTimer); clearTimeout(leaveTimer); dragging = true; if (!popover.value?.pinned) popover.value = null; }
-function endDrag() { dragging = false; dropDate.value = null; }
-function drag(event, task) { if (popover.value?.pinned) { event.preventDefault(); return; } popover.value = null; clearTimeout(hoverTimer); event.dataTransfer.setData('application/x-index12-task', task._id); event.dataTransfer.effectAllowed = 'move'; }
+async function closeCalendar() { if (popover.value) { await editor.value?.close(); if (popover.value) return; } emit('close'); }
+function endDrag() { dropDate.value = null; }
+function drag(event, task) { if (popover.value) { event.preventDefault(); return; } event.dataTransfer.setData('application/x-index12-task', task._id); event.dataTransfer.effectAllowed = 'move'; }
 async function drop(event, date) {
   endDrag(); const id = event.dataTransfer.getData('application/x-index12-task'); if (!business.tasks.some(task => task._id === id)) return;
   try { const response = await businessApi.get(`/tasks/${id}`), task = response.data.task; await business.saveTask(shiftTask(task, date), id, task.version); error.value = ''; } catch (e) { error.value = businessError(e); }
 }
 async function openRequested(id) {
   if (!id) return;
-  try { const { data } = await businessApi.get(`/tasks/${id}`); const date = data.task.dueDate || today.value; month.value = date.slice(0, 7); selected.value = date; await show(data.task, date, null, true); business.requestedTask = null; } catch (e) { error.value = businessError(e); }
+  try { const { data } = await businessApi.get(`/tasks/${id}`); const date = data.task.dueDate || today.value; month.value = date.slice(0, 7); selected.value = date; await show(data.task, date); business.requestedTask = null; } catch (e) { error.value = businessError(e); }
 }
 function reloadTask(task) { if (popover.value) popover.value = { ...popover.value, task, key: crypto.randomUUID() }; }
 function keyboard(event) { if (event.key === 'Escape' && !popover.value) { event.stopPropagation(); emit('close'); } }
 watch(month, () => business.setRange(days.value[0], days.value.at(-1)));
 watch(() => business.requestedTask, id => void openRequested(id));
-onMounted(() => { void business.setRange(days.value[0], days.value.at(-1)); void openRequested(business.requestedTask); clock = setInterval(() => { now.value = Date.now(); }, 15000); window.addEventListener('keydown', keyboard); window.addEventListener('pointerup', endDrag); });
-onBeforeUnmount(() => { clearInterval(clock); clearTimeout(hoverTimer); clearTimeout(leaveTimer); window.removeEventListener('keydown', keyboard); window.removeEventListener('pointerup', endDrag); });
+onMounted(() => { void business.setRange(days.value[0], days.value.at(-1)); void openRequested(business.requestedTask); clock = setInterval(() => { now.value = Date.now(); }, 15000); window.addEventListener('keydown', keyboard); });
+onBeforeUnmount(() => { clearInterval(clock); window.removeEventListener('keydown', keyboard); });
 </script>
 <template>
   <div class="calendar-overlay" @click.self="closeCalendar">
@@ -65,22 +56,22 @@ onBeforeUnmount(() => { clearInterval(clock); clearTimeout(hoverTimer); clearTim
       <div v-if="error || business.error" class="calendar-error" role="alert">{{ error || business.error }}</div><div v-if="business.truncated" class="calendar-error" role="status">Показаны первые 2000 задач периода</div>
       <div class="calendar-layout">
         <aside class="calendar-sidebar">
-          <button type="button" class="calendar-create" @click="show(null, selected, $event, true)"><span aria-hidden="true">+</span>Создать задачу</button>
+          <button type="button" class="calendar-create" @click="show(null, selected)"><span aria-hidden="true">+</span>Создать задачу</button>
           <div class="mini-header"><strong>{{ monthLabel }}</strong><button type="button" aria-label="Предыдущий месяц в мини-календаре" @click="moveMonth(-1)" class="ui-icon-button"><UiIcon name="chevron-left" /></button><button type="button" aria-label="Следующий месяц в мини-календаре" @click="moveMonth(1)" class="ui-icon-button"><UiIcon name="chevron-right" /></button></div>
           <div class="mini-grid"><span v-for="day in weekdays" :key="day">{{ day }}</span><button v-for="date in days" :key="date" type="button" :class="{ 'is-today': date === today, 'is-selected': date === selected, adjacent: !date.startsWith(month) }" :aria-label="`Выбрать ${date}`" @click="selected = date; month = date.slice(0, 7)">{{ Number(date.slice(-2)) }}</button></div>
           <h3>Мои задачи</h3><label v-for="(label, key) in statusLabels" :key="key" class="status-filter" :data-status="key"><input v-model="statuses" type="checkbox" :value="key" /><span>{{ label }}</span><small>{{ counts[key] }}</small></label>
           <h3>Контрагент</h3><select v-model="party" aria-label="Фильтр по контрагенту" class="ui-select"><option value="">Все компании и контрагенты</option><optgroup v-for="group in parties" :key="group.key" :label="group.label"><option v-for="row in group.rows" :key="row._id" :value="`${group.key}:${row._id}`">{{ row.name }}</option></optgroup></select>
-          <div v-if="unscheduled.length" class="unscheduled"><h3>Без даты <small>{{ unscheduled.length }}</small></h3><button v-for="task in unscheduled" :key="task._id" type="button" @click="show(task, selected, $event, true)">{{ task.title }}</button></div>
+          <div v-if="unscheduled.length" class="unscheduled"><h3>Без даты <small>{{ unscheduled.length }}</small></h3><button v-for="task in unscheduled" :key="task._id" type="button" @click="show(task, selected)">{{ task.title }}</button></div>
         </aside>
         <main class="calendar-main"><div class="calendar-weekdays"><span v-for="day in weekdays" :key="day">{{ day }}</span></div><div class="calendar-grid" :style="{ '--calendar-weeks': days.length / 7 }" role="grid" :aria-label="monthLabel">
-          <div v-for="date in days" :key="date" class="calendar-cell" :class="{ adjacent: !date.startsWith(month), 'drop-target': dropDate === date, 'selected-day': date === selected }" role="gridcell" tabindex="0" :aria-label="`${date}, задач: ${byDay[date].length}`" :data-date="date" @click="clickDay(date, $event)" @keydown.enter.self.prevent="selected = date; show(null, date, $event, true)" @dragover.prevent="dropDate = date" @dragleave.self="dropDate = null" @drop.prevent="drop($event, date)">
+          <div v-for="date in days" :key="date" class="calendar-cell" :class="{ adjacent: !date.startsWith(month), 'drop-target': dropDate === date, 'selected-day': date === selected }" role="gridcell" tabindex="0" :aria-label="`${date}, задач: ${byDay[date].length}`" :data-date="date" @click="clickDay(date)" @keydown.enter.self.prevent="selected = date; show(null, date)" @dragover.prevent="dropDate = date" @dragleave.self="dropDate = null" @drop.prevent="drop($event, date)">
             <div class="day-number"><span :class="{ 'is-today': date === today }">{{ Number(date.slice(-2)) }}<small v-if="date.slice(-2) === '01'"> {{ new Date(`${date}T12:00:00Z`).toLocaleDateString('ru-RU', { month: 'short', timeZone: 'UTC' }) }}</small></span></div>
-            <div class="day-tasks"><button v-for="task in byDay[date]" :key="task._id" type="button" class="calendar-event" :data-status="taskState(task, now)" :data-task-id="task._id" draggable="true" :aria-label="task.title" @pointerdown="prepareDrag" @pointerup="endDrag" @dragstart="drag($event, task)" @dragend="endDrag" @click.stop="show(task, date, $event, true)" @mouseenter="hover(task, date, $event)" @mouseleave="leave"><i aria-hidden="true"></i><time v-if="task.startsAt && dayAt(task.startsAt) === date">{{ timeAt(task.startsAt) }}</time><span>{{ task.title }}</span></button></div>
+            <div class="day-tasks"><button v-for="task in byDay[date]" :key="task._id" type="button" class="calendar-event" :data-status="taskState(task, now)" :data-task-id="task._id" draggable="true" :aria-label="task.title" @dragstart="drag($event, task)" @dragend="endDrag" @click.stop="show(task, date)"><i aria-hidden="true"></i><time v-if="task.startsAt && dayAt(task.startsAt) === date">{{ timeAt(task.startsAt) }}</time><span>{{ task.title }}</span></button></div>
           </div>
-        </div><div class="mobile-agenda"><header><strong>{{ selectedLabel }}</strong><span>{{ selectedTasks.length }}</span></header><button v-for="task in selectedTasks" :key="task._id" type="button" class="mobile-agenda-task" :data-status="taskState(task, now)" @click="show(task, selected, $event, true)"><time>{{ task.startsAt ? timeAt(task.startsAt) : 'Весь день' }}</time><span>{{ task.title }}<small>{{ task.partyName || statusLabels[taskState(task, now)] }}</small></span><i></i></button></div></main>
+        </div><div class="mobile-agenda"><header><strong>{{ selectedLabel }}</strong><span>{{ selectedTasks.length }}</span></header><button v-for="task in selectedTasks" :key="task._id" type="button" class="mobile-agenda-task" :data-status="taskState(task, now)" @click="show(task, selected)"><time>{{ task.startsAt ? timeAt(task.startsAt) : 'Весь день' }}</time><span>{{ task.title }}<small>{{ task.partyName || statusLabels[taskState(task, now)] }}</small></span><i></i></button></div></main>
       </div>
-      <button type="button" class="mobile-create" aria-label="Создать задачу" @click="show(null, selected, $event, true)">+</button>
-      <CalendarTaskPopover v-if="popover" :key="popover.key" ref="editor" :task="popover.task" :date="popover.date" :anchor="popover.anchor" :pinned="popover.pinned" @close="popover = null" @pin="pin" @enter="enter" @leave="leave" @reload="reloadTask" @saved="task => { if (popover) popover.task = task }" />
+      <button type="button" class="mobile-create" aria-label="Создать задачу" @click="show(null, selected)">+</button>
+      <CalendarTaskPopover v-if="popover" :key="popover.key" ref="editor" :task="popover.task" :date="popover.date" @close="popover = null" @reload="reloadTask" @saved="task => { if (popover) popover.task = task }" />
     </section>
   </div>
 </template>
