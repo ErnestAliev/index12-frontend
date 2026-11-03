@@ -7,6 +7,7 @@ import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
 import DateRangePicker from './DateRangePicker.vue';
 import CompanyDetailsModal from './CompanyDetailsModal.vue';
+import { matchesCompanySearch } from '@/utils/companySearch';
 import { legalFields } from '@/services/businessApi';
 
 // 🟢 ИМПОРТ ДАННЫХ ДЛЯ АВТОПОДСТАНОВКИ
@@ -203,8 +204,7 @@ const filteredContractorItems = computed(() => {
   const contractNumberFilter = normalizeSearch(contractNumber);
 
   return localItems.value.filter((item) => {
-    const itemName = normalizeSearch(item.name);
-    if (nameFilter && !itemName.includes(nameFilter)) return false;
+    if (!matchesCompanySearch(item, nameFilter)) return false;
 
     const projectIds = normalizeIdArray(item.selectedProjectIds);
     if (projectId && !projectIds.some((id) => idsMatch(id, projectId))) return false;

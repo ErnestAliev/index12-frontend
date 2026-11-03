@@ -3,14 +3,15 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { businessApi, businessError } from '@/services/businessApi';
 import { profileFields, profileDraft, profileText, downloadProfile } from '@/utils/companyProfile';
+import { matchesCompanySearch } from '@/utils/companySearch';
 
 const props = defineProps({ companyId: { type: String, required: true }, workspaceId: { type: String, default: '' }, kind: { type: String, default: 'companies', validator: v => ['companies', 'contractors'].includes(v) }, syncOnOpen: Boolean });
 const emit = defineEmits(['close', 'saved']);
 const main = useMainStore();
 const company = ref(null), draft = ref(profileDraft()), loading = ref(true), busy = ref(false), error = ref(''), message = ref('');
-const closeButton = ref(null), showSync = ref(false), search = ref(''), candidates = ref([]), selectedRef = ref(''), nextSkip = ref(null), searching = ref(false);
+const closeButton = ref(null), showSync = ref(false), search = ref(''), candidateForm = ref('all'), candidates = ref([]), selectedRef = ref(''), searching = ref(false), candidatesComplete = ref(false);
 const previousFocus = document.activeElement;
-let generation = 0, controller, searchGeneration = 0;
+let generation = 0, controller, candidateController, searchGeneration = 0;
 const title = computed(() => props.kind === 'contractors' ? 'Карточка контрагента' : 'Карточка компании');
 const endpoint = () => `/${props.kind}/${props.companyId}`;
 const options = () => ({ headers: props.workspaceId ? { 'X-Index12-Workspace-ID': props.workspaceId } : {} });
@@ -20,7 +21,7 @@ const displayCandidates = computed(() => {
   const normalize = value => value.toLocaleLowerCase('ru').replace(/[^\p{L}\p{N}]/gu, '').replace(/^(тоо|ип)/, '');
   const name = normalize(company.value?.name || '');
   const score = value => { const n = normalize(value); return n === name ? 3 : name && n && (n.includes(name) || name.includes(n)) ? 2 : 0; };
-  return [...candidates.value].sort((a, b) => score(b.name) - score(a.name));
+  return candidates.value.filter(item => matchesCompanySearch(item, search.value, candidateForm.value)).sort((a, b) => score(b.name) - score(a.name));
 });
 onMounted(() => closeButton.value?.focus());
 function close() { emit('close'); }
@@ -51,19 +52,35 @@ async function saveCurrent(current) {
   if (current === generation) applyCompany(data.company);
 }
 const save = () => action(async current => { await saveCurrent(current); if (current === generation) message.value = 'Реквизиты сохранены'; });
-async function loadCandidates(append = false) {
+function showAllCandidates() { search.value = ''; candidateForm.value = 'all'; }
+watch([search, candidateForm], () => { selectedRef.value = ''; });
+async function loadCandidates() {
   const current = generation, request = ++searchGeneration;
-  searching.value = true; error.value = '';
+  candidateController?.abort(); candidateController = new AbortController();
+  const signal = candidateController.signal;
+  searching.value = true; candidatesComplete.value = false; candidates.value = []; selectedRef.value = ''; error.value = '';
   try {
-    const { data } = await businessApi.get(`${endpoint()}/onec-candidates`, { ...options(), params: { search: search.value, skip: append ? nextSkip.value : 0 }, timeout: 90000 });
-    if (current !== generation || request !== searchGeneration) return;
-    candidates.value = append ? [...candidates.value, ...data.candidates] : data.candidates; nextSkip.value = data.nextSkip;
-    if (!candidates.value.some(row => row.ref === selectedRef.value)) selectedRef.value = '';
-  } catch (e) { if (current === generation && request === searchGeneration) error.value = businessError(e); }
+    const rows = new Map(); let skip = 0;
+    for (;;) {
+      const { data } = await businessApi.get(`${endpoint()}/onec-candidates`, { ...options(), params: { search: '', skip }, signal, timeout: 90000 });
+      if (current !== generation || request !== searchGeneration) return;
+      for (const row of data.candidates) rows.set(row.ref, row);
+      candidates.value = [...rows.values()];
+      if (!data.hasMore) { candidatesComplete.value = true; break; }
+      if (!data.candidates.length || !Number.isInteger(data.nextSkip) || data.nextSkip <= skip) {
+        const error = new Error(); error.publicMessage = '1С вернула некорректную страницу. Повторите загрузку списка'; throw error;
+      }
+      skip = data.nextSkip;
+    }
+  } catch (e) {
+    if (current === generation && request === searchGeneration && e.code !== 'ERR_CANCELED') {
+      candidates.value = []; error.value = e.publicMessage || businessError(e);
+    }
+  }
   finally { if (current === generation && request === searchGeneration) searching.value = false; }
 }
 async function beginSync() {
-  showSync.value = true; selectedRef.value = ''; search.value = ''; await loadCandidates();
+  showSync.value = true; showAllCandidates(); await loadCandidates();
 }
 const sync = () => action(async current => {
   const ref = showSync.value ? selectedRef.value : company.value?.onecSync?.ref;
@@ -80,7 +97,7 @@ const unlink = () => action(async current => {
 });
 const copy = async () => { try { await navigator.clipboard.writeText(profileText(draft.value)); message.value = 'Реквизиты скопированы'; } catch { error.value = 'Браузер не разрешил копирование'; } };
 watch(() => [main.user?.id || main.user?._id, main.user?.currentWorkspaceId, props.companyId, props.workspaceId, props.kind], async ([userId]) => {
-  const current = ++generation; ++searchGeneration; controller?.abort(); controller = new AbortController();
+  const current = ++generation; ++searchGeneration; controller?.abort(); candidateController?.abort(); controller = new AbortController();
   company.value = null; draft.value = profileDraft(); loading.value = true; busy.value = false; error.value = ''; message.value = ''; showSync.value = false; searching.value = false;
   if (!userId) return;
   try {
@@ -91,7 +108,7 @@ watch(() => [main.user?.id || main.user?._id, main.user?.currentWorkspaceId, pro
   } catch (e) { if (current === generation && e.code !== 'ERR_CANCELED') error.value = businessError(e); }
   finally { if (current === generation) loading.value = false; }
 }, { immediate: true });
-onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); if (previousFocus?.isConnected) previousFocus.focus(); });
+onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); candidateController?.abort(); if (previousFocus?.isConnected) previousFocus.focus(); });
 </script>
 
 <template>
@@ -104,10 +121,11 @@ onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); i
         <div class="company-toolbar"><button type="button" :disabled="busy || searching" @click="company.onecSync?.ref ? sync() : beginSync()">{{ busy ? 'Обработка…' : searching ? 'Загрузка списка…' : 'Синхронизировать с 1С' }}</button><button v-if="company.onecSync?.ref" type="button" :disabled="busy || searching" @click="beginSync">Изменить связь</button><button type="button" @click="copy">Копировать реквизиты</button><button type="button" @click="downloadProfile(draft)">Скачать .txt</button><button type="button" @click="downloadProfile(draft, 'json')">Скачать .json</button></div>
         <div class="company-source"><template v-if="company.onecSync?.ref">1С: {{ company.onecSync.name || company.onecSync.ref }}<template v-if="company.onecSync.identificationNumber"> · {{ company.onecSync.identificationNumber }}</template> · {{ new Date(company.onecSync.checkedAt).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' }) }}</template><template v-else>С 1С не связано</template><button v-if="company.onecSync?.ref" type="button" :disabled="busy" @click="unlink">Отвязать</button></div>
         <section v-if="showSync" class="company-section sync-selector" aria-label="Выбор записи 1С">
-          <h2>{{ kind === 'contractors' ? 'Контрагенты 1С' : 'Организации 1С' }}</h2>
-          <form class="sync-search" @submit.prevent="loadCandidates()"><input v-model="search" type="search" aria-label="Поиск по названию в 1С" placeholder="Название в 1С" /><button type="submit" :disabled="searching">Найти</button></form>
-          <select v-model="selectedRef" aria-label="Запись из справочника 1С" :disabled="searching || busy"><option value="">Выберите {{ kind === 'contractors' ? 'контрагента' : 'организацию' }}</option><option v-for="item in displayCandidates" :key="item.ref" :value="item.ref">{{ item.name }}{{ item.identificationNumber ? ` · ${item.identificationNumber}` : '' }}</option></select>
-          <div class="sync-actions"><button v-if="nextSkip !== null" type="button" :disabled="searching" @click="loadCandidates(true)">Загрузить ещё</button><button type="button" :disabled="!selectedRef || busy || searching" @click="sync">{{ busy ? 'Синхронизация…' : 'Связать и загрузить' }}</button><button type="button" :disabled="busy" @click="showSync = false">Закрыть список</button></div><div v-if="!searching && !candidates.length" role="status">Совпадений в 1С нет</div>
+          <div class="section-heading"><h2>{{ kind === 'contractors' ? 'Контрагенты 1С' : 'Организации 1С' }}</h2><span class="candidate-count" role="status">{{ searching ? `Загружено: ${candidates.length}` : candidatesComplete ? `Найдено: ${displayCandidates.length} из ${candidates.length}` : 'Список не загружен' }}</span></div>
+          <div class="sync-search"><input v-model="search" type="search" aria-label="Поиск по названию в 1С" placeholder="Название или часть названия" /><button type="button" @click="showAllCandidates">Показать все</button></div>
+          <div v-if="kind === 'contractors'" class="candidate-filters" role="group" aria-label="Тип контрагента в 1С"><button v-for="[value, label] in [['all', 'Все'], ['ip', 'ИП'], ['too', 'ТОО']]" :key="value" type="button" :aria-pressed="candidateForm === value" @click="candidateForm = value">{{ label }}</button></div>
+          <select v-model="selectedRef" aria-label="Запись из справочника 1С" :disabled="searching || !candidatesComplete || busy"><option value="">Выберите {{ kind === 'contractors' ? 'контрагента' : 'организацию' }}</option><option v-for="item in displayCandidates" :key="item.ref" :value="item.ref">{{ item.name }}{{ item.identificationNumber ? ` · ${item.identificationNumber}` : '' }}</option></select>
+          <div class="sync-actions"><button v-if="!searching && !candidatesComplete" type="button" @click="loadCandidates">Повторить загрузку</button><button type="button" :disabled="!selectedRef || busy || searching || !candidatesComplete" @click="sync">{{ busy ? 'Синхронизация…' : 'Связать и загрузить' }}</button><button type="button" :disabled="busy" @click="showSync = false">Закрыть список</button></div><div v-if="!searching && candidatesComplete && !displayCandidates.length" role="status">Совпадений в 1С нет</div>
         </section>
         <div v-if="missingLabels.length" class="company-source">В публикации 1С нет данных: {{ missingLabels.join(', ') }}</div>
         <div class="company-page-grid">
@@ -143,6 +161,10 @@ label { display: grid; gap: 8px; font-size: 13px; } input, textarea, select, but
 input, textarea, select { width: 100%; font-size: 14px; } textarea { resize: vertical; margin-top: 16px; } button { cursor: pointer; font-size: 13px; } button:disabled { opacity: .4; cursor: default; } a { color: var(--color-primary, #38b86d); }
 .company-footer { display: flex; align-items: center; gap: 12px; padding: 16px 28px; border-top: 1px solid var(--color-border); }.company-footer span { margin-right: auto; font-size: 12px; }.company-footer button:nth-last-child(2), .company-toolbar button:first-child { border-color: var(--color-primary, #38b86d); }
 .company-error { color: #dd6666; margin-bottom: 16px; }.company-message { margin-bottom: 16px; font-size: 13px; }.sync-selector { margin-bottom: 20px; }.sync-search { margin: 16px 0; flex-wrap: nowrap; }.sync-actions { margin-top: 12px; }
+.candidate-count { font-size: 12px; color: var(--color-text-soft, var(--color-text)); }
+.candidate-filters { display: flex; gap: 8px; margin-bottom: 12px; }
+.candidate-filters button { padding: 6px 16px; }
+.candidate-filters button[aria-pressed="true"] { border-color: var(--color-primary); background: var(--color-background); }
 @media(max-width: 850px) { .company-overlay { padding: 4px; }.company-page { width: 100%; height: 98dvh; }.company-page-header, .company-body { padding: 16px; }.company-footer { padding: 12px 16px; }.company-page-grid { grid-template-columns: 1fr; }.company-section { padding: 16px; } }
 @media(max-width: 480px) { .profile-fields { grid-template-columns: 1fr; }.wide { grid-column: auto; } h1 { font-size: 21px; } }
 </style>

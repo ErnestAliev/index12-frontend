@@ -15,9 +15,11 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     let syncRequests = 0;
+    const candidatePages = [];
     await page.context().route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       if (path.startsWith('/api/business')) {
+        if (path.endsWith('/onec-candidates')) candidatePages.push({ path, skip: Number(new URL(request.url()).searchParams.get('skip') || 0) });
         if (path.endsWith('/sync-onec') && request.method() === 'POST') syncRequests++;
         const response = await route.fetch({ url: apiUrl + path.slice(4) + new URL(request.url()).search, headers: { ...request.headers(), 'x-test-actor': actor, 'x-test-workspace': workspaceId, origin: 'http://127.0.0.1:5192' } });
         return route.fulfill({ response });
@@ -108,6 +110,24 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).waitFor();
     assert.equal(await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).inputValue(), '');
     await legal.getByRole('button', { name: 'Синхронизировать с 1С', exact: true }).click();
+    const sourceSelect = legal.getByRole('combobox', { name: 'Запись из справочника 1С', exact: true });
+    const sourceSearch = legal.getByRole('searchbox', { name: 'Поиск по названию в 1С', exact: true });
+    await legal.getByText('Найдено: 90 из 90', { exact: true }).waitFor();
+    assert.equal(await sourceSelect.locator('option').count(), 91, 'the complete source catalog must be loaded automatically');
+    assert.ok(candidatePages.some(page => page.path.includes('/contractors/') && page.skip === 50), 'records after the first source page must be fetched');
+    await sourceSearch.fill('YBB');
+    await sourceSelect.locator('option').filter({ hasText: 'YBB GROUP' }).waitFor({ state: 'attached' });
+    assert.equal(await sourceSelect.locator('option').count(), 2, 'YBB finds a partial name from the second page without a search button');
+    await legal.getByRole('button', { name: 'Показать все', exact: true }).click();
+    assert.equal(await sourceSelect.locator('option').count(), 91);
+    const typeFilter = legal.getByRole('group', { name: 'Тип контрагента в 1С', exact: true });
+    await typeFilter.getByRole('button', { name: 'ИП', exact: true }).click();
+    assert.equal(await sourceSelect.locator('option').count(), 45);
+    await typeFilter.getByRole('button', { name: 'ТОО', exact: true }).click();
+    assert.equal(await sourceSelect.locator('option').count(), 47);
+    await legal.getByRole('button', { name: 'Показать все', exact: true }).click();
+    await sourceSearch.fill('group ybb');
+    assert.equal(await sourceSelect.locator('option').count(), 2, 'name words may be entered in any order');
     await legal.getByRole('combobox', { name: 'Запись из справочника 1С', exact: true }).selectOption('22222222-2222-4222-8222-222222222222');
     await legal.getByRole('button', { name: 'Связать и загрузить', exact: true }).click();
     await legal.getByText('Реквизиты загружены из 1С', { exact: true }).waitFor();
