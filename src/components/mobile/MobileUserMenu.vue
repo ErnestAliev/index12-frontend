@@ -43,6 +43,10 @@
             </svg>
           </button>
 
+          <button v-if="mainStore.isAdmin" class="menu-item" @click="emit('close'); emit('open-calendar')">
+            <div class="menu-item-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></div>
+            <span>Календарь задач</span>
+          </button>
           <button class="menu-item" @click="emit('close'); emit('open-history')">
             <div class="menu-item-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg></div>
             <span>История изменений</span>
@@ -101,7 +105,7 @@ import { useMainStore } from '@/stores/mainStore';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 
 const mainStore = useMainStore();
-const emit = defineEmits(['close', 'open-about', 'open-appearance', 'open-history']);
+const emit = defineEmits(['close', 'open-about', 'open-appearance', 'open-history', 'open-calendar']);
 const appearance = useAppearanceStore();
 
 const currentTheme = computed(() => appearance.mode);

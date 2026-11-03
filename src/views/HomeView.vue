@@ -43,6 +43,8 @@ import ContractorEditorModal from '@/components/ContractorEditorModal.vue';
 import {useWindowPreferences} from '@/composables/useWindowPreferences.js';
 import ChangeHistoryPanel from '@/components/ChangeHistoryPanel.vue';
 import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
+import BusinessCalendar from '@/components/BusinessCalendar.vue';
+import { useBusinessMonitor } from '@/composables/useBusinessMonitor';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
@@ -53,6 +55,8 @@ const permissions = usePermissions();
 const appearance = useAppearanceStore();
 const showThemeSettings = ref(false);
 const showChangeHistory=ref(false);
+const showBusinessCalendar = ref(false);
+useBusinessMonitor(() => { showBusinessCalendar.value = false; }, () => { showBusinessCalendar.value = true; });
 const toggleThemeSettings = () => { showThemeSettings.value = !showThemeSettings.value; if (showThemeSettings.value) showCodex.value = false; };
 
 // --- CONSTANTS ---
@@ -1756,6 +1760,9 @@ const handleRefundDelete = async (op) => {
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
+          <button v-if="mainStore.isAdmin" class="icon-btn" type="button" data-tooltip="Календарь задач" aria-label="Открыть календарь задач" @click="showBusinessCalendar = true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2"/></svg>
+          </button>
           <button class="icon-btn codex-btn" :class="{ active: showCodex }" type="button"
             data-tooltip="Codex" aria-label="Открыть чат Codex" :aria-expanded="showCodex" aria-controls="codex-chat-window" @click="showCodex = !showCodex; if (showCodex) showThemeSettings = false">
             <CodexIcon />
@@ -1826,6 +1833,7 @@ const handleRefundDelete = async (op) => {
     <ImportExportModal v-if="showImportModal" @close="showImportModal = false" @import-complete="handleImportComplete" />
     <GraphModal v-if="showGraphModal" @close="showGraphModal = false" />
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
+    <BusinessCalendar v-if="showBusinessCalendar && mainStore.isAdmin" @close="showBusinessCalendar = false" />
     <EditorModal v-if="showEditorModal && !mainStore.isManager" @close="showEditorModal = false" />
     <ContractorEditorModal v-if="showContractorEditorModal && !mainStore.isManager" @close="showContractorEditorModal = false" />
     <!-- 🟢 Unified Workspace/Project Dashboard Modal -->

@@ -6,6 +6,8 @@ import { usePermissions } from '@/composables/usePermissions';
 import AccountPickerModal from './AccountPickerModal.vue';
 import MultiSelectModal from './MultiSelectModal.vue'; 
 import DateRangePicker from './DateRangePicker.vue';
+import RegistryFields from './RegistryFields.vue';
+import { legalFields } from '@/services/businessApi';
 
 // 🟢 ИМПОРТ ДАННЫХ ДЛЯ АВТОПОДСТАНОВКИ
 import { accountSuggestions } from '@/data/accountSuggestions.js';
@@ -41,6 +43,12 @@ const otherItems = ref([]);
 
 // 🟢 СПИСОК: Исключенные элементы (только для счетов)
 const excludedItems = ref([]);
+const registryItem = ref(null);
+const updateRegistryItem = value => {
+  const current = localItems.value.find(item => item._id === registryItem.value?._id);
+  if (!current) return;
+  Object.assign(current, value); registryItem.value = current; debouncedSave();
+};
 
 // 🟢 СПИСОК: Кассы (только для счетов)
 const cashRegisterItems = ref([]);
@@ -583,6 +591,9 @@ const runSave = async () => {
         data.contractNumber = item.contractNumber || null;
         data.contractDate = item.contractDate ? new Date(item.contractDate) : null;
     }
+    if (isContractorEditor || isCompanyEditor) {
+        for (const field of legalFields) data[field] = item[field] || null;
+    }
     if (isCompanyEditor) {
         data.identificationNumber = item.identificationNumber || null;
         data.taxRegime = normalizeTaxRegime(item.taxRegime);
@@ -837,7 +848,7 @@ defineExpose({
                 <input type="text" v-model="item.name" class="edit-input edit-name contractor-name-cell" @blur="debouncedSave" />
                 <button type="button" class="edit-input edit-picker-btn contractor-project-cell" @click="openMultiSelect(item, 'projects')">{{ normalizeIdArray(item.selectedProjectIds).length ? `Проекты (${normalizeIdArray(item.selectedProjectIds).length})` : 'Проект' }}</button>
                 <button type="button" class="edit-input edit-picker-btn contractor-category-cell" @click="openMultiSelect(item, 'categories')">{{ normalizeIdArray(item.selectedCategoryIds).length ? `Категории (${normalizeIdArray(item.selectedCategoryIds).length})` : 'Категория' }}</button>
-                <input type="text" v-model="item.identificationNumber" class="edit-input edit-bin contractor-bin-cell" placeholder="БИН/ИИН" @blur="debouncedSave" />
+                <button type="button" class="edit-input edit-bin contractor-bin-cell" @click="registryItem = item" :title="item.identificationNumber || 'Реквизиты и проверка'">{{ item.identificationNumber || 'БИН/ИИН · найти' }}</button>
                 <input type="text" v-model="item.contractNumber" class="edit-input edit-contract-num contractor-contract-num-cell" placeholder="Номер договора" @blur="debouncedSave" />
                 <input type="date" v-model="item.contractDate" class="edit-input edit-contract-date contractor-contract-date-cell" @input="debouncedSave" />
                 <button class="delete-btn contractor-trash-cell" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
@@ -1032,6 +1043,12 @@ defineExpose({
     </div>
 
     <!-- Диалоги удаления и создания (без изменений) -->
+    <Teleport to="body"><div v-if="registryItem" class="registry-overlay" @click.self="registryItem = null">
+      <div class="registry-card" role="dialog" aria-label="Реквизиты контрагента">
+        <div class="registry-card-header"><h4>{{ registryItem.name }}</h4><button type="button" @click="registryItem = null" aria-label="Закрыть реквизиты">×</button></div>
+        <RegistryFields :model-value="registryItem" @update:model-value="updateRegistryItem" />
+      </div>
+    </div></Teleport>
     <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete"><div class="delete-confirm-box"><div v-if="isDeleting" class="deleting-state"><h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите, обновляем данные.</p><div class="progress-container"><div class="progress-bar"></div></div></div><div v-else><h4>Удаление сущности</h4><p>Вы собираетесь удалить <strong>«{{ itemToDelete?.name }}»</strong>.<br>Что делать со связанными операциями?</p><div class="delete-actions"><button class="btn-choice btn-keep" @click="confirmDelete(false)"><span class="main-text">Только сущность</span><span class="sub-text">Операции останутся (связь исчезнет)</span></button><button class="btn-choice btn-nuke" @click="confirmDelete(true)"><span class="main-text">Сущность + Операции</span><span class="sub-text">Удалится всё безвозвратно</span></button></div><button class="btn-cancel" @click="cancelDelete">Отмена</button></div></div></div>
     <div v-if="showCreateOwnerPopup" class="inner-overlay" @click.self="cancelCreateOwner"><div class="create-owner-box"><h4>Новый владелец</h4><p class="sub-text">Создание: <b>{{ ownerTypeToCreate === 'company' ? 'Компания' : 'Физлицо' }}</b></p><input type="text" v-model="newOwnerNameInput" class="create-owner-input" placeholder="Введите название" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner"/><div class="owner-actions"><button class="btn-cancel" @click="cancelCreateOwner">Отмена</button><button class="btn-save-owner" @click="saveNewOwner" :disabled="isSavingOwner">{{ isSavingOwner ? '...' : 'Создать' }}</button></div></div></div>
     <AccountPickerModal v-if="showAccountPicker" :all-accounts="mainStore.accounts" :initial-selected-ids="currentItemForPicker ? currentItemForPicker.selectedAccountIds : []" :hint-text="pickerHintText" @close="showAccountPicker = false" @save="onAccountPickerSave"/>
@@ -1040,6 +1057,10 @@ defineExpose({
 </template>
 
 <style scoped>
+.registry-overlay { position: fixed; inset: 0; background: #0008; display: flex; align-items: center; justify-content: center; z-index: 5000; }
+.registry-card { width: min(560px, 90vw); max-height: 80vh; overflow-y: auto; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 12px; padding: 24px; }
+.registry-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.registry-card-header button { background: transparent; color: var(--color-text); border: 0; font-size: 24px; cursor: pointer; }
 .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
 .popup-content { max-width: 580px; background: var(--color-background-soft); padding: 2rem; border-radius: 12px; color: var(--color-text); width: 100%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin: 2rem 1rem; transition: max-width 0.2s ease; }
 .popup-content.wide { width: 90%; max-width: 1400px; }

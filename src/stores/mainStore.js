@@ -3014,7 +3014,7 @@ export const useMainStore = defineStore('mainStore', () => {
         if (!companies.value.find(i => _idsMatch(i._id, res.data._id))) companies.value.push(res.data);
         return res.data;
     }
-    async function addContractor(name) { const res = await axios.post(`${API_BASE_URL}/contractors`, { name }); if (!contractors.value.find(i => _idsMatch(i._id, res.data._id))) contractors.value.push(res.data); return res.data; }
+    async function addContractor(data) { const payload = typeof data === 'string' ? { name: data } : { ...data }; const res = await axios.post(`${API_BASE_URL}/contractors`, payload); if (!contractors.value.find(i => _idsMatch(i._id, res.data._id))) contractors.value.push(res.data); return res.data; }
     async function addProject(name) { const res = await axios.post(`${API_BASE_URL}/projects`, { name }); if (!projects.value.find(i => _idsMatch(i._id, res.data._id))) projects.value.push(res.data); return res.data; }
     async function addIndividual(data) {
         const payload = typeof data === 'string'

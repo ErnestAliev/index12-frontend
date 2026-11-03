@@ -29,6 +29,8 @@ import AboutModal from '@/components/AboutModal.vue';
 import CodexChatWindow from '@/components/CodexChatWindow.vue';
 import ChangeHistoryPanel from '@/components/ChangeHistoryPanel.vue';
 import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
+import BusinessCalendar from '@/components/BusinessCalendar.vue';
+import { useBusinessMonitor } from '@/composables/useBusinessMonitor';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -45,6 +47,8 @@ const baseUrlCalculated = API_BASE_URL.replace(/\/api\/?$/, '');
 const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
 
 const mainStore = useMainStore();
+const showBusinessCalendar = ref(false);
+useBusinessMonitor(() => { showBusinessCalendar.value = false; }, () => { showBusinessCalendar.value = true; });
 const uiStore = useUiStore();
 const { getWidgetItems } = useWidgetData();
 
@@ -1025,7 +1029,8 @@ const showCodex = ref(false);
 
     <!-- Mobile Modals -->
     <MobileProjectSwitcher v-if="showProjectsModal && mainStore.workspaceRole !== 'manager'" @close="closeProjectsModal" />
-    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" @open-history="showChangeHistory=true" />
+    <MobileUserMenu v-if="showUserMenuModal" @close="closeUserMenuModal" @open-about="openAboutModal" @open-appearance="showThemeSettings = true; showCodex = false" @open-history="showChangeHistory=true" @open-calendar="showBusinessCalendar = true" />
+    <BusinessCalendar v-if="showBusinessCalendar && mainStore.isAdmin" @close="showBusinessCalendar = false" />
     <AboutModal v-if="showAboutModal" @close="closeAboutModal" />
 
     <CodexChatWindow :open="showCodex" :api-base-url="API_BASE_URL" mobile @close="showCodex = false" />

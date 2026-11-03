@@ -1,5 +1,6 @@
 <script setup>
 import SubcategoryManager from './SubcategoryManager.vue';
+import CompanyTaxPanel from './CompanyTaxPanel.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName } from '@/utils/companyTax';
@@ -813,9 +814,11 @@ watch(
 
       <div class="editor-sections" role="tablist" aria-label="Справочники">
         <button role="tab" :aria-selected="activeSection === 'accounts'" @click="activeSection = 'accounts'">Счета</button>
+        <button role="tab" :aria-selected="activeSection === 'companies'" @click="activeSection = 'companies'">Компании и КГД</button>
         <button role="tab" :aria-selected="activeSection === 'subcategories'" @click="activeSection = 'subcategories'">Подкатегории</button>
       </div>
       <SubcategoryManager v-if="activeSection === 'subcategories'" class="subcategory-manager-pane" />
+      <CompanyTaxPanel v-else-if="activeSection === 'companies'" />
       <div v-else class="modal-body">
         <div v-if="saveMessage || saveError" class="status-row">
           <span v-if="saveMessage" class="status-text success">{{ saveMessage }}</span>

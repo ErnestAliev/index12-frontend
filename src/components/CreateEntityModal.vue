@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import RegistryFields from './RegistryFields.vue';
 
 const props = defineProps({
   entityType: { type: String, required: true } // 'accounts', 'companies', etc.
@@ -12,6 +13,9 @@ const mainStore = useMainStore();
 const newItemName = ref('');
 const newItemInputRef = ref(null);
 const isSaving = ref(false);
+const legalData = ref({});
+const hasLegalData = computed(() => ['contractors', 'companies'].includes(props.entityType));
+const registryModel = computed({ get: () => ({ ...legalData.value, name: newItemName.value }), set: value => { newItemName.value = value.name || ''; legalData.value = value; } });
 
 // Entity name for display
 const entityDisplayName = computed(() => {
@@ -58,13 +62,13 @@ const handleCreate = async () => {
         newItem = await mainStore.addAccount(name);
         break;
       case 'companies':
-        newItem = await mainStore.addCompany(name);
+        newItem = await mainStore.addCompany({ ...legalData.value, name });
         break;
       case 'individuals':
         newItem = await mainStore.addIndividual(name);
         break;
       case 'contractors':
-        newItem = await mainStore.addContractor(name);
+        newItem = await mainStore.addContractor({ ...legalData.value, name });
         break;
       case 'projects':
         newItem = await mainStore.addProject(name);
@@ -102,6 +106,7 @@ const handleClose = () => {
       </div>
       
       <div class="modal-body">
+        <RegistryFields v-if="hasLegalData" v-model="registryModel" />
         <input
           ref="newItemInputRef"
           v-model="newItemName"
@@ -198,6 +203,10 @@ const handleClose = () => {
 
 .modal-body {
   padding: 24px;
+  display: grid;
+  gap: 16px;
+  max-height: 65vh;
+  overflow-y: auto;
 }
 
 .name-input {
