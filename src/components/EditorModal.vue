@@ -25,6 +25,14 @@ const onOwnerNameInput = row => {
   for (const other of rows.value) if (other.ownerKey === row.ownerKey) other.ownerName = row.ownerName;
 };
 const selectedCompanyId = ref(null);
+const selectedCompanySync = ref(false);
+function openCompany(id, sync = false) { selectedCompanySync.value = sync; selectedCompanyId.value = id; }
+function companySaved(company) {
+  for (const row of rows.value) if (row.ownerKey === `company-${company._id}`) {
+    if (row.iinBin === row.sourceIinBin) row.iinBin = formatIinBin(company.identificationNumber || '');
+    row.sourceIinBin = formatIinBin(company.identificationNumber || '');
+  }
+}
 watch(() => mainStore.user?.currentWorkspaceId, () => { selectedCompanyId.value = null; });
 let accountSuggestionBlurTimer = null;
 
@@ -380,6 +388,7 @@ const buildRows = () => {
       ownerName: getOwnerDisplayName(ownerKey),
       sourceOwnerName: getOwnerDisplayName(ownerKey),
       iinBin: formatIinBin(ownerMeta.identificationNumber),
+      sourceIinBin: formatIinBin(ownerMeta.identificationNumber),
       legalForm: ownerMeta.legalForm,
       taxRegime: effectiveTaxRegime,
       taxPercent: effectiveTaxPercent,
@@ -402,7 +411,7 @@ const buildRows = () => {
       ownerName: previous.ownerName === previous.sourceOwnerName && previous.ownerKey === baseRow.ownerKey
         ? baseRow.ownerName
         : previous.ownerName ?? getOwnerDisplayName(previous.ownerKey ?? baseRow.ownerKey),
-      iinBin: previous.iinBin ?? baseRow.iinBin,
+      iinBin: previous.iinBin === previous.sourceIinBin && previous.ownerKey === baseRow.ownerKey ? baseRow.iinBin : previous.iinBin ?? baseRow.iinBin,
       legalForm: previous.legalForm ?? baseRow.legalForm,
       taxRegime: previous.taxRegime ?? baseRow.taxRegime,
       taxPercent: previous.taxPercent ?? baseRow.taxPercent,
@@ -850,6 +859,7 @@ watch(
               <col class="col-legal-form" :style="{ width: columnWidths.legalForm }" />
               <col class="col-tax-regime" :style="{ width: columnWidths.taxRegime }" />
               <col class="col-tax-percent" :style="{ width: columnWidths.taxPercent }" />
+              <col style="width: 180px" />
               <col class="col-delete" :style="{ width: columnWidths.delete }" />
             </colgroup>
             <thead>
@@ -864,6 +874,7 @@ watch(
                 <th>Форма лица</th>
                 <th>Режим налог</th>
                 <th>Ставка</th>
+                <th>1С</th>
                 <th class="delete-header-cell">Удалить</th>
               </tr>
             </thead>
@@ -959,7 +970,7 @@ watch(
                 <td class="owner-cell">
                   <template v-if="!row.ownerCreationType">
                     <div class="owner-name-control">
-                      <button v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" type="button" class="owner-company-link" aria-haspopup="dialog" :title="`Открыть компанию ${row.ownerName}`" @click="selectedCompanyId = ownerIdFromKey(row.ownerKey)">{{ row.ownerName }}</button>
+                      <button v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" type="button" class="owner-company-link" aria-haspopup="dialog" :title="`Открыть компанию ${row.ownerName}`" @click="openCompany(ownerIdFromKey(row.ownerKey))">{{ row.ownerName }}</button>
                       <input v-if="row.ownerKey" v-model="row.ownerName" type="text" class="cell-input owner-name-input" :class="{ 'has-company-link': ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id }" aria-label="Название владельца счета" @input="onOwnerNameInput(row)" @focus="editingOwnerRowId = row._id" @blur="editingOwnerRowId = null" />
                     <select v-model="row.ownerKey" class="cell-select owner-picker" :class="{ 'has-owner': !!row.ownerKey }" aria-label="Выбрать владельца счета" @change="onOwnerChange(row); row.ownerName = getOwnerDisplayName(row.ownerKey)">
                       <option value="">Не выбран</option>
@@ -1064,6 +1075,9 @@ watch(
                 </td>
 
                 <td class="delete-cell">
+                  <button v-if="ownerTypeFromKey(row.ownerKey) === 'company'" type="button" class="row-onec-button" :disabled="isSaving" @click="openCompany(ownerIdFromKey(row.ownerKey), true)">Синхронизировать с 1С</button>
+                </td>
+                <td class="delete-cell">
                   <button
                     type="button"
                     class="row-delete-btn"
@@ -1094,7 +1108,7 @@ watch(
                     <button class="add-btn" :disabled="isSaving" @click="addAccountRow('cash')">+ Касса</button>
                   </div>
                 </td>
-                <td class="add-row-empty" colspan="10"></td>
+                <td class="add-row-empty" colspan="11"></td>
               </tr>
             </tbody>
           </table>
@@ -1134,10 +1148,11 @@ watch(
       </div>
     </div>
   </div>
-    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @close="selectedCompanyId = null" />
+    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :sync-on-open="selectedCompanySync" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @saved="companySaved" @close="selectedCompanyId = null" />
 </template>
 
 <style scoped>
+.row-onec-button { border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); color: var(--color-text); cursor: pointer; font: inherit; font-size: 11px; padding: 7px 8px; white-space: nowrap; }
 .owner-name-control { position: relative; display: flex; min-width: 0; align-items: stretch; }
 .owner-name-control .owner-name-input { padding-right: 30px; width: 100%; min-width: 0; }
 .owner-name-input.has-company-link { color: transparent; }
