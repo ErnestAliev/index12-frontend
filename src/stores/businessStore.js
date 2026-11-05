@@ -3,22 +3,50 @@ import { ref } from 'vue';
 import { businessApi, businessError } from '@/services/businessApi';
 export const useBusinessStore = defineStore('business', () => {
   const tasks = ref([]), status = ref(null), error = ref(''), truncated = ref(false), notificationsEnabled = ref(false), requestedTask = ref(null);
-  let notificationScope = '', interval, initial, generation = 0, request = 0, range = null;
-  async function refresh() {
+  let notificationScope = '', interval, initial, recovery, generation = 0, request = 0, range = null, live = null;
+  const calendarVisible = ref(false);
+  const visible = () => typeof document !== 'undefined' && document.visibilityState !== 'hidden';
+  function invalidate(event) {
+    const workspaceId = event?.detail?.workspaceId;
+    if (workspaceId && workspaceId !== notificationScope.split(':')[1]) return;
+    const state = live; if (!state) return;
+    state.dirty = true;
+    if (!visible() || state.timer || state.running) return;
+    state.timer = setTimeout(async () => {
+      state.timer = null; if (state !== live || !visible()) return;
+      state.dirty = false; state.running = true;
+      try { await refresh({ tasksOnly: true }); } finally {
+        state.running = false;
+        if (state === live && state.dirty) invalidate();
+      }
+    }, 80);
+    state.timer?.unref?.();
+  }
+  const resume = () => { if (visible()) invalidate(); };
+  function setCalendarVisible(value) { calendarVisible.value = value; if (value) invalidate(); }
+  async function refresh({ tasksOnly = false } = {}) {
     const current = generation, ticket = ++request;
     try {
-      const [state, list] = await Promise.all([businessApi.get('/status'), businessApi.get('/tasks', { params: range || {} })]);
+      const [state, list] = await Promise.all([tasksOnly ? null : businessApi.get('/status'), businessApi.get('/tasks', { params: range || {} })]);
       if (current !== generation || ticket !== request) return;
-      status.value = state.data; tasks.value = list.data.tasks; truncated.value = list.data.truncated; error.value = '';
+      if (state) status.value = state.data; tasks.value = list.data.tasks; truncated.value = list.data.truncated; error.value = '';
     } catch (e) { if (current === generation && ticket === request) error.value = businessError(e); }
   }
   function stop() {
-    clearInterval(interval); clearTimeout(initial); ++generation; ++request;
+    clearInterval(interval); clearInterval(recovery); clearTimeout(initial); clearTimeout(live?.timer); live = null; ++generation; ++request;
+    window.removeEventListener?.('index12:calendar-changed', invalidate);
+    for (const name of ['focus', 'pageshow', 'online']) window.removeEventListener?.(name, resume);
+    document.removeEventListener?.('visibilitychange', resume);
     tasks.value = []; status.value = null; error.value = ''; truncated.value = false; range = null;
     notificationScope = ''; delete businessApi.defaults.headers.common['x-index12-workspace-id']; notificationsEnabled.value = false; requestedTask.value = null;
   }
   function start(scope) {
-    stop(); notificationScope = scope;
+    stop(); notificationScope = scope; live = { timer: null, running: false, dirty: false };
+    window.addEventListener?.('index12:calendar-changed', invalidate);
+    for (const name of ['focus', 'pageshow', 'online']) window.addEventListener?.(name, resume);
+    document.addEventListener?.('visibilitychange', resume);
+    // A missed socket packet or a suspended mobile connection must heal without a reload.
+    recovery = setInterval(() => { if (calendarVisible.value && visible()) invalidate(); }, 15000); recovery?.unref?.();
     if (scope.split(':')[1]) businessApi.defaults.headers.common['x-index12-workspace-id'] = scope.split(':')[1];
     try { notificationsEnabled.value = localStorage.getItem(`index12-calendar-push:${scope}`) === 'enabled'; } catch { /* Storage unavailable. */ }
     initial = setTimeout(() => { void sync(); interval = setInterval(() => { if (document.visibilityState === 'visible') void sync(); }, 60000); interval?.unref?.(); }, 1500); initial?.unref?.();
@@ -56,11 +84,13 @@ export const useBusinessStore = defineStore('business', () => {
     const current = generation;
     const response = id ? await businessApi.patch(`/tasks/${id}`, { changes: data, expectedVersion }) : await businessApi.post('/tasks', data);
     if (current !== generation) throw new Error('Рабочая область изменилась');
-    ++request; const task = response.data.task; tasks.value = [...tasks.value.filter(t => t._id !== task._id), task]; return task;
+    ++request; const task = response.data.task, existing = tasks.value.find(t => t._id === task._id);
+    if (!existing || (existing.version || 0) <= (task.version || 0)) tasks.value = [...tasks.value.filter(t => t._id !== task._id), task];
+    invalidate(); return task;
   }
   async function deleteTask(id, expectedVersion) {
     const current = generation; await businessApi.delete(`/tasks/${id}`, { data: { expectedVersion } });
-    if (current === generation) { ++request; tasks.value = tasks.value.filter(t => t._id !== id); }
+    if (current === generation) { ++request; tasks.value = tasks.value.filter(t => t._id !== id); invalidate(); }
   }
   function openNotification(data) {
     const workspaceId = notificationScope.split(':')[1];
@@ -68,5 +98,5 @@ export const useBusinessStore = defineStore('business', () => {
     requestedTask.value = data.taskId; window.dispatchEvent(new Event('index12:open-calendar'));
   }
   if (typeof navigator !== 'undefined' && navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', event => { if (event.data?.type === 'index12:open-calendar') openNotification(event.data); });
-  return { tasks, status, error, truncated, notificationsEnabled, requestedTask, toggleNotifications, refresh, setRange, start, stop, sync, saveTask, deleteTask, openNotification };
+  return { tasks, calendarVisible, setCalendarVisible, status, error, truncated, notificationsEnabled, requestedTask, toggleNotifications, refresh, setRange, start, stop, sync, saveTask, deleteTask, openNotification };
 });

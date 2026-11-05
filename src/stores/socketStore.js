@@ -44,6 +44,14 @@ export const useSocketStore = defineStore('socket', () => {
 
     const socket = ref(null);
     const isConnected = ref(false);
+    let activeWorkspaceId = '';
+    const calendarChanged = workspaceId => {
+        if (workspaceId && workspaceId === activeWorkspaceId) window.dispatchEvent(new CustomEvent('index12:calendar-changed', { detail: { workspaceId } }));
+    };
+    function joinWorkspace() {
+        const workspaceId = activeWorkspaceId;
+        if (workspaceId) socket.value?.emit('join', workspaceId, () => calendarChanged(workspaceId));
+    }
 
     const shouldIgnoreSocketEvent = (meta) => {
         if (!meta) return false;
@@ -65,8 +73,10 @@ export const useSocketStore = defineStore('socket', () => {
      * @param {string} workspaceId - ID workspace для комнаты (все члены workspace в одной комнате)
      */
     function connect(workspaceId) {
-        if (socket.value) return; // Уже подключен
         if (!workspaceId) return;
+        workspaceId = String(workspaceId);
+        if (socket.value) { if (workspaceId !== activeWorkspaceId) switchWorkspace(activeWorkspaceId, workspaceId); return; }
+        activeWorkspaceId = workspaceId;
 
         const mainStore = useMainStore();
 
@@ -78,9 +88,9 @@ export const useSocketStore = defineStore('socket', () => {
         });
 
         socket.value.on('connect', () => {
-            console.log('[socketStore] Connected to server, joining workspace:', workspaceId);
+            console.log('[socketStore] Connected to server, joining workspace:', activeWorkspaceId);
             isConnected.value = true;
-            socket.value.emit('join', workspaceId);
+            joinWorkspace();
 
             // Устанавливаем заголовок для axios, чтобы сервер знал ID сокета этого клиента
             // и не присылал нам обратно наши же действия (эхо)
@@ -94,6 +104,8 @@ export const useSocketStore = defineStore('socket', () => {
             isConnected.value = false;
             delete axios.defaults.headers.common['X-Socket-ID'];
         });
+
+        socket.value.on('calendar_changed', data => calendarChanged(data?.workspaceId));
 
         // --- Обработчики событий Операций ---
         // Мы предполагаем, что mainStore экспортирует публичные методы для обработки этих событий
@@ -152,6 +164,8 @@ export const useSocketStore = defineStore('socket', () => {
      * @param {string} newWorkspaceId - ID нового workspace
      */
     function switchWorkspace(oldWorkspaceId, newWorkspaceId) {
+        oldWorkspaceId = activeWorkspaceId || oldWorkspaceId;
+        activeWorkspaceId = newWorkspaceId ? String(newWorkspaceId) : '';
         if (!socket.value || !isConnected.value) return;
 
         if (oldWorkspaceId) {
@@ -161,7 +175,7 @@ export const useSocketStore = defineStore('socket', () => {
 
         if (newWorkspaceId) {
             console.log('[socketStore] Joining workspace:', newWorkspaceId);
-            socket.value.emit('join', newWorkspaceId);
+            joinWorkspace();
         }
     }
 
@@ -171,6 +185,8 @@ export const useSocketStore = defineStore('socket', () => {
             socket.value = null;
         }
         isConnected.value = false;
+        activeWorkspaceId = '';
+        delete axios.defaults.headers.common['X-Socket-ID'];
     }
 
     return {

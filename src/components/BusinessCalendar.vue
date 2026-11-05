@@ -46,8 +46,8 @@ function reloadTask(task) { if (popover.value) popover.value = { ...popover.valu
 function keyboard(event) { if (event.key === 'Escape' && !popover.value) { event.stopPropagation(); emit('close'); } }
 watch(month, () => business.setRange(days.value[0], days.value.at(-1)));
 watch(() => business.requestedTask, id => void openRequested(id));
-onMounted(() => { void business.setRange(days.value[0], days.value.at(-1)); void openRequested(business.requestedTask); clock = setInterval(() => { now.value = Date.now(); }, 15000); window.addEventListener('keydown', keyboard); });
-onBeforeUnmount(() => { clearInterval(clock); window.removeEventListener('keydown', keyboard); });
+onMounted(() => { business.setCalendarVisible(true); void business.setRange(days.value[0], days.value.at(-1)); void openRequested(business.requestedTask); clock = setInterval(() => { now.value = Date.now(); }, 15000); window.addEventListener('keydown', keyboard); });
+onBeforeUnmount(() => { business.setCalendarVisible(false); clearInterval(clock); window.removeEventListener('keydown', keyboard); });
 </script>
 <template>
   <div class="calendar-overlay" @click.self="closeCalendar">

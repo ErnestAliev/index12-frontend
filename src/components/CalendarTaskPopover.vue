@@ -1,6 +1,6 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import CalendarPartySelect from './CalendarPartySelect.vue';
 import { useBusinessStore } from '@/stores/businessStore';
 import { businessApi, businessError } from '@/services/businessApi';
@@ -9,20 +9,21 @@ const props = defineProps({ task: { type: Object, default: null }, date: { type:
 const emit = defineEmits(['close', 'saved', 'reload']);
 const business = useBusinessStore();
 const panel = ref(null), fileInput = ref(null), busy = ref(false), uploading = ref(false), error = ref(''), saved = ref(false), conflict = ref(false), viewport = ref({});
-const original = props.task || { ...defaultSlot(props.date), title: '', description: '', status: 'open', reminderOffsets: [10, 30, 60], reminderDates: [], overdueReminders: 1, overdueRepeatMinutes: 60, links: [], attachments: [], party: null };
-const draft = reactive({
-  title: original.title, description: original.description || '', date: props.task ? original.dueDate || (original.startsAt ? dayAt(original.startsAt) : '') : original.dueDate || props.date,
+const original = reactive(props.task ? { ...props.task } : { ...defaultSlot(props.date), title: '', description: '', status: 'open', reminderOffsets: [10, 30, 60], reminderDates: [], overdueReminders: 1, overdueRepeatMinutes: 60, links: [], attachments: [], party: null });
+function taskDraft(original, existing = true) { return {
+  title: original.title, description: original.description || '', date: existing ? original.dueDate || (original.startsAt ? dayAt(original.startsAt) : '') : original.dueDate || props.date,
   start: timeAt(original.startsAt) || '11:00', endDate: original.endsAt ? dayAt(original.endsAt) : original.dueDate || props.date, end: timeAt(original.endsAt) || '12:00',
   allDay: original.allDay ?? !original.startsAt, status: original.status, party: original.party || (original.companyId ? { kind: 'companies', id: original.companyId } : null),
   reminderOffsets: [...(original.reminderOffsets || [])], reminderDates: [...(original.reminderDates || [])], overdueReminders: original.overdueReminders ?? 1, overdueRepeatMinutes: original.overdueRepeatMinutes || 60,
   links: (original.links || []).map(link => ({ ...link })), attachments: [...(original.attachments || [])],
-});
+}; }
+const draft = reactive(taskDraft(original, Boolean(props.task)));
 const presets = [{ minutes: 10, label: '10 мин' }, { minutes: 30, label: '30 мин' }, { minutes: 60, label: '1 ч' }, { minutes: 1440, label: '1 день' }, { minutes: 4320, label: '3 дня' }, { minutes: 10080, label: '1 неделя' }];
 const legacyOffsets = computed(() => draft.reminderOffsets.filter(minutes => !presets.some(p => p.minutes === minutes)));
 const customOpen = ref(false), customDateTime = ref('');
 const customLabel = value => new Date(value).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const currentStatus = computed(() => taskState({ status: draft.status, dueDate: draft.date, ...(!draft.allDay && draft.date && draft.endDate && draft.start && draft.end ? { startsAt: localInstant(draft.date, draft.start), endsAt: localInstant(draft.endDate, draft.end) } : {}) }));
-let id = props.task?._id, version = props.task?.version || 0, timer, pending = false, active = true, savingPromise, previousDate = draft.date, returnFocus;
+let id = props.task?._id, version = props.task?.version || 0, timer, pending = false, active = true, savingPromise, previousDate = draft.date, returnFocus, remoteTicket = 0, queuedRemote = null;
 const creationKey = crypto.randomUUID();
 function payload() {
   if (!draft.title.trim()) throw new Error('Укажите название задачи');
@@ -36,9 +37,34 @@ function payload() {
   return data;
 }
 let lastSaved = id ? JSON.stringify(payload()) : '';
+function dirty() { try { return JSON.stringify(payload()) !== lastSaved; } catch { return true; } }
+function applyRemote(task) {
+  if (!active || !id || (task && (task.version || 0) <= version)) return;
+  if (busy.value || uploading.value) { queuedRemote = { task }; return; }
+  if (dirty()) {
+    clearTimeout(timer); conflict.value = true;
+    error.value = task ? 'Задача изменена на другом устройстве. Ваши правки сохранены в карточке; загрузите актуальную версию перед сохранением.' : 'Задача удалена на другом устройстве. Ваши правки остались в карточке.';
+    return;
+  }
+  if (!task) { emit('close'); return; }
+  clearTimeout(timer); Object.assign(original, task); Object.assign(draft, taskDraft(task));
+  version = task.version || 0; previousDate = draft.date; lastSaved = JSON.stringify(payload());
+  error.value = ''; conflict.value = false; saved.value = true;
+}
+function drainRemote() { if (queuedRemote) { const { task } = queuedRemote; queuedRemote = null; applyRemote(task); } }
+watch(() => business.tasks, async tasks => {
+  if (!id || !active) return;
+  const ticket = ++remoteTicket, task = tasks.find(row => row._id === id);
+  if (task) { applyRemote(task); return; }
+  // A task moved outside the displayed month is absent from the range, but still exists.
+  try { const { data } = await businessApi.get(`/tasks/${id}`); if (active && ticket === remoteTicket) applyRemote(data.task); }
+  catch (e) { if (active && ticket === remoteTicket && e.response?.status === 404) applyRemote(null); }
+});
+
 function changed() { if (!active) return; saved.value = false; if (conflict.value) return; error.value = ''; if (!id) return; clearTimeout(timer); timer = setTimeout(() => { void save(); }, 650); }
 async function save() {
   clearTimeout(timer);
+  if (conflict.value) return;
   if (busy.value) { pending = true; return; }
   let data; try { data = payload(); } catch (e) { error.value = e.message; return; }
   const snapshot = JSON.stringify(data); if (id && snapshot === lastSaved) return;
@@ -47,7 +73,7 @@ async function save() {
     savingPromise = business.saveTask(id ? data : { ...data, idempotencyKey: creationKey }, id, version);
     const task = await savingPromise; id = task._id; version = task.version; lastSaved = snapshot; saved.value = true; emit('saved', task);
   } catch (e) { conflict.value = e.response?.status === 409; error.value = e.response ? businessError(e) : e.message; }
-  finally { busy.value = false; if (active && pending && !error.value) { pending = false; void save(); } }
+  finally { busy.value = false; drainRemote(); if (active && pending && !error.value) { pending = false; void save(); } }
 }
 async function close() {
   if (busy.value && savingPromise) await savingPromise.catch(() => {});
@@ -79,7 +105,7 @@ async function upload(event) {
       const response = await businessApi.post('/task-files', file, { headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name), 'x-file-type': file.type }, timeout: 60000 }); draft.attachments.push(response.data.file);
     }
     changed();
-  } catch (e) { error.value = e.response ? businessError(e) : e.message; } finally { uploading.value = false; event.target.value = ''; }
+  } catch (e) { error.value = e.response ? businessError(e) : e.message; } finally { uploading.value = false; event.target.value = ''; drainRemote(); }
 }
 async function download(file) {
   if (!id) return;

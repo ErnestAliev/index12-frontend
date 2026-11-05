@@ -6,8 +6,8 @@ let server, useBusinessStore, businessApi, pinia;
 const tick = () => new Promise(resolve => setImmediate(resolve));
 before(async () => {
   const storage = new Map();
-  globalThis.window = { location: { hostname: 'localhost', origin: 'http://localhost:5173' }, dispatchEvent() {}, focus() {} };
-  globalThis.document = { visibilityState: 'visible' };
+  globalThis.window = Object.assign(new EventTarget(), { location: { hostname: 'localhost', origin: 'http://localhost:5173' }, focus() {} });
+  globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
   globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
   server = await createServer({ server: { middlewareMode: true, ws: false }, appType: 'custom' });
   ({ useBusinessStore } = await server.ssrLoadModule('/src/stores/businessStore.js'));
@@ -46,4 +46,38 @@ test('calendar updates send the displayed version and never retry a conflict wit
   businessApi.defaults.adapter = async config => { sent.push(config); throw Object.assign(new Error('conflict'), { response: { status: 409 } }); };
   await assert.rejects(store.saveTask({ title: 'Правка' }, 'task', 4));
   assert.equal(sent.length, 1); assert.equal(JSON.parse(sent[0].data).expectedVersion, 4); store.stop();
+});
+
+const settleSignals = () => new Promise(resolve => setTimeout(resolve, 130));
+function signal(workspaceId) { const event = new Event('index12:calendar-changed'); event.detail = { workspaceId }; window.dispatchEvent(event); }
+test('remote signals coalesce, fetch only tasks and recover an event received during a fetch', async () => {
+  const { store, requests } = fixture(); store.start('actor:workspace');
+  signal('elsewhere'); await settleSignals(); assert.equal(requests.length, 0);
+  signal('workspace'); signal('workspace'); await settleSignals(); assert.equal(requests.length, 1); assert.equal(requests[0].config.url, '/tasks');
+  signal('workspace'); requests[0].resolve({ tasks: [{ _id: 'task', version: 1 }], truncated: false });
+  await settleSignals(); assert.equal(requests.length, 2);
+  requests[1].resolve({ tasks: [{ _id: 'task', version: 2, description: 'Remote' }], truncated: false }); await tick();
+  assert.equal(store.tasks[0].version, 2); assert.equal(store.tasks[0].description, 'Remote'); store.stop();
+});
+test('mobile wake, online and focus recover silently missed changes and stop removes listeners', async () => {
+  const { store, requests } = fixture(); store.start('actor:workspace');
+  document.visibilityState = 'hidden'; signal('workspace'); await settleSignals(); assert.equal(requests.length, 0);
+  document.visibilityState = 'visible'; document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('online')); window.dispatchEvent(new Event('focus'));
+  await settleSignals(); assert.equal(requests.length, 1);
+  requests[0].resolve({ tasks: [], truncated: false }); await tick(); store.stop();
+  window.dispatchEvent(new Event('focus')); signal('workspace'); await settleSignals(); assert.equal(requests.length, 1);
+});
+test('a late old-workspace live fetch cannot replace the new calendar', async () => {
+  const { store, requests } = fixture(); store.start('actor:old'); signal('old'); await settleSignals();
+  store.start('actor:new'); signal('new'); await settleSignals();
+  requests[1].resolve({ tasks: [{ _id: 'new-task' }], truncated: false }); await tick();
+  requests[0].resolve({ tasks: [{ _id: 'private-old-task' }], truncated: false }); await tick();
+  assert.equal(store.tasks[0]._id, 'new-task'); store.stop();
+});
+test('a delayed local acknowledgement never replaces a newer remote task', async () => {
+  const { store, requests } = fixture(); store.start('actor:workspace');
+  const save = store.saveTask({ description: 'Local' }, 'task', 0); await tick();
+  signal('workspace'); await settleSignals(); requests[1].resolve({ tasks: [{ _id: 'task', version: 2, description: 'Remote' }], truncated: false }); await tick();
+  requests[0].resolve({ task: { _id: 'task', version: 1, description: 'Local' } }); await save;
+  assert.equal(store.tasks[0].description, 'Remote'); store.stop();
 });
