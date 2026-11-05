@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import { useMainStore } from "@/stores/mainStore";
 import { useTeamChatStore, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "./ChatWindowFrame.vue";
+import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
 import ExpensePopup from "./ExpensePopup.vue";
@@ -252,7 +253,7 @@ async function decide(status) {
     side="left"
     storage-key="index12-team-chat-window-size"
     @close="chat.open = false"
-    ><template #icon><UiIcon name="chat" /></template
+    ><template #heading><TeamChatHeader /></template
     ><TeamChatPane :mobile="route.name === 'mobile-home'"
   /></ChatWindowFrame>
   <Teleport to="body"

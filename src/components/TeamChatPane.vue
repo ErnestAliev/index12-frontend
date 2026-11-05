@@ -1,13 +1,20 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  ref,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+} from "vue";
 import UiIcon from "./UiIcon.vue";
 import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
 import TeamContractorSelect from "./TeamContractorSelect.vue";
 import TeamRequestCard from "./TeamRequestCard.vue";
+import TeamExpenseTitle from "./TeamExpenseTitle.vue";
 import { formatAmountInputEvent } from "@/utils/amountInput";
 defineProps({ mobile: Boolean });
-const emit = defineEmits(["logout"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
   tab = ref(chat.tab || "messages"),
@@ -20,8 +27,55 @@ const chat = useTeamChatStore(),
   localError = ref(""),
   creating = ref(false),
   older = ref([]);
+const scroll = ref(null);
+let noticeTimer, revealFrame;
+function revealField() {
+  cancelAnimationFrame(revealFrame);
+  revealFrame = requestAnimationFrame(() => {
+    const field = document.activeElement;
+    if (
+      !scroll.value?.contains(field) ||
+      !field.matches("input, textarea, select")
+    )
+      return;
+    const box = field.getBoundingClientRect(),
+      area = scroll.value.getBoundingClientRect();
+    const bottom = area.bottom - (creating.value ? 56 : 12);
+    if (box.bottom > bottom) scroll.value.scrollTop += box.bottom - bottom;
+    else if (box.top < area.top + 12)
+      scroll.value.scrollTop -= area.top - box.top + 12;
+  });
+}
+async function startRequest() {
+  creating.value = true;
+  chat.notice = "";
+  await nextTick();
+  scroll.value.scrollTop = 0;
+  scroll.value
+    .querySelector('[aria-label="Что оплатить / купить"]')
+    ?.focus({ preventScroll: true });
+}
+watch(
+  () => chat.notice,
+  (value) => {
+    clearTimeout(noticeTimer);
+    if (value)
+      noticeTimer = setTimeout(() => {
+        chat.notice = "";
+      }, 3500);
+  },
+  { immediate: true },
+);
+onMounted(() => window.visualViewport?.addEventListener("resize", revealField));
+onBeforeUnmount(() => {
+  clearTimeout(noticeTimer);
+  cancelAnimationFrame(revealFrame);
+  window.visualViewport?.removeEventListener("resize", revealField);
+  chat.notice = "";
+});
 const draft = ref({
   title: "",
+  categoryId: null,
   amount: "",
   contractorId: null,
   contractorName: "",
@@ -65,7 +119,6 @@ const money = (cents) =>
     currency: "KZT",
     maximumFractionDigits: 2,
   }).format(cents / 100);
-const roleName = (role) => chat.me?.roles?.[role] || role;
 const isReviewer = computed(() =>
   ["manager", "director"].includes(chat.me?.role),
 );
@@ -188,6 +241,7 @@ async function createRequest() {
     draft.value = {
       ...draft.value,
       title: "",
+      categoryId: null,
       amount: "",
       comment: "",
       id: crypto.randomUUID(),
@@ -260,7 +314,7 @@ async function removeRequest(row) {
       "delete",
     ),
   );
-  if (result) chat.notice = "Заявка удалена";
+  if (result) chat.notice = "";
 }
 async function invitePeople() {
   await run(async () => {
@@ -275,27 +329,22 @@ async function copy(text) {
 </script>
 <template>
   <div class="team-pane">
-    <div v-if="chat.me" class="team-identity">
-      <span>{{ chat.me.displayName }}</span>
-      <span class="team-role"
-        >{{ roleName(chat.me.role)
-        }}<span v-if="chat.me.owner" class="team-admin"
-          >Администратор</span
-        ></span
-      >
+    <nav class="team-tabs" role="tablist" aria-label="Разделы чата">
       <button
-        v-if="!chat.me.owner"
-        type="button"
-        class="team-logout"
-        @click="emit('logout')"
+        role="tab"
+        :aria-selected="tab === 'messages'"
+        :id="'team-tab-messages'"
+        aria-controls="team-panel"
+        @click="tab = 'messages'"
       >
-        Выйти
-      </button>
-    </div>
-    <nav class="team-tabs" aria-label="Разделы чата">
-      <button :aria-pressed="tab === 'messages'" @click="tab = 'messages'">
         Сообщения</button
-      ><button :aria-pressed="tab === 'requests'" @click="tab = 'requests'">
+      ><button
+        role="tab"
+        :aria-selected="tab === 'requests'"
+        :id="'team-tab-requests'"
+        aria-controls="team-panel"
+        @click="tab = 'requests'"
+      >
         Заявки
         <small>{{
           chat.state.requests.filter(
@@ -304,7 +353,10 @@ async function copy(text) {
         }}</small></button
       ><button
         v-if="chat.me?.owner"
-        :aria-pressed="tab === 'members'"
+        role="tab"
+        :aria-selected="tab === 'members'"
+        :id="'team-tab-members'"
+        aria-controls="team-panel"
         @click="tab = 'members'"
       >
         Участники
@@ -334,7 +386,9 @@ async function copy(text) {
       <div
         ref="feed"
         class="team-feed"
-        role="log"
+        id="team-panel"
+        role="tabpanel"
+        aria-labelledby="team-tab-messages"
         aria-label="Сообщения сотрудников"
         aria-live="polite"
       >
@@ -467,114 +521,67 @@ async function copy(text) {
         /><span v-if="uploading" role="status">Загрузка файла…</span>
       </div>
     </template>
-    <div v-else class="team-scroll">
+    <div
+      v-else
+      ref="scroll"
+      id="team-panel"
+      role="tabpanel"
+      :aria-labelledby="`team-tab-${tab}`"
+      class="team-scroll"
+      @focusin="revealField"
+    >
       <template v-if="tab === 'requests'">
-        <div v-if="isReviewer && chat.state.financial" class="team-forecast">
-          <div
-            v-if="chat.state.financial.unallocatedCents"
-            class="team-unallocated"
+        <div v-if="!creating" class="team-request-toolbar">
+          <button
+            type="button"
+            class="team-expense-primary team-request-new"
+            aria-label="Заявка на расход"
+            @click="startRequest"
           >
-            Без выбранной компании:
-            {{ money(chat.state.financial.unallocatedCents) }}
-          </div>
-          <article
-            v-for="c in chat.state.financial.companies.filter(
-              (c) => c.requestedCents,
-            )"
-            :key="c.companyId"
-          >
-            <strong>{{
-              chat.state.companies.find((x) => x._id === c.companyId)?.name ||
-              "Общие счета"
-            }}</strong>
-            <dl>
-              <div>
-                <dt>Сейчас на счетах</dt>
-                <dd>{{ money(c.currentCents) }}</dd>
-              </div>
-              <div>
-                <dt>Заявки к оплате</dt>
-                <dd>−{{ money(c.requestedCents) }}</dd>
-              </div>
-              <div>
-                <dt>Минимум по прогнозу</dt>
-                <dd :class="{ negative: c.minimumCents < 0 }">
-                  {{ money(c.minimumCents) }}
-                </dd>
-              </div>
-            </dl>
-            <p v-if="c.gapDate" class="negative">
-              Кассовый разрыв с {{ c.gapDate }}
-            </p>
-          </article>
-          <details>
-            <summary>Остатки на счетах</summary>
-            <details
-              v-for="a in chat.state.financial.accounts"
-              :key="a._id"
-              class="team-account-forecast"
-            >
-              <summary>
-                <span
-                  >{{ a.name
-                  }}<small>{{
-                    chat.state.companies.find((c) => c._id === a.companyId)
-                      ?.name
-                  }}</small></span
-                ><span>{{ money(a.balanceCents) }}</span>
-              </summary>
-              <dl>
-                <div>
-                  <dt>На согласовании</dt>
-                  <dd>−{{ money(a.pendingCents || 0) }}</dd>
-                </div>
-                <div>
-                  <dt>Утверждено</dt>
-                  <dd>−{{ money(a.approvedCents || 0) }}</dd>
-                </div>
-                <div>
-                  <dt>После всех заявок</dt>
-                  <dd :class="{ negative: a.afterRequestsCents < 0 }">
-                    {{ money(a.afterRequestsCents ?? a.balanceCents) }}
-                  </dd>
-                </div>
-              </dl>
-            </details>
-          </details>
+            <UiIcon name="plus" />Заявка
+          </button>
         </div>
-        <button
-          class="team-expense-primary team-request-new"
-          @click="creating = !creating"
-        >
-          Заявка на расход <UiIcon name="plus" />
-        </button>
         <form
           v-if="creating"
           class="team-form team-expense-form"
           @submit.prevent="createRequest"
         >
-          <input
-            v-model="draft.title"
-            aria-label="Что оплатить / купить"
-            placeholder="Что оплатить / купить"
-            maxlength="300"
-            required
-          />
-          <div class="team-fields">
-            <input
-              :value="draft.amount"
-              @input="draft.amount = formatAmountInputEvent($event)"
-              aria-label="Сумма, ₸"
-              placeholder="Сумма, ₸"
-              inputmode="decimal"
-              required
-            /><input
-              v-model="draft.dueDate"
-              type="date"
-              aria-label="Дата оплаты"
-              title="Дата оплаты"
-              required
+          <div class="team-title-row">
+            <TeamExpenseTitle
+              v-model="draft.title"
+              @category="draft.categoryId = $event?._id || null"
             />
+            <button
+              type="button"
+              class="team-small-icon"
+              title="Закрыть форму"
+              aria-label="Закрыть форму заявки"
+              @click="creating = false"
+            >
+              <UiIcon name="close" />
+            </button>
+          </div>
+          <div class="team-fields">
+            <div class="team-amount-field">
+              <input
+                :value="draft.amount"
+                @input="draft.amount = formatAmountInputEvent($event)"
+                aria-label="Сумма, ₸"
+                placeholder="Сумма"
+                inputmode="decimal"
+                required
+              /><span aria-hidden="true">₸</span>
+            </div>
+            <label class="team-payment-date" title="Дата оплаты"
+              ><UiIcon name="month" /><span aria-hidden="true">{{
+                draft.dueDate.split("-").reverse().join(".")
+              }}</span
+              ><input
+                v-model="draft.dueDate"
+                type="date"
+                aria-label="Дата оплаты"
+                required
+            /></label>
           </div>
           <TeamContractorSelect
             v-model="draft.contractorId"
@@ -588,30 +595,109 @@ async function copy(text) {
             maxlength="10000"
           ></textarea
           ><button
-            class="team-expense-primary"
+            class="team-expense-primary team-request-submit"
             :disabled="chat.busy || !draft.contractorId"
           >
-            На согласование
+            Отправить на согласование
           </button>
         </form>
-        <p v-if="chat.state.requestsTruncated" class="team-error">
-          Показаны последние 500 заявок. Прогноз учитывает все активные заявки
-        </p>
-        <div v-if="!chat.state.requests.length && !creating" class="team-empty">
-          Заявок пока нет
-        </div>
-        <TeamRequestCard
-          v-for="r in chat.state.requests"
-          :key="r._id"
-          :request="r"
-          :default-open="focusedRequest === r._id"
-          @edit="editRequest"
-          @decision="decide"
-          @convert="convert"
-          @recall="recall"
-          @file="download"
-          @delete="removeRequest"
-        />
+        <template v-if="!creating">
+          <div v-if="isReviewer && chat.state.financial" class="team-forecast">
+            <div
+              v-if="chat.state.financial.unallocatedCents"
+              class="team-unallocated"
+            >
+              Без выбранной компании:
+              {{ money(chat.state.financial.unallocatedCents) }}
+            </div>
+            <article
+              v-for="c in chat.state.financial.companies.filter(
+                (c) => c.requestedCents,
+              )"
+              :key="c.companyId"
+            >
+              <strong>{{
+                chat.state.companies.find((x) => x._id === c.companyId)?.name ||
+                "Общие счета"
+              }}</strong>
+              <dl>
+                <div>
+                  <dt>Сейчас на счетах</dt>
+                  <dd>{{ money(c.currentCents) }}</dd>
+                </div>
+                <div>
+                  <dt>Заявки к оплате</dt>
+                  <dd>−{{ money(c.requestedCents) }}</dd>
+                </div>
+                <div>
+                  <dt>Минимум по прогнозу</dt>
+                  <dd :class="{ negative: c.minimumCents < 0 }">
+                    {{ money(c.minimumCents) }}
+                  </dd>
+                </div>
+              </dl>
+              <p v-if="c.gapDate" class="negative">
+                Кассовый разрыв с {{ c.gapDate }}
+              </p>
+            </article>
+            <details>
+              <summary>Остатки на счетах</summary>
+              <details
+                v-for="a in chat.state.financial.accounts"
+                :key="a._id"
+                class="team-account-forecast"
+              >
+                <summary>
+                  <span
+                    >{{ a.name
+                    }}<small>{{
+                      chat.state.companies.find((c) => c._id === a.companyId)
+                        ?.name
+                    }}</small></span
+                  ><span>{{ money(a.balanceCents) }}</span>
+                </summary>
+                <dl>
+                  <div>
+                    <dt>На согласовании</dt>
+                    <dd>−{{ money(a.pendingCents || 0) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Утверждено</dt>
+                    <dd>−{{ money(a.approvedCents || 0) }}</dd>
+                  </div>
+                  <div>
+                    <dt>После всех заявок</dt>
+                    <dd :class="{ negative: a.afterRequestsCents < 0 }">
+                      {{ money(a.afterRequestsCents ?? a.balanceCents) }}
+                    </dd>
+                  </div>
+                </dl>
+              </details>
+            </details>
+          </div>
+          <p v-if="chat.state.requestsTruncated" class="team-error">
+            Показаны последние 500 заявок. Прогноз учитывает все активные заявки
+          </p>
+          <div
+            v-if="!chat.state.requests.length && !creating"
+            class="team-empty"
+          >
+            Заявок пока нет
+          </div>
+          <TeamRequestCard
+            v-for="r in chat.state.requests"
+            :key="r._id"
+            :request="r"
+            :default-open="focusedRequest === r._id"
+            @edit="editRequest"
+            @decision="decide"
+            @convert="convert"
+            @recall="recall"
+            @file="download"
+            @copy="copy"
+            @delete="removeRequest"
+          />
+        </template>
       </template>
       <template v-else-if="tab === 'members'">
         <div class="team-settings">

@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, onBeforeUnmount } from "vue";
+import { ref, watch, onBeforeUnmount, onMounted } from "vue";
+import { useTeamSuggestionPopup } from "@/composables/useTeamSuggestionPopup";
 import { teamApi, teamError } from "@/stores/teamChatStore";
 const props = defineProps({ modelValue: String, fallbackName: String });
 const emit = defineEmits(["update:modelValue", "selected"]);
@@ -10,6 +11,13 @@ const query = ref(props.fallbackName || ""),
   skip = ref(0),
   busy = ref(false),
   error = ref("");
+const root = ref(null);
+const { popupStyle, updatePosition } = useTeamSuggestionPopup(root, open);
+watch(open, updatePosition);
+function outside(event) {
+  if (!root.value?.contains(event.target)) open.value = false;
+}
+onMounted(() => document.addEventListener("pointerdown", outside));
 let timer,
   ticket = 0;
 watch(
@@ -32,6 +40,7 @@ async function search(append = false) {
     more.value = data.hasMore;
     skip.value = data.nextSkip;
     error.value = "";
+    updatePosition();
   } catch (e) {
     error.value = teamError(e);
   } finally {
@@ -63,11 +72,12 @@ async function create() {
 }
 onBeforeUnmount(() => {
   clearTimeout(timer);
+  document.removeEventListener("pointerdown", outside);
   ++ticket;
 });
 </script>
 <template>
-  <div class="team-party">
+  <div ref="root" class="team-party">
     <input
       v-model="query"
       role="combobox"
@@ -83,7 +93,7 @@ onBeforeUnmount(() => {
       @keydown.esc.stop="open = false"
       @keydown.enter.prevent="rows.length === 1 ? choose(rows[0]) : null"
     />
-    <div v-if="open" class="team-party-list">
+    <div v-if="open" class="team-party-list" :style="popupStyle">
       <button
         v-for="row in rows"
         :key="row._id"
@@ -105,8 +115,8 @@ onBeforeUnmount(() => {
         :disabled="busy"
         @click="create"
       >
-        Создать «{{ query.trim() }}»</button
-      ><button type="button" @click="open = false">Закрыть список</button>
+        Создать «{{ query.trim() }}»
+      </button>
       <p v-if="error" role="alert">{{ error }}</p>
     </div>
   </div>
@@ -117,8 +127,9 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 44px;
   padding: 10px 12px;
+  font-size: 16px;
   font: inherit;
   color: var(--codex-pane-text);
   border: 1px solid var(--codex-pane-border);

@@ -210,7 +210,9 @@ onBeforeUnmount(() => {
       @keydown="escape"
     >
       <header class="codex-window-header">
-        <slot name="icon"><CodexIcon /></slot><span>{{ title }}</span>
+        <slot name="heading"
+          ><slot name="icon"><CodexIcon /></slot><span>{{ title }}</span></slot
+        >
         <button
           v-if="closable"
           type="button"

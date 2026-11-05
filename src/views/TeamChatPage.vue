@@ -3,8 +3,8 @@ import { onMounted, onBeforeUnmount, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "@/components/ChatWindowFrame.vue";
+import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "@/components/TeamChatPane.vue";
-import UiIcon from "@/components/UiIcon.vue";
 const route = useRoute(),
   chat = useTeamChatStore(),
   name = ref(""),
@@ -133,8 +133,8 @@ async function logout() {
       title="Сотрудники"
       window-id="team-chat-public"
       storage-key="index12-team-chat-window-size"
-      ><template #icon><UiIcon name="chat" /></template
-      ><TeamChatPane mobile @logout="logout"
+      ><template #heading><TeamChatHeader @logout="logout" /></template
+      ><TeamChatPane mobile
     /></ChatWindowFrame>
   </main>
 </template>
