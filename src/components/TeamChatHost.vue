@@ -122,7 +122,11 @@ async function savePlacement(payload) {
     chat.show();
   } catch (e) {
     if (chat.me?.workspaceId !== workspace || edit.value !== current) return;
-    editConflict.value = e.response?.status === 409;
+    editConflict.value =
+      e.response?.status === 409 &&
+      /^(Заявка изменилась|Верните заявку)/.test(
+        e.response?.data?.message || "",
+      );
     editError.value = editConflict.value
       ? "Другой участник изменил заявку. Ваши данные остались в форме; загрузите актуальные реквизиты перед повторной отправкой."
       : teamError(e);
