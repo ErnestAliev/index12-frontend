@@ -2,7 +2,10 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
 const base =
-  import.meta.env.VITE_API_BASE_URL || `${window.location.origin}/api`;
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window === "undefined"
+    ? "http://localhost:3000/api"
+    : `${window.location.origin}/api`);
 export const teamApi = axios.create({
   baseURL: `${base}/team-chat`,
   withCredentials: true,
@@ -11,6 +14,8 @@ export const teamApi = axios.create({
 export const teamError = (e) =>
   e.response?.data?.message || e.message || "Не удалось связаться с чатом";
 export const useTeamChatStore = defineStore("teamChat", () => {
+  const tab = ref("messages"),
+    requestedRequestId = ref(null);
   const me = ref(null),
     state = ref({ messages: [], requests: [], members: [], companies: [] }),
     error = ref(""),
@@ -54,6 +59,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     me.value = null;
     state.value = { messages: [], requests: [], members: [], companies: [] };
     open.value = false;
+    tab.value = "messages";
+    requestedRequestId.value = null;
     unread.value = 0;
     busy.value = false;
     error.value = "";
@@ -204,6 +211,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    tab,
+    requestedRequestId,
     state,
     error,
     open,

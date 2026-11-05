@@ -9,6 +9,9 @@ export async function verifyTeamChat({
   scope,
   token,
   company,
+  account,
+  contractor,
+  category,
 }) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     output = root + "output/playwright";
@@ -65,9 +68,7 @@ export async function verifyTeamChat({
     await chat
       .getByLabel("Сообщение сотрудникам", { exact: true })
       .fill("Browser message");
-    await chat
-      .getByRole("button", { name: "Отправить сообщение", exact: true })
-      .click();
+    await chat.getByRole("button", { name: "Отправить", exact: true }).click();
     await chat.getByText("Browser message", { exact: true }).waitFor();
     for (const theme of ["dark", "light"]) {
       await page.evaluate(
@@ -165,24 +166,138 @@ export async function verifyTeamChat({
       .getByLabel("Сообщение сотрудникам", { exact: true })
       .fill("Mobile employee online");
     await mobile
-      .getByRole("button", { name: "Отправить сообщение", exact: true })
+      .getByRole("button", { name: "Отправить", exact: true })
       .click();
     await chat.getByText("Mobile employee online", { exact: true }).waitFor();
     await phone.screenshot({ path: `${output}/team-chat-phone.png` });
+    await mobile
+      .locator(".team-compose-area input[type=file]")
+      .setInputFiles({
+        name: "invoice-ui.pdf",
+        mimeType: "application/pdf",
+        buffer: Buffer.from("%PDF-1.4\ncontrolled UI fixture"),
+      });
+    await mobile
+      .getByRole("button", { name: "Отправить", exact: true })
+      .click();
+    await mobile.getByText("Это счёт на оплату?", { exact: true }).waitFor();
+    await mobile
+      .getByRole("button", { name: "Не обрабатывать", exact: true })
+      .click();
+    await mobile
+      .getByText("Это счёт на оплату?", { exact: true })
+      .waitFor({ state: "hidden" });
     await mobile.getByRole("button", { name: /^Заявки/ }).click();
     await mobile
       .getByRole("button", { name: "Заявка на расход", exact: true })
       .click();
     await mobile
-      .getByLabel("Что нужно сделать", { exact: true })
+      .getByLabel("Что оплатить / купить", { exact: true })
       .fill("Browser cleaning");
-    await mobile.getByLabel("Сумма, ₸", { exact: true }).fill("500");
-    await mobile.getByLabel("Компания", { exact: true }).selectOption(company);
+    await mobile.getByLabel("Сумма, ₸", { exact: true }).fill("12500.50");
+    assert.equal(
+      await mobile.getByLabel("Сумма, ₸", { exact: true }).inputValue(),
+      "12 500.50",
+    );
+    assert.equal(
+      await mobile.getByLabel("Компания", { exact: true }).count(),
+      0,
+    );
+    await mobile
+      .getByRole("combobox", { name: "Контрагент", exact: true })
+      .fill("ламп");
+    await mobile
+      .getByRole("button", { name: "Поставщик лампочек", exact: true })
+      .click();
+    await mobile
+      .getByLabel("Комментарий к заявке", { exact: true })
+      .fill("Уборка после ремонта");
     await mobile
       .getByRole("button", { name: "На согласование", exact: true })
       .click();
     await mobile.getByText("Browser cleaning", { exact: true }).waitFor();
     await phone.screenshot({ path: `${output}/team-chat-request-mobile.png` });
+    await chat.getByRole("button", { name: /^Заявки/ }).click();
+    const requestCard = chat
+      .locator(".request-card")
+      .filter({ hasText: "Browser cleaning" });
+    await requestCard.waitFor();
+    const date = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Almaty",
+    }).format(new Date());
+    const year = date.slice(0, 4),
+      doy =
+        Math.round(
+          (Date.parse(date) - Date.parse(year + "-01-01")) / 86400000,
+        ) + 1;
+    const target = page.locator(
+      `.hour-cell[data-date-key="${year}-${doy}"][data-cell-index="0"]`,
+    );
+    await requestCard.dragTo(target);
+    const popup = page.locator(".request-draft-popup");
+    await popup.waitFor();
+    await popup
+      .locator(".base-select")
+      .filter({ hasText: "Счет списания" })
+      .locator(".select-trigger")
+      .click();
+    await popup
+      .locator(".options-list")
+      .getByText("Team cash", { exact: true })
+      .click();
+    await popup
+      .locator(".base-select")
+      .filter({ hasText: "Категория" })
+      .filter({ hasNotText: "Подкатегория" })
+      .first()
+      .locator(".select-trigger")
+      .click();
+    await popup
+      .locator(".options-list")
+      .getByText("Обслуживание", { exact: true })
+      .click();
+    await popup
+      .locator(".base-select")
+      .filter({ hasText: "Категория" })
+      .filter({ hasNotText: "Подкатегория" })
+      .first()
+      .locator(".select-trigger")
+      .click();
+    await popup
+      .locator('[data-testid="subcategory-field"] .select-trigger')
+      .click();
+    await popup
+      .locator(".options-list")
+      .getByText("Лампочки", { exact: true })
+      .click();
+    await popup
+      .getByLabel("Комментарий к расходу", { exact: true })
+      .fill("Проверено управляющим");
+    await page.screenshot({
+      path: `${output}/team-request-placement.png`,
+      animations: "disabled",
+    });
+    await popup
+      .getByRole("button", { name: "Разместить заявку", exact: true })
+      .click();
+    await popup.waitFor({ state: "hidden" });
+    await page.locator(".operation-chip.team-request-chip").waitFor();
+    const refreshed = page.getByRole("dialog", {
+      name: "Чат Сотрудники",
+      exact: true,
+    });
+    await refreshed.waitFor();
+    const staged = refreshed
+      .locator(".request-card")
+      .filter({ hasText: "Browser cleaning" });
+    await staged.getByText("Team cash", { exact: true }).waitFor();
+    await staged
+      .getByRole("button", {
+        name: "Согласовано мной → руководителю",
+        exact: true,
+      })
+      .click();
+    await staged.getByText("У руководителя", { exact: true }).waitFor();
     await chat
       .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
       .click();

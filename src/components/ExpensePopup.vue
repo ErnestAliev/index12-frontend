@@ -1,5 +1,6 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
+import {useTeamChatStore} from '@/stores/teamChatStore';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
@@ -34,11 +35,13 @@ const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
   operationToEdit: { type: Object, default: null },
+  approvalRequest: {type:Boolean,default:false},
+  approvalRequestId:{type:String,default:null},
   minAllowedDate: { type: Date, default: null },
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense']);
+const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense','approval-save']);
 
 const mainStore = useMainStore();
 const permissions = usePermissions();
@@ -65,7 +68,7 @@ const defaultProjectId = computed(() => {
     const p = mainStore.projects.find(x => x.name && x.name.trim().toLowerCase() === 'без проекта');
     return p ? p._id : null;
 });
-const description = ref('');
+const description = ref(''), comment=ref(''), sendToDirector=ref(false);
 
 const isSaving = ref(false);
 const errorMessage = ref('');
@@ -460,7 +463,7 @@ const projectedIncomeAfterOffset = computed(() => {
     return after < 0 ? 0 : after;
 });
 
-const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
+const isEditMode = computed(() => !!props.operationToEdit && !props.approvalRequest && !isCloneMode.value);
 const isOffsetEditLocked = computed(() => isIncomeOffsetMode.value && isEditMode.value);
 
 // 🟢 PERMISSIONS
@@ -470,6 +473,7 @@ const isReadOnly = computed(() => !canEdit.value);
 
 // 🟢 ДИНАМИЧЕСКИЙ ЗАГОЛОВОК
 const title = computed(() => {
+    if(props.approvalRequest)return 'Заявка на расход';
     if (isCloneMode.value) return 'Копия: Расход';
     if (isEditMode.value) return 'Редактировать';
     
@@ -480,6 +484,7 @@ const title = computed(() => {
 });
 
 const buttonText = computed(() => {
+    if(props.approvalRequest)return 'Разместить заявку';
     if (isIncomeOffsetMode.value) return isEditMode.value ? 'Сохранить взаимозачет' : 'Создать взаимозачет';
     if (isEditMode.value) return 'Сохранить';
     if (isFutureDate.value) return 'Запланировать';
@@ -496,10 +501,11 @@ const projectedBalanceAfterExpense = computed(() => {
 
     const rawAmount = parseFloat((amount.value || '').replace(/\s/g, ''));
     const targetDate = createSmartDate(editableDate.value);
-    const currentBalance = isFutureDate.value
+    let currentBalance = isFutureDate.value
         ? mainStore.getBalanceAtDate(selectedAccountId.value, targetDate)
         : Number(mainStore.currentAccountBalances.find(acc => acc._id === selectedAccountId.value)?.balance || 0);
 
+    if(props.approvalRequest)currentBalance-=(useTeamChatStore().state.placements||[]).filter(r=>r._id!==props.approvalRequestId&&r.placement?.accountId===selectedAccountId.value&&r.dueDate<=editableDate.value&&!r.operationId).reduce((sum,r)=>sum+r.amountCents/100,0);
     const nextBalance = (!rawAmount || rawAmount <= 0)
         ? currentBalance
         : currentBalance - rawAmount;
@@ -517,7 +523,7 @@ const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccoun
     routes: [{ key: 'account', label: 'Счёт', accountId: selectedAccountId, ownerKey: selectedOwner, creating: isCreatingAccount }],
     ready: computed(() => !isInitialLoad.value),
     enabled: computed(() => canEdit.value && !isIncomeOffsetMode.value),
-    existing: computed(() => !!props.operationToEdit),
+    existing: computed(() => !!props.operationToEdit && !props.approvalRequest),
 });
 
 // --- LOGIC WATCHERS ---
@@ -670,7 +676,7 @@ const processSave = (preparedCategoryIds = []) => {
         subcategoryId: selectedSubcategoryId.value,
         categoryIds: preparedCategoryIds.length ? preparedCategoryIds : undefined,
         ...projectData,
-        description: description.value, cellIndex: targetCellIndex
+        description: description.value, comment:comment.value, cellIndex: targetCellIndex
     };
 
     if (isIncomeOffsetMode.value && selectedIncomeOpId.value) {
@@ -678,6 +684,7 @@ const processSave = (preparedCategoryIds = []) => {
         payload.excludeFromTotals = true; // не учитываем в общих итогах
     }
 
+    if(props.approvalRequest){emit('approval-save',{data:{...payload,dueDate:editableDate.value},submit:sendToDirector.value});isSaving.value=false;return;}
     emit('save', {
         mode: isEditMode.value ? 'edit' : 'create',
         id: props.operationToEdit?._id,
@@ -724,6 +731,7 @@ const handleSave = async () => {
         }
     }
     lastPreparedCategoryIds.value = preparedCategoryIds;
+    if(props.approvalRequest){if(!preparedCategoryIds.length){showError('Укажите категорию расхода');return;}if(!selectedContractorValue.value){showError('Укажите контрагента');return;}processSave(preparedCategoryIds);return;}
     
     try {
         if (!isIncomeOffsetMode.value) await mainStore.saveAccountOwners([{ accountId: selectedAccountId.value, ownerKey: selectedOwner.value }]);
@@ -968,8 +976,8 @@ onMounted(async () => {
         } else {
             selectedCategoryIds.value = [op.categoryId?._id || op.categoryId].filter(Boolean);
         }
-        description.value = op.description || '';
-        if (op.date) editableDate.value = toInputDate(new Date(op.date));
+        description.value = op.description || '';comment.value=op.comment||'';
+        if(op.date)editableDate.value=toInputDate(new Date(op.date));if(props.approvalRequest&&op.dueDate)editableDate.value=op.dueDate;
         if (op.companyId) selectedOwner.value = `company-${op.companyId._id || op.companyId}`;
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
         if (op.contractorId) selectedContractorValue.value = `contr_${op.contractorId._id || op.contractorId}`;
@@ -1020,11 +1028,11 @@ watch(defaultProjectId, (defId) => {
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="$emit('close')">
-    <div class="popup-content theme-expense">
+  <div class="popup-overlay" :class="{'team-request-editor':approvalRequest}" @click.self="$emit('close')">
+    <div class="popup-content theme-expense" :class="{'request-draft-popup':approvalRequest}">
       <div class="header-row">
-        <h3>{{ title }}</h3>
-        <button class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
+        <h3>{{ title }}</h3><button v-if="approvalRequest" type="button" class="request-close" aria-label="Закрыть заявку" @click="emit('close')"><UiIcon name="close"/></button>
+        <button v-if="!approvalRequest" class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
             <svg viewBox="0 0 24 24" class="offset-icon"><path d="M5 12h14M12 5v14M8 4l-4 4m0 0 4 4M16 16l4-4m0 0-4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="offset-label">Взаимовычет</span>
         </button>
@@ -1039,7 +1047,7 @@ watch(defaultProjectId, (defId) => {
       </div>
       
       <div v-if="projectedBalanceAfterExpense" class="validation-error" :class="{ 'validation-warning': !projectedBalanceAfterExpense.willBeNegative }">
-          После расхода: {{ formatNumber(Math.round(projectedBalanceAfterExpense.nextBalance)) }} ₸
+          {{approvalRequest?'С учётом заявок:':'После расхода:'}} {{ formatNumber(Math.round(projectedBalanceAfterExpense.nextBalance)) }} ₸
       </div>
 
       <div v-if="isIncomeOffsetMode && selectedIncomeOp" class="offset-hint">
@@ -1130,6 +1138,7 @@ watch(defaultProjectId, (defId) => {
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
       <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="selectedCategoryIds" :disabled="isReadOnly" />
+      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к расходу" maxlength="10000" rows="2" :disabled="isReadOnly"></textarea>
 
 
       <!-- ДАТА + ИНДИКАТОР -->
@@ -1141,7 +1150,7 @@ watch(defaultProjectId, (defId) => {
                
                <!-- 🟢 Индикатор ПЛАН/ФАКТ -->
                <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
-                   {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
+                   {{ approvalRequest?'Заявка':(isFutureDate ? 'ПЛАН' : 'ФАКТ') }}
                </span>
 
                <input type="date" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isReadOnly || isOffsetEditLocked" />
@@ -1155,12 +1164,13 @@ watch(defaultProjectId, (defId) => {
 
       <!-- НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ -->
       <div class="popup-actions-row">
-          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="handleSave" :disabled="isSaving || isInlineSaving">
+          <button v-if="approvalRequest&&canEdit" class="btn-submit btn-expense save-wide" :disabled="isSaving" @click="sendToDirector=true;handleSave()">Согласовано мной → руководителю</button>
+          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="sendToDirector=false;handleSave()" :disabled="isSaving || isInlineSaving">
               {{ buttonText }}
           </button>
           <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
           
-          <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
+          <div v-if="props.operationToEdit && !approvalRequest && !isCloneMode" class="icon-actions">
               <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
               <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
           </div>
@@ -1191,6 +1201,12 @@ watch(defaultProjectId, (defId) => {
 </template>
 
 <style scoped>
+:global(.request-draft-popup .btn-submit.btn-expense){background:#b7433b!important;color:#fff!important}
+
+.popup-overlay.team-request-editor{z-index:6500;box-sizing:border-box;padding:16px 0}.request-draft-popup{box-sizing:border-box!important;max-height:calc(100dvh - 32px);overflow-y:auto!important;scrollbar-width:thin;margin:auto 16px!important}.request-draft-popup .popup-actions-row{flex-direction:column;align-items:stretch;gap:8px;margin-top:16px}.request-draft-popup .header-row{margin-bottom:16px}.request-draft-popup h3{margin-bottom:0;font-weight:500}.request-draft-popup .request-close{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--color-text)}
+
+.operation-comment{box-sizing:border-box;display:block;width:100%;padding:12px;margin:0 0 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background-soft);color:var(--color-text);font:inherit;resize:vertical;max-height:140px;min-height:64px}
+
 /* 🟢 CSS ПЕРЕМЕННЫЕ ДЛЯ РАСХОДА */
 .popup-content {
     --color-expense: #F36F3F; /* Оранжевый */

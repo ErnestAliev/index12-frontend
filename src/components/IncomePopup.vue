@@ -64,7 +64,7 @@ const defaultProjectId = computed(() => {
   const p = mainStore.projects.find(x => x.name && x.name.trim().toLowerCase() === 'без проекта');
   return p ? p._id : null;
 });
-const description = ref('');
+const description = ref(''), comment=ref('');
 
 // СТАТУС ОПЕРАЦИИ
  
@@ -533,7 +533,7 @@ const preparePayload = (options = {}) => {
         categoryId: selectedCategoryId.value,
         subcategoryId: selectedSubcategoryId.value,
         ...projectData,
-        description: description.value, cellIndex: targetCellIndex
+        description: description.value, comment:comment.value, cellIndex: targetCellIndex
     };
 };
 
@@ -619,7 +619,7 @@ onMounted(async () => {
         if (op.projectScope === 'all') selectedProjectIds.value = projectSelection(op);
         selectedCategoryId.value = op.categoryId?._id || op.categoryId;
         selectedSubcategoryId.value = op.subcategoryId?._id || op.subcategoryId || null;
-        description.value = op.description || '';
+        description.value=op.description||'';comment.value=op.comment||'';
         if (op.date) editableDate.value = toInputDate(new Date(op.date));
         if (op.companyId) selectedOwner.value = `company-${op.companyId._id || op.companyId}`;
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
@@ -900,6 +900,7 @@ const handleMainAction = async () => {
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
       <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="[selectedCategoryId]" :disabled="isReadOnly || isProtectedMode" />
+      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к доходу" maxlength="10000" rows="2" :disabled="isReadOnly"></textarea>
 
       
       <div class="custom-input-box input-spacing has-value date-box" :class="{ 'is-disabled': isProtectedMode }">
@@ -957,6 +958,8 @@ const handleMainAction = async () => {
 </template>
 
 <style scoped>
+.operation-comment{box-sizing:border-box;width:100%;padding:12px;margin:0 0 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background-soft);color:var(--color-text);font:inherit;resize:vertical;max-height:140px}
+
 /* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     /* 🟢 Цвет ЗЕЛЕНЫЙ */

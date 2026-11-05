@@ -4,7 +4,7 @@ import CodexGlyph from './CodexGlyph.vue';
 const props = defineProps({
   modelValue: { type: String, default: '' }, busy: Boolean, recording: Boolean,
   speechSupported: Boolean, mobile: Boolean, attachmentsEnabled: Boolean, hasAttachments: Boolean,
-  liveVoice: Boolean, voiceAvailable: Boolean, voiceSupported: Boolean,
+  hideMicrophone:Boolean, liveVoice: Boolean, voiceAvailable: Boolean, voiceSupported: Boolean,
   placeholder: { type: String, default: 'Спросите Codex' },
 });
 const emit = defineEmits(['update:modelValue', 'send', 'microphone', 'attach', 'voice']);
@@ -46,7 +46,7 @@ onBeforeUnmount(() => observer?.disconnect());
       <textarea ref="input" :value="modelValue" class="codex-input" :placeholder="placeholder" :aria-label="placeholder"
         rows="1" maxlength="16000" @input="emit('update:modelValue', $event.target.value)" @keydown="keydown" />
       <div class="codex-input-buttons">
-        <button type="button" class="codex-mic-btn" :class="{ recording }" :disabled="busy || !speechSupported"
+        <button v-if="!hideMicrophone" type="button" class="codex-mic-btn" :class="{ recording }" :disabled="busy || !speechSupported"
           :title="speechSupported ? (recording ? 'Остановить запись' : 'Голосовой ввод') : 'Голосовой ввод не поддерживается'"
           aria-label="Голосовой ввод" :aria-pressed="recording" @click="emit('microphone')">
           <CodexGlyph name="microphone" />

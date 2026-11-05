@@ -6,13 +6,113 @@ import { useTeamChatStore, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "./ChatWindowFrame.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
+import ExpensePopup from "./ExpensePopup.vue";
+import { dayAt } from "@/utils/calendarTime";
 const main = useMainStore(),
   chat = useTeamChatStore(),
   route = useRoute(),
   dismissed = ref([]),
   role = ref("employee"),
   approvalError = ref("");
-const approvalPanel = ref(null);
+const approvalPanel = ref(null),
+  edit = ref(null),
+  editError = ref("");
+async function editRequest(event) {
+  const info = event.detail || {},
+    row =
+      chat.state.requests.find((r) => r._id === info.id) ||
+      chat.state.placements?.find((r) => r._id === info.id);
+  if (!row || !chat.me?.owner || chat.me.role !== "manager") return;
+  delete document.body.dataset.teamRequestDragging;
+  if (row.state !== "manager_review") {
+    chat.tab = "requests";
+    chat.requestedRequestId = row._id;
+    chat.show();
+    return;
+  }
+  if (
+    !main.contractors.some((c) => c._id === row.contractorId) ||
+    !main.accounts.length
+  ) {
+    const workspace = chat.me.workspaceId;
+    try {
+      await main.fetchAllEntities();
+    } catch (e) {
+      editError.value = teamError(e);
+      return;
+    }
+    if (chat.me?.workspaceId !== workspace) return;
+  }
+  const date = info.date
+      ? new Date(info.date)
+      : new Date(row.dueDate + "T12:00:00+05:00"),
+    cell = Number.isInteger(info.cellIndex)
+      ? info.cellIndex
+      : row.placement?.cellIndex || 0;
+  const desiredDate = info.dateKey
+    ? new Date(
+        Date.UTC(
+          Number(info.dateKey.split("-")[0]),
+          0,
+          Number(info.dateKey.split("-")[1]),
+        ),
+      )
+        .toISOString()
+        .slice(0, 10)
+    : row.dueDate;
+  const operation = {
+    dueDate: desiredDate,
+    ...row.placement,
+    amount: -row.amountCents / 100,
+    date,
+    cellIndex: cell,
+    companyId: row.companyId,
+    contractorId: row.contractorId,
+    categoryId: row.categoryId,
+    subcategoryId: row.subcategoryId,
+    description: row.placement?.description || row.title,
+    comment: row.comment || "",
+  };
+  if (info.drop && row.placement) {
+    try {
+      await chat.action(`/requests/${row._id}/placement`, {
+        expectedVersion: row.version,
+        operation,
+      });
+      chat.tab = "requests";
+      return;
+    } catch (e) {
+      editError.value = teamError(e);
+    }
+  }
+  chat.open = false;
+  chat.tab = "requests";
+  edit.value = { row, date, cell, operation, key: crypto.randomUUID() };
+}
+async function savePlacement(payload) {
+  if (!edit.value) return;
+  try {
+    await chat.action(`/requests/${edit.value.row._id}/placement`, {
+      expectedVersion: edit.value.row.version,
+      operation: payload.data,
+      submit: payload.submit,
+    });
+    chat.requestedRequestId = edit.value.row._id;
+    edit.value = null;
+    editError.value = "";
+    chat.tab = "requests";
+    chat.show();
+  } catch (e) {
+    editError.value = teamError(e);
+  }
+}
+function closeEditor() {
+  edit.value = null;
+  chat.tab = "requests";
+  chat.show();
+}
+window.addEventListener("index12:edit-team-request", editRequest);
+
 let approvalFocus;
 function approvalKeys(event) {
   if (event.key !== "Tab") return;
@@ -76,6 +176,7 @@ window.addEventListener("index12:team-operation-created", created);
 onBeforeUnmount(() => {
   window.removeEventListener("index12:open-team-chat", show);
   window.removeEventListener("index12:team-operation-created", created);
+  window.removeEventListener("index12:edit-team-request", editRequest);
   chat.stop();
 });
 async function decide(status) {
@@ -101,8 +202,30 @@ async function decide(status) {
     side="left"
     storage-key="index12-team-chat-window-size"
     @close="chat.open = false"
-    ><template #icon><UiIcon name="chat" /></template><TeamChatPane
+    ><template #icon><UiIcon name="chat" /></template
+    ><TeamChatPane :mobile="route.name === 'mobile-home'"
   /></ChatWindowFrame>
+  <Teleport to="body"
+    ><ExpensePopup
+      v-if="edit"
+      :key="edit.key"
+      :date="edit.date"
+      :cell-index="edit.cell"
+      :operation-to-edit="edit.operation"
+      approval-request
+      :approval-request-id="edit.row._id"
+      @close="closeEditor"
+      @approval-save="savePlacement"
+    />
+    <div
+      v-if="editError"
+      class="placement-error"
+      role="alert"
+      @click="editError = ''"
+    >
+      {{ editError }}
+    </div></Teleport
+  >
   <Teleport to="body"
     ><div v-if="pending" class="team-approval-backdrop">
       <section
@@ -156,6 +279,21 @@ async function decide(status) {
   >
 </template>
 <style scoped>
+.placement-error {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 140000;
+  max-width: 90vw;
+  padding: 12px 20px;
+  background: var(--color-background);
+  border: 1px solid var(--color-danger, #bd4942);
+  border-radius: 8px;
+  color: var(--color-danger, #bd4942);
+  font-size: 13px;
+}
+
 .team-approval-backdrop {
   position: fixed;
   inset: 0;

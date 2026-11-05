@@ -729,6 +729,7 @@ const handleShowMenu = (payload) => {
 
 
 const handleEditOperation = (operation) => {
+  if(operation?.isTeamRequest){window.dispatchEvent(new CustomEvent('index12:edit-team-request',{detail:{id:operation.requestId}}));return;}
   isContextMenuVisible.value = false;
   operationToEdit.value = operation;
   if (operation.dateKey) {
@@ -771,6 +772,7 @@ const handleContextMenuSelect = (type) => {
 };
 
 const handleOperationDrop = async (dropData) => {
+  if(dropData.operation?.isTeamRequest){window.dispatchEvent(new CustomEvent('index12:edit-team-request',{detail:{id:dropData.operation.requestId,dateKey:dropData.toDateKey,date:dropData.targetDate||mainStore._parseDateKey(dropData.toDateKey),cellIndex:dropData.toCellIndex,drop:true}}));return;}
     const { operation, toDateKey, toCellIndex, targetDate } = dropData;
     if (!operation || !toDateKey) return;
     const oldDateKey = operation.dateKey;

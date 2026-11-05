@@ -128,8 +128,7 @@ async function logout() {
       window-id="team-chat-public"
       storage-key="index12-team-chat-window-size"
       @close="logout"
-      ><template #icon><UiIcon name="chat" /></template><TeamChatPane
-    /></ChatWindowFrame>
+      ><template #icon><UiIcon name="chat" /></template><TeamChatPane mobile/></ChatWindowFrame>
   </main>
 </template>
 <style scoped>

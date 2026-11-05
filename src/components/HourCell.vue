@@ -318,6 +318,8 @@ const operationTooltipRows = computed(() => {
     { label: 'Контрагент', value: tooltipContractor.value },
     { label: 'Проект', value: tooltipProject.value },
     { label: 'Категория', value: tooltipCategory.value },
+    ...(props.operation?.comment?[{label:'Комментарий',value:props.operation.comment}]:[]),
+    ...(props.operation?.isTeamRequest?[{label:'Согласование',value:props.operation.approvalState==='manager_review'?'У управляющего':props.operation.approvalState==='director_review'?'У руководителя':'Согласовано'}]:[]),
     { label: 'Подкатегория', value: mainStore.getOperationSubcategoryName(props.operation) || 'Без подкатегории' }
   ];
 });
@@ -460,6 +462,7 @@ const onDragStart = (event) => {
       return;
   }
   if (!props.operation) return;
+  if(props.operation.isTeamRequest){event.dataTransfer.setData('application/json',JSON.stringify({operation:props.operation}));event.dataTransfer.effectAllowed='move';return;}
   const normalizedSelectedIds = props.selectedOperationIds.map((item) => String(item));
   const draggedOperationIds = isSelected.value && normalizedSelectedIds.length > 1
     ? normalizedSelectedIds
@@ -489,6 +492,8 @@ const onDragOver = (event) => { event.preventDefault(); isDragOver.value = true;
 const onDragLeave = () => { isDragOver.value = false; };
 const onDrop = (event) => {
   event.preventDefault(); isDragOver.value = false;
+  const requestId=event.dataTransfer.getData('application/x-index12-request');
+  if(requestId){emit('drop-operation',{operation:{_id:'team-request:'+requestId,isTeamRequest:true,requestId},toCellIndex:props.cellIndex});return;}
   const raw = event.dataTransfer.getData('application/json'); if (!raw) return;
   let payload = null; try { payload = JSON.parse(raw); } catch { return; }
   const operationData = payload?.operation?._id ? payload.operation : payload;
@@ -528,6 +533,7 @@ const onDrop = (event) => {
       <div
         class="operation-chip"
         :class="{ 
+           'team-request-chip':operation.isTeamRequest,
            transfer: isTransferOp, 
            income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp, 
            expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
@@ -611,6 +617,8 @@ const onDrop = (event) => {
 </template>
 
 <style scoped>
+.operation-chip.team-request-chip{border-style:dashed!important;opacity:.85}
+
 .amount-short { display: none; }
 /* Используем переменные из theme.css */
 .hour-cell { 

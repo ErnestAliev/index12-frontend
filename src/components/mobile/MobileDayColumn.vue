@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import {useTeamChatStore} from '@/stores/teamChatStore';
 
 import { useMainStore } from '@/stores/mainStore';
 import MobileHourCell from './MobileHourCell.vue';
@@ -15,7 +16,9 @@ const emit = defineEmits(['show-menu', 'edit-operation', 'drop-operation']);
 const mainStore = useMainStore();
 
 const operations = computed(() => {
-  return mainStore.getOperationsForDay(props.dateKey);
+  const real=mainStore.getOperationsForDay(props.dateKey);
+  const draft=(useTeamChatStore().state.placements||[]).filter(r=>r.placement?.dateKey===props.dateKey&&!r.operationId).map(r=>({...r.placement,_id:'team-request:'+r._id,requestId:r._id,isTeamRequest:true,approvalState:r.state,description:r.title,comment:r.comment}));
+  return [...real,...draft];
 });
 
 const phantoms = computed(() => {

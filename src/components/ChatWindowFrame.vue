@@ -256,6 +256,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+:global(body[data-team-request-dragging] #team-chat-window){pointer-events:none;opacity:.2}
+
 .codex-chat-window {
   --codex-pane-bg: var(--bg-main, #1a1a1a);
   --codex-pane-surface: var(--bg-soft, #282828);

@@ -24,7 +24,7 @@ function cardPayload(kind, clone, dateChanged = false) {
     selectedOwner: ref(null), selectedContractorValue: ref(null),
     selectedAccountId: ref('account'), selectedCategoryId: ref('category'), selectedSubcategoryId: ref('subcategory'),
     selectedProjectIds: ref(['project']), primaryProjectId: ref('project'), defaultProjectId: ref(null),
-    amount: ref('100'), editableDate: ref('2026-10-09'), description: ref('Копия'),
+    amount: ref('100'), editableDate: ref('2026-10-09'), description: ref('Копия'), comment:ref('Комментарий к оплате'),
     normalizeId: value => value?._id || value,
     createSmartDate: value => new Date(`${value}T12:00:00`),
     isIncomeOffsetMode: ref(false), selectedIncomeOpId: ref(null),
@@ -39,7 +39,7 @@ function cardPayload(kind, clone, dateChanged = false) {
 
 for (const kind of ['income', 'expense']) {
   test(`${kind} copy on the same date requests a free slot instead of the source slot`, () => {
-    assert.equal(cardPayload(kind, true).cellIndex, undefined);
+    assert.equal(cardPayload(kind, true).cellIndex, undefined);assert.equal(cardPayload(kind,true).comment,'Комментарий к оплате');
   });
   test(`${kind} editing on the same date preserves the existing slot`, () => {
     assert.equal(cardPayload(kind, false).cellIndex, 4);

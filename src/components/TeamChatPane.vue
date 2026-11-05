@@ -2,9 +2,14 @@
 import { computed, nextTick, ref, watch } from "vue";
 import UiIcon from "./UiIcon.vue";
 import CodexMessageText from "./CodexMessageText.vue";
+import CodexComposer from "./CodexComposer.vue";
+import TeamContractorSelect from "./TeamContractorSelect.vue";
+import TeamRequestCard from "./TeamRequestCard.vue";
+import { formatAmountInputEvent } from "@/utils/amountInput";
+defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
-  tab = ref("messages"),
+  tab = ref(chat.tab || "messages"),
   message = ref(""),
   files = ref([]),
   input = ref(null),
@@ -13,22 +18,33 @@ const chat = useTeamChatStore(),
   invite = ref(""),
   localError = ref(""),
   creating = ref(false),
-  converting = ref(null),
-  options = ref({ accounts: [], categories: [] }),
-  account = ref(""),
-  category = ref(""),
-  operationDate = ref(""),
   older = ref([]);
 const draft = ref({
   title: "",
   amount: "",
-  companyId: "",
+  contractorId: null,
+  contractorName: "",
+  comment: "",
   dueDate: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Almaty" }).format(
     new Date(),
   ),
   id: crypto.randomUUID(),
 });
-const selectedRoles = ref({});
+watch(tab, (value) => {
+  chat.tab = value;
+});
+watch(
+  () => chat.requestedRequestId,
+  (id) => {
+    if (id) {
+      focusedRequest.value = id;
+      tab.value = "requests";
+    }
+  },
+);
+const selectedRoles = ref({}),
+  processingPdf = ref(null),
+  focusedRequest = ref(chat.requestedRequestId || null);
 function updateRole(member, role) {
   if (member.status === "pending") {
     selectedRoles.value[member._id] = role;
@@ -42,13 +58,6 @@ function updateRole(member, role) {
     ),
   );
 }
-const labels = {
-  manager_review: "У управляющего",
-  director_review: "У руководителя",
-  ready: "Создать операцию",
-  recorded: "Операция создана",
-  rejected: "Отклонено",
-};
 const money = (cents) =>
   new Intl.NumberFormat("ru-KZ", {
     style: "currency",
@@ -65,14 +74,6 @@ const shownMessages = computed(() => [
   ),
   ...chat.state.messages,
 ]);
-const canDecide = (r) =>
-  (r.state === "manager_review" && chat.me?.role === "manager") ||
-  (r.state === "director_review" && chat.me?.role === "director");
-const accounts = computed(() =>
-  options.value.accounts.filter(
-    (a) => String(a.companyId) === converting.value?.companyId,
-  ),
-);
 watch(
   () => chat.me?.workspaceId,
   () => {
@@ -80,7 +81,6 @@ watch(
     invite.value = "";
     files.value = [];
     message.value = "";
-    converting.value = null;
   },
 );
 watch(
@@ -169,13 +169,21 @@ async function loadOlder() {
   });
 }
 async function createRequest() {
-  const result = await run(() => chat.action("/requests", draft.value));
+  const result = await run(() =>
+    chat.action("/requests", {
+      ...draft.value,
+      amount: draft.value.amount.replace(/\s/g, ""),
+    }),
+  );
   if (result) {
     creating.value = false;
+    focusedRequest.value = result.request._id;
+    chat.requestedRequestId = result.request._id;
     draft.value = {
       ...draft.value,
       title: "",
       amount: "",
+      comment: "",
       id: crypto.randomUUID(),
     };
   }
@@ -188,29 +196,44 @@ async function decide(row, action) {
     }),
   );
 }
-async function startConversion(row) {
-  await run(async () => {
-    const { data } = await teamApi.get("/operation-options");
-    options.value = data;
-    converting.value = row;
-    account.value = "";
-    category.value = "";
-    operationDate.value = row.dueDate;
-  });
+function editRequest(row) {
+  window.dispatchEvent(
+    new CustomEvent("index12:edit-team-request", { detail: { id: row._id } }),
+  );
 }
-async function convert() {
+async function convert(row) {
   const result = await run(() =>
-    chat.action(`/requests/${converting.value._id}/convert`, {
-      expectedVersion: converting.value.version,
-      accountId: account.value,
-      categoryId: category.value || null,
-      dueDate: operationDate.value,
+    chat.action(`/requests/${row._id}/convert`, {
+      expectedVersion: row.version,
     }),
   );
-  if (result) {
-    converting.value = null;
-    window.dispatchEvent(new Event("index12:team-operation-created"));
-  }
+  if (result) window.dispatchEvent(new Event("index12:team-operation-created"));
+}
+async function recall(row) {
+  await run(() =>
+    chat.action(`/requests/${row._id}/recall`, {
+      expectedVersion: row.version,
+    }),
+  );
+}
+async function processPdf(message, file) {
+  processingPdf.value = file.fileId;
+  await run(async () => {
+    const { data } = await teamApi.post(
+      `/messages/${message._id}/files/${file.fileId}/invoice`,
+      {},
+      { timeout: 200000 },
+    );
+    await chat.refresh();
+    focusedRequest.value = data.request._id;
+    tab.value = "requests";
+  });
+  processingPdf.value = null;
+}
+async function dismissPdf(message, file) {
+  await run(() =>
+    chat.action(`/messages/${message._id}/files/${file.fileId}/dismiss`, {}),
+  );
 }
 async function invitePeople() {
   await run(async () => {
@@ -222,15 +245,31 @@ async function invitePeople() {
 async function copy(text) {
   await run(() => navigator.clipboard.writeText(text));
 }
-function keyboard(event) {
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-    event.preventDefault();
-    void send();
-  }
-}
 </script>
 <template>
   <div class="team-pane">
+    <div v-if="chat.me" class="team-identity">
+      <span>{{ chat.me.displayName }}</span
+      ><select
+        v-if="chat.me.owner"
+        :value="chat.me.role"
+        aria-label="Моя роль в чате"
+        :disabled="chat.busy"
+        @change="
+          run(() =>
+            chat.action(
+              '/settings',
+              { ownerRole: $event.target.value },
+              'patch',
+            ),
+          )
+        "
+      >
+        <option v-for="(label, key) in chat.me.roles" :key="key" :value="key">
+          {{ label }}
+        </option></select
+      ><span v-else>{{ roleName(chat.me.role) }}</span>
+    </div>
     <nav class="team-tabs" aria-label="Разделы чата">
       <button :aria-pressed="tab === 'messages'" @click="tab = 'messages'">
         Сообщения</button
@@ -304,7 +343,42 @@ function keyboard(event) {
               class="team-file"
               @click="download(file)"
             >
-              <UiIcon name="attach" />{{ file.name }}</button
+              <UiIcon name="attach" />{{ file.name }}
+            </button>
+            <template
+              v-for="file in m.attachments.filter(
+                (f) =>
+                  f.isPdf &&
+                  !f.invoiceRequestId &&
+                  !f.invoiceDismissed &&
+                  !chat.state.requests.some((r) => r.sourceFileId === f.fileId),
+              )"
+              :key="'pdf-' + file.fileId"
+              ><div
+                v-if="m.authorId === chat.me.actorId"
+                class="team-pdf-question"
+              >
+                <span>Это счёт на оплату?</span>
+                <div>
+                  <button
+                    type="button"
+                    :disabled="!!processingPdf"
+                    @click="processPdf(m, file)"
+                  >
+                    {{
+                      processingPdf === file.fileId
+                        ? "Распознавание…"
+                        : "Да, создать заявку"
+                    }}</button
+                  ><button
+                    type="button"
+                    :disabled="!!processingPdf"
+                    @click="dismissPdf(m, file)"
+                  >
+                    Не обрабатывать
+                  </button>
+                </div>
+              </div></template
             ><button
               v-if="m.text"
               class="team-copy"
@@ -317,7 +391,7 @@ function keyboard(event) {
           </div>
         </article>
       </div>
-      <form class="team-composer" @submit.prevent="send">
+      <div class="team-compose-area">
         <div v-if="files.length" class="team-staged">
           <span v-for="(f, i) in files" :key="f.fileId"
             >{{ f.name
@@ -329,48 +403,35 @@ function keyboard(event) {
               <UiIcon name="close" /></button
           ></span>
         </div>
-        <div class="team-input-row">
-          <input
-            ref="input"
-            type="file"
-            hidden
-            multiple
-            @change="attach"
-          /><button
-            type="button"
-            class="team-icon"
-            title="Прикрепить файл"
-            aria-label="Прикрепить файл в чат"
-            :disabled="uploading || chat.busy"
-            @click="input.click()"
-          >
-            <UiIcon name="attach" /></button
-          ><textarea
-            v-model="message"
-            rows="2"
-            aria-label="Сообщение сотрудникам"
-            placeholder="Сообщение сотрудникам"
-            maxlength="10000"
-            @keydown="keyboard"
-          ></textarea
-          ><button
-            type="submit"
-            class="team-icon team-send"
-            title="Отправить"
-            aria-label="Отправить сообщение"
-            :disabled="
-              chat.busy || uploading || (!message.trim() && !files.length)
-            "
-          >
-            <UiIcon name="send" />
-          </button>
-        </div>
-        <span v-if="uploading" role="status">Загрузка файла…</span>
-      </form>
+        <input
+          ref="input"
+          type="file"
+          hidden
+          multiple
+          @change="attach"
+        /><CodexComposer
+          v-model="message"
+          :busy="chat.busy || uploading"
+          :mobile="mobile"
+          attachments-enabled
+          hide-microphone
+          :has-attachments="!!files.length"
+          placeholder="Сообщение сотрудникам"
+          @send="send"
+          @attach="input.click()"
+        /><span v-if="uploading" role="status">Загрузка файла…</span>
+      </div>
     </template>
     <div v-else class="team-scroll">
       <template v-if="tab === 'requests'">
         <div v-if="isReviewer && chat.state.financial" class="team-forecast">
+          <div
+            v-if="chat.state.financial.unallocatedCents"
+            class="team-unallocated"
+          >
+            Без выбранной компании:
+            {{ money(chat.state.financial.unallocatedCents) }}
+          </div>
           <article
             v-for="c in chat.state.financial.companies.filter(
               (c) => c.requestedCents,
@@ -414,46 +475,54 @@ function keyboard(event) {
           </details>
         </div>
         <button
-          class="team-primary team-request-new"
+          class="team-expense-primary team-request-new"
           @click="creating = !creating"
         >
           Заявка на расход <UiIcon name="plus" />
         </button>
-        <form v-if="creating" class="team-form" @submit.prevent="createRequest">
-          <label
-            >Что нужно сделать<input
-              v-model="draft.title"
-              placeholder="Купить лампочки"
-              maxlength="300"
-              required
-          /></label>
+        <form
+          v-if="creating"
+          class="team-form team-expense-form"
+          @submit.prevent="createRequest"
+        >
+          <input
+            v-model="draft.title"
+            aria-label="Что оплатить / купить"
+            placeholder="Что оплатить / купить"
+            maxlength="300"
+            required
+          />
           <div class="team-fields">
-            <label
-              >Сумма, ₸<input
-                v-model="draft.amount"
-                inputmode="decimal"
-                placeholder="0"
-                required /></label
-            ><label
-              >Дата оплаты<input v-model="draft.dueDate" type="date" required
-            /></label>
-          </div>
-          <label
-            >Компания<select
-              v-model="draft.companyId"
-              aria-label="Компания"
+            <input
+              :value="draft.amount"
+              @input="draft.amount = formatAmountInputEvent($event)"
+              aria-label="Сумма, ₸"
+              placeholder="Сумма, ₸"
+              inputmode="decimal"
               required
-            >
-              <option value="" disabled>Выберите компанию</option>
-              <option
-                v-for="c in chat.state.companies"
-                :key="c._id"
-                :value="c._id"
-              >
-                {{ c.name }}
-              </option>
-            </select></label
-          ><button class="team-primary" :disabled="chat.busy">
+            /><input
+              v-model="draft.dueDate"
+              type="date"
+              aria-label="Дата оплаты"
+              title="Дата оплаты"
+              required
+            />
+          </div>
+          <TeamContractorSelect
+            v-model="draft.contractorId"
+            :fallback-name="draft.contractorName"
+            @selected="draft.contractorName = $event.name"
+          /><textarea
+            v-model="draft.comment"
+            aria-label="Комментарий к заявке"
+            placeholder="Комментарий"
+            rows="2"
+            maxlength="10000"
+          ></textarea
+          ><button
+            class="team-expense-primary"
+            :disabled="chat.busy || !draft.contractorId"
+          >
             На согласование
           </button>
         </form>
@@ -463,113 +532,21 @@ function keyboard(event) {
         <div v-if="!chat.state.requests.length && !creating" class="team-empty">
           Заявок пока нет
         </div>
-        <article
+        <TeamRequestCard
           v-for="r in chat.state.requests"
           :key="r._id"
-          class="team-request"
-          :data-state="r.state"
-        >
-          <header>
-            <span class="team-status">{{ labels[r.state] }}</span
-            ><time>{{ r.dueDate }}</time>
-          </header>
-          <strong>{{ r.title }}</strong>
-          <div class="team-request-amount">{{ money(r.amountCents) }}</div>
-          <p>{{ r.companyName }} · {{ r.authorName }}</p>
-          <div v-if="canDecide(r)" class="team-decisions">
-            <button
-              class="team-primary"
-              :disabled="chat.busy"
-              @click="decide(r, 'approve')"
-            >
-              Согласовать</button
-            ><button :disabled="chat.busy" @click="decide(r, 'reject')">
-              Отклонить
-            </button>
-          </div>
-          <button
-            v-if="
-              r.state === 'ready' && chat.me.owner && chat.me.role === 'manager'
-            "
-            class="team-primary"
-            @click="startConversion(r)"
-          >
-            Создать расход в INDEX12
-          </button>
-          <details v-if="r.history.length">
-            <summary>Согласование</summary>
-            <p v-for="(h, i) in r.history" :key="i">
-              {{ h.name }} · {{ roleName(h.role) }} ·
-              {{ h.action === "approve" ? "Согласовано" : "Отклонено" }}
-            </p>
-          </details>
-        </article>
-        <form v-if="converting" class="team-convert" @submit.prevent="convert">
-          <header>
-            <strong>{{ converting.title }}</strong
-            ><button
-              type="button"
-              class="team-icon"
-              aria-label="Закрыть создание расхода"
-              @click="converting = null"
-            >
-              <UiIcon name="close" />
-            </button>
-          </header>
-          <p>{{ money(converting.amountCents) }}</p>
-          <label
-            >Счёт<select v-model="account" aria-label="Счёт" required>
-              <option value="" disabled>Выберите счёт компании</option>
-              <option v-for="a in accounts" :key="a._id" :value="a._id">
-                {{ a.name }}
-              </option>
-            </select></label
-          ><label
-            >Категория<select v-model="category" aria-label="Категория">
-              <option value="">Без категории</option>
-              <option
-                v-for="c in options.categories"
-                :key="c._id"
-                :value="c._id"
-              >
-                {{ c.name }}
-              </option>
-            </select></label
-          ><label
-            >Дата операции<input
-              v-model="operationDate"
-              type="date"
-              required /></label
-          ><button class="team-primary" :disabled="chat.busy">
-            Создать расход
-          </button>
-        </form>
+          :request="r"
+          :default-open="focusedRequest === r._id"
+          @edit="editRequest"
+          @decision="decide"
+          @convert="convert"
+          @recall="recall"
+          @file="download"
+        />
       </template>
       <template v-else-if="tab === 'members'">
         <div class="team-settings">
-          <label
-            >Моя роль в чате<select
-              :value="chat.me.role"
-              aria-label="Моя роль в чате"
-              @change="
-                run(() =>
-                  chat.action(
-                    '/settings',
-                    { ownerRole: $event.target.value },
-                    'patch',
-                  ),
-                )
-              "
-            >
-              <option
-                v-for="(label, role) in chat.me.roles"
-                :key="role"
-                :value="role"
-              >
-                {{ label }}
-              </option>
-            </select></label
-          ><button @click="invitePeople">Пригласить по ссылке</button
+          <button @click="invitePeople">Пригласить по ссылке</button
           ><input
             v-if="invite"
             :value="invite"
