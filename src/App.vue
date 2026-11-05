@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
+import TeamChatHost from '@/components/TeamChatHost.vue'
 import { useMainStore } from '@/stores/mainStore'
 import { useRepairStore } from '@/stores/repairStore' // 🟢 Импортируем repairStore
 import {setHistoryIdentity,connectPreferenceHistory} from '@/utils/preferenceHistory.js'
@@ -16,6 +17,7 @@ onUnmounted(connectPreferenceHistory())
 
 // Функция для инициализации приложения
 const initializeApp = async () => {
+  if (window.location.pathname.startsWith('/team/')) return;
   try {
     
     // 🟢 1. Проверяем авторизацию. Это критично для Socket.io, 
@@ -70,6 +72,7 @@ const forceRefresh = async () => {
 
 <template>
   <RouterView />
+  <TeamChatHost />
 
   <!-- 🟢 Шторка обновления базы данных (появляется только при миграции) -->
   <div v-if="repairStore.isRepairing" class="repair-overlay">

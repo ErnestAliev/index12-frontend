@@ -847,6 +847,7 @@ const handleOperationDelete = async (op) => {
 
 
 const showCodex = ref(false);
+const dispatchTeamChat=()=>window.dispatchEvent(new Event('index12:open-team-chat'));
 </script>
 
 <template>
@@ -1002,6 +1003,7 @@ const showCodex = ref(false);
                 @action="handleAction" 
                 @open-codex="showCodex = true; showThemeSettings = false"
                 @open-calendar="showBusinessCalendar = true"
+                @open-team-chat="dispatchTeamChat"
                 @open-user-menu="openUserMenuModal"
                 @prev-month="goPrevMonth"
                 @next-month="goNextMonth"

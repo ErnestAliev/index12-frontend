@@ -1,6 +1,11 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  chat: 'M21 11.5a7.5 7.5 0 0 1-7.5 7.5H5l-3 3V11.5A7.5 7.5 0 0 1 9.5 4h4a7.5 7.5 0 0 1 7.5 7.5ZM7 10h9M7 14h6',
+  month: 'M4 5h16v16H4zM8 3v4m8-4v4M4 10h16M10 14l-2 2 2 2m4-4 2 2-2 2',
+  send: 'm21 3-7 18-4-7-7-4 18-7ZM10 14 21 3',
+  copy: 'M9 9h12v12H9zM15 9V3H3v12h6',
+  settings: 'M4 7h16M4 17h16M8 4v6m8 4v6',
   trash: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7',
   plus: 'M12 5v14M5 12h14',
   attach: 'm21 11-9 9a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7L9 17.5a2 2 0 0 1-2.8-2.8l8.5-8.5',

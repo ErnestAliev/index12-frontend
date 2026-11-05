@@ -5,6 +5,7 @@ import { getHomeRouteRedirect } from '../utils/homeLayout.js'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    { path: '/team/:token', name: 'team-chat', component: () => import('../views/TeamChatPage.vue') },
     {
       path: '/',
       name: 'home',

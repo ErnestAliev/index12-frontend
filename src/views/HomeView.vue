@@ -36,6 +36,8 @@ import RefundPopup from '@/components/RefundPopup.vue';
 import InviteEmployeeModal from '@/components/InviteEmployeeModal.vue';
 import WorkspaceDashboardModal from '@/components/WorkspaceDashboardModal.vue';
 import PaymentReceiptModal from '@/components/PaymentReceiptModal.vue';
+import {useTeamChatStore} from '@/stores/teamChatStore';
+import UiIcon from '@/components/UiIcon.vue';
 import CodexChatWindow from '@/components/CodexChatWindow.vue';
 import CodexIcon from '@/components/CodexIcon.vue';
 import EditorModal from '@/components/EditorModal.vue';
@@ -78,6 +80,7 @@ const showAboutModal = ref(false);
 
 const showWorkspaceModal = ref(false); // 🟢 NEW: Unified workspace/project modal
 const showCodex = ref(false);
+const teamChat=useTeamChatStore();
 const showReceiptModal = ref(false);   // 🟢 NEW: Payment receipt generator
 const showEditorModal = ref(false);    // Editor modal opens from header button
 const showContractorEditorModal = ref(false);
@@ -1585,6 +1588,7 @@ const handleRefundDelete = async (op) => {
           </div>
         </div>
         <div class="divider-placeholder"></div>
+        <button class="employee-chat-launcher" type="button" aria-label="Открыть чат сотрудников" title="Чат сотрудников" :aria-expanded="teamChat.open" @click.stop="teamChat.show()"><UiIcon name="chat"/><span v-if="teamChat.unread||teamChat.pending.length||teamChat.actionable" class="team-unread">{{teamChat.unread+teamChat.pending.length+teamChat.actionable}}</span></button>
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
       <main class="home-main-content" ref="mainContentRef" data-graph-workspace :aria-busy="isDataLoading">
@@ -1961,7 +1965,7 @@ const handleRefundDelete = async (op) => {
 /* Rotate triangle when expanded (header is expanded, so triangle points up to collapse) */
 .header-resizer.expanded::before { transform: rotate(180deg) scale(1.1); }
 .home-body { display: flex; flex-grow: 1; overflow: hidden; min-height: 0; }
-.home-left-panel { width: 60px; flex-shrink: 0; overflow: hidden; display: grid; grid-template-rows: var(--timeline-height, 318px) var(--divider-height, 28px) 1fr; background: var(--divider-wrapper-bg); border-right: 1px solid var(--color-border); }
+.home-left-panel { position:relative; width: 60px; flex-shrink: 0; overflow: hidden; display: grid; grid-template-rows: var(--timeline-height, 318px) var(--divider-height, 28px) 1fr; background: var(--divider-wrapper-bg); border-right: 1px solid var(--color-border); }
 .timeline-spacer { width: 100%; height: 100%; align-items: center; justify-content: center; }
 
 .column-switcher-container {
@@ -1973,6 +1977,7 @@ const handleRefundDelete = async (op) => {
   height: 100%;
   padding: 8px;
 }
+.employee-chat-launcher{position:absolute;z-index:45;left:12px;bottom:16px;width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--color-border);border-radius:8px;padding:0;background:var(--color-background-soft);color:var(--color-text);cursor:pointer}.employee-chat-launcher :deep(svg){width:20px;height:20px}.employee-chat-launcher:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}.team-unread{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--color-primary);color:white;font:10px/16px sans-serif;box-sizing:border-box}
 .y-axis-wrapper-flex { width: 100%; height: 100%; }
 .home-right-panel { 
   width: 60px; 
