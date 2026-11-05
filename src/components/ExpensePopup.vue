@@ -37,11 +37,12 @@ const props = defineProps({
   operationToEdit: { type: Object, default: null },
   approvalRequest: {type:Boolean,default:false},
   approvalRequestId:{type:String,default:null},
+  approvalSaving:Boolean, approvalConflict:Boolean, approvalError:String,
   minAllowedDate: { type: Date, default: null },
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense','approval-save']);
+const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense','approval-save','reload-approval']);
 
 const mainStore = useMainStore();
 const permissions = usePermissions();
@@ -684,7 +685,7 @@ const processSave = (preparedCategoryIds = []) => {
         payload.excludeFromTotals = true; // не учитываем в общих итогах
     }
 
-    if(props.approvalRequest){emit('approval-save',{data:{...payload,dueDate:editableDate.value},submit:sendToDirector.value});isSaving.value=false;return;}
+    if(props.approvalRequest){emit('approval-save',{data:{...payload,dueDate:editableDate.value},submit:sendToDirector.value});return;}
     emit('save', {
         mode: isEditMode.value ? 'edit' : 'create',
         id: props.operationToEdit?._id,
@@ -698,7 +699,7 @@ const processSave = (preparedCategoryIds = []) => {
 
 
 const handleSave = async () => {
-    if (isSaving.value || isInlineSaving.value) return;
+    if (isSaving.value || isInlineSaving.value || props.approvalSaving || props.approvalConflict) return;
     
     if (isIncomeOffsetMode.value) {
         if (!selectedIncomeOpId.value || !selectedIncomeOp.value) { showError('Выберите операцию дохода'); return; }
@@ -1162,10 +1163,12 @@ watch(defaultProjectId, (defId) => {
       
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
 
+      <div v-if="approvalError" class="request-save-error" role="alert">{{ approvalError }}<button v-if="approvalConflict" type="button" @click="emit('reload-approval')">Загрузить актуальные реквизиты</button></div>
+      <p v-if="approvalSaving" role="status">Сохранение заявки…</p>
       <!-- НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ -->
       <div class="popup-actions-row">
-          <button v-if="approvalRequest&&canEdit" class="btn-submit btn-expense save-wide" :disabled="isSaving" @click="sendToDirector=true;handleSave()">Согласовано мной → руководителю</button>
-          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="sendToDirector=false;handleSave()" :disabled="isSaving || isInlineSaving">
+          <button v-if="approvalRequest&&canEdit" class="btn-submit btn-expense save-wide" :disabled="isSaving || approvalSaving || approvalConflict" @click="sendToDirector=true;handleSave()">Согласовано мной → руководителю</button>
+          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="sendToDirector=false;handleSave()" :disabled="isSaving || isInlineSaving || approvalSaving || approvalConflict">
               {{ buttonText }}
           </button>
           <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
@@ -1207,6 +1210,15 @@ watch(defaultProjectId, (defId) => {
 
 .operation-comment{box-sizing:border-box;display:block;width:100%;padding:12px;margin:0 0 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background-soft);color:var(--color-text);font:inherit;resize:vertical;max-height:140px;min-height:64px}
 
+.request-draft-popup{--request-panel:#242424;--request-field:#1a1a1a;--request-text:#e7e7e7;--request-muted:#ababab;background:var(--request-panel)!important;color:var(--request-text)}
+:global([data-theme="light"]) .request-draft-popup{--request-panel:#fff;--request-field:#fff;--request-text:#263631;--request-muted:#5c6863}
+.request-draft-popup h3{color:inherit}
+.request-draft-popup .operation-comment,.request-draft-popup .custom-input-box,.request-draft-popup :deep(.select-trigger){background:var(--request-field)!important;color:var(--request-text)!important;border-color:var(--color-border)!important}
+.request-draft-popup .real-input,.request-draft-popup .date-value-text,.request-draft-popup :deep(.selected-text){color:var(--request-text)!important}
+.request-draft-popup .floating-label,.request-draft-popup :deep(.small-label),.request-draft-popup :deep(.sub-text),.request-draft-popup :deep(.right-text){color:var(--request-muted)!important}
+.request-draft-popup .operation-comment::placeholder{color:var(--request-muted);opacity:1}
+.request-save-error{font-size:13px;color:var(--color-danger);line-height:1.5;margin:12px 0}
+.request-save-error button{display:block;margin-top:8px;padding:8px 12px;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent;cursor:pointer}
 /* 🟢 CSS ПЕРЕМЕННЫЕ ДЛЯ РАСХОДА */
 .popup-content {
     --color-expense: #F36F3F; /* Оранжевый */

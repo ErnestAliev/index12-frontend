@@ -7,6 +7,7 @@ import TeamContractorSelect from "./TeamContractorSelect.vue";
 import TeamRequestCard from "./TeamRequestCard.vue";
 import { formatAmountInputEvent } from "@/utils/amountInput";
 defineProps({ mobile: Boolean });
+const emit = defineEmits(["logout"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
   tab = ref(chat.tab || "messages"),
@@ -68,12 +69,16 @@ const roleName = (role) => chat.me?.roles?.[role] || role;
 const isReviewer = computed(() =>
   ["manager", "director"].includes(chat.me?.role),
 );
-const shownMessages = computed(() => [
-  ...older.value.filter(
-    (m) => !chat.state.messages.some((n) => n._id === m._id),
+const shownMessages = computed(() =>
+  [
+    ...older.value.filter(
+      (m) => !chat.state.messages.some((n) => n._id === m._id),
+    ),
+    ...chat.state.messages,
+  ].filter(
+    (m) => !m.deletedAt && !chat.state.deletedMessageIds?.includes(m._id),
   ),
-  ...chat.state.messages,
-]);
+);
 watch(
   () => chat.me?.workspaceId,
   () => {
@@ -164,7 +169,8 @@ async function loadOlder() {
     const { data } = await teamApi.get("/state", {
       params: { before: first._id },
     });
-    older.value = [...data.messages, ...older.value];
+    older.value = [...data.messages, ...older.value].slice(-1000);
+    chat.olderMessageIds = older.value.map((m) => m._id);
     chat.state.hasMore = data.hasMore;
   });
 }
@@ -235,6 +241,27 @@ async function dismissPdf(message, file) {
     chat.action(`/messages/${message._id}/files/${file.fileId}/dismiss`, {}),
   );
 }
+async function removeMessage(row) {
+  if (!window.confirm("Удалить сообщение для всех участников?")) return;
+  const result = await run(() =>
+    chat.action(`/messages/${row._id}`, {}, "delete"),
+  );
+  if (result) older.value = older.value.filter((m) => m._id !== row._id);
+}
+async function removeRequest(row) {
+  const question = row.operationId
+    ? "Удалить карточку заявки? Записанный расход останется на таймлайне."
+    : "Удалить заявку и её черновик с таймлайна?";
+  if (!window.confirm(question)) return;
+  const result = await run(() =>
+    chat.action(
+      `/requests/${row._id}`,
+      { expectedVersion: row.version },
+      "delete",
+    ),
+  );
+  if (result) chat.notice = "Заявка удалена";
+}
 async function invitePeople() {
   await run(async () => {
     const data = await chat.action("/invite", {});
@@ -249,26 +276,21 @@ async function copy(text) {
 <template>
   <div class="team-pane">
     <div v-if="chat.me" class="team-identity">
-      <span>{{ chat.me.displayName }}</span
-      ><select
-        v-if="chat.me.owner"
-        :value="chat.me.role"
-        aria-label="Моя роль в чате"
-        :disabled="chat.busy"
-        @change="
-          run(() =>
-            chat.action(
-              '/settings',
-              { ownerRole: $event.target.value },
-              'patch',
-            ),
-          )
-        "
+      <span>{{ chat.me.displayName }}</span>
+      <span class="team-role"
+        >{{ roleName(chat.me.role)
+        }}<span v-if="chat.me.owner" class="team-admin"
+          >Администратор</span
+        ></span
       >
-        <option v-for="(label, key) in chat.me.roles" :key="key" :value="key">
-          {{ label }}
-        </option></select
-      ><span v-else>{{ roleName(chat.me.role) }}</span>
+      <button
+        v-if="!chat.me.owner"
+        type="button"
+        class="team-logout"
+        @click="emit('logout')"
+      >
+        Выйти
+      </button>
     </div>
     <nav class="team-tabs" aria-label="Разделы чата">
       <button :aria-pressed="tab === 'messages'" @click="tab = 'messages'">
@@ -289,6 +311,16 @@ async function copy(text) {
         <small v-if="chat.pending.length">{{ chat.pending.length }}</small>
       </button>
     </nav>
+    <div v-if="chat.notice" class="team-notice" role="status">
+      <span>{{ chat.notice }}</span
+      ><button
+        type="button"
+        aria-label="Скрыть уведомление"
+        @click="chat.notice = ''"
+      >
+        <UiIcon name="close" />
+      </button>
+    </div>
     <div v-if="localError || chat.error" class="team-error" role="alert">
       {{ localError || chat.error }}
     </div>
@@ -379,15 +411,28 @@ async function copy(text) {
                   </button>
                 </div>
               </div></template
-            ><button
-              v-if="m.text"
-              class="team-copy"
-              title="Копировать"
-              aria-label="Копировать сообщение"
-              @click="copy(m.text)"
             >
-              <UiIcon name="copy" />
-            </button>
+            <div class="team-message-actions">
+              <button
+                v-if="chat.me.owner || m.authorId === chat.me.actorId"
+                type="button"
+                class="team-copy"
+                aria-label="Удалить сообщение"
+                title="Удалить сообщение"
+                :disabled="chat.busy"
+                @click="removeMessage(m)"
+              >
+                <UiIcon name="trash" /></button
+              ><button
+                v-if="m.text"
+                class="team-copy"
+                title="Копировать"
+                aria-label="Копировать сообщение"
+                @click="copy(m.text)"
+              >
+                <UiIcon name="copy" />
+              </button>
+            </div>
           </div>
         </article>
       </div>
@@ -464,14 +509,37 @@ async function copy(text) {
           </article>
           <details>
             <summary>Остатки на счетах</summary>
-            <div
+            <details
               v-for="a in chat.state.financial.accounts"
               :key="a._id"
-              class="team-balance"
+              class="team-account-forecast"
             >
-              <span>{{ a.name }}</span
-              ><span>{{ money(a.balanceCents) }}</span>
-            </div>
+              <summary>
+                <span
+                  >{{ a.name
+                  }}<small>{{
+                    chat.state.companies.find((c) => c._id === a.companyId)
+                      ?.name
+                  }}</small></span
+                ><span>{{ money(a.balanceCents) }}</span>
+              </summary>
+              <dl>
+                <div>
+                  <dt>На согласовании</dt>
+                  <dd>−{{ money(a.pendingCents || 0) }}</dd>
+                </div>
+                <div>
+                  <dt>Утверждено</dt>
+                  <dd>−{{ money(a.approvedCents || 0) }}</dd>
+                </div>
+                <div>
+                  <dt>После всех заявок</dt>
+                  <dd :class="{ negative: a.afterRequestsCents < 0 }">
+                    {{ money(a.afterRequestsCents ?? a.balanceCents) }}
+                  </dd>
+                </div>
+              </dl>
+            </details>
           </details>
         </div>
         <button
@@ -542,10 +610,29 @@ async function copy(text) {
           @convert="convert"
           @recall="recall"
           @file="download"
+          @delete="removeRequest"
         />
       </template>
       <template v-else-if="tab === 'members'">
         <div class="team-settings">
+          <select
+            v-if="chat.me.owner"
+            :value="chat.me.role"
+            aria-label="Моя роль в чате"
+            :disabled="chat.busy"
+            @change="
+              run(() =>
+                chat.action(
+                  '/settings',
+                  { ownerRole: $event.target.value },
+                  'patch',
+                ),
+              )
+            "
+          >
+            <option value="manager">Управляющий</option>
+            <option value="director">Руководитель компании</option>
+          </select>
           <button @click="invitePeople">Пригласить по ссылке</button
           ><input
             v-if="invite"

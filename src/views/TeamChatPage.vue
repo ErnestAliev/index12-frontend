@@ -16,7 +16,9 @@ const route = useRoute(),
   workspaceName = ref(""),
   busy = ref(false),
   valid = ref(false);
+const originalTitle = document.title;
 onMounted(async () => {
+  document.title = "INDEX12 Чат";
   chat.stop();
   try {
     const { data } = await teamApi.get(`/invite/${route.params.token}`);
@@ -27,7 +29,10 @@ onMounted(async () => {
     error.value = teamError(e);
   }
 });
-onBeforeUnmount(() => chat.stop());
+onBeforeUnmount(() => {
+  document.title = originalTitle;
+  chat.stop();
+});
 async function submit() {
   busy.value = true;
   error.value = "";
@@ -123,12 +128,14 @@ async function logout() {
     <ChatWindowFrame
       v-else
       :open="true"
+      :closable="false"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"
       storage-key="index12-team-chat-window-size"
-      @close="logout"
-      ><template #icon><UiIcon name="chat" /></template><TeamChatPane mobile/></ChatWindowFrame>
+      ><template #icon><UiIcon name="chat" /></template
+      ><TeamChatPane mobile @logout="logout"
+    /></ChatWindowFrame>
   </main>
 </template>
 <style scoped>

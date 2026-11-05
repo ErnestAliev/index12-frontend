@@ -16,13 +16,17 @@ const main = useMainStore(),
   approvalError = ref("");
 const approvalPanel = ref(null),
   edit = ref(null),
-  editError = ref("");
+  editError = ref(""),
+  savingPlacement = ref(false),
+  editConflict = ref(false);
 async function editRequest(event) {
   const info = event.detail || {},
     row =
       chat.state.requests.find((r) => r._id === info.id) ||
       chat.state.placements?.find((r) => r._id === info.id);
-  if (!row || !chat.me?.owner || chat.me.role !== "manager") return;
+  if (!row || !chat.me?.owner || savingPlacement.value) return;
+  editError.value = "";
+  editConflict.value = false;
   delete document.body.dataset.teamRequestDragging;
   if (row.state !== "manager_review") {
     chat.tab = "requests";
@@ -78,6 +82,7 @@ async function editRequest(event) {
       await chat.action(`/requests/${row._id}/placement`, {
         expectedVersion: row.version,
         operation,
+        mutationId: crypto.randomUUID(),
       });
       chat.tab = "requests";
       return;
@@ -90,24 +95,62 @@ async function editRequest(event) {
   edit.value = { row, date, cell, operation, key: crypto.randomUUID() };
 }
 async function savePlacement(payload) {
-  if (!edit.value) return;
+  if (!edit.value || savingPlacement.value) return;
+  savingPlacement.value = true;
+  editError.value = "";
+  editConflict.value = false;
+  const current = edit.value,
+    workspace = chat.me?.workspaceId;
+  const fingerprint = JSON.stringify(payload);
+  if (current.mutation?.fingerprint !== fingerprint)
+    current.mutation = { fingerprint, id: crypto.randomUUID() };
   try {
-    await chat.action(`/requests/${edit.value.row._id}/placement`, {
-      expectedVersion: edit.value.row.version,
+    const result = await chat.action(`/requests/${current.row._id}/placement`, {
+      expectedVersion: current.row.version,
+      mutationId: current.mutation.id,
       operation: payload.data,
       submit: payload.submit,
     });
-    chat.requestedRequestId = edit.value.row._id;
+    if (chat.me?.workspaceId !== workspace || edit.value !== current || !result)
+      return;
+    chat.requestedRequestId = current.row._id;
+    const row = result.request;
+    chat.notice = `${payload.submit ? "Передано руководителю" : "Заявка размещена"} · ${row.dueDate.split("-").reverse().join(".")} · ${row.placement.accountName}`;
     edit.value = null;
     editError.value = "";
     chat.tab = "requests";
     chat.show();
   } catch (e) {
-    editError.value = teamError(e);
+    if (chat.me?.workspaceId !== workspace || edit.value !== current) return;
+    editConflict.value = e.response?.status === 409;
+    editError.value = editConflict.value
+      ? "Другой участник изменил заявку. Ваши данные остались в форме; загрузите актуальные реквизиты перед повторной отправкой."
+      : teamError(e);
+  } finally {
+    savingPlacement.value = false;
   }
 }
-function closeEditor() {
+async function reloadEditor() {
+  if (!edit.value || savingPlacement.value) return;
+  const id = edit.value.row._id;
+  await chat.refresh();
+  const row = chat.state.requests.find((r) => r._id === id);
+  editError.value = "";
+  editConflict.value = false;
+  if (!row) {
+    edit.value = null;
+    chat.notice = "Заявка удалена другим участником";
+    chat.show();
+    return;
+  }
   edit.value = null;
+  await editRequest({ detail: { id } });
+}
+function closeEditor() {
+  if (savingPlacement.value) return;
+  edit.value = null;
+  editError.value = "";
+  editConflict.value = false;
   chat.tab = "requests";
   chat.show();
 }
@@ -159,6 +202,9 @@ watch(
   ],
   ([actor, workspace, publicPage]) => {
     dismissed.value = [];
+    edit.value = null;
+    editError.value = "";
+    editConflict.value = false;
     if (publicPage) return;
     if (actor && workspace) void chat.start(String(workspace));
     else chat.stop();
@@ -214,11 +260,15 @@ async function decide(status) {
       :operation-to-edit="edit.operation"
       approval-request
       :approval-request-id="edit.row._id"
+      :approval-saving="savingPlacement"
+      :approval-conflict="editConflict"
+      :approval-error="editError"
+      @reload-approval="reloadEditor"
       @close="closeEditor"
       @approval-save="savePlacement"
     />
     <div
-      v-if="editError"
+      v-if="editError && !edit"
       class="placement-error"
       role="alert"
       @click="editError = ''"

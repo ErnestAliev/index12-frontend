@@ -22,7 +22,18 @@ export async function verifyTeamChat({
     define: {
       "import.meta.env.VITE_API_BASE_URL": JSON.stringify(origin + "/api"),
     },
-    server: { host: "127.0.0.1", port: 5173, strictPort: true },
+    server: {
+      host: "127.0.0.1",
+      port: 5173,
+      strictPort: true,
+      proxy: {
+        "/team-manifest": {
+          target: origin,
+          rewrite: (path) =>
+            path.replace("/team-manifest", "/api/team-chat/manifest"),
+        },
+      },
+    },
   });
   let browser, page;
   try {
@@ -169,14 +180,70 @@ export async function verifyTeamChat({
       .getByRole("button", { name: "Отправить", exact: true })
       .click();
     await chat.getByText("Mobile employee online", { exact: true }).waitFor();
+    assert.equal(
+      await mobile.getByRole("button", { name: /^Заявки/ }).count(),
+      1,
+    );
+    assert.equal(
+      await mobile.getByRole("button", { name: /^Участники/ }).count(),
+      0,
+    );
+    assert.equal(
+      await mobile
+        .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
+        .count(),
+      0,
+    );
+    const manifestUrl = await phone
+      .locator('link[rel="manifest"]')
+      .getAttribute("href");
+    const manifestResponse = await employee.request.get(
+      new URL(manifestUrl, phone.url()).href,
+    );
+    const manifestData = await manifestResponse.json();
+    assert.equal(manifestData.start_url, "/team/" + token);
+    const persisted = await employee.storageState();
+    const persistentCookie = persisted.cookies.find(
+      (c) => c.name === "index12_team",
+    );
+    assert.ok(
+      persistentCookie &&
+        persistentCookie.httpOnly &&
+        persistentCookie.expires > Date.now() / 1000 + 300 * 86400,
+    );
+    const reopenedDevice = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      storageState: persisted,
+    });
+    const resumedPage = await reopenedDevice.newPage();
+    await resumedPage.goto("http://127.0.0.1:5173" + manifestData.start_url, {
+      waitUntil: "domcontentloaded",
+    });
+    await resumedPage
+      .getByRole("dialog", { name: "Чат Сотрудники", exact: true })
+      .waitFor();
+    assert.equal(
+      await resumedPage
+        .getByRole("button", { name: "Войти", exact: true })
+        .count(),
+      0,
+    );
+    await reopenedDevice.close();
+    await phone.reload();
+    await mobile.waitFor();
+    await phone.keyboard.press("Escape");
+    await phone.reload();
+    await mobile.waitFor();
+    assert.equal(
+      await mobile.getByRole("button", { name: /^Заявки/ }).count(),
+      1,
+    );
     await phone.screenshot({ path: `${output}/team-chat-phone.png` });
-    await mobile
-      .locator(".team-compose-area input[type=file]")
-      .setInputFiles({
-        name: "invoice-ui.pdf",
-        mimeType: "application/pdf",
-        buffer: Buffer.from("%PDF-1.4\ncontrolled UI fixture"),
-      });
+    await mobile.locator(".team-compose-area input[type=file]").setInputFiles({
+      name: "invoice-ui.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\ncontrolled UI fixture"),
+    });
     await mobile
       .getByRole("button", { name: "Отправить", exact: true })
       .click();
@@ -291,13 +358,132 @@ export async function verifyTeamChat({
       .locator(".request-card")
       .filter({ hasText: "Browser cleaning" });
     await staged.getByText("Team cash", { exact: true }).waitFor();
+    // Another participant changes the request while this form is open.
     await staged
+      .getByRole("button", { name: "Изменить реквизиты", exact: true })
+      .click();
+    await popup.waitFor();
+    const snapshot = await context.request.get(origin + "/api/team-chat/state");
+    const pendingRequest = (await snapshot.json()).requests.find(
+      (r) => r.title === "Browser cleaning",
+    );
+    const competing = await context.request.post(
+      origin + `/api/team-chat/requests/${pendingRequest._id}/placement`,
+      {
+        data: {
+          expectedVersion: pendingRequest.version,
+          operation: {
+            ...pendingRequest.placement,
+            comment: "Обновлено с другого устройства",
+          },
+        },
+      },
+    );
+    assert.equal(competing.status(), 200);
+    await popup
+      .getByLabel("Комментарий к расходу", { exact: true })
+      .fill("Мой несохранённый комментарий");
+    await popup
       .getByRole("button", {
         name: "Согласовано мной → руководителю",
         exact: true,
       })
       .click();
+    await popup.getByText(/Другой участник изменил заявку/).waitFor();
+    assert.equal(
+      await popup
+        .getByLabel("Комментарий к расходу", { exact: true })
+        .inputValue(),
+      "Мой несохранённый комментарий",
+    );
+    await popup
+      .getByRole("button", {
+        name: "Загрузить актуальные реквизиты",
+        exact: true,
+      })
+      .click();
+    await popup.getByLabel("Комментарий к расходу", { exact: true }).waitFor();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[aria-label="Комментарий к расходу"]')
+          ?.value === "Обновлено с другого устройства",
+    );
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (t) => document.documentElement.setAttribute("data-theme", t),
+        theme,
+      );
+      const colors = await popup
+        .getByLabel("Комментарий к расходу", { exact: true })
+        .evaluate((el) => ({
+          color: getComputedStyle(el).color,
+          background: getComputedStyle(el).backgroundColor,
+        }));
+      assert.notEqual(colors.color, colors.background);
+      if (theme === "dark") assert.notEqual(colors.color, "rgb(0, 0, 0)");
+      await page.screenshot({
+        path: `${output}/team-request-editor-${theme}.png`,
+      });
+    }
+    let submissions = 0;
+    await context.route(
+      `**/team-chat/requests/${pendingRequest._id}/placement`,
+      async (route) => {
+        submissions++;
+        await route.continue();
+      },
+    );
+    let failedIdentity = false;
+    await context.route("**/team-chat/me", async (route) => {
+      if (!failedIdentity) {
+        failedIdentity = true;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: '{"message":"controlled refresh failure"}',
+        });
+      } else await route.continue();
+    });
+    // Two immediate clicks must produce one committed save; an identity-refresh error cannot undo it.
+    await popup
+      .getByRole("button", {
+        name: "Согласовано мной → руководителю",
+        exact: true,
+      })
+      .evaluate((button) => {
+        button.click();
+        button.click();
+      });
+    await popup.waitFor({ state: "hidden" });
     await staged.getByText("У руководителя", { exact: true }).waitFor();
+    await chat
+      .getByRole("status")
+      .getByText(/Передано руководителю/)
+      .waitFor();
+    assert.equal(submissions, 1);
+    assert.equal(failedIdentity, true);
+    await context.unroute("**/team-chat/me");
+    await context.unroute(
+      `**/team-chat/requests/${pendingRequest._id}/placement`,
+    );
+    // The sender can delete their own message; all viewers lose it.
+    await mobile
+      .getByRole("button", { name: "Сообщения", exact: true })
+      .click();
+    phone.once("dialog", (dialog) => dialog.accept());
+    await mobile
+      .locator(".team-message")
+      .filter({ hasText: "Mobile employee online" })
+      .getByRole("button", { name: "Удалить сообщение", exact: true })
+      .click();
+    await chat.getByRole("button", { name: "Сообщения", exact: true }).click();
+    await chat
+      .getByText("Mobile employee online", { exact: true })
+      .waitFor({ state: "hidden" });
+    await chat.getByRole("button", { name: /^Заявки/ }).click();
+    await staged
+      .getByRole("button", { name: "Удалить заявку", exact: true })
+      .waitFor();
     await chat
       .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
       .click();

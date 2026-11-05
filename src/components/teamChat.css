@@ -484,3 +484,90 @@
   background: #b7433b;
   color: #fff;
 }
+
+.team-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.team-admin {
+  padding: 4px 6px;
+  border: 1px solid var(--codex-pane-border);
+  border-radius: 4px;
+  font-size: 10px;
+}
+.team-pane .team-logout {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  color: var(--codex-pane-muted);
+}
+.team-notice {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--codex-pane-border);
+  flex: none;
+}
+.team-pane .team-notice button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.team-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+}
+.team-pane .team-message-actions .team-copy {
+  margin: 0;
+}
+.team-account-forecast {
+  border-top: 1px solid var(--codex-pane-border);
+  padding: 12px 0;
+}
+.team-account-forecast > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+}
+.team-account-forecast > summary small {
+  display: block;
+  margin-top: 4px;
+  color: var(--codex-pane-muted);
+  font-size: 11px;
+}
+.team-account-forecast > summary > span:last-child {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.team-account-forecast dl {
+  margin: 12px 0 0;
+}
+@media (max-width: 400px) {
+  .team-identity {
+    gap: 8px;
+  }
+  .team-role {
+    font-size: 10px;
+    white-space: normal;
+  }
+  .team-admin {
+    font-size: 9px;
+  }
+}

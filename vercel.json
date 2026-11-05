@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/team-manifest/:token", "destination": "https://api.index12.com/api/team-chat/manifest/:token" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

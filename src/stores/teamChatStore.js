@@ -14,6 +14,8 @@ export const teamApi = axios.create({
 export const teamError = (e) =>
   e.response?.data?.message || e.message || "Не удалось связаться с чатом";
 export const useTeamChatStore = defineStore("teamChat", () => {
+  const notice = ref(""),
+    olderMessageIds = ref([]);
   const tab = ref("messages"),
     requestedRequestId = ref(null);
   const me = ref(null),
@@ -29,11 +31,10 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     () =>
       state.value.requests.filter(
         (r) =>
-          (r.state === "manager_review" && me.value?.role === "manager") ||
+          (r.state === "manager_review" &&
+            (me.value?.owner || me.value?.role === "manager")) ||
           (r.state === "director_review" && me.value?.role === "director") ||
-          (r.state === "ready" &&
-            me.value?.owner &&
-            me.value?.role === "manager"),
+          (r.state === "ready" && me.value?.owner),
       ).length,
   );
   let generation = 0,
@@ -58,6 +59,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     source = null;
     me.value = null;
     state.value = { messages: [], requests: [], members: [], companies: [] };
+    notice.value = "";
+    olderMessageIds.value = [];
     open.value = false;
     tab.value = "messages";
     requestedRequestId.value = null;
@@ -68,6 +71,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     lastMessage = "";
     sendId = null;
     delete teamApi.defaults.headers.common["x-index12-workspace-id"];
+    delete teamApi.defaults.headers.common["x-index12-chat-only"];
     window.removeEventListener("focus", wake);
     document.removeEventListener("visibilitychange", wake);
     running = false;
@@ -77,13 +81,18 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     const g = generation,
       t = ++ticket;
     try {
-      const { data } = await teamApi.get("/state");
+      const { data } = await teamApi.get("/state", {
+        params: olderMessageIds.value.length
+          ? { messageIds: olderMessageIds.value.join(",") }
+          : {},
+      });
       if (g !== generation || t !== ticket) return;
       const newest = data.messages.at(-1)?._id || "";
       if (loaded && !open.value && newest !== lastMessage) unread.value++;
       lastMessage = newest;
       loaded = true;
       state.value = data;
+      if (data.identity) me.value = data.identity;
       error.value = "";
     } catch (e) {
       if (g === generation && t === ticket) {
@@ -148,6 +157,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     workspace = id;
     const g = generation;
     if (id) teamApi.defaults.headers.common["x-index12-workspace-id"] = id;
+    else teamApi.defaults.headers.common["x-index12-chat-only"] = "1";
     try {
       const { data } = await teamApi.get("/me");
       if (g !== generation) return;
@@ -164,7 +174,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       await refresh();
       if (g !== generation) return;
       source = new EventSource(
-        `${base}/team-chat/events?workspaceId=${encodeURIComponent(data.workspaceId)}`,
+        `${base}/team-chat/events?workspaceId=${encodeURIComponent(data.workspaceId)}${id ? "" : "&chatOnly=1"}`,
         { withCredentials: true },
       );
       source.addEventListener("changed", schedule);
@@ -177,12 +187,33 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     const g = generation;
     busy.value = true;
     try {
-      const { data } = await teamApi[method](path, body);
+      const { data } = await teamApi.request({ url: path, method, data: body });
       if (g !== generation) return;
-      const { data: identity } = await teamApi.get("/me");
-      if (g !== generation) return;
-      me.value = identity;
-      await refresh();
+      // The mutation is already committed. A subsequent refresh failure must not turn it into a failed save.
+      ++ticket;
+      if (data.request) {
+        const index = state.value.requests.findIndex(
+          (r) => r._id === data.request._id,
+        );
+        if (index < 0) state.value.requests.unshift(data.request);
+        else state.value.requests[index] = data.request;
+      }
+      if (data.deletedRequestId)
+        state.value.requests = state.value.requests.filter(
+          (r) => r._id !== data.deletedRequestId,
+        );
+      if (data.deletedMessageId)
+        state.value.messages = state.value.messages.filter(
+          (m) => m._id !== data.deletedMessageId,
+        );
+      try {
+        const { data: identity } = await teamApi.get("/me");
+        if (g !== generation) return data;
+        me.value = identity;
+      } catch {
+        /* Recover identity through the next state refresh. */
+      }
+      if (g === generation) await refresh();
       return data;
     } catch (e) {
       if (g === generation) {
@@ -211,6 +242,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    notice,
+    olderMessageIds,
     tab,
     requestedRequestId,
     state,

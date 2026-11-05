@@ -16,6 +16,7 @@ import CodexGlyph from "./CodexGlyph.vue";
 
 const props = defineProps({
   open: Boolean,
+  closable: { type: Boolean, default: true },
   mobile: Boolean,
   title: { type: String, default: "Codex" },
   windowId: { type: String, default: "codex-chat-window" },
@@ -151,7 +152,7 @@ function updateViewport() {
   viewport.value = readViewport();
 }
 function escape(event) {
-  if (props.open && event.key === "Escape") {
+  if (props.open && props.closable && event.key === "Escape") {
     event.stopPropagation();
     emit("close");
   }
@@ -211,6 +212,7 @@ onBeforeUnmount(() => {
       <header class="codex-window-header">
         <slot name="icon"><CodexIcon /></slot><span>{{ title }}</span>
         <button
+          v-if="closable"
           type="button"
           class="codex-close"
           title="Закрыть"
@@ -256,7 +258,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-:global(body[data-team-request-dragging] #team-chat-window){pointer-events:none;opacity:.2}
+:global(body[data-team-request-dragging] #team-chat-window) {
+  pointer-events: none;
+  opacity: 0.2;
+}
 
 .codex-chat-window {
   --codex-pane-bg: var(--bg-main, #1a1a1a);

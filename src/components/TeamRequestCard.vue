@@ -5,7 +5,14 @@ const props = defineProps({
     request: { type: Object, required: true },
     defaultOpen: Boolean,
   }),
-  emit = defineEmits(["edit", "decision", "convert", "recall", "file"]);
+  emit = defineEmits([
+    "edit",
+    "decision",
+    "convert",
+    "recall",
+    "file",
+    "delete",
+  ]);
 const chat = useTeamChatStore(),
   expanded = ref(props.defaultOpen),
   r = computed(() => props.request);
@@ -26,7 +33,18 @@ const labels = {
   recorded: "Расход создан",
   rejected: "Отклонено",
 };
-const manager = computed(() => chat.me?.owner && chat.me?.role === "manager");
+const accountForecast = computed(() =>
+  chat.state.financial?.accounts?.find(
+    (a) => a._id === r.value.placement?.accountId,
+  ),
+);
+const canDelete = computed(
+  () =>
+    chat.me?.owner ||
+    ["manager", "director"].includes(chat.me?.role) ||
+    (r.value.authorId === chat.me?.actorId && !r.value.operationId),
+);
+const manager = computed(() => chat.me?.owner);
 const money = (value) =>
   new Intl.NumberFormat("ru-KZ", { style: "currency", currency: "KZT" }).format(
     value / 100,
@@ -136,6 +154,23 @@ function drag(event) {
       >
         <strong>Комментарий сотрудника:</strong> {{ r.authorComment }}
       </p>
+      <dl
+        v-if="accountForecast && !r.operationId"
+        class="request-account-balances"
+      >
+        <div>
+          <dt>Сейчас на счёте</dt>
+          <dd>{{ money(accountForecast.balanceCents) }}</dd>
+        </div>
+        <div>
+          <dt>После этой заявки</dt>
+          <dd>{{ money(accountForecast.balanceCents - r.amountCents) }}</dd>
+        </div>
+        <div>
+          <dt>С учётом всех заявок</dt>
+          <dd>{{ money(accountForecast.afterRequestsCents) }}</dd>
+        </div>
+      </dl>
       <p v-if="r.comment" class="request-comment">{{ r.comment }}</p>
       <button
         v-if="r.sourceFileId"
@@ -145,6 +180,15 @@ function drag(event) {
         Открыть PDF-счёт
       </button>
       <div class="request-actions">
+        <button
+          v-if="canDelete"
+          type="button"
+          :disabled="chat.busy"
+          class="request-delete"
+          @click="emit('delete', r)"
+        >
+          Удалить заявку
+        </button>
         <template v-if="manager && r.state === 'manager_review'"
           ><button type="button" @click="emit('edit', r)">
             {{

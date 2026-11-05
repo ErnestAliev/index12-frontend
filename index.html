@@ -9,6 +9,10 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
+  <script>
+    const teamInvite = location.pathname.match(/^\/team\/([A-Za-z0-9_-]{20,100})$/);
+    if (teamInvite) document.querySelector('link[rel="manifest"]').href = '/team-manifest/' + teamInvite[1];
+  </script>
 
   <!-- 🟢 FIX: Жесткая фиксация viewport для предотвращения зума на мобильных -->
   <meta name="viewport"
