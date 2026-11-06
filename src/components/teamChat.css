@@ -775,3 +775,60 @@
   flex: none;
   box-shadow: 0 -8px 0 var(--codex-pane-bg);
 }
+
+.team-bubble {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.team-message-content {
+  user-select: none;
+}
+.team-bubble:focus-visible {
+  outline: 2px solid var(--codex-pane-focus);
+  outline-offset: 2px;
+}
+.team-forwarded {
+  display: block;
+  font-size: 11px;
+  color: var(--codex-pane-muted);
+  margin: 8px 0;
+}
+.team-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.team-pane .team-reactions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.team-reactions button[aria-pressed="true"] {
+  border-color: var(--codex-pane-accent);
+}
+.team-reactions span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.team-message-meta {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--codex-pane-muted);
+}
+.team-message-meta .message-rejected {
+  color: var(--codex-pane-danger);
+}
+
+.team-pane .team-reactions button {
+  background: var(--codex-pane-user);
+  color: var(--codex-pane-text);
+}

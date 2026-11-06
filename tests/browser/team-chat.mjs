@@ -112,17 +112,42 @@ export async function verifyTeamChat({
       .inputValue();
     assert.ok(generated.includes("/team/"));
     token = generated.split("/").at(-1);
-    await chat
-      .getByLabel("Моя роль в чате", { exact: true })
-      .selectOption("director");
-    await page.waitForResponse(
-      (r) => r.url().includes("/team-chat/me") && r.status() === 200,
-    );
-    await chat
-      .getByLabel("Моя роль в чате", { exact: true })
-      .selectOption("manager");
-    await page.waitForResponse(
-      (r) => r.url().includes("/team-chat/me") && r.status() === 200,
+    for (const role of ["director", "employee", "manager"]) {
+      const saved = page.waitForResponse(
+        (r) =>
+          r.url().endsWith("/team-chat/settings") &&
+          r.request().method() === "PATCH" &&
+          r.status() === 200,
+      );
+      await chat
+        .getByLabel("Моя роль в чате", { exact: true })
+        .selectOption(role);
+      await saved;
+      await page.waitForFunction(
+        (role) =>
+          document.querySelector('[aria-label="Моя роль в чате"]')?.value ===
+            role &&
+          !document.querySelector('[aria-label="Моя роль в чате"]').disabled,
+        role,
+      );
+      assert.equal(
+        await chat.getByRole("tab", { name: /^Участники/ }).count(),
+        1,
+      );
+      assert.equal(
+        await chat
+          .getByRole("button", { name: "Пригласить по ссылке", exact: true })
+          .isEnabled(),
+        true,
+      );
+    }
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await launcher.waitFor();
+    await launcher.click();
+    await chat.getByRole("tab", { name: /^Участники/ }).click();
+    assert.equal(
+      await chat.getByLabel("Моя роль в чате", { exact: true }).inputValue(),
+      "manager",
     );
     await chat.getByRole("tab", { name: "Сообщения", exact: true }).click();
     // A fresh invitee registers from a different browser context, with no INDEX12 access.
@@ -232,6 +257,162 @@ export async function verifyTeamChat({
     await phone.reload();
     await mobile.waitFor();
     assert.equal(await mobile.getByRole("tab", { name: /^Заявки/ }).count(), 1);
+    async function holdMessage(targetPage, bubble) {
+      await targetPage.bringToFront();
+      await bubble.scrollIntoViewIfNeeded();
+      const box = await bubble.boundingBox();
+      await targetPage.mouse.move(
+        box.x + box.width / 2,
+        box.y + Math.min(30, box.height / 2),
+      );
+      await targetPage.mouse.down();
+      const menu = targetPage.getByRole("dialog", {
+        name: "Сообщение",
+        exact: true,
+      });
+      await menu.waitFor();
+      await targetPage.mouse.up();
+      return menu;
+    }
+    assert.equal(await mobile.locator(".team-message-actions").count(), 0);
+    const originalMobile = () =>
+      mobile
+        .locator(".team-message")
+        .filter({ hasNot: phone.locator(".team-forwarded") })
+        .filter({ hasText: "Mobile employee online" })
+        .locator(".team-bubble");
+    let menu = await holdMessage(phone, originalMobile());
+    assert.equal(
+      await menu.getByRole("button", { name: /Согласовать/ }).count(),
+      0,
+    );
+    for (const theme of ["dark", "light"]) {
+      await phone.evaluate(
+        (t) => document.documentElement.setAttribute("data-theme", t),
+        theme,
+      );
+      await phone.screenshot({
+        path: `${output}/team-message-menu-${theme}.png`,
+      });
+    }
+    await menu.getByRole("button", { name: "Реакция 👍", exact: true }).click();
+    await originalMobile()
+      .getByRole("button", { name: "Реакция 👍: 1", exact: true })
+      .waitFor();
+    const ownerBubble = () =>
+      chat
+        .locator(".team-message")
+        .filter({ hasNot: page.locator(".team-forwarded") })
+        .filter({ hasText: "Mobile employee online" })
+        .locator(".team-bubble");
+    menu = await holdMessage(page, ownerBubble());
+    assert.equal(
+      await menu
+        .getByRole("button", { name: "Редактировать", exact: true })
+        .count(),
+      0,
+    );
+    await menu
+      .getByRole("button", { name: "Согласовать → руководителю", exact: true })
+      .click();
+    await ownerBubble().getByText("У руководителя", { exact: true }).waitFor();
+    const directorContext = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+      }),
+      directorPhone = await directorContext.newPage();
+    directorPhone.on("pageerror", (e) => errors.push(e.message));
+    await directorPhone.goto("http://127.0.0.1:5173/team/" + token, {
+      waitUntil: "domcontentloaded",
+    });
+    await directorPhone
+      .getByLabel("Номер телефона", { exact: true })
+      .fill("+77010000002");
+    await directorPhone
+      .getByLabel("Пароль", { exact: true })
+      .fill("test-passphrase-2026");
+    await directorPhone
+      .getByRole("button", { name: "Войти", exact: true })
+      .click();
+    const directorChat = directorPhone.getByRole("dialog", {
+      name: "Чат Сотрудники",
+      exact: true,
+    });
+    await directorChat.waitFor();
+    assert.equal(
+      await directorChat.getByRole("tab", { name: /Участники/ }).count(),
+      0,
+    );
+    const directorBubble = directorChat
+      .locator(".team-message")
+      .filter({ hasText: "Mobile employee online" })
+      .locator(".team-bubble");
+    menu = await holdMessage(directorPhone, directorBubble);
+    await menu
+      .getByRole("button", {
+        name: "Согласовать как руководитель",
+        exact: true,
+      })
+      .click();
+    await directorBubble.getByText("Согласовано", { exact: true }).waitFor();
+    menu = await holdMessage(directorPhone, directorBubble);
+    await menu
+      .getByRole("button", { name: "История согласования", exact: true })
+      .click();
+    const approvalHistory = directorPhone.getByRole("dialog", {
+      name: "Согласование",
+      exact: true,
+    });
+    assert.equal(
+      await approvalHistory.locator(".message-approval-history li").count(),
+      2,
+    );
+    await approvalHistory
+      .getByRole("button", { name: "Закрыть меню сообщения", exact: true })
+      .click();
+    await directorContext.close();
+    await phone.bringToFront();
+    await phone.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await originalMobile().getByText("Согласовано", { exact: true }).waitFor();
+    menu = await holdMessage(phone, originalMobile());
+    await menu
+      .getByRole("button", { name: "Редактировать", exact: true })
+      .click();
+    const editMessage = phone.getByRole("dialog", {
+      name: "Редактировать",
+      exact: true,
+    });
+    await editMessage
+      .getByLabel("Текст сообщения", { exact: true })
+      .fill("Mobile employee online — edited");
+    await editMessage
+      .getByRole("button", { name: "Сохранить", exact: true })
+      .click();
+    await originalMobile()
+      .getByText("Mobile employee online — edited", { exact: true })
+      .waitFor();
+    assert.equal(
+      await originalMobile().getByText("Согласовано", { exact: true }).count(),
+      0,
+    );
+    menu = await holdMessage(phone, originalMobile());
+    await menu.getByRole("button", { name: "Переслать", exact: true }).click();
+    await phone
+      .getByRole("dialog", { name: "Переслать", exact: true })
+      .getByRole("button", { name: "Calendar", exact: true })
+      .click();
+    const forwardedBubble = mobile
+      .locator(".team-message")
+      .filter({ has: phone.locator(".team-forwarded") })
+      .filter({ hasText: "Mobile employee online — edited" })
+      .locator(".team-bubble");
+    await forwardedBubble.waitFor();
+    menu = await holdMessage(phone, forwardedBubble);
+    await menu.getByRole("button", { name: "Удалить", exact: true }).click();
+    await phone
+      .getByRole("dialog", { name: "Удалить сообщение?", exact: true })
+      .getByRole("button", { name: "Удалить для всех", exact: true })
+      .click();
+    await forwardedBubble.waitFor({ state: "hidden" });
     await phone.screenshot({ path: `${output}/team-chat-phone.png` });
     await mobile.locator(".team-compose-area input[type=file]").setInputFiles({
       name: "invoice-ui.pdf",
@@ -584,15 +765,15 @@ export async function verifyTeamChat({
     );
     // The sender can delete their own message; all viewers lose it.
     await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
-    phone.once("dialog", (dialog) => dialog.accept());
-    await mobile
-      .locator(".team-message")
-      .filter({ hasText: "Mobile employee online" })
-      .getByRole("button", { name: "Удалить сообщение", exact: true })
+    menu = await holdMessage(phone, originalMobile());
+    await menu.getByRole("button", { name: "Удалить", exact: true }).click();
+    await phone
+      .getByRole("dialog", { name: "Удалить сообщение?", exact: true })
+      .getByRole("button", { name: "Удалить для всех", exact: true })
       .click();
     await chat.getByRole("tab", { name: "Сообщения", exact: true }).click();
     await chat
-      .getByText("Mobile employee online", { exact: true })
+      .getByText("Mobile employee online — edited", { exact: true })
       .waitFor({ state: "hidden" });
     await chat.getByRole("tab", { name: /^Заявки/ }).click();
     await staged

@@ -24,6 +24,10 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     open = ref(false),
     busy = ref(false),
     unread = ref(0);
+  const isOwner = computed(
+    () =>
+      me.value?.owner === true || me.value?.permissions?.manageMembers === true,
+  );
   const pending = computed(() =>
     state.value.members.filter((m) => m.status === "pending"),
   );
@@ -83,7 +87,10 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     try {
       const { data } = await teamApi.get("/state", {
         params: olderMessageIds.value.length
-          ? { messageIds: olderMessageIds.value.join(",") }
+          ? {
+              messageIds: olderMessageIds.value.join(","),
+              updatedSince: state.value.checkedAt,
+            }
           : {},
       });
       if (g !== generation || t !== ticket) return;
@@ -189,6 +196,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     try {
       const { data } = await teamApi.request({ url: path, method, data: body });
       if (g !== generation) return;
+      if (data.identity) me.value = data.identity;
       // The mutation is already committed. A subsequent refresh failure must not turn it into a failed save.
       ++ticket;
       if (data.request) {
@@ -207,13 +215,18 @@ export const useTeamChatStore = defineStore("teamChat", () => {
           (m) => m._id !== data.deletedMessageId,
         );
       try {
-        const { data: identity } = await teamApi.get("/me");
-        if (g !== generation) return data;
-        me.value = identity;
+        if (!data.identity) {
+          const { data: identity } = await teamApi.get("/me");
+          if (g !== generation) return data;
+          me.value = identity;
+        }
       } catch {
         /* Recover identity through the next state refresh. */
       }
-      if (g === generation) await refresh();
+      if (g === generation) {
+        if (data.identity) schedule();
+        else await refresh();
+      }
       return data;
     } catch (e) {
       if (g === generation) {
@@ -242,6 +255,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    isOwner,
     notice,
     olderMessageIds,
     tab,

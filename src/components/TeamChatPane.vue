@@ -13,6 +13,7 @@ import CodexComposer from "./CodexComposer.vue";
 import TeamContractorSelect from "./TeamContractorSelect.vue";
 import TeamRequestCard from "./TeamRequestCard.vue";
 import TeamExpenseTitle from "./TeamExpenseTitle.vue";
+import TeamMessageMenu from "./TeamMessageMenu.vue";
 import { formatAmountInputEvent } from "@/utils/amountInput";
 defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
@@ -27,6 +28,80 @@ const chat = useTeamChatStore(),
   localError = ref(""),
   creating = ref(false),
   older = ref([]);
+const selectedMessageId = ref(null);
+const selectedMessage = computed(() =>
+  shownMessages.value.find((m) => m._id === selectedMessageId.value),
+);
+let holdTimer, holdStart, suppressedClick;
+function cancelHold() {
+  clearTimeout(holdTimer);
+  holdTimer = null;
+}
+function openMessageMenu(row) {
+  cancelHold();
+  if (selectedMessageId.value === row._id) return;
+  selectedMessageId.value = row._id;
+}
+function holdMessage(event, row) {
+  if (
+    event.button !== 0 ||
+    selectedMessage.value ||
+    event.target.closest("input,textarea")
+  )
+    return;
+  cancelHold();
+  suppressedClick = null;
+  holdStart = { x: event.clientX, y: event.clientY };
+  holdTimer = setTimeout(() => {
+    suppressedClick = row._id;
+    openMessageMenu(row);
+  }, 450);
+}
+function moveMessage(event) {
+  if (
+    holdStart &&
+    Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 10
+  )
+    cancelHold();
+}
+function messageClick(event, row) {
+  if (suppressedClick === row._id) {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressedClick = null;
+  }
+}
+function messageKeys(event, row) {
+  if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+    event.preventDefault();
+    openMessageMenu(row);
+  }
+}
+function deletedMessage(id) {
+  older.value = older.value.filter((m) => m._id !== id);
+}
+async function reactToMessage(row, reaction) {
+  await run(() =>
+    chat.action(`/messages/${row._id}/reaction`, {
+      emoji: reaction.mine ? null : reaction.emoji,
+    }),
+  );
+}
+const messageStatus = (row) =>
+  ({
+    director_review: "У руководителя",
+    approved: "Согласовано",
+    rejected: "Отклонено",
+  })[row.approval?.state] || "";
+watch(
+  () => chat.state.messageUpdates,
+  (updates) => {
+    if (updates?.length)
+      older.value = older.value.map(
+        (row) => updates.find((m) => m._id === row._id) || row,
+      );
+  },
+);
 const scroll = ref(null);
 let noticeTimer, revealFrame;
 function revealField() {
@@ -69,6 +144,7 @@ watch(
 onMounted(() => window.visualViewport?.addEventListener("resize", revealField));
 onBeforeUnmount(() => {
   clearTimeout(noticeTimer);
+  cancelHold();
   cancelAnimationFrame(revealFrame);
   window.visualViewport?.removeEventListener("resize", revealField);
   chat.notice = "";
@@ -119,8 +195,8 @@ const money = (cents) =>
     currency: "KZT",
     maximumFractionDigits: 2,
   }).format(cents / 100);
-const isReviewer = computed(() =>
-  ["manager", "director"].includes(chat.me?.role),
+const isReviewer = computed(
+  () => chat.isOwner || ["manager", "director"].includes(chat.me?.role),
 );
 const shownMessages = computed(() =>
   [
@@ -132,6 +208,9 @@ const shownMessages = computed(() =>
     (m) => !m.deletedAt && !chat.state.deletedMessageIds?.includes(m._id),
   ),
 );
+watch(selectedMessage, (value) => {
+  if (!value) selectedMessageId.value = null;
+});
 watch(
   () => chat.me?.workspaceId,
   () => {
@@ -295,13 +374,6 @@ async function dismissPdf(message, file) {
     chat.action(`/messages/${message._id}/files/${file.fileId}/dismiss`, {}),
   );
 }
-async function removeMessage(row) {
-  if (!window.confirm("Удалить сообщение для всех участников?")) return;
-  const result = await run(() =>
-    chat.action(`/messages/${row._id}`, {}, "delete"),
-  );
-  if (result) older.value = older.value.filter((m) => m._id !== row._id);
-}
 async function removeRequest(row) {
   const question = row.operationId
     ? "Удалить карточку заявки? Записанный расход останется на таймлайне."
@@ -329,6 +401,12 @@ async function copy(text) {
 </script>
 <template>
   <div class="team-pane">
+    <TeamMessageMenu
+      v-if="selectedMessage"
+      :message="selectedMessage"
+      @close="selectedMessageId = null"
+      @deleted="deletedMessage"
+    />
     <nav class="team-tabs" role="tablist" aria-label="Разделы чата">
       <button
         role="tab"
@@ -352,7 +430,7 @@ async function copy(text) {
           ).length
         }}</small></button
       ><button
-        v-if="chat.me?.owner"
+        v-if="chat.isOwner"
         role="tab"
         :aria-selected="tab === 'members'"
         :id="'team-tab-members'"
@@ -391,6 +469,7 @@ async function copy(text) {
         aria-labelledby="team-tab-messages"
         aria-label="Сообщения сотрудников"
         aria-live="polite"
+        @scroll="cancelHold"
       >
         <button
           v-if="chat.state.hasMore"
@@ -408,7 +487,18 @@ async function copy(text) {
           class="team-message"
           :class="{ self: m.authorId === chat.me.actorId }"
         >
-          <div class="team-bubble">
+          <div
+            class="team-bubble"
+            tabindex="0"
+            :aria-label="`Сообщение ${m.authorName}`"
+            @pointerdown="holdMessage($event, m)"
+            @pointermove="moveMessage"
+            @pointerup="cancelHold"
+            @pointercancel="cancelHold"
+            @click.capture="messageClick($event, m)"
+            @contextmenu.prevent="openMessageMenu(m)"
+            @keydown="messageKeys($event, m)"
+          >
             <header>
               <strong>{{ m.authorName }}</strong
               ><time>{{
@@ -418,6 +508,9 @@ async function copy(text) {
                 })
               }}</time>
             </header>
+            <span v-if="m.forwardedFrom" class="team-forwarded"
+              >Переслано · {{ m.forwardedFrom.authorName }}</span
+            >
             <CodexMessageText
               v-if="m.text"
               :text="m.text"
@@ -466,26 +559,27 @@ async function copy(text) {
                 </div>
               </div></template
             >
-            <div class="team-message-actions">
+            <div v-if="m.reactions?.length" class="team-reactions">
               <button
-                v-if="chat.me.owner || m.authorId === chat.me.actorId"
+                v-for="reaction in m.reactions"
+                :key="reaction.emoji"
                 type="button"
-                class="team-copy"
-                aria-label="Удалить сообщение"
-                title="Удалить сообщение"
+                :aria-label="`Реакция ${reaction.emoji}: ${reaction.count}`"
+                :aria-pressed="reaction.mine"
                 :disabled="chat.busy"
-                @click="removeMessage(m)"
+                @pointerdown.stop
+                @click="reactToMessage(m, reaction)"
               >
-                <UiIcon name="trash" /></button
-              ><button
-                v-if="m.text"
-                class="team-copy"
-                title="Копировать"
-                aria-label="Копировать сообщение"
-                @click="copy(m.text)"
-              >
-                <UiIcon name="copy" />
+                {{ reaction.emoji }} <span>{{ reaction.count }}</span>
               </button>
+            </div>
+            <div v-if="m.editedAt || m.approval" class="team-message-meta">
+              <span v-if="m.editedAt">изменено</span
+              ><span
+                v-if="m.approval"
+                :class="{ 'message-rejected': m.approval.state === 'rejected' }"
+                >{{ messageStatus(m) }}</span
+              >
             </div>
           </div>
         </article>
@@ -699,10 +793,10 @@ async function copy(text) {
           />
         </template>
       </template>
-      <template v-else-if="tab === 'members'">
+      <template v-else-if="tab === 'members' && chat.isOwner">
         <div class="team-settings">
           <select
-            v-if="chat.me.owner"
+            v-if="chat.isOwner"
             :value="chat.me.role"
             aria-label="Моя роль в чате"
             :disabled="chat.busy"
@@ -716,6 +810,7 @@ async function copy(text) {
               )
             "
           >
+            <option value="employee">Сотрудник</option>
             <option value="manager">Управляющий</option>
             <option value="director">Руководитель компании</option>
           </select>
