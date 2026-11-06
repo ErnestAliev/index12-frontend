@@ -41,6 +41,17 @@ export async function verifyTopNavigation(page, frame, output) {
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.waitForFunction(
+      ({ id, width, height }) => {
+        const bounds = document.getElementById(id)?.getBoundingClientRect();
+        return (
+          bounds &&
+          Math.abs(bounds.width - width) < 2 &&
+          Math.abs(bounds.height - height) < 2
+        );
+      },
+      { id: await frame.getAttribute("id"), ...viewport },
+    );
     const picker = await section.boundingBox();
     const button = await trigger.boundingBox();
     const header = await frame.locator(".team-heading").boundingBox();
