@@ -9,19 +9,6 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <script>
-    const teamInvite = location.pathname.match(/^\/team\/([A-Za-z0-9_-]{20,100})$/);
-    if (teamInvite) {
-      document.querySelector('link[rel="manifest"]').href = '/team-manifest/' + teamInvite[1];
-      document.querySelector('link[rel="apple-touch-icon"]').href = '/chat-180.png';
-      const title = document.createElement('meta');
-      title.name = 'apple-mobile-web-app-title'; title.content = 'Chat'; document.head.appendChild(title);
-      window.addEventListener('beforeinstallprompt', (event) => {
-        event.preventDefault();
-        window.index12InstallPrompt = event;
-      });
-    }
-  </script>
 
   <!-- 🟢 FIX: Жесткая фиксация viewport для предотвращения зума на мобильных -->
   <meta name="viewport"

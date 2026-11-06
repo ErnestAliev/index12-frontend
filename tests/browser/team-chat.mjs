@@ -3,15 +3,12 @@ import { fileURLToPath } from "node:url";
 import { mkdir } from "node:fs/promises";
 import { createServer } from "vite";
 import { chromium } from "playwright-core";
+import process from "node:process";
+import { Buffer } from "node:buffer";
 export async function verifyTeamChat({
   origin,
   cookie,
-  scope,
   token,
-  company,
-  account,
-  contractor,
-  category,
 }) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     output = root + "output/playwright";
@@ -171,6 +168,18 @@ export async function verifyTeamChat({
     );
     const phone = await employee.newPage();
     phone.on("pageerror", (e) => errors.push(e.message));
+    // Read the original server response, not the DOM after JS has swapped links.
+    // The former implementation passed start_url checks but exposed the root
+    // INDEX12 manifest to the installer while it was parsing the page.
+    const initial = await employee.request.get("http://127.0.0.1:5173/team/" + token);
+    const initialHtml = await initial.text();
+    assert.match(initialHtml, new RegExp(`href="/team-manifest/${token}"`));
+    assert.doesNotMatch(initialHtml, /href="\/manifest\.webmanifest"/);
+    const manifestsRequested = [];
+    phone.on("request", (request) => {
+      if (/manifest/.test(new URL(request.url()).pathname))
+        manifestsRequested.push(new URL(request.url()).pathname);
+    });
     await phone.goto("http://127.0.0.1:5173/team/" + token, {
       waitUntil: "domcontentloaded",
     });
@@ -302,6 +311,25 @@ export async function verifyTeamChat({
     assert.equal(manifestData.name, "Chat");
     assert.equal(manifestData.short_name, "Chat");
     assert.equal(manifestData.icons[0].src, "/chat-192.png");
+    const session = await employee.newCDPSession(phone);
+    const discovered = await session.send("Page.getAppManifest");
+    assert.equal(discovered.url, new URL(manifestUrl, phone.url()).href);
+    assert.equal(JSON.parse(discovered.data).start_url, "/team/" + token);
+    assert.ok(!manifestsRequested.includes("/manifest.webmanifest"));
+    await session.detach();
+    // iOS may create an isolated app storage context. Even without cookies or
+    // localStorage, the captured launch URL must still open this chat's login.
+    const isolated = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await isolated.addInitScript(() => {
+      Object.defineProperty(navigator, "standalone", { get: () => true });
+    });
+    const isolatedPage = await isolated.newPage();
+    await isolatedPage.goto(new URL(JSON.parse(discovered.data).start_url, phone.url()).href);
+    await isolatedPage.getByLabel("Номер телефона", { exact: true }).waitFor();
+    assert.equal(new URL(isolatedPage.url()).pathname, "/team/" + token);
+    assert.equal(await isolatedPage.title(), "Chat");
+    assert.equal(await isolatedPage.getByRole("heading", { name: "Chat", exact: true }).count(), 1);
+    await isolated.close();
     assert.equal(
       await mobile
         .getByLabel("Сообщение сотрудникам", { exact: true })
@@ -704,6 +732,7 @@ export async function verifyTeamChat({
     const target = page.locator(
       `.hour-cell[data-date-key="${year}-${doy}"][data-cell-index="0"]`,
     );
+    await page.bringToFront();
     await requestCard.dragTo(target);
     const popup = page.locator(".request-draft-popup");
     await popup.waitFor();

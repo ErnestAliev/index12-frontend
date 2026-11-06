@@ -1,6 +1,10 @@
 {
+  "functions": {
+    "api/team-entry.js": { "includeFiles": "dist/index.html" }
+  },
   "rewrites": [
     { "source": "/team-manifest/:token", "destination": "https://api.index12.com/api/team-chat/manifest/:token" },
+    { "source": "/team/:token", "destination": "/api/team-entry?token=:token" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
