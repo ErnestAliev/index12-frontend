@@ -11,8 +11,16 @@ import {
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useAppearanceStore } from "@/stores/appearanceStore";
 import UiIcon from "./UiIcon.vue";
-const props = defineProps({ modelValue: String });
-const emit = defineEmits(["update:modelValue", "close"]);
+import { useTeamChatNotifications } from "@/composables/useTeamChatNotifications";
+const props = defineProps({ modelValue: String, inviteToken: String });
+const emit = defineEmits(["update:modelValue", "close", "logout"]);
+const {
+  enabled: notificationsEnabled,
+  busy: notificationsBusy,
+  error: notificationsError,
+  toggle: toggleNotifications,
+  refresh: refreshNotifications,
+} = useTeamChatNotifications(() => props.inviteToken);
 const chat = useTeamChatStore(),
   appearance = useAppearanceStore(),
   open = ref(false),
@@ -24,17 +32,16 @@ const chat = useTeamChatStore(),
   error = ref("");
 const menuId = useId();
 const sections = computed(() => [
-  { value: "messages", label: "Сообщения" },
-  { value: "tasks", label: "Задачи" },
+  { value: "messages", label: "Чат" },
   { value: "requests", label: "Заявки" },
+  { value: "tasks", label: "Задачи" },
   ...(chat.isOwner ? [{ value: "members", label: "Роли и участники" }] : []),
-  { value: "settings", label: "Настройки чата" },
 ]);
 const label = computed(
   () =>
-    ({ members: "Роли", settings: "Настройки" })[props.modelValue] ||
+    ({ members: "Роли" })[props.modelValue] ||
     sections.value.find((s) => s.value === props.modelValue)?.label ||
-    "Сообщения",
+    "Чат",
 );
 let observer;
 function measure() {
@@ -118,6 +125,7 @@ watch(open, async (value) => {
   if (value) {
     await nextTick();
     measure();
+    void refreshNotifications();
   }
 });
 watch(
@@ -197,12 +205,36 @@ onBeforeUnmount(() => {
           />{{ s.label }}
         </button>
         <hr />
+        <span class="team-navigation-group">Настройки чата</span>
         <button type="button" @click="theme">
           <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{
             appearance.mode === "light" ? "Тёмная тема" : "Светлая тема"
           }}
         </button>
         <p v-if="error" role="alert">{{ error }}</p>
+        <button
+          type="button"
+          :disabled="notificationsBusy"
+          :aria-pressed="notificationsEnabled"
+          @click="toggleNotifications"
+        >
+          <UiIcon :name="notificationsBusy ? 'refresh' : 'bell'" />{{
+            notificationsEnabled
+              ? "Выключить уведомления"
+              : "Включить уведомления"
+          }}
+        </button>
+        <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
+        <hr />
+        <button
+          type="button"
+          @click="
+            close();
+            emit('logout');
+          "
+        >
+          <UiIcon name="logout" />Выйти
+        </button>
       </section>
     </div>
     <button
@@ -333,6 +365,13 @@ onBeforeUnmount(() => {
   margin: 6px;
   color: var(--color-danger, #c65048);
   font-size: 12px;
+}
+.team-navigation-group {
+  display: block;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--codex-pane-muted);
 }
 .team-chat-navigation button:focus {
   outline: none !important;

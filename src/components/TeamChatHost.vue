@@ -213,7 +213,15 @@ watch(
     editError.value = "";
     editConflict.value = false;
     if (publicPage) return;
-    if (actor && workspace) void chat.start(String(workspace));
+    if (actor && workspace)
+      void chat.start(String(workspace)).then(() => {
+        if (
+          route.query.teamChat === String(workspace) &&
+          chat.me?.owner &&
+          chat.me.workspaceId === String(workspace)
+        )
+          chat.show();
+      });
     else chat.stop();
   },
   { immediate: true },
@@ -224,9 +232,20 @@ function show() {
 function created() {
   void main.forceRefreshAll?.();
 }
+function notificationOpened(event) {
+  if (
+    !route.path.startsWith("/team/") &&
+    event.data?.type === "team:refresh" &&
+    event.data.workspaceId === chat.me?.workspaceId &&
+    chat.me?.owner
+  )
+    chat.show();
+}
+navigator.serviceWorker?.addEventListener("message", notificationOpened);
 window.addEventListener("index12:open-team-chat", show);
 window.addEventListener("index12:team-operation-created", created);
 onBeforeUnmount(() => {
+  navigator.serviceWorker?.removeEventListener("message", notificationOpened);
   window.removeEventListener("index12:open-team-chat", show);
   window.removeEventListener("index12:team-operation-created", created);
   window.removeEventListener("index12:edit-team-request", editRequest);
@@ -256,7 +275,8 @@ async function decide(status) {
     side="left"
     storage-key="index12-team-chat-window-size"
     @close="chat.open = false"
-    ><template #heading="{ close }"><TeamChatHeader @close="close" /></template
+    ><template #heading="{ close }"
+      ><TeamChatHeader @close="close" @logout="chat.open = false" /></template
     ><TeamChatPane :mobile="route.name === 'mobile-home'"
   /></ChatWindowFrame>
   <Teleport to="body"

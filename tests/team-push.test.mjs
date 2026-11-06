@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { test, before, after } from "node:test";
 import { createServer } from "vite";
 let vite, push, api, originalNavigator;
+const preferences = new Map();
 let ios = false,
   installed = false,
   requests = [],
@@ -37,6 +39,11 @@ const registration = {
   },
 };
 before(async () => {
+  globalThis.localStorage = {
+    getItem: (key) => preferences.get(key) || null,
+    setItem: (key, value) => preferences.set(key, String(value)),
+    removeItem: (key) => preferences.delete(key),
+  };
   originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   globalThis.window = {
     location: { origin: "http://localhost" },
@@ -88,6 +95,7 @@ before(async () => {
   };
 });
 after(async () => {
+  delete globalThis.localStorage;
   await vite.close();
   delete globalThis.window;
   delete globalThis.Notification;
@@ -95,6 +103,7 @@ after(async () => {
     Object.defineProperty(globalThis, "navigator", originalNavigator);
   else delete globalThis.navigator;
 });
+
 test("login checks never trigger a permission dialog; enabling waits for server-bound subscription", async () => {
   assert.deepEqual(await push.bindChatPush("fixture"), { state: "permission" });
   assert.equal(permissionRequests, 0);
@@ -139,4 +148,35 @@ test("server rejection cannot report notifications enabled, and logout never uns
   registration.active.scriptURL = "http://localhost/team-sw.js";
   await push.unsubscribeChatPush();
   assert.equal(unsubscribed, 1);
+});
+
+test("device opt-out survives automatic reconnects and is cleared only by explicit enable", async () => {
+  Notification.permission = "granted";
+  const identity = { workspaceId: "workspace-a", actorId: "actor-a" };
+  const preference = push.chatPushPreferenceKey(identity);
+  localStorage.setItem(preference, "1");
+  const beforeRequests = requests.length;
+  assert.deepEqual(await push.bindChatPush("fixture", false, identity), {
+    state: "disabled",
+  });
+  assert.equal(
+    requests.length,
+    beforeRequests,
+    "Disabled devices never silently bind again",
+  );
+  const other = { ...identity, workspaceId: "workspace-b" };
+  assert.equal(
+    (await push.bindChatPush("fixture", false, other)).state,
+    "enabled",
+  );
+  assert.equal(
+    localStorage.getItem(preference),
+    "1",
+    "A different workspace cannot clear the preference",
+  );
+  assert.equal(
+    (await push.bindChatPush("fixture", true, identity)).state,
+    "enabled",
+  );
+  assert.equal(localStorage.getItem(preference), null);
 });

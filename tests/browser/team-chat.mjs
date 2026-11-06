@@ -169,7 +169,7 @@ export async function verifyTeamChat({
       "manager",
     );
     await closeChatMenu(chat);
-    await selectSection(chat, "Сообщения");
+    await selectSection(chat, "Чат");
     // A fresh invitee registers from a different browser context, with no INDEX12 access.
     const employee = await browser.newContext({
       viewport: { width: 390, height: 844 },
@@ -623,7 +623,7 @@ export async function verifyTeamChat({
       createPosition.y > 700 &&
         Math.abs(createPosition.x + createPosition.width / 2 - 195) < 2,
     );
-    await selectSection(mobile, "Сообщения");
+    await selectSection(mobile, "Чат");
     const addButton = mobile.getByRole("button", {
       name: "Добавить в чат",
       exact: true,
@@ -1036,7 +1036,7 @@ export async function verifyTeamChat({
       .getByRole("button", { name: "Отклонить", exact: true })
       .click();
     await rejectDialog.waitFor({ state: "hidden" });
-    await selectSection(mobile, "Сообщения");
+    await selectSection(mobile, "Чат");
     const authorRejection = mobile
       .locator(".request-card")
       .filter({ hasText: rejectedTitle });
@@ -1047,14 +1047,14 @@ export async function verifyTeamChat({
       .getByText("Отклонено Управляющим (Calendar owner)", { exact: true })
       .waitFor();
     // The sender can delete their own message; all viewers lose it.
-    await selectSection(mobile, "Сообщения");
+    await selectSection(mobile, "Чат");
     menu = await holdMessage(phone, originalMobile());
     await menu.getByRole("button", { name: "Удалить", exact: true }).click();
     await phone
       .getByRole("dialog", { name: "Удалить сообщение?", exact: true })
       .getByRole("button", { name: "Удалить для всех", exact: true })
       .click();
-    await selectSection(chat, "Сообщения");
+    await selectSection(chat, "Чат");
     await chat
       .getByText("Mobile employee online — edited", { exact: true })
       .waitFor({ state: "hidden" });
@@ -1066,6 +1066,19 @@ export async function verifyTeamChat({
       .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
       .click();
     await page.setViewportSize({ width: 390, height: 844 });
+    const ownerIdentity = await (
+      await context.request.get(origin + "/api/team-chat/me")
+    ).json();
+    await page.goto(
+      "http://127.0.0.1:5173/?teamChat=" + ownerIdentity.workspaceId,
+      { waitUntil: "domcontentloaded" },
+    );
+    await page
+      .getByRole("dialog", { name: "Чат Сотрудники", exact: true })
+      .waitFor();
+    await page
+      .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
+      .click();
     await page.goto("http://127.0.0.1:5173/mobile", {
       waitUntil: "domcontentloaded",
     });
@@ -1095,6 +1108,17 @@ export async function verifyTeamChat({
     );
     await verifyOnboardingBrowser({
       browser,
+      base: "http://127.0.0.1:5173",
+      origin,
+      token,
+      output,
+    });
+    const { verifyNotificationMenu } = await import(
+      "./team-chat-notifications.mjs"
+    );
+    await verifyNotificationMenu({
+      browser,
+      employeePage: phone,
       base: "http://127.0.0.1:5173",
       origin,
       token,

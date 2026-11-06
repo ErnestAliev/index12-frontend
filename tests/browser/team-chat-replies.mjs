@@ -9,8 +9,8 @@ export async function verifyReplies({
   origin,
   output,
 }) {
-  await selectSection(chat, "Сообщения");
-  await selectSection(mobile, "Сообщения");
+  await selectSection(chat, "Чат");
+  await selectSection(mobile, "Чат");
   const sourceText = "Уточните время поставки ламп";
   const sent = page.waitForResponse(
     (r) =>
@@ -137,35 +137,31 @@ export async function verifyReplies({
     menuBox.y >= navBox.y + navBox.height,
     "Menu must open below the header",
   );
-  await account
-    .getByRole("button", { name: "Настройки чата", exact: true })
-    .click();
-  await account.waitFor({ state: "hidden" });
-  const settings = mobile.getByRole("region", {
-    name: "Настройки чата",
-    exact: true,
-  });
-  await settings
-    .getByRole("heading", { name: "Уведомления", exact: true })
-    .waitFor();
+  await account.getByText("Настройки чата", { exact: true }).waitFor();
   assert.equal(
-    await phone.getByRole("dialog", { name: "Chat", exact: true }).count(),
+    await account
+      .getByRole("button", { name: "Настройки чата", exact: true })
+      .count(),
     0,
   );
-  await settings.getByRole("button", { name: "Выйти", exact: true }).waitFor();
-  await settings
+  await account
+    .getByRole("button", { name: "Включить уведомления", exact: true })
+    .waitFor();
+  await account.getByRole("button", { name: "Выйти", exact: true }).waitFor();
+  await account
     .getByRole("button", { name: "Тёмная тема", exact: true })
     .click();
   assert.equal(
     await phone.evaluate(() => localStorage.getItem("theme")),
     "dark",
   );
-  await settings
+  await mobile.getByRole("button", { name: "Меню чата", exact: true }).click();
+  await account
     .getByRole("button", { name: "Светлая тема", exact: true })
     .click();
   await selectSection(mobile, "Задачи");
   assert.equal(await nav.getAttribute("data-section"), "tasks");
-  await selectSection(mobile, "Сообщения");
+  await selectSection(mobile, "Чат");
   await verifyTopNavigation(phone, mobile, output);
   console.log(
     "PASS: hold-to-reply, native touch swipe, vertical-scroll preservation, quoted replies and deletion, mobile dropdown and account/theme menu",

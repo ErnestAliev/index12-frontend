@@ -141,7 +141,7 @@ export async function verifyOnboardingBrowser({
   await h.getByText("Загружаем историю сообщений…", { exact: true }).waitFor();
   release();
   const feed = h.getByRole("region", {
-    name: "Сообщения сотрудников",
+    name: "Чат сотрудников",
     exact: true,
   });
   await feed.locator(".team-message").first().waitFor();

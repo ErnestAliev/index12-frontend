@@ -25,9 +25,7 @@ import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
 import TeamChatDialog from "./TeamChatDialog.vue";
-import TeamChatSettings from "./TeamChatSettings.vue";
-defineProps({ mobile: Boolean, inviteToken: String });
-const emit = defineEmits(["logout"]);
+defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
   tab = computed({
@@ -898,7 +896,7 @@ async function copy(text) {
         class="team-feed"
         id="team-panel"
         role="region"
-        aria-label="Сообщения сотрудников"
+        aria-label="Чат сотрудников"
         aria-live="polite"
         :aria-busy="chat.historyLoading || olderLoading"
         @scroll="scrollFeed"
@@ -1188,7 +1186,6 @@ async function copy(text) {
           requests: 'Заявки',
           tasks: 'Задачи',
           members: 'Роли и участники',
-          settings: 'Настройки чата',
         }[tab]
       "
       class="team-scroll"
@@ -1311,11 +1308,6 @@ async function copy(text) {
       <template v-else-if="tab === 'members' && chat.isOwner"
         ><TeamChatMembers />
       </template>
-      <TeamChatSettings
-        v-else-if="tab === 'settings'"
-        :invite-token="inviteToken"
-        @logout="emit('logout')"
-      />
     </div>
   </div>
 </template>

@@ -11,7 +11,6 @@ import { teamApi, teamError } from "@/stores/teamChatStore";
 import { bindChatPush, iosDevice, standalone } from "@/utils/teamPush";
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({
-  inline: Boolean,
   token: String,
   identity: Object,
   workspaceId: String,
@@ -38,6 +37,7 @@ const pushLabel = computed(
   () =>
     ({
       enabled: "Уведомления включены",
+      disabled: "Уведомления выключены",
       blocked: "Уведомления запрещены в настройках браузера",
       install: "Уведомления доступны после добавления на главный экран",
       unsupported: "Этот браузер не поддерживает push-уведомления",
@@ -53,7 +53,6 @@ function remember() {
   }
 }
 function open() {
-  if (props.inline) return;
   focusBefore = document.activeElement;
   opened.value = true;
   nextTick(() => dialog.value?.focus());
@@ -100,7 +99,7 @@ async function check(ask = false) {
   checking.value = true;
   error.value = "";
   try {
-    const result = await bindChatPush(props.token, ask);
+    const result = await bindChatPush(props.token, ask, props.identity);
     if (ticket !== generation) return;
     state.value = result.state;
     endpoint.value = result.endpoint || null;
@@ -180,7 +179,7 @@ function trap(event) {
 watch(
   () => props.workspaceId,
   (id) => {
-    if (props.inline || !id || installed.value || !mobile()) return;
+    if (!id || installed.value || !mobile()) return;
     let seen = false;
     try {
       seen = !!localStorage.getItem(seenKey.value);
@@ -210,7 +209,7 @@ watch(
       } catch {
         /* Private mode. */
       }
-      if (!seen && !props.inline) {
+      if (!seen) {
         open();
         try {
           localStorage.setItem(
@@ -243,24 +242,19 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <Teleport to="body" :disabled="inline">
-    <div
-      v-if="inline || opened"
-      :class="inline ? 'chat-setup-inline' : 'chat-setup-backdrop'"
-      @click.self="!inline && close()"
-    >
+  <Teleport to="body">
+    <div v-if="opened" class="chat-setup-backdrop" @click.self="close">
       <section
         ref="dialog"
         class="chat-setup"
-        :role="inline ? 'region' : 'dialog'"
-        :aria-modal="inline ? undefined : true"
-        :aria-labelledby="inline ? undefined : 'chat-setup-title'"
-        :aria-label="inline ? 'Установка и уведомления' : undefined"
-        :tabindex="inline ? undefined : -1"
-        @keydown.esc="!inline && ($event.stopPropagation(), close())"
-        @keydown="!inline && trap($event)"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-setup-title"
+        tabindex="-1"
+        @keydown.esc.stop="close"
+        @keydown="trap"
       >
-        <header v-if="!inline">
+        <header>
           <img src="/chat-192.png" alt="" width="44" height="44" />
           <h2 id="chat-setup-title">Chat</h2>
           <button
@@ -329,7 +323,7 @@ onBeforeUnmount(() => {
             <p v-if="error" class="setup-error" role="alert">{{ error }}</p>
           </div>
         </template>
-        <button v-if="!inline" class="setup-later" @click="close">
+        <button class="setup-later" @click="close">
           {{ installed ? "Продолжить" : "Позже" }}
         </button>
       </section>
@@ -337,17 +331,6 @@ onBeforeUnmount(() => {
   </Teleport>
 </template>
 <style scoped>
-.chat-setup-inline .chat-setup {
-  width: 100%;
-  max-height: none;
-  overflow: visible;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  box-shadow: none;
-}
 .chat-setup-backdrop {
   position: fixed;
   inset: 0;

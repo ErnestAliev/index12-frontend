@@ -44,7 +44,18 @@ const decode = (value) =>
     ),
     (c) => c.charCodeAt(0),
   );
-export async function bindChatPush(token, ask = false) {
+export const chatPushPreferenceKey = (identity) =>
+  identity?.workspaceId && identity?.actorId
+    ? `index12-chat-push-disabled:${identity.workspaceId}:${identity.actorId}`
+    : null;
+export async function bindChatPush(token, ask = false, identity) {
+  const preference = chatPushPreferenceKey(identity);
+  try {
+    if (!ask && preference && localStorage.getItem(preference))
+      return { state: "disabled" };
+  } catch {
+    /* Storage can be unavailable. */
+  }
   if (iosDevice() && !standalone()) return { state: "install" };
   if (!pushSupported()) return { state: "unsupported" };
   // Permission must be requested directly from the user's tap, before any await.
@@ -71,10 +82,21 @@ export async function bindChatPush(token, ask = false) {
       userVisibleOnly: true,
       applicationServerKey: key,
     });
+  try {
+    if (!ask && preference && localStorage.getItem(preference))
+      return { state: "disabled" };
+  } catch {
+    /* Storage can be unavailable. */
+  }
   await teamApi.post("/push/subscriptions", {
     subscription: subscription.toJSON(),
     token,
   });
+  try {
+    if (preference) localStorage.removeItem(preference);
+  } catch {
+    /* Subscription is already active. */
+  }
   return { state: "enabled", endpoint: subscription.endpoint };
 }
 export async function chatPushEndpoint() {

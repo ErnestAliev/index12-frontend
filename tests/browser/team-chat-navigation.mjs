@@ -6,13 +6,6 @@ export async function openChatMenu(frame) {
   const menu = frame.getByRole("dialog", { name: "Меню чата", exact: true });
   return menu;
 }
-export async function openChatSettings(frame) {
-  const menu = await openChatMenu(frame);
-  await menu
-    .getByRole("button", { name: "Настройки чата", exact: true })
-    .click();
-  return frame.getByRole("region", { name: "Настройки чата", exact: true });
-}
 export async function closeChatMenu(frame) {
   const trigger = frame.getByRole("button", { name: "Меню чата", exact: true });
   if ((await trigger.getAttribute("aria-expanded")) === "true")
@@ -98,9 +91,19 @@ export async function verifyTopNavigation(page, frame, output) {
       "Dropdown remains inside available screen space",
     );
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= viewport.width);
-    await menu
-      .getByRole("button", { name: "Настройки чата", exact: true })
-      .waitFor();
+    await menu.getByText("Настройки чата", { exact: true }).waitFor();
+    assert.equal(
+      await menu
+        .getByRole("button", { name: "Настройки чата", exact: true })
+        .count(),
+      0,
+    );
+    const labels = await menu.locator("button").allTextContents();
+    assert.deepEqual(
+      labels.slice(0, 3).map((t) => t.trim()),
+      ["Чат", "Заявки", "Задачи"],
+    );
+    assert.equal(labels.at(-1).trim(), "Выйти");
     const focus = await trigger.evaluate((el) => ({
       outline: getComputedStyle(el).outlineStyle,
       shadow: getComputedStyle(el).boxShadow,
@@ -117,7 +120,7 @@ export async function verifyTopNavigation(page, frame, output) {
     assert.equal(await frame.isVisible(), true);
     await selectSection(frame, "Задачи");
     assert.equal(await trigger.getAttribute("data-section"), "tasks");
-    await selectSection(frame, "Сообщения");
+    await selectSection(frame, "Чат");
     assert.equal(await trigger.getAttribute("data-section"), "messages");
   }
   await page.setViewportSize(originalViewport);
@@ -130,7 +133,7 @@ export async function verifyTopNavigation(page, frame, output) {
   await page.getByRole("button", { name: "Открыть чат", exact: true }).click();
   await frame.waitFor();
   await frame
-    .getByRole("region", { name: "Сообщения сотрудников", exact: true })
+    .getByRole("region", { name: "Чат сотрудников", exact: true })
     .waitFor();
   assert.equal(
     await page.getByRole("button", { name: "Войти", exact: true }).count(),

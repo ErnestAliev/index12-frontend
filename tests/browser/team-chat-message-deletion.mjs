@@ -11,8 +11,8 @@ export async function verifyMessageDeletion({
   category,
   output,
 }) {
-  await selectSection(chat, "Сообщения");
-  await selectSection(mobile, "Сообщения");
+  await selectSection(chat, "Чат");
+  await selectSection(mobile, "Чат");
   const messageMenu = (targetPage) =>
     targetPage.getByRole("dialog", { name: "Сообщение", exact: true });
   async function hold(targetPage, target) {

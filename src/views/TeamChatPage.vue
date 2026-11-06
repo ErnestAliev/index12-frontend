@@ -361,19 +361,14 @@ const closedText = (status) =>
       storage-key="index12-team-chat-window-size"
       @close="chatClosed = true"
       ><template #heading="{ close }"
-        ><TeamChatHeader @close="close" /></template
-      ><TeamChatPane
-        mobile
-        :invite-token="String(route.params.token)"
-        @logout="logout"
+        ><TeamChatHeader
+          :invite-token="String(route.params.token)"
+          @close="close"
+          @logout="logout" /></template
+      ><TeamChatPane mobile
     /></ChatWindowFrame>
     <TeamChatSetup
-      v-if="
-        valid &&
-        !booting &&
-        mode === 'auth' &&
-        !(chat.me?.status === 'active' && chat.tab === 'settings')
-      "
+      v-if="valid && !booting && mode === 'auth'"
       ref="setup"
       :token="String(route.params.token)"
       :workspace-id="invitation?.workspaceId"
